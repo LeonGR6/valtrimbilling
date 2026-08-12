@@ -1,16 +1,40 @@
-# React + Vite
+# ValtrimBilling
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Frontend de ValtrimBilling construido con React, Vite, React Router y MUI.
 
-Currently, two official plugins are available:
+## Comandos
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+```bash
+npm install
+npm run dev
+npm run lint
+npm run build
+```
 
-## React Compiler
+## Estructura
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+```text
+src/
+├── assets/           # Imágenes, fuentes e iconos estáticos
+├── components/
+│   ├── common/       # Componentes compartidos por toda la app
+│   └── layout/       # Estructura visual y navegación principal
+├── config/           # Configuración global de la aplicación
+├── context/          # Context providers compartidos
+├── features/         # Módulos de dominio autocontenidos
+│   ├── builders/
+│   └── plan-types/
+├── hooks/            # Hooks globales compartidos
+├── pages/            # Componentes de nivel ruta, sin lógica de dominio pesada
+├── routes/           # Registro de navegación y configuración del router
+├── services/         # Clientes API e integraciones externas
+├── store/            # Estado global cuando sea necesario
+├── styles/           # Estilos globales y tema MUI
+└── utils/            # Funciones puras y validadores compartidos
+```
 
-## Expanding the ESLint configuration
+Cada carpeta de página o componente compartido expone un `index.js` para mantener imports estables. Las rutas se cargan de forma diferida para no incluir todos los módulos en el bundle inicial.
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+Los catálogos de Builders y Plan Types todavía utilizan datos locales en memoria. Sus datos temporales viven dentro de cada `feature`; la futura conexión con Supabase debe implementarse mediante `services/` o servicios propios de cada feature.
+
+> En Vite, `index.html` permanece en la raíz del proyecto porque funciona como punto de entrada durante desarrollo y compilación.

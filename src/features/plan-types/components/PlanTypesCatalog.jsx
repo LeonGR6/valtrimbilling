@@ -29,13 +29,13 @@ import {
   TextField,
   Typography,
 } from '@mui/material'
-import AddRoundedIcon from '@mui/icons-material/AddRounded'
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
 import FilterListRoundedIcon from '@mui/icons-material/FilterListRounded'
 import MoreHorizRoundedIcon from '@mui/icons-material/MoreHorizRounded'
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined'
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
 import MapOutlinedIcon from '@mui/icons-material/MapOutlined'
+import ResponsiveCreateButton from '../../../components/common/ResponsiveCreateButton'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { Controller, useForm, useWatch } from 'react-hook-form'
 import {
@@ -312,15 +312,10 @@ export default function PlanTypesCatalog() {
             Manage the residential plans available for each builder.
           </Typography>
         </Box>
-        <Button
-          variant="contained"
-          startIcon={<AddRoundedIcon />}
+        <ResponsiveCreateButton
+          label="New plan type"
           onClick={() => setDialogState({ mode: 'create' })}
-          disableElevation
-          sx={{ whiteSpace: 'nowrap' }}
-        >
-          New plan type
-        </Button>
+        />
       </Box>
 
       <Box sx={{ p: { xs: 2.5, md: 4 } }}>

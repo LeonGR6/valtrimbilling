@@ -33,7 +33,6 @@ import {
   Typography,
 } from '@mui/material'
 import AccountTreeRoundedIcon from '@mui/icons-material/AccountTreeRounded'
-import AddRoundedIcon from '@mui/icons-material/AddRounded'
 import ApartmentRoundedIcon from '@mui/icons-material/ApartmentRounded'
 import BusinessRoundedIcon from '@mui/icons-material/BusinessRounded'
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
@@ -42,6 +41,7 @@ import FilterListRoundedIcon from '@mui/icons-material/FilterListRounded'
 import HomeWorkRoundedIcon from '@mui/icons-material/HomeWorkRounded'
 import MoreHorizRoundedIcon from '@mui/icons-material/MoreHorizRounded'
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
+import ResponsiveCreateButton from '../../../components/common/ResponsiveCreateButton'
 import {
   emptyJob,
   formatJobHierarchy,
@@ -410,15 +410,10 @@ export default function JobsCatalog() {
             Manage project locations and the lots or units included in each job.
           </Typography>
         </Box>
-        <Button
-          variant="contained"
-          startIcon={<AddRoundedIcon />}
+        <ResponsiveCreateButton
+          label="New job"
           onClick={openCreateDialog}
-          disableElevation
-          sx={{ whiteSpace: 'nowrap' }}
-        >
-          New job
-        </Button>
+        />
       </Box>
 
       <Box sx={{ p: { xs: 2.5, md: 4 } }}>

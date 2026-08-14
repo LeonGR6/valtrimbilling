@@ -81,7 +81,7 @@ const navigationSections = [
     items: [
       { label: 'Proposals', icon: DescriptionIcon },
       { label: 'Plan Pricing - Pricing Options', icon: SellIcon },
-      { label: 'Draw Templates', icon: DonutSmallRoundedIcon },
+      { label: 'Draw Schedules', path: '/draw', icon: DonutSmallRoundedIcon },
     ]
   },
   {

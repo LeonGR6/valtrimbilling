@@ -34,7 +34,6 @@ import {
   TextField,
   Typography,
 } from '@mui/material'
-import AddRoundedIcon from '@mui/icons-material/AddRounded'
 import BusinessRoundedIcon from '@mui/icons-material/BusinessRounded'
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined'
@@ -43,6 +42,7 @@ import MailOutlineRoundedIcon from '@mui/icons-material/MailOutlineRounded'
 import MoreHorizRoundedIcon from '@mui/icons-material/MoreHorizRounded'
 import PhoneOutlinedIcon from '@mui/icons-material/PhoneOutlined'
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
+import ResponsiveCreateButton from '../../../components/common/ResponsiveCreateButton'
 import {
   emptyPerson,
   initialPeople,
@@ -333,15 +333,10 @@ export default function PeopleCatalog() {
             Manage the contacts and team members available for job assignments.
           </Typography>
         </Box>
-        <Button
-          variant="contained"
-          startIcon={<AddRoundedIcon />}
+        <ResponsiveCreateButton
+          label="New person"
           onClick={() => setDialogState({ mode: 'create' })}
-          disableElevation
-          sx={{ whiteSpace: 'nowrap' }}
-        >
-          New person
-        </Button>
+        />
       </Box>
 
       <Box sx={{ p: { xs: 2.5, md: 4 } }}>

@@ -29,7 +29,6 @@ import {
   TextField,
   Typography,
 } from '@mui/material'
-import AddRoundedIcon from '@mui/icons-material/AddRounded'
 import BusinessRoundedIcon from '@mui/icons-material/BusinessRounded'
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined'
@@ -38,6 +37,7 @@ import MailOutlineRoundedIcon from '@mui/icons-material/MailOutlineRounded'
 import MoreHorizRoundedIcon from '@mui/icons-material/MoreHorizRounded'
 import PhoneOutlinedIcon from '@mui/icons-material/PhoneOutlined'
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
+import ResponsiveCreateButton from '../../../components/common/ResponsiveCreateButton'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { Controller, useForm, useWatch } from 'react-hook-form'
 import { emptyBuilder, initialBuilders } from '../data/builders.js'
@@ -385,15 +385,10 @@ export default function BuildersCatalog() {
             Manage builder companies and their primary contact information.
           </Typography>
         </Box>
-        <Button
-          variant="contained"
-          startIcon={<AddRoundedIcon />}
+        <ResponsiveCreateButton
+          label="New builder"
           onClick={() => setDialogState({ mode: 'create' })}
-          disableElevation
-          sx={{ whiteSpace: 'nowrap' }}
-        >
-          New builder
-        </Button>
+        />
       </Box>
 
       <Box sx={{ p: { xs: 2.5, md: 4 } }}>

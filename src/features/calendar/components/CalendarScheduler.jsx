@@ -29,7 +29,6 @@ import {
   Typography,
   useMediaQuery,
 } from '@mui/material'
-import AddRoundedIcon from '@mui/icons-material/AddRounded'
 import ApartmentRoundedIcon from '@mui/icons-material/ApartmentRounded'
 import ArrowBackIosNewRoundedIcon from '@mui/icons-material/ArrowBackIosNewRounded'
 import ArrowForwardIosRoundedIcon from '@mui/icons-material/ArrowForwardIosRounded'
@@ -45,6 +44,7 @@ import HomeWorkOutlinedIcon from '@mui/icons-material/HomeWorkOutlined'
 import LayersOutlinedIcon from '@mui/icons-material/LayersOutlined'
 import LocationOnOutlinedIcon from '@mui/icons-material/LocationOnOutlined'
 import PaymentsOutlinedIcon from '@mui/icons-material/PaymentsOutlined'
+import ResponsiveCreateButton from '../../../components/common/ResponsiveCreateButton'
 import {
   calendarStatusOptions,
   calendarStatusTone,
@@ -373,9 +373,7 @@ export default function CalendarScheduler() {
           <Typography variant="h4" fontWeight={780} letterSpacing="-0.025em">Calendar</Typography>
           <Typography color="text.secondary">Schedule your activities by community, phase, building and lot.</Typography>
         </Box>
-        <Button variant="contained" startIcon={<AddRoundedIcon />} onClick={() => openCreateDialog()} disableElevation>
-          New activity
-        </Button>
+        <ResponsiveCreateButton label="New activity" onClick={() => openCreateDialog()} />
       </Box>
 
       <Box className="calendar-toolbar">

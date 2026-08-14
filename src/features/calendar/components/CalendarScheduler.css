@@ -194,19 +194,6 @@
   color: var(--mui-palette-primary-main);
 }
 
-.calendar-canvas .fc .fc-timegrid-slot {
-  height: 2.85em;
-}
-
-.calendar-canvas .fc .fc-timegrid-slot-label-cushion {
-  color: var(--mui-palette-text-secondary);
-  font-size: 11px;
-}
-
-.calendar-canvas .fc .fc-timegrid-now-indicator-line {
-  border-width: 1px 0 0;
-}
-
 .calendar-canvas .fc .fc-event {
   margin: 1px 4px;
   border: 0;
@@ -219,6 +206,27 @@
 .calendar-canvas .fc .fc-daygrid-event {
   margin: 2px 4px;
   white-space: normal;
+}
+
+.calendar-canvas .fc .fc-daygrid-day-frame {
+  min-height: 132px;
+}
+
+.calendar-canvas .fc .fc-daygrid-day-top {
+  flex-direction: row;
+  padding: 5px 6px 2px;
+}
+
+.calendar-canvas .fc .fc-daygrid-day-number {
+  color: var(--mui-palette-text-secondary);
+  font-size: 12px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.calendar-canvas .fc .fc-daygrid-body,
+.calendar-canvas .fc .fc-daygrid-body table {
+  width: 100% !important;
 }
 
 .calendar-canvas .fc .fc-event-main {

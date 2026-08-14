@@ -42,14 +42,6 @@ export const initialPeople = [
     email: 'ap@cityventures.com',
     types: ['AP_CONTACT'],
   },
-  {
-    id: 4,
-    name: 'Michael Reed',
-    phone: '(925) 555-0184',
-    officePhone: '(925) 555-0100',
-    email: 'm.reed@trumarkhomes.com',
-    types: ['JOBSITE_SUPERINTENDENT', 'AP_CONTACT'],
-  },
 ]
 
 export const emptyPerson = {

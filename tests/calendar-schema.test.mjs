@@ -7,8 +7,6 @@ const validEvent = {
   workType: 'Exterior',
   lots: '9, 10',
   date: '2026-08-14',
-  startTime: '09:00',
-  endTime: '11:00',
   builder: 'KB Home',
   community: 'Andara',
   phase: 'Fase 1',
@@ -27,13 +25,12 @@ test('calendar event schema normalizes a valid activity', () => {
   assert.equal(result.rate, 2000)
 })
 
-test('calendar event schema rejects an invalid time range', () => {
+test('calendar event schema rejects an invalid date', () => {
   const result = calendarEventSchema.safeParse({
     ...validEvent,
-    startTime: '12:00',
-    endTime: '10:00',
+    date: '14/08/2026',
   })
 
   assert.equal(result.success, false)
-  assert.equal(result.error.issues[0].path[0], 'endTime')
+  assert.equal(result.error.issues[0].path[0], 'date')
 })

@@ -2,8 +2,6 @@ import { useMemo, useRef, useState } from 'react'
 import FullCalendar from '@fullcalendar/react'
 import dayGridPlugin from '@fullcalendar/daygrid'
 import interactionPlugin from '@fullcalendar/interaction'
-import timeGridPlugin from '@fullcalendar/timegrid'
-import esLocale from '@fullcalendar/core/locales/es'
 import {
   Alert,
   Box,
@@ -47,7 +45,6 @@ import HomeWorkOutlinedIcon from '@mui/icons-material/HomeWorkOutlined'
 import LayersOutlinedIcon from '@mui/icons-material/LayersOutlined'
 import LocationOnOutlinedIcon from '@mui/icons-material/LocationOnOutlined'
 import PaymentsOutlinedIcon from '@mui/icons-material/PaymentsOutlined'
-import ScheduleRoundedIcon from '@mui/icons-material/ScheduleRounded'
 import {
   calendarStatusOptions,
   calendarStatusTone,
@@ -65,10 +62,6 @@ const dateFormatter = new Intl.DateTimeFormat('es-MX', {
   weekday: 'short', day: 'numeric', month: 'short', year: 'numeric',
 })
 
-const timeFormatter = new Intl.DateTimeFormat('es-MX', {
-  hour: '2-digit', minute: '2-digit', hour12: false,
-})
-
 function getLocalDateInput(date) {
   const year = date.getFullYear()
   const month = String(date.getMonth() + 1).padStart(2, '0')
@@ -76,8 +69,9 @@ function getLocalDateInput(date) {
   return `${year}-${month}-${day}`
 }
 
-function getTimeInput(date) {
-  return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
+function parseLocalDate(dateString) {
+  const [year, month, day] = dateString.split('-').map(Number)
+  return new Date(year, month - 1, day)
 }
 
 function getLotsLabel(lots) {
@@ -99,7 +93,7 @@ function SummaryCard({ icon, label, value, tone }) {
   )
 }
 
-function EventCard({ event, timeText }) {
+function EventCard({ event }) {
   const { code, community, phase, building, status } = event.extendedProps
   return (
     <Box className={`work-event work-event--${calendarStatusTone[status] ?? 'confirmed'}`}>
@@ -109,7 +103,6 @@ function EventCard({ event, timeText }) {
       </Box>
       <span className="work-event__location">{community} · {phase.replace('Fase ', 'P')} · {building.replace('Edificio ', 'B')}</span>
       <Box className="work-event__meta">
-        <span>{timeText}</span>
         <em>{status}</em>
       </Box>
     </Box>
@@ -130,8 +123,7 @@ function EventDetail({ event, onClose, onEdit, onComplete }) {
   if (!event) return null
 
   const props = event.extendedProps
-  const start = new Date(event.start)
-  const end = new Date(event.end)
+  const start = parseLocalDate(event.start)
 
   return (
     <Box className="event-detail">
@@ -163,7 +155,6 @@ function EventDetail({ event, onClose, onEdit, onComplete }) {
         <DetailRow icon={<LayersOutlinedIcon />} label="Fase / Edificio">{props.phase} / {props.building}</DetailRow>
         <DetailRow icon={<HomeWorkOutlinedIcon />} label="Lotes">{props.lots}</DetailRow>
         <DetailRow icon={<CalendarMonthRoundedIcon />} label="Fecha">{dateFormatter.format(start)}</DetailRow>
-        <DetailRow icon={<ScheduleRoundedIcon />} label="Horario">{timeFormatter.format(start)}–{timeFormatter.format(end)}</DetailRow>
         <DetailRow icon={<ConstructionRoundedIcon />} label="Responsable">{props.foreman}</DetailRow>
       </Stack>
 
@@ -210,11 +201,7 @@ function EventDialog({ open, draft, isEditing, onChange, onClose, onSave }) {
             <TextField label="Tipo de trabajo" value={draft.workType} onChange={(event) => onChange('workType', event.target.value)} required fullWidth />
           </Stack>
           <TextField label="Lotes / unidades" placeholder="Ej. 9, 10, 11" value={draft.lots} onChange={(event) => onChange('lots', event.target.value)} required />
-          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
-            <TextField label="Fecha" type="date" value={draft.date} onChange={(event) => onChange('date', event.target.value)} required fullWidth slotProps={{ inputLabel: { shrink: true } }} />
-            <TextField label="Inicio" type="time" value={draft.startTime} onChange={(event) => onChange('startTime', event.target.value)} required fullWidth slotProps={{ inputLabel: { shrink: true } }} />
-            <TextField label="Fin" type="time" value={draft.endTime} onChange={(event) => onChange('endTime', event.target.value)} required fullWidth slotProps={{ inputLabel: { shrink: true } }} />
-          </Stack>
+          <TextField label="Fecha" type="date" value={draft.date} onChange={(event) => onChange('date', event.target.value)} required fullWidth slotProps={{ inputLabel: { shrink: true } }} />
           <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
             <TextField label="Builder" value={draft.builder} onChange={(event) => onChange('builder', event.target.value)} required fullWidth />
             <TextField label="Comunidad" value={draft.community} onChange={(event) => onChange('community', event.target.value)} required fullWidth />
@@ -249,8 +236,8 @@ export default function CalendarScheduler() {
   const compactDetail = useMediaQuery((theme) => theme.breakpoints.down('lg'))
   const [events, setEvents] = useState(initialCalendarEvents)
   const [selectedId, setSelectedId] = useState('evt-101')
-  const [viewTitle, setViewTitle] = useState('10 – 14 de agosto de 2026')
-  const [viewType, setViewType] = useState('timeGridWeek')
+  const [viewTitle, setViewTitle] = useState('Aug 10 – 14, 2026')
+  const [viewType, setViewType] = useState('dayGridWeek')
   const [filters, setFilters] = useState({ builder: 'KB Home', community: 'Andara', phase: 'Fase 1', building: 'Edificio 3' })
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingId, setEditingId] = useState(null)
@@ -287,14 +274,11 @@ export default function CalendarScheduler() {
   }
 
   const openCreateDialog = (selection) => {
-    const start = selection?.start ?? new Date('2026-08-10T09:00:00')
-    const end = selection?.end ?? new Date(start.getTime() + (2 * 60 * 60 * 1000))
+    const start = selection?.start ?? parseLocalDate(emptyCalendarDraft.date)
     setEditingId(null)
     setDraft({
       ...emptyCalendarDraft,
       date: getLocalDateInput(start),
-      startTime: getTimeInput(start),
-      endTime: getTimeInput(end),
       builder: filters.builder === 'Todos' ? 'KB Home' : filters.builder,
       community: filters.community === 'Todos' ? 'Andara' : filters.community,
       phase: filters.phase === 'Todos' ? 'Fase 1' : filters.phase,
@@ -305,15 +289,11 @@ export default function CalendarScheduler() {
 
   const openEditDialog = () => {
     if (!selectedEvent) return
-    const start = new Date(selectedEvent.start)
-    const end = new Date(selectedEvent.end)
     setEditingId(selectedEvent.id)
     setDraft({
       ...emptyCalendarDraft,
       ...selectedEvent.extendedProps,
-      date: getLocalDateInput(start),
-      startTime: getTimeInput(start),
-      endTime: getTimeInput(end),
+      date: selectedEvent.start,
     })
     setDialogOpen(true)
   }
@@ -328,14 +308,11 @@ export default function CalendarScheduler() {
     }
 
     const values = result.data
-    const start = `${values.date}T${values.startTime}:00`
-    const end = `${values.date}T${values.endTime}:00`
 
     const eventData = {
       id: editingId ?? `evt-${Date.now()}`,
       title: `${values.code} • ${getLotsLabel(values.lots)}`,
-      start,
-      end,
+      start: values.date,
       extendedProps: {
         code: values.code,
         workType: values.workType,
@@ -362,12 +339,11 @@ export default function CalendarScheduler() {
     setNotice(editingId ? 'Actividad actualizada.' : 'Actividad creada y agregada al calendario.')
   }
 
-  const updateEventTime = (changeInfo) => {
+  const updateEventDate = (changeInfo) => {
     const changed = changeInfo.event
     setEvents((current) => current.map((event) => event.id === changed.id ? {
       ...event,
-      start: changed.start?.toISOString() ?? event.start,
-      end: changed.end?.toISOString() ?? event.end,
+      start: changed.start ? getLocalDateInput(changed.start) : event.start,
     } : event))
     setNotice('Actividad reprogramada.')
   }
@@ -394,20 +370,20 @@ export default function CalendarScheduler() {
     <Box className="calendar-page">
       <Box className="calendar-page__header">
         <Box>
-          <Typography variant="h4" fontWeight={780} letterSpacing="-0.025em">Calendario de obra</Typography>
-          <Typography color="text.secondary">Programa trabajos por comunidad, fase, edificio y lote.</Typography>
+          <Typography variant="h4" fontWeight={780} letterSpacing="-0.025em">Calendar</Typography>
+          <Typography color="text.secondary">Schedule your activities by community, phase, building and lot.</Typography>
         </Box>
         <Button variant="contained" startIcon={<AddRoundedIcon />} onClick={() => openCreateDialog()} disableElevation>
-          Nueva actividad
+          New activity
         </Button>
       </Box>
 
       <Box className="calendar-toolbar">
         {[
           ['builder', 'Builder', <BusinessRoundedIcon key="builder" fontSize="small" />],
-          ['community', 'Comunidad', <LocationOnOutlinedIcon key="community" fontSize="small" />],
-          ['phase', 'Fase', <LayersOutlinedIcon key="phase" fontSize="small" />],
-          ['building', 'Edificio', <ApartmentRoundedIcon key="building" fontSize="small" />],
+          ['community', 'Community', <LocationOnOutlinedIcon key="community" fontSize="small" />],
+          ['phase', 'Phase', <LayersOutlinedIcon key="phase" fontSize="small" />],
+          ['building', 'Building', <ApartmentRoundedIcon key="building" fontSize="small" />],
         ].map(([key, label, icon]) => (
           <FormControl key={key} size="small" className="calendar-filter">
             <InputLabel id={`${key}-filter-label`}>{label}</InputLabel>
@@ -427,72 +403,65 @@ export default function CalendarScheduler() {
         <Box className="calendar-toolbar__spacer" />
 
         <ButtonGroup size="small" variant="outlined" aria-label="Cambiar vista">
-          <Button className={viewType === 'timeGridWeek' ? 'is-active' : ''} onClick={() => changeView('timeGridWeek')}>Semana</Button>
-          <Button className={viewType === 'timeGridDay' ? 'is-active' : ''} onClick={() => changeView('timeGridDay')}>Día</Button>
-          <Button className={viewType === 'dayGridMonth' ? 'is-active' : ''} onClick={() => changeView('dayGridMonth')}>Mes</Button>
+          <Button className={viewType === 'dayGridWeek' ? 'is-active' : ''} onClick={() => changeView('dayGridWeek')}>Week</Button>
+          <Button className={viewType === 'dayGridDay' ? 'is-active' : ''} onClick={() => changeView('dayGridDay')}>Day</Button>
+          <Button className={viewType === 'dayGridMonth' ? 'is-active' : ''} onClick={() => changeView('dayGridMonth')}>Month</Button>
         </ButtonGroup>
       </Box>
 
       <Box className="calendar-summary-row">
-        <SummaryCard icon={<CalendarMonthRoundedIcon />} value={filteredEvents.length} label="actividades" tone="scheduled" />
-        <SummaryCard icon={<CheckCircleOutlineRoundedIcon />} value={completedCount} label="completadas" tone="completed" />
-        <SummaryCard icon={<PaymentsOutlinedIcon />} value={billingCount} label="por facturar" tone="billing" />
-        <SummaryCard icon={<ErrorOutlineRoundedIcon />} value={exceptionCount} label="excepciones" tone="exception" />
+        <SummaryCard icon={<CalendarMonthRoundedIcon />} value={filteredEvents.length} label="activities" tone="scheduled" />
+        <SummaryCard icon={<CheckCircleOutlineRoundedIcon />} value={completedCount} label="completed" tone="completed" />
+        <SummaryCard icon={<PaymentsOutlinedIcon />} value={billingCount} label="to bill" tone="billing" />
+        <SummaryCard icon={<ErrorOutlineRoundedIcon />} value={exceptionCount} label="exceptions" tone="exception" />
       </Box>
 
       <Box className="calendar-workspace">
         <Box className="calendar-main">
           <Box className="calendar-period">
             <Box>
-              <Typography variant="overline" color="text.secondary" fontWeight={700}>PROGRAMACIÓN</Typography>
+              <Typography variant="overline" color="text.secondary" fontWeight={700}>CALENDAR</Typography>
               <Typography variant="h6" fontWeight={750} sx={{ textTransform: 'capitalize' }}>{viewTitle}</Typography>
             </Box>
             <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center' }}>
-              <Button size="small" color="inherit" onClick={() => navigateCalendar('today')}>Hoy</Button>
-              <Tooltip title="Periodo anterior"><IconButton size="small" onClick={() => navigateCalendar('prev')}><ArrowBackIosNewRoundedIcon fontSize="inherit" /></IconButton></Tooltip>
-              <Tooltip title="Periodo siguiente"><IconButton size="small" onClick={() => navigateCalendar('next')}><ArrowForwardIosRoundedIcon fontSize="inherit" /></IconButton></Tooltip>
+              <Button size="small" color="inherit" onClick={() => navigateCalendar('today')}>Today</Button>
+              <Tooltip title="Previous period"><IconButton size="small" onClick={() => navigateCalendar('prev')}><ArrowBackIosNewRoundedIcon fontSize="inherit" /></IconButton></Tooltip>
+              <Tooltip title="Next period"><IconButton size="small" onClick={() => navigateCalendar('next')}><ArrowForwardIosRoundedIcon fontSize="inherit" /></IconButton></Tooltip>
             </Stack>
           </Box>
 
           <Box className="calendar-canvas">
             <FullCalendar
               ref={calendarRef}
-              plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
-              initialView="timeGridWeek"
+              plugins={[dayGridPlugin, interactionPlugin]}
+              initialView="dayGridWeek"
               initialDate="2026-08-10"
-              locale={esLocale}
               firstDay={1}
               weekends={false}
               headerToolbar={false}
-              allDaySlot={false}
-              slotMinTime="08:00:00"
-              slotMaxTime="18:00:00"
-              slotDuration="00:30:00"
-              slotLabelInterval="01:00:00"
-              slotLabelFormat={{ hour: '2-digit', minute: '2-digit', hour12: false }}
-              eventTimeFormat={{ hour: '2-digit', minute: '2-digit', hour12: false }}
+              displayEventTime={false}
               dayHeaderFormat={{ weekday: 'short', day: 'numeric' }}
               height="100%"
               expandRows
-              nowIndicator
+              fixedWeekCount={false}
+              dayMaxEvents={false}
               editable
+              eventDurationEditable={false}
               selectable
               selectMirror
-              selectConstraint={{ startTime: '08:00', endTime: '18:00' }}
               events={filteredEvents}
               eventClick={({ event }) => setSelectedId(event.id)}
-              eventContent={(info) => <EventCard event={info.event} timeText={info.timeText} />}
+              eventContent={(info) => <EventCard event={info.event} />}
               eventClassNames={({ event }) => [
                 `fc-work-event--${calendarStatusTone[event.extendedProps.status] ?? 'confirmed'}`,
                 event.id === selectedId ? 'fc-work-event--selected' : '',
               ]}
-              eventDrop={updateEventTime}
-              eventResize={updateEventTime}
+              eventDrop={updateEventDate}
               select={(selection) => {
                 openCreateDialog(selection)
                 selection.view.calendar.unselect()
               }}
-              dateClick={({ date }) => viewType === 'dayGridMonth' && openCreateDialog({ start: date, end: new Date(date.getTime() + (2 * 60 * 60 * 1000)) })}
+              dateClick={({ date }) => openCreateDialog({ start: date })}
               datesSet={({ view }) => {
                 setViewTitle(view.title)
                 setViewType(view.type)

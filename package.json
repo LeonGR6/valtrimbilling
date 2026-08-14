@@ -17,7 +17,6 @@
     "@fullcalendar/daygrid": "6.1.21",
     "@fullcalendar/interaction": "6.1.21",
     "@fullcalendar/react": "6.1.21",
-    "@fullcalendar/timegrid": "6.1.21",
     "@hookform/resolvers": "^5.7.1",
     "@mui/icons-material": "^9.3.1",
     "@mui/material": "^9.3.1",

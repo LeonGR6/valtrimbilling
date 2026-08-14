@@ -41,7 +41,6 @@ import SellIcon from '@mui/icons-material/Sell';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import BarChartIcon from '@mui/icons-material/BarChart'
 import SupportAgentIcon from '@mui/icons-material/SupportAgent';
-import MoreHorizIcon from '@mui/icons-material/MoreHoriz';
 
 import { navigationRoutes } from '../../../routes/navigation.jsx'
 import ColorModeToggle from '../../common/ColorModeToggle'
@@ -81,9 +80,8 @@ const navigationSections = [
     label: 'PRICING',
     items: [
       { label: 'Proposals', icon: DescriptionIcon },
-      { label: 'Plan Pricing', icon: SellIcon },
+      { label: 'Plan Pricing - Pricing Options', icon: SellIcon },
       { label: 'Draw Templates', icon: DonutSmallRoundedIcon },
-      { label: 'Pricing Options', icon: MoreHorizIcon },
     ]
   },
   {

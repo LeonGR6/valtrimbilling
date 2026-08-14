@@ -5,11 +5,24 @@ import { resolve } from 'node:path'
 
 const sitesWorker = `const worker = {
   async fetch(request, env) {
-    const response = await env.ASSETS.fetch(request)
-    if (response.status !== 404 || !['GET', 'HEAD'].includes(request.method)) return response
+    let response = await env.ASSETS.fetch(request)
 
-    const fallbackUrl = new URL('/index.html', request.url)
-    return env.ASSETS.fetch(new Request(fallbackUrl, request))
+    if (response.status === 404 && ['GET', 'HEAD'].includes(request.method)) {
+      const fallbackUrl = new URL('/index.html', request.url)
+      response = await env.ASSETS.fetch(new Request(fallbackUrl, request))
+    }
+
+    if (response.headers.get('content-type')?.includes('text/html')) {
+      const headers = new Headers(response.headers)
+      headers.set('Cache-Control', 'no-store, max-age=0')
+      return new Response(response.body, {
+        status: response.status,
+        statusText: response.statusText,
+        headers,
+      })
+    }
+
+    return response
   },
 }
 

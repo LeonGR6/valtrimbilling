@@ -91,7 +91,7 @@ function SummaryCard({ icon, label, value, tone }) {
       <CardContent>
         <Box className="calendar-summary__icon">{icon}</Box>
         <Box>
-          <Typography variant="h5" fontWeight={750} lineHeight={1}>{value}</Typography>
+          <Typography variant="h5" fontWeight={750} sx={{ lineHeight: 1 }}>{value}</Typography>
           <Typography variant="body2" color="text.secondary">{label}</Typography>
         </Box>
       </CardContent>
@@ -447,7 +447,7 @@ export default function CalendarScheduler() {
               <Typography variant="overline" color="text.secondary" fontWeight={700}>PROGRAMACIÓN</Typography>
               <Typography variant="h6" fontWeight={750} sx={{ textTransform: 'capitalize' }}>{viewTitle}</Typography>
             </Box>
-            <Stack direction="row" spacing={0.75} alignItems="center">
+            <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center' }}>
               <Button size="small" color="inherit" onClick={() => navigateCalendar('today')}>Hoy</Button>
               <Tooltip title="Periodo anterior"><IconButton size="small" onClick={() => navigateCalendar('prev')}><ArrowBackIosNewRoundedIcon fontSize="inherit" /></IconButton></Tooltip>
               <Tooltip title="Periodo siguiente"><IconButton size="small" onClick={() => navigateCalendar('next')}><ArrowForwardIosRoundedIcon fontSize="inherit" /></IconButton></Tooltip>

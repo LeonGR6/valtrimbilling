@@ -201,6 +201,7 @@ test('phase by lot schema normalizes lots and accepts selected plan options', ()
   const job = initialJobs.find((item) => item.code === '1307')
   const result = createPhaseByLotSchema(job).parse({
     phaseName: ' Phase 11 ',
+    building: ' b5 ',
     lots: [
       {
         lotNumber: ' 12a ',
@@ -213,6 +214,7 @@ test('phase by lot schema normalizes lots and accepts selected plan options', ()
 
   assert.deepEqual(result, {
     phaseName: 'Phase 11',
+    building: 'B5',
     lots: [
       {
         lotNumber: '12A',
@@ -228,6 +230,7 @@ test('phase by lot schema rejects duplicate phase names and lot numbers', () => 
   const job = initialJobs.find((item) => item.code === '1307')
   const result = createPhaseByLotSchema(job).safeParse({
     phaseName: ' phase 10 ',
+    building: 'B4',
     lots: [
       { lotNumber: '1', planId: 1101, reverse: false, optionIds: [] },
       { lotNumber: ' 1 ', planId: 1101, reverse: false, optionIds: [] },
@@ -244,6 +247,7 @@ test('phase by lot schema rejects options from another plan', () => {
   const job = initialJobs.find((item) => item.code === '1307')
   const result = createPhaseByLotSchema(job).safeParse({
     phaseName: 'Phase 12',
+    building: 'B6',
     lots: [
       {
         lotNumber: '3',
@@ -260,6 +264,20 @@ test('phase by lot schema rejects options from another plan', () => {
       (issue) => issue.message === 'An option does not belong to the selected plan.',
     ),
   )
+})
+
+test('phase by lot schema requires a building', () => {
+  const job = initialJobs.find((item) => item.code === '1307')
+  const result = createPhaseByLotSchema(job).safeParse({
+    phaseName: 'Phase 13',
+    building: ' ',
+    lots: [
+      { lotNumber: '4', planId: 1101, reverse: false, optionIds: [] },
+    ],
+  })
+
+  assert.equal(result.success, false)
+  assert.ok(result.error.flatten().fieldErrors.building)
 })
 
 test('person schema normalizes contact information and supports multiple types', () => {

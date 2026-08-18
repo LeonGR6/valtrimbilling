@@ -27,6 +27,12 @@ export function createPhaseByLotSchema(job) {
         .trim()
         .min(1, 'Enter a phase name.')
         .max(100, 'Use 100 characters or fewer.'),
+      building: z
+        .string()
+        .trim()
+        .min(1, 'Enter a building.')
+        .max(50, 'Use 50 characters or fewer.')
+        .transform((value) => value.toUpperCase()),
       lots: z
         .array(lotAssignmentSchema)
         .min(1, 'Add at least one lot.')

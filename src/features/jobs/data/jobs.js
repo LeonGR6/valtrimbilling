@@ -57,6 +57,7 @@ export const initialJobs = [
         {
           id: 2101,
           name: 'Phase 10',
+          building: 'B4',
           createdAt: '2026-08-18',
           lots: [
             {

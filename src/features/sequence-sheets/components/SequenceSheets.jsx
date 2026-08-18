@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { zodResolver } from '@hookform/resolvers/zod'
 import {
   Controller,
@@ -13,6 +14,7 @@ import {
   Alert,
   Box,
   Button,
+  ButtonBase,
   Card,
   CardContent,
   Checkbox,
@@ -41,6 +43,8 @@ import {
 } from '@mui/material'
 import AddRoundedIcon from '@mui/icons-material/AddRounded'
 import ApartmentRoundedIcon from '@mui/icons-material/ApartmentRounded'
+import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded'
+import ArrowForwardIosRoundedIcon from '@mui/icons-material/ArrowForwardIosRounded'
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded'
 import ExpandMoreRoundedIcon from '@mui/icons-material/ExpandMoreRounded'
 import FolderRoundedIcon from '@mui/icons-material/FolderRounded'
@@ -107,116 +111,176 @@ function getPlan(job, planId) {
   )
 }
 
-function PhasePanel({ job, phase }) {
+function PhaseCard({ phase, onOpen }) {
   const selectedOptionCount = (phase.lots ?? []).reduce(
     (total, lot) => total + (lot.optionIds?.length ?? 0),
     0,
   )
 
   return (
-    <Accordion
-      disableGutters
-      elevation={0}
+    <Card
+      variant="outlined"
       sx={{
-        border: 1,
-        borderColor: 'divider',
-        borderRadius: '8px !important',
-        '&::before': { display: 'none' },
         '& + &': { mt: 1.5 },
         overflow: 'hidden',
       }}
     >
-      <AccordionSummary
-        expandIcon={<ExpandMoreRoundedIcon />}
+      <ButtonBase
+        onClick={onOpen}
+        aria-label={`View details for ${phase.name}`}
         sx={{
-          minHeight: 64,
-          bgcolor: 'action.hover',
-          '& .MuiAccordionSummary-content': { my: 1.25 },
+          width: '100%',
+          px: { xs: 2, sm: 2.5 },
+          py: 2,
+          textAlign: 'left',
+          justifyContent: 'stretch',
+          '&:hover': { bgcolor: 'action.hover' },
         }}
       >
         <Stack
           direction={{ xs: 'column', sm: 'row' }}
           alignItems={{ xs: 'flex-start', sm: 'center' }}
           justifyContent="space-between"
-          spacing={1}
-          sx={{ width: '100%', pr: 1 }}
+          spacing={1.5}
+          sx={{ width: '100%' }}
         >
           <Box>
             <Typography fontWeight={750}>{phase.name}</Typography>
             <Typography variant="caption" color="text.secondary">
-              Created {phase.createdAt}
+              Building {phase.building} · Created {phase.createdAt}
+            </Typography>
+          </Box>
+          <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
+            <Chip size="small" variant="outlined" label={`Building ${phase.building}`} />
+            <Chip size="small" label={`${phase.lots?.length ?? 0} lots`} />
+            <Chip size="small" variant="outlined" label={`${selectedOptionCount} selected options`} />
+            <ArrowForwardIosRoundedIcon fontSize="small" color="action" />
+          </Stack>
+        </Stack>
+      </ButtonBase>
+    </Card>
+  )
+}
+
+function PhaseDetails({ job, phase, onBack }) {
+  const selectedOptionCount = (phase.lots ?? []).reduce(
+    (total, lot) => total + (lot.optionIds?.length ?? 0),
+    0,
+  )
+
+  return (
+    <Box sx={{ minHeight: '100%', bgcolor: 'background.default' }}>
+      <Box
+        sx={{
+          px: { xs: 2.5, md: 4 },
+          py: 2.5,
+          bgcolor: 'background.paper',
+          borderBottom: 1,
+          borderColor: 'divider',
+        }}
+      >
+        <Button
+          color="inherit"
+          startIcon={<ArrowBackRoundedIcon />}
+          onClick={onBack}
+          sx={{ mb: 1.5 }}
+        >
+          All Sequence Sheets
+        </Button>
+        <Stack
+          direction={{ xs: 'column', sm: 'row' }}
+          alignItems={{ xs: 'flex-start', sm: 'center' }}
+          justifyContent="space-between"
+          spacing={2}
+        >
+          <Box>
+            <Typography variant="overline" color="text.secondary" fontWeight={700}>
+              Job #{job.code} · {job.community}
+            </Typography>
+            <Typography variant="h5" fontWeight={800} color="text.primary">
+              {phase.name}
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+              Building {phase.building} · {job.builder}
             </Typography>
           </Box>
           <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-            <Chip size="small" label={`${phase.lots?.length ?? 0} lots`} />
-            <Chip
-              size="small"
-              variant="outlined"
-              label={`${selectedOptionCount} selected options`}
-            />
+            <Chip color="primary" variant="outlined" label={`Building ${phase.building}`} />
+            <Chip label={`${phase.lots?.length ?? 0} lots`} />
+            <Chip variant="outlined" label={`${selectedOptionCount} selected options`} />
           </Stack>
         </Stack>
-      </AccordionSummary>
-      <AccordionDetails sx={{ p: 0 }}>
-        <TableContainer>
-          <Table size="small" aria-label={`${phase.name} lot assignments`}>
-            <TableHead>
-              <TableRow>
-                <TableCell>Lot</TableCell>
-                <TableCell>Plan</TableCell>
-                <TableCell>Options for selected plan</TableCell>
-                <TableCell align="center">Reverse</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {(phase.lots ?? []).map((lot) => {
-                const plan = getPlan(job, lot.planId)
-                const options = (plan?.options ?? []).filter((option) =>
-                  lot.optionIds?.includes(option.id),
-                )
+      </Box>
 
-                return (
-                  <TableRow key={lot.id} hover>
-                    <TableCell>
-                      <Typography fontWeight={700}>{lot.lotNumber}</Typography>
-                    </TableCell>
-                    <TableCell>
-                      {plan ? `${plan.code} · ${plan.name}` : 'Plan unavailable'}
-                    </TableCell>
-                    <TableCell sx={{ minWidth: 280 }}>
-                      {options.length > 0 ? (
-                        <Stack direction="row" spacing={0.75} flexWrap="wrap" useFlexGap>
-                          {options.map((option) => (
-                            <Chip
-                              key={option.id}
-                              size="small"
-                              variant="outlined"
-                              label={`${option.code} · ${option.description}`}
-                            />
-                          ))}
-                        </Stack>
-                      ) : (
-                        <Typography variant="body2" color="text.secondary">
-                          No options selected
-                        </Typography>
-                      )}
-                    </TableCell>
-                    <TableCell align="center">
-                      <Chip
-                        size="small"
-                        color={lot.reverse ? 'primary' : 'default'}
-                        variant={lot.reverse ? 'filled' : 'outlined'}
-                        label={lot.reverse ? 'Yes' : 'No'}
-                      />
-                    </TableCell>
-                  </TableRow>
-                )
-              })}
-            </TableBody>
-          </Table>
-        </TableContainer>
-      </AccordionDetails>
-    </Accordion>
+      <Box sx={{ p: { xs: 2.5, md: 4 } }}>
+        <Card variant="outlined" sx={{ overflow: 'hidden' }}>
+          <Box sx={{ px: 2.5, py: 2, bgcolor: 'action.hover' }}>
+            <Typography fontWeight={750}>Phase lot assignments</Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.25 }}>
+              Plan, orientation and selected options for every lot in this phase.
+            </Typography>
+          </Box>
+          <Divider />
+          <TableContainer>
+            <Table aria-label={`${phase.name} lot assignments`} sx={{ minWidth: 760 }}>
+              <TableHead>
+                <TableRow>
+                  <TableCell>Lot</TableCell>
+                  <TableCell>Plan</TableCell>
+                  <TableCell align="center">Reverse</TableCell>
+                  <TableCell>Options for selected plan</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {(phase.lots ?? []).map((lot) => {
+                  const plan = getPlan(job, lot.planId)
+                  const options = (plan?.options ?? []).filter((option) =>
+                    lot.optionIds?.includes(option.id),
+                  )
+
+                  return (
+                    <TableRow key={lot.id} hover>
+                      <TableCell sx={{ width: 100 }}>
+                        <Typography fontWeight={750}>{lot.lotNumber}</Typography>
+                      </TableCell>
+                      <TableCell sx={{ minWidth: 180 }}>
+                        {plan ? `${plan.code} · ${plan.name}` : 'Plan unavailable'}
+                      </TableCell>
+                      <TableCell align="center" sx={{ width: 120 }}>
+                        <Chip
+                          size="small"
+                          color={lot.reverse ? 'primary' : 'default'}
+                          variant={lot.reverse ? 'filled' : 'outlined'}
+                          label={lot.reverse ? 'Yes' : 'No'}
+                        />
+                      </TableCell>
+                      <TableCell sx={{ minWidth: 320 }}>
+                        {options.length > 0 ? (
+                          <Stack direction="row" spacing={0.75} flexWrap="wrap" useFlexGap>
+                            {options.map((option) => (
+                              <Chip
+                                key={option.id}
+                                size="small"
+                                variant="outlined"
+                                label={`${option.code} · ${option.description}`}
+                              />
+                            ))}
+                          </Stack>
+                        ) : (
+                          <Typography variant="body2" color="text.secondary">
+                            No options selected
+                          </Typography>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  )
+                })}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        </Card>
+      </Box>
+    </Box>
   )
 }
 
@@ -431,7 +495,7 @@ function CreatePhaseDialog({ job, onClose, onCreate }) {
     formState: { errors },
   } = useForm({
     resolver: zodResolver(schema),
-    defaultValues: { phaseName: '', lots: [{ ...emptyLot }] },
+    defaultValues: { phaseName: '', building: '', lots: [{ ...emptyLot }] },
     mode: 'onTouched',
     reValidateMode: 'onChange',
   })
@@ -511,6 +575,15 @@ function CreatePhaseDialog({ job, onClose, onCreate }) {
                   sx={{ minWidth: { sm: 280 } }}
                   slotProps={{ htmlInput: { maxLength: 100 } }}
                 />
+                <TextField
+                  label="Building"
+                  placeholder="Example: B4"
+                  {...register('building')}
+                  error={Boolean(errors.building)}
+                  helperText={errors.building?.message ?? 'Required for this phase'}
+                  sx={{ minWidth: { sm: 190 } }}
+                  slotProps={{ htmlInput: { maxLength: 50 } }}
+                />
                 <Button
                   type="button"
                   variant="outlined"
@@ -578,6 +651,7 @@ function CreatePhaseDialog({ job, onClose, onCreate }) {
 
 export default function SequenceSheets() {
   const { jobs, setJobs } = useJobs()
+  const [searchParams, setSearchParams] = useSearchParams()
   const [search, setSearch] = useState('')
   const [expandedJobId, setExpandedJobId] = useState(jobs[0]?.id ?? null)
   const [dialogJobId, setDialogJobId] = useState(null)
@@ -604,6 +678,12 @@ export default function SequenceSheets() {
     0,
   )
   const dialogJob = jobs.find((job) => job.id === dialogJobId)
+  const detailJob = jobs.find(
+    (job) => String(job.id) === searchParams.get('job'),
+  )
+  const detailPhase = detailJob?.sequenceSheet?.phases?.find(
+    (phase) => String(phase.id) === searchParams.get('phase'),
+  )
 
   const openCreate = (event, job) => {
     event.stopPropagation()
@@ -616,6 +696,7 @@ export default function SequenceSheets() {
     const phase = {
       id: phaseId,
       name: form.phaseName,
+      building: form.building,
       createdAt: new Date().toISOString().slice(0, 10),
       lots: form.lots.map((lot, index) => ({
         ...lot,
@@ -641,6 +722,16 @@ export default function SequenceSheets() {
       severity: 'success',
       message: `${form.phaseName} created with ${form.lots.length} lot${form.lots.length === 1 ? '' : 's'}.`,
     })
+  }
+
+  if (detailJob && detailPhase) {
+    return (
+      <PhaseDetails
+        job={detailJob}
+        phase={detailPhase}
+        onBack={() => setSearchParams({}, { replace: true })}
+      />
+    )
   }
 
   return (
@@ -772,7 +863,16 @@ export default function SequenceSheets() {
                 <AccordionDetails id={`job-${job.id}-phases`} sx={{ p: { xs: 2, md: 2.5 } }}>
                   {phases.length > 0 ? (
                     phases.map((phase) => (
-                      <PhasePanel key={phase.id} job={job} phase={phase} />
+                      <PhaseCard
+                        key={phase.id}
+                        phase={phase}
+                        onOpen={() =>
+                          setSearchParams({
+                            job: String(job.id),
+                            phase: String(phase.id),
+                          })
+                        }
+                      />
                     ))
                   ) : (
                     <Box

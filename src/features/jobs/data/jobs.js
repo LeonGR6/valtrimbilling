@@ -1,3 +1,38 @@
+const andaraSequencePlans = [
+  {
+    id: 1101,
+    code: '1',
+    name: 'Plan 1',
+    options: [
+      { id: 110101, code: '1-OPT', description: '1 - Door at Primary Bath' },
+    ],
+  },
+  {
+    id: 1102,
+    code: '2',
+    name: 'Plan 2',
+    options: [
+      { id: 110201, code: '2-OPT', description: '2 - Door at Primary Bath' },
+      { id: 110202, code: '2-OPT', description: '2 - FLEX ROOM' },
+      { id: 110203, code: '2-ADA', description: 'UNIT 2X ADA' },
+      { id: 110204, code: '2-ADA-OPT', description: '2 - Door at Primary Bath' },
+      { id: 110205, code: '2-ADA-OPT', description: '2X - FLEX ROOM' },
+    ],
+  },
+  {
+    id: 1103,
+    code: '3',
+    name: 'Plan 3',
+    options: [
+      { id: 110301, code: '3-OPT', description: '3 - Door at Primary Bath' },
+      { id: 110302, code: '3-OPT', description: 'No MDF Shelf laundry' },
+      { id: 110303, code: '3-W/UTI', description: '3 - W/UTI' },
+      { id: 110304, code: '3-W/UTI-OPT', description: '3 - Door at Primary Bath' },
+      { id: 110305, code: '3-W/UTI-OPT', description: 'No MDF Shelf laundry' },
+    ],
+  },
+]
+
 export const jobBuilderOptions = [
   'KB Home',
   'City Ventures',
@@ -8,76 +43,142 @@ export const jobBuilderOptions = [
 export const initialJobs = [
   {
     id: 1,
-    code: 'JOB-1001',
-    builder: 'KB Home',
+    code: '1307',
+    builder: 'Trumark Homes',
     community: 'Andara',
-    phase: '1',
-    building: '3',
-    lotFrom: '6',
-    lotTo: '12',
+    supervisor: 'Valtrim Supervisor',
+    jobsiteSuperintendent: 'Superintendent example',
+    totalLots: 24,
+    sequenceSheet: {
+      id: 1001,
+      name: 'Options Sequence Sheet',
+      plans: andaraSequencePlans,
+      phases: [
+        {
+          id: 2101,
+          name: 'Phase 10',
+          createdAt: '2026-08-18',
+          lots: [
+            {
+              id: 3101,
+              lotNumber: '1',
+              planId: 1102,
+              reverse: false,
+              optionIds: [110201, 110202],
+            },
+            {
+              id: 3102,
+              lotNumber: '2',
+              planId: 1101,
+              reverse: true,
+              optionIds: [110101],
+            },
+          ],
+        },
+      ],
+    },
   },
   {
     id: 2,
-    code: 'JOB-1002',
+    code: '1308',
     builder: 'City Ventures',
     community: 'Cedar Grove',
-    phase: '2',
-    building: '',
-    lotFrom: '18',
-    lotTo: '22',
+    supervisor: 'Lauren Mitchell',
+    jobsiteSuperintendent: 'Andrea Collins',
+    totalLots: 10,
+    sequenceSheet: {
+      id: 1002,
+      name: 'Options Sequence Sheet',
+      plans: [
+        { id: 1201, code: '1A', name: 'Plan 1A', options: [] },
+        { id: 1202, code: '1B', name: 'Plan 1B', options: [] },
+        { id: 1203, code: '2A', name: 'Plan 2A', options: [] },
+      ],
+      phases: [],
+    },
   },
   {
     id: 3,
-    code: 'JOB-1003',
-    builder: 'Trumark Homes',
+    code: '1309',
+    builder: 'KB Home',
     community: 'Stonebrook',
-    phase: '1',
-    building: '1',
-    lotFrom: '7',
-    lotTo: '',
+    supervisor: 'Robert King',
+    jobsiteSuperintendent: 'Daniel Torres',
+    totalLots: 1,
+    sequenceSheet: {
+      id: 1003,
+      name: 'Options Sequence Sheet',
+      plans: [{ id: 1301, code: '1', name: 'Plan 1', options: [] }],
+      phases: [],
+    },
   },
   {
     id: 4,
-    code: 'JOB-1004',
+    code: '1310',
     builder: 'Brookfield Residential',
-    community: 'Marlow',
-    phase: '3',
-    building: '2',
-    lotFrom: '30',
-    lotTo: '36',
+    community: 'Sky',
+    supervisor: 'Robert King',
+    jobsiteSuperintendent: 'Sky superintendent',
+    totalLots: 8,
+    sequenceSheet: {
+      id: 1004,
+      name: 'Options Sequence Sheet',
+      plans: [],
+      phases: [],
+    },
   },
 ]
 
 export const emptyJob = {
+  code: '',
   builder: '',
   community: '',
-  phase: '',
-  building: '',
-  lotFrom: '',
-  lotTo: '',
+  supervisor: '',
+  jobsiteSuperintendent: '',
+  totalLots: '',
 }
 
-export function formatLotRange(job) {
-  return job.lotTo && job.lotTo !== job.lotFrom
-    ? `${job.lotFrom}–${job.lotTo}`
-    : job.lotFrom
+export const emptyJobPlan = {
+  code: '',
+  name: '',
+}
+
+export const emptyPlanOption = {
+  code: '',
+  description: '',
 }
 
 export function getJobUnitCount(job) {
-  const start = Number(job.lotFrom)
-  const end = Number(job.lotTo || job.lotFrom)
+  const total = Number(job.totalLots)
+  return Number.isInteger(total) && total >= 0 ? total : 0
+}
 
-  return end - start + 1
+export function getJobPlanCount(job) {
+  return job.sequenceSheet?.plans?.length ?? 0
+}
+
+export function getJobOptionCount(job) {
+  return (job.sequenceSheet?.plans ?? []).reduce(
+    (total, plan) => total + (plan.options?.length ?? 0),
+    0,
+  )
+}
+
+export function getJobSequenceColumnCount(job) {
+  return getJobPlanCount(job) + getJobOptionCount(job)
+}
+
+export function getJobPhaseCount(job) {
+  return job.sequenceSheet?.phases?.length ?? 0
+}
+
+export function getJobAssignedLotCount(job) {
+  return (job.sequenceSheet?.phases ?? []).reduce(
+    (total, phase) => total + (phase.lots?.length ?? 0),
+    0,
+  )
 }
 
 export function formatJobHierarchy(job) {
-  return [
-    job.builder,
-    job.community,
-    job.phase && `Phase ${job.phase}`,
-    job.building && `Building ${job.building}`,
-    job.lotFrom && `Lot ${formatLotRange(job)}`,
-  ]
-    .filter(Boolean)
-    .join(' / ')
+  return [job.builder, job.community].filter(Boolean).join(' / ')
 }

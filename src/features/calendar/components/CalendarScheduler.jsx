@@ -58,7 +58,7 @@ const currencyFormatter = new Intl.NumberFormat('en-US', {
   style: 'currency', currency: 'USD', maximumFractionDigits: 0,
 })
 
-const dateFormatter = new Intl.DateTimeFormat('es-MX', {
+const dateFormatter = new Intl.DateTimeFormat('en-US', {
   weekday: 'short', day: 'numeric', month: 'short', year: 'numeric',
 })
 
@@ -75,8 +75,8 @@ function parseLocalDate(dateString) {
 }
 
 function getLotsLabel(lots) {
-  if (!lots) return 'Sin lote'
-  return lots.includes(',') || lots.includes('–') || lots.includes('-') ? `Lotes ${lots}` : `Lote ${lots}`
+  if (!lots) return 'No lot'
+  return lots.includes(',') || lots.includes('–') || lots.includes('-') ? `Lots ${lots}` : `Lot ${lots}`
 }
 
 function SummaryCard({ icon, label, value, tone }) {
@@ -101,7 +101,7 @@ function EventCard({ event }) {
         <strong>{code}</strong>
         <span>{event.title.replace(`${code} • `, '')}</span>
       </Box>
-      <span className="work-event__location">{community} · {phase.replace('Fase ', 'P')} · {building.replace('Edificio ', 'B')}</span>
+      <span className="work-event__location">{community} · {phase.replace('Phase ', 'P')} · {building.replace('Building ', 'B')}</span>
       <Box className="work-event__meta">
         <em>{status}</em>
       </Box>
@@ -129,10 +129,10 @@ function EventDetail({ event, onClose, onEdit, onComplete }) {
     <Box className="event-detail">
       <Box className="event-detail__header">
         <Box>
-          <Typography variant="overline" color="primary.main" fontWeight={800}>Detalle de la actividad</Typography>
-          <Typography variant="h6" fontWeight={750}>Trabajo programado</Typography>
+          <Typography variant="overline" color="primary.main" fontWeight={800}>Activity details</Typography>
+          <Typography variant="h6" fontWeight={750}>Scheduled work</Typography>
         </Box>
-        <IconButton onClick={onClose} aria-label="Cerrar detalle" size="small">
+        <IconButton onClick={onClose} aria-label="Close details" size="small">
           <CloseRoundedIcon />
         </IconButton>
       </Box>
@@ -151,11 +151,11 @@ function EventDetail({ event, onClose, onEdit, onComplete }) {
 
       <Stack spacing={1.65}>
         <DetailRow icon={<BusinessRoundedIcon />} label="Builder">{props.builder}</DetailRow>
-        <DetailRow icon={<LocationOnOutlinedIcon />} label="Comunidad">{props.community}</DetailRow>
-        <DetailRow icon={<LayersOutlinedIcon />} label="Fase / Edificio">{props.phase} / {props.building}</DetailRow>
-        <DetailRow icon={<HomeWorkOutlinedIcon />} label="Lotes">{props.lots}</DetailRow>
-        <DetailRow icon={<CalendarMonthRoundedIcon />} label="Fecha">{dateFormatter.format(start)}</DetailRow>
-        <DetailRow icon={<ConstructionRoundedIcon />} label="Responsable">{props.foreman}</DetailRow>
+        <DetailRow icon={<LocationOnOutlinedIcon />} label="Community">{props.community}</DetailRow>
+        <DetailRow icon={<LayersOutlinedIcon />} label="Phase / Building">{props.phase} / {props.building}</DetailRow>
+        <DetailRow icon={<HomeWorkOutlinedIcon />} label="Lots">{props.lots}</DetailRow>
+        <DetailRow icon={<CalendarMonthRoundedIcon />} label="Date">{dateFormatter.format(start)}</DetailRow>
+        <DetailRow icon={<ConstructionRoundedIcon />} label="Responsible">{props.foreman}</DetailRow>
       </Stack>
 
       <Paper variant="outlined" className="draw-card">
@@ -163,24 +163,24 @@ function EventDetail({ event, onClose, onEdit, onComplete }) {
         <Box sx={{ flex: 1 }}>
           <Typography variant="caption" color="text.secondary">DRAW SCHEDULE</Typography>
           <Typography variant="subtitle2" fontWeight={750}>{props.plan} · {props.progress}%</Typography>
-          <Typography variant="body2">{currencyFormatter.format(props.rate)} <Typography component="span" variant="caption" color="text.secondary">por lote</Typography></Typography>
+          <Typography variant="body2">{currencyFormatter.format(props.rate)} <Typography component="span" variant="caption" color="text.secondary">per lot</Typography></Typography>
         </Box>
         <ArrowForwardIosRoundedIcon fontSize="small" color="action" />
       </Paper>
 
       <Box className="event-detail__actions">
         <Button variant="outlined" startIcon={<EditOutlinedIcon />} onClick={onEdit} fullWidth>
-          Editar actividad
+          Edit Activity
         </Button>
         <Button
           variant="contained"
           startIcon={<CheckCircleOutlineRoundedIcon />}
           onClick={onComplete}
-          disabled={props.status === 'Completado'}
+          disabled={props.status === 'Completed'}
           fullWidth
           disableElevation
         >
-          {props.status === 'Completado' ? 'Trabajo completado' : 'Marcar completado'}
+          {props.status === 'Completed' ? 'Work completed' : 'Mark as completed'}
         </Button>
       </Box>
     </Box>
@@ -191,41 +191,37 @@ function EventDialog({ open, draft, isEditing, onChange, onClose, onSave }) {
   return (
     <Dialog open={open} onClose={onClose} fullWidth maxWidth="sm" component="form" onSubmit={onSave}>
       <DialogTitle sx={{ pb: 1 }}>
-        <Typography variant="h6" fontWeight={750}>{isEditing ? 'Editar actividad' : 'Nueva actividad'}</Typography>
-        <Typography variant="body2" color="text.secondary">Programa el trabajo y asígnalo a una ubicación y cuadrilla.</Typography>
+        <Typography variant="h6" fontWeight={750}>{isEditing ? 'Edit activity' : 'New activity'}</Typography>
+        <Typography variant="body2" color="text.secondary">Schedule the work and assign it to a location and crew.</Typography>
       </DialogTitle>
       <DialogContent sx={{ pt: '16px !important' }}>
         <Stack spacing={2.25}>
           <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
-            <TextField label="Código" value={draft.code} onChange={(event) => onChange('code', event.target.value.toUpperCase())} required sx={{ flex: 0.45 }} />
-            <TextField label="Tipo de trabajo" value={draft.workType} onChange={(event) => onChange('workType', event.target.value)} required fullWidth />
+            <TextField label="Code" value={draft.code} onChange={(event) => onChange('code', event.target.value.toUpperCase())} required sx={{ flex: 0.45 }} />
+            <TextField label="Work type" value={draft.workType} onChange={(event) => onChange('workType', event.target.value)} required fullWidth />
           </Stack>
-          <TextField label="Lotes / unidades" placeholder="Ej. 9, 10, 11" value={draft.lots} onChange={(event) => onChange('lots', event.target.value)} required />
-          <TextField label="Fecha" type="date" value={draft.date} onChange={(event) => onChange('date', event.target.value)} required fullWidth slotProps={{ inputLabel: { shrink: true } }} />
+          <TextField label="Lots / units" placeholder="E.g. 9, 10, 11" value={draft.lots} onChange={(event) => onChange('lots', event.target.value)} required />
+          <TextField label="Date" type="date" value={draft.date} onChange={(event) => onChange('date', event.target.value)} required fullWidth slotProps={{ inputLabel: { shrink: true } }} />
           <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
             <TextField label="Builder" value={draft.builder} onChange={(event) => onChange('builder', event.target.value)} required fullWidth />
-            <TextField label="Comunidad" value={draft.community} onChange={(event) => onChange('community', event.target.value)} required fullWidth />
+            <TextField label="Community" value={draft.community} onChange={(event) => onChange('community', event.target.value)} required fullWidth />
           </Stack>
           <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
-            <TextField label="Fase" value={draft.phase} onChange={(event) => onChange('phase', event.target.value)} fullWidth />
-            <TextField label="Edificio" value={draft.building} onChange={(event) => onChange('building', event.target.value)} fullWidth />
+            <TextField label="Phase" value={draft.phase} onChange={(event) => onChange('phase', event.target.value)} fullWidth />
+            <TextField label="Building" value={draft.building} onChange={(event) => onChange('building', event.target.value)} fullWidth />
             <FormControl fullWidth>
-              <InputLabel id="event-status-label">Estado</InputLabel>
-              <Select labelId="event-status-label" label="Estado" value={draft.status} onChange={(event) => onChange('status', event.target.value)}>
+              <InputLabel id="event-status-label">Status</InputLabel>
+              <Select labelId="event-status-label" label="Status" value={draft.status} onChange={(event) => onChange('status', event.target.value)}>
                 {calendarStatusOptions.map((status) => <MenuItem key={status} value={status}>{status}</MenuItem>)}
               </Select>
             </FormControl>
           </Stack>
-          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
-            <TextField label="Responsable" value={draft.foreman} onChange={(event) => onChange('foreman', event.target.value)} fullWidth />
-            <TextField label="Cuadrilla" value={draft.crew} onChange={(event) => onChange('crew', event.target.value)} fullWidth />
-          </Stack>
-          <Alert severity="info">También puedes arrastrar una actividad en el calendario para reprogramarla.</Alert>
+          <Alert severity="info">You can also drag an activity on the calendar to reschedule it.</Alert>
         </Stack>
       </DialogContent>
       <DialogActions sx={{ px: 3, pb: 2.5 }}>
-        <Button color="inherit" onClick={onClose}>Cancelar</Button>
-        <Button type="submit" variant="contained" disableElevation>{isEditing ? 'Guardar cambios' : 'Crear actividad'}</Button>
+        <Button color="inherit" onClick={onClose}>Cancel</Button>
+        <Button type="submit" variant="contained" disableElevation>{isEditing ? 'Save changes' : 'Create activity'}</Button>
       </DialogActions>
     </Dialog>
   )
@@ -238,7 +234,7 @@ export default function CalendarScheduler() {
   const [selectedId, setSelectedId] = useState('evt-101')
   const [viewTitle, setViewTitle] = useState('Aug 10 – 14, 2026')
   const [viewType, setViewType] = useState('dayGridWeek')
-  const [filters, setFilters] = useState({ builder: 'KB Home', community: 'Andara', phase: 'Fase 1', building: 'Edificio 3' })
+  const [filters, setFilters] = useState({ builder: 'KB Home', community: 'Andara', phase: 'Phase 1', building: 'Building 3' })
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingId, setEditingId] = useState(null)
   const [draft, setDraft] = useState(emptyCalendarDraft)
@@ -252,13 +248,13 @@ export default function CalendarScheduler() {
   }), [events])
 
   const filteredEvents = useMemo(() => events.filter((event) => (
-    Object.entries(filters).every(([key, value]) => value === 'Todos' || event.extendedProps[key] === value)
+    Object.entries(filters).every(([key, value]) => value === 'All' || event.extendedProps[key] === value)
   )), [events, filters])
 
   const selectedEvent = events.find((event) => event.id === selectedId) ?? null
-  const completedCount = filteredEvents.filter((event) => event.extendedProps.status === 'Completado').length
+  const completedCount = filteredEvents.filter((event) => event.extendedProps.status === 'Completed').length
   const billingCount = filteredEvents.filter((event) => event.extendedProps.billingReady).length
-  const exceptionCount = filteredEvents.filter((event) => event.extendedProps.status === 'Excepción').length
+  const exceptionCount = filteredEvents.filter((event) => event.extendedProps.status === 'Exception').length
 
   const navigateCalendar = (direction) => {
     const api = calendarRef.current?.getApi()
@@ -279,10 +275,10 @@ export default function CalendarScheduler() {
     setDraft({
       ...emptyCalendarDraft,
       date: getLocalDateInput(start),
-      builder: filters.builder === 'Todos' ? 'KB Home' : filters.builder,
-      community: filters.community === 'Todos' ? 'Andara' : filters.community,
-      phase: filters.phase === 'Todos' ? 'Fase 1' : filters.phase,
-      building: filters.building === 'Todos' ? 'Edificio 3' : filters.building,
+      builder: filters.builder === 'All' ? 'KB Home' : filters.builder,
+      community: filters.community === 'All' ? 'Andara' : filters.community,
+      phase: filters.phase === 'All' ? 'Phase 1' : filters.phase,
+      building: filters.building === 'All' ? 'Building 3' : filters.building,
     })
     setDialogOpen(true)
   }
@@ -303,7 +299,7 @@ export default function CalendarScheduler() {
     const result = calendarEventSchema.safeParse(draft)
 
     if (!result.success) {
-      setNotice(result.error.issues[0]?.message ?? 'Revisa los datos de la actividad.')
+      setNotice(result.error.issues[0]?.message ?? 'Review the activity details.')
       return
     }
 
@@ -325,9 +321,9 @@ export default function CalendarScheduler() {
         foreman: values.foreman,
         crew: values.crew,
         plan: values.plan,
-        progress: values.status === 'Completado' ? 100 : (values.progress ?? 0),
+        progress: values.status === 'Completed' ? 100 : (values.progress ?? 0),
         rate: values.rate,
-        billingReady: values.status === 'Completado' ? (values.billingReady ?? true) : false,
+        billingReady: values.status === 'Completed' ? (values.billingReady ?? true) : false,
       },
     }
 
@@ -336,7 +332,7 @@ export default function CalendarScheduler() {
       : [...current, eventData])
     setSelectedId(eventData.id)
     setDialogOpen(false)
-    setNotice(editingId ? 'Actividad actualizada.' : 'Actividad creada y agregada al calendario.')
+    setNotice(editingId ? 'Activity updated.' : 'Activity created and added to the calendar.')
   }
 
   const updateEventDate = (changeInfo) => {
@@ -345,16 +341,16 @@ export default function CalendarScheduler() {
       ...event,
       start: changed.start ? getLocalDateInput(changed.start) : event.start,
     } : event))
-    setNotice('Actividad reprogramada.')
+    setNotice('Activity rescheduled.')
   }
 
   const markCompleted = () => {
     if (!selectedId) return
     setEvents((current) => current.map((event) => event.id === selectedId ? {
       ...event,
-      extendedProps: { ...event.extendedProps, status: 'Completado', progress: 100, billingReady: true },
+      extendedProps: { ...event.extendedProps, status: 'Completed', progress: 100, billingReady: true },
     } : event))
-    setNotice('Trabajo completado y listo para facturación.')
+    setNotice('Work completed and ready for billing.')
   }
 
   const detail = selectedEvent ? (
@@ -392,7 +388,7 @@ export default function CalendarScheduler() {
               onChange={(event) => setFilters((current) => ({ ...current, [key]: event.target.value }))}
               startAdornment={<Box className="calendar-filter__icon">{icon}</Box>}
             >
-              <MenuItem value="Todos">Todos</MenuItem>
+              <MenuItem value="All">All</MenuItem>
               {filterOptions[key].map((option) => <MenuItem key={option} value={option}>{option}</MenuItem>)}
             </Select>
           </FormControl>
@@ -400,7 +396,7 @@ export default function CalendarScheduler() {
 
         <Box className="calendar-toolbar__spacer" />
 
-        <ButtonGroup size="small" variant="outlined" aria-label="Cambiar vista">
+        <ButtonGroup size="small" variant="outlined" aria-label="Change view">
           <Button className={viewType === 'dayGridWeek' ? 'is-active' : ''} onClick={() => changeView('dayGridWeek')}>Week</Button>
           <Button className={viewType === 'dayGridDay' ? 'is-active' : ''} onClick={() => changeView('dayGridDay')}>Day</Button>
           <Button className={viewType === 'dayGridMonth' ? 'is-active' : ''} onClick={() => changeView('dayGridMonth')}>Month</Button>

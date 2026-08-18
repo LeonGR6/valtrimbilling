@@ -3,6 +3,18 @@ import test from 'node:test'
 import { createBuilderSchema } from '../src/features/builders/schemas/builderSchema.js'
 import { createPlanTypeSchema } from '../src/features/plan-types/schemas/planTypeSchema.js'
 import { createJobSchema } from '../src/features/jobs/schemas/jobSchema.js'
+import {
+  getJobOptionCount,
+  getJobPlanCount,
+  getJobSequenceColumnCount,
+  getJobUnitCount,
+  initialJobs,
+} from '../src/features/jobs/data/jobs.js'
+import {
+  createJobPlanSchema,
+  planOptionSchema,
+} from '../src/features/jobs/schemas/jobSequenceSheetSchema.js'
+import { createPhaseByLotSchema } from '../src/features/sequence-sheets/schemas/phaseByLotSchema.js'
 import { personSchema } from '../src/features/people/schemas/personSchema.js'
 
 test('builder schema normalizes values before saving', () => {
@@ -92,59 +104,162 @@ test('plan type code must be unique within its builder', () => {
   assert.equal(otherBuilder.data.code, '1A')
 })
 
-test('job schema normalizes hierarchy values and accepts a lot range', () => {
+test('job schema normalizes the fields used to create a job', () => {
   const result = createJobSchema([], null).parse({
+    code: ' job-1005 ',
     builder: ' KB Home ',
     community: ' Andara ',
-    phase: ' 1 ',
-    building: ' 3 ',
-    lotFrom: ' 6 ',
-    lotTo: ' 12 ',
+    totalLots: '24',
+    supervisor: ' Lauren Mitchell ',
+    jobsiteSuperintendent: ' Daniel Torres ',
   })
 
   assert.deepEqual(result, {
+    code: 'JOB-1005',
     builder: 'KB Home',
     community: 'Andara',
-    phase: '1',
-    building: '3',
-    lotFrom: '6',
-    lotTo: '12',
+    totalLots: 24,
+    supervisor: 'Lauren Mitchell',
+    jobsiteSuperintendent: 'Daniel Torres',
   })
 })
 
-test('job schema rejects inverted and overlapping lot ranges', () => {
+test('job schema rejects a duplicate job number', () => {
   const existingJob = {
     id: 1,
+    code: 'JOB-1005',
     builder: 'KB Home',
     community: 'Andara',
-    phase: '1',
-    building: '3',
-    lotFrom: '6',
-    lotTo: '12',
+    totalLots: 24,
+    supervisor: 'Lauren Mitchell',
+    jobsiteSuperintendent: 'Daniel Torres',
   }
   const schema = createJobSchema([existingJob], null)
 
-  const inverted = schema.safeParse({
-    builder: 'KB Home',
-    community: 'Andara',
-    phase: '2',
-    building: '',
-    lotFrom: '12',
-    lotTo: '6',
-  })
-  const overlapping = schema.safeParse({
+  const duplicate = schema.safeParse({
+    code: ' job-1005 ',
     builder: ' kb home ',
     community: 'andara',
-    phase: '1',
-    building: '3',
-    lotFrom: '10',
-    lotTo: '15',
+    totalLots: '24',
+    supervisor: ' Lauren Mitchell ',
+    jobsiteSuperintendent: ' Daniel Torres ',
   })
 
-  assert.equal(inverted.success, false)
-  assert.ok(inverted.error.flatten().fieldErrors.lotTo)
-  assert.equal(overlapping.success, false)
-  assert.ok(overlapping.error.flatten().fieldErrors.lotFrom)
+  assert.equal(duplicate.success, false)
+  assert.ok(duplicate.error.flatten().fieldErrors.code)
+})
+
+test('job total lots are stored directly on the Job header', () => {
+  assert.equal(getJobUnitCount({ totalLots: 24 }), 24)
+  assert.equal(getJobUnitCount({ totalLots: '8' }), 8)
+  assert.equal(getJobUnitCount({ totalLots: -1 }), 0)
+})
+
+test('job plan schema normalizes codes and prevents duplicates in the sheet', () => {
+  const plans = [{ id: 1, code: '2', name: 'Plan 2' }]
+  const normalized = createJobPlanSchema(plans, null).parse({
+    code: ' 3-w/uti ',
+    name: ' Utility plan ',
+  })
+  const duplicate = createJobPlanSchema(plans, null).safeParse({
+    code: ' 2 ',
+    name: '',
+  })
+
+  assert.deepEqual(normalized, { code: '3-W/UTI', name: 'Utility plan' })
+  assert.equal(duplicate.success, false)
+  assert.ok(duplicate.error.flatten().fieldErrors.code)
+})
+
+test('plan option schema allows repeated codes but requires a description', () => {
+  const first = planOptionSchema.parse({
+    code: ' 2-opt ',
+    description: ' Door at Primary Bath ',
+  })
+  const second = planOptionSchema.parse({
+    code: ' 2-opt ',
+    description: ' FLEX ROOM ',
+  })
+
+  assert.deepEqual(first, {
+    code: '2-OPT',
+    description: 'Door at Primary Bath',
+  })
+  assert.equal(second.code, first.code)
+  assert.equal(second.description, 'FLEX ROOM')
+})
+
+test('Job 1307 sequence sheet counts plans, options and visible columns', () => {
+  const job = initialJobs.find((item) => item.code === '1307')
+
+  assert.equal(getJobPlanCount(job), 3)
+  assert.equal(getJobOptionCount(job), 11)
+  assert.equal(getJobSequenceColumnCount(job), 14)
+})
+
+test('phase by lot schema normalizes lots and accepts selected plan options', () => {
+  const job = initialJobs.find((item) => item.code === '1307')
+  const result = createPhaseByLotSchema(job).parse({
+    phaseName: ' Phase 11 ',
+    lots: [
+      {
+        lotNumber: ' 12a ',
+        planId: '1102',
+        reverse: true,
+        optionIds: ['110201', '110202'],
+      },
+    ],
+  })
+
+  assert.deepEqual(result, {
+    phaseName: 'Phase 11',
+    lots: [
+      {
+        lotNumber: '12A',
+        planId: 1102,
+        reverse: true,
+        optionIds: [110201, 110202],
+      },
+    ],
+  })
+})
+
+test('phase by lot schema rejects duplicate phase names and lot numbers', () => {
+  const job = initialJobs.find((item) => item.code === '1307')
+  const result = createPhaseByLotSchema(job).safeParse({
+    phaseName: ' phase 10 ',
+    lots: [
+      { lotNumber: '1', planId: 1101, reverse: false, optionIds: [] },
+      { lotNumber: ' 1 ', planId: 1101, reverse: false, optionIds: [] },
+    ],
+  })
+
+  assert.equal(result.success, false)
+  const messages = result.error.issues.map((issue) => issue.message)
+  assert.ok(messages.includes('This phase already exists for the selected Job.'))
+  assert.ok(messages.includes('Each lot can only appear once in the phase.'))
+})
+
+test('phase by lot schema rejects options from another plan', () => {
+  const job = initialJobs.find((item) => item.code === '1307')
+  const result = createPhaseByLotSchema(job).safeParse({
+    phaseName: 'Phase 12',
+    lots: [
+      {
+        lotNumber: '3',
+        planId: 1101,
+        reverse: false,
+        optionIds: [110201],
+      },
+    ],
+  })
+
+  assert.equal(result.success, false)
+  assert.ok(
+    result.error.issues.some(
+      (issue) => issue.message === 'An option does not belong to the selected plan.',
+    ),
+  )
 })
 
 test('person schema normalizes contact information and supports multiple types', () => {

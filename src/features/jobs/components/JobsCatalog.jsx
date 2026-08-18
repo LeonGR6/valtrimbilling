@@ -1,14 +1,14 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { Controller, useForm, useWatch } from 'react-hook-form'
+import { Controller, useForm } from 'react-hook-form'
 import {
   Alert,
   Box,
   Button,
+  ButtonBase,
   Card,
   CardContent,
-  Chip,
   Dialog,
   DialogActions,
   DialogContent,
@@ -42,31 +42,15 @@ import HomeWorkRoundedIcon from '@mui/icons-material/HomeWorkRounded'
 import MoreHorizRoundedIcon from '@mui/icons-material/MoreHorizRounded'
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
 import ResponsiveCreateButton from '../../../components/common/ResponsiveCreateButton'
+import JobDetails from './JobDetails.jsx'
 import {
   emptyJob,
-  formatJobHierarchy,
-  formatLotRange,
+  getJobPlanCount,
   getJobUnitCount,
-  initialJobs,
   jobBuilderOptions,
 } from '../data/jobs.js'
+import { useJobs } from '../context/useJobs.js'
 import { createJobSchema } from '../schemas/jobSchema.js'
-
-function OptionalLabel({ children }) {
-  return (
-    <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', mb: 0.75 }}>
-      <Typography variant="subtitle2" fontWeight={700}>
-        {children}
-      </Typography>
-      <Chip
-        label="Optional"
-        size="small"
-        variant="outlined"
-        sx={{ height: 20, '& .MuiChip-label': { px: 0.75, fontSize: 10 } }}
-      />
-    </Stack>
-  )
-}
 
 function JobDialog({ job, jobs, onClose, onSave }) {
   const schema = useMemo(
@@ -82,20 +66,17 @@ function JobDialog({ job, jobs, onClose, onSave }) {
     resolver: zodResolver(schema),
     defaultValues: job
       ? {
+          code: job.code,
           builder: job.builder,
           community: job.community,
-          phase: job.phase,
-          building: job.building,
-          lotFrom: job.lotFrom,
-          lotTo: job.lotTo,
+          totalLots: job.totalLots ?? 0,
+          supervisor: job.supervisor ?? '',
+          jobsiteSuperintendent: job.jobsiteSuperintendent ?? '',
         }
       : { ...emptyJob },
     mode: 'onTouched',
     reValidateMode: 'onChange',
   })
-  const values = useWatch({ control })
-  const hierarchyPreview = formatJobHierarchy(values)
-
   return (
     <Dialog
       open
@@ -111,7 +92,7 @@ function JobDialog({ job, jobs, onClose, onSave }) {
           {job ? 'Edit job' : 'Create new job'}
         </Typography>
         <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-          Define where the work belongs in the builder and project hierarchy.
+          Add the identifying and assigned team information for this job.
         </Typography>
       </DialogTitle>
 
@@ -119,115 +100,93 @@ function JobDialog({ job, jobs, onClose, onSave }) {
         <Stack spacing={3}>
           <Box>
             <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1.5 }}>
-              Project
+              Job information
+            </Typography>
+            <Stack spacing={2}>
+              <TextField
+                label="Job#"
+                {...register('code')}
+                error={Boolean(errors.code)}
+                helperText={errors.code?.message ?? 'Example: JOB-1005'}
+                fullWidth
+                slotProps={{ htmlInput: { maxLength: 30 } }}
+              />
+              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
+                <FormControl fullWidth error={Boolean(errors.builder)}>
+                  <InputLabel id="job-builder-label">Builder / Client</InputLabel>
+                  <Controller
+                    name="builder"
+                    control={control}
+                    render={({ field }) => (
+                      <Select
+                        {...field}
+                        labelId="job-builder-label"
+                        label="Builder / Client"
+                      >
+                        {jobBuilderOptions.map((builder) => (
+                          <MenuItem key={builder} value={builder}>
+                            {builder}
+                          </MenuItem>
+                        ))}
+                      </Select>
+                    )}
+                  />
+                  <Typography
+                    variant="caption"
+                    color={errors.builder ? 'error' : 'text.secondary'}
+                    sx={{ mt: 0.5, ml: 1.75, minHeight: 18 }}
+                  >
+                    {errors.builder?.message ?? 'Select a builder from the catalog.'}
+                  </Typography>
+                </FormControl>
+
+                <TextField
+                  label="Community"
+                  {...register('community')}
+                  error={Boolean(errors.community)}
+                  helperText={errors.community?.message ?? 'Example: Andara'}
+                  fullWidth
+                  slotProps={{ htmlInput: { maxLength: 100 } }}
+                />
+                <TextField
+                  label="Total lots"
+                  type="number"
+                  {...register('totalLots')}
+                  error={Boolean(errors.totalLots)}
+                  helperText={errors.totalLots?.message ?? 'Lots or units included in this Job.'}
+                  fullWidth
+                  slotProps={{ htmlInput: { min: 0, max: 100000, step: 1 } }}
+                />
+              </Stack>
+            </Stack>
+          </Box>
+
+          <Box>
+            <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1.5 }}>
+              Job team
             </Typography>
             <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
-              <FormControl fullWidth error={Boolean(errors.builder)}>
-                <InputLabel id="job-builder-label">Builder / Client</InputLabel>
-                <Controller
-                  name="builder"
-                  control={control}
-                  render={({ field }) => (
-                    <Select
-                      {...field}
-                      labelId="job-builder-label"
-                      label="Builder / Client"
-                    >
-                      {jobBuilderOptions.map((builder) => (
-                        <MenuItem key={builder} value={builder}>
-                          {builder}
-                        </MenuItem>
-                      ))}
-                    </Select>
-                  )}
-                />
-                <Typography
-                  variant="caption"
-                  color={errors.builder ? 'error' : 'text.secondary'}
-                  sx={{ mt: 0.5, ml: 1.75, minHeight: 18 }}
-                >
-                  {errors.builder?.message ?? 'Select a builder from the catalog.'}
-                </Typography>
-              </FormControl>
-
               <TextField
-                label="Community / Project"
-                {...register('community')}
-                error={Boolean(errors.community)}
-                helperText={errors.community?.message ?? 'Example: Andara'}
+                label="Supervisor"
+                {...register('supervisor')}
+                error={Boolean(errors.supervisor)}
+                helperText={errors.supervisor?.message ?? 'Valtrim supervisor assigned to this job.'}
+                fullWidth
+                slotProps={{ htmlInput: { maxLength: 100 } }}
+              />
+              <TextField
+                label="Jobsite Superintendent"
+                {...register('jobsiteSuperintendent')}
+                error={Boolean(errors.jobsiteSuperintendent)}
+                helperText={errors.jobsiteSuperintendent?.message ?? 'Builder contact responsible for the jobsite.'}
                 fullWidth
                 slotProps={{ htmlInput: { maxLength: 100 } }}
               />
             </Stack>
           </Box>
 
-          <Box>
-            <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1.5 }}>
-              Location
-            </Typography>
-            <Stack spacing={2}>
-              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
-                <TextField
-                  label="Phase"
-                  {...register('phase')}
-                  error={Boolean(errors.phase)}
-                  helperText={errors.phase?.message ?? 'Example: 1'}
-                  fullWidth
-                  slotProps={{ htmlInput: { maxLength: 30 } }}
-                />
-                <Box sx={{ width: '100%' }}>
-                  <OptionalLabel>Building</OptionalLabel>
-                  <TextField
-                    aria-label="Building"
-                    placeholder="Example: 3"
-                    {...register('building')}
-                    error={Boolean(errors.building)}
-                    helperText={errors.building?.message ?? 'Use only when the project has buildings.'}
-                    fullWidth
-                    slotProps={{ htmlInput: { maxLength: 30 } }}
-                  />
-                </Box>
-              </Stack>
-
-              <Box>
-                <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 0.75 }}>
-                  Lot / Unit range
-                </Typography>
-                <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
-                  <TextField
-                    label="From"
-                    type="number"
-                    {...register('lotFrom')}
-                    error={Boolean(errors.lotFrom)}
-                    helperText={errors.lotFrom?.message ?? 'First lot or unit.'}
-                    fullWidth
-                    slotProps={{ htmlInput: { min: 1, inputMode: 'numeric' } }}
-                  />
-                  <TextField
-                    label="To (optional)"
-                    type="number"
-                    {...register('lotTo')}
-                    error={Boolean(errors.lotTo)}
-                    helperText={errors.lotTo?.message ?? 'Leave blank for a single lot.'}
-                    fullWidth
-                    slotProps={{ htmlInput: { min: 1, inputMode: 'numeric' } }}
-                  />
-                </Stack>
-              </Box>
-            </Stack>
-          </Box>
-
-          <Alert
-            severity="info"
-            icon={<AccountTreeRoundedIcon fontSize="inherit" />}
-            sx={{ alignItems: 'center' }}
-          >
-            <Typography variant="caption" color="text.secondary" component="div">
-              HIERARCHY PREVIEW
-            </Typography>
-            <Typography variant="body2" fontWeight={600}>
-              {hierarchyPreview || 'Complete the fields to preview this job.'}
-            </Typography>
+          <Alert severity="info">
+            After creating the Job, open it to configure its Plans and Options sequence sheet.
           </Alert>
         </Stack>
       </DialogContent>
@@ -274,18 +233,9 @@ function SummaryCard({ icon, label, value }) {
   )
 }
 
-function getNextJobCode(jobs) {
-  const greatestNumber = jobs.reduce((greatest, job) => {
-    const number = Number(job.code.match(/\d+$/)?.[0] ?? 0)
-    return Math.max(greatest, number)
-  }, 1000)
-
-  return `JOB-${greatestNumber + 1}`
-}
-
 export default function JobsCatalog() {
   const [searchParams, setSearchParams] = useSearchParams()
-  const [jobs, setJobs] = useState(initialJobs)
+  const { jobs, setJobs } = useJobs()
   const [search, setSearch] = useState('')
   const [builderFilter, setBuilderFilter] = useState('all')
   const [page, setPage] = useState(0)
@@ -306,7 +256,13 @@ export default function JobsCatalog() {
     return jobs.filter((job) => {
       const matchesSearch =
         !query ||
-        [job.code, formatJobHierarchy(job)]
+        [
+          job.code,
+          job.community,
+          job.builder,
+          job.supervisor,
+          job.jobsiteSuperintendent,
+        ]
           .join(' ')
           .toLowerCase()
           .includes(query)
@@ -323,6 +279,14 @@ export default function JobsCatalog() {
   )
   const totalUnits = jobs.reduce((total, job) => total + getJobUnitCount(job), 0)
   const builderCount = new Set(jobs.map((job) => job.builder)).size
+  const detailJob = jobs.find(
+    (job) => String(job.id) === searchParams.get('job'),
+  )
+
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0 })
+    document.querySelector('main > div')?.scrollTo({ top: 0, left: 0 })
+  }, [detailJob?.id])
 
   const openCreateDialog = () => {
     setEditTarget(null)
@@ -355,6 +319,16 @@ export default function JobsCatalog() {
     handleMenuClose()
   }
 
+  const openJobDetails = (job) => {
+    setSearchParams({ job: String(job.id) })
+  }
+
+  const openSelectedJobDetails = () => {
+    const job = selectedJob
+    handleMenuClose()
+    if (job) openJobDetails(job)
+  }
+
   const handleSave = (form) => {
     if (editTarget) {
       setJobs((current) =>
@@ -368,7 +342,11 @@ export default function JobsCatalog() {
         {
           ...form,
           id: Date.now(),
-          code: getNextJobCode(current),
+          sequenceSheet: {
+            name: 'Options Sequence Sheet',
+            plans: [],
+            phases: [],
+          },
         },
         ...current,
       ])
@@ -384,6 +362,20 @@ export default function JobsCatalog() {
     setDeleteTarget(null)
     setPage(0)
     setNotice({ severity: 'success', message: 'Job deleted.' })
+  }
+
+  if (detailJob) {
+    return (
+      <JobDetails
+        job={detailJob}
+        onBack={() => setSearchParams({}, { replace: true })}
+        onChange={(updatedJob) => {
+          setJobs((current) =>
+            current.map((job) => (job.id === updatedJob.id ? updatedJob : job)),
+          )
+        }}
+      />
+    )
   }
 
   return (
@@ -407,7 +399,7 @@ export default function JobsCatalog() {
             Jobs
           </Typography>
           <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-            Manage project locations and the lots or units included in each job.
+            Select a Job to manage its Plans and Options sequence sheet.
           </Typography>
         </Box>
         <ResponsiveCreateButton
@@ -444,7 +436,7 @@ export default function JobsCatalog() {
                 setPage(0)
               }}
               size="small"
-              placeholder="Search jobs, communities or lots..."
+              placeholder="Search jobs, communities or team members..."
               sx={{ width: { xs: '100%', md: 380 } }}
               slotProps={{
                 input: {
@@ -483,7 +475,7 @@ export default function JobsCatalog() {
           </Stack>
 
           <TableContainer>
-            <Table sx={{ minWidth: 940 }}>
+            <Table sx={{ minWidth: 840 }}>
               <TableHead>
                 <TableRow
                   sx={{
@@ -497,38 +489,48 @@ export default function JobsCatalog() {
                     },
                   }}
                 >
-                  <TableCell>Job</TableCell>
-                  <TableCell>Builder / Community</TableCell>
-                  <TableCell>Phase</TableCell>
-                  <TableCell>Building</TableCell>
-                  <TableCell>Lot / Unit</TableCell>
-                  <TableCell>Units</TableCell>
-                  <TableCell align="right" width={72}>Actions</TableCell>
+                  <TableCell>Job#</TableCell>
+                  <TableCell>Community / Builder</TableCell>
+                  <TableCell>Supervisor</TableCell>
+                  <TableCell>Jobsite Superintendent</TableCell>
+                  <TableCell width={150}>Total Lots</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
                 {visibleJobs.map((job) => (
                   <TableRow key={job.id} hover sx={{ '&:last-child td': { borderBottom: 0 } }}>
                     <TableCell>
-                      <Stack direction="row" spacing={1.25} sx={{ alignItems: 'center' }}>
-                        <Box
-                          sx={{
-                            width: 36,
-                            height: 36,
-                            borderRadius: 1.5,
-                            display: 'grid',
-                            placeItems: 'center',
-                            bgcolor: 'primary.light',
-                            color: 'primary.main',
-                            flexShrink: 0,
-                          }}
-                        >
-                          <AccountTreeRoundedIcon fontSize="small" />
-                        </Box>
-                        <Typography variant="body2" fontWeight={700} noWrap>
-                          {job.code}
-                        </Typography>
-                      </Stack>
+                      <ButtonBase
+                        onClick={() => openJobDetails(job)}
+                        aria-label={`Open Job ${job.code}`}
+                        sx={{ borderRadius: 1.5, textAlign: 'left' }}
+                      >
+                        <Stack direction="row" spacing={1.25} sx={{ alignItems: 'center' }}>
+                          <Box
+                            sx={{
+                              width: 36,
+                              height: 36,
+                              borderRadius: 1.5,
+                              display: 'grid',
+                              placeItems: 'center',
+                              bgcolor: 'primary.light',
+                              color: 'primary.main',
+                              flexShrink: 0,
+                            }}
+                          >
+                            <AccountTreeRoundedIcon fontSize="small" />
+                          </Box>
+                          <Box>
+                            <Typography variant="body2" fontWeight={700} noWrap color="primary.main">
+                              {job.code}
+                            </Typography>
+                            <Typography variant="caption" color="text.secondary">
+                              {getJobPlanCount(job)}{' '}
+                              {getJobPlanCount(job) === 1 ? 'plan' : 'plans'}
+                            </Typography>
+                          </Box>
+                        </Stack>
+                      </ButtonBase>
                     </TableCell>
                     <TableCell>
                       <Typography variant="body2" fontWeight={600} noWrap>
@@ -539,38 +541,39 @@ export default function JobsCatalog() {
                       </Typography>
                     </TableCell>
                     <TableCell>
-                      <Chip label={`Phase ${job.phase}`} size="small" variant="outlined" />
-                    </TableCell>
-                    <TableCell>
-                      <Typography variant="body2" color={job.building ? 'text.primary' : 'text.secondary'}>
-                        {job.building || 'Not applicable'}
+                      <Typography variant="body2" fontWeight={600} noWrap>
+                        {job.supervisor || 'Unassigned'}
                       </Typography>
                     </TableCell>
                     <TableCell>
-                      <Typography variant="body2" fontWeight={600}>
-                        {formatLotRange(job)}
+                      <Typography variant="body2" fontWeight={600} noWrap>
+                        {job.jobsiteSuperintendent || 'Unassigned'}
                       </Typography>
                     </TableCell>
                     <TableCell>
-                      <Typography variant="body2" color="text.secondary">
-                        {getJobUnitCount(job)}
-                      </Typography>
-                    </TableCell>
-                    <TableCell align="right">
-                      <IconButton
-                        size="small"
-                        aria-label={`Actions for ${job.code}`}
-                        onClick={(event) => handleMenuOpen(event, job)}
+                      <Stack
+                        direction="row"
+                        spacing={1}
+                        sx={{ alignItems: 'center', justifyContent: 'space-between' }}
                       >
-                        <MoreHorizRoundedIcon />
-                      </IconButton>
+                        <Typography variant="body2" fontWeight={600}>
+                          {getJobUnitCount(job)}
+                        </Typography>
+                        <IconButton
+                          size="small"
+                          aria-label={`Actions for ${job.code}`}
+                          onClick={(event) => handleMenuOpen(event, job)}
+                        >
+                          <MoreHorizRoundedIcon />
+                        </IconButton>
+                      </Stack>
                     </TableCell>
                   </TableRow>
                 ))}
 
                 {visibleJobs.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={7} sx={{ py: 8, textAlign: 'center' }}>
+                    <TableCell colSpan={5} sx={{ py: 8, textAlign: 'center' }}>
                       <SearchRoundedIcon color="action" sx={{ fontSize: 40, mb: 1 }} />
                       <Typography fontWeight={600}>No jobs found</Typography>
                       <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
@@ -605,6 +608,10 @@ export default function JobsCatalog() {
         anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
         transformOrigin={{ vertical: 'top', horizontal: 'right' }}
       >
+        <MenuItem onClick={openSelectedJobDetails}>
+          <AccountTreeRoundedIcon fontSize="small" sx={{ mr: 1.25 }} />
+          View sequence sheet
+        </MenuItem>
         <MenuItem onClick={openEditDialog}>
           <EditOutlinedIcon fontSize="small" sx={{ mr: 1.25 }} />
           Edit
@@ -635,7 +642,7 @@ export default function JobsCatalog() {
         <DialogContent>
           <Typography variant="body2" color="text.secondary">
             {deleteTarget
-              ? `${deleteTarget.code} — ${formatJobHierarchy(deleteTarget)} will be removed.`
+              ? `${deleteTarget.code} — ${deleteTarget.community} / ${deleteTarget.builder} will be removed.`
               : ''}
           </Typography>
         </DialogContent>

@@ -55,8 +55,8 @@ const navigationSections = [
     label: 'OPERATION',
     items: [
       { label: 'Calendar', path: '/calendar', icon: CalendarMonthRoundedIcon },
-      { label: 'Jobs', path: '/jobs', icon: FolderRoundedIcon },
-      { label: 'Sequence Sheets', icon: TableChartRoundedIcon },
+      { label: 'Jobs / Plan Types', path: '/jobs', icon: FolderRoundedIcon },
+      { label: 'Sequence Sheets', path: '/sequence-sheets', icon: TableChartRoundedIcon },
       { label: 'Field Completion', icon: CheckCircleIcon },
     ],
   },
@@ -80,7 +80,7 @@ const navigationSections = [
     label: 'PRICING',
     items: [
       { label: 'Proposals', icon: DescriptionIcon },
-      { label: 'Plan Pricing - Pricing Options', icon: SellIcon },
+      { label: 'Plan Pricing - Pricing Options', path: '/pricing', icon: SellIcon },
       { label: 'Draw Schedules', path: '/draw', icon: DonutSmallRoundedIcon },
     ]
   },

@@ -1,20 +1,5 @@
 import { z } from 'zod'
 
-const lotNumber = z
-  .string()
-  .trim()
-  .min(1, 'Enter the first lot or unit.')
-  .regex(/^\d+$/, 'Use a positive whole number.')
-  .refine((value) => Number(value) > 0, 'Use a positive whole number.')
-
-const optionalLotNumber = z
-  .string()
-  .trim()
-  .refine(
-    (value) => value === '' || (/^\d+$/.test(value) && Number(value) > 0),
-    'Use a positive whole number.',
-  )
-
 function normalize(value) {
   return value.trim().toLocaleLowerCase()
 }
@@ -22,56 +7,49 @@ function normalize(value) {
 export function createJobSchema(jobs, currentJobId) {
   return z
     .object({
+      code: z
+        .string()
+        .trim()
+        .min(1, 'Enter the job number.')
+        .max(30, 'Use 30 characters or fewer.')
+        .transform((value) => value.toUpperCase()),
       builder: z.string().trim().min(1, 'Select a builder.'),
       community: z
         .string()
         .trim()
         .min(1, 'Enter a community or project.')
         .max(100, 'Use 100 characters or fewer.'),
-      phase: z
+      totalLots: z.preprocess(
+        (value) => (value === '' ? 0 : value),
+        z.coerce
+          .number()
+          .int('Enter a whole number of lots.')
+          .min(0, 'The lot total cannot be negative.')
+          .max(100000, 'Enter 100,000 lots or fewer.'),
+      ),
+      supervisor: z
         .string()
         .trim()
-        .min(1, 'Enter a phase.')
-        .max(30, 'Use 30 characters or fewer.'),
-      building: z.string().trim().max(30, 'Use 30 characters or fewer.'),
-      lotFrom: lotNumber,
-      lotTo: optionalLotNumber,
+        .min(1, 'Enter the supervisor.')
+        .max(100, 'Use 100 characters or fewer.'),
+      jobsiteSuperintendent: z
+        .string()
+        .trim()
+        .min(1, 'Enter the jobsite superintendent.')
+        .max(100, 'Use 100 characters or fewer.'),
     })
     .superRefine((data, context) => {
-      const start = Number(data.lotFrom)
-      const end = Number(data.lotTo || data.lotFrom)
+      const duplicateCode = jobs.some(
+        (job) =>
+          job.id !== currentJobId &&
+          normalize(job.code) === normalize(data.code),
+      )
 
-      if (end < start) {
+      if (duplicateCode) {
         context.addIssue({
           code: 'custom',
-          path: ['lotTo'],
-          message: 'The last lot must be greater than or equal to the first.',
-        })
-        return
-      }
-
-      const overlapsExistingJob = jobs.some((job) => {
-        if (job.id === currentJobId) return false
-
-        const sameLocation =
-          normalize(job.builder) === normalize(data.builder) &&
-          normalize(job.community) === normalize(data.community) &&
-          normalize(job.phase) === normalize(data.phase) &&
-          normalize(job.building) === normalize(data.building)
-
-        if (!sameLocation) return false
-
-        const existingStart = Number(job.lotFrom)
-        const existingEnd = Number(job.lotTo || job.lotFrom)
-
-        return start <= existingEnd && end >= existingStart
-      })
-
-      if (overlapsExistingJob) {
-        context.addIssue({
-          code: 'custom',
-          path: ['lotFrom'],
-          message: 'This lot range overlaps an existing job at this location.',
+          path: ['code'],
+          message: 'This job number is already in use.',
         })
       }
     })

@@ -29,56 +29,50 @@ import {
   TextField,
   Typography,
 } from '@mui/material'
-import AddRoundedIcon from '@mui/icons-material/AddRounded'
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
 import FilterListRoundedIcon from '@mui/icons-material/FilterListRounded'
 import MoreHorizRoundedIcon from '@mui/icons-material/MoreHorizRounded'
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined'
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
 import MapOutlinedIcon from '@mui/icons-material/MapOutlined'
+import ResponsiveCreateButton from '../../../components/common/ResponsiveCreateButton'
+import { zodResolver } from '@hookform/resolvers/zod'
+import { Controller, useForm, useWatch } from 'react-hook-form'
 import {
   builderOptions,
   emptyPlanType,
   initialPlanTypes,
 } from '../data/planTypes.js'
+import { createPlanTypeSchema } from '../schemas/planTypeSchema.js'
 
 function PlanTypeDialog({ open, planType, planTypes, onClose, onSave }) {
-  const [form, setForm] = useState(() =>
-    planType ? { ...planType } : { ...emptyPlanType },
+  const schema = useMemo(
+    () => createPlanTypeSchema(planTypes, planType?.id),
+    [planType?.id, planTypes],
   )
-  const [submitted, setSubmitted] = useState(false)
-
-  const normalizedCode = form.code.trim().toUpperCase()
-  const codeAlreadyExists = planTypes.some(
-    (item) =>
-      item.id !== planType?.id &&
-      item.builder === form.builder &&
-      item.code.toUpperCase() === normalizedCode,
-  )
-  const hasRequiredFields = Boolean(
-    form.builder && normalizedCode && form.name.trim(),
-  )
-
-  const updateField = (field) => (event) => {
-    const value =
-      field === 'isActive' ? event.target.checked : event.target.value
-    setForm((current) => ({ ...current, [field]: value }))
-  }
-
-  const handleSubmit = () => {
-    setSubmitted(true)
-    if (!hasRequiredFields || codeAlreadyExists) return
-
-    onSave({
-      ...form,
-      code: normalizedCode,
-      name: form.name.trim(),
-      planPrice: form.planPrice.trim(),
-    })
-  }
+  const {
+    control,
+    register,
+    handleSubmit,
+    formState: { errors },
+  } = useForm({
+    resolver: zodResolver(schema),
+    defaultValues: planType ? { ...planType } : { ...emptyPlanType },
+    mode: 'onTouched',
+    reValidateMode: 'onChange',
+  })
+  const planPrice = useWatch({ control, name: 'planPrice' })
 
   return (
-    <Dialog open={open} onClose={onClose} fullWidth maxWidth="sm">
+    <Dialog
+      open={open}
+      onClose={onClose}
+      fullWidth
+      maxWidth="sm"
+      component="form"
+      onSubmit={handleSubmit(onSave)}
+      noValidate
+    >
       <DialogTitle sx={{ pb: 1 }}>
         <Typography variant="h6" component="div" fontWeight={700}>
           {planType ? 'Edit plan type' : 'New plan type'}
@@ -92,23 +86,28 @@ function PlanTypeDialog({ open, planType, planTypes, onClose, onSave }) {
 
       <DialogContent sx={{ pt: '16px !important' }}>
         <Stack spacing={2.25}>
-          <FormControl fullWidth error={submitted && !form.builder}>
+          <FormControl fullWidth error={Boolean(errors.builder)}>
             <InputLabel id="plan-builder-label">Builder</InputLabel>
-            <Select
-              labelId="plan-builder-label"
-              value={form.builder}
-              label="Builder"
-              onChange={updateField('builder')}
-            >
-              {builderOptions.map((builder) => (
-                <MenuItem value={builder} key={builder}>
-                  {builder}
-                </MenuItem>
-              ))}
-            </Select>
-            {submitted && !form.builder && (
+            <Controller
+              name="builder"
+              control={control}
+              render={({ field }) => (
+                <Select
+                  {...field}
+                  labelId="plan-builder-label"
+                  label="Builder"
+                >
+                  {builderOptions.map((builderOption) => (
+                    <MenuItem value={builderOption} key={builderOption}>
+                      {builderOption}
+                    </MenuItem>
+                  ))}
+                </Select>
+              )}
+            />
+            {errors.builder && (
               <Typography variant="caption" color="error" sx={{ mt: 0.5, ml: 1.75 }}>
-                Select a builder.
+                {errors.builder.message}
               </Typography>
             )}
           </FormControl>
@@ -116,25 +115,17 @@ function PlanTypeDialog({ open, planType, planTypes, onClose, onSave }) {
           <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
             <TextField
               label="Plan code"
-              value={form.code}
-              onChange={updateField('code')}
-              error={(submitted && !normalizedCode) || codeAlreadyExists}
-              helperText={
-                codeAlreadyExists
-                  ? 'This code already exists for the selected builder.'
-                  : 'Example: PLAN-7C'
-              }
+              {...register('code')}
+              error={Boolean(errors.code)}
+              helperText={errors.code?.message ?? 'Example: PLAN-7C'}
               fullWidth
               slotProps={{ htmlInput: { maxLength: 24 } }}
             />
             <TextField
               label="Plan name"
-              value={form.name}
-              onChange={updateField('name')}
-              error={submitted && !form.name.trim()}
-              helperText={
-                submitted && !form.name.trim() ? 'Enter a plan name.' : ' '
-              }
+              {...register('name')}
+              error={Boolean(errors.name)}
+              helperText={errors.name?.message ?? ' '}
               fullWidth
               slotProps={{ htmlInput: { maxLength: 80 } }}
             />
@@ -142,13 +133,13 @@ function PlanTypeDialog({ open, planType, planTypes, onClose, onSave }) {
 
           <TextField
             label="Plan Price"
-            value={form.planPrice}
-            onChange={updateField('planPrice')}
+            {...register('planPrice')}
             multiline
             minRows={3}
             placeholder="Add a Plan Price..."
             slotProps={{ htmlInput: { maxLength: 240 } }}
-            helperText={`${form.planPrice.length}/240`}
+            error={Boolean(errors.planPrice)}
+            helperText={errors.planPrice?.message ?? `${planPrice.length}/240`}
           />
 
           <Box
@@ -164,9 +155,16 @@ function PlanTypeDialog({ open, planType, planTypes, onClose, onSave }) {
               sx={{ m: 0, width: '100%', justifyContent: 'space-between' }}
               labelPlacement="start"
               control={
-                <Switch
-                  checked={form.isActive}
-                  onChange={updateField('isActive')}
+                <Controller
+                  name="isActive"
+                  control={control}
+                  render={({ field }) => (
+                    <Switch
+                      checked={field.value}
+                      onChange={(_, checked) => field.onChange(checked)}
+                      inputRef={field.ref}
+                    />
+                  )}
                 />
               }
               label={
@@ -188,7 +186,7 @@ function PlanTypeDialog({ open, planType, planTypes, onClose, onSave }) {
         <Button color="inherit" onClick={onClose}>
           Cancel
         </Button>
-        <Button variant="contained" onClick={handleSubmit} disableElevation>
+        <Button variant="contained" type="submit" disableElevation>
           {planType ? 'Save changes' : 'Create plan type'}
         </Button>
       </DialogActions>
@@ -314,15 +312,10 @@ export default function PlanTypesCatalog() {
             Manage the residential plans available for each builder.
           </Typography>
         </Box>
-        <Button
-          variant="contained"
-          startIcon={<AddRoundedIcon />}
+        <ResponsiveCreateButton
+          label="New plan type"
           onClick={() => setDialogState({ mode: 'create' })}
-          disableElevation
-          sx={{ whiteSpace: 'nowrap' }}
-        >
-          New plan type
-        </Button>
+        />
       </Box>
 
       <Box sx={{ p: { xs: 2.5, md: 4 } }}>

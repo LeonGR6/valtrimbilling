@@ -8,3 +8,7 @@ export const HomePage = lazy(() => import('../pages/Home'))
 export const InvoicePage = lazy(() => import('../pages/Invoice'))
 export const PlanTypesPage = lazy(() => import('../pages/PlanTypes'))
 export const PricingPage = lazy(() => import('../pages/Pricing'))
+
+export const LoginPage = lazy(() => import('../pages/Auth/Login'))
+export const ForgotPasswordPage = lazy(() => import('../pages/Auth/ForgotPassword'))
+export const ResetPasswordPage = lazy(() => import('../pages/Auth/ResetPassword'))

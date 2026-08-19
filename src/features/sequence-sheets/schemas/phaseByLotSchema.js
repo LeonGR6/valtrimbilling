@@ -1,8 +1,28 @@
 import { z } from 'zod'
+import {
+  normalizeBuildingCode,
+  normalizePhaseCode,
+} from '../utils/phaseBuildingCodes.js'
 
 function normalized(value) {
   return value.trim().toLocaleUpperCase()
 }
+
+const phaseCodeSchema = z
+  .string()
+  .trim()
+  .min(1, 'Enter a phase number or code.')
+  .max(100, 'Use 100 characters or fewer.')
+  .transform(normalizePhaseCode)
+  .refine((value) => value.length > 0, 'Enter a phase number or code.')
+
+const buildingCodeSchema = z
+  .string()
+  .trim()
+  .min(1, 'Enter a building number or code.')
+  .max(50, 'Use 50 characters or fewer.')
+  .transform(normalizeBuildingCode)
+  .refine((value) => value.length > 0, 'Enter a building number or code.')
 
 const lotAssignmentSchema = z.object({
   lotNumber: z
@@ -22,17 +42,8 @@ export function createPhaseByLotSchema(job) {
 
   return z
     .object({
-      phaseName: z
-        .string()
-        .trim()
-        .min(1, 'Enter a phase name.')
-        .max(100, 'Use 100 characters or fewer.'),
-      building: z
-        .string()
-        .trim()
-        .min(1, 'Enter a building.')
-        .max(50, 'Use 50 characters or fewer.')
-        .transform((value) => value.toUpperCase()),
+      phaseName: phaseCodeSchema,
+      building: buildingCodeSchema,
       lots: z
         .array(lotAssignmentSchema)
         .min(1, 'Add at least one lot.')
@@ -41,7 +52,8 @@ export function createPhaseByLotSchema(job) {
     .superRefine((data, context) => {
       if (
         phases.some(
-          (phase) => normalized(phase.name) === normalized(data.phaseName),
+          (phase) =>
+            normalizePhaseCode(phase.name) === normalizePhaseCode(data.phaseName),
         )
       ) {
         context.addIssue({

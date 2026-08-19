@@ -15,6 +15,13 @@ import {
   planOptionSchema,
 } from '../src/features/jobs/schemas/jobSequenceSheetSchema.js'
 import { createPhaseByLotSchema } from '../src/features/sequence-sheets/schemas/phaseByLotSchema.js'
+import {
+  formatBuilding,
+  formatPhase,
+  normalizeBuildingCode,
+  normalizePhaseCode,
+} from '../src/features/sequence-sheets/utils/phaseBuildingCodes.js'
+import { parseLotRange } from '../src/features/sequence-sheets/utils/lotRange.js'
 import { personSchema } from '../src/features/people/schemas/personSchema.js'
 
 test('builder schema normalizes values before saving', () => {
@@ -200,8 +207,8 @@ test('Job 1307 sequence sheet counts plans, options and visible columns', () => 
 test('phase by lot schema normalizes lots and accepts selected plan options', () => {
   const job = initialJobs.find((item) => item.code === '1307')
   const result = createPhaseByLotSchema(job).parse({
-    phaseName: ' Phase 11 ',
-    building: ' b5 ',
+    phaseName: ' 11 ',
+    building: ' c5 ',
     lots: [
       {
         lotNumber: ' 12a ',
@@ -213,8 +220,8 @@ test('phase by lot schema normalizes lots and accepts selected plan options', ()
   })
 
   assert.deepEqual(result, {
-    phaseName: 'Phase 11',
-    building: 'B5',
+    phaseName: '11',
+    building: 'C5',
     lots: [
       {
         lotNumber: '12A',
@@ -226,11 +233,37 @@ test('phase by lot schema normalizes lots and accepts selected plan options', ()
   })
 })
 
+test('phase and building codes support long and abbreviated labels', () => {
+  assert.equal(normalizePhaseCode(' Phase 10 '), '10')
+  assert.equal(normalizePhaseCode('P10'), '10')
+  assert.equal(normalizeBuildingCode(' Building 4 '), '4')
+  assert.equal(normalizeBuildingCode('B4'), '4')
+  assert.equal(normalizeBuildingCode('C5'), 'C5')
+  assert.equal(formatPhase('1'), 'Phase 1')
+  assert.equal(formatPhase('1', 'short'), 'P1')
+  assert.equal(formatBuilding('3'), 'Building 3')
+  assert.equal(formatBuilding('3', 'short'), 'B3')
+  assert.equal(formatBuilding('C5'), 'Building C5')
+})
+
+test('lot ranges generate every consecutive lot inclusively', () => {
+  assert.deepEqual(parseLotRange(' 9 - 14 '), {
+    success: true,
+    lotNumbers: ['9', '10', '11', '12', '13', '14'],
+  })
+})
+
+test('lot ranges reject invalid, reversed and oversized ranges', () => {
+  assert.equal(parseLotRange('9 to 14').success, false)
+  assert.equal(parseLotRange('14-9').success, false)
+  assert.equal(parseLotRange('1-501').success, false)
+})
+
 test('phase by lot schema rejects duplicate phase names and lot numbers', () => {
   const job = initialJobs.find((item) => item.code === '1307')
   const result = createPhaseByLotSchema(job).safeParse({
-    phaseName: ' phase 10 ',
-    building: 'B4',
+    phaseName: ' p10 ',
+    building: '4',
     lots: [
       { lotNumber: '1', planId: 1101, reverse: false, optionIds: [] },
       { lotNumber: ' 1 ', planId: 1101, reverse: false, optionIds: [] },

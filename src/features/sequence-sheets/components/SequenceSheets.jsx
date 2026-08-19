@@ -60,6 +60,11 @@ import {
   getJobPlanCount,
 } from '../../jobs/data/jobs.js'
 import { createPhaseByLotSchema } from '../schemas/phaseByLotSchema.js'
+import {
+  formatBuilding,
+  formatPhase,
+} from '../utils/phaseBuildingCodes.js'
+import { parseLotRange } from '../utils/lotRange.js'
 
 const emptyLot = {
   lotNumber: '',
@@ -112,6 +117,8 @@ function getPlan(job, planId) {
 }
 
 function PhaseCard({ phase, onOpen }) {
+  const phaseLabel = formatPhase(phase.name)
+  const buildingLabel = formatBuilding(phase.building)
   const selectedOptionCount = (phase.lots ?? []).reduce(
     (total, lot) => total + (lot.optionIds?.length ?? 0),
     0,
@@ -127,7 +134,7 @@ function PhaseCard({ phase, onOpen }) {
     >
       <ButtonBase
         onClick={onOpen}
-        aria-label={`View details for ${phase.name}`}
+        aria-label={`View details for ${phaseLabel}`}
         sx={{
           width: '100%',
           px: { xs: 2, sm: 2.5 },
@@ -145,13 +152,13 @@ function PhaseCard({ phase, onOpen }) {
           sx={{ width: '100%' }}
         >
           <Box>
-            <Typography fontWeight={750}>{phase.name}</Typography>
+            <Typography fontWeight={750}>{phaseLabel}</Typography>
             <Typography variant="caption" color="text.secondary">
-              Building {phase.building} · Created {phase.createdAt}
+              {buildingLabel} · Created {phase.createdAt}
             </Typography>
           </Box>
           <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
-            <Chip size="small" variant="outlined" label={`Building ${phase.building}`} />
+            <Chip size="small" variant="outlined" label={formatBuilding(phase.building, 'short')} />
             <Chip size="small" label={`${phase.lots?.length ?? 0} lots`} />
             <Chip size="small" variant="outlined" label={`${selectedOptionCount} selected options`} />
             <ArrowForwardIosRoundedIcon fontSize="small" color="action" />
@@ -163,6 +170,8 @@ function PhaseCard({ phase, onOpen }) {
 }
 
 function PhaseDetails({ job, phase, onBack }) {
+  const phaseLabel = formatPhase(phase.name)
+  const buildingLabel = formatBuilding(phase.building)
   const selectedOptionCount = (phase.lots ?? []).reduce(
     (total, lot) => total + (lot.optionIds?.length ?? 0),
     0,
@@ -198,14 +207,14 @@ function PhaseDetails({ job, phase, onBack }) {
               Job #{job.code} · {job.community}
             </Typography>
             <Typography variant="h5" fontWeight={800} color="text.primary">
-              {phase.name}
+              {phaseLabel}
             </Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-              Building {phase.building} · {job.builder}
+              {buildingLabel} · {job.builder}
             </Typography>
           </Box>
           <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-            <Chip color="primary" variant="outlined" label={`Building ${phase.building}`} />
+            <Chip color="primary" variant="outlined" label={formatBuilding(phase.building, 'short')} />
             <Chip label={`${phase.lots?.length ?? 0} lots`} />
             <Chip variant="outlined" label={`${selectedOptionCount} selected options`} />
           </Stack>
@@ -222,7 +231,7 @@ function PhaseDetails({ job, phase, onBack }) {
           </Box>
           <Divider />
           <TableContainer>
-            <Table aria-label={`${phase.name} lot assignments`} sx={{ minWidth: 760 }}>
+            <Table aria-label={`${phaseLabel} lot assignments`} sx={{ minWidth: 760 }}>
               <TableHead>
                 <TableRow>
                   <TableCell>Lot</TableCell>
@@ -244,7 +253,7 @@ function PhaseDetails({ job, phase, onBack }) {
                         <Typography fontWeight={750}>{lot.lotNumber}</Typography>
                       </TableCell>
                       <TableCell sx={{ minWidth: 180 }}>
-                        {plan ? `${plan.code} · ${plan.name}` : 'Plan unavailable'}
+                        {plan ? `${plan.code}` : 'Plan unavailable'}
                       </TableCell>
                       <TableCell align="center" sx={{ width: 120 }}>
                         <Chip
@@ -486,11 +495,14 @@ function LotEditor({ index, fieldId, job, control, register, errors, setValue, r
 }
 
 function CreatePhaseDialog({ job, onClose, onCreate }) {
+  const [lotRange, setLotRange] = useState('')
+  const [lotRangeError, setLotRangeError] = useState('')
   const schema = useMemo(() => createPhaseByLotSchema(job), [job])
   const {
     control,
     register,
     handleSubmit,
+    getValues,
     setValue,
     formState: { errors },
   } = useForm({
@@ -499,8 +511,61 @@ function CreatePhaseDialog({ job, onClose, onCreate }) {
     mode: 'onTouched',
     reValidateMode: 'onChange',
   })
-  const { fields, append, remove } = useFieldArray({ control, name: 'lots' })
+  const { fields, append, remove, replace } = useFieldArray({ control, name: 'lots' })
   const hasPlans = (job.sequenceSheet?.plans?.length ?? 0) > 0
+
+  const addLotRange = () => {
+    const currentLots = getValues('lots') ?? []
+    const hasOnlyInitialEmptyLot =
+      currentLots.length === 1 &&
+      !currentLots[0].lotNumber?.trim() &&
+      !currentLots[0].planId &&
+      !currentLots[0].reverse &&
+      (currentLots[0].optionIds?.length ?? 0) === 0
+    const remainingLotCapacity = hasOnlyInitialEmptyLot
+      ? 500
+      : Math.max(500 - currentLots.length, 0)
+
+    if (remainingLotCapacity === 0) {
+      setLotRangeError('A phase can contain up to 500 lots.')
+      return
+    }
+
+    const parsedRange = parseLotRange(lotRange, remainingLotCapacity)
+
+    if (!parsedRange.success) {
+      setLotRangeError(parsedRange.error)
+      return
+    }
+
+    const existingLotNumbers = new Set(
+      currentLots
+        .map((lot) => lot.lotNumber?.trim().toUpperCase())
+        .filter(Boolean),
+    )
+    const duplicateLot = parsedRange.lotNumbers.find((lotNumber) =>
+      existingLotNumbers.has(lotNumber),
+    )
+
+    if (duplicateLot) {
+      setLotRangeError(`Lot ${duplicateLot} has already been added.`)
+      return
+    }
+
+    const generatedLots = parsedRange.lotNumbers.map((lotNumber) => ({
+      ...emptyLot,
+      lotNumber,
+    }))
+
+    if (hasOnlyInitialEmptyLot) {
+      replace(generatedLots)
+    } else {
+      append(generatedLots)
+    }
+
+    setLotRange('')
+    setLotRangeError('')
+  }
 
   return (
     <Dialog
@@ -523,7 +588,7 @@ function CreatePhaseDialog({ job, onClose, onCreate }) {
     >
       <DialogTitle sx={{ pr: 7, pb: 1 }}>
         <Typography variant="h6" component="div" fontWeight={750}>
-          Create Phase by Lot
+          Create Phase
         </Typography>
         <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
           Assign every lot to one of Job #{job.code}&apos;s plans and select its applicable options.
@@ -567,22 +632,32 @@ function CreatePhaseDialog({ job, onClose, onCreate }) {
               </Box>
               <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} alignItems={{ sm: 'flex-start' }}>
                 <TextField
-                  label="Phase name"
-                  placeholder="Example: Phase 10"
+                  label="Phase number / code"
+                  placeholder="Example: 3"
                   {...register('phaseName')}
                   error={Boolean(errors.phaseName)}
-                  helperText={errors.phaseName?.message ?? 'Unique within this Job'}
+                  helperText={errors.phaseName?.message ?? 'Enter only the number or code'}
                   sx={{ minWidth: { sm: 280 } }}
-                  slotProps={{ htmlInput: { maxLength: 100 } }}
+                  slotProps={{
+                    input: {
+                      startAdornment: <InputAdornment position="start">Phase</InputAdornment>,
+                    },
+                    htmlInput: { maxLength: 100 },
+                  }}
                 />
                 <TextField
-                  label="Building"
-                  placeholder="Example: B4"
+                  label="Building number / code"
+                  placeholder="Example: 3 or C5"
                   {...register('building')}
                   error={Boolean(errors.building)}
-                  helperText={errors.building?.message ?? 'Required for this phase'}
+                  helperText={errors.building?.message ?? 'Enter only the number or code'}
                   sx={{ minWidth: { sm: 190 } }}
-                  slotProps={{ htmlInput: { maxLength: 50 } }}
+                  slotProps={{
+                    input: {
+                      startAdornment: <InputAdornment position="start">Building</InputAdornment>,
+                    },
+                    htmlInput: { maxLength: 50 },
+                  }}
                 />
                 <Button
                   type="button"
@@ -594,6 +669,50 @@ function CreatePhaseDialog({ job, onClose, onCreate }) {
                   Add lot
                 </Button>
               </Stack>
+            </Stack>
+            <Divider sx={{ my: 2 }} />
+            <Stack
+              direction={{ xs: 'column', sm: 'row' }}
+              spacing={1.5}
+              alignItems={{ sm: 'flex-start' }}
+            >
+              <Box sx={{ flex: 1 }}>
+                <Typography variant="subtitle2" fontWeight={750}>
+                  Add a lot range
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  Generate consecutive lots, then assign a plan, Reverse and options to each one.
+                </Typography>
+              </Box>
+              <TextField
+                label="Lot range"
+                placeholder="Example: 9-14"
+                value={lotRange}
+                onChange={(event) => {
+                  setLotRange(event.target.value)
+                  if (lotRangeError) setLotRangeError('')
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') {
+                    event.preventDefault()
+                    addLotRange()
+                  }
+                }}
+                error={Boolean(lotRangeError)}
+                helperText={lotRangeError || 'Start and end lot numbers'}
+                sx={{ width: { xs: '100%', sm: 230 } }}
+                slotProps={{ htmlInput: { maxLength: 31 } }}
+              />
+              <Button
+                type="button"
+                variant="contained"
+                startIcon={<AddRoundedIcon />}
+                onClick={addLotRange}
+                disableElevation
+                sx={{ minHeight: 56, whiteSpace: 'nowrap' }}
+              >
+                Add range
+              </Button>
             </Stack>
           </Box>
 
@@ -720,7 +839,7 @@ export default function SequenceSheets() {
     setDialogJobId(null)
     setNotice({
       severity: 'success',
-      message: `${form.phaseName} created with ${form.lots.length} lot${form.lots.length === 1 ? '' : 's'}.`,
+      message: `${formatPhase(form.phaseName)} created with ${form.lots.length} lot${form.lots.length === 1 ? '' : 's'}.`,
     })
   }
 
@@ -855,7 +974,7 @@ export default function SequenceSheets() {
                       disableElevation
                       fullWidth
                     >
-                      Create Phase by Lot
+                      Create Phase
                     </Button>
                   </Box>
                 </Stack>
@@ -896,7 +1015,7 @@ export default function SequenceSheets() {
                         startIcon={<AddRoundedIcon />}
                         onClick={(event) => openCreate(event, job)}
                       >
-                        Create Phase by Lot
+                        Create Phase
                       </Button>
                     </Box>
                   )}

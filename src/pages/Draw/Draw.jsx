@@ -1,11 +1,6 @@
-import { Box, Typography } from '@mui/material'
+import DrawSchedules from '../../features/draw-schedules';
+
 
 export default function DrawPage() {
-  return (
-    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
-      <Typography variant="h5" fontWeight={600}>
-        Create Draw
-      </Typography>
-    </Box>
-  )
+  return (<DrawSchedules />);
 }

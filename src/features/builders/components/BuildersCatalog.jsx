@@ -29,7 +29,6 @@ import {
   TextField,
   Typography,
 } from '@mui/material'
-import AddRoundedIcon from '@mui/icons-material/AddRounded'
 import BusinessRoundedIcon from '@mui/icons-material/BusinessRounded'
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined'
@@ -38,8 +37,11 @@ import MailOutlineRoundedIcon from '@mui/icons-material/MailOutlineRounded'
 import MoreHorizRoundedIcon from '@mui/icons-material/MoreHorizRounded'
 import PhoneOutlinedIcon from '@mui/icons-material/PhoneOutlined'
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
-import { isValidEmail } from '../../../utils/validators.js'
+import ResponsiveCreateButton from '../../../components/common/ResponsiveCreateButton'
+import { zodResolver } from '@hookform/resolvers/zod'
+import { Controller, useForm, useWatch } from 'react-hook-form'
 import { emptyBuilder, initialBuilders } from '../data/builders.js'
+import { createBuilderSchema } from '../schemas/builderSchema.js'
 
 function OptionalLabel({ children }) {
   return (
@@ -58,45 +60,33 @@ function OptionalLabel({ children }) {
 }
 
 function BuilderDialog({ open, builder, builders, onClose, onSave }) {
-  const [form, setForm] = useState(() =>
-    builder ? { ...builder } : { ...emptyBuilder },
+  const schema = useMemo(
+    () => createBuilderSchema(builders, builder?.id),
+    [builder?.id, builders],
   )
-  const [submitted, setSubmitted] = useState(false)
-
-  const normalizedCode = form.code.trim().toUpperCase()
-  const codeAlreadyExists = builders.some(
-    (item) =>
-      item.id !== builder?.id && item.code.toUpperCase() === normalizedCode,
-  )
-  const invalidEmail = Boolean(
-    form.contactEmail.trim() && !isValidEmail(form.contactEmail.trim()),
-  )
-  const hasRequiredFields = Boolean(normalizedCode && form.name.trim())
-
-  const updateField = (field) => (event) => {
-    const value =
-      field === 'isActive' ? event.target.checked : event.target.value
-    setForm((current) => ({ ...current, [field]: value }))
-  }
-
-  const handleSubmit = () => {
-    setSubmitted(true)
-    if (!hasRequiredFields || codeAlreadyExists || invalidEmail) return
-
-    onSave({
-      ...form,
-      code: normalizedCode,
-      name: form.name.trim(),
-      description: form.description.trim(),
-      address: form.address.trim(),
-      contactName: form.contactName.trim(),
-      contactEmail: form.contactEmail.trim().toLowerCase(),
-      contactPhone: form.contactPhone.trim(),
-    })
-  }
+  const {
+    control,
+    register,
+    handleSubmit,
+    formState: { errors },
+  } = useForm({
+    resolver: zodResolver(schema),
+    defaultValues: builder ? { ...builder } : { ...emptyBuilder },
+    mode: 'onTouched',
+    reValidateMode: 'onChange',
+  })
+  const description = useWatch({ control, name: 'description' })
 
   return (
-    <Dialog open={open} onClose={onClose} fullWidth maxWidth="md">
+    <Dialog
+      open={open}
+      onClose={onClose}
+      fullWidth
+      maxWidth="md"
+      component="form"
+      onSubmit={handleSubmit(onSave)}
+      noValidate
+    >
       <DialogTitle sx={{ pb: 1 }}>
         <Typography variant="h6" component="div" fontWeight={700}>
           {builder ? 'Edit builder' : 'New builder'}
@@ -118,27 +108,17 @@ function BuilderDialog({ open, builder, builders, onClose, onSave }) {
               <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
                 <TextField
                   label="Builder code"
-                  value={form.code}
-                  onChange={updateField('code')}
-                  error={(submitted && !normalizedCode) || codeAlreadyExists}
-                  helperText={
-                    codeAlreadyExists
-                      ? 'This builder code already exists.'
-                      : 'Example: CV'
-                  }
+                  {...register('code')}
+                  error={Boolean(errors.code)}
+                  helperText={errors.code?.message ?? 'Example: CV'}
                   fullWidth
                   slotProps={{ htmlInput: { maxLength: 24 } }}
                 />
                 <TextField
                   label="Builder name"
-                  value={form.name}
-                  onChange={updateField('name')}
-                  error={submitted && !form.name.trim()}
-                  helperText={
-                    submitted && !form.name.trim()
-                      ? 'Enter a builder name.'
-                      : ' '
-                  }
+                  {...register('name')}
+                  error={Boolean(errors.name)}
+                  helperText={errors.name?.message ?? ' '}
                   fullWidth
                   slotProps={{ htmlInput: { maxLength: 100 } }}
                 />
@@ -148,15 +128,15 @@ function BuilderDialog({ open, builder, builders, onClose, onSave }) {
                 <OptionalLabel>Description</OptionalLabel>
                 <TextField
                   aria-label="Description"
-                  value={form.description}
-                  onChange={updateField('description')}
+                  {...register('description')}
                   multiline
                   minRows={2}
                   placeholder="Add a short description of this builder..."
                   fullWidth
                   sx={{ mt: 1 }}
                   slotProps={{ htmlInput: { maxLength: 240 } }}
-                  helperText={`${form.description.length}/240`}
+                  error={Boolean(errors.description)}
+                  helperText={errors.description?.message ?? `${description.length}/240`}
                 />
               </Box>
 
@@ -164,14 +144,15 @@ function BuilderDialog({ open, builder, builders, onClose, onSave }) {
                 <OptionalLabel>Address</OptionalLabel>
                 <TextField
                   aria-label="Address"
-                  value={form.address}
-                  onChange={updateField('address')}
+                  {...register('address')}
                   multiline
                   minRows={2}
                   placeholder="Street, city, state and ZIP code"
                   fullWidth
                   sx={{ mt: 1 }}
                   slotProps={{ htmlInput: { maxLength: 240 } }}
+                  error={Boolean(errors.address)}
+                  helperText={errors.address?.message}
                 />
               </Box>
             </Stack>
@@ -182,8 +163,9 @@ function BuilderDialog({ open, builder, builders, onClose, onSave }) {
             <Stack spacing={2} sx={{ mt: 1.5 }}>
               <TextField
                 label="Contact name"
-                value={form.contactName}
-                onChange={updateField('contactName')}
+                {...register('contactName')}
+                error={Boolean(errors.contactName)}
+                helperText={errors.contactName?.message ?? ' '}
                 fullWidth
                 slotProps={{ htmlInput: { maxLength: 100 } }}
               />
@@ -191,10 +173,9 @@ function BuilderDialog({ open, builder, builders, onClose, onSave }) {
                 <TextField
                   label="Email"
                   type="email"
-                  value={form.contactEmail}
-                  onChange={updateField('contactEmail')}
-                  error={invalidEmail}
-                  helperText={invalidEmail ? 'Enter a valid email address.' : ' '}
+                  {...register('contactEmail')}
+                  error={Boolean(errors.contactEmail)}
+                  helperText={errors.contactEmail?.message ?? ' '}
                   fullWidth
                   slotProps={{
                     input: {
@@ -210,9 +191,9 @@ function BuilderDialog({ open, builder, builders, onClose, onSave }) {
                 <TextField
                   label="Phone"
                   type="tel"
-                  value={form.contactPhone}
-                  onChange={updateField('contactPhone')}
-                  helperText="Include the area code."
+                  {...register('contactPhone')}
+                  error={Boolean(errors.contactPhone)}
+                  helperText={errors.contactPhone?.message ?? 'Include the area code.'}
                   fullWidth
                   slotProps={{
                     input: {
@@ -242,9 +223,16 @@ function BuilderDialog({ open, builder, builders, onClose, onSave }) {
               sx={{ m: 0, width: '100%', justifyContent: 'space-between' }}
               labelPlacement="start"
               control={
-                <Switch
-                  checked={form.isActive}
-                  onChange={updateField('isActive')}
+                <Controller
+                  name="isActive"
+                  control={control}
+                  render={({ field }) => (
+                    <Switch
+                      checked={field.value}
+                      onChange={(_, checked) => field.onChange(checked)}
+                      inputRef={field.ref}
+                    />
+                  )}
                 />
               }
               label={
@@ -266,7 +254,7 @@ function BuilderDialog({ open, builder, builders, onClose, onSave }) {
         <Button color="inherit" onClick={onClose}>
           Cancel
         </Button>
-        <Button variant="contained" onClick={handleSubmit} disableElevation>
+        <Button variant="contained" type="submit" disableElevation>
           {builder ? 'Save changes' : 'Create builder'}
         </Button>
       </DialogActions>
@@ -397,15 +385,10 @@ export default function BuildersCatalog() {
             Manage builder companies and their primary contact information.
           </Typography>
         </Box>
-        <Button
-          variant="contained"
-          startIcon={<AddRoundedIcon />}
+        <ResponsiveCreateButton
+          label="New builder"
           onClick={() => setDialogState({ mode: 'create' })}
-          disableElevation
-          sx={{ whiteSpace: 'nowrap' }}
-        >
-          New builder
-        </Button>
+        />
       </Box>
 
       <Box sx={{ p: { xs: 2.5, md: 4 } }}>

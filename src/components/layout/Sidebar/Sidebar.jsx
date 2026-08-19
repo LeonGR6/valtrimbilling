@@ -1,7 +1,9 @@
+import { useState } from 'react'
 import { NavLink } from 'react-router-dom'
 import {
   Drawer,
   Box,
+  Button,
   List,
   ListItem,
   ListItemButton,
@@ -11,7 +13,9 @@ import {
   Typography,
   Divider,
   Chip,
+  Collapse,
 } from '@mui/material'
+//Icons
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown'
 import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp'
 import HomeRoundedIcon from '@mui/icons-material/HomeRounded'
@@ -20,12 +24,24 @@ import FolderRoundedIcon from '@mui/icons-material/FolderRounded'
 import TableChartRoundedIcon from '@mui/icons-material/TableChartRounded'
 import DonutSmallRoundedIcon from '@mui/icons-material/DonutSmallRounded'
 import BusinessRoundedIcon from '@mui/icons-material/BusinessRounded'
+import PeopleAltRoundedIcon from '@mui/icons-material/PeopleAltRounded'
 import MapRoundedIcon from '@mui/icons-material/MapRounded'
 import ApartmentRoundedIcon from '@mui/icons-material/ApartmentRounded'
-import HandymanRoundedIcon from '@mui/icons-material/HandymanRounded'
+import HomeWorkRoundedIcon from '@mui/icons-material/HomeWorkRounded'
+import DomainRoundedIcon from '@mui/icons-material/DomainRounded'
+import AddIcon from '@mui/icons-material/Add'
 import KeyboardOptionKeyIcon from '@mui/icons-material/KeyboardOptionKey'
 import ManageAccountsRoundedIcon from '@mui/icons-material/ManageAccountsRounded'
 import SettingsRoundedIcon from '@mui/icons-material/SettingsRounded'
+import RequestQuoteIcon from '@mui/icons-material/RequestQuote';
+import BallotIcon from '@mui/icons-material/Ballot';
+import DescriptionIcon from '@mui/icons-material/Description';
+import SyncAltIcon from '@mui/icons-material/SyncAlt';
+import SellIcon from '@mui/icons-material/Sell';
+import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+import BarChartIcon from '@mui/icons-material/BarChart'
+import SupportAgentIcon from '@mui/icons-material/SupportAgent';
+
 import { navigationRoutes } from '../../../routes/navigation.jsx'
 import ColorModeToggle from '../../common/ColorModeToggle'
 
@@ -39,31 +55,68 @@ const navigationSections = [
     label: 'OPERATION',
     items: [
       { label: 'Calendar', path: '/calendar', icon: CalendarMonthRoundedIcon },
-      { label: 'Projects', icon: FolderRoundedIcon },
-      { label: 'Sequence Sheets', icon: TableChartRoundedIcon },
+      { label: 'Jobs / Plan Types', path: '/jobs', icon: FolderRoundedIcon },
+      { label: 'Sequence Sheets', path: '/sequence-sheets', icon: TableChartRoundedIcon },
+      { label: 'Field Completion', icon: CheckCircleIcon },
     ],
+  },
+  {
+    label: 'CUSTOMER SERVICE',
+    items: [
+      { label: 'Customer Service', icon: SupportAgentIcon }
+    ]
+  },
+  {
+    label: 'BILLING',
+    items: [
+      { label: 'Ready to Invoice', icon: RequestQuoteIcon },
+      { label: 'Draw & Invoice Packages', icon: BallotIcon },
+      { label: 'Invoices & A/R', icon: DescriptionIcon },
+      { label: 'Releases', icon: DescriptionIcon },
+      { label: 'Change Orders', icon:  SyncAltIcon },
+    ],
+  },
+  {
+    label: 'PRICING',
+    items: [
+      { label: 'Proposals', icon: DescriptionIcon },
+      { label: 'Plan Pricing - Pricing Options', path: '/pricing', icon: SellIcon },
+      { label: 'Draw Schedules', path: '/draw', icon: DonutSmallRoundedIcon },
+    ]
+  },
+  {
+    label: 'REPORTING',
+    items: [
+      { label: 'Reports', icon: BarChartIcon },
+    ]
   },
   {
     label: 'CATALOGS',
     items: [
-      { label: 'Draw Schedules', path: '/draw', icon: DonutSmallRoundedIcon },
       { label: 'Builders', path: '/builders', icon: BusinessRoundedIcon },
+      { label: 'Crews Foremen', path: '/people', icon: PeopleAltRoundedIcon },
       { label: 'Plan Types', path: '/plan-types', icon: MapRoundedIcon },
-      { label: 'Builder Types', icon: ApartmentRoundedIcon },
+      {
+        label: 'Builder Types',
+        icon: ApartmentRoundedIcon,
+        children: [
+          { label: 'Single Family', icon: HomeWorkRoundedIcon },
+          { label: 'Multi Family', icon: DomainRoundedIcon },
+        ],
+      },
       { label: 'Options' , icon: KeyboardOptionKeyIcon },
-      { label: 'Work Codes', icon: HandymanRoundedIcon },
     ],
   },
   {
     label: 'ADMINISTRATION',
     items: [
-      { label: 'Users', icon: ManageAccountsRoundedIcon },
+      { label: 'Users & Roles', icon: ManageAccountsRoundedIcon },
       { label: 'Configuration', icon: SettingsRoundedIcon },
     ],
   },
 ]
 
-function NavigationItem({ label, path, icon: Icon }) {
+function NavigationItem({ label, path, icon: Icon, nested = false }) {
   const isAvailable = Boolean(path && availablePaths.has(path))
 
   return (
@@ -75,6 +128,7 @@ function NavigationItem({ label, path, icon: Icon }) {
         disabled={!isAvailable}
         sx={{
           minHeight: 40,
+          pl: nested ? 4.5 : 2,
           borderRadius: 2,
           color: 'text.secondary',
           '&:hover': { bgcolor: 'sidebar.hover' },
@@ -87,7 +141,7 @@ function NavigationItem({ label, path, icon: Icon }) {
           '&.Mui-disabled': { opacity: 0.55 },
         }}
       >
-        <ListItemIcon sx={{ minWidth: 36, color: 'inherit' }}>
+        <ListItemIcon sx={{ minWidth: nested ? 32 : 36, color: 'inherit' }}>
           <Icon fontSize="small" />
         </ListItemIcon>
         <ListItemText
@@ -104,6 +158,54 @@ function NavigationItem({ label, path, icon: Icon }) {
         )}
       </ListItemButton>
     </ListItem>
+  )
+}
+
+function ExpandableNavigationItem({ label, icon: Icon, children }) {
+  const [open, setOpen] = useState(false)
+  const submenuId = `${label.toLowerCase().replaceAll(' ', '-')}-submenu`
+
+  return (
+    <Box component="li" sx={{ listStyle: 'none', mb: 0.25 }}>
+      <ListItemButton
+        onClick={() => setOpen((current) => !current)}
+        aria-expanded={open}
+        aria-controls={submenuId}
+        sx={{
+          minHeight: 40,
+          borderRadius: 2,
+          color: 'text.secondary',
+          '&:hover': { bgcolor: 'sidebar.hover' },
+          ...(open && {
+            bgcolor: 'sidebar.hover',
+            color: 'text.primary',
+            '& .MuiListItemIcon-root': { color: 'primary.main' },
+            '& .MuiListItemText-primary': { fontWeight: 600 },
+          }),
+        }}
+      >
+        <ListItemIcon sx={{ minWidth: 36, color: 'inherit' }}>
+          <Icon fontSize="small" />
+        </ListItemIcon>
+        <ListItemText
+          primary={label}
+          sx={{ '& .MuiListItemText-primary': { fontSize: 14 } }}
+        />
+        {open ? (
+          <KeyboardArrowUpIcon fontSize="small" />
+        ) : (
+          <KeyboardArrowDownIcon fontSize="small" />
+        )}
+      </ListItemButton>
+
+      <Collapse in={open} timeout="auto" unmountOnExit>
+        <List id={submenuId} disablePadding>
+          {children.map((item) => (
+            <NavigationItem key={item.label} {...item} nested />
+          ))}
+        </List>
+      </Collapse>
+    </Box>
   )
 }
 
@@ -138,6 +240,20 @@ export default function Sidebar() {
         <KeyboardArrowDownIcon sx={{ color: 'text.secondary' }} />
       </Box>
 
+      <Box sx={{ px: 1.5, pb: 1 }}>
+        <Button
+          component={NavLink}
+          startIcon={<AddIcon />}
+          to="/jobs?create=1"
+          variant="contained"
+          color="primary"
+          fullWidth
+          sx={{ fontSize: 14, fontWeight: 600, textTransform: 'none' }}
+        >
+          Create
+        </Button>
+      </Box>
+
       {/* Navigation is organized by workflow; future modules stay visible but disabled. */}
       <List sx={{ flexGrow: 1, overflowY: 'auto', px: 1, pb: 2 }}>
         <NavigationItem {...homeItem} />
@@ -152,7 +268,11 @@ export default function Sidebar() {
             </Typography>
             <List disablePadding>
               {section.items.map((item) => (
-                <NavigationItem key={item.label} {...item} />
+                item.children ? (
+                  <ExpandableNavigationItem key={item.label} {...item} />
+                ) : (
+                  <NavigationItem key={item.label} {...item} />
+                )
               ))}
             </List>
           </Box>

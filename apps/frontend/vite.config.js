@@ -1,7 +1,12 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { mkdir, writeFile } from 'node:fs/promises'
-import { resolve } from 'node:path'
+import { dirname, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+const frontendDirectory = dirname(fileURLToPath(import.meta.url))
+const repositoryDirectory = resolve(frontendDirectory, '../..')
+const buildDirectory = resolve(repositoryDirectory, 'dist')
 
 const sitesWorker = `const worker = {
   async fetch(request, env) {
@@ -34,7 +39,7 @@ function emitSitesWorker() {
     name: 'emit-sites-worker',
     apply: 'build',
     async closeBundle() {
-      const serverDirectory = resolve(process.cwd(), 'dist/server')
+      const serverDirectory = resolve(buildDirectory, 'server')
       await mkdir(serverDirectory, { recursive: true })
       await writeFile(resolve(serverDirectory, 'index.js'), sitesWorker)
     },
@@ -44,7 +49,8 @@ function emitSitesWorker() {
 export default defineConfig({
   plugins: [react(), emitSitesWorker()],
   build: {
-    outDir: 'dist/client',
+    outDir: resolve(buildDirectory, 'client'),
+    emptyOutDir: true,
   },
   server: {
     port: Number(process.env.PORT) || 5173,

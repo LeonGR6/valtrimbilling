@@ -3,5 +3,5 @@ export {
   AuthTextField,
   AuthHeading,
   Brand,
-  submitButtonSx,
 } from './components/authComponents.jsx'
+export { submitButtonSx } from './styles.js'

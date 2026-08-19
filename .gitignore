@@ -17,6 +17,7 @@ dist-ssr
 
 # Local Claude Code files (skills, preview config — not committed)
 .claude/
+CLAUDE.md
 
 # Local architecture notes (not committed)
 docs/architecture.md

@@ -11,3 +11,7 @@ export const PeoplePage = lazy(() => import('../pages/People'))
 export const PlanTypesPage = lazy(() => import('../pages/PlanTypes'))
 export const PricingPage = lazy(() => import('../pages/Pricing'))
 export const SequenceSheetsPage = lazy(() => import('../pages/SequenceSheets'))
+
+export const LoginPage = lazy(() => import('../pages/Auth/Login'))
+export const ForgotPasswordPage = lazy(() => import('../pages/Auth/ForgotPassword'))
+export const ResetPasswordPage = lazy(() => import('../pages/Auth/ResetPassword'))

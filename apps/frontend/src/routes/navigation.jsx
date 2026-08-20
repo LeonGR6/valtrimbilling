@@ -1,5 +1,4 @@
 import {
-  BuildersPage,
   CalendarPage,
   DrawPage,
   FinancialsPage,
@@ -7,7 +6,6 @@ import {
   InvoicePage,
   JobsPage,
   PeoplePage,
-  PlanTypesPage,
   PricingPage,
   SequenceSheetsPage,
 } from './lazyPages.jsx'
@@ -20,9 +18,7 @@ export const navigationRoutes = [
   { path: '/jobs', label: 'Jobs', icon: 'jobs', element: <JobsPage /> },
   { path: '/sequence-sheets', label: 'Sequence Sheets', icon: 'sequence-sheets', element: <SequenceSheetsPage /> },
   { path: '/draw', label: 'Draw', icon: 'draw', element: <DrawPage /> },
-  { path: '/builders', label: 'Builders', icon: 'builders', element: <BuildersPage /> },
   { path: '/people', label: 'People', icon: 'people', element: <PeoplePage /> },
-  { path: '/plan-types', label: 'Plan Types', icon: 'plan-types', element: <PlanTypesPage /> },
   { path: '/pricing', label: 'Pricing', icon: 'pricing', element: <PricingPage /> },
   { path: '/invoice', label: 'Invoice', icon: 'invoice', element: <InvoicePage /> },
   { path: '/financials', label: 'Financials', icon: 'financials', element: <FinancialsPage /> },

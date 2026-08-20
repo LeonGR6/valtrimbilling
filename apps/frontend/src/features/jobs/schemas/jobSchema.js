@@ -19,14 +19,6 @@ export function createJobSchema(jobs, currentJobId) {
         .trim()
         .min(1, 'Enter a community or project.')
         .max(100, 'Use 100 characters or fewer.'),
-      totalLots: z.preprocess(
-        (value) => (value === '' ? 0 : value),
-        z.coerce
-          .number()
-          .int('Enter a whole number of lots.')
-          .min(0, 'The lot total cannot be negative.')
-          .max(100000, 'Enter 100,000 lots or fewer.'),
-      ),
       supervisor: z
         .string()
         .trim()

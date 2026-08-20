@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { Controller, useForm } from 'react-hook-form'
+import { Controller, useForm, useWatch } from 'react-hook-form'
 import {
   Alert,
   Avatar,
@@ -34,7 +34,7 @@ import {
   TextField,
   Typography,
 } from '@mui/material'
-import BusinessRoundedIcon from '@mui/icons-material/BusinessRounded'
+import ContactPhoneRoundedIcon from '@mui/icons-material/ContactPhoneRounded'
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined'
 import FilterListRoundedIcon from '@mui/icons-material/FilterListRounded'
@@ -76,11 +76,13 @@ function PersonDialog({ person, onClose, onSave }) {
           officePhone: person.officePhone,
           email: person.email,
           types: [...person.types],
+          territory: person.territory ?? '',
         }
       : { ...emptyPerson },
     mode: 'onTouched',
     reValidateMode: 'onChange',
   })
+  const selectedTypes = useWatch({ control, name: 'types' }) ?? []
 
   return (
     <Dialog
@@ -144,7 +146,7 @@ function PersonDialog({ person, onClose, onSave }) {
                 input: {
                   startAdornment: (
                     <InputAdornment position="start">
-                      <BusinessRoundedIcon fontSize="small" />
+                      <ContactPhoneRoundedIcon fontSize="small" />
                     </InputAdornment>
                   ),
                 },
@@ -214,6 +216,21 @@ function PersonDialog({ person, onClose, onSave }) {
               </FormControl>
             )}
           />
+
+          {selectedTypes.includes('SUPERVISOR') && (
+            <TextField
+              label="Territory"
+              {...register('territory')}
+              error={Boolean(errors.territory)}
+              helperText={
+                errors.territory?.message
+                ?? 'Geographic area assigned to this Valtrim supervisor.'
+              }
+              required
+              fullWidth
+              slotProps={{ htmlInput: { maxLength: 80 } }}
+            />
+          )}
         </Stack>
       </DialogContent>
 
@@ -247,7 +264,7 @@ export default function PeopleCatalog() {
     return people.filter((person) => {
       const matchesSearch =
         !query ||
-        [person.name, person.phone, person.officePhone, person.email]
+        [person.name, person.phone, person.officePhone, person.email, person.territory]
           .join(' ')
           .toLowerCase()
           .includes(query)
@@ -418,6 +435,7 @@ export default function PeopleCatalog() {
                   <TableCell>Phone number</TableCell>
                   <TableCell>Office phone number</TableCell>
                   <TableCell>Person type</TableCell>
+                  <TableCell>Territory</TableCell>
                   <TableCell align="right" width={72}>Actions</TableCell>
                 </TableRow>
               </TableHead>
@@ -485,6 +503,13 @@ export default function PeopleCatalog() {
                         ))}
                       </Stack>
                     </TableCell>
+                    <TableCell>
+                      <Typography variant="body2" color="text.secondary" noWrap>
+                        {person.types.includes('SUPERVISOR')
+                          ? person.territory || 'Not assigned'
+                          : '—'}
+                      </Typography>
+                    </TableCell>
                     <TableCell align="right">
                       <IconButton
                         size="small"
@@ -499,7 +524,7 @@ export default function PeopleCatalog() {
 
                 {visiblePeople.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={5} sx={{ py: 8, textAlign: 'center' }}>
+                    <TableCell colSpan={6} sx={{ py: 8, textAlign: 'center' }}>
                       <SearchRoundedIcon color="action" sx={{ fontSize: 40, mb: 1 }} />
                       <Typography fontWeight={600}>No people found</Typography>
                       <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>

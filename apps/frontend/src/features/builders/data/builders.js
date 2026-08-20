@@ -32,6 +32,17 @@ export const initialBuilders = [
     contactPhone: '',
     isActive: false,
   },
+  {
+    id: 4,
+    code: 'KB',
+    name: 'KB Home',
+    description: 'Homebuilder with communities across the United States.',
+    address: '',
+    contactName: '',
+    contactEmail: '',
+    contactPhone: '',
+    isActive: true,
+  },
 ]
 
 export const emptyBuilder = {

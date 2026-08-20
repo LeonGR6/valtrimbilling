@@ -1,5 +1,5 @@
-import PlanPricing from '../../features/plan-pricing';
+import PlanPricing from '../../features/plan-pricing'
 
 export default function PricingPage() {
-  return <PlanPricing />;
+  return <PlanPricing />
 }

@@ -23,9 +23,7 @@ import CalendarMonthRoundedIcon from '@mui/icons-material/CalendarMonthRounded'
 import FolderRoundedIcon from '@mui/icons-material/FolderRounded'
 import TableChartRoundedIcon from '@mui/icons-material/TableChartRounded'
 import DonutSmallRoundedIcon from '@mui/icons-material/DonutSmallRounded'
-import BusinessRoundedIcon from '@mui/icons-material/BusinessRounded'
 import PeopleAltRoundedIcon from '@mui/icons-material/PeopleAltRounded'
-import MapRoundedIcon from '@mui/icons-material/MapRounded'
 import ApartmentRoundedIcon from '@mui/icons-material/ApartmentRounded'
 import HomeWorkRoundedIcon from '@mui/icons-material/HomeWorkRounded'
 import DomainRoundedIcon from '@mui/icons-material/DomainRounded'
@@ -55,7 +53,7 @@ const navigationSections = [
     label: 'OPERATION',
     items: [
       { label: 'Calendar', path: '/calendar', icon: CalendarMonthRoundedIcon },
-      { label: 'Jobs / Plan Types', path: '/jobs', icon: FolderRoundedIcon },
+      { label: 'Jobs', path: '/jobs', icon: FolderRoundedIcon },
       { label: 'Sequence Sheets', path: '/sequence-sheets', icon: TableChartRoundedIcon },
       { label: 'Field Completion', icon: CheckCircleIcon },
     ],
@@ -93,9 +91,7 @@ const navigationSections = [
   {
     label: 'CATALOGS',
     items: [
-      { label: 'Builders', path: '/builders', icon: BusinessRoundedIcon },
       { label: 'Crews Foremen', path: '/people', icon: PeopleAltRoundedIcon },
-      { label: 'Plan Types', path: '/plan-types', icon: MapRoundedIcon },
       {
         label: 'Builder Types',
         icon: ApartmentRoundedIcon,
@@ -244,7 +240,7 @@ export default function Sidebar() {
         <Button
           component={NavLink}
           startIcon={<AddIcon />}
-          to="/jobs?create=1"
+          to="/jobs"
           variant="contained"
           color="primary"
           fullWidth

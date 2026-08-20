@@ -25,6 +25,7 @@ const buildingCodeSchema = z
   .refine((value) => value.length > 0, 'Enter a building number or code.')
 
 const lotAssignmentSchema = z.object({
+  id: z.union([z.string(), z.number()]).optional(),
   lotNumber: z
     .string()
     .trim()
@@ -36,7 +37,7 @@ const lotAssignmentSchema = z.object({
   optionIds: z.array(z.coerce.number().int().positive()),
 })
 
-export function createPhaseByLotSchema(job) {
+export function createPhaseByLotSchema(job, currentPhaseId) {
   const phases = job.sequenceSheet?.phases ?? []
   const plans = job.sequenceSheet?.plans ?? []
 
@@ -53,6 +54,7 @@ export function createPhaseByLotSchema(job) {
       if (
         phases.some(
           (phase) =>
+            phase.id !== currentPhaseId &&
             normalizePhaseCode(phase.name) === normalizePhaseCode(data.phaseName),
         )
       ) {

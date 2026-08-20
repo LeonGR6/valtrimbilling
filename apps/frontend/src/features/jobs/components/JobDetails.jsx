@@ -34,6 +34,8 @@ import {
   getJobOptionCount,
   getJobPlanCount,
   getJobUnitCount,
+  getOptionLotDependencies,
+  getPlanLotDependencies,
 } from '../data/jobs.js'
 import {
   createJobPlanSchema,
@@ -465,6 +467,15 @@ export default function JobDetails({ job, onBack, onChange }) {
     plans: [],
   }
   const plans = sequenceSheet.plans ?? []
+  const deleteDependencies = deleteTarget
+    ? deleteTarget.type === 'plan'
+      ? getPlanLotDependencies(job, deleteTarget.plan.id)
+      : getOptionLotDependencies(job, deleteTarget.option.id)
+    : []
+  const dependencyPhaseCount = new Set(
+    deleteDependencies.map((dependency) => dependency.phaseId),
+  ).size
+  const deletionBlocked = deleteDependencies.length > 0
 
   const updatePlans = (nextPlans) => {
     onChange({
@@ -518,6 +529,14 @@ export default function JobDetails({ job, onBack, onChange }) {
   }
 
   const handleDelete = () => {
+    if (!deleteTarget || deletionBlocked) {
+      setNotice({
+        severity: 'error',
+        message: 'Reassign or remove the dependent lots before deleting this item.',
+      })
+      return
+    }
+
     if (deleteTarget.type === 'plan') {
       updatePlans(plans.filter((plan) => plan.id !== deleteTarget.plan.id))
       setNotice({ severity: 'success', message: 'Plan deleted.' })
@@ -560,6 +579,9 @@ export default function JobDetails({ job, onBack, onChange }) {
             <ArrowBackRoundedIcon />
           </IconButton>
           <Box>
+            <Typography variant="caption" color="primary.main" fontWeight={700}>
+              Builders / {job.builder} / Jobs / Job {job.code} / Plans &amp; Options
+            </Typography>
             <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
               <Typography variant="h5" fontWeight={700} color="text.primary">
                 Job {job.code} · Plans &amp; options
@@ -732,20 +754,63 @@ export default function JobDetails({ job, onBack, onChange }) {
         maxWidth="xs"
       >
         <DialogTitle>
-          {deleteTarget?.type === 'plan' ? 'Delete plan?' : 'Delete option?'}
+          {deletionBlocked
+            ? deleteTarget?.type === 'plan'
+              ? 'Plan is in use'
+              : 'Option is in use'
+            : deleteTarget?.type === 'plan'
+              ? 'Delete plan?'
+              : 'Delete option?'}
         </DialogTitle>
         <DialogContent>
-          <Typography variant="body2" color="text.secondary">
-            {deleteTarget?.type === 'plan'
-              ? `Plan ${deleteTarget.plan.code} and all of its options will be removed from Job ${job.code}.`
-              : deleteTarget
-                ? `${deleteTarget.option.code} will be removed from Plan ${deleteTarget.plan.code}.`
-                : ''}
-          </Typography>
+          {deletionBlocked ? (
+            <Stack spacing={2}>
+              <Alert severity="warning">
+                {deleteTarget?.type === 'plan'
+                  ? `Plan ${deleteTarget.plan.code} cannot be deleted because ${deleteDependencies.length} ${deleteDependencies.length === 1 ? 'lot depends' : 'lots depend'} on it across ${dependencyPhaseCount} ${dependencyPhaseCount === 1 ? 'phase' : 'phases'}.`
+                  : `${deleteTarget.option.code} cannot be deleted because it is selected for ${deleteDependencies.length} ${deleteDependencies.length === 1 ? 'lot' : 'lots'} across ${dependencyPhaseCount} ${dependencyPhaseCount === 1 ? 'phase' : 'phases'}.`}
+              </Alert>
+              <Typography variant="body2" color="text.secondary">
+                Reassign or remove these dependencies from Sequence Sheets before deleting it.
+              </Typography>
+              <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: 'wrap' }}>
+                {deleteDependencies.slice(0, 6).map((dependency) => (
+                  <Chip
+                    key={`${dependency.phaseId}-${dependency.lotId}`}
+                    size="small"
+                    variant="outlined"
+                    label={`Phase ${dependency.phaseName} · Lot ${dependency.lotNumber}`}
+                  />
+                ))}
+                {deleteDependencies.length > 6 && (
+                  <Chip
+                    size="small"
+                    label={`+${deleteDependencies.length - 6} more`}
+                  />
+                )}
+              </Stack>
+            </Stack>
+          ) : (
+            <Typography variant="body2" color="text.secondary">
+              {deleteTarget?.type === 'plan'
+                ? `Plan ${deleteTarget.plan.code} and all of its options will be removed from Job ${job.code}.`
+                : deleteTarget
+                  ? `${deleteTarget.option.code} will be removed from Plan ${deleteTarget.plan.code}.`
+                  : ''}
+            </Typography>
+          )}
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2.5 }}>
-          <Button color="inherit" onClick={() => setDeleteTarget(null)}>Cancel</Button>
-          <Button color="error" variant="contained" onClick={handleDelete} disableElevation>
+          <Button color="inherit" onClick={() => setDeleteTarget(null)}>
+            {deletionBlocked ? 'Close' : 'Cancel'}
+          </Button>
+          <Button
+            color="error"
+            variant="contained"
+            onClick={handleDelete}
+            disableElevation
+            disabled={deletionBlocked}
+          >
             Delete
           </Button>
         </DialogActions>

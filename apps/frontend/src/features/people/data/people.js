@@ -25,6 +25,7 @@ export const initialPeople = [
     officePhone: '(951) 555-0100',
     email: 'daniel.torres@kbhome.com',
     types: ['JOBSITE_SUPERINTENDENT'],
+    territory: '',
   },
   {
     id: 2,
@@ -33,6 +34,7 @@ export const initialPeople = [
     officePhone: '',
     email: 'lauren.mitchell@valtriminc.com',
     types: ['SUPERVISOR'],
+    territory: 'Inland Empire',
   },
   {
     id: 3,
@@ -41,6 +43,7 @@ export const initialPeople = [
     officePhone: '(949) 555-0110',
     email: 'ap@cityventures.com',
     types: ['AP_CONTACT'],
+    territory: '',
   },
 ]
 
@@ -50,4 +53,5 @@ export const emptyPerson = {
   officePhone: '',
   email: '',
   types: [],
+  territory: '',
 }

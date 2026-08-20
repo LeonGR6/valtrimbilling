@@ -230,7 +230,7 @@ function BuilderDialog({ open, builder, builders, onClose, onSave }) {
                     <Switch
                       checked={field.value}
                       onChange={(_, checked) => field.onChange(checked)}
-                      inputRef={field.ref}
+                      slotProps={{ input: { ref: field.ref } }}
                     />
                   )}
                 />
@@ -241,7 +241,7 @@ function BuilderDialog({ open, builder, builders, onClose, onSave }) {
                     Active builder
                   </Typography>
                   <Typography variant="caption" color="text.secondary">
-                    Inactive builders remain visible but cannot be selected.
+                    Inactive builders remain visible in the catalog.
                   </Typography>
                 </Box>
               }
@@ -262,8 +262,16 @@ function BuilderDialog({ open, builder, builders, onClose, onSave }) {
   )
 }
 
-export default function BuildersCatalog() {
-  const [builders, setBuilders] = useState(initialBuilders)
+export default function BuildersCatalog({
+  builders: controlledBuilders,
+  setBuilders: setControlledBuilders,
+  getBuilderJobCount,
+  onBuilderRenamed,
+  onSelectBuilder,
+}) {
+  const [localBuilders, setLocalBuilders] = useState(initialBuilders)
+  const builders = controlledBuilders ?? localBuilders
+  const setBuilders = setControlledBuilders ?? setLocalBuilders
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState('all')
   const [page, setPage] = useState(0)
@@ -304,8 +312,12 @@ export default function BuildersCatalog() {
     page * rowsPerPage,
     page * rowsPerPage + rowsPerPage,
   )
+  const deleteTargetJobCount = deleteTarget
+    ? getBuilderJobCount?.(deleteTarget) ?? 0
+    : 0
 
   const handleMenuOpen = (event, builder) => {
+    event.stopPropagation()
     setMenuAnchor(event.currentTarget)
     setSelectedBuilder(builder)
   }
@@ -327,11 +339,15 @@ export default function BuildersCatalog() {
 
   const handleSave = (form) => {
     if (dialogState?.mode === 'edit') {
+      const previousBuilder = dialogState.builder
       setBuilders((current) =>
         current.map((item) =>
-          item.id === dialogState.builder.id ? { ...item, ...form } : item,
+          item.id === previousBuilder.id ? { ...item, ...form } : item,
         ),
       )
+      if (previousBuilder.name !== form.name) {
+        onBuilderRenamed?.(previousBuilder.name, form.name)
+      }
       setNotice({ severity: 'success', message: 'Builder updated.' })
     } else {
       setBuilders((current) => [{ ...form, id: Date.now() }, ...current])
@@ -343,6 +359,16 @@ export default function BuildersCatalog() {
   }
 
   const handleDelete = () => {
+    const jobCount = getBuilderJobCount?.(deleteTarget) ?? 0
+    if (jobCount > 0) {
+      setDeleteTarget(null)
+      setNotice({
+        severity: 'error',
+        message: `Reassign or delete ${jobCount} ${jobCount === 1 ? 'job' : 'jobs'} before deleting this builder.`,
+      })
+      return
+    }
+
     setBuilders((current) =>
       current.filter((item) => item.id !== deleteTarget.id),
     )
@@ -382,7 +408,9 @@ export default function BuildersCatalog() {
             Builders
           </Typography>
           <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-            Manage builder companies and their primary contact information.
+            {onSelectBuilder
+              ? 'Select a builder to view its jobs, or manage the builder catalog.'
+              : 'Manage builder companies and their primary contact information.'}
           </Typography>
         </Box>
         <ResponsiveCreateButton
@@ -461,6 +489,7 @@ export default function BuildersCatalog() {
                   <TableCell>Primary contact</TableCell>
                   <TableCell>Phone</TableCell>
                   <TableCell>Address</TableCell>
+                  {getBuilderJobCount && <TableCell width={100}>Jobs</TableCell>}
                   <TableCell>Status</TableCell>
                   <TableCell align="right" width={72}>Actions</TableCell>
                 </TableRow>
@@ -470,7 +499,28 @@ export default function BuildersCatalog() {
                   <TableRow
                     key={builder.id}
                     hover
-                    sx={{ '&:last-child td': { borderBottom: 0 } }}
+                    {...(onSelectBuilder && {
+                      role: 'link',
+                      tabIndex: 0,
+                      'aria-label': `View jobs for ${builder.name}`,
+                      onClick: () => onSelectBuilder(builder),
+                      onKeyDown: (event) => {
+                        if (event.target === event.currentTarget && event.key === 'Enter') {
+                          onSelectBuilder(builder)
+                        }
+                      },
+                    })}
+                    sx={{
+                      cursor: onSelectBuilder ? 'pointer' : 'default',
+                      '&:last-child td': { borderBottom: 0 },
+                      ...(onSelectBuilder && {
+                        '&:focus-visible': {
+                          outline: '2px solid',
+                          outlineColor: 'primary.main',
+                          outlineOffset: -2,
+                        },
+                      }),
+                    }}
                   >
                     <TableCell>
                       <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center' }}>
@@ -520,6 +570,13 @@ export default function BuildersCatalog() {
                         {builder.address || 'No address'}
                       </Typography>
                     </TableCell>
+                    {getBuilderJobCount && (
+                      <TableCell>
+                        <Typography variant="body2" fontWeight={600}>
+                          {getBuilderJobCount(builder)}
+                        </Typography>
+                      </TableCell>
+                    )}
                     <TableCell>
                       <Chip
                         label={builder.isActive ? 'Active' : 'Inactive'}
@@ -549,7 +606,10 @@ export default function BuildersCatalog() {
 
                 {visibleBuilders.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={6} sx={{ py: 8, textAlign: 'center' }}>
+                    <TableCell
+                      colSpan={getBuilderJobCount ? 7 : 6}
+                      sx={{ py: 8, textAlign: 'center' }}
+                    >
                       <Box
                         sx={{
                           width: 48,
@@ -629,7 +689,9 @@ export default function BuildersCatalog() {
         <DialogContent>
           <Typography variant="body2" color="text.secondary">
             {deleteTarget
-              ? `${deleteTarget.name} (${deleteTarget.code}) will be removed from this catalog.`
+              ? deleteTargetJobCount > 0
+                ? `${deleteTarget.name} has ${deleteTargetJobCount} ${deleteTargetJobCount === 1 ? 'job' : 'jobs'}. Reassign or delete them before deleting this builder.`
+                : `${deleteTarget.name} (${deleteTarget.code}) will be removed from this catalog.`
               : ''}
           </Typography>
         </DialogContent>
@@ -637,7 +699,13 @@ export default function BuildersCatalog() {
           <Button color="inherit" onClick={() => setDeleteTarget(null)}>
             Cancel
           </Button>
-          <Button color="error" variant="contained" onClick={handleDelete} disableElevation>
+          <Button
+            color="error"
+            variant="contained"
+            onClick={handleDelete}
+            disabled={deleteTargetJobCount > 0}
+            disableElevation
+          >
             Delete builder
           </Button>
         </DialogActions>

@@ -6,7 +6,6 @@ import {
   Alert,
   Box,
   Button,
-  ButtonBase,
   Card,
   CardContent,
   Dialog,
@@ -34,25 +33,26 @@ import {
 } from '@mui/material'
 import AccountTreeRoundedIcon from '@mui/icons-material/AccountTreeRounded'
 import ApartmentRoundedIcon from '@mui/icons-material/ApartmentRounded'
-import BusinessRoundedIcon from '@mui/icons-material/BusinessRounded'
+import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded'
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined'
-import FilterListRoundedIcon from '@mui/icons-material/FilterListRounded'
 import HomeWorkRoundedIcon from '@mui/icons-material/HomeWorkRounded'
+import LayersRoundedIcon from '@mui/icons-material/LayersRounded'
 import MoreHorizRoundedIcon from '@mui/icons-material/MoreHorizRounded'
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
 import ResponsiveCreateButton from '../../../components/common/ResponsiveCreateButton'
+import { BuildersCatalog } from '../../builders/index.js'
+import { initialBuilders } from '../../builders/data/builders.js'
 import JobDetails from './JobDetails.jsx'
 import {
   emptyJob,
   getJobPlanCount,
   getJobUnitCount,
-  jobBuilderOptions,
 } from '../data/jobs.js'
 import { useJobs } from '../context/useJobs.js'
 import { createJobSchema } from '../schemas/jobSchema.js'
 
-function JobDialog({ job, jobs, onClose, onSave }) {
+function JobDialog({ builderOptions, defaultBuilder, job, jobs, onClose, onSave }) {
   const schema = useMemo(
     () => createJobSchema(jobs, job?.id),
     [job?.id, jobs],
@@ -69,11 +69,10 @@ function JobDialog({ job, jobs, onClose, onSave }) {
           code: job.code,
           builder: job.builder,
           community: job.community,
-          totalLots: job.totalLots ?? 0,
           supervisor: job.supervisor ?? '',
           jobsiteSuperintendent: job.jobsiteSuperintendent ?? '',
         }
-      : { ...emptyJob },
+      : { ...emptyJob, builder: defaultBuilder ?? '' },
     mode: 'onTouched',
     reValidateMode: 'onChange',
   })
@@ -123,7 +122,7 @@ function JobDialog({ job, jobs, onClose, onSave }) {
                         labelId="job-builder-label"
                         label="Builder / Client"
                       >
-                        {jobBuilderOptions.map((builder) => (
+                        {builderOptions.map((builder) => (
                           <MenuItem key={builder} value={builder}>
                             {builder}
                           </MenuItem>
@@ -147,15 +146,6 @@ function JobDialog({ job, jobs, onClose, onSave }) {
                   helperText={errors.community?.message ?? 'Example: Andara'}
                   fullWidth
                   slotProps={{ htmlInput: { maxLength: 100 } }}
-                />
-                <TextField
-                  label="Total lots"
-                  type="number"
-                  {...register('totalLots')}
-                  error={Boolean(errors.totalLots)}
-                  helperText={errors.totalLots?.message ?? 'Lots or units included in this Job.'}
-                  fullWidth
-                  slotProps={{ htmlInput: { min: 0, max: 100000, step: 1 } }}
                 />
               </Stack>
             </Stack>
@@ -236,8 +226,8 @@ function SummaryCard({ icon, label, value }) {
 export default function JobsCatalog() {
   const [searchParams, setSearchParams] = useSearchParams()
   const { jobs, setJobs } = useJobs()
+  const [builders, setBuilders] = useState(initialBuilders)
   const [search, setSearch] = useState('')
-  const [builderFilter, setBuilderFilter] = useState('all')
   const [page, setPage] = useState(0)
   const [rowsPerPage, setRowsPerPage] = useState(5)
   const [menuAnchor, setMenuAnchor] = useState(null)
@@ -249,56 +239,95 @@ export default function JobsCatalog() {
   const createRequested = searchParams.get('create') === '1'
   const dialogJob = editTarget ?? (createRequested ? null : undefined)
   const dialogOpen = createRequested || Boolean(editTarget)
+  const selectedBuilder = builders.find(
+    (builder) => String(builder.id) === searchParams.get('builder'),
+  )
+  const builderJobs = useMemo(
+    () => selectedBuilder
+      ? jobs.filter((job) => job.builder === selectedBuilder.name)
+      : [],
+    [jobs, selectedBuilder],
+  )
 
   const filteredJobs = useMemo(() => {
     const query = search.trim().toLowerCase()
 
-    return jobs.filter((job) => {
-      const matchesSearch =
-        !query ||
-        [
+    return builderJobs.filter((job) =>
+      !query ||
+      [
           job.code,
           job.community,
           job.builder,
           job.supervisor,
           job.jobsiteSuperintendent,
-        ]
-          .join(' ')
-          .toLowerCase()
-          .includes(query)
-      const matchesBuilder =
-        builderFilter === 'all' || job.builder === builderFilter
-
-      return matchesSearch && matchesBuilder
-    })
-  }, [builderFilter, jobs, search])
+      ]
+        .join(' ')
+        .toLowerCase()
+        .includes(query),
+    )
+  }, [builderJobs, search])
 
   const visibleJobs = filteredJobs.slice(
     page * rowsPerPage,
     page * rowsPerPage + rowsPerPage,
   )
-  const totalUnits = jobs.reduce((total, job) => total + getJobUnitCount(job), 0)
-  const builderCount = new Set(jobs.map((job) => job.builder)).size
-  const detailJob = jobs.find(
+  const totalUnits = builderJobs.reduce(
+    (total, job) => total + getJobUnitCount(job),
+    0,
+  )
+  const totalPlans = builderJobs.reduce(
+    (total, job) => total + getJobPlanCount(job),
+    0,
+  )
+  const detailJob = builderJobs.find(
     (job) => String(job.id) === searchParams.get('job'),
   )
+  const builderOptions = builders
+    .filter(
+      (builder) =>
+        builder.isActive ||
+        builder.name === selectedBuilder?.name ||
+        builder.name === editTarget?.builder,
+    )
+    .map((builder) => builder.name)
 
   useEffect(() => {
     window.scrollTo({ top: 0, left: 0 })
     document.querySelector('main > div')?.scrollTo({ top: 0, left: 0 })
-  }, [detailJob?.id])
+  }, [detailJob?.id, selectedBuilder?.id])
+
+  const openBuilderJobs = (builder) => {
+    setSearch('')
+    setPage(0)
+    setSearchParams({ builder: String(builder.id) })
+  }
+
+  const showBuilders = () => {
+    setSearch('')
+    setPage(0)
+    setSearchParams({}, { replace: true })
+  }
 
   const openCreateDialog = () => {
     setEditTarget(null)
-    setSearchParams({ create: '1' })
+    setSearchParams({
+      builder: String(selectedBuilder.id),
+      create: '1',
+    })
   }
 
   const closeDialog = () => {
     setEditTarget(null)
-    if (createRequested) setSearchParams({}, { replace: true })
+    if (createRequested) {
+      setSearchParams(
+        { builder: String(selectedBuilder.id) },
+        { replace: true },
+      )
+    }
   }
 
   const handleMenuOpen = (event, job) => {
+    event.stopPropagation()
     setMenuAnchor(event.currentTarget)
     setSelectedJob(job)
   }
@@ -309,7 +338,10 @@ export default function JobsCatalog() {
   }
 
   const openEditDialog = () => {
-    setSearchParams({}, { replace: true })
+    setSearchParams(
+      { builder: String(selectedBuilder.id) },
+      { replace: true },
+    )
     setEditTarget(selectedJob)
     handleMenuClose()
   }
@@ -320,7 +352,10 @@ export default function JobsCatalog() {
   }
 
   const openJobDetails = (job) => {
-    setSearchParams({ job: String(job.id) })
+    setSearchParams({
+      builder: String(selectedBuilder.id),
+      job: String(job.id),
+    })
   }
 
   const openSelectedJobDetails = () => {
@@ -364,11 +399,38 @@ export default function JobsCatalog() {
     setNotice({ severity: 'success', message: 'Job deleted.' })
   }
 
+  const handleBuilderRenamed = (previousName, nextName) => {
+    setJobs((current) =>
+      current.map((job) =>
+        job.builder === previousName ? { ...job, builder: nextName } : job,
+      ),
+    )
+  }
+
+  if (!selectedBuilder) {
+    return (
+      <BuildersCatalog
+        builders={builders}
+        setBuilders={setBuilders}
+        getBuilderJobCount={(builder) =>
+          jobs.filter((job) => job.builder === builder.name).length
+        }
+        onBuilderRenamed={handleBuilderRenamed}
+        onSelectBuilder={openBuilderJobs}
+      />
+    )
+  }
+
   if (detailJob) {
     return (
       <JobDetails
         job={detailJob}
-        onBack={() => setSearchParams({}, { replace: true })}
+        onBack={() =>
+          setSearchParams(
+            { builder: String(selectedBuilder.id) },
+            { replace: true },
+          )
+        }
         onChange={(updatedJob) => {
           setJobs((current) =>
             current.map((job) => (job.id === updatedJob.id ? updatedJob : job)),
@@ -394,14 +456,26 @@ export default function JobsCatalog() {
           flexDirection: { xs: 'column', sm: 'row' },
         }}
       >
-        <Box>
-          <Typography variant="h5" fontWeight={700} color="text.primary">
-            Jobs
-          </Typography>
-          <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-            Select a Job to manage its Plans and Options sequence sheet.
-          </Typography>
-        </Box>
+        <Stack direction="row" spacing={1.5} sx={{ alignItems: 'flex-start' }}>
+          <IconButton
+            aria-label="Back to builders"
+            onClick={showBuilders}
+            sx={{ mt: -0.5, ml: -1 }}
+          >
+            <ArrowBackRoundedIcon />
+          </IconButton>
+          <Box>
+            <Typography variant="caption" color="primary.main" fontWeight={700}>
+              Builders / {selectedBuilder.name} / Jobs
+            </Typography>
+            <Typography variant="h5" fontWeight={700} color="text.primary">
+              Jobs
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+              Select a job for {selectedBuilder.name} to manage its Plans &amp; Options.
+            </Typography>
+          </Box>
+        </Stack>
         <ResponsiveCreateButton
           label="New job"
           onClick={openCreateDialog}
@@ -410,9 +484,9 @@ export default function JobsCatalog() {
 
       <Box sx={{ p: { xs: 2.5, md: 4 } }}>
         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} sx={{ mb: 3 }}>
-          <SummaryCard icon={<HomeWorkRoundedIcon />} label="Total jobs" value={jobs.length} />
-          <SummaryCard icon={<BusinessRoundedIcon />} label="Builders" value={builderCount} />
-          <SummaryCard icon={<ApartmentRoundedIcon />} label="Lots / units" value={totalUnits} />
+          <SummaryCard icon={<HomeWorkRoundedIcon />} label="Jobs" value={builderJobs.length} />
+          <SummaryCard icon={<LayersRoundedIcon />} label="Plans" value={totalPlans} />
+          <SummaryCard icon={<ApartmentRoundedIcon />} label="Lots from phases" value={totalUnits} />
         </Stack>
 
         <Box
@@ -448,30 +522,6 @@ export default function JobsCatalog() {
                 },
               }}
             />
-            <FormControl size="small" sx={{ minWidth: 220 }}>
-              <InputLabel id="job-builder-filter-label">Builder</InputLabel>
-              <Select
-                labelId="job-builder-filter-label"
-                label="Builder"
-                value={builderFilter}
-                onChange={(event) => {
-                  setBuilderFilter(event.target.value)
-                  setPage(0)
-                }}
-                startAdornment={
-                  <InputAdornment position="start">
-                    <FilterListRoundedIcon fontSize="small" color="action" />
-                  </InputAdornment>
-                }
-              >
-                <MenuItem value="all">All builders</MenuItem>
-                {jobBuilderOptions.map((builder) => (
-                  <MenuItem key={builder} value={builder}>
-                    {builder}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
           </Stack>
 
           <TableContainer>
@@ -498,39 +548,54 @@ export default function JobsCatalog() {
               </TableHead>
               <TableBody>
                 {visibleJobs.map((job) => (
-                  <TableRow key={job.id} hover sx={{ '&:last-child td': { borderBottom: 0 } }}>
+                  <TableRow
+                    key={job.id}
+                    hover
+                    role="link"
+                    tabIndex={0}
+                    aria-label={`Open Job ${job.code}`}
+                    onClick={() => openJobDetails(job)}
+                    onKeyDown={(event) => {
+                      if (event.target === event.currentTarget && event.key === 'Enter') {
+                        openJobDetails(job)
+                      }
+                    }}
+                    sx={{
+                      cursor: 'pointer',
+                      '&:last-child td': { borderBottom: 0 },
+                      '&:focus-visible': {
+                        outline: '2px solid',
+                        outlineColor: 'primary.main',
+                        outlineOffset: -2,
+                      },
+                    }}
+                  >
                     <TableCell>
-                      <ButtonBase
-                        onClick={() => openJobDetails(job)}
-                        aria-label={`Open Job ${job.code}`}
-                        sx={{ borderRadius: 1.5, textAlign: 'left' }}
-                      >
-                        <Stack direction="row" spacing={1.25} sx={{ alignItems: 'center' }}>
-                          <Box
-                            sx={{
-                              width: 36,
-                              height: 36,
-                              borderRadius: 1.5,
-                              display: 'grid',
-                              placeItems: 'center',
-                              bgcolor: 'primary.light',
-                              color: 'primary.main',
-                              flexShrink: 0,
-                            }}
-                          >
-                            <AccountTreeRoundedIcon fontSize="small" />
-                          </Box>
-                          <Box>
-                            <Typography variant="body2" fontWeight={700} noWrap color="primary.main">
-                              {job.code}
-                            </Typography>
-                            <Typography variant="caption" color="text.secondary">
-                              {getJobPlanCount(job)}{' '}
-                              {getJobPlanCount(job) === 1 ? 'plan' : 'plans'}
-                            </Typography>
-                          </Box>
-                        </Stack>
-                      </ButtonBase>
+                      <Stack direction="row" spacing={1.25} sx={{ alignItems: 'center' }}>
+                        <Box
+                          sx={{
+                            width: 36,
+                            height: 36,
+                            borderRadius: 1.5,
+                            display: 'grid',
+                            placeItems: 'center',
+                            bgcolor: 'primary.light',
+                            color: 'primary.main',
+                            flexShrink: 0,
+                          }}
+                        >
+                          <AccountTreeRoundedIcon fontSize="small" />
+                        </Box>
+                        <Box>
+                          <Typography variant="body2" fontWeight={700} noWrap color="primary.main">
+                            {job.code}
+                          </Typography>
+                          <Typography variant="caption" color="text.secondary">
+                            {getJobPlanCount(job)}{' '}
+                            {getJobPlanCount(job) === 1 ? 'plan' : 'plans'}
+                          </Typography>
+                        </Box>
+                      </Stack>
                     </TableCell>
                     <TableCell>
                       <Typography variant="body2" fontWeight={600} noWrap>
@@ -577,7 +642,9 @@ export default function JobsCatalog() {
                       <SearchRoundedIcon color="action" sx={{ fontSize: 40, mb: 1 }} />
                       <Typography fontWeight={600}>No jobs found</Typography>
                       <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-                        Try changing your search or builder filter.
+                        {search
+                          ? 'Try changing your search.'
+                          : `Create the first job for ${selectedBuilder.name}.`}
                       </Typography>
                     </TableCell>
                   </TableRow>
@@ -610,7 +677,7 @@ export default function JobsCatalog() {
       >
         <MenuItem onClick={openSelectedJobDetails}>
           <AccountTreeRoundedIcon fontSize="small" sx={{ mr: 1.25 }} />
-          View sequence sheet
+          View Plans & Options for job #{selectedJob?.code}
         </MenuItem>
         <MenuItem onClick={openEditDialog}>
           <EditOutlinedIcon fontSize="small" sx={{ mr: 1.25 }} />
@@ -625,6 +692,8 @@ export default function JobsCatalog() {
       {dialogOpen && (
         <JobDialog
           key={dialogJob?.id ?? 'new'}
+          builderOptions={builderOptions}
+          defaultBuilder={selectedBuilder.name}
           job={dialogJob}
           jobs={jobs}
           onClose={closeDialog}

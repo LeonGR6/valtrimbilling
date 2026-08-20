@@ -50,6 +50,7 @@ import ExpandMoreRoundedIcon from '@mui/icons-material/ExpandMoreRounded'
 import FolderRoundedIcon from '@mui/icons-material/FolderRounded'
 import FormatListNumberedRoundedIcon from '@mui/icons-material/FormatListNumberedRounded'
 import HomeWorkRoundedIcon from '@mui/icons-material/HomeWorkRounded'
+import EditOutlinedIcon from '@mui/icons-material/EditOutlined'
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
 import TableChartRoundedIcon from '@mui/icons-material/TableChartRounded'
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
@@ -71,6 +72,15 @@ const emptyLot = {
   planId: '',
   reverse: false,
   optionIds: [],
+}
+
+function assignLotIds(lots) {
+  let nextLotId = Date.now()
+
+  return lots.map((lot) => ({
+    ...lot,
+    id: lot.id ?? nextLotId++,
+  }))
 }
 
 function SummaryCard({ icon, value, label }) {
@@ -116,7 +126,7 @@ function getPlan(job, planId) {
   )
 }
 
-function PhaseCard({ phase, onOpen }) {
+function PhaseCard({ phase, onDelete, onEdit, onOpen }) {
   const phaseLabel = formatPhase(phase.name)
   const buildingLabel = formatBuilding(phase.building)
   const selectedOptionCount = (phase.lots ?? []).reduce(
@@ -146,10 +156,12 @@ function PhaseCard({ phase, onOpen }) {
       >
         <Stack
           direction={{ xs: 'column', sm: 'row' }}
-          alignItems={{ xs: 'flex-start', sm: 'center' }}
-          justifyContent="space-between"
           spacing={1.5}
-          sx={{ width: '100%' }}
+          sx={{
+            width: '100%',
+            alignItems: { xs: 'flex-start', sm: 'center' },
+            justifyContent: 'space-between',
+          }}
         >
           <Box>
             <Typography fontWeight={750}>{phaseLabel}</Typography>
@@ -157,7 +169,12 @@ function PhaseCard({ phase, onOpen }) {
               {buildingLabel} · Created {phase.createdAt}
             </Typography>
           </Box>
-          <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
+          <Stack
+            direction="row"
+            spacing={1}
+            useFlexGap
+            sx={{ alignItems: 'center', flexWrap: 'wrap' }}
+          >
             <Chip size="small" variant="outlined" label={formatBuilding(phase.building, 'short')} />
             <Chip size="small" label={`${phase.lots?.length ?? 0} lots`} />
             <Chip size="small" variant="outlined" label={`${selectedOptionCount} selected options`} />
@@ -165,11 +182,34 @@ function PhaseCard({ phase, onOpen }) {
           </Stack>
         </Stack>
       </ButtonBase>
+      <Divider />
+      <Stack
+        direction="row"
+        spacing={1}
+        sx={{ px: 1.5, py: 1, justifyContent: 'flex-end' }}
+      >
+        <Button
+          size="small"
+          color="inherit"
+          startIcon={<EditOutlinedIcon />}
+          onClick={onEdit}
+        >
+          Edit phase
+        </Button>
+        <Button
+          size="small"
+          color="error"
+          startIcon={<DeleteOutlineRoundedIcon />}
+          onClick={onDelete}
+        >
+          Delete phase
+        </Button>
+      </Stack>
     </Card>
   )
 }
 
-function PhaseDetails({ job, phase, onBack }) {
+function PhaseDetails({ job, phase, onBack, onDelete, onEdit }) {
   const phaseLabel = formatPhase(phase.name)
   const buildingLabel = formatBuilding(phase.building)
   const selectedOptionCount = (phase.lots ?? []).reduce(
@@ -198,9 +238,11 @@ function PhaseDetails({ job, phase, onBack }) {
         </Button>
         <Stack
           direction={{ xs: 'column', sm: 'row' }}
-          alignItems={{ xs: 'flex-start', sm: 'center' }}
-          justifyContent="space-between"
           spacing={2}
+          sx={{
+            alignItems: { xs: 'flex-start', sm: 'center' },
+            justifyContent: 'space-between',
+          }}
         >
           <Box>
             <Typography variant="overline" color="text.secondary" fontWeight={700}>
@@ -213,10 +255,32 @@ function PhaseDetails({ job, phase, onBack }) {
               {buildingLabel} · {job.builder}
             </Typography>
           </Box>
-          <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-            <Chip color="primary" variant="outlined" label={formatBuilding(phase.building, 'short')} />
-            <Chip label={`${phase.lots?.length ?? 0} lots`} />
-            <Chip variant="outlined" label={`${selectedOptionCount} selected options`} />
+          <Stack spacing={1.25} sx={{ alignItems: { xs: 'flex-start', sm: 'flex-end' } }}>
+            <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: 'wrap' }}>
+              <Chip color="primary" variant="outlined" label={formatBuilding(phase.building, 'short')} />
+              <Chip label={`${phase.lots?.length ?? 0} lots`} />
+              <Chip variant="outlined" label={`${selectedOptionCount} selected options`} />
+            </Stack>
+            <Stack direction="row" spacing={1}>
+              <Button
+                size="small"
+                variant="outlined"
+                color="inherit"
+                startIcon={<EditOutlinedIcon />}
+                onClick={onEdit}
+              >
+                Edit phase
+              </Button>
+              <Button
+                size="small"
+                variant="outlined"
+                color="error"
+                startIcon={<DeleteOutlineRoundedIcon />}
+                onClick={onDelete}
+              >
+                Delete phase
+              </Button>
+            </Stack>
           </Stack>
         </Stack>
       </Box>
@@ -265,7 +329,7 @@ function PhaseDetails({ job, phase, onBack }) {
                       </TableCell>
                       <TableCell sx={{ minWidth: 320 }}>
                         {options.length > 0 ? (
-                          <Stack direction="row" spacing={0.75} flexWrap="wrap" useFlexGap>
+                          <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: 'wrap' }}>
                             {options.map((option) => (
                               <Chip
                                 key={option.id}
@@ -311,11 +375,15 @@ function LotEditor({ index, fieldId, job, control, register, errors, setValue, r
     >
       <Stack
         direction="row"
-        alignItems="center"
-        justifyContent="space-between"
-        sx={{ px: 2, py: 1.25, bgcolor: 'action.hover' }}
+        sx={{
+          px: 2,
+          py: 1.25,
+          bgcolor: 'action.hover',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+        }}
       >
-        <Stack direction="row" alignItems="center" spacing={1}>
+        <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
           <Box
             sx={{
               width: 26,
@@ -351,7 +419,11 @@ function LotEditor({ index, fieldId, job, control, register, errors, setValue, r
       </Stack>
 
       <Stack spacing={2.25} sx={{ p: 2 }}>
-        <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} alignItems={{ md: 'flex-start' }}>
+        <Stack
+          direction={{ xs: 'column', md: 'row' }}
+          spacing={2}
+          sx={{ alignItems: { md: 'flex-start' } }}
+        >
           <TextField
             label="Lot"
             placeholder="Lot #"
@@ -494,10 +566,13 @@ function LotEditor({ index, fieldId, job, control, register, errors, setValue, r
   )
 }
 
-function CreatePhaseDialog({ job, onClose, onCreate }) {
+function PhaseDialog({ job, phase, onClose, onSave }) {
   const [lotRange, setLotRange] = useState('')
   const [lotRangeError, setLotRangeError] = useState('')
-  const schema = useMemo(() => createPhaseByLotSchema(job), [job])
+  const schema = useMemo(
+    () => createPhaseByLotSchema(job, phase?.id),
+    [job, phase?.id],
+  )
   const {
     control,
     register,
@@ -507,11 +582,27 @@ function CreatePhaseDialog({ job, onClose, onCreate }) {
     formState: { errors },
   } = useForm({
     resolver: zodResolver(schema),
-    defaultValues: { phaseName: '', building: '', lots: [{ ...emptyLot }] },
+    defaultValues: phase
+      ? {
+          phaseName: phase.name,
+          building: phase.building,
+          lots: (phase.lots ?? []).map((lot) => ({
+            id: lot.id,
+            lotNumber: lot.lotNumber,
+            planId: lot.planId,
+            reverse: lot.reverse ?? false,
+            optionIds: [...(lot.optionIds ?? [])],
+          })),
+        }
+      : { phaseName: '', building: '', lots: [{ ...emptyLot }] },
     mode: 'onTouched',
     reValidateMode: 'onChange',
   })
-  const { fields, append, remove, replace } = useFieldArray({ control, name: 'lots' })
+  const { fields, append, remove, replace } = useFieldArray({
+    control,
+    name: 'lots',
+    keyName: 'fieldKey',
+  })
   const hasPlans = (job.sequenceSheet?.plans?.length ?? 0) > 0
 
   const addLotRange = () => {
@@ -574,7 +665,7 @@ function CreatePhaseDialog({ job, onClose, onCreate }) {
       fullWidth
       maxWidth="lg"
       component="form"
-      onSubmit={handleSubmit(onCreate)}
+      onSubmit={handleSubmit(onSave)}
       noValidate
       slotProps={{
         paper: {
@@ -588,14 +679,16 @@ function CreatePhaseDialog({ job, onClose, onCreate }) {
     >
       <DialogTitle sx={{ pr: 7, pb: 1 }}>
         <Typography variant="h6" component="div" fontWeight={750}>
-          Create Phase
+          {phase ? `Edit ${formatPhase(phase.name)}` : 'Create Phase'}
         </Typography>
         <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-          Assign every lot to one of Job #{job.code}&apos;s plans and select its applicable options.
+          {phase
+            ? `Update its Building and lot assignments for Job #${job.code}.`
+            : `Assign every lot to one of Job #${job.code}'s plans and select its applicable options.`}
         </Typography>
         <IconButton
           onClick={onClose}
-          aria-label="Close create phase dialog"
+          aria-label={phase ? 'Close edit phase dialog' : 'Close create phase dialog'}
           sx={{ position: 'absolute', right: 16, top: 14 }}
         >
           <CloseRoundedIcon />
@@ -615,9 +708,8 @@ function CreatePhaseDialog({ job, onClose, onCreate }) {
           >
             <Stack
               direction={{ xs: 'column', md: 'row' }}
-              alignItems={{ md: 'center' }}
-              justifyContent="space-between"
               spacing={2}
+              sx={{ alignItems: { md: 'center' }, justifyContent: 'space-between' }}
             >
               <Box>
                 <Typography variant="overline" color="text.secondary" fontWeight={700}>
@@ -630,7 +722,11 @@ function CreatePhaseDialog({ job, onClose, onCreate }) {
                   {getJobPlanCount(job)} plans available
                 </Typography>
               </Box>
-              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} alignItems={{ sm: 'flex-start' }}>
+              <Stack
+                direction={{ xs: 'column', sm: 'row' }}
+                spacing={1.5}
+                sx={{ alignItems: { sm: 'flex-start' } }}
+              >
                 <TextField
                   label="Phase number / code"
                   placeholder="Example: 3"
@@ -674,7 +770,7 @@ function CreatePhaseDialog({ job, onClose, onCreate }) {
             <Stack
               direction={{ xs: 'column', sm: 'row' }}
               spacing={1.5}
-              alignItems={{ sm: 'flex-start' }}
+              sx={{ alignItems: { sm: 'flex-start' } }}
             >
               <Box sx={{ flex: 1 }}>
                 <Typography variant="subtitle2" fontWeight={750}>
@@ -718,7 +814,7 @@ function CreatePhaseDialog({ job, onClose, onCreate }) {
 
           {!hasPlans && (
             <Alert severity="warning">
-              This Job has no plans yet. Add at least one plan from Jobs before creating a phase.
+              This Job has no plans yet. Add at least one plan from Jobs before saving a phase.
             </Alert>
           )}
 
@@ -729,8 +825,8 @@ function CreatePhaseDialog({ job, onClose, onCreate }) {
           <Stack spacing={2}>
             {fields.map((field, index) => (
               <LotEditor
-                key={field.id}
-                fieldId={field.id}
+                key={field.fieldKey}
+                fieldId={field.fieldKey}
                 index={index}
                 job={job}
                 control={control}
@@ -761,10 +857,60 @@ function CreatePhaseDialog({ job, onClose, onCreate }) {
           Cancel
         </Button>
         <Button type="submit" variant="contained" disableElevation disabled={!hasPlans}>
-          Create phase
+          {phase ? 'Save changes' : 'Create phase'}
         </Button>
       </DialogActions>
     </Dialog>
+  )
+}
+
+function PhaseDeleteDialog({ target, onClose, onDelete }) {
+  const lotCount = target?.phase.lots?.length ?? 0
+  const selectedOptionCount = (target?.phase.lots ?? []).reduce(
+    (total, lot) => total + (lot.optionIds?.length ?? 0),
+    0,
+  )
+
+  return (
+    <Dialog open={Boolean(target)} onClose={onClose} fullWidth maxWidth="xs">
+      <DialogTitle>Delete {target ? formatPhase(target.phase.name) : 'phase'}?</DialogTitle>
+      <DialogContent>
+        <Stack spacing={2}>
+          <Alert severity="warning">
+            This will permanently remove {lotCount} {lotCount === 1 ? 'lot assignment' : 'lot assignments'}
+            {selectedOptionCount > 0
+              ? ` and ${selectedOptionCount} selected ${selectedOptionCount === 1 ? 'option' : 'options'}`
+              : ''}.
+          </Alert>
+          <Typography variant="body2" color="text.secondary">
+            The Job Total Lots will be recalculated immediately after deletion.
+          </Typography>
+        </Stack>
+      </DialogContent>
+      <DialogActions sx={{ px: 3, pb: 2.5 }}>
+        <Button color="inherit" onClick={onClose}>Cancel</Button>
+        <Button color="error" variant="contained" onClick={onDelete} disableElevation>
+          Delete phase
+        </Button>
+      </DialogActions>
+    </Dialog>
+  )
+}
+
+function NoticeSnackbar({ notice, onClose }) {
+  return (
+    <Snackbar
+      open={Boolean(notice)}
+      autoHideDuration={4000}
+      onClose={onClose}
+      anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+    >
+      {notice ? (
+        <Alert severity={notice.severity} onClose={onClose} variant="filled">
+          {notice.message}
+        </Alert>
+      ) : undefined}
+    </Snackbar>
   )
 }
 
@@ -774,6 +920,8 @@ export default function SequenceSheets() {
   const [search, setSearch] = useState('')
   const [expandedJobId, setExpandedJobId] = useState(jobs[0]?.id ?? null)
   const [dialogJobId, setDialogJobId] = useState(null)
+  const [dialogPhaseId, setDialogPhaseId] = useState(null)
+  const [deleteTarget, setDeleteTarget] = useState(null)
   const [notice, setNotice] = useState(null)
 
   const filteredJobs = useMemo(() => {
@@ -797,6 +945,9 @@ export default function SequenceSheets() {
     0,
   )
   const dialogJob = jobs.find((job) => job.id === dialogJobId)
+  const dialogPhase = dialogJob?.sequenceSheet?.phases?.find(
+    (phase) => phase.id === dialogPhaseId,
+  )
   const detailJob = jobs.find(
     (job) => String(job.id) === searchParams.get('job'),
   )
@@ -808,19 +959,30 @@ export default function SequenceSheets() {
     event.stopPropagation()
     setExpandedJobId(job.id)
     setDialogJobId(job.id)
+    setDialogPhaseId(null)
   }
 
-  const createPhase = (form) => {
-    const phaseId = Date.now()
-    const phase = {
+  const openEdit = (job, phase) => {
+    setExpandedJobId(job.id)
+    setDialogJobId(job.id)
+    setDialogPhaseId(phase.id)
+  }
+
+  const closePhaseDialog = () => {
+    setDialogJobId(null)
+    setDialogPhaseId(null)
+  }
+
+  const savePhase = (form) => {
+    const isEditing = Boolean(dialogPhase)
+    const phaseId = dialogPhase?.id ?? Date.now()
+    const savedPhase = {
+      ...dialogPhase,
       id: phaseId,
       name: form.phaseName,
       building: form.building,
-      createdAt: new Date().toISOString().slice(0, 10),
-      lots: form.lots.map((lot, index) => ({
-        ...lot,
-        id: phaseId + index + 1,
-      })),
+      createdAt: dialogPhase?.createdAt ?? new Date().toISOString().slice(0, 10),
+      lots: assignLotIds(form.lots),
     }
 
     setJobs((current) =>
@@ -830,26 +992,80 @@ export default function SequenceSheets() {
               ...job,
               sequenceSheet: {
                 ...job.sequenceSheet,
-                phases: [...(job.sequenceSheet?.phases ?? []), phase],
+                phases: isEditing
+                  ? (job.sequenceSheet?.phases ?? []).map((phase) =>
+                      phase.id === phaseId ? savedPhase : phase,
+                    )
+                  : [...(job.sequenceSheet?.phases ?? []), savedPhase],
               },
             }
           : job,
       ),
     )
-    setDialogJobId(null)
+    closePhaseDialog()
     setNotice({
       severity: 'success',
-      message: `${formatPhase(form.phaseName)} created with ${form.lots.length} lot${form.lots.length === 1 ? '' : 's'}.`,
+      message: `${formatPhase(form.phaseName)} ${isEditing ? 'updated' : 'created'} with ${form.lots.length} lot${form.lots.length === 1 ? '' : 's'}. Total Lots updated.`,
     })
+  }
+
+  const deletePhase = () => {
+    if (!deleteTarget) return
+
+    setJobs((current) =>
+      current.map((job) =>
+        job.id === deleteTarget.jobId
+          ? {
+              ...job,
+              sequenceSheet: {
+                ...job.sequenceSheet,
+                phases: (job.sequenceSheet?.phases ?? []).filter(
+                  (phase) => phase.id !== deleteTarget.phase.id,
+                ),
+              },
+            }
+          : job,
+      ),
+    )
+    if (
+      String(deleteTarget.jobId) === searchParams.get('job') &&
+      String(deleteTarget.phase.id) === searchParams.get('phase')
+    ) {
+      setSearchParams({}, { replace: true })
+    }
+    setNotice({
+      severity: 'success',
+      message: `${formatPhase(deleteTarget.phase.name)} deleted. Total Lots updated.`,
+    })
+    setDeleteTarget(null)
   }
 
   if (detailJob && detailPhase) {
     return (
-      <PhaseDetails
-        job={detailJob}
-        phase={detailPhase}
-        onBack={() => setSearchParams({}, { replace: true })}
-      />
+      <>
+        <PhaseDetails
+          job={detailJob}
+          phase={detailPhase}
+          onBack={() => setSearchParams({}, { replace: true })}
+          onEdit={() => openEdit(detailJob, detailPhase)}
+          onDelete={() => setDeleteTarget({ jobId: detailJob.id, phase: detailPhase })}
+        />
+        {dialogJob && (
+          <PhaseDialog
+            key={dialogPhase?.id ?? `new-phase-${dialogJob.id}`}
+            job={dialogJob}
+            phase={dialogPhase}
+            onClose={closePhaseDialog}
+            onSave={savePhase}
+          />
+        )}
+        <PhaseDeleteDialog
+          target={deleteTarget}
+          onClose={() => setDeleteTarget(null)}
+          onDelete={deletePhase}
+        />
+        <NoticeSnackbar notice={notice} onClose={() => setNotice(null)} />
+      </>
     )
   }
 
@@ -917,7 +1133,10 @@ export default function SequenceSheets() {
                   '&::before': { display: 'none' },
                 }}
               >
-                <Stack direction={{ xs: 'column', md: 'row' }} alignItems={{ md: 'center' }}>
+                <Stack
+                  direction={{ xs: 'column', md: 'row' }}
+                  sx={{ alignItems: { md: 'center' } }}
+                >
                   <AccordionSummary
                     expandIcon={<ExpandMoreRoundedIcon />}
                     aria-controls={`job-${job.id}-phases`}
@@ -931,12 +1150,20 @@ export default function SequenceSheets() {
                   >
                     <Stack
                       direction={{ xs: 'column', sm: 'row' }}
-                      alignItems={{ xs: 'flex-start', sm: 'center' }}
-                      justifyContent="space-between"
                       spacing={1.5}
-                      sx={{ width: '100%', pr: 1, minWidth: 0 }}
+                      sx={{
+                        width: '100%',
+                        pr: 1,
+                        minWidth: 0,
+                        alignItems: { xs: 'flex-start', sm: 'center' },
+                        justifyContent: 'space-between',
+                      }}
                     >
-                      <Stack direction="row" spacing={1.5} alignItems="center" minWidth={0}>
+                      <Stack
+                        direction="row"
+                        spacing={1.5}
+                        sx={{ alignItems: 'center', minWidth: 0 }}
+                      >
                         <Box
                           sx={{
                             width: 44,
@@ -951,7 +1178,7 @@ export default function SequenceSheets() {
                         >
                           <HomeWorkRoundedIcon />
                         </Box>
-                        <Box minWidth={0}>
+                        <Box sx={{ minWidth: 0 }}>
                           <Typography fontWeight={800}>Job #{job.code}</Typography>
                           <Typography variant="body2" color="text.secondary" noWrap>
                             {job.community} · {job.builder}
@@ -959,7 +1186,12 @@ export default function SequenceSheets() {
                         </Box>
                       </Stack>
 
-                      <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
+                      <Stack
+                        direction="row"
+                        spacing={1}
+                        useFlexGap
+                        sx={{ alignItems: 'center', flexWrap: 'wrap' }}
+                      >
                         <Chip size="small" icon={<FormatListNumberedRoundedIcon />} label={`${getJobPlanCount(job)} plans`} />
                         <Chip size="small" variant="outlined" label={`${phases.length} phases`} />
                       </Stack>
@@ -985,6 +1217,8 @@ export default function SequenceSheets() {
                       <PhaseCard
                         key={phase.id}
                         phase={phase}
+                        onEdit={() => openEdit(job, phase)}
+                        onDelete={() => setDeleteTarget({ jobId: job.id, phase })}
                         onOpen={() =>
                           setSearchParams({
                             job: String(job.id),
@@ -1036,25 +1270,21 @@ export default function SequenceSheets() {
       </Box>
 
       {dialogJob && (
-        <CreatePhaseDialog
+        <PhaseDialog
+          key={dialogPhase?.id ?? `new-phase-${dialogJob.id}`}
           job={dialogJob}
-          onClose={() => setDialogJobId(null)}
-          onCreate={createPhase}
+          phase={dialogPhase}
+          onClose={closePhaseDialog}
+          onSave={savePhase}
         />
       )}
 
-      <Snackbar
-        open={Boolean(notice)}
-        autoHideDuration={4000}
-        onClose={() => setNotice(null)}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
-      >
-        {notice ? (
-          <Alert severity={notice.severity} onClose={() => setNotice(null)} variant="filled">
-            {notice.message}
-          </Alert>
-        ) : undefined}
-      </Snackbar>
+      <PhaseDeleteDialog
+        target={deleteTarget}
+        onClose={() => setDeleteTarget(null)}
+        onDelete={deletePhase}
+      />
+      <NoticeSnackbar notice={notice} onClose={() => setNotice(null)} />
     </Box>
   )
 }

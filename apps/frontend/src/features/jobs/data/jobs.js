@@ -3,32 +3,40 @@ const andaraSequencePlans = [
     id: 1101,
     code: '1',
     name: 'Plan 1',
+    price: 2621,
     options: [
-      { id: 110101, code: '1-OPT', description: '1 - Door at Primary Bath' },
+      {
+        id: 110101,
+        code: '1-OPT',
+        description: '1 - Door at Primary Bath',
+        price: null,
+      },
     ],
   },
   {
     id: 1102,
     code: '2',
     name: 'Plan 2',
+    price: null,
     options: [
-      { id: 110201, code: '2-OPT', description: '2 - Door at Primary Bath' },
-      { id: 110202, code: '2-OPT', description: '2 - FLEX ROOM' },
-      { id: 110203, code: '2-ADA', description: 'UNIT 2X ADA' },
-      { id: 110204, code: '2-ADA-OPT', description: '2 - Door at Primary Bath' },
-      { id: 110205, code: '2-ADA-OPT', description: '2X - FLEX ROOM' },
+      { id: 110201, code: '2-OPT', description: '2 - Door at Primary Bath', price: null },
+      { id: 110202, code: '2-OPT', description: '2 - FLEX ROOM', price: null },
+      { id: 110203, code: '2-ADA', description: 'UNIT 2X ADA', price: null },
+      { id: 110204, code: '2-ADA-OPT', description: '2 - Door at Primary Bath', price: null },
+      { id: 110205, code: '2-ADA-OPT', description: '2X - FLEX ROOM', price: null },
     ],
   },
   {
     id: 1103,
     code: '3',
     name: 'Plan 3',
+    price: null,
     options: [
-      { id: 110301, code: '3-OPT', description: '3 - Door at Primary Bath' },
-      { id: 110302, code: '3-OPT', description: 'No MDF Shelf laundry' },
-      { id: 110303, code: '3-W/UTI', description: '3 - W/UTI' },
-      { id: 110304, code: '3-W/UTI-OPT', description: '3 - Door at Primary Bath' },
-      { id: 110305, code: '3-W/UTI-OPT', description: 'No MDF Shelf laundry' },
+      { id: 110301, code: '3-OPT', description: '3 - Door at Primary Bath', price: null },
+      { id: 110302, code: '3-OPT', description: 'No MDF Shelf laundry', price: null },
+      { id: 110303, code: '3-W/UTI', description: '3 - W/UTI', price: null },
+      { id: 110304, code: '3-W/UTI-OPT', description: '3 - Door at Primary Bath', price: null },
+      { id: 110305, code: '3-W/UTI-OPT', description: 'No MDF Shelf laundry', price: null },
     ],
   },
 ]
@@ -48,7 +56,6 @@ export const initialJobs = [
     community: 'Andara',
     supervisor: 'Valtrim Supervisor',
     jobsiteSuperintendent: 'Superintendent example',
-    totalLots: 24,
     sequenceSheet: {
       id: 1001,
       name: 'Options Sequence Sheet',
@@ -86,14 +93,13 @@ export const initialJobs = [
     community: 'Cedar Grove',
     supervisor: 'Lauren Mitchell',
     jobsiteSuperintendent: 'Andrea Collins',
-    totalLots: 10,
     sequenceSheet: {
       id: 1002,
       name: 'Options Sequence Sheet',
       plans: [
-        { id: 1201, code: '1A', name: 'Plan 1A', options: [] },
-        { id: 1202, code: '1B', name: 'Plan 1B', options: [] },
-        { id: 1203, code: '2A', name: 'Plan 2A', options: [] },
+        { id: 1201, code: '1A', name: 'Plan 1A', price: 2621, options: [] },
+        { id: 1202, code: '1B', name: 'Plan 1B', price: 2621, options: [] },
+        { id: 1203, code: '2A', name: 'Plan 2A', price: 4507, options: [] },
       ],
       phases: [],
     },
@@ -105,11 +111,10 @@ export const initialJobs = [
     community: 'Stonebrook',
     supervisor: 'Robert King',
     jobsiteSuperintendent: 'Daniel Torres',
-    totalLots: 1,
     sequenceSheet: {
       id: 1003,
       name: 'Options Sequence Sheet',
-      plans: [{ id: 1301, code: '1', name: 'Plan 1', options: [] }],
+      plans: [{ id: 1301, code: '1', name: 'Plan 1', price: null, options: [] }],
       phases: [],
     },
   },
@@ -120,7 +125,6 @@ export const initialJobs = [
     community: 'Sky',
     supervisor: 'Robert King',
     jobsiteSuperintendent: 'Sky superintendent',
-    totalLots: 8,
     sequenceSheet: {
       id: 1004,
       name: 'Options Sequence Sheet',
@@ -136,7 +140,6 @@ export const emptyJob = {
   community: '',
   supervisor: '',
   jobsiteSuperintendent: '',
-  totalLots: '',
 }
 
 export const emptyJobPlan = {
@@ -150,8 +153,7 @@ export const emptyPlanOption = {
 }
 
 export function getJobUnitCount(job) {
-  const total = Number(job.totalLots)
-  return Number.isInteger(total) && total >= 0 ? total : 0
+  return getJobAssignedLotCount(job)
 }
 
 export function getJobPlanCount(job) {
@@ -177,6 +179,41 @@ export function getJobAssignedLotCount(job) {
   return (job.sequenceSheet?.phases ?? []).reduce(
     (total, phase) => total + (phase.lots?.length ?? 0),
     0,
+  )
+}
+
+function getJobLotDependencies(job, predicate) {
+  return (job.sequenceSheet?.phases ?? []).flatMap((phase) =>
+    (phase.lots ?? [])
+      .filter(predicate)
+      .map((lot) => ({
+        phaseId: phase.id,
+        phaseName: phase.name,
+        building: phase.building,
+        lotId: lot.id,
+        lotNumber: lot.lotNumber,
+      })),
+  )
+}
+
+export function getPlanLotDependencies(job, planId) {
+  const plan = (job.sequenceSheet?.plans ?? []).find(
+    (item) => item.id === planId,
+  )
+  const planOptionIds = new Set((plan?.options ?? []).map((option) => option.id))
+
+  return getJobLotDependencies(
+    job,
+    (lot) =>
+      lot.planId === planId ||
+      (lot.optionIds ?? []).some((optionId) => planOptionIds.has(optionId)),
+  )
+}
+
+export function getOptionLotDependencies(job, optionId) {
+  return getJobLotDependencies(
+    job,
+    (lot) => (lot.optionIds ?? []).includes(optionId),
   )
 }
 

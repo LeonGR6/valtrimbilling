@@ -30,6 +30,7 @@ import {
   Typography,
 } from '@mui/material'
 import BusinessRoundedIcon from '@mui/icons-material/BusinessRounded'
+import ArrowForwardRoundedIcon from '@mui/icons-material/ArrowForwardRounded'
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined'
 import FilterListRoundedIcon from '@mui/icons-material/FilterListRounded'
@@ -269,6 +270,7 @@ export default function BuildersCatalog({
   onBuilderRenamed,
   onSelectBuilder,
 }) {
+  const isJobsEntry = Boolean(onSelectBuilder)
   const [localBuilders, setLocalBuilders] = useState(initialBuilders)
   const builders = controlledBuilders ?? localBuilders
   const setBuilders = setControlledBuilders ?? setLocalBuilders
@@ -404,12 +406,22 @@ export default function BuildersCatalog({
         }}
       >
         <Box>
+          {isJobsEntry && (
+            <Typography
+              variant="caption"
+              color="primary.main"
+              fontWeight={700}
+              sx={{ display: 'block', mb: 0.5, letterSpacing: '0.04em' }}
+            >
+              JOBS / BUILDERS
+            </Typography>
+          )}
           <Typography variant="h5" fontWeight={700} color="text.primary">
-            Builders
+            {isJobsEntry ? 'Choose a builder' : 'Builders'}
           </Typography>
           <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-            {onSelectBuilder
-              ? 'Select a builder to view its jobs, or manage the builder catalog.'
+            {isJobsEntry
+              ? 'You are in Jobs. Jobs are grouped by builder, so select one to continue.'
               : 'Manage builder companies and their primary contact information.'}
           </Typography>
         </Box>
@@ -429,6 +441,16 @@ export default function BuildersCatalog({
             overflow: 'hidden',
           }}
         >
+          {isJobsEntry && (
+            <Box sx={{ px: 2.5, py: 2, borderBottom: 1, borderColor: 'divider' }}>
+              <Typography variant="subtitle1" fontWeight={700}>
+                Builders
+              </Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mt: 0.25 }}>
+                Select a builder below to see the jobs assigned to it.
+              </Typography>
+            </Box>
+          )}
           <Stack
             direction={{ xs: 'column', md: 'row' }}
             spacing={1.5}
@@ -572,9 +594,18 @@ export default function BuildersCatalog({
                     </TableCell>
                     {getBuilderJobCount && (
                       <TableCell>
-                        <Typography variant="body2" fontWeight={600}>
-                          {getBuilderJobCount(builder)}
-                        </Typography>
+                        <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+                          <Typography variant="body2" fontWeight={600}>
+                            {getBuilderJobCount(builder)}
+                          </Typography>
+                          {isJobsEntry && (
+                            <ArrowForwardRoundedIcon
+                              color="primary"
+                              sx={{ fontSize: 18 }}
+                              aria-hidden="true"
+                            />
+                          )}
+                        </Stack>
                       </TableCell>
                     )}
                     <TableCell>

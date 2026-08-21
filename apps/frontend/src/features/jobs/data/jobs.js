@@ -51,6 +51,7 @@ export const jobBuilderOptions = [
 export const initialJobs = [
   {
     id: 1,
+    builderId: 2,
     code: '1307',
     builder: 'Trumark Homes',
     community: 'Andara',
@@ -88,6 +89,7 @@ export const initialJobs = [
   },
   {
     id: 2,
+    builderId: 1,
     code: '1308',
     builder: 'City Ventures',
     community: 'Cedar Grove',
@@ -106,6 +108,7 @@ export const initialJobs = [
   },
   {
     id: 3,
+    builderId: 4,
     code: '1309',
     builder: 'KB Home',
     community: 'Stonebrook',
@@ -120,6 +123,7 @@ export const initialJobs = [
   },
   {
     id: 4,
+    builderId: 3,
     code: '1310',
     builder: 'Brookfield Residential',
     community: 'Sky',

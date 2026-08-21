@@ -1,5 +1,9 @@
-import { useState } from 'react'
-import { Link as RouterLink } from 'react-router-dom'
+import { useEffect, useState } from 'react'
+import {
+  Link as RouterLink,
+  useNavigate,
+  useParams,
+} from 'react-router-dom'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useForm } from 'react-hook-form'
 import {
@@ -30,12 +34,20 @@ import EditOutlinedIcon from '@mui/icons-material/EditOutlined'
 import LayersRoundedIcon from '@mui/icons-material/LayersRounded'
 import LocationCityRoundedIcon from '@mui/icons-material/LocationCityRounded'
 import ReceiptLongRoundedIcon from '@mui/icons-material/ReceiptLongRounded'
+import { initialBuilders } from '../../builders/data/builders.js'
+import JobModuleNavigation from '../../jobs/components/JobModuleNavigation.jsx'
 import {
   getJobOptionCount,
   getJobPlanCount,
   getJobUnitCount,
 } from '../../jobs/data/jobs.js'
 import { useJobs } from '../../jobs/context/useJobs.js'
+import {
+  getJobBuilderId,
+  jobBelongsToBuilder,
+  jobPlanPricingPath,
+  jobPlansOptionsPath,
+} from '../../jobs/utils/jobRoutes.js'
 import { priceSchema } from '../schemas/priceSchema.js'
 
 const currencyFormatter = new Intl.NumberFormat('en-US', {
@@ -158,7 +170,7 @@ function JobField({ label, value }) {
   )
 }
 
-function PlanPriceCard({ plan, position, jobId, onEditPlan, onEditOption }) {
+function PlanPriceCard({ builderId, plan, position, jobId, onEditPlan, onEditOption }) {
   const options = plan.options ?? []
 
   return (
@@ -387,7 +399,7 @@ function PlanPriceCard({ plan, position, jobId, onEditPlan, onEditOption }) {
             </Typography>
             <Button
               component={RouterLink}
-              to={`/jobs?job=${jobId}`}
+              to={jobPlansOptionsPath(builderId, jobId)}
               size="small"
               variant="outlined"
             >
@@ -401,15 +413,39 @@ function PlanPriceCard({ plan, position, jobId, onEditPlan, onEditOption }) {
 }
 
 export default function PlanPricing() {
+  const navigate = useNavigate()
+  const { builderId, jobId } = useParams()
   const { jobs, setJobs } = useJobs()
-  const [selectedJobId, setSelectedJobId] = useState(jobs[0]?.id ?? '')
   const [priceTarget, setPriceTarget] = useState(null)
   const [notice, setNotice] = useState(null)
-  const job = jobs.find((item) => item.id === selectedJobId) ?? jobs[0]
+  const job = jobId
+    ? jobs.find(
+        (item) =>
+          String(item.id) === jobId &&
+          jobBelongsToBuilder(item, builderId, initialBuilders),
+      )
+    : jobs[0]
+  const resolvedBuilderId = builderId ?? getJobBuilderId(job, initialBuilders)
   const plans = job?.sequenceSheet?.plans ?? []
   const options = plans.flatMap((plan) => plan.options ?? [])
   const pricedPlanCount = plans.filter((plan) => hasPrice(plan.price)).length
   const pricedOptionCount = options.filter((option) => hasPrice(option.price)).length
+
+  useEffect(() => {
+    if (jobId || !job || resolvedBuilderId == null) return
+
+    navigate(jobPlanPricingPath(resolvedBuilderId, job.id), { replace: true })
+  }, [job, jobId, navigate, resolvedBuilderId])
+
+  const selectJob = (selectedJobId) => {
+    const selectedJob = jobs.find(
+      (item) => String(item.id) === String(selectedJobId),
+    )
+    const selectedBuilderId = getJobBuilderId(selectedJob, initialBuilders)
+    if (!selectedJob || selectedBuilderId == null) return
+
+    navigate(jobPlanPricingPath(selectedBuilderId, selectedJob.id))
+  }
 
   const handlePriceSave = ({ amount }) => {
     setJobs((currentJobs) =>
@@ -446,9 +482,13 @@ export default function PlanPricing() {
     return (
       <Box sx={{ py: 10, px: 3, textAlign: 'center' }}>
         <ApartmentRoundedIcon color="action" sx={{ fontSize: 46, mb: 1 }} />
-        <Typography variant="h6" fontWeight={700}>No Jobs available</Typography>
+        <Typography variant="h6" fontWeight={700}>
+          {jobId ? 'Job unavailable' : 'No Jobs available'}
+        </Typography>
         <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, mb: 2 }}>
-          Create a Job and configure its plans before assigning prices.
+          {jobId
+            ? 'Return to Jobs and choose a Job that belongs to this builder.'
+            : 'Create a Job and configure its plans before assigning prices.'}
         </Typography>
         <Button component={RouterLink} to="/jobs" variant="outlined">
           Choose builder
@@ -490,7 +530,7 @@ export default function PlanPricing() {
             labelId="pricing-job-label"
             label="Job"
             value={job.id}
-            onChange={(event) => setSelectedJobId(event.target.value)}
+            onChange={(event) => selectJob(event.target.value)}
           >
             {jobs.map((jobOption) => (
               <MenuItem key={jobOption.id} value={jobOption.id}>
@@ -500,6 +540,12 @@ export default function PlanPricing() {
           </Select>
         </FormControl>
       </Box>
+
+      <JobModuleNavigation
+        active="plan-pricing"
+        builderId={resolvedBuilderId}
+        jobId={job.id}
+      />
 
       <Box sx={{ p: { xs: 2.5, md: 4 } }}>
         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} sx={{ mb: 3 }}>
@@ -586,6 +632,7 @@ export default function PlanPricing() {
               {plans.map((plan, index) => (
                 <PlanPriceCard
                   key={plan.id}
+                  builderId={resolvedBuilderId}
                   plan={plan}
                   position={index + 1}
                   jobId={job.id}
@@ -603,7 +650,11 @@ export default function PlanPricing() {
               <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, mb: 2 }}>
                 Add plans and options from the Job view before assigning their prices.
               </Typography>
-              <Button component={RouterLink} to={`/jobs?job=${job.id}`} variant="outlined">
+              <Button
+                component={RouterLink}
+                to={jobPlansOptionsPath(resolvedBuilderId, job.id)}
+                variant="outlined"
+              >
                 Manage job plans
               </Button>
             </Box>

@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useEffect, useMemo, useState } from 'react'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { zodResolver } from '@hookform/resolvers/zod'
 import {
   Controller,
@@ -54,12 +54,19 @@ import EditOutlinedIcon from '@mui/icons-material/EditOutlined'
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
 import TableChartRoundedIcon from '@mui/icons-material/TableChartRounded'
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
+import { initialBuilders } from '../../builders/data/builders.js'
+import JobModuleNavigation from '../../jobs/components/JobModuleNavigation.jsx'
 import { useJobs } from '../../jobs/context/useJobs.js'
 import {
   getJobAssignedLotCount,
   getJobPhaseCount,
   getJobPlanCount,
 } from '../../jobs/data/jobs.js'
+import {
+  getJobBuilderId,
+  jobBelongsToBuilder,
+  jobSequenceSheetPath,
+} from '../../jobs/utils/jobRoutes.js'
 import { createPhaseByLotSchema } from '../schemas/phaseByLotSchema.js'
 import {
   formatBuilding,
@@ -209,7 +216,7 @@ function PhaseCard({ phase, onDelete, onEdit, onOpen }) {
   )
 }
 
-function PhaseDetails({ job, phase, onBack, onDelete, onEdit }) {
+function PhaseDetails({ builderId, job, phase, onBack, onDelete, onEdit }) {
   const phaseLabel = formatPhase(phase.name)
   const buildingLabel = formatBuilding(phase.building)
   const selectedOptionCount = (phase.lots ?? []).reduce(
@@ -234,7 +241,7 @@ function PhaseDetails({ job, phase, onBack, onDelete, onEdit }) {
           onClick={onBack}
           sx={{ mb: 1.5 }}
         >
-          All Sequence Sheets
+          Job phases
         </Button>
         <Stack
           direction={{ xs: 'column', sm: 'row' }}
@@ -284,6 +291,12 @@ function PhaseDetails({ job, phase, onBack, onDelete, onEdit }) {
           </Stack>
         </Stack>
       </Box>
+
+      <JobModuleNavigation
+        active="sequence-sheet"
+        builderId={builderId}
+        jobId={job.id}
+      />
 
       <Box sx={{ p: { xs: 2.5, md: 4 } }}>
         <Card variant="outlined" sx={{ overflow: 'hidden' }}>
@@ -915,8 +928,10 @@ function NoticeSnackbar({ notice, onClose }) {
 }
 
 export default function SequenceSheets() {
+  const navigate = useNavigate()
+  const { builderId, jobId, phaseId } = useParams()
   const { jobs, setJobs } = useJobs()
-  const [searchParams, setSearchParams] = useSearchParams()
+  const [searchParams] = useSearchParams()
   const [search, setSearch] = useState('')
   const [expandedJobId, setExpandedJobId] = useState(jobs[0]?.id ?? null)
   const [dialogJobId, setDialogJobId] = useState(null)
@@ -924,23 +939,38 @@ export default function SequenceSheets() {
   const [deleteTarget, setDeleteTarget] = useState(null)
   const [notice, setNotice] = useState(null)
 
+  const legacyJobId = searchParams.get('job')
+  const legacyPhaseId = searchParams.get('phase')
+  const focusedJobId = jobId ?? legacyJobId
+  const focusedJob = jobs.find(
+    (job) =>
+      String(job.id) === focusedJobId &&
+      (!builderId || jobBelongsToBuilder(job, builderId, initialBuilders)),
+  )
+  const focusedBuilderId = builderId ?? getJobBuilderId(focusedJob, initialBuilders)
+  const scopedJobs = useMemo(
+    () => (focusedJob ? [focusedJob] : jobId ? [] : jobs),
+    [focusedJob, jobId, jobs],
+  )
+  const visibleExpandedJobId = focusedJob?.id ?? expandedJobId
+
   const filteredJobs = useMemo(() => {
     const query = search.trim().toLowerCase()
-    if (!query) return jobs
+    if (!query) return scopedJobs
 
-    return jobs.filter((job) =>
+    return scopedJobs.filter((job) =>
       [job.code, job.builder, job.community]
         .join(' ')
         .toLowerCase()
         .includes(query),
     )
-  }, [jobs, search])
+  }, [scopedJobs, search])
 
-  const totalPhases = jobs.reduce(
+  const totalPhases = scopedJobs.reduce(
     (total, job) => total + getJobPhaseCount(job),
     0,
   )
-  const totalAssignedLots = jobs.reduce(
+  const totalAssignedLots = scopedJobs.reduce(
     (total, job) => total + getJobAssignedLotCount(job),
     0,
   )
@@ -948,12 +978,23 @@ export default function SequenceSheets() {
   const dialogPhase = dialogJob?.sequenceSheet?.phases?.find(
     (phase) => phase.id === dialogPhaseId,
   )
-  const detailJob = jobs.find(
-    (job) => String(job.id) === searchParams.get('job'),
+  const detailPhaseId = phaseId ?? legacyPhaseId
+  const detailPhase = focusedJob?.sequenceSheet?.phases?.find(
+    (phase) => String(phase.id) === detailPhaseId,
   )
-  const detailPhase = detailJob?.sequenceSheet?.phases?.find(
-    (phase) => String(phase.id) === searchParams.get('phase'),
-  )
+
+  useEffect(() => {
+    if (jobId || !legacyJobId) return
+
+    const legacyJob = jobs.find((job) => String(job.id) === legacyJobId)
+    const legacyBuilderId = getJobBuilderId(legacyJob, initialBuilders)
+    if (!legacyJob || legacyBuilderId == null) return
+
+    navigate(
+      jobSequenceSheetPath(legacyBuilderId, legacyJob.id, legacyPhaseId),
+      { replace: true },
+    )
+  }, [jobId, jobs, legacyJobId, legacyPhaseId, navigate])
 
   const openCreate = (event, job) => {
     event.stopPropagation()
@@ -971,6 +1012,13 @@ export default function SequenceSheets() {
   const closePhaseDialog = () => {
     setDialogJobId(null)
     setDialogPhaseId(null)
+  }
+
+  const openPhaseDetails = (job, phase) => {
+    const phaseBuilderId = getJobBuilderId(job, initialBuilders)
+    if (phaseBuilderId == null) return
+
+    navigate(jobSequenceSheetPath(phaseBuilderId, job.id, phase.id))
   }
 
   const savePhase = (form) => {
@@ -1028,10 +1076,14 @@ export default function SequenceSheets() {
       ),
     )
     if (
-      String(deleteTarget.jobId) === searchParams.get('job') &&
-      String(deleteTarget.phase.id) === searchParams.get('phase')
+      String(deleteTarget.jobId) === String(focusedJob?.id) &&
+      String(deleteTarget.phase.id) === detailPhaseId &&
+      focusedBuilderId != null
     ) {
-      setSearchParams({}, { replace: true })
+      navigate(
+        jobSequenceSheetPath(focusedBuilderId, deleteTarget.jobId),
+        { replace: true },
+      )
     }
     setNotice({
       severity: 'success',
@@ -1040,15 +1092,18 @@ export default function SequenceSheets() {
     setDeleteTarget(null)
   }
 
-  if (detailJob && detailPhase) {
+  if (focusedJob && detailPhase) {
     return (
       <>
         <PhaseDetails
-          job={detailJob}
+          builderId={focusedBuilderId}
+          job={focusedJob}
           phase={detailPhase}
-          onBack={() => setSearchParams({}, { replace: true })}
-          onEdit={() => openEdit(detailJob, detailPhase)}
-          onDelete={() => setDeleteTarget({ jobId: detailJob.id, phase: detailPhase })}
+          onBack={() =>
+            navigate(jobSequenceSheetPath(focusedBuilderId, focusedJob.id))
+          }
+          onEdit={() => openEdit(focusedJob, detailPhase)}
+          onDelete={() => setDeleteTarget({ jobId: focusedJob.id, phase: detailPhase })}
         />
         {dialogJob && (
           <PhaseDialog
@@ -1080,17 +1135,47 @@ export default function SequenceSheets() {
           borderColor: 'divider',
         }}
       >
-        <Typography variant="h5" fontWeight={750} color="text.primary">
-          Sequence Sheets
-        </Typography>
-        <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-          Expand a Job to review its phases or create a new Phase by Lot.
-        </Typography>
+        <Stack
+          direction={{ xs: 'column', sm: 'row' }}
+          spacing={2}
+          sx={{ alignItems: { sm: 'center' }, justifyContent: 'space-between' }}
+        >
+          <Box>
+            {focusedJob && (
+              <Typography variant="caption" color="primary.main" fontWeight={700}>
+                {focusedJob.builder} / Job {focusedJob.code} / Sequence Sheet
+              </Typography>
+            )}
+            <Typography variant="h5" fontWeight={750} color="text.primary">
+              {focusedJob ? `Job ${focusedJob.code} · Sequence Sheet` : 'Sequence Sheets'}
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+              Expand a Job to review its phases or create a new Phase by Lot.
+            </Typography>
+          </Box>
+          {focusedJob && (
+            <Button
+              color="inherit"
+              startIcon={<ArrowBackRoundedIcon />}
+              onClick={() => navigate('/sequence-sheets')}
+            >
+              All Sequence Sheets
+            </Button>
+          )}
+        </Stack>
       </Box>
+
+      {focusedJob && (
+        <JobModuleNavigation
+          active="sequence-sheet"
+          builderId={focusedBuilderId}
+          jobId={focusedJob.id}
+        />
+      )}
 
       <Box sx={{ p: { xs: 2.5, md: 4 } }}>
         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} sx={{ mb: 3 }}>
-          <SummaryCard icon={<FolderRoundedIcon />} value={jobs.length} label="Jobs" />
+          <SummaryCard icon={<FolderRoundedIcon />} value={scopedJobs.length} label="Jobs" />
           <SummaryCard icon={<TableChartRoundedIcon />} value={totalPhases} label="Phases" />
           <SummaryCard icon={<ApartmentRoundedIcon />} value={totalAssignedLots} label="Assigned lots" />
         </Stack>
@@ -1115,7 +1200,7 @@ export default function SequenceSheets() {
         <Stack spacing={1.5}>
           {filteredJobs.map((job) => {
             const phases = job.sequenceSheet?.phases ?? []
-            const isExpanded = expandedJobId === job.id
+            const isExpanded = visibleExpandedJobId === job.id
 
             return (
               <Accordion
@@ -1219,12 +1304,7 @@ export default function SequenceSheets() {
                         phase={phase}
                         onEdit={() => openEdit(job, phase)}
                         onDelete={() => setDeleteTarget({ jobId: job.id, phase })}
-                        onOpen={() =>
-                          setSearchParams({
-                            job: String(job.id),
-                            phase: String(phase.id),
-                          })
-                        }
+                        onOpen={() => openPhaseDetails(job, phase)}
                       />
                     ))
                   ) : (
@@ -1261,9 +1341,13 @@ export default function SequenceSheets() {
 
         {filteredJobs.length === 0 && (
           <Box sx={{ py: 8, textAlign: 'center' }}>
-            <Typography fontWeight={700}>No Jobs match your search.</Typography>
+            <Typography fontWeight={700}>
+              {jobId ? 'The selected Job is unavailable.' : 'No Jobs match your search.'}
+            </Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-              Try another Job number, builder or community.
+              {jobId
+                ? 'Return to Jobs and choose a Job that belongs to this builder.'
+                : 'Try another Job number, builder or community.'}
             </Typography>
           </Box>
         )}

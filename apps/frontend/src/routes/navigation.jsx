@@ -24,3 +24,25 @@ export const navigationRoutes = [
   { path: '/financials', label: 'Financials', icon: 'financials', element: <FinancialsPage /> },
 
 ]
+
+// Context routes keep the selected builder and Job in the URL while the
+// sidebar continues to link to each module's general entry point.
+export const contextualRoutes = [
+  { path: '/jobs/builder/:builderId', element: <JobsPage /> },
+  {
+    path: '/jobs/builder/:builderId/job/:jobId/plans-options',
+    element: <JobsPage />,
+  },
+  {
+    path: '/sequence-sheets/builder/:builderId/job/:jobId',
+    element: <SequenceSheetsPage />,
+  },
+  {
+    path: '/sequence-sheets/builder/:builderId/job/:jobId/phase/:phaseId',
+    element: <SequenceSheetsPage />,
+  },
+  {
+    path: '/pricing/builder/:builderId/job/:jobId',
+    element: <PricingPage />,
+  },
+]

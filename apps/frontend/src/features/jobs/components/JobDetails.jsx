@@ -41,6 +41,7 @@ import {
   createJobPlanSchema,
   planOptionSchema,
 } from '../schemas/jobSequenceSheetSchema.js'
+import JobModuleNavigation from './JobModuleNavigation.jsx'
 
 function PlanDialog({ plans, plan, onClose, onSave }) {
   const schema = useMemo(
@@ -457,7 +458,7 @@ function PlanCard({
   )
 }
 
-export default function JobDetails({ job, onBack, onChange }) {
+export default function JobDetails({ builderId, job, onBack, onChange }) {
   const [planDialog, setPlanDialog] = useState(null)
   const [optionDialog, setOptionDialog] = useState(null)
   const [deleteTarget, setDeleteTarget] = useState(null)
@@ -602,6 +603,12 @@ export default function JobDetails({ job, onBack, onChange }) {
           New plan
         </Button>
       </Box>
+
+      <JobModuleNavigation
+        active="plans-options"
+        builderId={builderId}
+        jobId={job.id}
+      />
 
       <Box sx={{ p: { xs: 2.5, md: 4 } }}>
         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} sx={{ mb: 3 }}>

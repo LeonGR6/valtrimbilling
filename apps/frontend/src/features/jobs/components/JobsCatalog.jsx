@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { Controller, useForm } from 'react-hook-form'
 import {
@@ -51,6 +51,11 @@ import {
 } from '../data/jobs.js'
 import { useJobs } from '../context/useJobs.js'
 import { createJobSchema } from '../schemas/jobSchema.js'
+import {
+  builderJobsPath,
+  getJobBuilderId,
+  jobPlansOptionsPath,
+} from '../utils/jobRoutes.js'
 
 function JobDialog({ builderOptions, defaultBuilder, job, jobs, onClose, onSave }) {
   const schema = useMemo(
@@ -224,7 +229,9 @@ function SummaryCard({ icon, label, value }) {
 }
 
 export default function JobsCatalog() {
-  const [searchParams, setSearchParams] = useSearchParams()
+  const navigate = useNavigate()
+  const { builderId, jobId } = useParams()
+  const [searchParams] = useSearchParams()
   const { jobs, setJobs } = useJobs()
   const [builders, setBuilders] = useState(initialBuilders)
   const [search, setSearch] = useState('')
@@ -237,10 +244,12 @@ export default function JobsCatalog() {
   const [notice, setNotice] = useState(null)
 
   const createRequested = searchParams.get('create') === '1'
+  const legacyBuilderId = searchParams.get('builder')
+  const legacyJobId = searchParams.get('job')
   const dialogJob = editTarget ?? (createRequested ? null : undefined)
   const dialogOpen = createRequested || Boolean(editTarget)
   const selectedBuilder = builders.find(
-    (builder) => String(builder.id) === searchParams.get('builder'),
+    (builder) => String(builder.id) === builderId,
   )
   const builderJobs = useMemo(
     () => selectedBuilder
@@ -280,7 +289,7 @@ export default function JobsCatalog() {
     0,
   )
   const detailJob = builderJobs.find(
-    (job) => String(job.id) === searchParams.get('job'),
+    (job) => String(job.id) === jobId,
   )
   const builderOptions = builders
     .filter(
@@ -292,6 +301,34 @@ export default function JobsCatalog() {
     .map((builder) => builder.name)
 
   useEffect(() => {
+    if (builderId || jobId || (!legacyBuilderId && !legacyJobId)) return
+
+    const legacyJob = jobs.find((job) => String(job.id) === legacyJobId)
+    const resolvedBuilderId = legacyJob
+      ? getJobBuilderId(legacyJob, builders)
+      : legacyBuilderId
+
+    if (legacyJob && resolvedBuilderId != null) {
+      navigate(jobPlansOptionsPath(resolvedBuilderId, legacyJob.id), {
+        replace: true,
+      })
+      return
+    }
+
+    if (resolvedBuilderId != null) {
+      navigate(builderJobsPath(resolvedBuilderId), { replace: true })
+    }
+  }, [
+    builderId,
+    builders,
+    jobId,
+    jobs,
+    legacyBuilderId,
+    legacyJobId,
+    navigate,
+  ])
+
+  useEffect(() => {
     window.scrollTo({ top: 0, left: 0 })
     document.querySelector('main > div')?.scrollTo({ top: 0, left: 0 })
   }, [detailJob?.id, selectedBuilder?.id])
@@ -299,30 +336,24 @@ export default function JobsCatalog() {
   const openBuilderJobs = (builder) => {
     setSearch('')
     setPage(0)
-    setSearchParams({ builder: String(builder.id) })
+    navigate(builderJobsPath(builder.id))
   }
 
   const showBuilders = () => {
     setSearch('')
     setPage(0)
-    setSearchParams({}, { replace: true })
+    navigate('/jobs')
   }
 
   const openCreateDialog = () => {
     setEditTarget(null)
-    setSearchParams({
-      builder: String(selectedBuilder.id),
-      create: '1',
-    })
+    navigate(`${builderJobsPath(selectedBuilder.id)}?create=1`)
   }
 
   const closeDialog = () => {
     setEditTarget(null)
     if (createRequested) {
-      setSearchParams(
-        { builder: String(selectedBuilder.id) },
-        { replace: true },
-      )
+      navigate(builderJobsPath(selectedBuilder.id), { replace: true })
     }
   }
 
@@ -338,10 +369,6 @@ export default function JobsCatalog() {
   }
 
   const openEditDialog = () => {
-    setSearchParams(
-      { builder: String(selectedBuilder.id) },
-      { replace: true },
-    )
     setEditTarget(selectedJob)
     handleMenuClose()
   }
@@ -352,10 +379,7 @@ export default function JobsCatalog() {
   }
 
   const openJobDetails = (job) => {
-    setSearchParams({
-      builder: String(selectedBuilder.id),
-      job: String(job.id),
-    })
+    navigate(jobPlansOptionsPath(selectedBuilder.id, job.id))
   }
 
   const openSelectedJobDetails = () => {
@@ -365,10 +389,16 @@ export default function JobsCatalog() {
   }
 
   const handleSave = (form) => {
+    const savedBuilderId = builders.find(
+      (builder) => builder.name === form.builder,
+    )?.id ?? editTarget?.builderId ?? selectedBuilder.id
+
     if (editTarget) {
       setJobs((current) =>
         current.map((job) =>
-          job.id === editTarget.id ? { ...job, ...form } : job,
+          job.id === editTarget.id
+            ? { ...job, ...form, builderId: savedBuilderId }
+            : job,
         ),
       )
       setNotice({ severity: 'success', message: 'Job updated.' })
@@ -377,6 +407,7 @@ export default function JobsCatalog() {
         {
           ...form,
           id: Date.now(),
+          builderId: savedBuilderId,
           sequenceSheet: {
             name: 'Options Sequence Sheet',
             plans: [],
@@ -425,12 +456,8 @@ export default function JobsCatalog() {
     return (
       <JobDetails
         job={detailJob}
-        onBack={() =>
-          setSearchParams(
-            { builder: String(selectedBuilder.id) },
-            { replace: true },
-          )
-        }
+        builderId={selectedBuilder.id}
+        onBack={() => navigate(builderJobsPath(selectedBuilder.id))}
         onChange={(updatedJob) => {
           setJobs((current) =>
             current.map((job) => (job.id === updatedJob.id ? updatedJob : job)),
@@ -456,23 +483,30 @@ export default function JobsCatalog() {
           flexDirection: { xs: 'column', sm: 'row' },
         }}
       >
-        <Stack direction="row" spacing={1.5} sx={{ alignItems: 'flex-start' }}>
-          <IconButton
-            aria-label="Back to builders"
+        <Stack spacing={1.25} sx={{ alignItems: 'flex-start' }}>
+          <Button
+            color="inherit"
+            size="small"
+            startIcon={<ArrowBackRoundedIcon />}
             onClick={showBuilders}
-            sx={{ mt: -0.5, ml: -1 }}
+            sx={{ ml: -1, color: 'text.secondary' }}
           >
-            <ArrowBackRoundedIcon />
-          </IconButton>
+            All builders
+          </Button>
           <Box>
-            <Typography variant="caption" color="primary.main" fontWeight={700}>
-              Builders / {selectedBuilder.name} / Jobs
+            <Typography
+              variant="caption"
+              color="primary.main"
+              fontWeight={700}
+              sx={{ display: 'block', mb: 0.5, letterSpacing: '0.04em' }}
+            >
+              JOBS / BUILDERS / {selectedBuilder.name.toUpperCase()}
             </Typography>
             <Typography variant="h5" fontWeight={700} color="text.primary">
-              Jobs
+              {selectedBuilder.name} jobs
             </Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-              Select a job for {selectedBuilder.name} to manage its Plans &amp; Options.
+              Viewing jobs assigned to this builder. Select one to manage its Plans &amp; Options.
             </Typography>
           </Box>
         </Stack>
@@ -483,6 +517,14 @@ export default function JobsCatalog() {
       </Box>
 
       <Box sx={{ p: { xs: 2.5, md: 4 } }}>
+        <Box sx={{ mb: 2.5 }}>
+          <Typography variant="subtitle1" fontWeight={700}>
+            Jobs for {selectedBuilder.name}
+          </Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 0.25 }}>
+            This list only includes jobs belonging to the selected builder.
+          </Typography>
+        </Box>
         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} sx={{ mb: 3 }}>
           <SummaryCard icon={<HomeWorkRoundedIcon />} label="Jobs" value={builderJobs.length} />
           <SummaryCard icon={<LayersRoundedIcon />} label="Plans" value={totalPlans} />

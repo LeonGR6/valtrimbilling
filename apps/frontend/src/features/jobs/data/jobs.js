@@ -46,8 +46,8 @@ export const initialJobs = [
     code: '1307',
     builder: 'Trumark Homes',
     community: 'Andara',
-    supervisor: 'Valtrim Supervisor',
-    jobsiteSuperintendent: 'Superintendent example',
+    supervisorId: 1,
+    superintendentId: 1,
     totalLots: 24,
     sequenceSheet: {
       id: 1001,
@@ -84,8 +84,8 @@ export const initialJobs = [
     code: '1308',
     builder: 'City Ventures',
     community: 'Cedar Grove',
-    supervisor: 'Lauren Mitchell',
-    jobsiteSuperintendent: 'Andrea Collins',
+    supervisorId: 1,
+    superintendentId: 2,
     totalLots: 10,
     sequenceSheet: {
       id: 1002,
@@ -103,8 +103,8 @@ export const initialJobs = [
     code: '1309',
     builder: 'KB Home',
     community: 'Stonebrook',
-    supervisor: 'Robert King',
-    jobsiteSuperintendent: 'Daniel Torres',
+    supervisorId: 2,
+    superintendentId: 1,
     totalLots: 1,
     sequenceSheet: {
       id: 1003,
@@ -118,8 +118,8 @@ export const initialJobs = [
     code: '1310',
     builder: 'Brookfield Residential',
     community: 'Sky',
-    supervisor: 'Robert King',
-    jobsiteSuperintendent: 'Sky superintendent',
+    supervisorId: 2,
+    superintendentId: 5,
     totalLots: 8,
     sequenceSheet: {
       id: 1004,
@@ -134,8 +134,8 @@ export const emptyJob = {
   code: '',
   builder: '',
   community: '',
-  supervisor: '',
-  jobsiteSuperintendent: '',
+  supervisorId: null,
+  superintendentId: null,
   totalLots: '',
 }
 

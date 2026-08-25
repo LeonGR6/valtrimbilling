@@ -117,8 +117,8 @@ test('job schema normalizes the fields used to create a job', () => {
     builder: ' KB Home ',
     community: ' Andara ',
     totalLots: '24',
-    supervisor: ' Lauren Mitchell ',
-    jobsiteSuperintendent: ' Daniel Torres ',
+    supervisorId: 2,
+    superintendentId: 5,
   })
 
   assert.deepEqual(result, {
@@ -126,9 +126,29 @@ test('job schema normalizes the fields used to create a job', () => {
     builder: 'KB Home',
     community: 'Andara',
     totalLots: 24,
-    supervisor: 'Lauren Mitchell',
-    jobsiteSuperintendent: 'Daniel Torres',
+    supervisorId: 2,
+    superintendentId: 5,
   })
+})
+
+test('job schema requires a supervisor and a superintendent to be picked', () => {
+  const schema = createJobSchema([], null)
+  const base = {
+    code: 'JOB-2001',
+    builder: 'KB Home',
+    community: 'Andara',
+    totalLots: 10,
+    supervisorId: 2,
+    superintendentId: 5,
+  }
+
+  for (const field of ['supervisorId', 'superintendentId']) {
+    const missing = schema.safeParse({ ...base, [field]: null })
+    assert.equal(missing.success, false, `${field} should be required`)
+
+    const asText = schema.safeParse({ ...base, [field]: 'Lauren Mitchell' })
+    assert.equal(asText.success, false, `${field} should reject a loose name`)
+  }
 })
 
 test('job schema rejects a duplicate job number', () => {
@@ -138,8 +158,8 @@ test('job schema rejects a duplicate job number', () => {
     builder: 'KB Home',
     community: 'Andara',
     totalLots: 24,
-    supervisor: 'Lauren Mitchell',
-    jobsiteSuperintendent: 'Daniel Torres',
+    supervisorId: 2,
+    superintendentId: 5,
   }
   const schema = createJobSchema([existingJob], null)
 
@@ -148,8 +168,8 @@ test('job schema rejects a duplicate job number', () => {
     builder: ' kb home ',
     community: 'andara',
     totalLots: '24',
-    supervisor: ' Lauren Mitchell ',
-    jobsiteSuperintendent: ' Daniel Torres ',
+    supervisorId: 2,
+    superintendentId: 5,
   })
 
   assert.equal(duplicate.success, false)
@@ -313,13 +333,13 @@ test('phase by lot schema requires a building', () => {
   assert.ok(result.error.flatten().fieldErrors.building)
 })
 
-test('person schema normalizes contact information and supports multiple types', () => {
+test('person schema normalizes contact information', () => {
   const result = personSchema.parse({
     name: ' María López ',
     phone: ' (951) 555-0184 ',
     officePhone: '',
     email: ' MARIA.LOPEZ@EXAMPLE.COM ',
-    types: ['JOBSITE_SUPERINTENDENT', 'AP_CONTACT'],
+    types: ['SUPERVISOR'],
   })
 
   assert.deepEqual(result, {
@@ -327,8 +347,22 @@ test('person schema normalizes contact information and supports multiple types',
     phone: '(951) 555-0184',
     officePhone: '',
     email: 'maria.lopez@example.com',
-    types: ['JOBSITE_SUPERINTENDENT', 'AP_CONTACT'],
+    types: ['SUPERVISOR'],
   })
+})
+
+test('person schema rejects builder-side types, which moved to builder contacts', () => {
+  for (const type of ['JOBSITE_SUPERINTENDENT', 'AP_CONTACT']) {
+    const result = personSchema.safeParse({
+      name: 'Person',
+      phone: '',
+      officePhone: '',
+      email: 'person@example.com',
+      types: [type],
+    })
+
+    assert.equal(result.success, false, `${type} should no longer be accepted`)
+  }
 })
 
 test('person schema requires an email and at least one person type', () => {

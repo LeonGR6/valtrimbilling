@@ -10,6 +10,9 @@ import {
   PlanTypesPage,
   PricingPage,
   SequenceSheetsPage,
+  BillingProfilesPage,
+  BuilderContactsPage,
+  UsersPage,
 } from './lazyPages.jsx'
 
 // Single source of truth for the app's navigable routes.
@@ -26,5 +29,8 @@ export const navigationRoutes = [
   { path: '/pricing', label: 'Pricing', icon: 'pricing', element: <PricingPage /> },
   { path: '/invoice', label: 'Invoice', icon: 'invoice', element: <InvoicePage /> },
   { path: '/financials', label: 'Financials', icon: 'financials', element: <FinancialsPage /> },
+  { path: '/users', label: 'Users', icon: 'users', element: <UsersPage /> },
+  { path: '/billing-profiles', label: 'Billing Profiles', icon: 'billing-profiles', element: <BillingProfilesPage /> },
+  { path: '/builder-contacts', label: 'Builder Contacts', icon: 'builder-contacts', element: <BuilderContactsPage /> },
 
 ]

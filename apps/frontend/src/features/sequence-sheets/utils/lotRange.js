@@ -21,7 +21,7 @@ export function parseLotRange(value, maxLots = 500) {
   }
 
   if (start > end) {
-    return { success: false, error: 'The first lot must be smaller than the last lot.' }
+    return { success: false, error: 'The first lot number must be less than or equal to the second.'}
   }
 
   const count = end - start + 1

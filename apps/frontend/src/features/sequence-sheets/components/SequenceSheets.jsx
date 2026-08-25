@@ -863,9 +863,6 @@ function PhaseDialog({ job, phase, onClose, onSave }) {
           bgcolor: 'background.paper',
         }}
       >
-        <Typography variant="caption" color="text.secondary" sx={{ mr: 'auto', display: { xs: 'none', sm: 'block' } }}>
-          Door Style is intentionally excluded from this version.
-        </Typography>
         <Button color="inherit" onClick={onClose}>
           Cancel
         </Button>

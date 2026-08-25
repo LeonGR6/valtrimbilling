@@ -679,7 +679,7 @@ export default function JobDetails({ builderId, job, onBack, onChange }) {
                 Plans &amp; options
               </Typography>
               <Typography variant="body2" color="text.secondary" sx={{ mt: 0.25 }}>
-                Review each plan vertically and manage its options directly underneath it.
+                Review each plan and manage its options directly underneath it.
               </Typography>
             </Box>
             <Chip

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useMemo, useState } from 'react'
 import {
   Link as RouterLink,
   useNavigate,
@@ -18,22 +18,20 @@ import {
   DialogContent,
   DialogTitle,
   Divider,
-  FormControl,
   InputAdornment,
-  InputLabel,
-  MenuItem,
-  Select,
   Snackbar,
   Stack,
   TextField,
   Typography,
 } from '@mui/material'
 import ApartmentRoundedIcon from '@mui/icons-material/ApartmentRounded'
+import ArrowForwardRoundedIcon from '@mui/icons-material/ArrowForwardRounded'
 import AttachMoneyRoundedIcon from '@mui/icons-material/AttachMoneyRounded'
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined'
 import LayersRoundedIcon from '@mui/icons-material/LayersRounded'
 import LocationCityRoundedIcon from '@mui/icons-material/LocationCityRounded'
 import ReceiptLongRoundedIcon from '@mui/icons-material/ReceiptLongRounded'
+import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
 import { initialBuilders } from '../../builders/data/builders.js'
 import JobModuleNavigation from '../../jobs/components/JobModuleNavigation.jsx'
 import {
@@ -412,10 +410,182 @@ function PlanPriceCard({ builderId, plan, position, jobId, onEditPlan, onEditOpt
   )
 }
 
+function JobPricingSelector({ jobs, filteredJobs, search, onSearchChange, onSelectJob }) {
+  return (
+    <Box sx={{ minHeight: '100%', bgcolor: 'background.default' }}>
+      <Box
+        sx={{
+          px: { xs: 2.5, md: 4 },
+          py: 3,
+          bgcolor: 'background.paper',
+          borderBottom: 1,
+          borderColor: 'divider',
+        }}
+      >
+        <Typography variant="overline" color="primary.main" fontWeight={750}>
+          Plan pricing
+        </Typography>
+        <Typography variant="h5" fontWeight={750} color="text.primary">
+          Choose a Job
+        </Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+          Search for a Job first, then review and update the prices for its plans and options.
+        </Typography>
+      </Box>
+
+      <Box sx={{ p: { xs: 2.5, md: 4 } }}>
+        <Card variant="outlined">
+          <CardContent sx={{ p: { xs: 2, sm: 2.5 } }}>
+            <Stack
+              direction={{ xs: 'column', sm: 'row' }}
+              spacing={1}
+              sx={{
+                mb: 2,
+                alignItems: { sm: 'center' },
+                justifyContent: 'space-between',
+              }}
+            >
+              <Box>
+                <Typography variant="subtitle1" fontWeight={750}>
+                  Find a Job
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  Search by Job number, builder or community.
+                </Typography>
+              </Box>
+              <Chip
+                size="small"
+                variant="outlined"
+                label={`${filteredJobs.length} ${filteredJobs.length === 1 ? 'result' : 'results'}`}
+              />
+            </Stack>
+
+            <TextField
+              value={search}
+              onChange={(event) => onSearchChange(event.target.value)}
+              placeholder="Search by Job#, builder or community"
+              fullWidth
+              autoFocus
+              slotProps={{
+                input: {
+                  startAdornment: (
+                    <InputAdornment position="start">
+                      <SearchRoundedIcon color="action" />
+                    </InputAdornment>
+                  ),
+                },
+              }}
+            />
+          </CardContent>
+
+          {filteredJobs.length > 0 ? (
+            <Stack divider={<Divider flexItem />}>
+              {filteredJobs.map((job) => {
+                const plans = job.sequenceSheet?.plans ?? []
+                const options = plans.flatMap((plan) => plan.options ?? [])
+                const pricedPlans = plans.filter((plan) => hasPrice(plan.price)).length
+                const pricedOptions = options.filter((option) => hasPrice(option.price)).length
+
+                return (
+                  <Box
+                    key={job.id}
+                    sx={{
+                      px: { xs: 2, sm: 2.5 },
+                      py: 2,
+                      display: 'flex',
+                      alignItems: { xs: 'stretch', md: 'center' },
+                      justifyContent: 'space-between',
+                      flexDirection: { xs: 'column', md: 'row' },
+                      gap: 2,
+                      '&:hover': { bgcolor: 'action.hover' },
+                    }}
+                  >
+                    <Stack
+                      direction="row"
+                      spacing={1.5}
+                      sx={{ alignItems: 'center', minWidth: 0 }}
+                    >
+                      <Box
+                        sx={{
+                          width: 44,
+                          height: 44,
+                          flexShrink: 0,
+                          borderRadius: 1.5,
+                          display: 'grid',
+                          placeItems: 'center',
+                          bgcolor: 'primary.light',
+                          color: 'primary.main',
+                        }}
+                      >
+                        <ApartmentRoundedIcon />
+                      </Box>
+                      <Box sx={{ minWidth: 0 }}>
+                        <Typography fontWeight={800}>Job #{job.code}</Typography>
+                        <Typography variant="body2" color="text.secondary">
+                          {job.builder} · {job.community}
+                        </Typography>
+                      </Box>
+                    </Stack>
+
+                    <Stack
+                      direction={{ xs: 'column', sm: 'row' }}
+                      spacing={1.5}
+                      sx={{ alignItems: { sm: 'center' } }}
+                    >
+                      <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: 'wrap' }}>
+                        <Chip
+                          size="small"
+                          label={`${pricedPlans} / ${plans.length} plan prices`}
+                        />
+                        <Chip
+                          size="small"
+                          variant="outlined"
+                          label={`${pricedOptions} / ${options.length} option prices`}
+                        />
+                      </Stack>
+                      <Button
+                        variant="contained"
+                        endIcon={<ArrowForwardRoundedIcon />}
+                        onClick={() => onSelectJob(job.id)}
+                        disableElevation
+                        sx={{ whiteSpace: 'nowrap' }}
+                      >
+                        Manage pricing
+                      </Button>
+                    </Stack>
+                  </Box>
+                )
+              })}
+            </Stack>
+          ) : (
+            <Box sx={{ py: 7, px: 3, textAlign: 'center', borderTop: 1, borderColor: 'divider' }}>
+              <SearchRoundedIcon color="disabled" sx={{ fontSize: 42, mb: 1 }} />
+              <Typography fontWeight={700}>
+                {jobs.length > 0 ? 'No Jobs match your search' : 'No Jobs available'}
+              </Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                {jobs.length > 0
+                  ? 'Try another Job number, builder or community.'
+                  : 'Create a Job and configure its plans before assigning prices.'}
+              </Typography>
+              {jobs.length === 0 && (
+                <Button component={RouterLink} to="/jobs" variant="outlined" sx={{ mt: 2 }}>
+                  Go to Jobs
+                </Button>
+              )}
+            </Box>
+          )}
+        </Card>
+      </Box>
+    </Box>
+  )
+}
+
 export default function PlanPricing() {
   const navigate = useNavigate()
   const { builderId, jobId } = useParams()
   const { jobs, setJobs } = useJobs()
+  const [search, setSearch] = useState('')
   const [priceTarget, setPriceTarget] = useState(null)
   const [notice, setNotice] = useState(null)
   const job = jobId
@@ -424,18 +594,23 @@ export default function PlanPricing() {
           String(item.id) === jobId &&
           jobBelongsToBuilder(item, builderId, initialBuilders),
       )
-    : jobs[0]
+    : null
   const resolvedBuilderId = builderId ?? getJobBuilderId(job, initialBuilders)
   const plans = job?.sequenceSheet?.plans ?? []
   const options = plans.flatMap((plan) => plan.options ?? [])
   const pricedPlanCount = plans.filter((plan) => hasPrice(plan.price)).length
   const pricedOptionCount = options.filter((option) => hasPrice(option.price)).length
+  const filteredJobs = useMemo(() => {
+    const query = search.trim().toLowerCase()
+    if (!query) return jobs
 
-  useEffect(() => {
-    if (jobId || !job || resolvedBuilderId == null) return
-
-    navigate(jobPlanPricingPath(resolvedBuilderId, job.id), { replace: true })
-  }, [job, jobId, navigate, resolvedBuilderId])
+    return jobs.filter((jobOption) =>
+      [jobOption.code, jobOption.builder, jobOption.community]
+        .join(' ')
+        .toLowerCase()
+        .includes(query),
+    )
+  }, [jobs, search])
 
   const selectJob = (selectedJobId) => {
     const selectedJob = jobs.find(
@@ -478,6 +653,18 @@ export default function PlanPricing() {
     setPriceTarget(null)
   }
 
+  if (!jobId) {
+    return (
+      <JobPricingSelector
+        jobs={jobs}
+        filteredJobs={filteredJobs}
+        search={search}
+        onSearchChange={setSearch}
+        onSelectJob={selectJob}
+      />
+    )
+  }
+
   if (!job) {
     return (
       <Box sx={{ py: 10, px: 3, textAlign: 'center' }}>
@@ -490,8 +677,8 @@ export default function PlanPricing() {
             ? 'Return to Jobs and choose a Job that belongs to this builder.'
             : 'Create a Job and configure its plans before assigning prices.'}
         </Typography>
-        <Button component={RouterLink} to="/jobs" variant="outlined">
-          Choose builder
+        <Button component={RouterLink} to="/pricing" variant="outlined">
+          Browse pricing Jobs
         </Button>
       </Box>
     )
@@ -514,6 +701,9 @@ export default function PlanPricing() {
         }}
       >
         <Box>
+          <Typography variant="caption" color="primary.main" fontWeight={700}>
+            Plan pricing / Job {job.code}
+          </Typography>
           <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
             <Typography variant="h5" fontWeight={700} color="text.primary">
               Job {job.code} · Plan pricing
@@ -524,21 +714,14 @@ export default function PlanPricing() {
             {job.builder} · {job.community}
           </Typography>
         </Box>
-        <FormControl size="small" sx={{ width: { xs: '100%', sm: 300 } }}>
-          <InputLabel id="pricing-job-label">Job</InputLabel>
-          <Select
-            labelId="pricing-job-label"
-            label="Job"
-            value={job.id}
-            onChange={(event) => selectJob(event.target.value)}
-          >
-            {jobs.map((jobOption) => (
-              <MenuItem key={jobOption.id} value={jobOption.id}>
-                Job {jobOption.code} · {jobOption.community}
-              </MenuItem>
-            ))}
-          </Select>
-        </FormControl>
+        <Button
+          variant="outlined"
+          startIcon={<SearchRoundedIcon />}
+          onClick={() => navigate('/pricing')}
+          sx={{ width: { xs: '100%', sm: 'auto' } }}
+        >
+          Change Job
+        </Button>
       </Box>
 
       <JobModuleNavigation
@@ -616,7 +799,7 @@ export default function PlanPricing() {
                 Plan pricing &amp; pricing options
               </Typography>
               <Typography variant="body2" color="text.secondary" sx={{ mt: 0.25 }}>
-                Review each plan vertically and set the price for the plan and every option below it.
+                Review each plan and set the price for the plan and every option below it.
               </Typography>
             </Box>
             <Chip

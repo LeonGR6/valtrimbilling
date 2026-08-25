@@ -13,6 +13,7 @@ import {
   DialogContent,
   DialogTitle,
   FormControl,
+  FormHelperText,
   IconButton,
   InputAdornment,
   InputLabel,
@@ -43,6 +44,7 @@ import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
 import ResponsiveCreateButton from '../../../components/common/ResponsiveCreateButton'
 import { BuildersCatalog } from '../../builders/index.js'
 import { initialBuilders } from '../../builders/data/builders.js'
+import { initialPeople } from '../../people/data/people.js'
 import JobDetails from './JobDetails.jsx'
 import {
   emptyJob,
@@ -57,7 +59,7 @@ import {
   jobPlansOptionsPath,
 } from '../utils/jobRoutes.js'
 
-function JobDialog({ builderOptions, defaultBuilder, job, jobs, onClose, onSave }) {
+function JobDialog({ builderOptions, defaultBuilder, supervisorOptions, job, jobs, onClose, onSave }) {
   const schema = useMemo(
     () => createJobSchema(jobs, job?.id),
     [job?.id, jobs],
@@ -161,14 +163,33 @@ function JobDialog({ builderOptions, defaultBuilder, job, jobs, onClose, onSave 
               Job team
             </Typography>
             <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
-              <TextField
-                label="Supervisor"
-                {...register('supervisor')}
-                error={Boolean(errors.supervisor)}
-                helperText={errors.supervisor?.message ?? 'Valtrim supervisor assigned to this job.'}
-                fullWidth
-                slotProps={{ htmlInput: { maxLength: 100 } }}
-              />
+              <FormControl fullWidth error={Boolean(errors.supervisor)}>
+                <InputLabel id="job-supervisor-label">Supervisor</InputLabel>
+                <Controller
+                  name="supervisor"
+                  control={control}
+                  render={({ field }) => (
+                    <Select
+                      {...field}
+                      labelId="job-supervisor-label"
+                      label="Supervisor"
+                    >
+                      <MenuItem value="" disabled>
+                        Select a supervisor
+                      </MenuItem>
+                      {supervisorOptions.map((supervisor) => (
+                        <MenuItem key={supervisor} value={supervisor}>
+                          {supervisor}
+                        </MenuItem>
+                      ))}
+                    </Select>
+                  )}
+                />
+                <FormHelperText>
+                  {errors.supervisor?.message ?? 'Valtrim supervisor assigned to this job.'}
+                </FormHelperText>
+              </FormControl>
+
               <TextField
                 label="Jobsite Superintendent"
                 {...register('jobsiteSuperintendent')}
@@ -299,6 +320,17 @@ export default function JobsCatalog() {
         builder.name === editTarget?.builder,
     )
     .map((builder) => builder.name)
+  const supervisorOptions = useMemo(
+    () => [
+      ...new Set([
+        ...initialPeople
+          .filter((person) => person.types.includes('SUPERVISOR'))
+          .map((person) => person.name),
+        ...jobs.map((job) => job.supervisor).filter(Boolean),
+      ]),
+    ].sort((left, right) => left.localeCompare(right)),
+    [jobs],
+  )
 
   useEffect(() => {
     if (builderId || jobId || (!legacyBuilderId && !legacyJobId)) return
@@ -736,6 +768,7 @@ export default function JobsCatalog() {
           key={dialogJob?.id ?? 'new'}
           builderOptions={builderOptions}
           defaultBuilder={selectedBuilder.name}
+          supervisorOptions={supervisorOptions}
           job={dialogJob}
           jobs={jobs}
           onClose={closeDialog}

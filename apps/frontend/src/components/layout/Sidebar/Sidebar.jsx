@@ -68,10 +68,11 @@ const navigationSections = [
     label: 'BILLING',
     items: [
       { label: 'Ready to Invoice', icon: RequestQuoteIcon },
-      { label: 'Draw & Invoice Packages', icon: BallotIcon },
+      { label: 'Draw & Invoice Packages', path: '/draw-invoice', icon: BallotIcon },
       { label: 'Invoices & A/R', icon: DescriptionIcon },
       { label: 'Releases', icon: DescriptionIcon },
-      { label: 'Change Orders', icon:  SyncAltIcon },
+      { label: 'Release - Builder Portal', icon: DescriptionIcon },
+      { label: 'Extra / Change Orders', icon:  SyncAltIcon },
     ],
   },
   {
@@ -79,7 +80,11 @@ const navigationSections = [
     items: [
       { label: 'Proposals', icon: DescriptionIcon },
       { label: 'Plan Pricing - Pricing Options', path: '/pricing', icon: SellIcon },
-      { label: 'Draw Schedules', path: '/draw', icon: DonutSmallRoundedIcon },
+      {
+        label: 'Builder Draw Schedules',
+        path: '/builder-draw-schedules',
+        icon: DonutSmallRoundedIcon,
+      },
     ]
   },
   {
@@ -100,7 +105,6 @@ const navigationSections = [
           { label: 'Multi Family', icon: DomainRoundedIcon },
         ],
       },
-      { label: 'Options' , icon: KeyboardOptionKeyIcon },
     ],
   },
   {

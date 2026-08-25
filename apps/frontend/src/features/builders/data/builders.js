@@ -30,7 +30,7 @@ export const initialBuilders = [
     contactName: 'Sarah Mitchell',
     contactEmail: 's.mitchell@brookfieldrp.com',
     contactPhone: '',
-    isActive: false,
+    isActive: true,
   },
   {
     id: 4,

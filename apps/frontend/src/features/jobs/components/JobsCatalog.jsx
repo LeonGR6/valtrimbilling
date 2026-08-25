@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { Controller, useForm } from 'react-hook-form'
+import { Controller, useForm, useWatch } from 'react-hook-form'
 import {
   Alert,
   Box,
@@ -13,7 +13,6 @@ import {
   DialogContent,
   DialogTitle,
   FormControl,
-  FormHelperText,
   IconButton,
   InputAdornment,
   InputLabel,
@@ -32,8 +31,8 @@ import {
   TextField,
   Typography,
 } from '@mui/material'
-import AccountTreeRoundedIcon from '@mui/icons-material/AccountTreeRounded'
 import ApartmentRoundedIcon from '@mui/icons-material/ApartmentRounded'
+import BackupTableRoundedIcon from '@mui/icons-material/BackupTableRounded'
 import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded'
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined'
@@ -44,8 +43,14 @@ import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
 import ResponsiveCreateButton from '../../../components/common/ResponsiveCreateButton'
 import { BuildersCatalog } from '../../builders/index.js'
 import { initialBuilders } from '../../builders/data/builders.js'
-import { initialPeople } from '../../people/data/people.js'
+import { initialPeople } from '../../people'
+import {
+  builderLabels,
+  emptyContact,
+  initialContacts,
+} from '../../builder-contacts'
 import JobDetails from './JobDetails.jsx'
+import PersonPickerField from './PersonPickerField.jsx'
 import {
   emptyJob,
   getJobPlanCount,
@@ -59,7 +64,24 @@ import {
   jobPlansOptionsPath,
 } from '../utils/jobRoutes.js'
 
-function JobDialog({ builderOptions, defaultBuilder, supervisorOptions, job, jobs, onClose, onSave }) {
+const builderCodeByName = Object.fromEntries(
+  Object.entries(builderLabels).map(([code, name]) => [name, code]),
+)
+
+const personName = (index, id) => index.get(id)?.name ?? 'Unassigned'
+
+function JobDialog({
+  builderOptions,
+  defaultBuilder,
+  supervisors,
+  superintendents,
+  job,
+  jobs,
+  onClose,
+  onCreateSuperintendent,
+  onSave,
+}) {
+
   const schema = useMemo(
     () => createJobSchema(jobs, job?.id),
     [job?.id, jobs],
@@ -76,13 +98,29 @@ function JobDialog({ builderOptions, defaultBuilder, supervisorOptions, job, job
           code: job.code,
           builder: job.builder,
           community: job.community,
-          supervisor: job.supervisor ?? '',
-          jobsiteSuperintendent: job.jobsiteSuperintendent ?? '',
+          totalLots: job.totalLots ?? 0,
+          supervisorId: job.supervisorId ?? null,
+          superintendentId: job.superintendentId ?? null,
         }
       : { ...emptyJob, builder: defaultBuilder ?? '' },
     mode: 'onTouched',
     reValidateMode: 'onChange',
   })
+  const selectedBuilderName = useWatch({ control, name: 'builder' })
+  const selectedBuilderCode = builderCodeByName[selectedBuilderName]
+  const availableSuperintendents = useMemo(
+    () => superintendents.filter(
+      (contact) =>
+        contact.type === 'JOBSITE_SUPERINTENDENT'
+        && (
+          !selectedBuilderCode
+          || contact.builder === selectedBuilderCode
+          || contact.id === job?.superintendentId
+        ),
+    ),
+    [job?.superintendentId, selectedBuilderCode, superintendents],
+  )
+
   return (
     <Dialog
       open
@@ -154,6 +192,15 @@ function JobDialog({ builderOptions, defaultBuilder, supervisorOptions, job, job
                   fullWidth
                   slotProps={{ htmlInput: { maxLength: 100 } }}
                 />
+                <TextField
+                  label="Total lots"
+                  type="number"
+                  {...register('totalLots')}
+                  error={Boolean(errors.totalLots)}
+                  helperText={errors.totalLots?.message ?? 'Lots or units included in this Job.'}
+                  fullWidth
+                  slotProps={{ htmlInput: { min: 0, max: 100000, step: 1 } }}
+                />
               </Stack>
             </Stack>
           </Box>
@@ -162,41 +209,31 @@ function JobDialog({ builderOptions, defaultBuilder, supervisorOptions, job, job
             <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1.5 }}>
               Job team
             </Typography>
-            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
-              <FormControl fullWidth error={Boolean(errors.supervisor)}>
-                <InputLabel id="job-supervisor-label">Supervisor</InputLabel>
-                <Controller
-                  name="supervisor"
-                  control={control}
-                  render={({ field }) => (
-                    <Select
-                      {...field}
-                      labelId="job-supervisor-label"
-                      label="Supervisor"
-                    >
-                      <MenuItem value="" disabled>
-                        Select a supervisor
-                      </MenuItem>
-                      {supervisorOptions.map((supervisor) => (
-                        <MenuItem key={supervisor} value={supervisor}>
-                          {supervisor}
-                        </MenuItem>
-                      ))}
-                    </Select>
-                  )}
-                />
-                <FormHelperText>
-                  {errors.supervisor?.message ?? 'Valtrim supervisor assigned to this job.'}
-                </FormHelperText>
-              </FormControl>
-
-              <TextField
+            <Stack
+              direction={{ xs: 'column', sm: 'row' }}
+              spacing={2}
+              sx={{ alignItems: 'flex-start' }}
+            >
+              <PersonPickerField
+                name="supervisorId"
+                label="Supervisor"
+                helperText="Loaded from the saved Crews & Foremen roster."
+                control={control}
+                error={errors.supervisorId}
+                people={supervisors}
+              />
+              <PersonPickerField
+                name="superintendentId"
                 label="Jobsite Superintendent"
-                {...register('jobsiteSuperintendent')}
-                error={Boolean(errors.jobsiteSuperintendent)}
-                helperText={errors.jobsiteSuperintendent?.message ?? 'Builder contact responsible for the jobsite.'}
-                fullWidth
-                slotProps={{ htmlInput: { maxLength: 100 } }}
+                helperText="Builder contact responsible for the jobsite."
+                control={control}
+                error={errors.superintendentId}
+                people={availableSuperintendents}
+                onCreate={(draft) =>
+                  onCreateSuperintendent(draft, selectedBuilderName)
+                }
+                createTitle="Add new superintendent"
+                extraFields={['phone']}
               />
             </Stack>
           </Box>
@@ -255,6 +292,11 @@ export default function JobsCatalog() {
   const [searchParams] = useSearchParams()
   const { jobs, setJobs } = useJobs()
   const [builders, setBuilders] = useState(initialBuilders)
+  const [superintendents, setSuperintendents] = useState(
+    () => initialContacts.filter(
+      (contact) => contact.type === 'JOBSITE_SUPERINTENDENT',
+    ),
+  )
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(0)
   const [rowsPerPage, setRowsPerPage] = useState(5)
@@ -263,6 +305,18 @@ export default function JobsCatalog() {
   const [editTarget, setEditTarget] = useState(null)
   const [deleteTarget, setDeleteTarget] = useState(null)
   const [notice, setNotice] = useState(null)
+  const supervisors = useMemo(
+    () => initialPeople.filter((person) => person.types.includes('SUPERVISOR')),
+    [],
+  )
+  const supervisorsById = useMemo(
+    () => new Map(supervisors.map((person) => [person.id, person])),
+    [supervisors],
+  )
+  const superintendentsById = useMemo(
+    () => new Map(superintendents.map((person) => [person.id, person])),
+    [superintendents],
+  )
 
   const createRequested = searchParams.get('create') === '1'
   const legacyBuilderId = searchParams.get('builder')
@@ -288,14 +342,14 @@ export default function JobsCatalog() {
           job.code,
           job.community,
           job.builder,
-          job.supervisor,
-          job.jobsiteSuperintendent,
+          personName(supervisorsById, job.supervisorId),
+          personName(superintendentsById, job.superintendentId),
       ]
         .join(' ')
         .toLowerCase()
         .includes(query),
     )
-  }, [builderJobs, search])
+  }, [builderJobs, search, superintendentsById, supervisorsById])
 
   const visibleJobs = filteredJobs.slice(
     page * rowsPerPage,
@@ -320,18 +374,6 @@ export default function JobsCatalog() {
         builder.name === editTarget?.builder,
     )
     .map((builder) => builder.name)
-  const supervisorOptions = useMemo(
-    () => [
-      ...new Set([
-        ...initialPeople
-          .filter((person) => person.types.includes('SUPERVISOR'))
-          .map((person) => person.name),
-        ...jobs.map((job) => job.supervisor).filter(Boolean),
-      ]),
-    ].sort((left, right) => left.localeCompare(right)),
-    [jobs],
-  )
-
   useEffect(() => {
     if (builderId || jobId || (!legacyBuilderId && !legacyJobId)) return
 
@@ -418,6 +460,18 @@ export default function JobsCatalog() {
     const job = selectedJob
     handleMenuClose()
     if (job) openJobDetails(job)
+  }
+
+  const handleCreateSuperintendent = (draft, builderName) => {
+    const created = {
+      ...emptyContact,
+      ...draft,
+      id: Date.now(),
+      type: 'JOBSITE_SUPERINTENDENT',
+      builder: builderCodeByName[builderName] ?? '',
+    }
+    setSuperintendents((current) => [created, ...current])
+    return created
   }
 
   const handleSave = (form) => {
@@ -658,7 +712,7 @@ export default function JobsCatalog() {
                             flexShrink: 0,
                           }}
                         >
-                          <AccountTreeRoundedIcon fontSize="small" />
+                          <BackupTableRoundedIcon fontSize="small" />
                         </Box>
                         <Box>
                           <Typography variant="body2" fontWeight={700} noWrap color="primary.main">
@@ -681,12 +735,12 @@ export default function JobsCatalog() {
                     </TableCell>
                     <TableCell>
                       <Typography variant="body2" fontWeight={600} noWrap>
-                        {job.supervisor || 'Unassigned'}
+                        {personName(supervisorsById, job.supervisorId)}
                       </Typography>
                     </TableCell>
                     <TableCell>
                       <Typography variant="body2" fontWeight={600} noWrap>
-                        {job.jobsiteSuperintendent || 'Unassigned'}
+                        {personName(superintendentsById, job.superintendentId)}
                       </Typography>
                     </TableCell>
                     <TableCell>
@@ -696,7 +750,7 @@ export default function JobsCatalog() {
                         sx={{ alignItems: 'center', justifyContent: 'space-between' }}
                       >
                         <Typography variant="body2" fontWeight={600}>
-                          {getJobUnitCount(job)}
+                          {job.totalLots ?? getJobUnitCount(job)}
                         </Typography>
                         <IconButton
                           size="small"
@@ -750,7 +804,7 @@ export default function JobsCatalog() {
         transformOrigin={{ vertical: 'top', horizontal: 'right' }}
       >
         <MenuItem onClick={openSelectedJobDetails}>
-          <AccountTreeRoundedIcon fontSize="small" sx={{ mr: 1.25 }} />
+          <BackupTableRoundedIcon fontSize="small" sx={{ mr: 1.25 }} />
           View Plans & Options for job #{selectedJob?.code}
         </MenuItem>
         <MenuItem onClick={openEditDialog}>
@@ -768,10 +822,12 @@ export default function JobsCatalog() {
           key={dialogJob?.id ?? 'new'}
           builderOptions={builderOptions}
           defaultBuilder={selectedBuilder.name}
-          supervisorOptions={supervisorOptions}
+          supervisors={supervisors}
+          superintendents={superintendents}
           job={dialogJob}
           jobs={jobs}
           onClose={closeDialog}
+          onCreateSuperintendent={handleCreateSuperintendent}
           onSave={handleSave}
         />
       )}

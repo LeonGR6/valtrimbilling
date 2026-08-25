@@ -1,10 +1,8 @@
 import { z } from 'zod'
 
-export const personTypeSchema = z.enum([
-  'JOBSITE_SUPERINTENDENT',
-  'SUPERVISOR',
-  'AP_CONTACT',
-])
+// Builder-side types moved to features/builder-contacts. This screen only
+// holds Valtrim's own field staff.
+export const personTypeSchema = z.enum(['SUPERVISOR'])
 
 const namePattern = /^[\p{L}\p{M}\s.'-]+$/u
 const phonePattern = /^[\d\s()+.-]*$/

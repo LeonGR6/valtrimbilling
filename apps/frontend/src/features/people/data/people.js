@@ -1,15 +1,9 @@
+// Valtrim's own field staff. Builder-side people — jobsite superintendents and
+// AP contacts — live in features/builder-contacts instead.
 export const personTypeOptions = [
-  {
-    value: 'JOBSITE_SUPERINTENDENT',
-    label: 'Jobsite Superintendent',
-  },
   {
     value: 'SUPERVISOR',
     label: 'Supervisor',
-  },
-  {
-    value: 'AP_CONTACT',
-    label: 'AP Contact',
   },
 ]
 
@@ -20,15 +14,6 @@ export const personTypeLabels = Object.fromEntries(
 export const initialPeople = [
   {
     id: 1,
-    name: 'Daniel Torres',
-    phone: '(951) 555-0184',
-    officePhone: '(951) 555-0100',
-    email: 'daniel.torres@kbhome.com',
-    types: ['JOBSITE_SUPERINTENDENT'],
-    territory: '',
-  },
-  {
-    id: 2,
     name: 'Lauren Mitchell',
     phone: '(714) 555-0162',
     officePhone: '',
@@ -37,13 +22,31 @@ export const initialPeople = [
     territory: 'Inland Empire',
   },
   {
+    id: 2,
+    name: 'Robert King',
+    phone: '(714) 555-0178',
+    officePhone: '(714) 555-0100',
+    email: 'robert.king@valtriminc.com',
+    types: ['SUPERVISOR'],
+    territory: 'Orange County',
+  },
+  {
     id: 3,
-    name: 'Andrea Collins',
-    phone: '(949) 555-0146',
-    officePhone: '(949) 555-0110',
-    email: 'ap@cityventures.com',
-    types: ['AP_CONTACT'],
-    territory: '',
+    name: 'Esteban Marquez',
+    phone: '(951) 555-0135',
+    officePhone: '',
+    email: 'esteban.marquez@valtriminc.com',
+    types: ['SUPERVISOR'],
+    territory: 'Riverside County',
+  },
+  {
+    id: 4,
+    name: 'Nadia Haddad',
+    phone: '(909) 555-0191',
+    officePhone: '(909) 555-0100',
+    email: 'nadia.haddad@valtriminc.com',
+    types: ['SUPERVISOR'],
+    territory: 'High Desert',
   },
 ]
 
@@ -52,6 +55,7 @@ export const emptyPerson = {
   phone: '',
   officePhone: '',
   email: '',
-  types: [],
+  // Supervisor is the only role this screen holds today, so it starts checked.
+  types: ['SUPERVISOR'],
   territory: '',
 }

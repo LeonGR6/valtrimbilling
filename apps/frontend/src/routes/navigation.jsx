@@ -9,6 +9,8 @@ import {
   PeoplePage,
   PricingPage,
   SequenceSheetsPage,
+  BuilderContactsPage,
+  UsersPage,
 } from './lazyPages.jsx'
 
 // Single source of truth for the app's navigable routes.
@@ -29,6 +31,8 @@ export const navigationRoutes = [
   { path: '/pricing', label: 'Pricing', icon: 'pricing', element: <PricingPage /> },
   { path: '/invoice', label: 'Invoice', icon: 'invoice', element: <InvoicePage /> },
   { path: '/financials', label: 'Financials', icon: 'financials', element: <FinancialsPage /> },
+  { path: '/users', label: 'Users', icon: 'users', element: <UsersPage /> },
+  { path: '/builder-contacts', label: 'Builder Contacts', icon: 'builder-contacts', element: <BuilderContactsPage /> },
 
 ]
 

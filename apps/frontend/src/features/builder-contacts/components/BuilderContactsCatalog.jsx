@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { useForm } from 'react-hook-form'
+import { Controller, useForm } from 'react-hook-form'
 import {
   Alert,
   Avatar,
@@ -11,10 +11,14 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
+  FormControl,
+  FormHelperText,
   IconButton,
   InputAdornment,
+  InputLabel,
   Menu,
   MenuItem,
+  Select,
   Snackbar,
   Stack,
   Table,
@@ -27,20 +31,25 @@ import {
   TextField,
   Typography,
 } from '@mui/material'
-import ContactPhoneRoundedIcon from '@mui/icons-material/ContactPhoneRounded'
+import BusinessRoundedIcon from '@mui/icons-material/BusinessRounded'
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined'
+import FilterListRoundedIcon from '@mui/icons-material/FilterListRounded'
 import MailOutlineRoundedIcon from '@mui/icons-material/MailOutlineRounded'
 import MoreHorizRoundedIcon from '@mui/icons-material/MoreHorizRounded'
 import PhoneOutlinedIcon from '@mui/icons-material/PhoneOutlined'
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
 import ResponsiveCreateButton from '../../../components/common/ResponsiveCreateButton'
 import {
-  emptyPerson,
-  initialPeople,
-  personTypeLabels,
-} from '../data/people.js'
-import { personSchema } from '../schemas/personSchema.js'
+  builderLabels,
+  builderOptions,
+  contactTypeDescriptions,
+  contactTypeLabels,
+  contactTypeOptions,
+  emptyContact,
+  initialContacts,
+} from '../data/builderContacts.js'
+import { createBuilderContactSchema } from '../schemas/builderContactSchema.js'
 
 function getInitials(name) {
   return name
@@ -52,26 +61,19 @@ function getInitials(name) {
     .toUpperCase()
 }
 
-function PersonDialog({ person, onClose, onSave }) {
+function ContactDialog({ contact, contacts, onClose, onSave }) {
   const {
+    control,
     register,
     handleSubmit,
     formState: { errors },
   } = useForm({
-    resolver: zodResolver(personSchema),
-    defaultValues: person
-      ? {
-          name: person.name,
-          phone: person.phone,
-          officePhone: person.officePhone,
-          email: person.email,
-          types: [...person.types],
-          territory: person.territory ?? '',
-        }
-      : { ...emptyPerson },
+    resolver: zodResolver(createBuilderContactSchema(contacts, contact?.id ?? null)),
+    defaultValues: contact ? { ...contact } : { ...emptyContact },
     mode: 'onTouched',
     reValidateMode: 'onChange',
   })
+
   return (
     <Dialog
       open
@@ -84,12 +86,12 @@ function PersonDialog({ person, onClose, onSave }) {
     >
       <DialogTitle sx={{ pb: 1 }}>
         <Typography variant="h6" component="div" fontWeight={700}>
-          {person ? 'Edit supervisor' : 'New supervisor'}
+          {contact ? 'Edit contact' : 'New contact'}
         </Typography>
         <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-          {person
-            ? 'Update the supervisor contact information and territory.'
-            : 'Add a Valtrim supervisor who can be assigned to jobs.'}
+          {contact
+            ? 'Update who to reach on the builder side.'
+            : 'Add someone who works for the builder, not for Valtrim.'}
         </Typography>
       </DialogTitle>
 
@@ -102,6 +104,75 @@ function PersonDialog({ person, onClose, onSave }) {
             helperText={errors.name?.message ?? ' '}
             fullWidth
             slotProps={{ htmlInput: { maxLength: 100 } }}
+          />
+
+          <Controller
+            name="builder"
+            control={control}
+            render={({ field }) => (
+              <FormControl error={Boolean(errors.builder)} fullWidth>
+                <InputLabel id="contact-builder-label">Builder</InputLabel>
+                <Select
+                  labelId="contact-builder-label"
+                  label="Builder"
+                  value={field.value}
+                  onChange={field.onChange}
+                  onBlur={field.onBlur}
+                >
+                  {builderOptions.map((option) => (
+                    <MenuItem key={option.value} value={option.value}>
+                      {option.label}
+                    </MenuItem>
+                  ))}
+                </Select>
+                <FormHelperText>{errors.builder?.message ?? ' '}</FormHelperText>
+              </FormControl>
+            )}
+          />
+
+          <Controller
+            name="type"
+            control={control}
+            render={({ field }) => (
+              <FormControl error={Boolean(errors.type)} fullWidth>
+                <InputLabel id="contact-type-label">Contact type</InputLabel>
+                <Select
+                  labelId="contact-type-label"
+                  label="Contact type"
+                  value={field.value}
+                  onChange={field.onChange}
+                  onBlur={field.onBlur}
+                >
+                  {contactTypeOptions.map((option) => (
+                    <MenuItem key={option.value} value={option.value}>
+                      {option.label}
+                    </MenuItem>
+                  ))}
+                </Select>
+                <FormHelperText>
+                  {errors.type?.message ?? contactTypeDescriptions[field.value]}
+                </FormHelperText>
+              </FormControl>
+            )}
+          />
+
+          <TextField
+            label="Email"
+            type="email"
+            {...register('email')}
+            error={Boolean(errors.email)}
+            helperText={errors.email?.message ?? ' '}
+            fullWidth
+            slotProps={{
+              input: {
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <MailOutlineRoundedIcon fontSize="small" />
+                  </InputAdornment>
+                ),
+              },
+              htmlInput: { maxLength: 160 },
+            }}
           />
 
           <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
@@ -134,7 +205,7 @@ function PersonDialog({ person, onClose, onSave }) {
                 input: {
                   startAdornment: (
                     <InputAdornment position="start">
-                      <ContactPhoneRoundedIcon fontSize="small" />
+                      <BusinessRoundedIcon fontSize="small" />
                     </InputAdornment>
                   ),
                 },
@@ -144,36 +215,13 @@ function PersonDialog({ person, onClose, onSave }) {
           </Stack>
 
           <TextField
-            label="Email"
-            type="email"
-            {...register('email')}
-            error={Boolean(errors.email)}
-            helperText={errors.email?.message ?? ' '}
+            label="Notes"
+            {...register('notes')}
+            error={Boolean(errors.notes)}
+            helperText={errors.notes?.message ?? 'How they prefer to be reached, quirks to remember'}
             fullWidth
-            slotProps={{
-              input: {
-                startAdornment: (
-                  <InputAdornment position="start">
-                    <MailOutlineRoundedIcon fontSize="small" />
-                  </InputAdornment>
-                ),
-              },
-              htmlInput: { maxLength: 160 },
-            }}
-          />
-
-
-          <TextField
-            label="Territory"
-            {...register('territory')}
-            error={Boolean(errors.territory)}
-            helperText={
-              errors.territory?.message
-              ?? 'Geographic area assigned to this Valtrim supervisor.'
-            }
-            required
-            fullWidth
-            slotProps={{ htmlInput: { maxLength: 80 } }}
+            multiline
+            minRows={2}
           />
         </Stack>
       </DialogContent>
@@ -183,87 +231,94 @@ function PersonDialog({ person, onClose, onSave }) {
           Cancel
         </Button>
         <Button type="submit" variant="contained" disableElevation>
-          {person ? 'Save changes' : 'Create supervisor'}
+          {contact ? 'Save changes' : 'Create contact'}
         </Button>
       </DialogActions>
     </Dialog>
   )
 }
 
-export default function PeopleCatalog() {
-  const [people, setPeople] = useState(initialPeople)
+export default function BuilderContactsCatalog() {
+  const [contacts, setContacts] = useState(initialContacts)
   const [search, setSearch] = useState('')
+  const [typeFilter, setTypeFilter] = useState('all')
+  const [builderFilter, setBuilderFilter] = useState('all')
   const [page, setPage] = useState(0)
   const [rowsPerPage, setRowsPerPage] = useState(5)
   const [menuAnchor, setMenuAnchor] = useState(null)
-  const [selectedPerson, setSelectedPerson] = useState(null)
+  const [selectedContact, setSelectedContact] = useState(null)
   const [dialogState, setDialogState] = useState(null)
   const [deleteTarget, setDeleteTarget] = useState(null)
   const [notice, setNotice] = useState(null)
 
-  const filteredPeople = useMemo(() => {
+  const filteredContacts = useMemo(() => {
     const query = search.trim().toLowerCase()
 
-    return people.filter((person) => {
+    return contacts.filter((contact) => {
       const matchesSearch =
         !query ||
-        [person.name, person.phone, person.officePhone, person.email, person.territory]
+        [contact.name, contact.email, contact.phone, contact.officePhone, builderLabels[contact.builder]]
+          .filter(Boolean)
           .join(' ')
           .toLowerCase()
           .includes(query)
-      return matchesSearch
-    })
-  }, [people, search])
+      const matchesType = typeFilter === 'all' || contact.type === typeFilter
+      const matchesBuilder =
+        builderFilter === 'all' || contact.builder === builderFilter
 
-  const visiblePeople = filteredPeople.slice(
+      return matchesSearch && matchesType && matchesBuilder
+    })
+  }, [contacts, search, typeFilter, builderFilter])
+
+  const visibleContacts = filteredContacts.slice(
     page * rowsPerPage,
     page * rowsPerPage + rowsPerPage,
   )
 
-  const handleMenuOpen = (event, person) => {
+  const handleMenuOpen = (event, contact) => {
     setMenuAnchor(event.currentTarget)
-    setSelectedPerson(person)
+    setSelectedContact(contact)
   }
 
   const handleMenuClose = () => {
     setMenuAnchor(null)
-    setSelectedPerson(null)
+    setSelectedContact(null)
   }
 
   const openEditDialog = () => {
-    setDialogState({ mode: 'edit', person: selectedPerson })
+    setDialogState({ mode: 'edit', contact: selectedContact })
     handleMenuClose()
   }
 
   const openDeleteDialog = () => {
-    setDeleteTarget(selectedPerson)
+    setDeleteTarget(selectedContact)
     handleMenuClose()
   }
 
   const handleSave = (form) => {
     if (dialogState?.mode === 'edit') {
-      setPeople((current) =>
-        current.map((person) =>
-          person.id === dialogState.person.id ? { ...person, ...form } : person,
+      setContacts((current) =>
+        current.map((contact) =>
+          contact.id === dialogState.contact.id ? { ...contact, ...form } : contact,
         ),
       )
-      setNotice({ severity: 'success', message: 'Supervisor updated.' })
+      setNotice({ severity: 'success', message: 'Contact updated.' })
     } else {
-      setPeople((current) => [{ ...form, id: Date.now() }, ...current])
+      setContacts((current) => [{ ...form, id: Date.now() }, ...current])
       setPage(0)
-      setNotice({ severity: 'success', message: 'Supervisor created.' })
+      setNotice({ severity: 'success', message: 'Contact created.' })
     }
 
     setDialogState(null)
   }
 
   const handleDelete = () => {
-    setPeople((current) =>
-      current.filter((person) => person.id !== deleteTarget.id),
+    setContacts((current) =>
+      current.filter((contact) => contact.id !== deleteTarget.id),
     )
     setDeleteTarget(null)
     setPage(0)
-    setNotice({ severity: 'success', message: 'Supervisor deleted.' })
+    setNotice({ severity: 'success', message: 'Contact deleted.' })
   }
 
   return (
@@ -284,14 +339,14 @@ export default function PeopleCatalog() {
       >
         <Box>
           <Typography variant="h5" fontWeight={700} color="text.primary">
-            Crews &amp; Foremen
+            Builder Contacts
           </Typography>
           <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-            Manage Valtrim supervisors available for job assignments.
+            Superintendents and accounts payable contacts on the builder side.
           </Typography>
         </Box>
         <ResponsiveCreateButton
-          label="New supervisor"
+          label="New contact"
           onClick={() => setDialogState({ mode: 'create' })}
         />
       </Box>
@@ -318,8 +373,8 @@ export default function PeopleCatalog() {
                 setPage(0)
               }}
               size="small"
-              placeholder="Search supervisors or contact information..."
-              sx={{ width: { xs: '100%', md: 380 } }}
+              placeholder="Search contacts, builders or phone numbers..."
+              sx={{ width: { xs: '100%', md: 340 } }}
               slotProps={{
                 input: {
                   startAdornment: (
@@ -330,6 +385,49 @@ export default function PeopleCatalog() {
                 },
               }}
             />
+            <FormControl size="small" sx={{ minWidth: 200 }}>
+              <InputLabel id="contact-builder-filter-label">Builder</InputLabel>
+              <Select
+                labelId="contact-builder-filter-label"
+                label="Builder"
+                value={builderFilter}
+                onChange={(event) => {
+                  setBuilderFilter(event.target.value)
+                  setPage(0)
+                }}
+                startAdornment={
+                  <InputAdornment position="start">
+                    <FilterListRoundedIcon fontSize="small" color="action" />
+                  </InputAdornment>
+                }
+              >
+                <MenuItem value="all">All builders</MenuItem>
+                {builderOptions.map((option) => (
+                  <MenuItem key={option.value} value={option.value}>
+                    {option.label}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+            <FormControl size="small" sx={{ minWidth: 210 }}>
+              <InputLabel id="contact-type-filter-label">Contact type</InputLabel>
+              <Select
+                labelId="contact-type-filter-label"
+                label="Contact type"
+                value={typeFilter}
+                onChange={(event) => {
+                  setTypeFilter(event.target.value)
+                  setPage(0)
+                }}
+              >
+                <MenuItem value="all">All types</MenuItem>
+                {contactTypeOptions.map((option) => (
+                  <MenuItem key={option.value} value={option.value}>
+                    {option.label}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
           </Stack>
 
           <TableContainer>
@@ -347,18 +445,17 @@ export default function PeopleCatalog() {
                     },
                   }}
                 >
-                  <TableCell>Person</TableCell>
-                  <TableCell>Phone number</TableCell>
-                  <TableCell>Office phone number</TableCell>
-                  <TableCell>Person type</TableCell>
-                  <TableCell>Territory</TableCell>
+                  <TableCell>Contact</TableCell>
+                  <TableCell>Builder</TableCell>
+                  <TableCell>Type</TableCell>
+                  <TableCell>Phone</TableCell>
                   <TableCell align="right" width={72}>Actions</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
-                {visiblePeople.map((person) => (
+                {visibleContacts.map((contact) => (
                   <TableRow
-                    key={person.id}
+                    key={contact.id}
                     hover
                     sx={{ '&:last-child td': { borderBottom: 0 } }}
                   >
@@ -374,11 +471,11 @@ export default function PeopleCatalog() {
                             fontWeight: 700,
                           }}
                         >
-                          {getInitials(person.name)}
+                          {getInitials(contact.name)}
                         </Avatar>
                         <Box sx={{ minWidth: 0 }}>
                           <Typography variant="body2" fontWeight={600} noWrap>
-                            {person.name}
+                            {contact.name}
                           </Typography>
                           <Typography
                             variant="caption"
@@ -386,51 +483,34 @@ export default function PeopleCatalog() {
                             noWrap
                             component="div"
                           >
-                            {person.email}
+                            {contact.email}
                           </Typography>
                         </Box>
                       </Stack>
                     </TableCell>
                     <TableCell>
                       <Typography variant="body2" color="text.secondary" noWrap>
-                        {person.phone || 'No phone'}
+                        {builderLabels[contact.builder] ?? contact.builder}
                       </Typography>
                     </TableCell>
                     <TableCell>
-                      <Typography variant="body2" color="text.secondary" noWrap>
-                        {person.officePhone || 'No office phone'}
-                      </Typography>
-                    </TableCell>
-                    <TableCell sx={{ maxWidth: 340 }}>
-                      <Stack
-                        direction="row"
-                        spacing={0.75}
-                        useFlexGap
-                        sx={{ flexWrap: 'wrap' }}
-                      >
-                        {person.types.map((type) => (
-                          <Chip
-                            key={type}
-                            label={personTypeLabels[type]}
-                            size="small"
-                            variant="outlined"
-                            color={type === 'SUPERVISOR' ? 'primary' : 'default'}
-                          />
-                        ))}
-                      </Stack>
+                      <Chip
+                        label={contactTypeLabels[contact.type]}
+                        size="small"
+                        variant="outlined"
+                        color={contact.type === 'AP_CONTACT' ? 'primary' : 'default'}
+                      />
                     </TableCell>
                     <TableCell>
                       <Typography variant="body2" color="text.secondary" noWrap>
-                        {person.types.includes('SUPERVISOR')
-                          ? person.territory || 'Not assigned'
-                          : '—'}
+                        {contact.phone || contact.officePhone || 'No phone'}
                       </Typography>
                     </TableCell>
                     <TableCell align="right">
                       <IconButton
                         size="small"
-                        aria-label={`Actions for ${person.name}`}
-                        onClick={(event) => handleMenuOpen(event, person)}
+                        aria-label={`Actions for ${contact.name}`}
+                        onClick={(event) => handleMenuOpen(event, contact)}
                       >
                         <MoreHorizRoundedIcon />
                       </IconButton>
@@ -438,13 +518,13 @@ export default function PeopleCatalog() {
                   </TableRow>
                 ))}
 
-                {visiblePeople.length === 0 && (
+                {visibleContacts.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={6} sx={{ py: 8, textAlign: 'center' }}>
+                    <TableCell colSpan={5} sx={{ py: 8, textAlign: 'center' }}>
                       <SearchRoundedIcon color="action" sx={{ fontSize: 40, mb: 1 }} />
-                      <Typography fontWeight={600}>No supervisors found</Typography>
+                      <Typography fontWeight={600}>No contacts found</Typography>
                       <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-                        Try changing your search.
+                        Try changing your search, builder or type filter.
                       </Typography>
                     </TableCell>
                   </TableRow>
@@ -455,7 +535,7 @@ export default function PeopleCatalog() {
 
           <TablePagination
             component="div"
-            count={filteredPeople.length}
+            count={filteredContacts.length}
             page={page}
             onPageChange={(_, nextPage) => setPage(nextPage)}
             rowsPerPage={rowsPerPage}
@@ -486,9 +566,10 @@ export default function PeopleCatalog() {
       </Menu>
 
       {dialogState && (
-        <PersonDialog
-          key={dialogState.person?.id ?? 'new'}
-          person={dialogState.person}
+        <ContactDialog
+          key={dialogState.contact?.id ?? 'new'}
+          contact={dialogState.contact}
+          contacts={contacts}
           onClose={() => setDialogState(null)}
           onSave={handleSave}
         />
@@ -500,11 +581,11 @@ export default function PeopleCatalog() {
         fullWidth
         maxWidth="xs"
       >
-        <DialogTitle>Delete person?</DialogTitle>
+        <DialogTitle>Delete contact?</DialogTitle>
         <DialogContent>
           <Typography variant="body2" color="text.secondary">
             {deleteTarget
-              ? `${deleteTarget.name} will be removed from Crews & Foremen.`
+              ? `${deleteTarget.name} will be removed from the ${builderLabels[deleteTarget.builder]} contact list.`
               : ''}
           </Typography>
         </DialogContent>
@@ -513,7 +594,7 @@ export default function PeopleCatalog() {
             Cancel
           </Button>
           <Button color="error" variant="contained" onClick={handleDelete} disableElevation>
-            Delete supervisor
+            Delete contact
           </Button>
         </DialogActions>
       </Dialog>

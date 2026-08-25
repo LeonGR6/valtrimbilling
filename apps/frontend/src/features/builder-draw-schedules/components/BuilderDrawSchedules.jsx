@@ -8,16 +8,21 @@ import {
   Button,
   Card,
   CardActions,
+  Checkbox,
   Chip,
   Dialog,
   DialogActions,
   DialogContent,
   DialogTitle,
   Divider,
+  FormControl,
+  FormControlLabel,
   IconButton,
   InputAdornment,
+  InputLabel,
   LinearProgress,
   MenuItem,
+  Select,
   Snackbar,
   Stack,
   TextField,
@@ -25,17 +30,39 @@ import {
 } from '@mui/material'
 import AddRoundedIcon from '@mui/icons-material/AddRounded'
 import BusinessRoundedIcon from '@mui/icons-material/BusinessRounded'
+import CalendarMonthRoundedIcon from '@mui/icons-material/CalendarMonthRounded'
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined'
 import ResponsiveCreateButton from '../../../components/common/ResponsiveCreateButton'
 import { initialBuilders } from '../../builders/data/builders.js'
 import {
   defaultDraws,
+  defaultBillingSettings,
+  frequencyLabels,
+  frequencyOptions,
   initialBuilderDrawSchedules,
+  invoiceDateOptions,
+  invoiceLineFormatLabels,
+  invoiceLineFormatOptions,
   MAX_DRAW_COUNT,
   MIN_DRAW_COUNT,
+  weekdayOptions,
+  workAcceptedOptions,
 } from '../data/builderDrawSchedules.js'
 import { createBuilderDrawScheduleSchema } from '../schemas/builderDrawScheduleSchema.js'
+import {
+  computeDrawPeriods,
+  describeSchedule,
+  formatPeriodDate,
+} from '../utils/drawPeriods.js'
+
+const sectionSx = {
+  fontSize: 12,
+  fontWeight: 700,
+  letterSpacing: '0.04em',
+  textTransform: 'uppercase',
+  color: 'text.secondary',
+}
 
 function formatPercentage(value) {
   if (!Number.isFinite(value)) return '0'
@@ -55,6 +82,68 @@ function getDrawTotal(draws) {
   return draws.reduce(
     (total, draw) => total + (Number(draw.percentage) || 0),
     0,
+  )
+}
+
+function requiredDocuments(setup) {
+  return [
+    setup.requiresPo && 'PO',
+    setup.requiresPaymentSchedule && 'Payment schedule',
+    setup.requiresRelease && 'Release',
+    setup.requiresBackup && 'Backup',
+  ].filter(Boolean)
+}
+
+function SchedulePreview({ control }) {
+  const values = useWatch({ control })
+  const periods = useMemo(
+    () => computeDrawPeriods(
+      {
+        ...values,
+        cutoffDay: Number(values.cutoffDay) || 1,
+        submissionDay: Number(values.submissionDay) || 1,
+        cutoffWeekday: Number(values.cutoffWeekday) || 0,
+        cutoffDays: (values.cutoffDays ?? []).map(Number).filter(Boolean),
+        submissionOffsetDays: Number(values.submissionOffsetDays) || 0,
+        paymentTermsDays: Number(values.paymentTermsDays) || 0,
+      },
+      3,
+    ),
+    [values],
+  )
+
+  return (
+    <Box sx={{ bgcolor: 'primary.light', borderRadius: 2, p: 2 }}>
+      <Stack direction="row" spacing={1} sx={{ alignItems: 'center', mb: 1.5 }}>
+        <CalendarMonthRoundedIcon fontSize="small" sx={{ color: 'primary.main' }} />
+        <Typography variant="body2" fontWeight={700} color="primary.main">
+          Next billing periods
+        </Typography>
+      </Stack>
+      <Stack spacing={0.75}>
+        {periods.map((period) => (
+          <Stack
+            key={period.key}
+            direction="row"
+            spacing={1}
+            sx={{ justifyContent: 'space-between', flexWrap: 'wrap' }}
+          >
+            <Typography variant="caption" color="text.secondary">
+              Cutoff {formatPeriodDate(period.cutoffDate)}
+            </Typography>
+            <Typography variant="caption" color="text.secondary">
+              Due {formatPeriodDate(period.submissionDate)}
+            </Typography>
+            <Typography variant="caption" color="text.secondary">
+              Invoice {formatPeriodDate(period.invoiceDate)}
+            </Typography>
+            <Typography variant="caption" color="text.secondary">
+              Pay ~{formatPeriodDate(period.estimatedPaymentDate)}
+            </Typography>
+          </Stack>
+        ))}
+      </Stack>
+    </Box>
   )
 }
 
@@ -78,12 +167,15 @@ function BuilderDrawScheduleDialog({
     resolver: zodResolver(schema),
     defaultValues: schedule
       ? {
-          builderId: schedule.builderId,
+          ...schedule,
           draws: schedule.draws.map((draw) => ({ ...draw })),
+          cutoffDays: [...schedule.cutoffDays],
         }
       : {
           builderId: '',
           draws: defaultDraws.map((draw) => ({ ...draw })),
+          ...defaultBillingSettings,
+          cutoffDays: [...defaultBillingSettings.cutoffDays],
         },
     mode: 'onTouched',
     reValidateMode: 'onChange',
@@ -95,6 +187,9 @@ function BuilderDrawScheduleDialog({
   })
   const selectedBuilderId = useWatch({ control, name: 'builderId' })
   const watchedDraws = useWatch({ control, name: 'draws' }) ?? []
+  const frequency = useWatch({ control, name: 'frequency' })
+  const retentionEnabled = useWatch({ control, name: 'retentionEnabled' })
+  const ocipWrapEnabled = useWatch({ control, name: 'ocipWrapEnabled' })
   const total = getDrawTotal(watchedDraws)
   const totalIsValid = Math.abs(total - 100) <= 0.001
   const percentagesAreValid =
@@ -121,18 +216,18 @@ function BuilderDrawScheduleDialog({
       open
       onClose={onClose}
       fullWidth
-      maxWidth="sm"
+      maxWidth="md"
       component="form"
       onSubmit={handleSubmit(onSave)}
       noValidate
     >
       <DialogTitle sx={{ pb: 1 }}>
         <Typography variant="h6" component="div" fontWeight={750}>
-          {schedule ? 'Edit Builder Draw Schedule' : 'New Builder Draw Schedule'}
+          {schedule ? 'Edit builder setup' : 'New builder setup'}
         </Typography>
         <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-          Choose between {MIN_DRAW_COUNT} and {MAX_DRAW_COUNT} draws and allocate
-          exactly 100% across them.
+          Configure draw allocation, billing rules and submission requirements in
+          one setup for this builder.
         </Typography>
       </DialogTitle>
 
@@ -170,9 +265,13 @@ function BuilderDrawScheduleDialog({
 
           {availableBuilders.length === 0 && !schedule && (
             <Alert severity="info">
-              Every active builder already has a draw schedule.
+              Every active builder already has a billing and draw setup.
             </Alert>
           )}
+
+          <Divider textAlign="left">
+            <Typography sx={sectionSx}>Draw allocation</Typography>
+          </Divider>
 
           <Box>
             <Stack
@@ -230,8 +329,8 @@ function BuilderDrawScheduleDialog({
                       htmlInput: {
                         min: 1,
                         max: 100,
-                        step: 1,
-                        inputMode: 'numeric',
+                        step: 0.01,
+                        inputMode: 'decimal',
                       },
                     }}
                   />
@@ -307,6 +406,338 @@ function BuilderDrawScheduleDialog({
               </Typography>
             )}
           </Box>
+
+          <Divider textAlign="left">
+            <Typography sx={sectionSx}>Billing cycle</Typography>
+          </Divider>
+
+          <Controller
+            name="frequency"
+            control={control}
+            render={({ field }) => (
+              <FormControl fullWidth>
+                <InputLabel id="setup-frequency-label">Frequency</InputLabel>
+                <Select
+                  {...field}
+                  labelId="setup-frequency-label"
+                  label="Frequency"
+                >
+                  {frequencyOptions.map((option) => (
+                    <MenuItem key={option.value} value={option.value}>
+                      {option.label}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            )}
+          />
+
+          {frequency === 'MONTHLY' && (
+            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
+              <TextField
+                label="Cutoff day"
+                type="number"
+                {...register('cutoffDay')}
+                error={Boolean(errors.cutoffDay)}
+                helperText={errors.cutoffDay?.message ?? 'Day of the month'}
+                fullWidth
+                slotProps={{ htmlInput: { min: 1, max: 31, step: 1 } }}
+              />
+              <TextField
+                label="Submission due day"
+                type="number"
+                {...register('submissionDay')}
+                error={Boolean(errors.submissionDay)}
+                helperText={errors.submissionDay?.message ?? 'Day of the month'}
+                fullWidth
+                slotProps={{ htmlInput: { min: 1, max: 31, step: 1 } }}
+              />
+            </Stack>
+          )}
+
+          {frequency === 'SEMIMONTHLY' && (
+            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
+              <TextField
+                label="First cutoff day"
+                type="number"
+                {...register('cutoffDays.0')}
+                error={Boolean(errors.cutoffDays)}
+                helperText={errors.cutoffDays?.message ?? 'Day of the month'}
+                fullWidth
+                slotProps={{ htmlInput: { min: 1, max: 31, step: 1 } }}
+              />
+              <TextField
+                label="Second cutoff day"
+                type="number"
+                {...register('cutoffDays.1')}
+                error={Boolean(errors.cutoffDays)}
+                helperText="Day of the month"
+                fullWidth
+                slotProps={{ htmlInput: { min: 1, max: 31, step: 1 } }}
+              />
+              <TextField
+                label="Days until due"
+                type="number"
+                {...register('submissionOffsetDays')}
+                error={Boolean(errors.submissionOffsetDays)}
+                helperText={errors.submissionOffsetDays?.message ?? 'After each cutoff'}
+                fullWidth
+                slotProps={{ htmlInput: { min: 0, max: 30, step: 1 } }}
+              />
+            </Stack>
+          )}
+
+          {frequency === 'WEEKLY' && (
+            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
+              <Controller
+                name="cutoffWeekday"
+                control={control}
+                render={({ field }) => (
+                  <FormControl fullWidth>
+                    <InputLabel id="setup-weekday-label">Cutoff weekday</InputLabel>
+                    <Select
+                      {...field}
+                      labelId="setup-weekday-label"
+                      label="Cutoff weekday"
+                    >
+                      {weekdayOptions.map((option) => (
+                        <MenuItem key={option.value} value={option.value}>
+                          {option.label}
+                        </MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                )}
+              />
+              <TextField
+                label="Days until due"
+                type="number"
+                {...register('submissionOffsetDays')}
+                error={Boolean(errors.submissionOffsetDays)}
+                helperText={errors.submissionOffsetDays?.message ?? 'After each cutoff'}
+                fullWidth
+                slotProps={{ htmlInput: { min: 0, max: 30, step: 1 } }}
+              />
+            </Stack>
+          )}
+
+          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
+            <Controller
+              name="workAcceptedThrough"
+              control={control}
+              render={({ field }) => (
+                <FormControl fullWidth>
+                  <InputLabel id="setup-accepted-label">Work accepted through</InputLabel>
+                  <Select
+                    {...field}
+                    labelId="setup-accepted-label"
+                    label="Work accepted through"
+                  >
+                    {workAcceptedOptions.map((option) => (
+                      <MenuItem key={option.value} value={option.value}>
+                        {option.label}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              )}
+            />
+            <Controller
+              name="invoiceDateRule"
+              control={control}
+              render={({ field }) => (
+                <FormControl fullWidth>
+                  <InputLabel id="setup-invoice-date-label">Invoice date</InputLabel>
+                  <Select
+                    {...field}
+                    labelId="setup-invoice-date-label"
+                    label="Invoice date"
+                  >
+                    {invoiceDateOptions.map((option) => (
+                      <MenuItem key={option.value} value={option.value}>
+                        {option.label}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              )}
+            />
+          </Stack>
+
+          <SchedulePreview control={control} />
+
+          <Divider textAlign="left">
+            <Typography sx={sectionSx}>Payment</Typography>
+          </Divider>
+
+          <TextField
+            label="Payment terms"
+            type="number"
+            {...register('paymentTermsDays')}
+            error={Boolean(errors.paymentTermsDays)}
+            helperText={errors.paymentTermsDays?.message ?? 'Days after the invoice date'}
+            fullWidth
+            slotProps={{
+              input: { endAdornment: <InputAdornment position="end">days</InputAdornment> },
+              htmlInput: { min: 0, max: 180, step: 1 },
+            }}
+          />
+
+          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} sx={{ alignItems: 'flex-start' }}>
+            <Box sx={{ width: '100%' }}>
+              <Controller
+                name="retentionEnabled"
+                control={control}
+                render={({ field }) => (
+                  <FormControlLabel
+                    label="Apply retention"
+                    control={(
+                      <Checkbox
+                        checked={Boolean(field.value)}
+                        onChange={(_, checked) => field.onChange(checked)}
+                      />
+                    )}
+                  />
+                )}
+              />
+              {retentionEnabled && (
+                <TextField
+                  label="Retention percentage"
+                  type="number"
+                  {...register('retentionPercentage')}
+                  error={Boolean(errors.retentionPercentage)}
+                  helperText={
+                    errors.retentionPercentage?.message
+                    ?? 'Percentage held until closeout.'
+                  }
+                  fullWidth
+                  required
+                  sx={{ mt: 1 }}
+                  slotProps={{
+                    input: { endAdornment: <InputAdornment position="end">%</InputAdornment> },
+                    htmlInput: { min: 1, max: 100, step: 0.01, inputMode: 'decimal' },
+                  }}
+                />
+              )}
+            </Box>
+
+            <Box sx={{ width: '100%' }}>
+              <Controller
+                name="ocipWrapEnabled"
+                control={control}
+                render={({ field }) => (
+                  <FormControlLabel
+                    label="Apply OCIP / WRAP insurance"
+                    control={(
+                      <Checkbox
+                        checked={Boolean(field.value)}
+                        onChange={(_, checked) => field.onChange(checked)}
+                      />
+                    )}
+                  />
+                )}
+              />
+              {ocipWrapEnabled && (
+                <TextField
+                  label="OCIP / WRAP percentage"
+                  type="number"
+                  {...register('ocipWrapPercentage')}
+                  error={Boolean(errors.ocipWrapPercentage)}
+                  helperText={
+                    errors.ocipWrapPercentage?.message
+                    ?? 'Insurance percentage deducted by the builder.'
+                  }
+                  fullWidth
+                  required
+                  sx={{ mt: 1 }}
+                  slotProps={{
+                    input: { endAdornment: <InputAdornment position="end">%</InputAdornment> },
+                    htmlInput: { min: 1, max: 100, step: 0.01, inputMode: 'decimal' },
+                  }}
+                />
+              )}
+            </Box>
+          </Stack>
+
+          <Divider textAlign="left">
+            <Typography sx={sectionSx}>Required to submit</Typography>
+          </Divider>
+
+          <Box
+            sx={{
+              display: 'grid',
+              gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)' },
+            }}
+          >
+            {[
+              ['requiresPo', 'Purchase order'],
+              ['requiresPaymentSchedule', 'Payment schedule'],
+              ['requiresRelease', 'Release'],
+              ['requiresBackup', 'Backup documentation'],
+            ].map(([name, label]) => (
+              <Controller
+                key={name}
+                name={name}
+                control={control}
+                render={({ field }) => (
+                  <FormControlLabel
+                    label={label}
+                    control={(
+                      <Checkbox
+                        checked={Boolean(field.value)}
+                        onChange={(_, checked) => field.onChange(checked)}
+                      />
+                    )}
+                  />
+                )}
+              />
+            ))}
+          </Box>
+
+          <Divider textAlign="left">
+            <Typography sx={sectionSx}>Submission</Typography>
+          </Divider>
+
+          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
+            <TextField
+              label="Portal"
+              {...register('portalName')}
+              error={Boolean(errors.portalName)}
+              helperText={errors.portalName?.message ?? 'Optional'}
+              fullWidth
+            />
+            <Controller
+              name="invoiceLineFormat"
+              control={control}
+              render={({ field }) => (
+                <FormControl fullWidth>
+                  <InputLabel id="setup-line-format-label">Invoice line format</InputLabel>
+                  <Select
+                    {...field}
+                    labelId="setup-line-format-label"
+                    label="Invoice line format"
+                  >
+                    {invoiceLineFormatOptions.map((option) => (
+                      <MenuItem key={option.value} value={option.value}>
+                        {option.label}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              )}
+            />
+          </Stack>
+
+          <TextField
+            label="Notes"
+            {...register('notes')}
+            error={Boolean(errors.notes)}
+            helperText={errors.notes?.message ?? 'Optional billing instructions'}
+            fullWidth
+            multiline
+            minRows={2}
+          />
+
         </Stack>
       </DialogContent>
 
@@ -315,7 +746,7 @@ function BuilderDrawScheduleDialog({
           Cancel
         </Button>
         <Button type="submit" variant="contained" disableElevation disabled={!canSave}>
-          {schedule ? 'Save changes' : 'Create schedule'}
+          {schedule ? 'Save changes' : 'Create setup'}
         </Button>
       </DialogActions>
     </Dialog>
@@ -364,15 +795,15 @@ function BuilderDrawScheduleCard({ schedule, builder, onEdit, onDelete }) {
         </Box>
         <Chip
           size="small"
-          color="success"
-          label={`${formatPercentage(total)}%`}
+          variant="outlined"
+          label={`${formatPercentage(total)}% allocated`}
           sx={{ fontWeight: 750 }}
         />
       </Stack>
 
       <Divider />
 
-      <Stack spacing={0} sx={{ flex: 1, px: 2 }}>
+      <Stack spacing={0} sx={{ px: 2 }}>
         {schedule.draws.map((draw, index) => (
           <Stack
             key={`${schedule.id}-draw-${index + 1}`}
@@ -407,6 +838,48 @@ function BuilderDrawScheduleCard({ schedule, builder, onEdit, onDelete }) {
         ))}
       </Stack>
 
+      <Divider />
+
+      <Stack spacing={1.25} sx={{ flex: 1, p: 2 }}>
+        <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
+          <Chip
+            size="small"
+            variant="outlined"
+            label={frequencyLabels[schedule.frequency]}
+          />
+          <Typography variant="caption" color="text.secondary">
+            {describeSchedule(schedule)}
+          </Typography>
+        </Stack>
+
+        <Typography variant="body2" color="text.secondary">
+          Net {schedule.paymentTermsDays}
+          {schedule.retentionEnabled
+            ? ` · ${formatPercentage(schedule.retentionPercentage)}% retention`
+            : ''}
+          {schedule.ocipWrapEnabled
+            ? ` · ${formatPercentage(schedule.ocipWrapPercentage)}% OCIP / WRAP`
+            : ''}
+        </Typography>
+
+        <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: 'wrap' }}>
+          {requiredDocuments(schedule).length > 0 ? (
+            requiredDocuments(schedule).map((document) => (
+              <Chip key={document} label={document} size="small" variant="outlined" />
+            ))
+          ) : (
+            <Typography variant="caption" color="text.secondary">
+              No submission documents required
+            </Typography>
+          )}
+        </Stack>
+
+        <Typography variant="caption" color="text.secondary">
+          {schedule.portalName || 'No portal'} ·{' '}
+          {invoiceLineFormatLabels[schedule.invoiceLineFormat]}
+        </Typography>
+      </Stack>
+
       <CardActions
         sx={{
           px: 2,
@@ -439,12 +912,12 @@ function BuilderDrawScheduleCard({ schedule, builder, onEdit, onDelete }) {
 function DeleteScheduleDialog({ schedule, builder, onClose, onDelete }) {
   return (
     <Dialog open={Boolean(schedule)} onClose={onClose} fullWidth maxWidth="xs">
-      <DialogTitle>Delete Builder Draw Schedule?</DialogTitle>
+      <DialogTitle>Delete builder setup?</DialogTitle>
       <DialogContent>
         <Alert severity="warning">
           {builder
-            ? `${builder.name}'s ${schedule.draws.length}-draw configuration will be permanently removed.`
-            : 'This draw configuration will be permanently removed.'}
+            ? `${builder.name}'s draw allocation and complete billing configuration will be permanently removed.`
+            : 'This draw and billing configuration will be permanently removed.'}
         </Alert>
       </DialogContent>
       <DialogActions sx={{ px: 3, pb: 2.5 }}>
@@ -452,7 +925,7 @@ function DeleteScheduleDialog({ schedule, builder, onClose, onDelete }) {
           Cancel
         </Button>
         <Button color="error" variant="contained" onClick={onDelete} disableElevation>
-          Delete schedule
+          Delete setup
         </Button>
       </DialogActions>
     </Dialog>
@@ -478,13 +951,13 @@ export default function BuilderDrawSchedules() {
             : schedule,
         ),
       )
-      setNotice({ severity: 'success', message: 'Builder Draw Schedule updated.' })
+      setNotice({ severity: 'success', message: 'Builder setup updated.' })
     } else {
       setSchedules((current) => [
         ...current,
         { ...form, id: Date.now() },
       ])
-      setNotice({ severity: 'success', message: 'Builder Draw Schedule created.' })
+      setNotice({ severity: 'success', message: 'Builder setup created.' })
     }
 
     setDialogState(null)
@@ -495,7 +968,7 @@ export default function BuilderDrawSchedules() {
       current.filter((schedule) => schedule.id !== deleteTarget.id),
     )
     setDeleteTarget(null)
-    setNotice({ severity: 'success', message: 'Builder Draw Schedule deleted.' })
+    setNotice({ severity: 'success', message: 'Builder setup deleted.' })
   }
 
   return (
@@ -519,13 +992,13 @@ export default function BuilderDrawSchedules() {
               Builder Draw Schedules
             </Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, maxWidth: 720 }}>
-              Define how each builder splits billing across 3 to 5 draws. Every
-              schedule must allocate exactly 100%.
+              One complete setup per builder: draw allocation, cutoff rules,
+              payment deductions and required submission documents.
             </Typography>
           </Box>
           <ResponsiveCreateButton
-            label="New Builder Draw Schedule"
-            mobileLabel="New schedule"
+            label="New builder setup"
+            mobileLabel="New setup"
             onClick={() => setDialogState({ mode: 'create' })}
           />
         </Stack>
@@ -539,7 +1012,7 @@ export default function BuilderDrawSchedules() {
         >
           <Box>
             <Typography variant="subtitle1" fontWeight={750}>
-              Existing schedules
+              Existing builder setups
             </Typography>
             <Typography variant="body2" color="text.secondary">
               {schedules.length} {schedules.length === 1 ? 'builder is' : 'builders are'} configured.
@@ -586,10 +1059,10 @@ export default function BuilderDrawSchedules() {
           <Card variant="outlined" sx={{ p: 6, textAlign: 'center' }}>
             <BusinessRoundedIcon color="action" sx={{ fontSize: 44 }} />
             <Typography fontWeight={750} sx={{ mt: 1 }}>
-              No Builder Draw Schedules yet
+              No builder setups yet
             </Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, mb: 2 }}>
-              Create the first schedule to define its draw percentages.
+              Create the first setup with draw and billing configuration.
             </Typography>
             <Button
               variant="contained"
@@ -597,7 +1070,7 @@ export default function BuilderDrawSchedules() {
               onClick={() => setDialogState({ mode: 'create' })}
               disableElevation
             >
-              New Builder Draw Schedule
+              New builder setup
             </Button>
           </Card>
         )}

@@ -27,16 +27,16 @@ export function createJobSchema(jobs, currentJobId) {
           .min(0, 'The lot total cannot be negative.')
           .max(100000, 'Enter 100,000 lots or fewer.'),
       ),
-      supervisor: z
-        .string()
-        .trim()
-        .min(1, 'Enter the supervisor.')
-        .max(100, 'Use 100 characters or fewer.'),
-      jobsiteSuperintendent: z
-        .string()
-        .trim()
-        .min(1, 'Enter the jobsite superintendent.')
-        .max(100, 'Use 100 characters or fewer.'),
+      // References into features/people and features/builder-contacts, so a job
+      // points at a record instead of repeating a name as loose text.
+      supervisorId: z
+        .number({ invalid_type_error: 'Select a supervisor.' })
+        .int()
+        .positive('Select a supervisor.'),
+      superintendentId: z
+        .number({ invalid_type_error: 'Select a jobsite superintendent.' })
+        .int()
+        .positive('Select a jobsite superintendent.'),
     })
     .superRefine((data, context) => {
       const duplicateCode = jobs.some(

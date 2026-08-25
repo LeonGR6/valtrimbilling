@@ -32,8 +32,8 @@ import {
   TextField,
   Typography,
 } from '@mui/material'
-import AccountTreeRoundedIcon from '@mui/icons-material/AccountTreeRounded'
 import ApartmentRoundedIcon from '@mui/icons-material/ApartmentRounded'
+import BackupTableRoundedIcon from '@mui/icons-material/BackupTableRounded'
 import BusinessRoundedIcon from '@mui/icons-material/BusinessRounded'
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined'
@@ -51,8 +51,30 @@ import {
 } from '../data/jobs.js'
 import { useJobs } from '../context/useJobs.js'
 import { createJobSchema } from '../schemas/jobSchema.js'
+import PersonPickerField from './PersonPickerField.jsx'
+import { initialPeople } from '../../people'
+import { initialContacts } from '../../builder-contacts'
+
+// The catalogs are keyed by id so the table can print a name without scanning.
+const supervisorsById = new Map(initialPeople.map((person) => [person.id, person]))
+const superintendentsById = new Map(initialContacts.map((person) => [person.id, person]))
+
+const personName = (index, id) => index.get(id)?.name ?? 'Unassigned'
 
 function JobDialog({ job, jobs, onClose, onSave }) {
+  // Seeded from the catalogs. Someone added here lives only in this session —
+  // once Supabase exists the insert and the query replace this entirely.
+  const [supervisors, setSupervisors] = useState(initialPeople)
+  const [superintendents, setSuperintendents] = useState(initialContacts)
+
+  const addPerson = (setList) => (draft) => {
+    const created = { ...draft, id: Date.now() }
+    setList((current) => [created, ...current])
+    return created
+  }
+  const addSupervisor = addPerson(setSupervisors)
+  const addSuperintendent = addPerson(setSuperintendents)
+
   const schema = useMemo(
     () => createJobSchema(jobs, job?.id),
     [job?.id, jobs],
@@ -70,8 +92,8 @@ function JobDialog({ job, jobs, onClose, onSave }) {
           builder: job.builder,
           community: job.community,
           totalLots: job.totalLots ?? 0,
-          supervisor: job.supervisor ?? '',
-          jobsiteSuperintendent: job.jobsiteSuperintendent ?? '',
+          supervisorId: job.supervisorId ?? null,
+          superintendentId: job.superintendentId ?? null,
         }
       : { ...emptyJob },
     mode: 'onTouched',
@@ -165,22 +187,27 @@ function JobDialog({ job, jobs, onClose, onSave }) {
             <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1.5 }}>
               Job team
             </Typography>
-            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
-              <TextField
+            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} sx={{ alignItems: 'flex-start' }}>
+              <PersonPickerField
+                name="supervisorId"
                 label="Supervisor"
-                {...register('supervisor')}
-                error={Boolean(errors.supervisor)}
-                helperText={errors.supervisor?.message ?? 'Valtrim supervisor assigned to this job.'}
-                fullWidth
-                slotProps={{ htmlInput: { maxLength: 100 } }}
+                helperText="Valtrim supervisor assigned to this job."
+                control={control}
+                error={errors.supervisorId}
+                people={supervisors}
+                onCreate={addSupervisor}
+                createTitle="Add new supervisor"
+                extraFields={['phone']}
               />
-              <TextField
+              <PersonPickerField
+                name="superintendentId"
                 label="Jobsite Superintendent"
-                {...register('jobsiteSuperintendent')}
-                error={Boolean(errors.jobsiteSuperintendent)}
-                helperText={errors.jobsiteSuperintendent?.message ?? 'Builder contact responsible for the jobsite.'}
-                fullWidth
-                slotProps={{ htmlInput: { maxLength: 100 } }}
+                helperText="Builder contact responsible for the jobsite."
+                control={control}
+                error={errors.superintendentId}
+                people={superintendents}
+                onCreate={addSuperintendent}
+                createTitle="Add new superintendent"
               />
             </Stack>
           </Box>
@@ -260,8 +287,8 @@ export default function JobsCatalog() {
           job.code,
           job.community,
           job.builder,
-          job.supervisor,
-          job.jobsiteSuperintendent,
+          personName(supervisorsById, job.supervisorId),
+          personName(superintendentsById, job.superintendentId),
         ]
           .join(' ')
           .toLowerCase()
@@ -518,7 +545,7 @@ export default function JobsCatalog() {
                               flexShrink: 0,
                             }}
                           >
-                            <AccountTreeRoundedIcon fontSize="small" />
+                            <BackupTableRoundedIcon fontSize="small" />
                           </Box>
                           <Box>
                             <Typography variant="body2" fontWeight={700} noWrap color="primary.main">
@@ -542,12 +569,12 @@ export default function JobsCatalog() {
                     </TableCell>
                     <TableCell>
                       <Typography variant="body2" fontWeight={600} noWrap>
-                        {job.supervisor || 'Unassigned'}
+                        {personName(supervisorsById, job.supervisorId)}
                       </Typography>
                     </TableCell>
                     <TableCell>
                       <Typography variant="body2" fontWeight={600} noWrap>
-                        {job.jobsiteSuperintendent || 'Unassigned'}
+                        {personName(superintendentsById, job.superintendentId)}
                       </Typography>
                     </TableCell>
                     <TableCell>
@@ -609,7 +636,7 @@ export default function JobsCatalog() {
         transformOrigin={{ vertical: 'top', horizontal: 'right' }}
       >
         <MenuItem onClick={openSelectedJobDetails}>
-          <AccountTreeRoundedIcon fontSize="small" sx={{ mr: 1.25 }} />
+          <BackupTableRoundedIcon fontSize="small" sx={{ mr: 1.25 }} />
           View sequence sheet
         </MenuItem>
         <MenuItem onClick={openEditDialog}>

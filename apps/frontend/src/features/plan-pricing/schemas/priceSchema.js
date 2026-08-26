@@ -12,3 +12,24 @@ export const priceSchema = z
       ),
   })
   .transform(({ amount }) => ({ amount: Number(amount) }))
+
+export function createHardwarePriceSchema(basePlanPrice) {
+  return priceSchema.superRefine(({ amount }, context) => {
+    if (!Number.isFinite(basePlanPrice)) {
+      context.addIssue({
+        code: 'custom',
+        path: ['amount'],
+        message: 'Set the base plan price before the hardware price.',
+      })
+      return
+    }
+
+    if (amount > basePlanPrice) {
+      context.addIssue({
+        code: 'custom',
+        path: ['amount'],
+        message: 'Hardware price cannot exceed the base plan price.',
+      })
+    }
+  })
+}

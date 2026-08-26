@@ -92,7 +92,6 @@ test('job schema normalizes the fields used to create a job', () => {
     code: ' job-1005 ',
     builder: ' KB Home ',
     community: ' Andara ',
-    totalLots: '24',
     supervisorId: 2,
     superintendentId: 5,
   })
@@ -101,7 +100,6 @@ test('job schema normalizes the fields used to create a job', () => {
     code: 'JOB-1005',
     builder: 'KB Home',
     community: 'Andara',
-    totalLots: 24,
     supervisorId: 2,
     superintendentId: 5,
   })
@@ -113,7 +111,6 @@ test('job schema requires a supervisor and a superintendent to be picked', () =>
     code: 'JOB-2001',
     builder: 'KB Home',
     community: 'Andara',
-    totalLots: 10,
     supervisorId: 2,
     superintendentId: 5,
   }
@@ -133,7 +130,6 @@ test('job schema rejects a duplicate job number', () => {
     code: 'JOB-1005',
     builder: 'KB Home',
     community: 'Andara',
-    totalLots: 24,
     supervisorId: 2,
     superintendentId: 5,
   }
@@ -143,7 +139,6 @@ test('job schema rejects a duplicate job number', () => {
     code: ' job-1005 ',
     builder: ' kb home ',
     community: 'andara',
-    totalLots: '24',
     supervisorId: 2,
     superintendentId: 5,
   })
@@ -176,16 +171,18 @@ test('job total lots follow phase edits and deletions', () => {
       ...job.sequenceSheet,
       phases: job.sequenceSheet.phases.map((phase) => ({
         ...phase,
-        lots: [
-          ...phase.lots,
-          {
-            id: 3103,
-            lotNumber: '3',
-            planId: 1103,
-            reverse: false,
-            optionIds: [],
-          },
-        ],
+        lots: phase.id === 2101
+          ? [
+              ...phase.lots,
+              {
+                id: 3103,
+                lotNumber: '3',
+                planId: 1103,
+                reverse: false,
+                optionIds: [],
+              },
+            ]
+          : phase.lots,
       })),
     },
   }
@@ -194,7 +191,7 @@ test('job total lots follow phase edits and deletions', () => {
     sequenceSheet: { ...editedJob.sequenceSheet, phases: [] },
   }
 
-  assert.equal(getJobUnitCount(editedJob), 3)
+  assert.equal(getJobUnitCount(editedJob), 8)
   assert.equal(getJobUnitCount(jobWithoutPhases), 0)
 })
 
@@ -203,13 +200,16 @@ test('plans and options report the lots that prevent their deletion', () => {
 
   assert.deepEqual(
     getPlanLotDependencies(job, 1101).map((dependency) => dependency.lotNumber),
-    ['2'],
+    ['67', '2'],
   )
   assert.deepEqual(
     getPlanLotDependencies(job, 1102).map((dependency) => dependency.lotNumber),
-    ['1'],
+    ['68', '69', '1'],
   )
-  assert.equal(getPlanLotDependencies(job, 1103).length, 0)
+  assert.deepEqual(
+    getPlanLotDependencies(job, 1103).map((dependency) => dependency.lotNumber),
+    ['66'],
+  )
   assert.deepEqual(
     getOptionLotDependencies(job, 110201).map(
       (dependency) => dependency.lotNumber,
@@ -265,9 +265,9 @@ test('pricing accepts USD amounts with up to two decimal places', () => {
 test('Job 1307 sequence sheet counts plans, options and visible columns', () => {
   const job = initialJobs.find((item) => item.code === '1307')
 
-  assert.equal(getJobPlanCount(job), 3)
+  assert.equal(getJobPlanCount(job), 4)
   assert.equal(getJobOptionCount(job), 11)
-  assert.equal(getJobSequenceColumnCount(job), 14)
+  assert.equal(getJobSequenceColumnCount(job), 15)
 })
 
 test('phase by lot schema normalizes lots and accepts selected plan options', () => {
@@ -301,7 +301,7 @@ test('phase by lot schema normalizes lots and accepts selected plan options', ()
 
 test('phase by lot schema supports editing the current phase and preserves lot ids', () => {
   const job = initialJobs.find((item) => item.code === '1307')
-  const phase = job.sequenceSheet.phases[0]
+  const phase = job.sequenceSheet.phases.find((item) => item.id === 2101)
   const result = createPhaseByLotSchema(job, phase.id).parse({
     phaseName: ' Phase 10 ',
     building: ' B5 ',

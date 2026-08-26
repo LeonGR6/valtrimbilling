@@ -1,10 +1,9 @@
-export const MIN_DRAW_COUNT = 3
+export const MIN_DRAW_COUNT = 2
 export const MAX_DRAW_COUNT = 5
 
 export const defaultDraws = [
-  { percentage: 0 },
-  { percentage: 0 },
-  { percentage: 0 },
+  { name: '', percentage: 0 },
+  { name: '', percentage: 0 },
 ]
 
 export const frequencyOptions = [
@@ -50,6 +49,7 @@ export const invoiceLineFormatLabels = Object.fromEntries(
 )
 
 export const defaultBillingSettings = {
+  separateHardwarePrice: false,
   frequency: 'MONTHLY',
   cutoffDay: 20,
   submissionDay: 25,
@@ -79,9 +79,9 @@ export const initialBuilderDrawSchedules = [
     id: 1,
     builderId: 2,
     draws: [
-      { percentage: 15 },
-      { percentage: 75 },
-      { percentage: 10 },
+      { name: 'Trim Complete', percentage: 10 },
+      { name: '', percentage: 75 },
+      { name: '', percentage: 15 },
     ],
     ...defaultBillingSettings,
     frequency: 'WEEKLY',
@@ -97,9 +97,9 @@ export const initialBuilderDrawSchedules = [
     id: 2,
     builderId: 4,
     draws: [
-      { percentage: 25 },
-      { percentage: 50 },
-      { percentage: 25 },
+      { name: '', percentage: 25 },
+      { name: '', percentage: 50 },
+      { name: '', percentage: 25 },
     ],
     ...defaultBillingSettings,
     frequency: 'MONTHLY',
@@ -120,9 +120,9 @@ export const initialBuilderDrawSchedules = [
     id: 3,
     builderId: 1,
     draws: [
-      { percentage: 25 },
-      { percentage: 50 },
-      { percentage: 25 },
+      { name: '', percentage: 25 },
+      { name: '', percentage: 50 },
+      { name: '', percentage: 25 },
     ],
     ...defaultBillingSettings,
     frequency: 'SEMIMONTHLY',

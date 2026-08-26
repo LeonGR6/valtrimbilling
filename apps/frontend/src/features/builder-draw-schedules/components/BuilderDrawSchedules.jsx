@@ -31,6 +31,7 @@ import {
 import AddRoundedIcon from '@mui/icons-material/AddRounded'
 import BusinessRoundedIcon from '@mui/icons-material/BusinessRounded'
 import CalendarMonthRoundedIcon from '@mui/icons-material/CalendarMonthRounded'
+import ConstructionRoundedIcon from '@mui/icons-material/ConstructionRounded'
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined'
 import ResponsiveCreateButton from '../../../components/common/ResponsiveCreateButton'
@@ -40,7 +41,6 @@ import {
   defaultBillingSettings,
   frequencyLabels,
   frequencyOptions,
-  initialBuilderDrawSchedules,
   invoiceDateOptions,
   invoiceLineFormatLabels,
   invoiceLineFormatOptions,
@@ -55,6 +55,7 @@ import {
   describeSchedule,
   formatPeriodDate,
 } from '../utils/drawPeriods.js'
+import { useBuilderDrawSchedules } from '../context/useBuilderDrawSchedules.js'
 
 const sectionSx = {
   fontSize: 12,
@@ -162,6 +163,7 @@ function BuilderDrawScheduleDialog({
     control,
     register,
     handleSubmit,
+    setValue,
     formState: { errors },
   } = useForm({
     resolver: zodResolver(schema),
@@ -187,6 +189,10 @@ function BuilderDrawScheduleDialog({
   })
   const selectedBuilderId = useWatch({ control, name: 'builderId' })
   const watchedDraws = useWatch({ control, name: 'draws' }) ?? []
+  const separateHardwarePrice = useWatch({
+    control,
+    name: 'separateHardwarePrice',
+  })
   const frequency = useWatch({ control, name: 'frequency' })
   const retentionEnabled = useWatch({ control, name: 'retentionEnabled' })
   const ocipWrapEnabled = useWatch({ control, name: 'ocipWrapEnabled' })
@@ -284,7 +290,7 @@ function BuilderDrawScheduleDialog({
                   Draw allocation
                 </Typography>
                 <Typography variant="caption" color="text.secondary">
-                  Draw numbers follow their order below.
+                  Draw numbers follow their order. Add an optional name for each one.
                 </Typography>
               </Box>
               <Chip
@@ -315,25 +321,42 @@ function BuilderDrawScheduleDialog({
                   >
                     {index + 1}
                   </Avatar>
-                  <TextField
-                    label={`Draw ${index + 1}`}
-                    type="number"
-                    {...register(`draws.${index}.percentage`)}
-                    error={Boolean(errors.draws?.[index]?.percentage)}
-                    helperText={errors.draws?.[index]?.percentage?.message ?? ' '}
-                    fullWidth
-                    slotProps={{
-                      input: {
-                        endAdornment: <InputAdornment position="end">%</InputAdornment>,
-                      },
-                      htmlInput: {
-                        min: 1,
-                        max: 100,
-                        step: 0.01,
-                        inputMode: 'decimal',
-                      },
-                    }}
-                  />
+                  <Stack
+                    direction={{ xs: 'column', sm: 'row' }}
+                    spacing={1.25}
+                    sx={{ flex: 1, minWidth: 0 }}
+                  >
+                    <TextField
+                      label={`Draw ${index + 1} name`}
+                      placeholder="Example: Trim Complete"
+                      {...register(`draws.${index}.name`)}
+                      error={Boolean(errors.draws?.[index]?.name)}
+                      helperText={
+                        errors.draws?.[index]?.name?.message
+                        ?? `Displayed as Draw ${index + 1} (name)`
+                      }
+                      fullWidth
+                    />
+                    <TextField
+                      label="Percentage"
+                      type="number"
+                      {...register(`draws.${index}.percentage`)}
+                      error={Boolean(errors.draws?.[index]?.percentage)}
+                      helperText={errors.draws?.[index]?.percentage?.message ?? ' '}
+                      sx={{ width: { xs: '100%', sm: 180 }, flexShrink: 0 }}
+                      slotProps={{
+                        input: {
+                          endAdornment: <InputAdornment position="end">%</InputAdornment>,
+                        },
+                        htmlInput: {
+                          min: 1,
+                          max: 100,
+                          step: 0.01,
+                          inputMode: 'decimal',
+                        },
+                      }}
+                    />
+                  </Stack>
                   {fields.length > MIN_DRAW_COUNT && (
                     <IconButton
                       aria-label={`Remove Draw ${index + 1}`}
@@ -348,16 +371,42 @@ function BuilderDrawScheduleDialog({
               ))}
             </Stack>
 
-            <Button
-              type="button"
-              variant="outlined"
-              startIcon={<AddRoundedIcon />}
-              disabled={fields.length >= MAX_DRAW_COUNT}
-              onClick={() => append({ percentage: 0 })}
-              sx={{ mt: 0.5 }}
+            <Stack
+              direction={{ xs: 'column', sm: 'row' }}
+              spacing={1}
+              sx={{ mt: 0.5, alignItems: { sm: 'center' } }}
             >
-              Add draw
-            </Button>
+              <Button
+                type="button"
+                variant="outlined"
+                startIcon={<AddRoundedIcon />}
+                disabled={fields.length >= MAX_DRAW_COUNT}
+                onClick={() => append({ name: '', percentage: 0 })}
+              >
+                Add draw
+              </Button>
+              <Button
+                type="button"
+                variant={separateHardwarePrice ? 'contained' : 'outlined'}
+                color={separateHardwarePrice ? 'primary' : 'inherit'}
+                startIcon={<ConstructionRoundedIcon />}
+                onClick={() => setValue(
+                  'separateHardwarePrice',
+                  !separateHardwarePrice,
+                  { shouldDirty: true, shouldValidate: true },
+                )}
+                disableElevation
+              >
+                Separate Hardware Price
+              </Button>
+            </Stack>
+
+            {separateHardwarePrice && (
+              <Alert severity="info" sx={{ mt: 1.25 }}>
+                Draws will allocate 100% of the plan price excluding hardware.
+                Hardware will be billed separately at 100%.
+              </Alert>
+            )}
           </Box>
 
           <Box  
@@ -639,7 +688,7 @@ function BuilderDrawScheduleDialog({
               />
               {ocipWrapEnabled && (
                 <TextField
-                  label="OCIP / WRAP percentage"
+                  label="OCIP / WRAP insurance percentage"
                   type="number"
                   {...register('ocipWrapPercentage')}
                   error={Boolean(errors.ocipWrapPercentage)}
@@ -830,6 +879,7 @@ function BuilderDrawScheduleCard({ schedule, builder, onEdit, onDelete }) {
             </Avatar>
             <Typography variant="body2" fontWeight={650} sx={{ flex: 1 }}>
               Draw {index + 1}
+              {draw.name?.trim() ? ` (${draw.name.trim()})` : ''}
             </Typography>
             <Typography variant="body2" color="primary.main" fontWeight={800}>
               {formatPercentage(Number(draw.percentage))}%
@@ -841,6 +891,15 @@ function BuilderDrawScheduleCard({ schedule, builder, onEdit, onDelete }) {
       <Divider />
 
       <Stack spacing={1.25} sx={{ flex: 1, p: 2 }}>
+        {schedule.separateHardwarePrice && (
+          <Chip
+            size="small"
+            color="primary"
+            icon={<ConstructionRoundedIcon />}
+            label="Hardware separated · 100%"
+            sx={{ alignSelf: 'flex-start', fontWeight: 750 }}
+          />
+        )}
         <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
           <Chip
             size="small"
@@ -933,7 +992,10 @@ function DeleteScheduleDialog({ schedule, builder, onClose, onDelete }) {
 }
 
 export default function BuilderDrawSchedules() {
-  const [schedules, setSchedules] = useState(initialBuilderDrawSchedules)
+  const {
+    builderDrawSchedules: schedules,
+    setBuilderDrawSchedules: setSchedules,
+  } = useBuilderDrawSchedules()
   const [dialogState, setDialogState] = useState(null)
   const [deleteTarget, setDeleteTarget] = useState(null)
   const [notice, setNotice] = useState(null)

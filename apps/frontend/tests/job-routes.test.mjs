@@ -6,6 +6,7 @@ import {
   builderJobsPath,
   getJobBuilderId,
   jobBelongsToBuilder,
+  jobDrawInvoicePath,
   jobPlanPricingPath,
   jobPlansOptionsPath,
   jobSequenceSheetPath,
@@ -28,6 +29,14 @@ test('Job module routes keep the builder and Job identifiers', () => {
   assert.equal(
     jobPlanPricingPath(2, 1),
     '/pricing/builder/2/job/1',
+  )
+  assert.equal(
+    jobDrawInvoicePath(2, 1),
+    '/draw-invoice/builder/2/job/1',
+  )
+  assert.equal(
+    jobDrawInvoicePath(2, 1, 2102),
+    '/draw-invoice/builder/2/job/1/phase/2102',
   )
 })
 

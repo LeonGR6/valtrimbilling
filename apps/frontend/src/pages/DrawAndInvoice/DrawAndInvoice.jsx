@@ -1,5 +1,5 @@
-
+import DrawAndInvoicePackages from '../../features/draw-invoice'
 
 export default function DrawAndInvoicePage() {
-  return <div>Draw & Invoice Page</div>
+  return <DrawAndInvoicePackages />
 }

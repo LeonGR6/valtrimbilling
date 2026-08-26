@@ -98,7 +98,6 @@ function JobDialog({
           code: job.code,
           builder: job.builder,
           community: job.community,
-          totalLots: job.totalLots ?? 0,
           supervisorId: job.supervisorId ?? null,
           superintendentId: job.superintendentId ?? null,
         }
@@ -191,15 +190,6 @@ function JobDialog({
                   helperText={errors.community?.message ?? 'Example: Andara'}
                   fullWidth
                   slotProps={{ htmlInput: { maxLength: 100 } }}
-                />
-                <TextField
-                  label="Total lots"
-                  type="number"
-                  {...register('totalLots')}
-                  error={Boolean(errors.totalLots)}
-                  helperText={errors.totalLots?.message ?? 'Lots or units included in this Job.'}
-                  fullWidth
-                  slotProps={{ htmlInput: { min: 0, max: 100000, step: 1 } }}
                 />
               </Stack>
             </Stack>
@@ -671,7 +661,7 @@ export default function JobsCatalog() {
                   <TableCell>Community / Builder</TableCell>
                   <TableCell>Supervisor</TableCell>
                   <TableCell>Jobsite Superintendent</TableCell>
-                  <TableCell width={150}>Total Lots</TableCell>
+                  <TableCell width={150}>Lots from Phases</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
@@ -750,7 +740,7 @@ export default function JobsCatalog() {
                         sx={{ alignItems: 'center', justifyContent: 'space-between' }}
                       >
                         <Typography variant="body2" fontWeight={600}>
-                          {job.totalLots ?? getJobUnitCount(job)}
+                          {getJobUnitCount(job)}
                         </Typography>
                         <IconButton
                           size="small"

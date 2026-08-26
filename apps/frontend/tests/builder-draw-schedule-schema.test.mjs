@@ -22,6 +22,45 @@ test('Builder Draw Schedule accepts 3 draws totaling 100 percent', () => {
 
   assert.equal(result.builderId, 2)
   assert.equal(result.draws.length, 3)
+  assert.equal(result.separateHardwarePrice, false)
+})
+
+test('Builder Draw Schedule can separate hardware at 100 percent', () => {
+  const result = createBuilderDrawScheduleSchema([], null).parse(validSetup({
+    separateHardwarePrice: true,
+  }))
+
+  assert.equal(result.separateHardwarePrice, true)
+})
+
+test('Builder Draw Schedule stores and trims optional draw names', () => {
+  const result = createBuilderDrawScheduleSchema([], null).parse(validSetup({
+    draws: [
+      { name: ' Trim Complete ', percentage: 10 },
+      { name: '', percentage: 75 },
+      { percentage: 15 },
+    ],
+  }))
+
+  assert.equal(result.draws[0].name, 'Trim Complete')
+  assert.equal(result.draws[1].name, '')
+  assert.equal(result.draws[2].name, '')
+})
+
+test('Builder Draw Schedule limits draw names to 80 characters', () => {
+  const result = createBuilderDrawScheduleSchema([], null).safeParse(validSetup({
+    draws: [
+      { name: 'x'.repeat(81), percentage: 10 },
+      { percentage: 75 },
+      { percentage: 15 },
+    ],
+  }))
+
+  assert.equal(result.success, false)
+  assert.equal(
+    result.error.issues.some((issue) => issue.path.join('.') === 'draws.0.name'),
+    true,
+  )
 })
 
 test('Builder Draw Schedule accepts 5 draws with two-decimal percentages', () => {

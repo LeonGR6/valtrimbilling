@@ -10,6 +10,7 @@ lerna-debug.log*
 node_modules
 dist
 dist-ssr
+coverage
 *.local
 .env
 .env.*
@@ -17,6 +18,7 @@ dist-ssr
 
 # Local Claude Code files (skills, preview config — not committed)
 .claude/
+CLAUDE.md
 
 # Local architecture notes (not committed)
 docs/architecture.md

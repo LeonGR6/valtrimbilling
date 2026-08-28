@@ -1,40 +1,95 @@
 # ValtrimBilling
 
-Frontend de ValtrimBilling construido con React, Vite, React Router y MUI.
+ValtrimBilling is organized as an npm-workspaces monorepo. The existing React
+application lives in `apps/frontend`; `apps/backend` is reserved for the future
+API.
 
-## Comandos
+## Repository structure
+
+```text
+valtrimbilling/
+├── apps/
+│   ├── frontend/          # React 19 + Vite application
+│   │   ├── public/
+│   │   ├── src/
+│   │   ├── tests/
+│   │   ├── package.json
+│   │   └── vite.config.js
+│   └── backend/           # Reserved for the backend
+├── packages/              # Future packages shared by multiple applications
+├── .openai/               # Repository-level hosting configuration
+├── package.json           # Workspace scripts
+└── package-lock.json      # Single lockfile for all workspaces
+```
+
+The `packages` directory does not need to be created until shared code is
+introduced. The root workspace pattern is already configured for it.
+
+## Requirements
+
+- Node.js 20+
+- npm
+
+## Getting started
+
+Run all commands from the repository root:
 
 ```bash
 npm install
 npm run dev
-npm run lint
-npm run build
 ```
 
-## Estructura
+The frontend development server is available at `http://localhost:5173` by
+default.
 
-```text
-src/
-├── assets/           # Imágenes, fuentes e iconos estáticos
-├── components/
-│   ├── common/       # Componentes compartidos por toda la app
-│   └── layout/       # Estructura visual y navegación principal
-├── config/           # Configuración global de la aplicación
-├── context/          # Context providers compartidos
-├── features/         # Módulos de dominio autocontenidos
-│   ├── builders/
-│   └── plan-types/
-├── hooks/            # Hooks globales compartidos
-├── pages/            # Componentes de nivel ruta, sin lógica de dominio pesada
-├── routes/           # Registro de navegación y configuración del router
-├── services/         # Clientes API e integraciones externas
-├── store/            # Estado global cuando sea necesario
-├── styles/           # Estilos globales y tema MUI
-└── utils/            # Funciones puras y validadores compartidos
+## Root scripts
+
+| Command | What it does |
+| --- | --- |
+| `npm run dev` | Starts the frontend development server |
+| `npm run dev:frontend` | Starts the frontend explicitly |
+| `npm run build` | Creates the production frontend build |
+| `npm run preview` | Serves the production build locally |
+| `npm run lint` | Runs frontend lint checks |
+| `npm test` | Runs frontend tests |
+
+Commands can also be executed directly against the frontend workspace:
+
+```bash
+npm run test --workspace=@valtrimbilling/frontend
 ```
 
-Cada carpeta de página o componente compartido expone un `index.js` para mantener imports estables. Las rutas se cargan de forma diferida para no incluir todos los módulos en el bundle inicial.
+## Frontend
 
-Los catálogos de Builders y Plan Types todavía utilizan datos locales en memoria. Sus datos temporales viven dentro de cada `feature`; la futura conexión con Supabase debe implementarse mediante `services/` o servicios propios de cada feature.
+The frontend uses React, Vite, Material UI, Emotion, React Router, React Hook
+Form, and Zod. Its source code is organized by domain under
+`apps/frontend/src/features`.
 
-> En Vite, `index.html` permanece en la raíz del proyecto porque funciona como punto de entrada durante desarrollo y compilación.
+Frontend environment variables belong in `apps/frontend/.env`. Use
+`apps/frontend/.env.example` as the template and expose only browser-safe values
+with the `VITE_` prefix.
+
+## Backend
+
+`apps/backend` is intentionally empty for now. When backend development starts,
+add its own `package.json`, source directory, tests, and environment template.
+Because the root workspace uses `apps/*`, npm will discover it automatically.
+
+Backend secrets must stay in backend-only environment variables and must never
+use the frontend's `VITE_` prefix.
+
+## Shared code
+
+When frontend and backend need the same schemas, types, or constants, create a
+package under `packages/` instead of importing backend internals directly into
+the frontend.
+
+## Build and hosting
+
+The hosting configuration remains at `.openai/hosting.json`. Although the Vite
+configuration lives inside the frontend workspace, production artifacts still
+go to the repository-level `dist/client` and `dist/server` directories to
+preserve the existing hosting contract.
+
+Frontend and backend should remain independently deployable even though they
+share one repository.

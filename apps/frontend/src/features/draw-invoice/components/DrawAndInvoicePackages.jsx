@@ -875,7 +875,7 @@ function PackageCatalog({ jobs, schedules, packages, onOpen, onCreate }) {
                       </TableCell>
                       <TableCell>{formatBillingPeriod(record)}</TableCell>
                       <TableCell>
-                        <Typography fontWeight={750}>{summary.lotCount} lots</Typography>
+                        <Typography fontWeight={750}>{summary.lotRange}</Typography>
                         <Typography variant="caption" color="text.secondary">{summary.scopeCount} scopes</Typography>
                       </TableCell>
                       <TableCell><Typography fontWeight={750}>{formatCurrency(summary.currentDraw)}</Typography></TableCell>

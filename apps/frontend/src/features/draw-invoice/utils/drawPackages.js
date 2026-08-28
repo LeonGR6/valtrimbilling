@@ -10,6 +10,44 @@ export function makePackageSelections(lotIds = [], drawIndexes = []) {
   )
 }
 
+export function formatLotRange(lotNumbers = []) {
+  const sortedLots = [...new Set(
+    lotNumbers.map((value) => String(value).trim()).filter(Boolean),
+  )].sort((left, right) =>
+    left.localeCompare(right, 'en', { numeric: true, sensitivity: 'base' }),
+  )
+
+  if (sortedLots.length === 0) return '—'
+
+  const ranges = []
+  let rangeStart = sortedLots[0]
+  let rangeEnd = sortedLots[0]
+
+  const appendRange = () => {
+    ranges.push(rangeStart === rangeEnd ? rangeStart : `${rangeStart}–${rangeEnd}`)
+  }
+
+  for (const lotNumber of sortedLots.slice(1)) {
+    const previousIsNumeric = /^\d+$/.test(rangeEnd)
+    const currentIsNumeric = /^\d+$/.test(lotNumber)
+    const isConsecutive =
+      previousIsNumeric &&
+      currentIsNumeric &&
+      Number(lotNumber) === Number(rangeEnd) + 1
+
+    if (isConsecutive) {
+      rangeEnd = lotNumber
+    } else {
+      appendRange()
+      rangeStart = lotNumber
+      rangeEnd = lotNumber
+    }
+  }
+
+  appendRange()
+  return ranges.join(', ')
+}
+
 export function buildUsedDrawSelections(packages = [], excludedPackageId = null) {
   const used = new Map()
 
@@ -50,6 +88,7 @@ export function summarizeDrawPackage(record, job, phase, schedule) {
     worksheet,
     selectedRows,
     lotCount: selectedRows.length,
+    lotRange: formatLotRange(selectedRows.map((row) => row.lotNumber)),
     scopeCount: selections.length,
     currentDraw: sumSelectionAmounts(
       selections,

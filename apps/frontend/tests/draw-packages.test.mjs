@@ -5,6 +5,7 @@ import { initialDrawInvoicePackages } from '../src/features/draw-invoice/data/dr
 import {
   buildUsedDrawSelections,
   drawSelectionKey,
+  formatLotRange,
   makePackageSelections,
   summarizeDrawPackage,
 } from '../src/features/draw-invoice/utils/drawPackages.js'
@@ -19,6 +20,13 @@ test('a package uses the cross product of its selected lots and draws', () => {
     { lotId: 20, drawIndex: 0 },
     { lotId: 20, drawIndex: 2 },
   ])
+})
+
+test('lot ranges remain compact without hiding unselected lots', () => {
+  assert.equal(formatLotRange(['22', '18', '19', '20']), '18–20, 22')
+  assert.equal(formatLotRange(['66', '67', '68', '69', '70']), '66–70')
+  assert.equal(formatLotRange(['A2', 'A1']), 'A1, A2')
+  assert.equal(formatLotRange([]), '—')
 })
 
 test('used lot and draw combinations point back to their package', () => {
@@ -55,6 +63,7 @@ test('package totals include only selected lots and draws', () => {
   const summary = summarizeDrawPackage(record, job, phase, schedule)
 
   assert.equal(summary.lotCount, 3)
+  assert.equal(summary.lotRange, '18–20')
   assert.equal(summary.scopeCount, 3)
   assert.equal(summary.currentDraw, 15042.75)
   assert.equal(summary.retention, 0)

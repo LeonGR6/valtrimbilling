@@ -880,8 +880,18 @@ function PackageCatalog({ jobs, schedules, packages, onOpen, onCreate }) {
                       </TableCell>
                       <TableCell><Typography fontWeight={750}>{formatCurrency(summary.currentDraw)}</Typography></TableCell>
                       <TableCell>
-                        <Typography variant="body2">Retention: -{formatCurrency(summary.retention)}</Typography>
-                        <Typography variant="body2">WRAP: -{formatCurrency(summary.wrapInsurance)}</Typography>
+                        <Typography variant="body2">
+                          Retention:{' '}
+                          <Typography component="span" variant="inherit" color="error">
+                            -{formatCurrency(summary.retention)}
+                          </Typography>
+                        </Typography>
+                        <Typography variant="body2">
+                          WRAP:{' '}
+                          <Typography component="span" variant="inherit" color="error">
+                            -{formatCurrency(summary.wrapInsurance)}
+                          </Typography>
+                        </Typography>
                       </TableCell>
                       <TableCell><Typography fontWeight={850}>{formatCurrency(summary.invoiceAmount)}</Typography></TableCell>
                       <TableCell>

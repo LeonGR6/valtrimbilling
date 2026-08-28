@@ -76,7 +76,7 @@ export function createBuilderDrawScheduleSchema(schedules, currentScheduleId) {
         .int('Use a whole number.')
         .min(0, 'Use 0 or more days.')
         .max(180, 'Use 180 days or fewer.'),
-      retentionEnabled: z.boolean(),
+      retentionEnabled: z.boolean().default(false),
       retentionPercentage: optionalPercentageSchema,
       ocipWrapEnabled: z.boolean(),
       ocipWrapPercentage: optionalPercentageSchema,
@@ -149,6 +149,18 @@ export function createBuilderDrawScheduleSchema(schedules, currentScheduleId) {
           code: 'custom',
           path: ['ocipWrapPercentage'],
           message: 'Enter the OCIP / WRAP insurance percentage.',
+        })
+      }
+
+      const totalDeductions = (data.retentionEnabled
+        ? data.retentionPercentage
+        : 0) + (data.ocipWrapEnabled ? data.ocipWrapPercentage : 0)
+
+      if (totalDeductions > 100) {
+        context.addIssue({
+          code: 'custom',
+          path: ['ocipWrapPercentage'],
+          message: 'Retention and OCIP / WRAP cannot exceed 100% combined.',
         })
       }
     })

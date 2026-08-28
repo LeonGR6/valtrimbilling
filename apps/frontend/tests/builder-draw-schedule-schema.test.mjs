@@ -92,9 +92,9 @@ test('Builder Draw Schedule rejects totals other than 100 percent', () => {
   ])
 })
 
-test('Builder Draw Schedule requires between 3 and 5 draws', () => {
+test('Builder Draw Schedule requires between 2 and 5 draws', () => {
   const tooFew = createBuilderDrawScheduleSchema([], null).safeParse(validSetup({
-    draws: [{ percentage: 50 }, { percentage: 50 }],
+    draws: [{ percentage: 100 }],
   }))
   const tooMany = createBuilderDrawScheduleSchema([], null).safeParse(validSetup({
     draws: Array.from({ length: 6 }, (_, index) => ({
@@ -147,6 +147,18 @@ test('disabled retention and OCIP options clear hidden percentages', () => {
 
   assert.equal(result.retentionPercentage, 0)
   assert.equal(result.ocipWrapPercentage, 0)
+})
+
+test('retention and OCIP / WRAP cannot exceed 100 percent combined', () => {
+  const result = createBuilderDrawScheduleSchema([], null).safeParse(validSetup({
+    retentionEnabled: true,
+    retentionPercentage: 60,
+    ocipWrapEnabled: true,
+    ocipWrapPercentage: 50,
+  }))
+
+  assert.equal(result.success, false)
+  assert.ok(result.error.flatten().fieldErrors.ocipWrapPercentage)
 })
 
 test('enabled retention and OCIP options require a percentage', () => {

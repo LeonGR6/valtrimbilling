@@ -120,9 +120,8 @@ export const initialBuilderDrawSchedules = [
     id: 3,
     builderId: 1,
     draws: [
-      { name: '', percentage: 25 },
-      { name: '', percentage: 50 },
-      { name: '', percentage: 25 },
+      { name: '', percentage: 85 },
+      { name: '', percentage: 15 },
     ],
     ...defaultBillingSettings,
     frequency: 'SEMIMONTHLY',

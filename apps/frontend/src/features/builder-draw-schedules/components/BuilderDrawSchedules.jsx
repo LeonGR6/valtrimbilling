@@ -657,7 +657,7 @@ function BuilderDrawScheduleDialog({
                   error={Boolean(errors.retentionPercentage)}
                   helperText={
                     errors.retentionPercentage?.message
-                    ?? 'Percentage held until closeout.'
+                    ?? 'Percentage deducted after draws total 100%.'
                   }
                   fullWidth
                   required

@@ -45,6 +45,47 @@ export function allocateDrawAmounts(basePrice, draws = []) {
   })
 }
 
+export function getRetentionMode(schedule) {
+  if (schedule?.retentionEnabled) return 'APPLY'
+  return 'NONE'
+}
+
+export function calculateInvoiceAmounts(currentDraw, schedule) {
+  if (!hasPlanPrice(currentDraw)) {
+    return {
+      currentDraw: null,
+      retention: null,
+      wrapInsurance: null,
+      invoiceAmount: null,
+    }
+  }
+
+  const currentDrawCents = Math.round(currentDraw * 100)
+  const retentionMode = getRetentionMode(schedule)
+  const retentionPercentage = Number(schedule?.retentionPercentage) || 0
+  const wrapInsurancePercentage = Number(schedule?.ocipWrapPercentage) || 0
+  const shouldApplyRetention = retentionMode === 'APPLY'
+    && retentionPercentage > 0
+    && retentionPercentage <= 100
+  const shouldApplyWrapInsurance = Boolean(schedule?.ocipWrapEnabled)
+    && wrapInsurancePercentage > 0
+    && wrapInsurancePercentage <= 100
+  const retentionCents = shouldApplyRetention
+    ? Math.round(currentDrawCents * retentionPercentage / 100)
+    : 0
+  const wrapInsuranceCents = shouldApplyWrapInsurance
+    ? Math.round(currentDrawCents * wrapInsurancePercentage / 100)
+    : 0
+
+  return {
+    currentDraw: currentDrawCents / 100,
+    retention: retentionCents / 100,
+    wrapInsurance: wrapInsuranceCents / 100,
+    invoiceAmount:
+      (currentDrawCents - retentionCents - wrapInsuranceCents) / 100,
+  }
+}
+
 function compareLotNumbers(left, right) {
   return String(left.lotNumber).localeCompare(String(right.lotNumber), 'en', {
     numeric: true,
@@ -73,6 +114,12 @@ export function buildDrawWorksheet(job, phase, schedule) {
       ? basePrice - (separateHardwarePrice ? hardwarePrice : 0)
       : null
 
+    const drawAmounts = scheduleIsValid && hasPlanPrice(drawBasePrice)
+      ? allocateDrawAmounts(drawBasePrice, draws)
+      : draws.map(() => null)
+    const drawFinancials = drawAmounts.map((amount) =>
+      calculateInvoiceAmounts(amount, schedule))
+
     return {
       id: lot.id,
       lot,
@@ -84,9 +131,12 @@ export function buildDrawWorksheet(job, phase, schedule) {
       hardwarePrice: separateHardwarePrice && hardwarePriceIsAvailable
         ? hardwarePrice
         : null,
-      drawAmounts: scheduleIsValid && hasPlanPrice(drawBasePrice)
-        ? allocateDrawAmounts(drawBasePrice, draws)
-        : draws.map(() => null),
+      drawAmounts,
+      drawRetentionAmounts: drawFinancials.map(({ retention }) => retention),
+      drawWrapInsuranceAmounts: drawFinancials.map(
+        ({ wrapInsurance }) => wrapInsurance,
+      ),
+      drawInvoiceAmounts: drawFinancials.map(({ invoiceAmount }) => invoiceAmount),
       issue: !plan
         ? 'PLAN_MISSING'
         : !priceIsAvailable
@@ -125,6 +175,34 @@ export function buildDrawWorksheet(job, phase, schedule) {
       (total, row) => total + (row.drawAmounts[drawIndex] ?? 0),
       0,
     ))
+  const drawRetentionTotals = draws.map((_, drawIndex) =>
+    drawableRows.reduce(
+      (total, row) => total + (row.drawRetentionAmounts[drawIndex] ?? 0),
+      0,
+    ))
+  const drawInvoiceTotals = draws.map((_, drawIndex) =>
+    drawableRows.reduce(
+      (total, row) => total + (row.drawInvoiceAmounts[drawIndex] ?? 0),
+      0,
+    ))
+  const drawWrapInsuranceTotals = draws.map((_, drawIndex) =>
+    drawableRows.reduce(
+      (total, row) => total + (row.drawWrapInsuranceAmounts[drawIndex] ?? 0),
+      0,
+    ))
+  const totalRetention = drawRetentionTotals.reduce(
+    (total, amount) => total + amount,
+    0,
+  )
+  const totalInvoiceAmount = drawInvoiceTotals.reduce(
+    (total, amount) => total + amount,
+    0,
+  )
+  const totalWrapInsurance = drawWrapInsuranceTotals.reduce(
+    (total, amount) => total + amount,
+    0,
+  )
+  const retentionMode = getRetentionMode(schedule)
 
   return {
     draws,
@@ -133,6 +211,20 @@ export function buildDrawWorksheet(job, phase, schedule) {
     totalDrawBasePrice,
     totalHardwarePrice,
     drawTotals,
+    drawRetentionTotals,
+    drawWrapInsuranceTotals,
+    drawInvoiceTotals,
+    totalCurrentDraw: totalDrawBasePrice,
+    totalRetention,
+    totalWrapInsurance,
+    totalInvoiceAmount,
+    retentionMode,
+    retentionPercentage: retentionMode === 'NONE'
+      ? 0
+      : Number(schedule?.retentionPercentage) || 0,
+    wrapInsurancePercentage: schedule?.ocipWrapEnabled
+      ? Number(schedule?.ocipWrapPercentage) || 0
+      : 0,
     missingPlanCount,
     unpricedLotCount,
     missingHardwarePriceCount,

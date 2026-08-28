@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react'
-import { Link as RouterLink, useNavigate, useParams } from 'react-router-dom'
+import { useMemo, useState } from "react";
+import { Link as RouterLink, useNavigate, useParams } from "react-router-dom";
 import {
   Alert,
   Box,
@@ -24,107 +24,129 @@ import {
   TableRow,
   TextField,
   Typography,
-} from '@mui/material'
-import AddRoundedIcon from '@mui/icons-material/AddRounded'
-import ApartmentRoundedIcon from '@mui/icons-material/ApartmentRounded'
-import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded'
-import ArrowForwardRoundedIcon from '@mui/icons-material/ArrowForwardRounded'
-import AttachMoneyRoundedIcon from '@mui/icons-material/AttachMoneyRounded'
-import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded'
-import ConstructionRoundedIcon from '@mui/icons-material/ConstructionRounded'
-import EditOutlinedIcon from '@mui/icons-material/EditOutlined'
-import LayersRoundedIcon from '@mui/icons-material/LayersRounded'
-import ReceiptLongRoundedIcon from '@mui/icons-material/ReceiptLongRounded'
-import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
-import WarningAmberRoundedIcon from '@mui/icons-material/WarningAmberRounded'
-import { useBuilderDrawSchedules } from '../../builder-draw-schedules/context/useBuilderDrawSchedules.js'
-import JobModuleNavigation from '../../jobs/components/JobModuleNavigation.jsx'
-import { useJobs } from '../../jobs/context/useJobs.js'
+} from "@mui/material";
+import AddRoundedIcon from "@mui/icons-material/AddRounded";
+import ApartmentRoundedIcon from "@mui/icons-material/ApartmentRounded";
+import ArrowBackRoundedIcon from "@mui/icons-material/ArrowBackRounded";
+import ArrowForwardRoundedIcon from "@mui/icons-material/ArrowForwardRounded";
+import AttachMoneyRoundedIcon from "@mui/icons-material/AttachMoneyRounded";
+import CheckCircleRoundedIcon from "@mui/icons-material/CheckCircleRounded";
+import ConstructionRoundedIcon from "@mui/icons-material/ConstructionRounded";
+import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
+import LayersRoundedIcon from "@mui/icons-material/LayersRounded";
+import ReceiptLongRoundedIcon from "@mui/icons-material/ReceiptLongRounded";
+import SearchRoundedIcon from "@mui/icons-material/SearchRounded";
+import WarningAmberRoundedIcon from "@mui/icons-material/WarningAmberRounded";
+import { useBuilderDrawSchedules } from "../../builder-draw-schedules/context/useBuilderDrawSchedules.js";
+import JobModuleNavigation from "../../jobs/components/JobModuleNavigation.jsx";
+import { useJobs } from "../../jobs/context/useJobs.js";
 import {
   getJobBuilderId,
   jobBelongsToBuilder,
   jobDrawInvoicePath,
   jobPlanPricingPath,
   jobSequenceSheetPath,
-} from '../../jobs/utils/jobRoutes.js'
+} from "../../jobs/utils/jobRoutes.js";
 import {
   formatBuilding,
   formatPhase,
-} from '../../sequence-sheets/utils/phaseBuildingCodes.js'
-import { buildDrawWorksheet } from '../utils/drawWorksheet.js'
+} from "../../sequence-sheets/utils/phaseBuildingCodes.js";
+import { buildDrawWorksheet } from "../utils/drawWorksheet.js";
 
-const currencyFormatter = new Intl.NumberFormat('en-US', {
-  style: 'currency',
-  currency: 'USD',
+const currencyFormatter = new Intl.NumberFormat("en-US", {
+  style: "currency",
+  currency: "USD",
   minimumFractionDigits: 2,
-})
+});
+
+const packageTableColumns = [
+  { key: "package", width: 200 },
+  { key: "builder", width: 170 },
+  { key: "billing-period", width: 120 },
+  { key: "lots", width: 80 },
+  { key: "current-draw", width: 130 },
+  { key: "retention-wrap", width: 190 },
+  { key: "invoice-amount", width: 140 },
+  { key: "documents", width: 95 },
+  { key: "quickbooks", width: 110 },
+  { key: "submission", width: 115 },
+  { key: "status", width: 190 },
+  { key: "action", width: 90 },
+];
+
+const packageTableMinimumWidth = packageTableColumns.reduce(
+  (total, column) => total + column.width,
+  0,
+);
 
 function formatCurrency(value) {
-  return typeof value === 'number' && Number.isFinite(value)
+  return typeof value === "number" && Number.isFinite(value)
     ? currencyFormatter.format(value)
-    : '—'
+    : "—";
 }
 
 function formatPercentage(value) {
-  const percentage = Number(value) || 0
+  const percentage = Number(value) || 0;
   return Number.isInteger(percentage)
     ? String(percentage)
-    : percentage.toFixed(2).replace(/0+$/, '').replace(/\.$/, '')
+    : percentage.toFixed(2).replace(/0+$/, "").replace(/\.$/, "");
 }
 
 function formatBilledDate(value) {
-  if (!value) return '—'
-  return new Date(`${value}T00:00:00`).toLocaleDateString('en-US', {
-    month: 'numeric',
-    day: 'numeric',
-    year: 'numeric',
-  })
+  if (!value) return "—";
+  return new Date(`${value}T00:00:00`).toLocaleDateString("en-US", {
+    month: "numeric",
+    day: "numeric",
+    year: "numeric",
+  });
 }
 
 function billingRecordKey(jobId, phaseId, lotId, drawIndex) {
-  return `${jobId}:${phaseId}:${lotId}:${drawIndex}`
+  return `${jobId}:${phaseId}:${lotId}:${drawIndex}`;
 }
 
 function readinessLabel(worksheet) {
-  if (!worksheet.hasSchedule) return 'Schedule missing'
-  if (!worksheet.scheduleIsValid) return 'Schedule needs review'
-  if (worksheet.rows.length === 0) return 'No lots'
-  if (worksheet.missingPlanCount > 0) return 'Plan missing'
-  if (worksheet.unpricedLotCount > 0) return 'Pricing incomplete'
-  if (worksheet.missingHardwarePriceCount > 0) return 'Hardware pricing incomplete'
-  if (worksheet.invalidHardwarePriceCount > 0) return 'Hardware pricing invalid'
-  return 'Ready'
+  if (!worksheet.hasSchedule) return "Schedule missing";
+  if (!worksheet.scheduleIsValid) return "Schedule needs review";
+  if (worksheet.rows.length === 0) return "No lots";
+  if (worksheet.missingPlanCount > 0) return "Plan missing";
+  if (worksheet.unpricedLotCount > 0) return "Pricing incomplete";
+  if (worksheet.missingHardwarePriceCount > 0)
+    return "Hardware pricing incomplete";
+  if (worksheet.invalidHardwarePriceCount > 0)
+    return "Hardware pricing invalid";
+  return "Ready";
 }
 
 function ReadinessChip({ worksheet }) {
-  const ready = worksheet.isReady
+  const ready = worksheet.isReady;
 
   return (
     <Chip
       size="small"
-      color={ready ? 'success' : 'warning'}
-      variant={ready ? 'filled' : 'outlined'}
+      color={ready ? "success" : "warning"}
+      variant={ready ? "filled" : "outlined"}
       icon={ready ? <CheckCircleRoundedIcon /> : <WarningAmberRoundedIcon />}
       label={readinessLabel(worksheet)}
       sx={{ fontWeight: 750 }}
     />
-  )
+  );
 }
 
 function MetricCard({ icon, label, value, detail }) {
   return (
     <Card variant="outlined" sx={{ minWidth: 190, flex: 1 }}>
-      <CardContent sx={{ display: 'flex', gap: 1.5, p: '16px !important' }}>
+      <CardContent sx={{ display: "flex", gap: 1.5, p: "16px !important" }}>
         <Box
           sx={{
             width: 40,
             height: 40,
             flexShrink: 0,
             borderRadius: 1.5,
-            display: 'grid',
-            placeItems: 'center',
-            bgcolor: 'primary.light',
-            color: 'primary.main',
+            display: "grid",
+            placeItems: "center",
+            bgcolor: "primary.light",
+            color: "primary.main",
           }}
         >
           {icon}
@@ -137,44 +159,49 @@ function MetricCard({ icon, label, value, detail }) {
             {label}
           </Typography>
           {detail && (
-            <Typography variant="caption" color="text.secondary" component="div" noWrap>
+            <Typography
+              variant="caption"
+              color="text.secondary"
+              component="div"
+              noWrap
+            >
               {detail}
             </Typography>
           )}
         </Box>
       </CardContent>
     </Card>
-  )
+  );
 }
 
 function BillingDetailsDialog({ target, onClose, onSave, onClear }) {
   const [invoiceNumber, setInvoiceNumber] = useState(
-    target.record?.invoiceNumber ?? '',
-  )
-  const [dateBilled, setDateBilled] = useState(target.record?.dateBilled ?? '')
-  const canSave = invoiceNumber.trim().length > 0 && dateBilled.length > 0
-  const draw = target.draw
-  const isHardware = target.type === 'hardware'
+    target.record?.invoiceNumber ?? "",
+  );
+  const [dateBilled, setDateBilled] = useState(target.record?.dateBilled ?? "");
+  const canSave = invoiceNumber.trim().length > 0 && dateBilled.length > 0;
+  const draw = target.draw;
+  const isHardware = target.type === "hardware";
 
   return (
     <Dialog open onClose={onClose} fullWidth maxWidth="xs">
       <DialogTitle sx={{ pb: 1 }}>
         <Typography variant="h6" component="div" fontWeight={750}>
           {isHardware
-            ? 'Hardware billing details'
+            ? "Hardware billing details"
             : `Draw ${target.drawIndex + 1} billing details`}
         </Typography>
         <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-          Lot {target.row.lotNumber} · Plan {target.row.planCode} ·{' '}
+          Lot {target.row.lotNumber} · Plan {target.row.planCode} ·{" "}
           {formatCurrency(target.amount)}
           {isHardware
-            ? ' · Hardware 100%'
+            ? " · Hardware 100%"
             : draw?.name?.trim()
               ? ` · ${draw.name.trim()}`
-              : ''}
+              : ""}
         </Typography>
       </DialogTitle>
-      <DialogContent sx={{ pt: '16px !important' }}>
+      <DialogContent sx={{ pt: "16px !important" }}>
         <Stack spacing={2}>
           <TextField
             autoFocus
@@ -196,46 +223,60 @@ function BillingDetailsDialog({ target, onClose, onSave, onClear }) {
       </DialogContent>
       <DialogActions sx={{ px: 3, pb: 2.5 }}>
         {target.record && (
-          <Button color="error" onClick={onClear} sx={{ mr: 'auto' }}>
+          <Button color="error" onClick={onClear} sx={{ mr: "auto" }}>
             Clear details
           </Button>
         )}
-        <Button color="inherit" onClick={onClose}>Cancel</Button>
+        <Button color="inherit" onClick={onClose}>
+          Cancel
+        </Button>
         <Button
           variant="contained"
           disableElevation
           disabled={!canSave}
-          onClick={() => onSave({ invoiceNumber: invoiceNumber.trim(), dateBilled })}
+          onClick={() =>
+            onSave({ invoiceNumber: invoiceNumber.trim(), dateBilled })
+          }
         >
           Save billing details
         </Button>
       </DialogActions>
     </Dialog>
-  )
+  );
 }
 
-function DrawWorksheetTable({ job, phase, worksheet, billingRecords, onEditBilling }) {
-  const minimumWidth = 300 + worksheet.draws.length * 230
-
+function DrawWorksheetTable({
+  job,
+  phase,
+  worksheet,
+  billingRecords,
+  onEditBilling,
+}) {
+  const minimumWidth = 300 + worksheet.draws.length * 230;
 
   return (
-    <Card variant="outlined" sx={{ overflow: 'hidden' }}>
-      <Box sx={{ px: { xs: 2, sm: 2.5 }, py: 2, bgcolor: 'action.hover' }}>
+    <Card variant="outlined" sx={{ overflow: "hidden" }}>
+      <Box sx={{ px: { xs: 2, sm: 2.5 }, py: 2, bgcolor: "action.hover" }}>
         <Stack
-          direction={{ xs: 'column', sm: 'row' }}
+          direction={{ xs: "column", sm: "row" }}
           spacing={1}
-          sx={{ justifyContent: 'space-between', alignItems: { sm: 'center' } }}
+          sx={{ justifyContent: "space-between", alignItems: { sm: "center" } }}
         >
           <Box>
             <Typography fontWeight={800}>Draw worksheet</Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.25 }}>
-              Every lot uses its assigned plan price and the builder&apos;s active draw allocation.
+            <Typography
+              variant="body2"
+              color="text.secondary"
+              sx={{ mt: 0.25 }}
+            >
+              Every lot uses its assigned plan price and the builder&apos;s
+              active draw allocation.
             </Typography>
           </Box>
           <Chip
             size="small"
             variant="outlined"
-            label={`${worksheet.rows.length} ${worksheet.rows.length === 1 ? 'lot' : 'lots'}`}
+            label={`${worksheet.rows.length} ${worksheet.rows.length === 1 ? "lot" : "lots"}`}
           />
         </Stack>
       </Box>
@@ -246,49 +287,67 @@ function DrawWorksheetTable({ job, phase, worksheet, billingRecords, onEditBilli
           aria-label={`${formatPhase(phase.name)} ${formatBuilding(phase.building)} draw worksheet`}
           sx={{
             minWidth: minimumWidth,
-            '& .MuiTableCell-root': {
+            "& .MuiTableCell-root": {
               px: 1.2,
               py: 1,
               fontSize: 12.25,
               lineHeight: 1.25,
             },
-            '& .MuiTypography-root': {
+            "& .MuiTypography-root": {
               fontSize: 12.25,
               lineHeight: 1.25,
             },
-            '& .MuiButton-root': {
+            "& .MuiButton-root": {
               minWidth: 0,
               px: 0.75,
               py: 0.4,
               fontSize: 11,
               lineHeight: 1.2,
-              whiteSpace: 'nowrap',
+              whiteSpace: "nowrap",
             },
-            '& .MuiButton-startIcon': {
+            "& .MuiButton-startIcon": {
               mr: 0.4,
-              '& svg': { fontSize: 15 },
+              "& svg": { fontSize: 15 },
             },
           }}
         >
           <TableHead>
             <TableRow>
-              <TableCell rowSpan={2} sx={{ width: 60, fontWeight: 800 }}>Lot</TableCell>
-              <TableCell rowSpan={2} sx={{ width: 72, fontWeight: 800 }}>Plan</TableCell>
-              <TableCell rowSpan={2} align="right" sx={{ width: 115, fontWeight: 800 }}>
-                {worksheet.separateHardwarePrice ? 'Draw base / lot' : 'Price per lot'}
+              <TableCell rowSpan={2} sx={{ width: 60, fontWeight: 800 }}>
+                Lot
+              </TableCell>
+              <TableCell rowSpan={2} sx={{ width: 72, fontWeight: 800 }}>
+                Plan
+              </TableCell>
+              <TableCell
+                rowSpan={2}
+                align="right"
+                sx={{ width: 115, fontWeight: 800 }}
+              >
+                {worksheet.separateHardwarePrice
+                  ? "Draw base / lot"
+                  : "Price per lot"}
               </TableCell>
               {worksheet.draws.map((draw, drawIndex) => (
                 <TableCell
                   key={`draw-heading-${drawIndex}`}
                   colSpan={2}
                   align="center"
-                  sx={{ borderLeft: 1, borderColor: 'divider', bgcolor: 'primary.light' }}
+                  sx={{
+                    borderLeft: 1,
+                    borderColor: "divider",
+                    bgcolor: "primary.light",
+                  }}
                 >
                   <Typography color="primary.main" fontWeight={850}>
                     Draw #{drawIndex + 1}
-                    {draw.name?.trim() ? ` · ${draw.name.trim()}` : ''}
+                    {draw.name?.trim() ? ` · ${draw.name.trim()}` : ""}
                   </Typography>
-                  <Typography variant="caption" color="primary.main" fontWeight={750}>
+                  <Typography
+                    variant="caption"
+                    color="primary.main"
+                    fontWeight={750}
+                  >
                     {formatPercentage(draw.percentage)}%
                   </Typography>
                 </TableCell>
@@ -299,11 +358,19 @@ function DrawWorksheetTable({ job, phase, worksheet, billingRecords, onEditBilli
                 <TableCell
                   key={`amount-heading-${drawIndex}`}
                   align="right"
-                  sx={{ width: 98, borderLeft: 1, borderColor: 'divider', fontWeight: 750 }}
+                  sx={{
+                    width: 98,
+                    borderLeft: 1,
+                    borderColor: "divider",
+                    fontWeight: 750,
+                  }}
                 >
                   Amount
                 </TableCell>,
-                <TableCell key={`invoice-heading-${drawIndex}`} sx={{ width: 132, fontWeight: 750 }}>
+                <TableCell
+                  key={`invoice-heading-${drawIndex}`}
+                  sx={{ width: 132, fontWeight: 750 }}
+                >
                   Invoice / Date billed
                 </TableCell>,
               ])}
@@ -313,23 +380,37 @@ function DrawWorksheetTable({ job, phase, worksheet, billingRecords, onEditBilli
             {worksheet.rows.map((row) => (
               <TableRow key={row.id} hover>
                 <TableCell>
-                  <Typography color="error.main" fontWeight={850}>{row.lotNumber}</Typography>
+                  <Typography color="error.main" fontWeight={850}>
+                    {row.lotNumber}
+                  </Typography>
                 </TableCell>
                 <TableCell>
                   {row.plan ? (
                     <Box>
                       <Typography fontWeight={750}>{row.planCode}</Typography>
                       {row.lot.reverse && (
-                        <Typography variant="caption" color="text.secondary">Reverse</Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          Reverse
+                        </Typography>
                       )}
                     </Box>
                   ) : (
-                    <Chip size="small" color="error" variant="outlined" label="Missing" />
+                    <Chip
+                      size="small"
+                      color="error"
+                      variant="outlined"
+                      label="Missing"
+                    />
                   )}
                 </TableCell>
                 <TableCell align="right">
                   {row.drawBasePrice == null ? (
-                    <Chip size="small" color="warning" variant="outlined" label="Not priced" />
+                    <Chip
+                      size="small"
+                      color="warning"
+                      variant="outlined"
+                      label="Not priced"
+                    />
                   ) : (
                     <Box>
                       <Typography fontWeight={750}>
@@ -344,48 +425,71 @@ function DrawWorksheetTable({ job, phase, worksheet, billingRecords, onEditBilli
                   )}
                 </TableCell>
                 {worksheet.draws.flatMap((draw, drawIndex) => {
-                  const key = billingRecordKey(job.id, phase.id, row.id, drawIndex)
-                  const record = billingRecords[key]
-                  const amount = row.drawAmounts[drawIndex]
+                  const key = billingRecordKey(
+                    job.id,
+                    phase.id,
+                    row.id,
+                    drawIndex,
+                  );
+                  const record = billingRecords[key];
+                  const amount = row.drawAmounts[drawIndex];
 
                   return [
                     <TableCell
                       key={`${key}-amount`}
                       align="right"
-                      sx={{ borderLeft: 1, borderColor: 'divider' }}
+                      sx={{ borderLeft: 1, borderColor: "divider" }}
                     >
-                      <Typography fontWeight={850}>{formatCurrency(amount)}</Typography>
+                      <Typography fontWeight={850}>
+                        {formatCurrency(amount)}
+                      </Typography>
                     </TableCell>,
                     <TableCell key={`${key}-billing`}>
                       <Button
                         size="small"
-                        color={record ? 'primary' : 'inherit'}
-                        variant={record ? 'text' : 'outlined'}
-                        startIcon={record ? <EditOutlinedIcon /> : <AddRoundedIcon />}
+                        color={record ? "primary" : "inherit"}
+                        variant={record ? "text" : "outlined"}
+                        startIcon={
+                          record ? <EditOutlinedIcon /> : <AddRoundedIcon />
+                        }
                         disabled={amount == null}
-                        onClick={() => onEditBilling({
-                          key,
-                          row,
-                          draw,
-                          drawIndex,
-                          amount,
-                          record,
-                        })}
-                        sx={{ textAlign: 'left', justifyContent: 'flex-start' }}
+                        onClick={() =>
+                          onEditBilling({
+                            key,
+                            row,
+                            draw,
+                            drawIndex,
+                            amount,
+                            record,
+                          })
+                        }
+                        sx={{ textAlign: "left", justifyContent: "flex-start" }}
                       >
                         {record ? (
                           <Box component="span">
-                            <Box component="span" sx={{ display: 'block', fontWeight: 750 }}>
+                            <Box
+                              component="span"
+                              sx={{ display: "block", fontWeight: 750 }}
+                            >
                               {record.invoiceNumber}
                             </Box>
-                            <Box component="span" sx={{ display: 'block', fontSize: 11, color: 'text.secondary' }}>
+                            <Box
+                              component="span"
+                              sx={{
+                                display: "block",
+                                fontSize: 11,
+                                color: "text.secondary",
+                              }}
+                            >
                               {formatBilledDate(record.dateBilled)}
                             </Box>
                           </Box>
-                        ) : 'Add details'}
+                        ) : (
+                          "Add details"
+                        )}
                       </Button>
                     </TableCell>,
-                  ]
+                  ];
                 })}
               </TableRow>
             ))}
@@ -395,9 +499,16 @@ function DrawWorksheetTable({ job, phase, worksheet, billingRecords, onEditBilli
               <TableRow>
                 <TableCell
                   colSpan={2}
-                  sx={{ bgcolor: 'primary.main', color: 'primary.contrastText' }}
+                  sx={{
+                    bgcolor: "primary.main",
+                    color: "primary.contrastText",
+                  }}
                 >
-                  <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center' }}>
+                  <Stack
+                    direction="row"
+                    spacing={0.75}
+                    sx={{ alignItems: "center" }}
+                  >
                     <ConstructionRoundedIcon sx={{ fontSize: 16 }} />
                     <Typography fontWeight={900} color="inherit">
                       HW · Hardware
@@ -406,20 +517,33 @@ function DrawWorksheetTable({ job, phase, worksheet, billingRecords, onEditBilli
                 </TableCell>
                 <TableCell
                   align="right"
-                  sx={{ bgcolor: 'primary.main', color: 'primary.contrastText', fontWeight: 900 }}
+                  sx={{
+                    bgcolor: "primary.main",
+                    color: "primary.contrastText",
+                    fontWeight: 900,
+                  }}
                 >
                   100%
                 </TableCell>
                 <TableCell
                   colSpan={worksheet.draws.length * 2}
-                  sx={{ bgcolor: 'primary.light', color: 'primary.main', fontWeight: 750 }}
+                  sx={{
+                    bgcolor: "primary.light",
+                    color: "primary.main",
+                    fontWeight: 750,
+                  }}
                 >
                   Billed separately from the draw allocation
                 </TableCell>
               </TableRow>
               {worksheet.rows.map((row) => {
-                const key = billingRecordKey(job.id, phase.id, row.id, 'hardware')
-                const record = billingRecords[key]
+                const key = billingRecordKey(
+                  job.id,
+                  phase.id,
+                  row.id,
+                  "hardware",
+                );
+                const record = billingRecords[key];
 
                 return (
                   <TableRow key={`${row.id}-hardware`} hover>
@@ -429,7 +553,9 @@ function DrawWorksheetTable({ job, phase, worksheet, billingRecords, onEditBilli
                       </Typography>
                     </TableCell>
                     <TableCell>
-                      <Typography fontWeight={750}>{row.planCode ?? '—'}</Typography>
+                      <Typography fontWeight={750}>
+                        {row.planCode ?? "—"}
+                      </Typography>
                     </TableCell>
                     <TableCell align="right">
                       {row.hardwarePrice == null ? (
@@ -448,25 +574,29 @@ function DrawWorksheetTable({ job, phase, worksheet, billingRecords, onEditBilli
                     <TableCell colSpan={worksheet.draws.length * 2}>
                       <Button
                         size="small"
-                        color={record ? 'primary' : 'inherit'}
-                        variant={record ? 'text' : 'outlined'}
-                        startIcon={record ? <EditOutlinedIcon /> : <AddRoundedIcon />}
+                        color={record ? "primary" : "inherit"}
+                        variant={record ? "text" : "outlined"}
+                        startIcon={
+                          record ? <EditOutlinedIcon /> : <AddRoundedIcon />
+                        }
                         disabled={row.hardwarePrice == null}
-                        onClick={() => onEditBilling({
-                          type: 'hardware',
-                          key,
-                          row,
-                          amount: row.hardwarePrice,
-                          record,
-                        })}
+                        onClick={() =>
+                          onEditBilling({
+                            type: "hardware",
+                            key,
+                            row,
+                            amount: row.hardwarePrice,
+                            record,
+                          })
+                        }
                       >
                         {record
                           ? `${record.invoiceNumber} · ${formatBilledDate(record.dateBilled)}`
-                          : 'Add hardware invoice details'}
+                          : "Add hardware invoice details"}
                       </Button>
                     </TableCell>
                   </TableRow>
-                )
+                );
               })}
             </TableBody>
           )}
@@ -475,7 +605,9 @@ function DrawWorksheetTable({ job, phase, worksheet, billingRecords, onEditBilli
               <TableRow>
                 <TableCell colSpan={2}>
                   <Typography fontWeight={850}>
-                    {worksheet.separateHardwarePrice ? 'Draw total' : 'Package total'}
+                    {worksheet.separateHardwarePrice
+                      ? "Draw total"
+                      : "Package total"}
                   </Typography>
                 </TableCell>
                 <TableCell align="right">
@@ -485,16 +617,18 @@ function DrawWorksheetTable({ job, phase, worksheet, billingRecords, onEditBilli
                 </TableCell>
                 {worksheet.draws.flatMap((_, drawIndex) => {
                   const billedCount = worksheet.rows.filter((row) =>
-                    Boolean(billingRecords[
-                      billingRecordKey(job.id, phase.id, row.id, drawIndex)
-                    ]),
-                  ).length
+                    Boolean(
+                      billingRecords[
+                        billingRecordKey(job.id, phase.id, row.id, drawIndex)
+                      ],
+                    ),
+                  ).length;
 
                   return [
                     <TableCell
                       key={`total-draw-${drawIndex}`}
                       align="right"
-                      sx={{ borderLeft: 1, borderColor: 'divider' }}
+                      sx={{ borderLeft: 1, borderColor: "divider" }}
                     >
                       <Typography fontWeight={900} color="text.primary">
                         {formatCurrency(worksheet.drawTotals[drawIndex])}
@@ -505,13 +639,15 @@ function DrawWorksheetTable({ job, phase, worksheet, billingRecords, onEditBilli
                         {billedCount} / {worksheet.rows.length} billed
                       </Typography>
                     </TableCell>,
-                  ]
+                  ];
                 })}
               </TableRow>
               {worksheet.separateHardwarePrice && (
                 <TableRow>
                   <TableCell colSpan={2}>
-                    <Typography fontWeight={850}>Hardware total · 100%</Typography>
+                    <Typography fontWeight={850}>
+                      Hardware total · 100%
+                    </Typography>
                   </TableCell>
                   <TableCell align="right">
                     <Typography fontWeight={900} color="text.primary">
@@ -520,9 +656,21 @@ function DrawWorksheetTable({ job, phase, worksheet, billingRecords, onEditBilli
                   </TableCell>
                   <TableCell colSpan={worksheet.draws.length * 2}>
                     <Typography variant="caption" color="text.secondary">
-                      {worksheet.rows.filter((row) => Boolean(billingRecords[
-                        billingRecordKey(job.id, phase.id, row.id, 'hardware')
-                      ])).length} / {worksheet.rows.length} billed
+                      {
+                        worksheet.rows.filter((row) =>
+                          Boolean(
+                            billingRecords[
+                              billingRecordKey(
+                                job.id,
+                                phase.id,
+                                row.id,
+                                "hardware",
+                              )
+                            ],
+                           ),
+                        ).length
+                      }{" "}
+                      / {worksheet.rows.length} billed
                     </Typography>
                   </TableCell>
                 </TableRow>
@@ -545,58 +693,68 @@ function DrawWorksheetTable({ job, phase, worksheet, billingRecords, onEditBilli
         </Table>
       </TableContainer>
       {worksheet.rows.length === 0 && (
-        <Box sx={{ p: 5, textAlign: 'center' }}>
+        <Box sx={{ p: 5, textAlign: "center" }}>
           <ApartmentRoundedIcon color="disabled" sx={{ fontSize: 40 }} />
-          <Typography fontWeight={750} sx={{ mt: 1 }}>No lots assigned</Typography>
+          <Typography fontWeight={750} sx={{ mt: 1 }}>
+            No lots assigned
+          </Typography>
           <Typography variant="body2" color="text.secondary">
             Add lots to this phase from its Sequence Sheet.
           </Typography>
         </Box>
       )}
     </Card>
-  )
+  );
 }
 
 function PackageCatalog({ jobs, schedules, onOpen }) {
-  const [search, setSearch] = useState('')
+  const [search, setSearch] = useState("");
   const packages = useMemo(
-    () => jobs.flatMap((job) => {
-      const schedule = schedules.find((item) =>
-        String(item.builderId) === String(getJobBuilderId(job)),
-      )
+    () =>
+      jobs.flatMap((job) => {
+        const schedule = schedules.find(
+          (item) => String(item.builderId) === String(getJobBuilderId(job)),
+        );
 
-      return (job.sequenceSheet?.phases ?? []).map((phase) => ({
-        job,
-        phase,
-        worksheet: buildDrawWorksheet(job, phase, schedule),
-      }))
-    }),
+        return (job.sequenceSheet?.phases ?? []).map((phase) => ({
+          job,
+          phase,
+          worksheet: buildDrawWorksheet(job, phase, schedule),
+        }));
+      }),
     [jobs, schedules],
-  )
-  const normalizedSearch = search.trim().toLowerCase()
+  );
+  const normalizedSearch = search.trim().toLowerCase();
   const filteredPackages = packages.filter(({ job, phase }) =>
-    [job.code, job.builder, job.community, phase.name, phase.building]
-      .some((value) => String(value).toLowerCase().includes(normalizedSearch)),
-  )
+    [job.code, job.builder, job.community, phase.name, phase.building].some(
+      (value) => String(value).toLowerCase().includes(normalizedSearch),
+    ),
+  );
 
   return (
-    <Box sx={{ minHeight: '100%', bgcolor: 'background.default' }}>
+    <Box sx={{ minHeight: "100%", bgcolor: "background.default" }}>
       <Box
         sx={{
           px: { xs: 2.5, md: 4 },
           py: 3,
-          bgcolor: 'background.paper',
+          bgcolor: "background.paper",
           borderBottom: 1,
-          borderColor: 'divider',
+          borderColor: "divider",
         }}
       >
         <Typography variant="overline" color="primary.main" fontWeight={800}>
           Draw & Invoice Packages
         </Typography>
-        <Typography variant="h5" fontWeight={800}>Choose a draw package</Typography>
-        <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, maxWidth: 760 }}>
-          Packages are built from each Job phase, its assigned lots and plan prices,
-          then allocated with the builder&apos;s Draw Schedule.
+        <Typography variant="h5" fontWeight={800}>
+          Choose a draw package
+        </Typography>
+        <Typography
+          variant="body2"
+          color="text.secondary"
+          sx={{ mt: 0.5, maxWidth: 760 }}
+        >
+          Packages are built from each Job phase, its assigned lots and plan
+          prices, then allocated with the builder&apos;s Draw Schedule.
         </Typography>
       </Box>
 
@@ -621,30 +779,38 @@ function PackageCatalog({ jobs, schedules, onOpen }) {
         <Stack spacing={1.5}>
           {filteredPackages.map(({ job, phase, worksheet }) => (
             <Card key={`${job.id}-${phase.id}`} variant="outlined">
-              <CardContent sx={{ p: '20px !important' }}>
+              <CardContent sx={{ p: "20px !important" }}>
                 <Stack
-                  direction={{ xs: 'column', md: 'row' }}
+                  direction={{ xs: "column", md: "row" }}
                   spacing={2}
-                  sx={{ alignItems: { md: 'center' }, justifyContent: 'space-between' }}
+                  sx={{
+                    alignItems: { md: "center" },
+                    justifyContent: "space-between",
+                  }}
                 >
-                  <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center' }}>
+                  <Stack
+                    direction="row"
+                    spacing={1.5}
+                    sx={{ alignItems: "center" }}
+                  >
                     <Box
                       sx={{
                         width: 46,
                         height: 46,
                         flexShrink: 0,
                         borderRadius: 1.5,
-                        display: 'grid',
-                        placeItems: 'center',
-                        bgcolor: 'primary.light',
-                        color: 'primary.main',
+                        display: "grid",
+                        placeItems: "center",
+                        bgcolor: "primary.light",
+                        color: "primary.main",
                       }}
                     >
                       <ReceiptLongRoundedIcon />
                     </Box>
                     <Box>
                       <Typography fontWeight={850}>
-                        Job #{job.code} · {formatPhase(phase.name)} / {formatBuilding(phase.building)}
+                        Job #{job.code} · {formatPhase(phase.name)} /{" "}
+                        {formatBuilding(phase.building)}
                       </Typography>
                       <Typography variant="body2" color="text.secondary">
                         {job.builder} · {job.community}
@@ -652,15 +818,28 @@ function PackageCatalog({ jobs, schedules, onOpen }) {
                     </Box>
                   </Stack>
                   <Stack
-                    direction={{ xs: 'column', sm: 'row' }}
+                    direction={{ xs: "column", sm: "row" }}
                     spacing={1}
-                    sx={{ alignItems: { sm: 'center' } }}
+                    sx={{ alignItems: { sm: "center" } }}
                   >
-                    <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: 'wrap' }}>
+                    <Stack
+                      direction="row"
+                      spacing={0.75}
+                      useFlexGap
+                      sx={{ flexWrap: "wrap" }}
+                    >
                       <ReadinessChip worksheet={worksheet} />
-                      <Chip size="small" variant="outlined" label={`${worksheet.rows.length} lots`} />
+                      <Chip
+                        size="small"
+                        variant="outlined"
+                        label={`${worksheet.rows.length} lots`}
+                      />
                       {worksheet.rows.length > 0 && (
-                        <Chip size="small" variant="outlined" label={formatCurrency(worksheet.totalBasePrice)} />
+                        <Chip
+                          size="small"
+                          variant="outlined"
+                          label={formatCurrency(worksheet.totalBasePrice)}
+                        />
                       )}
                     </Stack>
                     <Button
@@ -676,47 +855,211 @@ function PackageCatalog({ jobs, schedules, onOpen }) {
               </CardContent>
             </Card>
           ))}
+
+          <Box
+            sx={{
+              bgcolor: "background.paper",
+              border: 1,
+              borderColor: "divider",
+              borderRadius: 2,
+              overflow: "hidden",
+            }}
+          >
+            {/* Test table */}
+            <TableContainer>
+              <Table
+                sx={{
+                  minWidth: packageTableMinimumWidth,
+                  tableLayout: "fixed",
+                }}
+              >
+                <colgroup>
+                  {packageTableColumns.map((column) => (
+                    <col key={column.key} style={{ width: column.width }} />
+                  ))}
+                </colgroup>
+                <TableHead>
+                  <TableRow
+                    sx={{
+                      bgcolor: "sidebar.bg",
+                      "& .MuiTableCell-root": {
+                        color: "text.secondary",
+                        fontSize: 12,
+                        fontWeight: 700,
+                        letterSpacing: "0.04em",
+                        textTransform: "uppercase",
+                      },
+                    }}
+                  >
+                    <TableCell>Package</TableCell>
+                    <TableCell>Builder/Community</TableCell>
+                    <TableCell>Billing Period</TableCell>
+                    <TableCell>Lots/Scopes</TableCell>
+                    <TableCell>Current Draw</TableCell>
+                    <TableCell>Retention / WRAP Insurance</TableCell>
+                    <TableCell>Invoice Amount</TableCell>
+                    <TableCell>Documents</TableCell>
+                    <TableCell>Quickbooks</TableCell>
+                    <TableCell>Submission</TableCell>
+                    <TableCell>Status</TableCell>
+                    <TableCell>Action</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {filteredPackages.map(({ job, phase, worksheet }) => (
+                    <TableRow
+                      key={`${job.id}-${phase.id}`}
+                      hover
+                      sx={{
+                        cursor: "pointer",
+                        "&:focus-visible": {
+                          outline: "2px solid",
+                          outLineColor: "primary.main",
+                          outlineOffset: -2,
+                        },
+                      }}
+                    >
+                      <TableCell>
+                        Job #{job.code} · {formatPhase(phase.name)} /{" "}
+                        {formatBuilding(phase.building)}
+                      </TableCell>
+                      <TableCell>
+                        <Typography color="text.primary">
+                          {job.builder}
+                        </Typography>
+                        <Typography variant="body2" color="text.secondary">
+                          {job.community}
+                        </Typography>
+                      </TableCell>
+                      <TableCell>Jan 1 - Jan 31</TableCell>
+                      <TableCell>
+                        <Chip
+                          size="medium"
+                          variant="outlined"
+                          label={`${worksheet.rows.length}`}
+                        />
+                      </TableCell>
+
+                      <TableCell>
+                        {worksheet.rows.length > 0 && (
+                          <Chip
+                            size="medium"
+                            variant="outlined"
+                            label={formatCurrency(worksheet.totalCurrentDraw)}
+                          />
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        {worksheet.rows.length > 0 && (
+                          <Stack spacing={0.5}>
+                            <Box>
+                              <Typography fontWeight={750} color="text.secondary">
+                                Retention:
+                              </Typography>
+                              <Typography color="error">-{formatCurrency(worksheet.totalRetention)}</Typography>
+                              <Typography variant="caption" color="text.secondary">
+                                {worksheet.retentionMode === "NONE"
+                                  ? "Not applied"
+                                  : `${formatPercentage(worksheet.retentionPercentage)}%`}
+                              </Typography>
+                            </Box>
+                            <Box>
+                              <Typography fontWeight={750}>
+                                WRAP:
+                              </Typography>
+                              <Typography color="error">-{formatCurrency(worksheet.totalWrapInsurance)}</Typography>
+                              <Typography variant="caption" color="text.secondary">
+                                {worksheet.wrapInsurancePercentage > 0
+                                  ? `${formatPercentage(worksheet.wrapInsurancePercentage)}%`
+                                  : "Not applied"}
+                              </Typography>
+                            </Box>
+                          </Stack>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        {worksheet.rows.length > 0 && (
+                          <Chip
+                            size="medium"
+                            variant="outlined"
+                            label={formatCurrency(worksheet.totalInvoiceAmount)}
+                          />
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <Typography colof="text.prmimary">
+                          6 of 6
+                        </Typography>
+                        <Typography variant="body2" color="success">
+                          Complete
+                        </Typography>
+                      </TableCell>
+                      <TableCell>Not created</TableCell>
+                      <TableCell>Not submitted</TableCell>
+                      <TableCell>
+                        <ReadinessChip worksheet={worksheet} />
+                      </TableCell>
+                      <TableCell>
+                        <Button
+                          variant="contained"
+                          endIcon={<ArrowForwardRoundedIcon />}
+                          onClick={() => onOpen(job, phase)}
+                        >
+                          Open
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          </Box>
         </Stack>
 
         {filteredPackages.length === 0 && (
-          <Card variant="outlined" sx={{ p: 5, textAlign: 'center' }}>
+          <Card variant="outlined" sx={{ p: 5, textAlign: "center" }}>
             <ReceiptLongRoundedIcon color="disabled" sx={{ fontSize: 42 }} />
-            <Typography fontWeight={750} sx={{ mt: 1 }}>No draw packages found</Typography>
+            <Typography fontWeight={750} sx={{ mt: 1 }}>
+              No draw packages found
+            </Typography>
             <Typography variant="body2" color="text.secondary">
-              A Job needs at least one phase with assigned lots before a package appears here.
+              A Job needs at least one phase with assigned lots before a package
+              appears here.
             </Typography>
           </Card>
         )}
       </Box>
     </Box>
-  )
+  );
 }
 
 export default function DrawAndInvoicePackages() {
-  const navigate = useNavigate()
-  const { builderId, jobId, phaseId } = useParams()
-  const { jobs } = useJobs()
-  const { builderDrawSchedules } = useBuilderDrawSchedules()
-  const [billingRecords, setBillingRecords] = useState({})
-  const [billingTarget, setBillingTarget] = useState(null)
+  const navigate = useNavigate();
+  const { builderId, jobId, phaseId } = useParams();
+  const { jobs } = useJobs();
+  const { builderDrawSchedules } = useBuilderDrawSchedules();
+  const [billingRecords, setBillingRecords] = useState({});
+  const [billingTarget, setBillingTarget] = useState(null);
 
-  const focusedJob = jobId == null
-    ? null
-    : jobs.find((job) =>
-        String(job.id) === String(jobId)
-        && jobBelongsToBuilder(job, builderId),
-      )
+  const focusedJob =
+    jobId == null
+      ? null
+      : jobs.find(
+          (job) =>
+            String(job.id) === String(jobId) &&
+            jobBelongsToBuilder(job, builderId),
+        );
 
   if (jobId == null) {
     return (
       <PackageCatalog
         jobs={jobs}
         schedules={builderDrawSchedules}
-        onOpen={(job, phase) => navigate(
-          jobDrawInvoicePath(getJobBuilderId(job), job.id, phase.id),
-        )}
+        onOpen={(job, phase) =>
+          navigate(jobDrawInvoicePath(getJobBuilderId(job), job.id, phase.id))
+        }
       />
-    )
+    );
   }
 
   if (!focusedJob) {
@@ -724,78 +1067,93 @@ export default function DrawAndInvoicePackages() {
       <Box sx={{ p: { xs: 2.5, md: 4 } }}>
         <Alert
           severity="error"
-          action={<Button color="inherit" onClick={() => navigate('/draw-invoice')}>All packages</Button>}
+          action={
+            <Button color="inherit" onClick={() => navigate("/draw-invoice")}>
+              All packages
+            </Button>
+          }
         >
           This Job does not exist or does not belong to the selected builder.
         </Alert>
       </Box>
-    )
+    );
   }
 
-  const phases = focusedJob.sequenceSheet?.phases ?? []
-  const selectedPhase = phases.find((phase) => String(phase.id) === String(phaseId))
-    ?? phases[0]
-  const focusedBuilderId = getJobBuilderId(focusedJob)
+  const phases = focusedJob.sequenceSheet?.phases ?? [];
+  const selectedPhase =
+    phases.find((phase) => String(phase.id) === String(phaseId)) ?? phases[0];
+  const focusedBuilderId = getJobBuilderId(focusedJob);
   const schedule = builderDrawSchedules.find(
     (item) => String(item.builderId) === String(focusedBuilderId),
-  )
-  const worksheet = buildDrawWorksheet(focusedJob, selectedPhase, schedule)
+  );
+  const worksheet = buildDrawWorksheet(focusedJob, selectedPhase, schedule);
 
   const handlePhaseChange = (event) => {
-    navigate(jobDrawInvoicePath(focusedBuilderId, focusedJob.id, event.target.value))
-  }
+    navigate(
+      jobDrawInvoicePath(focusedBuilderId, focusedJob.id, event.target.value),
+    );
+  };
 
   const handleSaveBilling = (record) => {
     setBillingRecords((current) => ({
       ...current,
       [billingTarget.key]: record,
-    }))
-    setBillingTarget(null)
-  }
+    }));
+    setBillingTarget(null);
+  };
 
   const handleClearBilling = () => {
     setBillingRecords((current) => {
-      const next = { ...current }
-      delete next[billingTarget.key]
-      return next
-    })
-    setBillingTarget(null)
-  }
+      const next = { ...current };
+      delete next[billingTarget.key];
+      return next;
+    });
+    setBillingTarget(null);
+  };
 
   return (
-    <Box sx={{ minHeight: '100%', bgcolor: 'background.default' }}>
+    <Box sx={{ minHeight: "100%", bgcolor: "background.default" }}>
       <Box
         sx={{
           px: { xs: 2.5, md: 4 },
           py: 2.5,
-          bgcolor: 'background.paper',
+          bgcolor: "background.paper",
           borderBottom: 1,
-          borderColor: 'divider',
+          borderColor: "divider",
         }}
       >
         <Button
           color="inherit"
           startIcon={<ArrowBackRoundedIcon />}
-          onClick={() => navigate('/draw-invoice')}
+          onClick={() => navigate("/draw-invoice")}
           sx={{ mb: 1.5 }}
         >
           All draw packages
         </Button>
         <Stack
-          direction={{ xs: 'column', md: 'row' }}
+          direction={{ xs: "column", md: "row" }}
           spacing={2}
-          sx={{ alignItems: { md: 'center' }, justifyContent: 'space-between' }}
+          sx={{ alignItems: { md: "center" }, justifyContent: "space-between" }}
         >
           <Box>
-            <Typography variant="overline" color="primary.main" fontWeight={800}>
+            <Typography
+              variant="overline"
+              color="primary.main"
+              fontWeight={800}
+            >
               {focusedJob.builder} / {focusedJob.community}
             </Typography>
             <Typography variant="h5" fontWeight={850}>
               Job #{focusedJob.code} · Draw package
             </Typography>
             {selectedPhase && (
-              <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-                {formatPhase(selectedPhase.name)} · {formatBuilding(selectedPhase.building)}
+              <Typography
+                variant="body2"
+                color="text.secondary"
+                sx={{ mt: 0.5 }}
+              >
+                {formatPhase(selectedPhase.name)} ·{" "}
+                {formatBuilding(selectedPhase.building)}
               </Typography>
             )}
           </Box>
@@ -813,7 +1171,7 @@ export default function DrawAndInvoicePackages() {
         {phases.length === 0 ? (
           <Alert
             severity="info"
-            action={(
+            action={
               <Button
                 component={RouterLink}
                 to={jobSequenceSheetPath(focusedBuilderId, focusedJob.id)}
@@ -821,35 +1179,41 @@ export default function DrawAndInvoicePackages() {
               >
                 Open Sequence Sheet
               </Button>
-            )}
+            }
           >
-            This Job has no phases yet. Create a phase and assign its lots first.
+            This Job has no phases yet. Create a phase and assign its lots
+            first.
           </Alert>
         ) : (
           <Stack spacing={2.5}>
             <Card variant="outlined">
               <CardContent sx={{ p: { xs: 2, sm: 2.5 } }}>
                 <Stack
-                  direction={{ xs: 'column', md: 'row' }}
+                  direction={{ xs: "column", md: "row" }}
                   spacing={2}
-                  sx={{ alignItems: { md: 'center' }, justifyContent: 'space-between' }}
+                  sx={{
+                    alignItems: { md: "center" },
+                    justifyContent: "space-between",
+                  }}
                 >
                   <Box>
                     <Typography fontWeight={800}>Package scope</Typography>
                     <Typography variant="body2" color="text.secondary">
-                      Choose the phase and building whose lots should be included.
+                      Choose the phase and building whose lots should be
+                      included.
                     </Typography>
                   </Box>
                   <TextField
                     select
                     label="Phase / Building"
-                    value={selectedPhase?.id ?? ''}
+                    value={selectedPhase?.id ?? ""}
                     onChange={handlePhaseChange}
-                    sx={{ minWidth: { xs: '100%', md: 280 } }}
+                    sx={{ minWidth: { xs: "100%", md: 280 } }}
                   >
                     {phases.map((phase) => (
                       <MenuItem key={phase.id} value={phase.id}>
-                        {formatPhase(phase.name)} · {formatBuilding(phase.building)} ·{' '}
+                        {formatPhase(phase.name)} ·{" "}
+                        {formatBuilding(phase.building)} ·{" "}
                         {phase.lots?.length ?? 0} lots
                       </MenuItem>
                     ))}
@@ -859,10 +1223,10 @@ export default function DrawAndInvoicePackages() {
             </Card>
 
             <Stack
-              direction={{ xs: 'column', sm: 'row' }}
+              direction={{ xs: "column", sm: "row" }}
               spacing={1.5}
               useFlexGap
-              sx={{ flexWrap: 'wrap' }}
+              sx={{ flexWrap: "wrap" }}
             >
               <MetricCard
                 icon={<ApartmentRoundedIcon />}
@@ -874,7 +1238,11 @@ export default function DrawAndInvoicePackages() {
                 icon={<AttachMoneyRoundedIcon />}
                 label="Base contract value"
                 value={formatCurrency(worksheet.totalBasePrice)}
-                detail={worksheet.unpricedLotCount > 0 ? `${worksheet.unpricedLotCount} unpriced` : 'All plan prices included'}
+                detail={
+                  worksheet.unpricedLotCount > 0
+                    ? `${worksheet.unpricedLotCount} unpriced`
+                    : "All plan prices included"
+                }
               />
               {worksheet.separateHardwarePrice && (
                 <MetricCard
@@ -887,34 +1255,45 @@ export default function DrawAndInvoicePackages() {
               <MetricCard
                 icon={<LayersRoundedIcon />}
                 label="Builder draw allocation"
-                value={schedule ? `${schedule.draws.length} draws` : 'Not configured'}
-                detail={schedule
-                  ? `${schedule.draws.map((draw) => `${formatPercentage(draw.percentage)}%`).join(' / ')}${schedule.separateHardwarePrice ? ' + HW 100%' : ''}`
-                  : focusedJob.builder}
+                value={
+                  schedule ? `${schedule.draws.length} draws` : "Not configured"
+                }
+                detail={
+                  schedule
+                    ? `${schedule.draws.map((draw) => `${formatPercentage(draw.percentage)}%`).join(" / ")}${schedule.separateHardwarePrice ? " + HW 100%" : ""}`
+                    : focusedJob.builder
+                }
               />
             </Stack>
 
             {!worksheet.hasSchedule && (
               <Alert
                 severity="warning"
-                action={(
-                  <Button component={RouterLink} to="/builder-draw-schedules" color="inherit">
+                action={
+                  <Button
+                    component={RouterLink}
+                    to="/builder-draw-schedules"
+                    color="inherit"
+                  >
                     Configure schedule
                   </Button>
-                )}
+                }
               >
-                {focusedJob.builder} does not have a Builder Draw Schedule. Amounts cannot be allocated yet.
+                {focusedJob.builder} does not have a Builder Draw Schedule.
+                Amounts cannot be allocated yet.
               </Alert>
             )}
             {worksheet.hasSchedule && !worksheet.scheduleIsValid && (
               <Alert severity="error">
-                The builder&apos;s draw percentages must be positive and total exactly 100%.
+                The builder&apos;s draw percentages must be positive and total
+                exactly 100%.
               </Alert>
             )}
-            {(worksheet.missingPlanCount > 0 || worksheet.unpricedLotCount > 0) && (
+            {(worksheet.missingPlanCount > 0 ||
+              worksheet.unpricedLotCount > 0) && (
               <Alert
                 severity="warning"
-                action={(
+                action={
                   <Button
                     component={RouterLink}
                     to={jobPlanPricingPath(focusedBuilderId, focusedJob.id)}
@@ -922,21 +1301,21 @@ export default function DrawAndInvoicePackages() {
                   >
                     Open pricing
                   </Button>
-                )}
+                }
               >
                 {worksheet.missingPlanCount > 0
-                  ? `${worksheet.missingPlanCount} lot assignment${worksheet.missingPlanCount === 1 ? '' : 's'} reference a missing plan. `
-                  : ''}
+                  ? `${worksheet.missingPlanCount} lot assignment${worksheet.missingPlanCount === 1 ? "" : "s"} reference a missing plan. `
+                  : ""}
                 {worksheet.unpricedLotCount > 0
-                  ? `${worksheet.unpricedLotCount} lot${worksheet.unpricedLotCount === 1 ? '' : 's'} use a plan without a base price.`
-                  : ''}
+                  ? `${worksheet.unpricedLotCount} lot${worksheet.unpricedLotCount === 1 ? "" : "s"} use a plan without a base price.`
+                  : ""}
               </Alert>
             )}
-            {(worksheet.missingHardwarePriceCount > 0
-              || worksheet.invalidHardwarePriceCount > 0) && (
+            {(worksheet.missingHardwarePriceCount > 0 ||
+              worksheet.invalidHardwarePriceCount > 0) && (
               <Alert
                 severity="warning"
-                action={(
+                action={
                   <Button
                     component={RouterLink}
                     to={jobPlanPricingPath(focusedBuilderId, focusedJob.id)}
@@ -944,14 +1323,14 @@ export default function DrawAndInvoicePackages() {
                   >
                     Open pricing
                   </Button>
-                )}
+                }
               >
                 {worksheet.missingHardwarePriceCount > 0
-                  ? `${worksheet.missingHardwarePriceCount} lot${worksheet.missingHardwarePriceCount === 1 ? '' : 's'} use a plan without a hardware price. `
-                  : ''}
+                  ? `${worksheet.missingHardwarePriceCount} lot${worksheet.missingHardwarePriceCount === 1 ? "" : "s"} use a plan without a hardware price. `
+                  : ""}
                 {worksheet.invalidHardwarePriceCount > 0
-                  ? `${worksheet.invalidHardwarePriceCount} hardware price${worksheet.invalidHardwarePriceCount === 1 ? '' : 's'} exceed the plan price.`
-                  : ''}
+                  ? `${worksheet.invalidHardwarePriceCount} hardware price${worksheet.invalidHardwarePriceCount === 1 ? "" : "s"} exceed the plan price.`
+                  : ""}
               </Alert>
             )}
 
@@ -976,5 +1355,5 @@ export default function DrawAndInvoicePackages() {
         />
       )}
     </Box>
-  )
+  );
 }

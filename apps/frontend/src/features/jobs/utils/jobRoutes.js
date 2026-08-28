@@ -22,12 +22,15 @@ export function jobPlanPricingPath(builderId, jobId) {
   return `/pricing/builder/${routeId(builderId)}/job/${routeId(jobId)}`
 }
 
-export function jobDrawInvoicePath(builderId, jobId, phaseId) {
+export function jobDrawInvoicePath(builderId, jobId, phaseId, packageId) {
   const jobPath = `/draw-invoice/builder/${routeId(builderId)}/job/${routeId(jobId)}`
 
-  return phaseId == null
-    ? jobPath
-    : `${jobPath}/phase/${routeId(phaseId)}`
+  if (phaseId == null) return jobPath
+
+  const phasePath = `${jobPath}/phase/${routeId(phaseId)}`
+  return packageId == null
+    ? phasePath
+    : `${phasePath}/package/${routeId(packageId)}`
 }
 
 export function getJobBuilderId(job, builders = []) {

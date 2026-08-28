@@ -64,4 +64,8 @@ export const contextualRoutes = [
     path: '/draw-invoice/builder/:builderId/job/:jobId/phase/:phaseId',
     element: <DrawAndInvoicePage />,
   },
+  {
+    path: '/draw-invoice/builder/:builderId/job/:jobId/phase/:phaseId/package/:packageId',
+    element: <DrawAndInvoicePage />,
+  },
 ]

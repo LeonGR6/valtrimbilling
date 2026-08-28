@@ -38,6 +38,10 @@ test('Job module routes keep the builder and Job identifiers', () => {
     jobDrawInvoicePath(2, 1, 2102),
     '/draw-invoice/builder/2/job/1/phase/2102',
   )
+  assert.equal(
+    jobDrawInvoicePath(2, 1, 2102, 'draw-package-1'),
+    '/draw-invoice/builder/2/job/1/phase/2102/package/draw-package-1',
+  )
 })
 
 test('Jobs resolve and validate their builder relationship', () => {

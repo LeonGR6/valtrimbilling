@@ -40,6 +40,13 @@ const dayOfMonthSchema = z.coerce
   .min(1, 'Use a day between 1 and 31.')
   .max(31, 'Use a day between 1 and 31.')
 
+const optionsBillingDrawIndexSchema = z.preprocess(
+  (value) => (value === '' || value === null || value === undefined
+    ? null
+    : Number(value)),
+  z.number().int().min(0).nullable(),
+)
+
 export function createBuilderDrawScheduleSchema(schedules, currentScheduleId) {
   return z
     .object({
@@ -59,6 +66,7 @@ export function createBuilderDrawScheduleSchema(schedules, currentScheduleId) {
         .min(MIN_DRAW_COUNT, `Configure at least ${MIN_DRAW_COUNT} draws.`)
         .max(MAX_DRAW_COUNT, `Configure no more than ${MAX_DRAW_COUNT} draws.`),
       separateHardwarePrice: z.boolean().default(false),
+      optionsBillingDrawIndex: optionsBillingDrawIndexSchema,
       frequency: z.enum(['MONTHLY', 'SEMIMONTHLY', 'WEEKLY']),
       cutoffDay: dayOfMonthSchema,
       submissionDay: dayOfMonthSchema,
@@ -113,6 +121,17 @@ export function createBuilderDrawScheduleSchema(schedules, currentScheduleId) {
           code: 'custom',
           path: ['draws'],
           message: 'Draw percentages must total exactly 100%.',
+        })
+      }
+
+      if (
+        data.optionsBillingDrawIndex !== null
+        && data.optionsBillingDrawIndex >= data.draws.length
+      ) {
+        context.addIssue({
+          code: 'custom',
+          path: ['optionsBillingDrawIndex'],
+          message: 'Select one of the configured draws.',
         })
       }
 

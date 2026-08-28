@@ -48,6 +48,7 @@ export function DrawInvoicePackagesProvider({ children }) {
           phaseId,
           lotIds: [...lotIds],
           drawIndexes: [...drawIndexes],
+          optionsBillingDrawIndex: schedule?.optionsBillingDrawIndex ?? null,
           selections: makePackageSelections(lotIds, drawIndexes),
           invoiceNumber: null,
           invoiceDate: null,
@@ -73,4 +74,3 @@ export function DrawInvoicePackagesProvider({ children }) {
     </DrawInvoicePackagesContext.Provider>
   )
 }
-

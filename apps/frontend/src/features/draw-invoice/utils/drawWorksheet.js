@@ -103,6 +103,15 @@ export function buildDrawWorksheet(job, phase, schedule) {
 
   const rows = lots.map((lot) => {
     const plan = plans.find((candidate) => String(candidate.id) === String(lot.planId))
+    const selectedOptionIds = new Set(
+      (lot.optionIds ?? []).map((optionId) => String(optionId)),
+    )
+    const selectedOptions = (plan?.options ?? [])
+      .filter((option) => selectedOptionIds.has(String(option.id)))
+      .map((option) => ({
+        ...option,
+        price: hasPlanPrice(option.price) ? option.price : null,
+      }))
     const basePrice = plan?.price
     const priceIsAvailable = hasPlanPrice(basePrice)
     const hardwarePrice = plan?.hardwarePrice
@@ -126,6 +135,7 @@ export function buildDrawWorksheet(job, phase, schedule) {
       lotNumber: lot.lotNumber,
       plan,
       planCode: plan?.code ?? null,
+      selectedOptions,
       basePrice: priceIsAvailable ? basePrice : null,
       drawBasePrice,
       hardwarePrice: separateHardwarePrice && hardwarePriceIsAvailable

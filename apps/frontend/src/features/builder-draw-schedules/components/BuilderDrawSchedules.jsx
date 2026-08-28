@@ -170,6 +170,7 @@ function BuilderDrawScheduleDialog({
     defaultValues: schedule
       ? {
           ...schedule,
+          optionsBillingDrawIndex: schedule.optionsBillingDrawIndex ?? null,
           draws: schedule.draws.map((draw) => ({ ...draw })),
           cutoffDays: [...schedule.cutoffDays],
         }
@@ -192,6 +193,10 @@ function BuilderDrawScheduleDialog({
   const separateHardwarePrice = useWatch({
     control,
     name: 'separateHardwarePrice',
+  })
+  const optionsBillingDrawIndex = useWatch({
+    control,
+    name: 'optionsBillingDrawIndex',
   })
   const frequency = useWatch({ control, name: 'frequency' })
   const retentionEnabled = useWatch({ control, name: 'retentionEnabled' })
@@ -216,6 +221,26 @@ function BuilderDrawScheduleDialog({
         )),
   )
   const drawsError = errors.draws?.message ?? errors.draws?.root?.message
+
+  const handleRemoveDraw = (drawIndex) => {
+    const configuredDrawIndex = optionsBillingDrawIndex == null
+      ? null
+      : Number(optionsBillingDrawIndex)
+
+    if (configuredDrawIndex === drawIndex) {
+      setValue('optionsBillingDrawIndex', null, {
+        shouldDirty: true,
+        shouldValidate: true,
+      })
+    } else if (configuredDrawIndex > drawIndex) {
+      setValue('optionsBillingDrawIndex', configuredDrawIndex - 1, {
+        shouldDirty: true,
+        shouldValidate: true,
+      })
+    }
+
+    remove(drawIndex)
+  }
 
   return (
     <Dialog
@@ -361,7 +386,7 @@ function BuilderDrawScheduleDialog({
                     <IconButton
                       aria-label={`Remove Draw ${index + 1}`}
                       color="error"
-                      onClick={() => remove(index)}
+                      onClick={() => handleRemoveDraw(index)}
                       sx={{ mt: 1.25 }}
                     >
                       <DeleteOutlineRoundedIcon />
@@ -407,6 +432,38 @@ function BuilderDrawScheduleDialog({
                 Hardware will be billed separately at 100%.
               </Alert>
             )}
+
+            <Controller
+              name="optionsBillingDrawIndex"
+              control={control}
+              render={({ field }) => (
+                <TextField
+                  select
+                  label="Options billing draw"
+                  value={field.value ?? ''}
+                  onChange={(event) => field.onChange(
+                    event.target.value === '' ? null : Number(event.target.value),
+                  )}
+                  onBlur={field.onBlur}
+                  inputRef={field.ref}
+                  error={Boolean(errors.optionsBillingDrawIndex)}
+                  helperText={
+                    errors.optionsBillingDrawIndex?.message
+                    ?? 'Selected lot options are added when this draw is included in a package.'
+                  }
+                  fullWidth
+                  sx={{ mt: 1.5 }}
+                >
+                  <MenuItem value="">Do not bill options in a draw</MenuItem>
+                  {watchedDraws.map((draw, index) => (
+                    <MenuItem key={`options-draw-${index + 1}`} value={index}>
+                      Draw {index + 1}
+                      {draw.name?.trim() ? ` · ${draw.name.trim()}` : ''}
+                    </MenuItem>
+                  ))}
+                </TextField>
+              )}
+            />
           </Box>
 
           <Box  
@@ -881,6 +938,10 @@ function BuilderDrawScheduleCard({ schedule, builder, onEdit, onDelete }) {
               Draw {index + 1}
               {draw.name?.trim() ? ` (${draw.name.trim()})` : ''}
             </Typography>
+            {schedule.optionsBillingDrawIndex != null
+              && Number(schedule.optionsBillingDrawIndex) === index && (
+              <Chip size="small" color="primary" label="Options billed" />
+            )}
             <Typography variant="body2" color="primary.main" fontWeight={800}>
               {formatPercentage(Number(draw.percentage))}%
             </Typography>

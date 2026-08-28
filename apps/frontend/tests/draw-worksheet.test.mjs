@@ -128,6 +128,37 @@ test('hardware separation requires a hardware price for every assigned plan', ()
   assert.deepEqual(worksheet.rows[0].drawAmounts, [null, null])
 })
 
+test('worksheet resolves only selected options that belong to the assigned plan', () => {
+  const worksheet = buildDrawWorksheet(
+    {
+      sequenceSheet: {
+        plans: [{
+          id: 1,
+          code: 'A',
+          price: 1000,
+          options: [
+            { id: 10, code: 'OPT-10', description: 'Door upgrade', price: 125 },
+            { id: 11, code: 'OPT-11', description: 'Shelf upgrade', price: 75 },
+          ],
+        }],
+      },
+    },
+    {
+      lots: [{
+        id: 1,
+        lotNumber: '19',
+        planId: 1,
+        optionIds: [10, 999],
+      }],
+    },
+    { draws: [{ percentage: 50 }, { percentage: 50 }] },
+  )
+
+  assert.deepEqual(worksheet.rows[0].selectedOptions, [
+    { id: 10, code: 'OPT-10', description: 'Door upgrade', price: 125 },
+  ])
+})
+
 test('worksheet exposes current draw, retention, WRAP and invoice totals', () => {
   const worksheet = buildDrawWorksheet(
     {

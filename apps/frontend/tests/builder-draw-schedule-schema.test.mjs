@@ -33,6 +33,25 @@ test('Builder Draw Schedule can separate hardware at 100 percent', () => {
   assert.equal(result.separateHardwarePrice, true)
 })
 
+test('Builder Draw Schedule stores the draw used to bill selected options', () => {
+  const result = createBuilderDrawScheduleSchema([], null).parse(validSetup({
+    optionsBillingDrawIndex: '2',
+  }))
+
+  assert.equal(result.optionsBillingDrawIndex, 2)
+})
+
+test('options billing draw must point to a configured draw', () => {
+  const result = createBuilderDrawScheduleSchema([], null).safeParse(validSetup({
+    optionsBillingDrawIndex: 3,
+  }))
+
+  assert.equal(result.success, false)
+  assert.deepEqual(result.error.flatten().fieldErrors.optionsBillingDrawIndex, [
+    'Select one of the configured draws.',
+  ])
+})
+
 test('Builder Draw Schedule stores and trims optional draw names', () => {
   const result = createBuilderDrawScheduleSchema([], null).parse(validSetup({
     draws: [

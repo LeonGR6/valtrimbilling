@@ -50,6 +50,7 @@ export const invoiceLineFormatLabels = Object.fromEntries(
 
 export const defaultBillingSettings = {
   separateHardwarePrice: false,
+  optionsBillingDrawIndex: null,
   frequency: 'MONTHLY',
   cutoffDay: 20,
   submissionDay: 25,
@@ -92,6 +93,7 @@ export const initialBuilderDrawSchedules = [
     requiresRelease: true,
     invoiceLineFormat: 'LOT',
     portalName: 'GCPay',
+    optionsBillingDrawIndex: 2,
   },
   {
     id: 2,

@@ -324,13 +324,15 @@ function CreateDrawDialog({
   const draftRecord = {
     lotIds: selectedLotIds,
     drawIndexes: selectedDrawIndexes,
+    optionsBillingDrawIndex: schedule?.optionsBillingDrawIndex ?? null,
     selections: makePackageSelections(selectedLotIds, selectedDrawIndexes),
   }
   const summary = summarizeDrawPackage(draftRecord, job, phase, schedule)
   const canCreate =
     worksheet.isReady &&
     selectedLotIds.length > 0 &&
-    selectedDrawIndexes.length > 0
+    selectedDrawIndexes.length > 0 &&
+    summary.unpricedOptionCount === 0
 
   return (
     <Dialog open onClose={onClose} fullWidth maxWidth="md">
@@ -408,6 +410,7 @@ function CreateDrawDialog({
                       <TableCell padding="checkbox" />
                       <TableCell>Lot</TableCell>
                       <TableCell>Plan</TableCell>
+                      <TableCell>Options</TableCell>
                       <TableCell align="right">Price per lot</TableCell>
                       <TableCell>Availability</TableCell>
                     </TableRow>
@@ -445,6 +448,19 @@ function CreateDrawDialog({
                             </Typography>
                           </TableCell>
                           <TableCell>{row.planCode ?? '—'}</TableCell>
+                          <TableCell>
+                            {(row.selectedOptions?.length ?? 0) > 0 ? (
+                              <Chip
+                                size="small"
+                                variant="outlined"
+                                label={`${row.selectedOptions.length} selected`}
+                              />
+                            ) : (
+                              <Typography variant="caption" color="text.secondary">
+                                None
+                              </Typography>
+                            )}
+                          </TableCell>
                           <TableCell align="right">
                             {formatCurrency(row.drawBasePrice)}
                           </TableCell>
@@ -518,6 +534,32 @@ function CreateDrawDialog({
             </Stack>
           </Box>
 
+          {summary.optionsAreDue && summary.selectedOptionRows.length > 0 && (
+            summary.unpricedOptionCount > 0 ? (
+              <Alert
+                severity="warning"
+                action={job ? (
+                  <Button
+                    component={RouterLink}
+                    to={jobPlanPricingPath(getJobBuilderId(job), job.id)}
+                    color="inherit"
+                  >
+                    Open pricing
+                  </Button>
+                ) : undefined}
+              >
+                {summary.unpricedOptionCount} selected{' '}
+                {summary.unpricedOptionCount === 1 ? 'option needs' : 'options need'}{' '}
+                a price before this package can be created.
+              </Alert>
+            ) : (
+              <Alert severity="success">
+                Options are billed with Draw #{summary.optionsBillingDrawIndex + 1}.
+                This package will add {formatCurrency(summary.optionsTotal)} in options.
+              </Alert>
+            )
+          )}
+
           {canCreate && (
             <Card variant="outlined" sx={{ bgcolor: 'action.hover' }}>
               <CardContent sx={{ p: '16px !important' }}>
@@ -535,6 +577,11 @@ function CreateDrawDialog({
                   <Typography variant="body2">
                     Current Draw: <strong>{formatCurrency(summary.currentDraw)}</strong>
                   </Typography>
+                  {summary.optionsAreDue && (
+                    <Typography variant="body2">
+                      Options: <strong>{formatCurrency(summary.optionsTotal)}</strong>
+                    </Typography>
+                  )}
                   <Typography variant="body2">
                     Invoice Amount: <strong>{formatCurrency(summary.invoiceAmount)}</strong>
                   </Typography>
@@ -744,6 +791,107 @@ function DrawWorksheetTable({
   )
 }
 
+function PackageOptionsTable({ summary }) {
+  const billingDrawLabel = summary.optionsBillingDrawIndex == null
+    ? 'Not configured'
+    : `Draw #${summary.optionsBillingDrawIndex + 1}`
+
+  return (
+    <Card variant="outlined" sx={{ overflow: 'hidden' }}>
+      <Box sx={{ px: { xs: 2, sm: 2.5 }, py: 2, bgcolor: 'action.hover' }}>
+        <Stack
+          direction={{ xs: 'column', sm: 'row' }}
+          spacing={1}
+          sx={{ justifyContent: 'space-between', alignItems: { sm: 'center' } }}
+        >
+          <Box>
+            <Typography fontWeight={800}>Options</Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.25 }}>
+              Selected lot options are invoiced according to the builder setup.
+            </Typography>
+          </Box>
+          <Chip size="small" variant="outlined" label={`Billing draw · ${billingDrawLabel}`} />
+        </Stack>
+      </Box>
+      <Divider />
+
+      {summary.optionsBillingDrawIndex == null ? (
+        <Alert severity="info" sx={{ m: 2 }}>
+          This builder does not have an options billing draw configured.
+        </Alert>
+      ) : summary.selectedOptionRows.length === 0 ? (
+        <Alert severity="info" sx={{ m: 2 }}>
+          The lots in this package do not contain selected options.
+        </Alert>
+      ) : (
+        <TableContainer>
+          <Table size="small" aria-label="Options selected for this package">
+            <TableHead>
+              <TableRow>
+                <TableCell>Lot</TableCell>
+                <TableCell>Plan</TableCell>
+                <TableCell>Option</TableCell>
+                <TableCell>Description</TableCell>
+                <TableCell>Billing draw</TableCell>
+                <TableCell align="right">Price</TableCell>
+                <TableCell>Status</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {summary.selectedOptionRows.map((option) => {
+                const included = summary.optionsAreDue
+                const priceMissing = option.issue === 'PRICE_MISSING'
+
+                return (
+                  <TableRow key={option.id} hover>
+                    <TableCell>
+                      <Typography color="error.main" fontWeight={850}>
+                        {option.lotNumber}
+                      </Typography>
+                    </TableCell>
+                    <TableCell>{option.planCode ?? '—'}</TableCell>
+                    <TableCell><Typography fontWeight={750}>{option.optionCode}</Typography></TableCell>
+                    <TableCell>{option.description}</TableCell>
+                    <TableCell>{billingDrawLabel}</TableCell>
+                    <TableCell align="right">
+                      <Typography color={priceMissing ? 'error' : 'text.primary'} fontWeight={750}>
+                        {priceMissing ? 'Price missing' : formatCurrency(option.price)}
+                      </Typography>
+                    </TableCell>
+                    <TableCell>
+                      <Chip
+                        size="small"
+                        color={included && !priceMissing ? 'success' : priceMissing ? 'error' : 'default'}
+                        variant={included && !priceMissing ? 'filled' : 'outlined'}
+                        label={included
+                          ? priceMissing ? 'Needs price' : 'Included in invoice'
+                          : `Pending ${billingDrawLabel}`}
+                      />
+                    </TableCell>
+                  </TableRow>
+                )
+              })}
+            </TableBody>
+            {summary.optionsAreDue && (
+              <TableFooter>
+                <TableRow>
+                  <TableCell colSpan={5}>
+                    <Typography fontWeight={850}>Options total</Typography>
+                  </TableCell>
+                  <TableCell align="right">
+                    <Typography fontWeight={900}>{formatCurrency(summary.optionsTotal)}</Typography>
+                  </TableCell>
+                  <TableCell />
+                </TableRow>
+              </TableFooter>
+            )}
+          </Table>
+        </TableContainer>
+      )}
+    </Card>
+  )
+}
+
 function PackageCatalog({ jobs, schedules, packages, onOpen, onCreate }) {
   const [search, setSearch] = useState('')
   const contexts = useMemo(
@@ -893,7 +1041,14 @@ function PackageCatalog({ jobs, schedules, packages, onOpen, onCreate }) {
                           </Typography>
                         </Typography>
                       </TableCell>
-                      <TableCell><Typography fontWeight={850}>{formatCurrency(summary.invoiceAmount)}</Typography></TableCell>
+                      <TableCell>
+                        <Typography fontWeight={850}>{formatCurrency(summary.invoiceAmount)}</Typography>
+                        {summary.optionsTotal > 0 && (
+                          <Typography variant="caption" color="text.secondary">
+                            Includes {formatCurrency(summary.optionsTotal)} options
+                          </Typography>
+                        )}
+                      </TableCell>
                       <TableCell>
                         <Typography>{completeDocuments} of {record.documents.length}</Typography>
                         <Typography variant="caption" color={completeDocuments === record.documents.length ? 'success.main' : 'text.secondary'}>
@@ -1153,7 +1308,11 @@ export default function DrawAndInvoicePackages() {
                   icon={<ReceiptLongRoundedIcon />}
                   label="Invoice Amount"
                   value={formatCurrency(packageSummary.invoiceAmount)}
-                  detail={focusedPackage.invoiceNumber ? `Invoice ${focusedPackage.invoiceNumber}` : 'Invoice pending'}
+                  detail={packageSummary.optionsTotal > 0
+                    ? `${formatCurrency(packageSummary.optionsTotal)} options included`
+                    : focusedPackage.invoiceNumber
+                      ? `Invoice ${focusedPackage.invoiceNumber}`
+                      : 'Invoice pending'}
                 />
               </Stack>
             ) : (
@@ -1206,6 +1365,8 @@ export default function DrawAndInvoicePackages() {
               packages={drawInvoicePackages}
               currentPackageId={focusedPackage?.id}
             />
+
+            {focusedPackage && <PackageOptionsTable summary={packageSummary} />}
           </Stack>
         )}
       </Box>

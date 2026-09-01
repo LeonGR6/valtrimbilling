@@ -205,7 +205,8 @@
 }
 
 .calendar-canvas .fc {
-  --fc-border-color: color-mix(in srgb, var(--mui-palette-divider) 84%, var(--mui-palette-text-secondary));
+  --calendar-grid-color: color-mix(in srgb, var(--mui-palette-text-primary) 18%, var(--mui-palette-background-paper));
+  --fc-border-color: var(--calendar-grid-color);
   --fc-page-bg-color: transparent;
   --fc-neutral-bg-color: color-mix(in srgb, var(--mui-palette-text-secondary) 5%, transparent);
   --fc-today-bg-color: color-mix(in srgb, var(--mui-palette-primary-main) 7%, transparent);
@@ -215,11 +216,17 @@
 }
 
 .calendar-canvas .fc .fc-scrollgrid {
-  border: 0;
+  border: 1px solid var(--calendar-grid-color);
 }
 
-.calendar-canvas .fc .fc-scrollgrid-section > * {
-  border-color: var(--fc-border-color);
+.calendar-canvas .fc .fc-scrollgrid-section > *,
+.calendar-canvas .fc .fc-scrollgrid td,
+.calendar-canvas .fc .fc-scrollgrid th {
+  border-color: var(--calendar-grid-color);
+}
+
+[data-mui-color-scheme="dark"] .calendar-canvas .fc {
+  --calendar-grid-color: color-mix(in srgb, var(--mui-palette-text-primary) 26%, var(--mui-palette-background-paper));
 }
 
 .calendar-canvas .fc .fc-col-header-cell {

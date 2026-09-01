@@ -36,9 +36,11 @@ import CloseRoundedIcon from '@mui/icons-material/CloseRounded'
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined'
 import EventAvailableRoundedIcon from '@mui/icons-material/EventAvailableRounded'
+import EngineeringRoundedIcon from '@mui/icons-material/EngineeringRounded'
 import LayersOutlinedIcon from '@mui/icons-material/LayersOutlined'
 import LocationOnOutlinedIcon from '@mui/icons-material/LocationOnOutlined'
 import ResponsiveCreateButton from '../../../components/common/ResponsiveCreateButton'
+import { initialPeople } from '../../people'
 import {
   activityTypeMap,
   activityTypeOptions,
@@ -57,6 +59,7 @@ const dateFormatter = new Intl.DateTimeFormat('en-US', {
 
 const builderOptions = ['KB Home', 'Lennar', 'Trumark']
 const communityOptions = ['Andara', 'Solara', 'Haven']
+const foremanOptions = initialPeople.map((person) => person.name)
 
 function parseLocalDate(dateString) {
   const [year, month, day] = dateString.split('-').map(Number)
@@ -101,6 +104,7 @@ function createCalendarEvents(values, groupId) {
     community: values.community,
     phase: values.phase,
     building: values.building,
+    foreman: values.foreman,
     notes: values.notes,
     splitPhase: values.splitPhase,
     splitParts,
@@ -238,6 +242,9 @@ function ActivityDetail({ event, groupEvents, onClose, onEdit }) {
           <DetailRow icon={<LocationOnOutlinedIcon />} label="Community">{props.community}</DetailRow>
           <DetailRow icon={<LayersOutlinedIcon />} label="Phase">{props.phase}</DetailRow>
           <DetailRow icon={<ApartmentRoundedIcon />} label="Building">{props.building}</DetailRow>
+          {props.foreman && (
+            <DetailRow icon={<EngineeringRoundedIcon />} label="Foreman">{props.foreman}</DetailRow>
+          )}
         </Box>
 
         <Divider />
@@ -316,9 +323,10 @@ function ActivityTypePicker({ value, onChange }) {
   )
 }
 
-function SelectField({ label, value, options, onChange }) {
+function SelectField({ label, value, options, onChange, emptyLabel = '', required = true }) {
   return (
-    <TextField select label={label} value={value} onChange={(event) => onChange(event.target.value)} fullWidth required>
+    <TextField select label={label} value={value} onChange={(event) => onChange(event.target.value)} fullWidth required={required}>
+      {emptyLabel && <MenuItem value="">{emptyLabel}</MenuItem>}
       {options.map((option) => <MenuItem key={option} value={option}>{option}</MenuItem>)}
     </TextField>
   )
@@ -430,6 +438,14 @@ function ActivityForm({ draft, isEditing, formError, onChange, onClose, onSave }
               slotProps={{ htmlInput: { maxLength: 40 } }}
               fullWidth
               required
+            />
+            <SelectField
+              label="Foreman"
+              value={draft.foreman}
+              options={foremanOptions}
+              onChange={(value) => onChange({ foreman: value })}
+              emptyLabel="Unassigned"
+              required={false}
             />
           </Box>
         </Box>

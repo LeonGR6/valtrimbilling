@@ -25,6 +25,7 @@ export const calendarEventSchema = z.object({
   community: requiredText('Enter the community.'),
   phase: requiredText('Enter the phase.', 40),
   building: requiredText('Enter the building.', 40),
+  foreman: z.string().trim().max(100, 'Use 100 characters or fewer.').optional().default(''),
   notes: z.string().trim().max(500, 'Use 500 characters or fewer.').optional().default(''),
   installOnly: z.boolean().default(false),
   installDate: z.string().default(''),

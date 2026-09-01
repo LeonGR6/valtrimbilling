@@ -57,8 +57,6 @@ const dateFormatter = new Intl.DateTimeFormat('en-US', {
 
 const builderOptions = ['KB Home', 'Lennar', 'Trumark']
 const communityOptions = ['Andara', 'Solara', 'Haven']
-const phaseOptions = ['Phase 1', 'Phase 2', 'Phase 3']
-const buildingOptions = ['Building 1', 'Building 2', 'Building 3', 'Building 4']
 
 function parseLocalDate(dateString) {
   const [year, month, day] = dateString.split('-').map(Number)
@@ -417,8 +415,22 @@ function ActivityForm({ draft, isEditing, formError, onChange, onClose, onSave }
           <Box className="activity-form__grid">
             <SelectField label="Builder" value={draft.builder} options={builderOptions} onChange={(value) => onChange({ builder: value })} />
             <SelectField label="Community" value={draft.community} options={communityOptions} onChange={(value) => onChange({ community: value })} />
-            <SelectField label="Phase" value={draft.phase} options={phaseOptions} onChange={(value) => onChange({ phase: value })} />
-            <SelectField label="Building" value={draft.building} options={buildingOptions} onChange={(value) => onChange({ building: value })} />
+            <TextField
+              label="Phase"
+              value={draft.phase}
+              onChange={(event) => onChange({ phase: event.target.value })}
+              slotProps={{ htmlInput: { maxLength: 40 } }}
+              fullWidth
+              required
+            />
+            <TextField
+              label="Building"
+              value={draft.building}
+              onChange={(event) => onChange({ building: event.target.value })}
+              slotProps={{ htmlInput: { maxLength: 40 } }}
+              fullWidth
+              required
+            />
           </Box>
         </Box>
 

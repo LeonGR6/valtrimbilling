@@ -1,16 +1,43 @@
 .activity-tone--ext {
-  --activity-color: #7c3aed;
-  --activity-strong: #6d28d9;
+  --activity-color: #80698b;
+  --activity-strong: #604d69;
+  --activity-background: #eee9f1;
+  --activity-soft: #f6f3f7;
 }
 
 .activity-tone--dm {
-  --activity-color: #dc2626;
-  --activity-strong: #b91c1c;
+  --activity-color: #ad6b6b;
+  --activity-strong: #814d4d;
+  --activity-background: #f3e8e8;
+  --activity-soft: #faf3f3;
 }
 
 .activity-tone--hw {
-  --activity-color: #2563eb;
-  --activity-strong: #1d4ed8;
+  --activity-color: #617e9c;
+  --activity-strong: #49657e;
+  --activity-background: #e7edf3;
+  --activity-soft: #f1f5f8;
+}
+
+[data-mui-color-scheme="dark"] .activity-tone--ext {
+  --activity-color: #907da0;
+  --activity-strong: #c3b2d0;
+  --activity-background: #302a35;
+  --activity-soft: #28242d;
+}
+
+[data-mui-color-scheme="dark"] .activity-tone--dm {
+  --activity-color: #a96e72;
+  --activity-strong: #d6a3a3;
+  --activity-background: #3a292b;
+  --activity-soft: #302427;
+}
+
+[data-mui-color-scheme="dark"] .activity-tone--hw {
+  --activity-color: #718ba6;
+  --activity-strong: #aec0d3;
+  --activity-background: #263442;
+  --activity-soft: #222e3a;
 }
 
 .calendar-page {
@@ -61,7 +88,7 @@
   border: 1px solid color-mix(in srgb, var(--activity-color) 48%, var(--mui-palette-divider));
   border-radius: 8px;
   color: var(--activity-strong);
-  background: color-mix(in srgb, var(--activity-color) 8%, transparent);
+  background: var(--activity-soft);
 }
 
 .calendar-type-filter .MuiCheckbox-root {
@@ -269,6 +296,7 @@
 }
 
 .work-event {
+  width: 100%;
   min-height: 55px;
   display: flex;
   flex-direction: column;
@@ -278,8 +306,9 @@
   border-left: 4px solid var(--activity-strong);
   border-radius: 7px;
   color: var(--activity-strong);
-  background: color-mix(in srgb, var(--activity-color) 14%, var(--mui-palette-background-paper));
-  box-shadow: 0 2px 5px color-mix(in srgb, var(--activity-color) 10%, transparent);
+  background: var(--activity-background);
+  box-shadow: 0 2px 5px rgba(15, 23, 42, 0.08);
+  box-sizing: border-box;
 }
 
 .work-event__topline {
@@ -332,11 +361,12 @@
 
 .activity-drawer {
   overflow: hidden;
+  opacity: 1;
   border-left: 1px solid var(--mui-palette-divider);
   color: var(--mui-palette-text-primary);
-  background: color-mix(in srgb, var(--mui-palette-background-paper) 97%, transparent) !important;
+  background: var(--mui-palette-background-paper) !important;
   box-shadow: -16px 0 40px rgba(15, 23, 42, 0.14) !important;
-  backdrop-filter: blur(20px);
+  backdrop-filter: none;
 }
 
 .activity-drawer__layout {
@@ -344,6 +374,7 @@
   min-height: 0;
   display: flex;
   flex-direction: column;
+  background: var(--mui-palette-background-paper);
 }
 
 .activity-drawer__header {
@@ -355,7 +386,7 @@
   flex: 0 0 auto;
   padding: 15px 20px;
   border-bottom: 1px solid var(--mui-palette-divider);
-  background: color-mix(in srgb, var(--mui-palette-background-paper) 94%, transparent);
+  background: var(--mui-palette-background-paper);
 }
 
 .activity-drawer__header .MuiTypography-overline {
@@ -371,6 +402,7 @@
   gap: 22px;
   overflow-y: auto;
   padding: 20px;
+  background: var(--mui-palette-background-paper);
 }
 
 .activity-drawer__footer {
@@ -380,7 +412,7 @@
   flex: 0 0 auto;
   padding: 14px 20px;
   border-top: 1px solid var(--mui-palette-divider);
-  background: color-mix(in srgb, var(--mui-palette-background-paper) 96%, transparent);
+  background: var(--mui-palette-background-paper);
   box-shadow: 0 -10px 24px rgba(15, 23, 42, 0.04);
 }
 
@@ -399,7 +431,7 @@
   padding: 16px;
   border: 1px solid color-mix(in srgb, var(--activity-color) 48%, var(--mui-palette-divider));
   border-radius: 11px;
-  background: color-mix(in srgb, var(--activity-color) 10%, transparent);
+  background: var(--activity-soft);
 }
 
 .activity-detail__type-mark {

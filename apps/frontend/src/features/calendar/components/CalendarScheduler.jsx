@@ -25,6 +25,7 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material'
+import { useColorScheme } from '@mui/material/styles'
 import AddRoundedIcon from '@mui/icons-material/AddRounded'
 import ApartmentRoundedIcon from '@mui/icons-material/ApartmentRounded'
 import ArrowBackIosNewRoundedIcon from '@mui/icons-material/ArrowBackIosNewRounded'
@@ -613,6 +614,8 @@ function ActivityForm({ draft, isEditing, formError, onChange, onClose, onSave }
 
 export default function CalendarScheduler() {
   const calendarRef = useRef(null)
+  const { mode, systemMode } = useColorScheme()
+  const resolvedColorMode = mode === 'system' ? systemMode : mode
   const [events, setEvents] = useState(initialCalendarEvents)
   const [selectedId, setSelectedId] = useState(null)
   const [drawerMode, setDrawerMode] = useState(null)
@@ -870,6 +873,9 @@ export default function CalendarScheduler() {
         slotProps={{
           paper: {
             className: 'activity-drawer',
+            style: {
+              '--drawer-surface': resolvedColorMode === 'dark' ? '#1e293b' : '#ffffff',
+            },
             sx: { width: { xs: '100%', sm: 480 }, maxWidth: '100%' },
           },
         }}

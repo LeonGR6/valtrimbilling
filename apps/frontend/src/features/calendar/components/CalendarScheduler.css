@@ -360,7 +360,7 @@
 }
 
 .activity-drawer {
-  --drawer-surface: light-dark(#ffffff, #1e293b);
+  --drawer-surface: #ffffff;
   overflow: hidden;
   opacity: 1;
   border-left: 1px solid var(--mui-palette-divider);
@@ -369,6 +369,20 @@
   background-image: none !important;
   box-shadow: -16px 0 40px rgba(15, 23, 42, 0.14) !important;
   backdrop-filter: none;
+}
+
+@media (prefers-color-scheme: dark) {
+  .activity-drawer {
+    --drawer-surface: #1e293b;
+  }
+}
+
+[data-mui-color-scheme="light"] .activity-drawer {
+  --drawer-surface: #ffffff;
+}
+
+[data-mui-color-scheme="dark"] .activity-drawer {
+  --drawer-surface: #1e293b;
 }
 
 .activity-drawer__layout {

@@ -16,83 +16,94 @@ const splitPartSchema = z.object({
   date: dateField,
 })
 
-export const calendarEventSchema = z.object({
-  activityType: z.enum(['EXT', 'DM', 'HW']),
-  lotStart: lotField,
-  lotEnd: lotField,
-  date: dateField,
-  builder: requiredText('Enter the builder.'),
-  community: requiredText('Enter the community.'),
-  phase: requiredText('Enter the phase.', 40),
-  building: requiredText('Enter the building.', 40),
-  foreman: z.string().trim().max(100, 'Use 100 characters or fewer.').optional().default(''),
-  notes: z.string().trim().max(500, 'Use 500 characters or fewer.').optional().default(''),
-  installOnly: z.boolean().default(false),
-  installDate: z.string().default(''),
-  splitPhase: z.boolean().default(false),
-  splitParts: z.array(splitPartSchema).default([]),
-  lockUp: z.boolean().default(false),
-}).superRefine((value, context) => {
-  if (value.lotEnd < value.lotStart) {
+function validateSplitParts(value, context, enabledField, partsField) {
+  if (!value[enabledField]) return
+
+  const parts = value[partsField]
+  if (parts.length < 2) {
     context.addIssue({
       code: z.ZodIssueCode.custom,
-      path: ['lotEnd'],
-      message: 'The ending lot must be equal to or greater than the starting lot.',
-    })
-  }
-
-  if (value.installOnly) {
-    if (value.activityType === 'HW') {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['installOnly'],
-        message: 'Install only is available for EXT FRAMES and DM activities.',
-      })
-    }
-
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(value.installDate)) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['installDate'],
-        message: 'Select the install-only date.',
-      })
-    }
-  }
-
-  if (!value.splitPhase) return
-
-  if (value.splitParts.length < 2) {
-    context.addIssue({
-      code: z.ZodIssueCode.custom,
-      path: ['splitParts'],
+      path: [partsField],
       message: 'Add at least two lot groups for a split phase.',
     })
     return
   }
 
-  const sortedParts = [...value.splitParts].sort((a, b) => a.lotStart - b.lotStart)
-
-  for (const [index, part] of sortedParts.entries()) {
-    if (part.lotEnd < part.lotStart) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['splitParts', index, 'lotEnd'],
-        message: 'Each division needs a valid lot range.',
-      })
-    }
-  }
-
+  const sortedParts = [...parts].sort((a, b) => a.lotStart - b.lotStart)
+  const allRangesValid = sortedParts.every((part) => part.lotEnd >= part.lotStart)
   const coversFullRange = sortedParts[0]?.lotStart === value.lotStart
     && sortedParts.at(-1)?.lotEnd === value.lotEnd
   const hasNoGaps = sortedParts.every((part, index) => (
     index === 0 || part.lotStart === sortedParts[index - 1].lotEnd + 1
   ))
 
-  if (!coversFullRange || !hasNoGaps) {
+  if (!allRangesValid || !coversFullRange || !hasNoGaps) {
     context.addIssue({
       code: z.ZodIssueCode.custom,
-      path: ['splitParts'],
+      path: [partsField],
       message: `Split groups must cover lots ${value.lotStart}–${value.lotEnd} once, without gaps.`,
     })
   }
+}
+
+export const productionActivitySchema = z.object({
+  calendarType: z.literal('PRODUCTION').default('PRODUCTION'),
+  jobId: z.coerce.number().int().positive('Select a job.'),
+  phaseId: z.coerce.number().int().positive('Select a phase.'),
+  jobCode: requiredText('Select a job.', 40),
+  builder: requiredText('The selected job needs a builder.'),
+  community: requiredText('The selected job needs a community.'),
+  phase: requiredText('Select a phase.', 40),
+  building: requiredText('The selected phase needs a building.', 40),
+  lotStart: lotField,
+  lotEnd: lotField,
+  lotNumbers: z.array(requiredText('Every lot needs a number.', 40)).min(1, 'The selected phase has no lots.'),
+  foreman: z.string().trim().max(100, 'Use 100 characters or fewer.').optional().default(''),
+  superintendent: z.string().trim().max(100, 'Use 100 characters or fewer.').optional().default(''),
+  notes: z.string().trim().max(500, 'Use 500 characters or fewer.').optional().default(''),
+  extDate: dateField,
+  extOrderMaterial: z.boolean().default(false),
+  extInstallOnly: z.boolean().default(false),
+  extInstallDate: z.string().default(''),
+  dmDate: dateField,
+  dmInstallOnly: z.boolean().default(false),
+  dmInstallDate: z.string().default(''),
+  dmSplitPhase: z.boolean().default(false),
+  dmSplitParts: z.array(splitPartSchema).default([]),
+  dmShutters: z.boolean().default(false),
+  hwDate: dateField,
+  hwSplitPhase: z.boolean().default(false),
+  hwSplitParts: z.array(splitPartSchema).default([]),
+  hwLockUp: z.boolean().default(false),
+}).superRefine((value, context) => {
+  if (value.lotEnd < value.lotStart) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['lotEnd'],
+      message: 'The selected phase has an invalid lot range.',
+    })
+  }
+
+  if (value.extInstallOnly && !/^\d{4}-\d{2}-\d{2}$/.test(value.extInstallDate)) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['extInstallDate'],
+      message: 'Select the EXT install-only date.',
+    })
+  }
+
+  if (value.dmInstallOnly && !/^\d{4}-\d{2}-\d{2}$/.test(value.dmInstallDate)) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['dmInstallDate'],
+      message: 'Select the DM install-only date.',
+    })
+  }
+
+  validateSplitParts(value, context, 'dmSplitPhase', 'dmSplitParts')
+  validateSplitParts(value, context, 'hwSplitPhase', 'hwSplitParts')
 })
+
+// Keep the original export name while the calendar moves from one event per
+// form to a grouped Production activity.
+export const calendarEventSchema = productionActivitySchema

@@ -11,17 +11,15 @@ import {
   Chip,
   Divider,
   Drawer,
-  FormControl,
   FormControlLabel,
   IconButton,
-  InputLabel,
   MenuItem,
   Paper,
-  Radio,
-  Select,
   Snackbar,
   Stack,
   TextField,
+  ToggleButton,
+  ToggleButtonGroup,
   Tooltip,
   Typography,
 } from '@mui/material'
@@ -35,16 +33,23 @@ import CalendarMonthRoundedIcon from '@mui/icons-material/CalendarMonthRounded'
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded'
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined'
-import EventAvailableRoundedIcon from '@mui/icons-material/EventAvailableRounded'
 import EngineeringRoundedIcon from '@mui/icons-material/EngineeringRounded'
+import EventAvailableRoundedIcon from '@mui/icons-material/EventAvailableRounded'
 import LayersOutlinedIcon from '@mui/icons-material/LayersOutlined'
 import LocationOnOutlinedIcon from '@mui/icons-material/LocationOnOutlined'
 import ResponsiveCreateButton from '../../../components/common/ResponsiveCreateButton'
-import { initialPeople } from '../../people'
+import { initialContacts } from '../../builder-contacts/data/builderContacts.js'
+import { useJobs } from '../../jobs/context/useJobs.js'
+import { initialPeople } from '../../people/data/people.js'
 import {
   activityTypeMap,
   activityTypeOptions,
-  emptyCalendarDraft,
+  changeOrderType,
+  createDraftFromProductionEvent,
+  createEmptyProductionDraft,
+  createProductionCalendarEvents,
+  getActivityTone,
+  getLotsLabel,
   initialCalendarEvents,
 } from '../data/calendarEvents.js'
 import { calendarEventSchema } from '../schemas/calendarEventSchema.js'
@@ -57,9 +62,8 @@ const dateFormatter = new Intl.DateTimeFormat('en-US', {
   year: 'numeric',
 })
 
-const builderOptions = ['KB Home', 'Lennar', 'Trumark']
-const communityOptions = ['Andara', 'Solara', 'Haven']
-const foremanOptions = initialPeople.map((person) => person.name)
+const supervisorsById = new Map(initialPeople.map((person) => [person.id, person]))
+const superintendentsById = new Map(initialContacts.map((person) => [person.id, person]))
 
 function parseLocalDate(dateString) {
   const [year, month, day] = dateString.split('-').map(Number)
@@ -70,13 +74,43 @@ function formatDate(dateString) {
   return dateString ? dateFormatter.format(parseLocalDate(dateString)) : '—'
 }
 
-function getLotsLabel(lotStart, lotEnd) {
-  return Number(lotStart) === Number(lotEnd)
-    ? `Lot ${lotStart}`
-    : `Lots ${lotStart}–${lotEnd}`
+function formatPhase(value) {
+  return String(value).toLowerCase().startsWith('phase') ? String(value) : `Phase ${value}`
 }
 
-function createDefaultSplitParts(draft) {
+function formatBuilding(value) {
+  return String(value).toLowerCase().startsWith('building') ? String(value) : `Building ${value}`
+}
+
+function sortLotNumbers(lots) {
+  return [...lots].sort((a, b) => Number(a.lotNumber) - Number(b.lotNumber))
+}
+
+function getPhasePatch(job, phase) {
+  const lots = sortLotNumbers(phase?.lots ?? [])
+  const lotNumbers = lots.map((lot) => String(lot.lotNumber))
+
+  return {
+    jobId: job?.id ?? '',
+    phaseId: phase?.id ?? '',
+    jobCode: job?.code ?? '',
+    builder: job?.builder ?? '',
+    community: job?.community ?? '',
+    phase: phase ? formatPhase(phase.name) : '',
+    building: phase ? formatBuilding(phase.building) : '',
+    lotStart: Number(lotNumbers[0]) || 1,
+    lotEnd: Number(lotNumbers.at(-1)) || 1,
+    lotNumbers,
+    foreman: supervisorsById.get(job?.supervisorId)?.name ?? '',
+    superintendent: superintendentsById.get(job?.superintendentId)?.name ?? '',
+    dmSplitPhase: false,
+    dmSplitParts: [],
+    hwSplitPhase: false,
+    hwSplitParts: [],
+  }
+}
+
+function createDefaultSplitParts(draft, date) {
   const lotStart = Math.max(1, Number(draft.lotStart) || 1)
   const requestedEnd = Number(draft.lotEnd) || lotStart + 1
   const lotEnd = Math.max(lotStart + 1, requestedEnd)
@@ -84,80 +118,60 @@ function createDefaultSplitParts(draft) {
   const stamp = Date.now()
 
   return [
-    { id: `split-${stamp}-a`, lotStart, lotEnd: midpoint, date: draft.date },
-    { id: `split-${stamp}-b`, lotStart: midpoint + 1, lotEnd, date: draft.date },
+    { id: `split-${stamp}-a`, lotStart, lotEnd: midpoint, date },
+    { id: `split-${stamp}-b`, lotStart: midpoint + 1, lotEnd, date },
   ]
 }
 
-function createCalendarEvents(values, groupId) {
-  const type = activityTypeMap[values.activityType]
-  const splitParts = values.splitPhase
-    ? [...values.splitParts].sort((a, b) => a.lotStart - b.lotStart)
-    : []
-  const schedules = values.splitPhase
-    ? splitParts
-    : [{ lotStart: values.lotStart, lotEnd: values.lotEnd, date: values.date }]
-  const commonProps = {
-    groupId,
-    activityType: values.activityType,
-    builder: values.builder,
-    community: values.community,
-    phase: values.phase,
-    building: values.building,
-    foreman: values.foreman,
-    notes: values.notes,
-    splitPhase: values.splitPhase,
-    splitParts,
-    installOnly: values.installOnly,
-    installDate: values.installDate,
-    lockUp: false,
-  }
-  const stamp = Date.now()
+function addSplitDivision(parts) {
+  let widestIndex = -1
+  let widestSize = 0
 
-  const calendarEvents = schedules.map((schedule, index) => ({
-    id: `${groupId}-phase-${stamp}-${index}`,
-    groupId,
-    title: `${type.label} • ${getLotsLabel(schedule.lotStart, schedule.lotEnd)}`,
-    start: schedule.date,
-    allDay: true,
-    extendedProps: {
-      ...commonProps,
-      lotStart: schedule.lotStart,
-      lotEnd: schedule.lotEnd,
-      variant: 'base',
-    },
-  }))
+  parts.forEach((part, index) => {
+    const size = Number(part.lotEnd) - Number(part.lotStart) + 1
+    if (size > widestSize) {
+      widestIndex = index
+      widestSize = size
+    }
+  })
 
-  if (values.installOnly) {
-    calendarEvents.push({
-      id: `${groupId}-install-${stamp}`,
-      groupId,
-      title: `${type.label} INSTALL ONLY • ${getLotsLabel(values.lotStart, values.lotEnd)}`,
-      start: values.installDate,
-      allDay: true,
-      extendedProps: {
-        ...commonProps,
-        lotStart: values.lotStart,
-        lotEnd: values.lotEnd,
-        variant: 'install-only',
-      },
-    })
-  }
+  if (widestIndex < 0 || widestSize < 2) return parts
 
-  return calendarEvents
+  const part = parts[widestIndex]
+  const midpoint = Math.floor((Number(part.lotStart) + Number(part.lotEnd)) / 2)
+  const nextParts = [...parts]
+  nextParts.splice(
+    widestIndex,
+    1,
+    { ...part, lotEnd: midpoint },
+    { ...part, id: `split-${Date.now()}`, lotStart: midpoint + 1 },
+  )
+  return nextParts
+}
+
+function removeSplitDivision(parts, index) {
+  if (parts.length <= 2) return parts
+
+  const nextParts = parts.map((part) => ({ ...part }))
+  const [removed] = nextParts.splice(index, 1)
+  if (index > 0) nextParts[index - 1].lotEnd = removed.lotEnd
+  else nextParts[0].lotStart = removed.lotStart
+  return nextParts
 }
 
 function EventCard({ event }) {
   const props = event.extendedProps
   const type = activityTypeMap[props.activityType]
+  const tone = getActivityTone(props.activityType, props.orderMaterial)
 
   return (
-    <Box className={`work-event activity-tone--${type.tone}`}>
+    <Box className={`work-event activity-tone--${tone}`}>
       <Box className="work-event__topline">
         <strong>{type.label}</strong>
+        {props.orderMaterial && <span className="work-event__tag">Order material</span>}
         {props.variant === 'install-only' && <span className="work-event__tag">Install only</span>}
       </Box>
-      <span className="work-event__community">{props.community}</span>
+      <span className="work-event__community">#{props.jobCode} · {props.community}</span>
       <span className="work-event__lots">{getLotsLabel(props.lotStart, props.lotEnd)}</span>
     </Box>
   )
@@ -169,7 +183,7 @@ function DetailRow({ icon, label, children }) {
       <Box className="activity-detail__row-icon">{icon}</Box>
       <Box>
         <Typography variant="caption" color="text.secondary">{label}</Typography>
-        <Typography variant="body2" fontWeight={650}>{children}</Typography>
+        <Typography variant="body2" fontWeight={650}>{children || 'Unassigned'}</Typography>
       </Box>
     </Box>
   )
@@ -197,44 +211,86 @@ function ScheduleRow({ label, lotStart, lotEnd, date, tone }) {
         <span>{formatDate(date)}</span>
       </Box>
       <Typography variant="body2" fontWeight={750}>{label}</Typography>
-      <Typography variant="caption" color="text.secondary">{getLotsLabel(lotStart, lotEnd)} · All day</Typography>
+      <Typography variant="caption" color="text.secondary">
+        {getLotsLabel(lotStart, lotEnd)} · All day
+      </Typography>
     </Box>
   )
 }
 
-function ActivityDetail({ event, groupEvents, onClose, onEdit }) {
+function StageScheduleDetail({ activityType, schedule, lotStart, lotEnd }) {
+  const type = activityTypeMap[activityType]
+  const tone = getActivityTone(activityType, schedule.orderMaterial)
+  const schedules = schedule.splitPhase
+    ? schedule.splitParts
+    : [{ id: `${activityType}-base`, lotStart, lotEnd, date: schedule.date }]
+  const optionLabels = [
+    schedule.orderMaterial && 'Order material',
+    schedule.installOnly && 'Install only',
+    schedule.splitPhase && 'Split phase',
+    schedule.shutters && 'Shutters',
+    schedule.lockUp && 'Lock up',
+  ].filter(Boolean)
+
+  return (
+    <Box className="activity-detail__stage">
+      <Box className="activity-detail__stage-heading">
+        <Box className={`activity-stage-title activity-tone--${tone}`}>
+          <span className="activity-stage-title__dot" />
+          <Typography variant="subtitle2" fontWeight={800}>{type.label}</Typography>
+        </Box>
+        <Stack direction="row" spacing={0.5} useFlexGap sx={{ flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+          {optionLabels.map((label) => <Chip key={label} size="small" label={label} />)}
+        </Stack>
+      </Box>
+      <Stack spacing={0.75}>
+        {schedules.map((part, index) => (
+          <ScheduleRow
+            key={part.id ?? `${activityType}-${index}`}
+            label={schedule.splitPhase ? `Division ${index + 1}` : type.label}
+            lotStart={part.lotStart}
+            lotEnd={part.lotEnd}
+            date={part.date}
+            tone={tone}
+          />
+        ))}
+        {schedule.installOnly && (
+          <ScheduleRow
+            label="Install only"
+            lotStart={lotStart}
+            lotEnd={lotEnd}
+            date={schedule.installDate}
+            tone={tone}
+          />
+        )}
+      </Stack>
+    </Box>
+  )
+}
+
+function ActivityDetail({ event, onClose, onEdit }) {
   if (!event) return null
 
   const props = event.extendedProps
   const type = activityTypeMap[props.activityType]
-  const baseEvent = groupEvents.find((item) => item.extendedProps.variant !== 'install-only') ?? event
-  const schedules = props.splitPhase
-    ? props.splitParts
-    : [{
-        id: baseEvent.id,
-        lotStart: baseEvent.extendedProps.lotStart,
-        lotEnd: baseEvent.extendedProps.lotEnd,
-        date: baseEvent.start,
-      }]
+  const tone = getActivityTone(props.activityType, props.orderMaterial)
+  const lotStart = props.lotNumbers?.[0] ?? props.lotStart
+  const lotEnd = props.lotNumbers?.at(-1) ?? props.lotEnd
 
   return (
     <Box className="activity-drawer__layout">
-      <DrawerHeader eyebrow="ACTIVITY DETAILS" title="Scheduled activity" onClose={onClose} />
+      <DrawerHeader eyebrow="PRODUCTION ACTIVITY" title={`Job #${props.jobCode}`} onClose={onClose} />
 
       <Box className="activity-drawer__scroll">
-        <Box className={`activity-detail__hero activity-tone--${type.tone}`}>
-          <Box className="activity-detail__type-mark">{props.activityType}</Box>
+        <Box className={`activity-detail__hero activity-tone--${tone}`}>
+          <Box className="activity-detail__type-mark">{type.shortLabel}</Box>
           <Box>
             <Typography variant="h6" fontWeight={780}>{type.label}</Typography>
             <Typography variant="body2" color="text.secondary">
-              {getLotsLabel(props.lotStart, props.lotEnd)}
+              {props.phase} · {getLotsLabel(lotStart, lotEnd)}
             </Typography>
           </Box>
-          <Chip
-            size="small"
-            label={props.variant === 'install-only' ? 'Install only' : 'All day'}
-            className="activity-detail__chip"
-          />
+          <Chip size="small" label="Production" className="activity-detail__chip" />
         </Box>
 
         <Box className="activity-detail__grid">
@@ -242,46 +298,36 @@ function ActivityDetail({ event, groupEvents, onClose, onEdit }) {
           <DetailRow icon={<LocationOnOutlinedIcon />} label="Community">{props.community}</DetailRow>
           <DetailRow icon={<LayersOutlinedIcon />} label="Phase">{props.phase}</DetailRow>
           <DetailRow icon={<ApartmentRoundedIcon />} label="Building">{props.building}</DetailRow>
-          {props.foreman && (
-            <DetailRow icon={<EngineeringRoundedIcon />} label="Foreman">{props.foreman}</DetailRow>
-          )}
+          <DetailRow icon={<EngineeringRoundedIcon />} label="Foreman / Supervisor">{props.foreman}</DetailRow>
+          <DetailRow icon={<EngineeringRoundedIcon />} label="Jobsite Superintendent">{props.superintendent}</DetailRow>
         </Box>
 
         <Divider />
 
         <Box className="activity-detail__section">
           <Box className="activity-detail__section-title">
-            <Typography variant="subtitle1" fontWeight={750}>
-              {props.splitPhase ? 'Split phase schedule' : 'Schedule'}
-            </Typography>
-            {props.splitPhase && <Chip size="small" label={`${schedules.length} divisions`} />}
+            <Box>
+              <Typography variant="subtitle1" fontWeight={750}>Production schedule</Typography>
+              <Typography variant="caption" color="text.secondary">EXT, DM and HW are managed together.</Typography>
+            </Box>
+            <Chip size="small" label="3 events" />
           </Box>
-          <Stack spacing={1}>
-            {schedules.map((schedule, index) => (
-              <ScheduleRow
-                key={schedule.id ?? `${schedule.date}-${index}`}
-                label={props.splitPhase ? `Division ${index + 1}` : type.label}
-                lotStart={schedule.lotStart}
-                lotEnd={schedule.lotEnd}
-                date={schedule.date}
-                tone={type.tone}
+          <Stack spacing={1.5}>
+            {activityTypeOptions.map((stage) => (
+              <StageScheduleDetail
+                key={stage.value}
+                activityType={stage.value}
+                schedule={props.productionSchedule[stage.value]}
+                lotStart={lotStart}
+                lotEnd={lotEnd}
               />
             ))}
-            {props.installOnly && (
-              <ScheduleRow
-                label="Install only"
-                lotStart={props.splitPhase ? props.splitParts[0].lotStart : props.lotStart}
-                lotEnd={props.splitPhase ? props.splitParts.at(-1).lotEnd : props.lotEnd}
-                date={props.installDate}
-                tone={type.tone}
-              />
-            )}
           </Stack>
         </Box>
 
         {props.notes && (
           <Paper variant="outlined" className="activity-detail__notes">
-            <Typography variant="caption" color="text.secondary" fontWeight={750}>NOTES / SCOPE OF WORK</Typography>
+            <Typography variant="caption" color="text.secondary" fontWeight={750}>NOTES</Typography>
             <Typography variant="body2">{props.notes}</Typography>
           </Paper>
         )}
@@ -290,120 +336,201 @@ function ActivityDetail({ event, groupEvents, onClose, onEdit }) {
       <Box className="activity-drawer__footer">
         <Button variant="outlined" color="inherit" onClick={onClose}>Close</Button>
         <Button variant="contained" startIcon={<EditOutlinedIcon />} onClick={onEdit} disableElevation>
-          Edit activity
+          Edit production
         </Button>
       </Box>
     </Box>
   )
 }
 
-function ActivityTypePicker({ value, onChange }) {
+function AutoField({ label, value }) {
   return (
-    <Box className="activity-type-picker" role="radiogroup" aria-label="Activity type">
-      {activityTypeOptions.map((type) => (
-        <Box
-          component="label"
-          key={type.value}
-          className={`activity-type-option activity-tone--${type.tone} ${value === type.value ? 'is-selected' : ''}`}
-        >
-          <Radio
-            checked={value === type.value}
-            onChange={() => onChange(type.value)}
-            value={type.value}
-            size="small"
-            inputProps={{ 'aria-label': type.label }}
-          />
-          <Box>
-            <Typography variant="subtitle2" fontWeight={800}>{type.label}</Typography>
-            <Typography variant="caption" color="text.secondary">{type.description}</Typography>
-          </Box>
-        </Box>
-      ))}
+    <Box className="production-summary__field">
+      <Typography variant="caption" color="text.secondary">{label}</Typography>
+      <Typography variant="body2" fontWeight={700}>{value || 'Unassigned'}</Typography>
     </Box>
   )
 }
 
-function SelectField({ label, value, options, onChange, emptyLabel = '', required = true }) {
+function ProductionSummary({ draft }) {
   return (
-    <TextField select label={label} value={value} onChange={(event) => onChange(event.target.value)} fullWidth required={required}>
-      {emptyLabel && <MenuItem value="">{emptyLabel}</MenuItem>}
-      {options.map((option) => <MenuItem key={option} value={option}>{option}</MenuItem>)}
-    </TextField>
+    <Paper variant="outlined" className="production-summary">
+      <Box className="production-summary__heading">
+        <Box>
+          <Typography variant="subtitle2" fontWeight={800}>Loaded from Job #{draft.jobCode}</Typography>
+          <Typography variant="caption" color="text.secondary">These fields update automatically with the selected phase.</Typography>
+        </Box>
+        <Chip size="small" color="success" variant="outlined" label={`${draft.lotNumbers.length} lots`} />
+      </Box>
+      <Box className="production-summary__grid">
+        <AutoField label="Builder" value={draft.builder} />
+        <AutoField label="Community" value={draft.community} />
+        <AutoField label="Building" value={draft.building} />
+        <AutoField label="Lot range" value={getLotsLabel(draft.lotStart, draft.lotEnd)} />
+        <AutoField label="Foreman / Supervisor" value={draft.foreman} />
+        <AutoField label="Jobsite Superintendent" value={draft.superintendent} />
+      </Box>
+      <Box className="production-summary__lots" aria-label="Lots loaded from selected phase">
+        {draft.lotNumbers.map((lot) => <Chip key={lot} size="small" label={`Lot ${lot}`} />)}
+      </Box>
+    </Paper>
   )
 }
 
-function ActivityForm({ draft, isEditing, formError, onChange, onClose, onSave }) {
-  const type = activityTypeMap[draft.activityType]
-  const supportsInstallOnly = draft.activityType === 'EXT' || draft.activityType === 'DM'
-  const supportsSplitPhase = draft.activityType === 'DM' || draft.activityType === 'HW'
-  const totalLots = Math.max(0, Number(draft.lotEnd) - Number(draft.lotStart) + 1)
-  const canAddDivision = draft.splitParts.length < totalLots
+function OptionCheckbox({ checked, disabled = false, label, description, onChange, endAdornment = null }) {
+  return (
+    <FormControlLabel
+      disabled={disabled}
+      control={<Checkbox checked={checked} onChange={(event) => onChange(event.target.checked)} />}
+      label={(
+        <Box className="activity-option-label">
+          <Box>
+            <Typography variant="body2" fontWeight={700}>{label}</Typography>
+            <Typography variant="caption" color="text.secondary">{description}</Typography>
+          </Box>
+          {endAdornment}
+        </Box>
+      )}
+    />
+  )
+}
 
-  const changeActivityType = (activityType) => {
+function SplitScheduleEditor({ activityType, parts, totalLots, onChange, onReset }) {
+  const type = activityTypeMap[activityType]
+  const canAddDivision = parts.length < totalLots
+
+  return (
+    <Box className="stage-split-editor">
+      <Box className="activity-form__heading activity-form__heading--actions">
+        <Box>
+          <Typography variant="subtitle2" fontWeight={800}>Split schedule</Typography>
+          <Typography variant="caption" color="text.secondary">Each division becomes an all-day calendar event.</Typography>
+        </Box>
+        <Stack direction="row" spacing={0.5}>
+          <Button size="small" onClick={onReset}>Reset</Button>
+          <Button
+            size="small"
+            startIcon={<AddRoundedIcon />}
+            disabled={!canAddDivision}
+            onClick={() => onChange(addSplitDivision(parts))}
+          >
+            Division
+          </Button>
+        </Stack>
+      </Box>
+      <Stack spacing={1}>
+        {parts.map((part, index) => (
+          <Paper key={part.id} variant="outlined" className={`split-part activity-tone--${type.tone}`}>
+            <Box className="split-part__heading">
+              <Typography variant="caption" fontWeight={800}>DIVISION {index + 1}</Typography>
+              <IconButton
+                size="small"
+                aria-label={`Remove division ${index + 1}`}
+                disabled={parts.length <= 2}
+                onClick={() => onChange(removeSplitDivision(parts, index))}
+              >
+                <DeleteOutlineRoundedIcon fontSize="small" />
+              </IconButton>
+            </Box>
+            <Box className="split-part__fields">
+              <TextField
+                label="From"
+                type="number"
+                value={part.lotStart}
+                onChange={(event) => onChange(parts.map((item) => item.id === part.id
+                  ? { ...item, lotStart: event.target.value }
+                  : item))}
+                slotProps={{ htmlInput: { min: 1 } }}
+                required
+              />
+              <TextField
+                label="To"
+                type="number"
+                value={part.lotEnd}
+                onChange={(event) => onChange(parts.map((item) => item.id === part.id
+                  ? { ...item, lotEnd: event.target.value }
+                  : item))}
+                slotProps={{ htmlInput: { min: 1 } }}
+                required
+              />
+              <TextField
+                label="Date"
+                type="date"
+                value={part.date}
+                onChange={(event) => onChange(parts.map((item) => item.id === part.id
+                  ? { ...item, date: event.target.value }
+                  : item))}
+                slotProps={{ inputLabel: { shrink: true } }}
+                required
+              />
+            </Box>
+          </Paper>
+        ))}
+      </Stack>
+    </Box>
+  )
+}
+
+function StageCard({ activityType, date, onDateChange, tone, children }) {
+  const type = activityTypeMap[activityType]
+
+  return (
+    <Paper variant="outlined" className={`production-stage-card activity-tone--${tone}`}>
+      <Box className="production-stage-card__header">
+        <Box className="production-stage-card__identity">
+          <span className="production-stage-card__number">{activityType}</span>
+          <Box>
+            <Typography variant="subtitle1" fontWeight={800}>{type.label}</Typography>
+            <Typography variant="caption" color="text.secondary">{type.description}</Typography>
+          </Box>
+        </Box>
+        <TextField
+          label={`${activityType} date`}
+          type="date"
+          value={date}
+          onChange={(event) => onDateChange(event.target.value)}
+          slotProps={{ inputLabel: { shrink: true } }}
+          required
+          size="small"
+          className="production-stage-card__date"
+        />
+      </Box>
+      {children}
+    </Paper>
+  )
+}
+
+function ActivityForm({ jobs, draft, isEditing, formError, onChange, onClose, onSave }) {
+  const selectedJob = jobs.find((job) => job.id === Number(draft.jobId)) ?? null
+  const phases = selectedJob?.sequenceSheet?.phases ?? []
+  const totalLots = draft.lotNumbers.length
+
+  const changeJob = (jobId) => {
+    const job = jobs.find((item) => item.id === Number(jobId)) ?? null
     onChange({
-      activityType,
-      installOnly: activityType === 'HW' ? false : draft.installOnly,
-      installDate: activityType === 'HW' ? '' : draft.installDate,
-      splitPhase: activityType === 'EXT' ? false : draft.splitPhase,
-      splitParts: activityType === 'EXT' ? [] : draft.splitParts,
-      lockUp: false,
+      ...getPhasePatch(job, null),
+      jobId: job?.id ?? '',
     })
   }
 
-  const toggleSplitPhase = (checked) => {
+  const changePhase = (phaseId) => {
+    const phase = phases.find((item) => item.id === Number(phaseId)) ?? null
+    onChange(getPhasePatch(selectedJob, phase))
+  }
+
+  const toggleSplit = (prefix, checked, date) => {
+    const partsField = `${prefix}SplitParts`
     onChange({
-      splitPhase: checked,
-      splitParts: checked ? createDefaultSplitParts(draft) : [],
+      [`${prefix}SplitPhase`]: checked,
+      [partsField]: checked ? createDefaultSplitParts(draft, date) : [],
     })
-  }
-
-  const updateSplitPart = (id, field, value) => {
-    onChange({
-      splitParts: draft.splitParts.map((part) => part.id === id ? { ...part, [field]: value } : part),
-    })
-  }
-
-  const addDivision = () => {
-    let widestIndex = -1
-    let widestSize = 0
-    draft.splitParts.forEach((part, index) => {
-      const size = Number(part.lotEnd) - Number(part.lotStart) + 1
-      if (size > widestSize) {
-        widestIndex = index
-        widestSize = size
-      }
-    })
-
-    if (widestIndex < 0 || widestSize < 2) return
-
-    const part = draft.splitParts[widestIndex]
-    const midpoint = Math.floor((Number(part.lotStart) + Number(part.lotEnd)) / 2)
-    const nextParts = [...draft.splitParts]
-    nextParts.splice(
-      widestIndex,
-      1,
-      { ...part, lotEnd: midpoint },
-      { ...part, id: `split-${Date.now()}`, lotStart: midpoint + 1 },
-    )
-    onChange({ splitParts: nextParts })
-  }
-
-  const removeDivision = (index) => {
-    if (draft.splitParts.length <= 2) return
-    const nextParts = draft.splitParts.map((part) => ({ ...part }))
-    const [removed] = nextParts.splice(index, 1)
-
-    if (index > 0) nextParts[index - 1].lotEnd = removed.lotEnd
-    else nextParts[0].lotStart = removed.lotStart
-
-    onChange({ splitParts: nextParts })
   }
 
   return (
     <Box component="form" className="activity-drawer__layout" onSubmit={onSave}>
       <DrawerHeader
-        eyebrow={isEditing ? 'EDIT ACTIVITY' : 'NEW ACTIVITY'}
-        title={isEditing ? 'Edit activity' : 'Add activity'}
+        eyebrow={isEditing ? 'EDIT PRODUCTION' : 'NEW PRODUCTION ACTIVITY'}
+        title={isEditing ? 'Edit production' : 'Schedule production'}
         onClose={onClose}
       />
 
@@ -412,269 +539,259 @@ function ActivityForm({ draft, isEditing, formError, onChange, onClose, onSave }
 
         <Box className="activity-form__section">
           <Box className="activity-form__heading">
-            <Typography variant="subtitle2" fontWeight={800}>Activity type</Typography>
-            <Typography variant="caption" color="text.secondary">Color is assigned automatically.</Typography>
+            <Box>
+              <Typography variant="subtitle2" fontWeight={800}>Job and phase</Typography>
+              <Typography variant="caption" color="text.secondary">Choose these two fields; project and staff data load automatically.</Typography>
+            </Box>
           </Box>
-          <ActivityTypePicker value={draft.activityType} onChange={changeActivityType} />
+          <Box className="activity-form__grid">
+            <TextField
+              select
+              label="Job"
+              value={draft.jobId}
+              onChange={(event) => changeJob(event.target.value)}
+              required
+              fullWidth
+            >
+              <MenuItem value="">Select a job</MenuItem>
+              {jobs.map((job) => (
+                <MenuItem key={job.id} value={job.id}>
+                  #{job.code} · {job.community} · {job.builder}
+                </MenuItem>
+              ))}
+            </TextField>
+            <TextField
+              select
+              label="Phase"
+              value={draft.phaseId}
+              onChange={(event) => changePhase(event.target.value)}
+              disabled={!selectedJob || phases.length === 0}
+              required
+              fullWidth
+            >
+              <MenuItem value="">Select a phase</MenuItem>
+              {phases.map((phase) => (
+                <MenuItem key={phase.id} value={phase.id}>
+                  {formatPhase(phase.name)} · {formatBuilding(phase.building)} · {phase.lots?.length ?? 0} lots
+                </MenuItem>
+              ))}
+            </TextField>
+          </Box>
+          {selectedJob && phases.length === 0 && (
+            <Alert severity="warning">This job has no phases yet. Add a phase and its lots in Sequence Sheets first.</Alert>
+          )}
         </Box>
 
-        <Box className="activity-form__section">
-          <Typography variant="subtitle2" fontWeight={800}>Project location</Typography>
-          <Box className="activity-form__grid">
-            <SelectField label="Builder" value={draft.builder} options={builderOptions} onChange={(value) => onChange({ builder: value })} />
-            <SelectField label="Community" value={draft.community} options={communityOptions} onChange={(value) => onChange({ community: value })} />
-            <TextField
-              label="Phase"
-              value={draft.phase}
-              onChange={(event) => onChange({ phase: event.target.value })}
-              slotProps={{ htmlInput: { maxLength: 40 } }}
-              fullWidth
-              required
-            />
-            <TextField
-              label="Building"
-              value={draft.building}
-              onChange={(event) => onChange({ building: event.target.value })}
-              slotProps={{ htmlInput: { maxLength: 40 } }}
-              fullWidth
-              required
-            />
-            <SelectField
-              label="Foreman"
-              value={draft.foreman}
-              options={foremanOptions}
-              onChange={(value) => onChange({ foreman: value })}
-              emptyLabel="Unassigned"
-              required={false}
-            />
-          </Box>
-        </Box>
+        {draft.phaseId && <ProductionSummary draft={draft} />}
+
+        <Divider />
 
         <Box className="activity-form__section">
           <Box className="activity-form__heading">
-            <Typography variant="subtitle2" fontWeight={800}>Lot range</Typography>
-            <Typography variant="caption" color="text.secondary">Enter the first and last lot.</Typography>
+            <Box>
+              <Typography variant="subtitle2" fontWeight={800}>Production dates</Typography>
+              <Typography variant="caption" color="text.secondary">Saving creates EXT, DM and HW together.</Typography>
+            </Box>
+            <Chip size="small" label="3 events" color="primary" variant="outlined" />
           </Box>
-          <Box className="lot-range-fields">
-            <TextField
-              label="From lot"
-              type="number"
-              value={draft.lotStart}
-              onChange={(event) => onChange({ lotStart: event.target.value })}
-              slotProps={{ htmlInput: { min: 1 } }}
-              required
-            />
-            <span>—</span>
-            <TextField
-              label="To lot"
-              type="number"
-              value={draft.lotEnd}
-              onChange={(event) => onChange({ lotEnd: event.target.value })}
-              slotProps={{ htmlInput: { min: 1 } }}
-              required
-            />
-          </Box>
-        </Box>
 
-        <Box className="activity-form__section">
-          <Typography variant="subtitle2" fontWeight={800}>Options for {type.label}</Typography>
-          <Paper variant="outlined" className="activity-options-card">
-            {supportsInstallOnly && (
-              <FormControlLabel
-                control={(
-                  <Checkbox
-                    checked={draft.installOnly}
-                    onChange={(event) => onChange({
-                      installOnly: event.target.checked,
-                      installDate: event.target.checked ? (draft.installDate || draft.date) : '',
-                    })}
+          <Stack spacing={1.5}>
+            <StageCard
+              activityType="EXT"
+              tone={getActivityTone('EXT', draft.extOrderMaterial)}
+              date={draft.extDate}
+              onDateChange={(value) => onChange({ extDate: value })}
+            >
+              <Box className="activity-options-card">
+                <OptionCheckbox
+                  checked={draft.extOrderMaterial}
+                  label="Order Material"
+                  description="Mark the EXT event yellow when material must be ordered."
+                  onChange={(checked) => onChange({ extOrderMaterial: checked })}
+                />
+                <OptionCheckbox
+                  checked={draft.extInstallOnly}
+                  label="Install only"
+                  description="Add a separate EXT install-only event."
+                  onChange={(checked) => onChange({
+                    extInstallOnly: checked,
+                    extInstallDate: checked ? (draft.extInstallDate || draft.extDate) : '',
+                  })}
+                />
+                {draft.extInstallOnly && (
+                  <TextField
+                    label="EXT install-only date"
+                    type="date"
+                    value={draft.extInstallDate}
+                    onChange={(event) => onChange({ extInstallDate: event.target.value })}
+                    slotProps={{ inputLabel: { shrink: true } }}
+                    fullWidth
+                    required
+                    size="small"
+                    className="activity-option-date"
                   />
                 )}
-                label={(
-                  <Box>
-                    <Typography variant="body2" fontWeight={700}>Install only</Typography>
-                    <Typography variant="caption" color="text.secondary">Add it as a separate calendar event.</Typography>
-                  </Box>
-                )}
-              />
-            )}
-            {supportsSplitPhase && (
-              <FormControlLabel
-                control={<Checkbox checked={draft.splitPhase} onChange={(event) => toggleSplitPhase(event.target.checked)} />}
-                label={(
-                  <Box>
-                    <Typography variant="body2" fontWeight={700}>Split phase</Typography>
-                    <Typography variant="caption" color="text.secondary">Schedule groups of lots on different dates.</Typography>
-                  </Box>
-                )}
-              />
-            )}
-            {draft.activityType === 'HW' && (
-              <FormControlLabel
-                disabled
-                control={<Checkbox checked={false} />}
-                label={(
-                  <Box className="lockup-label">
-                    <Box>
-                      <Typography variant="body2" fontWeight={700}>Lock up</Typography>
-                      <Typography variant="caption" color="text.secondary">Hardware lock-up workflow.</Typography>
-                    </Box>
-                    <Chip size="small" label="Coming later" />
-                  </Box>
-                )}
-              />
-            )}
-          </Paper>
-        </Box>
-
-        {draft.splitPhase ? (
-          <Box className="activity-form__section">
-            <Box className="activity-form__heading activity-form__heading--actions">
-              <Box>
-                <Typography variant="subtitle2" fontWeight={800}>Split schedule</Typography>
-                <Typography variant="caption" color="text.secondary">Every division is an all-day event.</Typography>
               </Box>
-              <Stack direction="row" spacing={0.5}>
-                <Button size="small" onClick={() => onChange({ splitParts: createDefaultSplitParts(draft) })}>Reset</Button>
-                <Button size="small" startIcon={<AddRoundedIcon />} onClick={addDivision} disabled={!canAddDivision}>Division</Button>
-              </Stack>
-            </Box>
+            </StageCard>
 
-            <Stack spacing={1.25}>
-              {draft.splitParts.map((part, index) => (
-                <Paper key={part.id} variant="outlined" className={`split-part activity-tone--${type.tone}`}>
-                  <Box className="split-part__heading">
-                    <Typography variant="caption" fontWeight={800}>DIVISION {index + 1}</Typography>
-                    <IconButton
-                      size="small"
-                      aria-label={`Remove division ${index + 1}`}
-                      disabled={draft.splitParts.length <= 2}
-                      onClick={() => removeDivision(index)}
-                    >
-                      <DeleteOutlineRoundedIcon fontSize="small" />
-                    </IconButton>
-                  </Box>
-                  <Box className="split-part__fields">
-                    <TextField
-                      label="From"
-                      type="number"
-                      value={part.lotStart}
-                      onChange={(event) => updateSplitPart(part.id, 'lotStart', event.target.value)}
-                      slotProps={{ htmlInput: { min: 1 } }}
-                      required
-                    />
-                    <TextField
-                      label="To"
-                      type="number"
-                      value={part.lotEnd}
-                      onChange={(event) => updateSplitPart(part.id, 'lotEnd', event.target.value)}
-                      slotProps={{ htmlInput: { min: 1 } }}
-                      required
-                    />
-                    <TextField
-                      label="Date"
-                      type="date"
-                      value={part.date}
-                      onChange={(event) => updateSplitPart(part.id, 'date', event.target.value)}
-                      slotProps={{ inputLabel: { shrink: true } }}
-                      required
-                    />
-                  </Box>
-                </Paper>
-              ))}
-            </Stack>
-          </Box>
-        ) : (
-          <Box className="activity-form__section">
-            <Typography variant="subtitle2" fontWeight={800}>Activity date</Typography>
-            <TextField
-              label="Date"
-              type="date"
-              value={draft.date}
-              onChange={(event) => onChange({ date: event.target.value })}
-              slotProps={{ inputLabel: { shrink: true } }}
-              fullWidth
-              required
-            />
-          </Box>
-        )}
+            <StageCard
+              activityType="DM"
+              tone="dm"
+              date={draft.dmDate}
+              onDateChange={(value) => onChange({ dmDate: value })}
+            >
+              <Box className="activity-options-card">
+                <OptionCheckbox
+                  checked={draft.dmInstallOnly}
+                  label="Install only"
+                  description="Add a separate DM install-only event."
+                  onChange={(checked) => onChange({
+                    dmInstallOnly: checked,
+                    dmInstallDate: checked ? (draft.dmInstallDate || draft.dmDate) : '',
+                  })}
+                />
+                {draft.dmInstallOnly && (
+                  <TextField
+                    label="DM install-only date"
+                    type="date"
+                    value={draft.dmInstallDate}
+                    onChange={(event) => onChange({ dmInstallDate: event.target.value })}
+                    slotProps={{ inputLabel: { shrink: true } }}
+                    fullWidth
+                    required
+                    size="small"
+                    className="activity-option-date"
+                  />
+                )}
+                <OptionCheckbox
+                  checked={draft.dmSplitPhase}
+                  disabled={totalLots < 2}
+                  label="Split phase"
+                  description="Schedule groups of lots on different dates."
+                  onChange={(checked) => toggleSplit('dm', checked, draft.dmDate)}
+                />
+                <OptionCheckbox
+                  checked={draft.dmShutters}
+                  label="Shutters"
+                  description="Include shutters in the DM scope."
+                  onChange={(checked) => onChange({ dmShutters: checked })}
+                />
+              </Box>
+              {draft.dmSplitPhase && (
+                <SplitScheduleEditor
+                  activityType="DM"
+                  parts={draft.dmSplitParts}
+                  totalLots={totalLots}
+                  onChange={(parts) => onChange({ dmSplitParts: parts })}
+                  onReset={() => onChange({ dmSplitParts: createDefaultSplitParts(draft, draft.dmDate) })}
+                />
+              )}
+            </StageCard>
 
-        {draft.installOnly && (
-          <Box className="activity-form__section">
-            <Typography variant="subtitle2" fontWeight={800}>Install-only date</Typography>
-            <TextField
-              label="Install-only date"
-              type="date"
-              value={draft.installDate}
-              onChange={(event) => onChange({ installDate: event.target.value })}
-              slotProps={{ inputLabel: { shrink: true } }}
-              fullWidth
-              required
-            />
-          </Box>
-        )}
+            <StageCard
+              activityType="HW"
+              tone="hw"
+              date={draft.hwDate}
+              onDateChange={(value) => onChange({ hwDate: value })}
+            >
+              <Box className="activity-options-card">
+                <OptionCheckbox
+                  checked={draft.hwSplitPhase}
+                  disabled={totalLots < 2}
+                  label="Split phase"
+                  description="Schedule groups of lots on different dates."
+                  onChange={(checked) => toggleSplit('hw', checked, draft.hwDate)}
+                />
+                <OptionCheckbox
+                  checked={false}
+                  disabled
+                  label="Lock up"
+                  description="Hardware lock-up workflow."
+                  onChange={() => {}}
+                  endAdornment={<Chip size="small" label="Pending" />}
+                />
+              </Box>
+              {draft.hwSplitPhase && (
+                <SplitScheduleEditor
+                  activityType="HW"
+                  parts={draft.hwSplitParts}
+                  totalLots={totalLots}
+                  onChange={(parts) => onChange({ hwSplitParts: parts })}
+                  onReset={() => onChange({ hwSplitParts: createDefaultSplitParts(draft, draft.hwDate) })}
+                />
+              )}
+            </StageCard>
+          </Stack>
+        </Box>
 
         <Box className="activity-form__section">
           <TextField
-            label="Notes / Scope of work"
+            label="Notes"
             value={draft.notes}
             onChange={(event) => onChange({ notes: event.target.value })}
             multiline
             rows={3}
             fullWidth
+            slotProps={{ htmlInput: { maxLength: 500 } }}
           />
         </Box>
 
         <Alert severity="info" icon={<EventAvailableRoundedIcon />}>
-          Activities are all-day events. To reschedule one, edit its date in this drawer.
+          All production events are all-day. Edit this activity to reschedule any stage.
         </Alert>
       </Box>
 
       <Box className="activity-drawer__footer">
         <Button variant="outlined" color="inherit" onClick={onClose}>Cancel</Button>
         <Button type="submit" variant="contained" disableElevation>
-          {isEditing ? 'Save changes' : 'Create activity'}
+          {isEditing ? 'Save changes' : 'Create 3 events'}
         </Button>
       </Box>
     </Box>
   )
 }
 
+function ChangeOrdersPlaceholder() {
+  return (
+    <Paper variant="outlined" className="change-orders-placeholder activity-tone--change-order">
+      <Box className="change-orders-placeholder__icon">
+        <EventAvailableRoundedIcon />
+      </Box>
+      <Chip size="small" label="PENDING" color="success" variant="outlined" />
+      <Typography variant="h5" fontWeight={800}>Extra / Change Orders</Typography>
+      <Typography color="text.secondary" align="center">
+        This workspace is reserved for extra work and change orders. Its events will use green when scheduling is enabled.
+      </Typography>
+      <Box className="change-orders-placeholder__legend">
+        <span />
+        Extra / Change Order event
+      </Box>
+    </Paper>
+  )
+}
+
 export default function CalendarScheduler() {
   const calendarRef = useRef(null)
+  const { jobs } = useJobs()
   const { mode, systemMode } = useColorScheme()
   const resolvedColorMode = mode === 'system' ? systemMode : mode
+  const [calendarMode, setCalendarMode] = useState('PRODUCTION')
   const [events, setEvents] = useState(initialCalendarEvents)
   const [selectedId, setSelectedId] = useState(null)
   const [drawerMode, setDrawerMode] = useState(null)
   const [editingGroupId, setEditingGroupId] = useState(null)
-  const [draft, setDraft] = useState(emptyCalendarDraft)
+  const [draft, setDraft] = useState(createEmptyProductionDraft())
   const [formError, setFormError] = useState('')
   const [notice, setNotice] = useState('')
   const [viewTitle, setViewTitle] = useState('Aug 10 – 14, 2026')
   const [viewType, setViewType] = useState('dayGridWeek')
-  const [filters, setFilters] = useState({ builder: 'All', community: 'All', phase: 'All', building: 'All' })
   const [visibleTypes, setVisibleTypes] = useState(['EXT', 'DM', 'HW'])
-
-  const filterOptions = useMemo(() => ({
-    builder: [...new Set(events.map((event) => event.extendedProps.builder))],
-    community: [...new Set(events.map((event) => event.extendedProps.community))],
-    phase: [...new Set(events.map((event) => event.extendedProps.phase))],
-    building: [...new Set(events.map((event) => event.extendedProps.building))],
-  }), [events])
 
   const filteredEvents = useMemo(() => events.filter((event) => (
     visibleTypes.includes(event.extendedProps.activityType)
-    && Object.entries(filters).every(([key, value]) => value === 'All' || event.extendedProps[key] === value)
-  )), [events, filters, visibleTypes])
+  )), [events, visibleTypes])
 
   const selectedEvent = events.find((event) => event.id === selectedId) ?? null
-  const selectedGroupEvents = selectedEvent
-    ? events.filter((event) => (
-        (event.extendedProps.groupId ?? event.groupId ?? event.id)
-        === (selectedEvent.extendedProps.groupId ?? selectedEvent.groupId ?? selectedEvent.id)
-      ))
-    : []
 
   const closeDrawer = () => {
     setDrawerMode(null)
@@ -686,7 +803,7 @@ export default function CalendarScheduler() {
   const openCreateDrawer = () => {
     setSelectedId(null)
     setEditingGroupId(null)
-    setDraft({ ...emptyCalendarDraft })
+    setDraft(createEmptyProductionDraft())
     setFormError('')
     setDrawerMode('create')
   }
@@ -701,30 +818,8 @@ export default function CalendarScheduler() {
   const openEditDrawer = () => {
     if (!selectedEvent) return
 
-    const props = selectedEvent.extendedProps
-    const groupId = props.groupId ?? selectedEvent.groupId ?? selectedEvent.id
-    const groupEvents = events.filter((event) => (
-      (event.extendedProps.groupId ?? event.groupId ?? event.id) === groupId
-    ))
-    const baseEvent = groupEvents.find((event) => event.extendedProps.variant !== 'install-only') ?? selectedEvent
-    const baseProps = baseEvent.extendedProps
-    const splitParts = baseProps.splitPhase ? baseProps.splitParts.map((part) => ({ ...part })) : []
-    const lotStart = baseProps.splitPhase
-      ? Math.min(...splitParts.map((part) => Number(part.lotStart)))
-      : baseProps.lotStart
-    const lotEnd = baseProps.splitPhase
-      ? Math.max(...splitParts.map((part) => Number(part.lotEnd)))
-      : baseProps.lotEnd
-
-    setDraft({
-      ...emptyCalendarDraft,
-      ...baseProps,
-      lotStart,
-      lotEnd,
-      date: baseEvent.start,
-      splitParts,
-      lockUp: false,
-    })
+    const groupId = selectedEvent.extendedProps.groupId ?? selectedEvent.groupId ?? selectedEvent.id
+    setDraft(createDraftFromProductionEvent(selectedEvent))
     setEditingGroupId(groupId)
     setFormError('')
     setDrawerMode('edit')
@@ -735,14 +830,12 @@ export default function CalendarScheduler() {
     const result = calendarEventSchema.safeParse(draft)
 
     if (!result.success) {
-      setFormError(result.error.issues[0]?.message ?? 'Review the activity details.')
+      setFormError(result.error.issues[0]?.message ?? 'Review the production details.')
       return
     }
 
-    const values = result.data
-    const groupId = editingGroupId ?? `activity-${Date.now()}`
-    const nextEvents = createCalendarEvents(values, groupId)
-
+    const groupId = editingGroupId ?? `production-${Date.now()}`
+    const nextEvents = createProductionCalendarEvents(result.data, groupId)
     setEvents((current) => {
       const withoutEditedGroup = editingGroupId
         ? current.filter((item) => (item.extendedProps.groupId ?? item.groupId ?? item.id) !== editingGroupId)
@@ -753,7 +846,9 @@ export default function CalendarScheduler() {
     setEditingGroupId(null)
     setDrawerMode('detail')
     setFormError('')
-    setNotice(editingGroupId ? 'Activity updated.' : 'Activity added to the calendar.')
+    setNotice(editingGroupId
+      ? 'Production activity updated.'
+      : 'Production activity created with EXT, DM and HW.')
   }
 
   const navigateCalendar = (direction) => {
@@ -775,124 +870,143 @@ export default function CalendarScheduler() {
       : [...current, activityType])
   }
 
+  const changeCalendarMode = (_, nextMode) => {
+    if (!nextMode) return
+    closeDrawer()
+    setCalendarMode(nextMode)
+  }
+
   return (
     <Box className="calendar-page">
       <Box className="calendar-page__header">
         <Box>
           <Typography variant="h4" fontWeight={780} letterSpacing="-0.025em">Calendar</Typography>
-          <Typography color="text.secondary">Plan every phase by date and lot range.</Typography>
+          <Typography color="text.secondary">
+            {calendarMode === 'PRODUCTION'
+              ? 'Schedule EXT, DM and HW as one production activity.'
+              : 'Track extra work and change orders separately.'}
+          </Typography>
         </Box>
-        <ResponsiveCreateButton label="New activity" onClick={openCreateDrawer} />
+
+        <Box className="calendar-page__actions">
+          <ToggleButtonGroup
+            exclusive
+            value={calendarMode}
+            onChange={changeCalendarMode}
+            size="small"
+            aria-label="Calendar section"
+            className="calendar-mode-toggle"
+          >
+            <ToggleButton value="PRODUCTION">Production</ToggleButton>
+            <ToggleButton value="CHANGE_ORDERS">Extra / Change Orders</ToggleButton>
+          </ToggleButtonGroup>
+          {calendarMode === 'PRODUCTION' ? (
+            <ResponsiveCreateButton label="New activity" onClick={openCreateDrawer} />
+          ) : (
+            <Tooltip title="Extra / Change Orders is pending">
+              <span><Button variant="contained" disabled>New change order</Button></span>
+            </Tooltip>
+          )}
+        </Box>
       </Box>
 
-      <Box className="calendar-toolbar">
-        <Box className="calendar-type-filters" aria-label="Filter activity types">
-          {activityTypeOptions.map((type) => (
-            <FormControlLabel
-              key={type.value}
-              className={`calendar-type-filter activity-tone--${type.tone}`}
-              control={(
-                <Checkbox
-                  checked={visibleTypes.includes(type.value)}
-                  onChange={() => toggleType(type.value)}
-                  size="small"
+      {calendarMode === 'PRODUCTION' ? (
+        <>
+          <Box className="calendar-toolbar">
+            <Box className="calendar-type-filters" aria-label="Filter activity types">
+              {activityTypeOptions.map((type) => (
+                <FormControlLabel
+                  key={type.value}
+                  className={`calendar-type-filter activity-tone--${type.tone}`}
+                  control={(
+                    <Checkbox
+                      checked={visibleTypes.includes(type.value)}
+                      onChange={() => toggleType(type.value)}
+                      size="small"
+                    />
+                  )}
+                  label={type.label}
                 />
-              )}
-              label={type.label}
-            />
-          ))}
+              ))}
+              <Box className="calendar-color-key activity-tone--ext-order">
+                <span />
+                EXT · Order Material
+              </Box>
+            </Box>
+          </Box>
+
+          <Box className="calendar-workspace">
+            <Box className="calendar-main">
+              <Box className="calendar-period">
+                <Stack direction="row" spacing={1} sx={{ alignItems: 'center', minWidth: 0 }}>
+                  <Button size="small" color="inherit" variant="outlined" onClick={() => navigateCalendar('today')}>Today</Button>
+                  <ButtonGroup size="small" variant="outlined" aria-label="Navigate calendar">
+                    <Tooltip title="Previous period">
+                      <IconButton size="small" onClick={() => navigateCalendar('prev')} aria-label="Previous period">
+                        <ArrowBackIosNewRoundedIcon fontSize="inherit" />
+                      </IconButton>
+                    </Tooltip>
+                    <Tooltip title="Next period">
+                      <IconButton size="small" onClick={() => navigateCalendar('next')} aria-label="Next period">
+                        <ArrowForwardIosRoundedIcon fontSize="inherit" />
+                      </IconButton>
+                    </Tooltip>
+                  </ButtonGroup>
+                  <Typography variant="h6" fontWeight={750} className="calendar-period__title">{viewTitle}</Typography>
+                </Stack>
+
+                <ButtonGroup size="small" variant="outlined" aria-label="Change calendar view">
+                  <Button className={viewType === 'dayGridWeek' ? 'is-active' : ''} onClick={() => changeView('dayGridWeek')}>Week</Button>
+                  <Button className={viewType === 'dayGridMonth' ? 'is-active' : ''} onClick={() => changeView('dayGridMonth')}>Month</Button>
+                </ButtonGroup>
+              </Box>
+
+              <Box className="calendar-all-day-note">
+                <EventAvailableRoundedIcon fontSize="small" />
+                <span>All-day activities · Open any event to view or edit its full Production group</span>
+              </Box>
+
+              <Box className="calendar-canvas">
+                <FullCalendar
+                  ref={calendarRef}
+                  plugins={[dayGridPlugin, interactionPlugin]}
+                  initialView="dayGridWeek"
+                  initialDate="2026-08-10"
+                  firstDay={1}
+                  weekends={false}
+                  headerToolbar={false}
+                  displayEventTime={false}
+                  dayHeaderFormat={{ weekday: 'short', day: 'numeric' }}
+                  height="100%"
+                  expandRows
+                  fixedWeekCount={false}
+                  dayMaxEvents={false}
+                  editable={false}
+                  droppable={false}
+                  selectable={false}
+                  eventStartEditable={false}
+                  eventDurationEditable={false}
+                  events={filteredEvents}
+                  eventClick={({ event }) => openDetailDrawer(event.id)}
+                  eventContent={(info) => <EventCard event={info.event} />}
+                  eventClassNames={({ event }) => {
+                    const tone = getActivityTone(event.extendedProps.activityType, event.extendedProps.orderMaterial)
+                    return [`fc-activity--${tone}`, event.id === selectedId ? 'is-selected' : '']
+                  }}
+                  datesSet={({ view }) => {
+                    setViewTitle(view.title)
+                    setViewType(view.type)
+                  }}
+                />
+              </Box>
+            </Box>
+          </Box>
+        </>
+      ) : (
+        <Box className="calendar-workspace calendar-workspace--placeholder">
+          <ChangeOrdersPlaceholder type={changeOrderType} />
         </Box>
-
-        <Box className="calendar-toolbar__spacer" />
-
-        {[
-          ['builder', 'Builder', <BusinessRoundedIcon key="builder" fontSize="small" />],
-          ['community', 'Community', <LocationOnOutlinedIcon key="community" fontSize="small" />],
-          ['phase', 'Phase', <LayersOutlinedIcon key="phase" fontSize="small" />],
-          ['building', 'Building', <ApartmentRoundedIcon key="building" fontSize="small" />],
-        ].map(([key, label, icon]) => (
-          <FormControl key={key} size="small" className="calendar-filter">
-            <InputLabel id={`${key}-filter-label`}>{label}</InputLabel>
-            <Select
-              labelId={`${key}-filter-label`}
-              label={label}
-              value={filters[key]}
-              onChange={(event) => setFilters((current) => ({ ...current, [key]: event.target.value }))}
-              startAdornment={<Box className="calendar-filter__icon">{icon}</Box>}
-            >
-              <MenuItem value="All">All</MenuItem>
-              {filterOptions[key].map((option) => <MenuItem key={option} value={option}>{option}</MenuItem>)}
-            </Select>
-          </FormControl>
-        ))}
-      </Box>
-
-      <Box className="calendar-workspace">
-        <Box className="calendar-main">
-          <Box className="calendar-period">
-            <Stack direction="row" spacing={1} sx={{ alignItems: 'center', minWidth: 0 }}>
-              <Button size="small" color="inherit" variant="outlined" onClick={() => navigateCalendar('today')}>Today</Button>
-              <ButtonGroup size="small" variant="outlined" aria-label="Navigate calendar">
-                <Tooltip title="Previous period">
-                  <IconButton size="small" onClick={() => navigateCalendar('prev')} aria-label="Previous period">
-                    <ArrowBackIosNewRoundedIcon fontSize="inherit" />
-                  </IconButton>
-                </Tooltip>
-                <Tooltip title="Next period">
-                  <IconButton size="small" onClick={() => navigateCalendar('next')} aria-label="Next period">
-                    <ArrowForwardIosRoundedIcon fontSize="inherit" />
-                  </IconButton>
-                </Tooltip>
-              </ButtonGroup>
-              <Typography variant="h6" fontWeight={750} className="calendar-period__title">{viewTitle}</Typography>
-            </Stack>
-
-            <ButtonGroup size="small" variant="outlined" aria-label="Change calendar view">
-              <Button className={viewType === 'dayGridWeek' ? 'is-active' : ''} onClick={() => changeView('dayGridWeek')}>Week</Button>
-              <Button className={viewType === 'dayGridMonth' ? 'is-active' : ''} onClick={() => changeView('dayGridMonth')}>Month</Button>
-            </ButtonGroup>
-          </Box>
-
-          <Box className="calendar-all-day-note">
-            <EventAvailableRoundedIcon fontSize="small" />
-            <span>All-day activities · Open an activity to view or change its date</span>
-          </Box>
-
-          <Box className="calendar-canvas">
-            <FullCalendar
-              ref={calendarRef}
-              plugins={[dayGridPlugin, interactionPlugin]}
-              initialView="dayGridWeek"
-              initialDate="2026-08-10"
-              firstDay={1}
-              weekends={false}
-              headerToolbar={false}
-              displayEventTime={false}
-              dayHeaderFormat={{ weekday: 'short', day: 'numeric' }}
-              height="100%"
-              expandRows
-              fixedWeekCount={false}
-              dayMaxEvents={false}
-              editable={false}
-              droppable={false}
-              selectable={false}
-              eventStartEditable={false}
-              eventDurationEditable={false}
-              events={filteredEvents}
-              eventClick={({ event }) => openDetailDrawer(event.id)}
-              eventContent={(info) => <EventCard event={info.event} />}
-              eventClassNames={({ event }) => {
-                const tone = activityTypeMap[event.extendedProps.activityType]?.tone ?? 'ext'
-                return [`fc-activity--${tone}`, event.id === selectedId ? 'is-selected' : '']
-              }}
-              datesSet={({ view }) => {
-                setViewTitle(view.title)
-                setViewType(view.type)
-              }}
-            />
-          </Box>
-        </Box>
-      </Box>
+      )}
 
       <Drawer
         anchor="right"
@@ -904,24 +1018,20 @@ export default function CalendarScheduler() {
             style: {
               '--drawer-surface': resolvedColorMode === 'dark' ? '#1e293b' : '#ffffff',
             },
-            sx: { width: { xs: '100%', sm: 480 }, maxWidth: '100%' },
+            sx: { width: { xs: '100%', sm: 560 }, maxWidth: '100%' },
           },
         }}
       >
         {drawerMode === 'detail' ? (
-          <ActivityDetail
-            event={selectedEvent}
-            groupEvents={selectedGroupEvents}
-            onClose={closeDrawer}
-            onEdit={openEditDrawer}
-          />
+          <ActivityDetail event={selectedEvent} onClose={closeDrawer} onEdit={openEditDrawer} />
         ) : (
           <ActivityForm
+            jobs={jobs}
             draft={draft}
             isEditing={drawerMode === 'edit'}
             formError={formError}
-            onChange={(patch) => {
-              setDraft((current) => ({ ...current, ...patch }))
+            onChange={(draftPatch) => {
+              setDraft((current) => ({ ...current, ...draftPatch }))
               setFormError('')
             }}
             onClose={closeDrawer}

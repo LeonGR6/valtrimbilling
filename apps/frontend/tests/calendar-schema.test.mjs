@@ -1,63 +1,97 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import {
+  createProductionCalendarEvents,
+  getActivityTone,
+} from '../src/features/calendar/data/calendarEvents.js'
 import { calendarEventSchema } from '../src/features/calendar/schemas/calendarEventSchema.js'
 
-const validEvent = {
-  activityType: 'DM',
-  lotStart: '1',
-  lotEnd: '8',
-  date: '2026-08-14',
-  builder: 'KB Home',
+const validActivity = {
+  calendarType: 'PRODUCTION',
+  jobId: '1',
+  phaseId: '2102',
+  jobCode: '1307',
+  builder: 'Trumark Homes',
   community: 'Andara',
-  phase: 'Phase 1',
-  building: 'Building 3',
+  phase: 'Phase 2',
+  building: 'Building 15',
+  lotStart: '66',
+  lotEnd: '70',
+  lotNumbers: ['66', '67', '68', '69', '70'],
+  foreman: 'Lauren Mitchell',
+  superintendent: 'Daniel Torres',
   notes: '',
-  installOnly: false,
-  installDate: '',
-  splitPhase: false,
-  splitParts: [],
-  lockUp: false,
+  extDate: '2026-08-10',
+  extOrderMaterial: false,
+  extInstallOnly: false,
+  extInstallDate: '',
+  dmDate: '2026-08-11',
+  dmInstallOnly: false,
+  dmInstallDate: '',
+  dmSplitPhase: false,
+  dmSplitParts: [],
+  dmShutters: false,
+  hwDate: '2026-08-12',
+  hwSplitPhase: false,
+  hwSplitParts: [],
+  hwLockUp: false,
 }
 
-test('calendar event schema normalizes a valid lot range', () => {
-  const result = calendarEventSchema.parse(validEvent)
+test('production activity schema normalizes selected Job, phase and lot range', () => {
+  const result = calendarEventSchema.parse(validActivity)
 
-  assert.equal(result.activityType, 'DM')
-  assert.equal(result.lotStart, 1)
-  assert.equal(result.lotEnd, 8)
+  assert.equal(result.jobId, 1)
+  assert.equal(result.phaseId, 2102)
+  assert.equal(result.lotStart, 66)
+  assert.equal(result.lotEnd, 70)
 })
 
-test('calendar event schema rejects an invalid date', () => {
+test('production activity requires one valid date for EXT, DM and HW', () => {
   const result = calendarEventSchema.safeParse({
-    ...validEvent,
-    date: '14/08/2026',
+    ...validActivity,
+    extDate: '10/08/2026',
   })
 
   assert.equal(result.success, false)
-  assert.equal(result.error.issues[0].path[0], 'date')
+  assert.equal(result.error.issues[0].path[0], 'extDate')
 })
 
-test('split phase requires contiguous lot ranges with a date per division', () => {
+test('DM split phase requires contiguous lot ranges with a date per division', () => {
   const result = calendarEventSchema.parse({
-    ...validEvent,
-    splitPhase: true,
-    splitParts: [
-      { id: 'a', lotStart: 1, lotEnd: 5, date: '2026-08-14' },
-      { id: 'b', lotStart: 6, lotEnd: 8, date: '2026-08-18' },
+    ...validActivity,
+    dmSplitPhase: true,
+    dmSplitParts: [
+      { id: 'a', lotStart: 66, lotEnd: 68, date: '2026-08-11' },
+      { id: 'b', lotStart: 69, lotEnd: 70, date: '2026-08-13' },
     ],
   })
 
-  assert.equal(result.splitParts.length, 2)
-  assert.equal(result.splitParts[1].date, '2026-08-18')
+  assert.equal(result.dmSplitParts.length, 2)
+  assert.equal(result.dmSplitParts[1].date, '2026-08-13')
 })
 
-test('install only requires a separate date', () => {
+test('EXT install only requires its separate date', () => {
   const result = calendarEventSchema.safeParse({
-    ...validEvent,
-    activityType: 'EXT',
-    installOnly: true,
+    ...validActivity,
+    extInstallOnly: true,
   })
 
   assert.equal(result.success, false)
-  assert.equal(result.error.issues[0].path[0], 'installDate')
+  assert.equal(result.error.issues[0].path[0], 'extInstallDate')
+})
+
+test('saving Production creates the EXT, DM and HW calendar events together', () => {
+  const values = calendarEventSchema.parse(validActivity)
+  const events = createProductionCalendarEvents(values, 'production-test', 123)
+
+  assert.equal(events.length, 3)
+  assert.deepEqual(events.map((event) => event.extendedProps.activityType), ['EXT', 'DM', 'HW'])
+  assert.deepEqual(events.map((event) => event.start), ['2026-08-10', '2026-08-11', '2026-08-12'])
+})
+
+test('Order Material changes the EXT tone without changing DM or HW', () => {
+  assert.equal(getActivityTone('EXT', false), 'ext')
+  assert.equal(getActivityTone('EXT', true), 'ext-order')
+  assert.equal(getActivityTone('DM', true), 'dm')
+  assert.equal(getActivityTone('HW', true), 'hw')
 })

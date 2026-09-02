@@ -1,43 +1,71 @@
 .activity-tone--ext {
-  --activity-color: #80698b;
-  --activity-strong: #604d69;
-  --activity-background: #eee9f1;
-  --activity-soft: #f6f3f7;
+  --activity-color: #8b5cf6;
+  --activity-strong: #6d28d9;
+  --activity-background: #f3e8ff;
+  --activity-soft: #faf5ff;
+}
+
+.activity-tone--ext-order {
+  --activity-color: #f59e0b;
+  --activity-strong: #b45309;
+  --activity-background: #fef3c7;
+  --activity-soft: #fffbeb;
 }
 
 .activity-tone--dm {
-  --activity-color: #ad6b6b;
-  --activity-strong: #814d4d;
-  --activity-background: #f3e8e8;
-  --activity-soft: #faf3f3;
+  --activity-color: #dc2626;
+  --activity-strong: #b91c1c;
+  --activity-background: #fee2e2;
+  --activity-soft: #fef2f2;
 }
 
 .activity-tone--hw {
-  --activity-color: #617e9c;
-  --activity-strong: #49657e;
-  --activity-background: #e7edf3;
-  --activity-soft: #f1f5f8;
+  --activity-color: #2563eb;
+  --activity-strong: #1d4ed8;
+  --activity-background: #dbeafe;
+  --activity-soft: #eff6ff;
+}
+
+.activity-tone--change-order {
+  --activity-color: #16a34a;
+  --activity-strong: #15803d;
+  --activity-background: #dcfce7;
+  --activity-soft: #f0fdf4;
 }
 
 [data-mui-color-scheme="dark"] .activity-tone--ext {
-  --activity-color: #907da0;
-  --activity-strong: #c3b2d0;
-  --activity-background: #302a35;
-  --activity-soft: #28242d;
+  --activity-color: #a78bfa;
+  --activity-strong: #ddd6fe;
+  --activity-background: #35275a;
+  --activity-soft: #2b2340;
+}
+
+[data-mui-color-scheme="dark"] .activity-tone--ext-order {
+  --activity-color: #fbbf24;
+  --activity-strong: #fde68a;
+  --activity-background: #4a3715;
+  --activity-soft: #392e18;
 }
 
 [data-mui-color-scheme="dark"] .activity-tone--dm {
-  --activity-color: #a96e72;
-  --activity-strong: #d6a3a3;
-  --activity-background: #3a292b;
-  --activity-soft: #302427;
+  --activity-color: #f87171;
+  --activity-strong: #fecaca;
+  --activity-background: #4a2529;
+  --activity-soft: #382326;
 }
 
 [data-mui-color-scheme="dark"] .activity-tone--hw {
-  --activity-color: #718ba6;
-  --activity-strong: #aec0d3;
-  --activity-background: #263442;
-  --activity-soft: #222e3a;
+  --activity-color: #60a5fa;
+  --activity-strong: #bfdbfe;
+  --activity-background: #203757;
+  --activity-soft: #202f45;
+}
+
+[data-mui-color-scheme="dark"] .activity-tone--change-order {
+  --activity-color: #4ade80;
+  --activity-strong: #bbf7d0;
+  --activity-background: #1c422d;
+  --activity-soft: #1d3528;
 }
 
 .calendar-page {
@@ -67,6 +95,34 @@
   font-weight: 750;
 }
 
+.calendar-page__actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.calendar-mode-toggle {
+  padding: 3px;
+  border: 1px solid var(--mui-palette-divider);
+  border-radius: 10px !important;
+  background: color-mix(in srgb, var(--mui-palette-background-paper) 92%, transparent);
+}
+
+.calendar-mode-toggle .MuiToggleButton-root {
+  min-height: 34px;
+  padding: 5px 13px;
+  border: 0;
+  border-radius: 7px !important;
+  text-transform: none;
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.calendar-mode-toggle .MuiToggleButton-root.Mui-selected {
+  color: var(--mui-palette-primary-main);
+  background: var(--mui-palette-primary-light);
+}
+
 .calendar-toolbar {
   display: flex;
   align-items: center;
@@ -79,6 +135,26 @@
   display: flex;
   align-items: center;
   gap: 6px;
+}
+
+.calendar-color-key {
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 10px;
+  color: var(--mui-palette-text-secondary);
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.calendar-color-key span {
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  background: var(--activity-color);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--activity-color) 16%, transparent);
 }
 
 .calendar-type-filter {
@@ -454,7 +530,7 @@
   padding: 16px;
   border: 1px solid color-mix(in srgb, var(--activity-color) 48%, var(--mui-palette-divider));
   border-radius: 11px;
-  background: var(--activity-soft);
+  background: color-mix(in srgb, var(--activity-color) 20%, transparent);
 }
 
 .activity-detail__type-mark {
@@ -517,6 +593,35 @@
   gap: 12px;
 }
 
+.activity-detail__stage {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.activity-detail__stage-heading {
+  min-height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.activity-stage-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.activity-stage-title__dot {
+  width: 10px;
+  height: 10px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: var(--activity-color);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--activity-color) 13%, transparent);
+}
+
 .schedule-row {
   position: relative;
   display: grid;
@@ -558,6 +663,54 @@
   background: color-mix(in srgb, var(--mui-palette-text-secondary) 4%, transparent) !important;
 }
 
+.production-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 15px;
+  border-color: color-mix(in srgb, var(--mui-palette-success-main) 30%, var(--mui-palette-divider)) !important;
+  background: color-mix(in srgb, var(--mui-palette-success-main) 4%, var(--drawer-surface)) !important;
+}
+
+.production-summary__heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.production-summary__grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px 16px;
+}
+
+.production-summary__field {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.production-summary__field .MuiTypography-body2 {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.production-summary__lots {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  padding-top: 12px;
+  border-top: 1px solid var(--mui-palette-divider);
+}
+
+.production-summary__lots .MuiChip-root {
+  height: 24px;
+  font-size: 11px;
+}
+
 .activity-form__section {
   display: flex;
   flex-direction: column;
@@ -584,6 +737,46 @@
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 12px;
+}
+
+.production-stage-card {
+  overflow: hidden;
+  border-color: color-mix(in srgb, var(--activity-color) 44%, var(--mui-palette-divider)) !important;
+  background: color-mix(in srgb, var(--activity-color) 4%, var(--drawer-surface)) !important;
+}
+
+.production-stage-card__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 13px 14px;
+  border-bottom: 1px solid color-mix(in srgb, var(--activity-color) 28%, var(--mui-palette-divider));
+}
+
+.production-stage-card__identity {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.production-stage-card__number {
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  border-radius: 9px;
+  color: #fff;
+  background: var(--activity-color);
+  font-size: 11px;
+  font-weight: 850;
+}
+
+.production-stage-card__date {
+  width: 174px;
+  flex: 0 0 auto;
 }
 
 .activity-type-picker {
@@ -644,8 +837,8 @@
 .activity-options-card {
   display: flex;
   flex-direction: column;
-  padding: 4px 12px;
-  background: color-mix(in srgb, var(--mui-palette-text-secondary) 3%, transparent) !important;
+  padding: 4px 14px;
+  background: color-mix(in srgb, var(--mui-palette-text-secondary) 2%, transparent) !important;
 }
 
 .activity-options-card .MuiFormControlLabel-root {
@@ -661,6 +854,25 @@
 
 .activity-options-card .MuiFormControlLabel-label {
   flex: 1;
+}
+
+.activity-option-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.activity-option-date {
+  margin: 8px 0 12px !important;
+}
+
+.stage-split-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 14px 14px;
+  border-top: 1px solid color-mix(in srgb, var(--activity-color) 24%, var(--mui-palette-divider));
 }
 
 .lockup-label {
@@ -688,6 +900,68 @@
   display: grid;
   grid-template-columns: 0.7fr 0.7fr 1.6fr;
   gap: 8px;
+}
+
+.calendar-workspace--placeholder {
+  display: grid;
+  place-items: center;
+  padding: 0 26px 26px;
+}
+
+.change-orders-placeholder {
+  width: min(100%, 620px);
+  min-height: 360px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 11px;
+  padding: 44px;
+  border-color: color-mix(in srgb, var(--activity-color) 42%, var(--mui-palette-divider)) !important;
+  background:
+    radial-gradient(circle at 50% 5%, color-mix(in srgb, var(--activity-color) 14%, transparent), transparent 16rem),
+    var(--mui-palette-background-paper) !important;
+}
+
+.change-orders-placeholder__icon {
+  width: 62px;
+  height: 62px;
+  display: grid;
+  place-items: center;
+  margin-bottom: 4px;
+  border-radius: 18px;
+  color: #fff;
+  background: var(--activity-color);
+  box-shadow: 0 12px 28px color-mix(in srgb, var(--activity-color) 28%, transparent);
+}
+
+.change-orders-placeholder__icon .MuiSvgIcon-root {
+  font-size: 30px;
+}
+
+.change-orders-placeholder > .MuiTypography-body1 {
+  max-width: 480px;
+}
+
+.change-orders-placeholder__legend {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 8px 11px;
+  border: 1px solid color-mix(in srgb, var(--activity-color) 35%, var(--mui-palette-divider));
+  border-radius: 8px;
+  color: var(--activity-strong);
+  background: var(--activity-soft);
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.change-orders-placeholder__legend span {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: var(--activity-color);
 }
 
 @media (max-width: 1320px) {
@@ -723,6 +997,16 @@
     align-items: stretch;
     flex-direction: column;
     padding: 20px 16px 14px;
+  }
+
+  .calendar-page__actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .calendar-mode-toggle {
+    display: grid !important;
+    grid-template-columns: 1fr 1fr;
   }
 
   .calendar-toolbar {
@@ -764,7 +1048,8 @@
   }
 
   .activity-detail__grid,
-  .activity-form__grid {
+  .activity-form__grid,
+  .production-summary__grid {
     grid-template-columns: 1fr;
   }
 
@@ -794,6 +1079,25 @@
   .activity-detail__chip {
     grid-column: 1 / -1;
     justify-self: start;
+  }
+
+  .production-stage-card__header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .production-stage-card__date {
+    width: 100%;
+  }
+
+  .activity-detail__stage-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .change-orders-placeholder {
+    min-height: 320px;
+    padding: 28px 20px;
   }
 
   .split-part__fields {

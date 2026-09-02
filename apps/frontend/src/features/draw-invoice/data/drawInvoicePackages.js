@@ -14,9 +14,9 @@ export const initialDrawInvoicePackages = [
       { lotId: 3205, drawIndex: 0 },
     ],
     invoiceNumber: '14645',
-    invoiceDate: '2026-08-07',
+    invoiceDate: '2026-08-10',
     billingPeriodStart: '2026-08-01',
-    billingPeriodEnd: '2026-08-07',
+    billingPeriodEnd: '2026-08-10',
     status: 'INVOICED',
     documents: [
       { type: 'INVOICE', label: 'Invoice', status: 'COMPLETE' },

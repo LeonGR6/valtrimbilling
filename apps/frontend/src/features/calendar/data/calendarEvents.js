@@ -7,6 +7,13 @@ export const activityTypeOptions = [
     tone: 'ext',
   },
   {
+    value: 'SHUTTER',
+    label: 'Shutter',
+    shortLabel: 'SHUTTER',
+    description: 'Shutter phase',
+    tone: 'shutter',
+  },
+  {
     value: 'DM',
     label: 'DM',
     shortLabel: 'DM',
@@ -114,6 +121,11 @@ export function createEmptyProductionDraft(date = new Date().toISOString().split
     extInstallDateOwner: '',
     extInstallDateNote: '',
     extInstallDateHistory: [],
+    dmShutters: false,
+    shutterDate: '',
+    shutterDateOwner: '',
+    shutterDateNote: '',
+    shutterDateHistory: [],
     dmDate: date,
     dmDateOwner: '',
     dmDateNote: '',
@@ -125,7 +137,6 @@ export function createEmptyProductionDraft(date = new Date().toISOString().split
     dmInstallDateHistory: [],
     dmSplitPhase: false,
     dmSplitParts: [],
-    dmShutters: false,
     hwDate: date,
     hwDateOwner: '',
     hwDateNote: '',
@@ -151,6 +162,18 @@ function buildProductionSchedule(values) {
       installDateOwner: values.extInstallDateOwner,
       installDateNote: values.extInstallDateNote,
       installDateHistory: values.extInstallDateHistory,
+      splitPhase: false,
+      splitParts: [],
+    },
+    SHUTTER: {
+      enabled: values.dmShutters,
+      date: values.shutterDate,
+      dateOwner: values.shutterDateOwner,
+      note: values.shutterDateNote,
+      history: values.shutterDateHistory,
+      orderMaterial: false,
+      installOnly: false,
+      installDate: '',
       splitPhase: false,
       splitParts: [],
     },
@@ -195,6 +218,19 @@ const stageFieldMap = {
     installDateOwner: 'extInstallDateOwner',
     installDateNote: 'extInstallDateNote',
     installDateHistory: 'extInstallDateHistory',
+    splitPhase: null,
+    splitParts: null,
+  },
+  SHUTTER: {
+    date: 'shutterDate',
+    dateOwner: 'shutterDateOwner',
+    note: 'shutterDateNote',
+    history: 'shutterDateHistory',
+    installOnly: null,
+    installDate: null,
+    installDateOwner: null,
+    installDateNote: null,
+    installDateHistory: null,
     splitPhase: null,
     splitParts: null,
   },
@@ -257,6 +293,7 @@ export function recordProductionDateHistory(values, previousEvent, changedAt = n
   Object.entries(stageFieldMap).forEach(([activityType, fields]) => {
     const previousStage = previousSchedule[activityType]
     if (!previousStage) return
+    if (activityType === 'SHUTTER' && !previousStage.enabled) return
 
     nextValues[fields.history] = appendPreviousDate(
       values[fields.history],
@@ -334,6 +371,8 @@ export function createProductionCalendarEvents(values, groupId, stamp = Date.now
 
   return activityTypeOptions.flatMap((type) => {
     const stage = productionSchedule[type.value]
+    if (type.value === 'SHUTTER' && !stage.enabled) return []
+
     const schedules = stage.splitPhase
       ? stage.splitParts
       : [{
@@ -369,7 +408,6 @@ export function createProductionCalendarEvents(values, groupId, stamp = Date.now
           installDate: stage.installDate ?? '',
           splitPhase: Boolean(stage.splitPhase),
           splitParts: stage.splitParts ?? [],
-          shutters: Boolean(stage.shutters),
           lockUp: Boolean(stage.lockUp),
           variant: stage.splitPhase ? 'division' : 'base',
         },
@@ -397,7 +435,6 @@ export function createProductionCalendarEvents(values, groupId, stamp = Date.now
           installDate: stage.installDate,
           splitPhase: Boolean(stage.splitPhase),
           splitParts: stage.splitParts ?? [],
-          shutters: Boolean(stage.shutters),
           lockUp: Boolean(stage.lockUp),
           variant: 'install-only',
         },
@@ -411,6 +448,7 @@ export function createProductionCalendarEvents(values, groupId, stamp = Date.now
 export function createDraftFromProductionEvent(event) {
   const props = event.extendedProps
   const schedule = props.productionSchedule
+  const shutterSchedule = schedule.SHUTTER ?? {}
   const phaseLotNumbers = props.phaseLotNumbers ?? props.lotNumbers ?? []
 
   return {
@@ -438,6 +476,11 @@ export function createDraftFromProductionEvent(event) {
     extInstallDateOwner: schedule.EXT.installDateOwner ?? '',
     extInstallDateNote: schedule.EXT.installDateNote ?? '',
     extInstallDateHistory: (schedule.EXT.installDateHistory ?? []).map((entry) => ({ ...entry })),
+    dmShutters: Boolean(schedule.DM.shutters ?? shutterSchedule.enabled),
+    shutterDate: shutterSchedule.date ?? '',
+    shutterDateOwner: shutterSchedule.dateOwner ?? '',
+    shutterDateNote: shutterSchedule.note ?? '',
+    shutterDateHistory: (shutterSchedule.history ?? []).map((entry) => ({ ...entry })),
     dmDate: schedule.DM.date,
     dmDateOwner: schedule.DM.dateOwner ?? '',
     dmDateNote: schedule.DM.note ?? '',
@@ -452,7 +495,6 @@ export function createDraftFromProductionEvent(event) {
       ...part,
       history: (part.history ?? []).map((entry) => ({ ...entry })),
     })),
-    dmShutters: Boolean(schedule.DM.shutters),
     hwDate: schedule.HW.date,
     hwDateOwner: schedule.HW.dateOwner ?? '',
     hwDateNote: schedule.HW.note ?? '',
@@ -484,9 +526,11 @@ const demoActivityOne = {
   extDate: '2026-08-10',
   extDateOwner: 'SUPERVISOR',
   extOrderMaterial: true,
+  dmShutters: true,
+  shutterDate: '2026-08-04',
+  shutterDateOwner: 'TENTATIVE',
   dmDate: '2026-08-11',
   dmDateOwner: 'JOBSITE_SUPERINTENDENT',
-  dmShutters: true,
   hwDate: '2026-08-12',
   hwDateOwner: 'TENTATIVE',
 }

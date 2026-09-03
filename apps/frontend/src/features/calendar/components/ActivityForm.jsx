@@ -11,6 +11,7 @@ import {
   Typography,
 } from '@mui/material'
 import EventAvailableRoundedIcon from '@mui/icons-material/EventAvailableRounded'
+import { getBuilderDateConfiguration } from '../../builders/data/builders.js'
 import {
   activityTypeMap,
   getActivityTone,
@@ -29,6 +30,11 @@ import {
   formatPhase,
   getPhasePatch,
 } from './calendarSchedulerUtils.js'
+import {
+  calculateProductionDates,
+  calculateShutterDate,
+  getProductionDateCascade,
+} from '../utils/calendarDateRules.js'
 
 function AutoField({ label, value }) {
   return (
@@ -64,17 +70,39 @@ function ProductionSummary({ draft }) {
   )
 }
 
-export default function ActivityForm({ jobs, draft, isEditing, activeActivityType, formError, onChange, onClose, onSave }) {
+function findJobBuilder(job, builders) {
+  return builders.find((builder) => (
+    builder.id === job?.builderId || builder.name === job?.builder
+  ))
+}
+
+export default function ActivityForm({
+  jobs,
+  builders = [],
+  draft,
+  isEditing,
+  activeActivityType,
+  formError,
+  onChange,
+  onClose,
+  onSave,
+}) {
   const selectedJob = jobs.find((job) => job.id === Number(draft.jobId)) ?? null
+  const builderDateConfiguration = getBuilderDateConfiguration(findJobBuilder(selectedJob, builders))
   const phases = selectedJob?.sequenceSheet?.phases ?? []
   const totalLots = draft.lotNumbers.length
   const activeType = activityTypeMap[activeActivityType] ?? null
 
   const changeJob = (jobId) => {
     const job = jobs.find((item) => item.id === Number(jobId)) ?? null
+    const dateConfiguration = getBuilderDateConfiguration(findJobBuilder(job, builders))
+    const automaticDates = job ? calculateProductionDates(draft.extDate, dateConfiguration) : {}
     onChange({
       ...getPhasePatch(job, null),
       jobId: job?.id ?? '',
+      ...automaticDates,
+      dmShutters: false,
+      shutterDate: '',
     })
   }
 
@@ -159,11 +187,24 @@ export default function ActivityForm({ jobs, draft, isEditing, activeActivityTyp
               <Typography variant="subtitle2" fontWeight={800}>
                 {isEditing ? `${activeType?.label ?? 'Event'} configuration` : 'Production dates'}
               </Typography>
-              <Typography variant="caption" color="text.secondary">
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
                 {isEditing
                   ? `Update the date and options for this ${activeType?.shortLabel ?? ''} event.`
-                  : 'Choose the three dates now; event options are configured after creation.'}
+                  : 'Choose EXT; the builder rule automatically schedules DM and HW.'}
               </Typography>
+              <Typography variant="caption" color="primary.main" fontWeight={700} sx={{ display: 'block' }}>
+                {builderDateConfiguration.extToDmWeeks} {' '}
+                {builderDateConfiguration.extToDmWeeks === 1 ? 'week' : 'weeks'} EXT → DM · {' '}
+                {builderDateConfiguration.dmToHwWeeks} {' '}
+                {builderDateConfiguration.dmToHwWeeks === 1 ? 'week' : 'weeks'} DM → HW · {' '}
+                Configured U.S. holidays excluded
+              </Typography>
+              {draft.dmShutters && (
+                <Typography variant="caption" color="primary.main" fontWeight={700} sx={{ display: 'block' }}>
+                  Shutter: {builderDateConfiguration.shutterBeforeDmWeeks} {' '}
+                  {builderDateConfiguration.shutterBeforeDmWeeks === 1 ? 'week' : 'weeks'} before DM
+                </Typography>
+              )}
             </Box>
             <Chip
               size="small"
@@ -181,7 +222,12 @@ export default function ActivityForm({ jobs, draft, isEditing, activeActivityTyp
                 date={draft.extDate}
                 dateOwner={draft.extDateOwner}
                 note={draft.extDateNote}
-                onDateChange={(value) => onChange({ extDate: value })}
+                onDateChange={(value) => onChange(getProductionDateCascade(
+                  draft,
+                  'EXT',
+                  value,
+                  builderDateConfiguration,
+                ))}
                 onDateOwnerChange={(value) => onChange({ extDateOwner: value })}
                 onNoteChange={(value) => onChange({ extDateNote: value })}
               >
@@ -244,6 +290,24 @@ export default function ActivityForm({ jobs, draft, isEditing, activeActivityTyp
               </StageCard>
             )}
 
+            {draft.dmShutters && isEditing && activeActivityType === 'SHUTTER' && (
+              <StageCard
+                activityType="SHUTTER"
+                tone="shutter"
+                date={draft.shutterDate}
+                dateOwner={draft.shutterDateOwner}
+                note={draft.shutterDateNote}
+                onDateChange={(value) => onChange(getProductionDateCascade(
+                  draft,
+                  'SHUTTER',
+                  value,
+                  builderDateConfiguration,
+                ))}
+                onDateOwnerChange={(value) => onChange({ shutterDateOwner: value })}
+                onNoteChange={(value) => onChange({ shutterDateNote: value })}
+              />
+            )}
+
             {(!isEditing || activeActivityType === 'DM') && (
               <StageCard
                 activityType="DM"
@@ -251,7 +315,12 @@ export default function ActivityForm({ jobs, draft, isEditing, activeActivityTyp
                 date={draft.dmDate}
                 dateOwner={draft.dmDateOwner}
                 note={draft.dmDateNote}
-                onDateChange={(value) => onChange({ dmDate: value })}
+                onDateChange={(value) => onChange(getProductionDateCascade(
+                  draft,
+                  'DM',
+                  value,
+                  builderDateConfiguration,
+                ))}
                 onDateOwnerChange={(value) => onChange({ dmDateOwner: value })}
                 onNoteChange={(value) => onChange({ dmDateNote: value })}
               >
@@ -319,9 +388,17 @@ export default function ActivityForm({ jobs, draft, isEditing, activeActivityTyp
                       />
                       <OptionCheckbox
                         checked={draft.dmShutters}
-                        label="Shutters"
-                        description="Include shutters in the DM scope."
-                        onChange={(checked) => onChange({ dmShutters: checked })}
+                        label="Shutter"
+                        description={`Create a Shutter event ${builderDateConfiguration.shutterBeforeDmWeeks} ${builderDateConfiguration.shutterBeforeDmWeeks === 1 ? 'week' : 'weeks'} before DM.`}
+                        onChange={(checked) => onChange({
+                          dmShutters: checked,
+                          shutterDate: checked
+                            ? calculateShutterDate(draft.dmDate, builderDateConfiguration)
+                            : draft.shutterDate,
+                          shutterDateOwner: checked
+                            ? (draft.shutterDateOwner || draft.dmDateOwner)
+                            : draft.shutterDateOwner,
+                        })}
                       />
                     </Box>
                     {draft.dmSplitPhase && (
@@ -352,7 +429,12 @@ export default function ActivityForm({ jobs, draft, isEditing, activeActivityTyp
                 date={draft.hwDate}
                 dateOwner={draft.hwDateOwner}
                 note={draft.hwDateNote}
-                onDateChange={(value) => onChange({ hwDate: value })}
+                onDateChange={(value) => onChange(getProductionDateCascade(
+                  draft,
+                  'HW',
+                  value,
+                  builderDateConfiguration,
+                ))}
                 onDateOwnerChange={(value) => onChange({ hwDateOwner: value })}
                 onNoteChange={(value) => onChange({ hwDateNote: value })}
               >
@@ -419,14 +501,16 @@ export default function ActivityForm({ jobs, draft, isEditing, activeActivityTyp
         <Alert severity="info" icon={<EventAvailableRoundedIcon />}>
           {isEditing
             ? `Only the selected ${activeType?.shortLabel ?? ''} event is being configured.`
-            : 'All events are all-day. Open EXT, DM or HW later to configure its specific options.'}
+            : 'All events are all-day. Open DM later to enable Shutter and configure its event.'}
         </Alert>
       </Box>
 
       <Box className="activity-drawer__footer">
         <Button variant="outlined" color="inherit" onClick={onClose}>Cancel</Button>
         <Button type="submit" variant="contained" disableElevation>
-          {isEditing ? `Save ${activeType?.shortLabel ?? 'event'}` : 'Create 3 events'}
+          {isEditing
+            ? `Save ${activeType?.shortLabel ?? 'event'}`
+            : 'Create 3 events'}
         </Button>
       </Box>
     </Box>

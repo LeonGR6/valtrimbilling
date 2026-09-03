@@ -42,7 +42,7 @@ import MoreHorizRoundedIcon from '@mui/icons-material/MoreHorizRounded'
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
 import ResponsiveCreateButton from '../../../components/common/ResponsiveCreateButton'
 import { BuildersCatalog } from '../../builders/index.js'
-import { initialBuilders } from '../../builders/data/builders.js'
+import { useBuilders } from '../../builders/context/useBuilders.js'
 import { initialPeople } from '../../people'
 import {
   builderLabels,
@@ -281,7 +281,7 @@ export default function JobsCatalog() {
   const { builderId, jobId } = useParams()
   const [searchParams] = useSearchParams()
   const { jobs, setJobs } = useJobs()
-  const [builders, setBuilders] = useState(initialBuilders)
+  const { builders, setBuilders } = useBuilders()
   const [superintendents, setSuperintendents] = useState(
     () => initialContacts.filter(
       (contact) => contact.type === 'JOBSITE_SUPERINTENDENT',

@@ -41,7 +41,8 @@ import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
 import ResponsiveCreateButton from '../../../components/common/ResponsiveCreateButton'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { Controller, useForm, useWatch } from 'react-hook-form'
-import { emptyBuilder, initialBuilders } from '../data/builders.js'
+import { useBuilders } from '../context/useBuilders.js'
+import { emptyBuilder, withDefaultBuilderDateConfiguration } from '../data/builders.js'
 import { createBuilderSchema } from '../schemas/builderSchema.js'
 
 function OptionalLabel({ children }) {
@@ -271,9 +272,9 @@ export default function BuildersCatalog({
   onSelectBuilder,
 }) {
   const isJobsEntry = Boolean(onSelectBuilder)
-  const [localBuilders, setLocalBuilders] = useState(initialBuilders)
-  const builders = controlledBuilders ?? localBuilders
-  const setBuilders = setControlledBuilders ?? setLocalBuilders
+  const { builders: sharedBuilders, setBuilders: setSharedBuilders } = useBuilders()
+  const builders = controlledBuilders ?? sharedBuilders
+  const setBuilders = setControlledBuilders ?? setSharedBuilders
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState('all')
   const [page, setPage] = useState(0)
@@ -352,7 +353,10 @@ export default function BuildersCatalog({
       }
       setNotice({ severity: 'success', message: 'Builder updated.' })
     } else {
-      setBuilders((current) => [{ ...form, id: Date.now() }, ...current])
+      setBuilders((current) => [
+        withDefaultBuilderDateConfiguration({ ...form, id: Date.now() }),
+        ...current,
+      ])
       setPage(0)
       setNotice({ severity: 'success', message: 'Builder created.' })
     }

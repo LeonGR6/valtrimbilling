@@ -30,6 +30,9 @@ const validActivity = {
   extInstallOnly: false,
   extInstallDate: '',
   extInstallDateOwner: '',
+  dmShutters: false,
+  shutterDate: '',
+  shutterDateOwner: '',
   dmDate: '2026-08-11',
   dmDateOwner: 'JOBSITE_SUPERINTENDENT',
   dmInstallOnly: false,
@@ -37,7 +40,6 @@ const validActivity = {
   dmInstallDateOwner: '',
   dmSplitPhase: false,
   dmSplitParts: [],
-  dmShutters: false,
   hwDate: '2026-08-12',
   hwDateOwner: 'TENTATIVE',
   hwSplitPhase: false,
@@ -183,6 +185,62 @@ test('saving Production creates the EXT, DM and HW calendar events together', ()
   assert.equal(restoredDraft.extDateNote, 'Confirm frame delivery before arrival.')
   assert.equal(restoredDraft.dmDateOwner, 'JOBSITE_SUPERINTENDENT')
   assert.equal(restoredDraft.hwDateOwner, 'TENTATIVE')
+})
+
+test('the Shutter option on DM creates a separate Shutter event', () => {
+  const values = calendarEventSchema.parse({
+    ...validActivity,
+    dmShutters: true,
+    shutterDate: '2026-08-04',
+    shutterDateOwner: '',
+    shutterDateNote: 'Confirm shutter material.',
+  })
+  const events = createProductionCalendarEvents(values, 'production-shutter', 125)
+
+  assert.equal(events.length, 4)
+  assert.deepEqual(
+    events.map((event) => event.extendedProps.activityType),
+    ['EXT', 'SHUTTER', 'DM', 'HW'],
+  )
+  assert.equal(events[1].start, '2026-08-04')
+  assert.equal(events[1].extendedProps.dateOwner, 'TENTATIVE')
+  assert.equal(events[1].extendedProps.dateNote, 'Confirm shutter material.')
+
+  const restoredDraft = createDraftFromProductionEvent(events[1])
+  assert.equal(restoredDraft.dmShutters, true)
+  assert.equal(restoredDraft.shutterDate, '2026-08-04')
+})
+
+test('moving DM preserves the previous Shutter date in its event history', () => {
+  const originalValues = calendarEventSchema.parse({
+    ...validActivity,
+    dmShutters: true,
+    shutterDate: '2026-08-04',
+    shutterDateOwner: 'TENTATIVE',
+    shutterDateNote: 'Original shutter visit.',
+  })
+  const previousEvent = createProductionCalendarEvents(
+    originalValues,
+    'production-shutter-history',
+    126,
+  )[1]
+  const editedValues = calendarEventSchema.parse({
+    ...createDraftFromProductionEvent(previousEvent),
+    dmDate: '2026-08-18',
+    shutterDate: '2026-08-11',
+  })
+  const valuesWithHistory = recordProductionDateHistory(
+    editedValues,
+    previousEvent,
+    '2026-08-03T18:30:00.000Z',
+  )
+
+  assert.deepEqual(valuesWithHistory.shutterDateHistory, [{
+    date: '2026-08-04',
+    dateOwner: 'TENTATIVE',
+    note: 'Original shutter visit.',
+    changedAt: '2026-08-03T18:30:00.000Z',
+  }])
 })
 
 test('editing a date or date type stores its previous date, type and note', () => {

@@ -135,7 +135,7 @@ function StageScheduleDetail({ activityType, schedule, lotStart, lotEnd, lotNumb
     schedule.orderMaterial && 'Order material',
     schedule.installOnly && 'Install only',
     schedule.splitPhase && 'Split phase',
-    schedule.shutters && 'Shutters',
+    schedule.shutters && 'Shutter',
     schedule.lockUp && 'Lock up',
   ].filter(Boolean)
 

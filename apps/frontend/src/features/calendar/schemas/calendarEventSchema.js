@@ -90,6 +90,11 @@ export const productionActivitySchema = z.object({
   extInstallDateOwner: dateOwnerField,
   extInstallDateNote: dateNoteField,
   extInstallDateHistory: dateHistoryField,
+  dmShutters: z.boolean().default(false),
+  shutterDate: z.string().default(''),
+  shutterDateOwner: dateOwnerField,
+  shutterDateNote: dateNoteField,
+  shutterDateHistory: dateHistoryField,
   dmDate: dateField,
   dmDateOwner: dateOwnerField,
   dmDateNote: dateNoteField,
@@ -101,7 +106,6 @@ export const productionActivitySchema = z.object({
   dmInstallDateHistory: dateHistoryField,
   dmSplitPhase: z.boolean().default(false),
   dmSplitParts: z.array(splitPartSchema).default([]),
-  dmShutters: z.boolean().default(false),
   hwDate: dateField,
   hwDateOwner: dateOwnerField,
   hwDateNote: dateNoteField,
@@ -131,6 +135,14 @@ export const productionActivitySchema = z.object({
       code: z.ZodIssueCode.custom,
       path: ['extInstallDateOwner'],
       message: 'Select who owns the EXT install-only date.',
+    })
+  }
+
+  if (value.dmShutters && !/^\d{4}-\d{2}-\d{2}$/.test(value.shutterDate)) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['shutterDate'],
+      message: 'Select the Shutter date.',
     })
   }
 

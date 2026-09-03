@@ -2,6 +2,7 @@ import { useMemo, useRef, useState } from 'react'
 import { Box, Drawer, Snackbar } from '@mui/material'
 import { useColorScheme } from '@mui/material/styles'
 import { useJobs } from '../../jobs/context/useJobs.js'
+import { useBuilders } from '../../builders/context/useBuilders.js'
 import {
   createDraftFromProductionEvent,
   createEmptyProductionDraft,
@@ -12,6 +13,7 @@ import {
 import { calendarEventSchema } from '../schemas/calendarEventSchema.js'
 import ActivityDetail from './ActivityDetail.jsx'
 import ActivityForm from './ActivityForm.jsx'
+import BuilderDateSettings from './BuilderDateSettings.jsx'
 import CalendarPageHeader from './CalendarPageHeader.jsx'
 import CalendarWorkspace from './CalendarWorkspace.jsx'
 import ChangeOrdersPlaceholder from './ChangeOrdersPlaceholder.jsx'
@@ -20,10 +22,12 @@ import './CalendarScheduler.css'
 export default function CalendarScheduler() {
   const calendarRef = useRef(null)
   const { jobs } = useJobs()
+  const { builders } = useBuilders()
   const { mode, systemMode } = useColorScheme()
   const resolvedColorMode = mode === 'system' ? systemMode : mode
   const calendarColorMode = resolvedColorMode === 'dark' ? 'dark' : 'light'
   const [calendarMode, setCalendarMode] = useState('PRODUCTION')
+  const [activeTab, setActiveTab] = useState('SCHEDULE')
   const [events, setEvents] = useState(initialCalendarEvents)
   const [selectedId, setSelectedId] = useState(null)
   const [drawerMode, setDrawerMode] = useState(null)
@@ -33,7 +37,7 @@ export default function CalendarScheduler() {
   const [notice, setNotice] = useState('')
   const [viewTitle, setViewTitle] = useState('Aug 10 – 14, 2026')
   const [viewType, setViewType] = useState('dayGridWeek')
-  const [visibleTypes, setVisibleTypes] = useState(['EXT', 'DM', 'HW'])
+  const [visibleTypes, setVisibleTypes] = useState(['EXT', 'SHUTTER', 'DM', 'HW'])
 
   const filteredEvents = useMemo(() => events.filter((event) => (
     visibleTypes.includes(event.extendedProps.activityType)
@@ -145,6 +149,12 @@ export default function CalendarScheduler() {
     setCalendarMode(nextMode)
   }
 
+  const changeActiveTab = (_, nextTab) => {
+    if (!nextTab) return
+    closeDrawer()
+    setActiveTab(nextTab)
+  }
+
   const changeDraft = (draftPatch) => {
     setDraft((current) => ({ ...current, ...draftPatch }))
     setFormError('')
@@ -153,12 +163,16 @@ export default function CalendarScheduler() {
   return (
     <Box className={`calendar-page calendar-theme--${calendarColorMode}`}>
       <CalendarPageHeader
+        activeTab={activeTab}
         calendarMode={calendarMode}
+        onChangeTab={changeActiveTab}
         onChangeMode={changeCalendarMode}
         onCreate={openCreateDrawer}
       />
 
-      {calendarMode === 'PRODUCTION' ? (
+      {activeTab === 'BUILDER_SETTINGS' ? (
+        <BuilderDateSettings />
+      ) : calendarMode === 'PRODUCTION' ? (
         <CalendarWorkspace
           calendarRef={calendarRef}
           events={filteredEvents}
@@ -200,6 +214,7 @@ export default function CalendarScheduler() {
         ) : (
           <ActivityForm
             jobs={jobs}
+            builders={builders}
             draft={draft}
             isEditing={drawerMode === 'edit'}
             activeActivityType={selectedEvent?.extendedProps.activityType}

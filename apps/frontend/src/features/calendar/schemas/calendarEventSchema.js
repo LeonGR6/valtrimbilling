@@ -8,12 +8,31 @@ const requiredText = (message, max = 100) => z
 
 const dateField = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Select a valid date.')
 const lotField = z.coerce.number().int('Use a whole lot number.').min(1, 'Lots must start at 1.')
+const dateOwnerValues = ['SUPERVISOR', 'JOBSITE_SUPERINTENDENT', 'TENTATIVE']
+const isDateOwner = (value) => dateOwnerValues.includes(value)
+const dateOwnerField = z.preprocess(
+  (value) => (typeof value === 'string' && value.trim() ? value : 'TENTATIVE'),
+  z.string().refine(isDateOwner, 'Select a supported date type.'),
+)
+const dateNoteField = z.string().trim().max(100, 'Use 100 characters or fewer.').optional().default('')
+
+const dateHistoryEntrySchema = z.object({
+  date: dateField,
+  dateOwner: z.string().refine(isDateOwner, 'The previous date type is not supported.'),
+  note: dateNoteField,
+  changedAt: z.string().trim().min(1, 'The change date is required.'),
+})
+
+const dateHistoryField = z.array(dateHistoryEntrySchema).default([])
 
 const splitPartSchema = z.object({
   id: z.string(),
   lotStart: lotField,
   lotEnd: lotField,
   date: dateField,
+  dateOwner: dateOwnerField,
+  note: dateNoteField,
+  history: dateHistoryField,
 })
 
 function validateSplitParts(value, context, enabledField, partsField) {
@@ -62,16 +81,31 @@ export const productionActivitySchema = z.object({
   superintendent: z.string().trim().max(100, 'Use 100 characters or fewer.').optional().default(''),
   notes: z.string().trim().max(500, 'Use 500 characters or fewer.').optional().default(''),
   extDate: dateField,
+  extDateOwner: dateOwnerField,
+  extDateNote: dateNoteField,
+  extDateHistory: dateHistoryField,
   extOrderMaterial: z.boolean().default(false),
   extInstallOnly: z.boolean().default(false),
   extInstallDate: z.string().default(''),
+  extInstallDateOwner: dateOwnerField,
+  extInstallDateNote: dateNoteField,
+  extInstallDateHistory: dateHistoryField,
   dmDate: dateField,
+  dmDateOwner: dateOwnerField,
+  dmDateNote: dateNoteField,
+  dmDateHistory: dateHistoryField,
   dmInstallOnly: z.boolean().default(false),
   dmInstallDate: z.string().default(''),
+  dmInstallDateOwner: dateOwnerField,
+  dmInstallDateNote: dateNoteField,
+  dmInstallDateHistory: dateHistoryField,
   dmSplitPhase: z.boolean().default(false),
   dmSplitParts: z.array(splitPartSchema).default([]),
   dmShutters: z.boolean().default(false),
   hwDate: dateField,
+  hwDateOwner: dateOwnerField,
+  hwDateNote: dateNoteField,
+  hwDateHistory: dateHistoryField,
   hwSplitPhase: z.boolean().default(false),
   hwSplitParts: z.array(splitPartSchema).default([]),
   hwLockUp: z.boolean().default(false),
@@ -92,11 +126,27 @@ export const productionActivitySchema = z.object({
     })
   }
 
+  if (value.extInstallOnly && !isDateOwner(value.extInstallDateOwner)) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['extInstallDateOwner'],
+      message: 'Select who owns the EXT install-only date.',
+    })
+  }
+
   if (value.dmInstallOnly && !/^\d{4}-\d{2}-\d{2}$/.test(value.dmInstallDate)) {
     context.addIssue({
       code: z.ZodIssueCode.custom,
       path: ['dmInstallDate'],
       message: 'Select the DM install-only date.',
+    })
+  }
+
+  if (value.dmInstallOnly && !isDateOwner(value.dmInstallDateOwner)) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['dmInstallDateOwner'],
+      message: 'Select who owns the DM install-only date.',
     })
   }
 

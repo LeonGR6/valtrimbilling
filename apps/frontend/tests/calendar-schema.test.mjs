@@ -1,8 +1,11 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  createDraftFromProductionEvent,
   createProductionCalendarEvents,
   getActivityTone,
+  getLotsLabel,
+  recordProductionDateHistory,
 } from '../src/features/calendar/data/calendarEvents.js'
 import { calendarEventSchema } from '../src/features/calendar/schemas/calendarEventSchema.js'
 
@@ -22,16 +25,21 @@ const validActivity = {
   superintendent: 'Daniel Torres',
   notes: '',
   extDate: '2026-08-10',
+  extDateOwner: 'SUPERVISOR',
   extOrderMaterial: false,
   extInstallOnly: false,
   extInstallDate: '',
+  extInstallDateOwner: '',
   dmDate: '2026-08-11',
+  dmDateOwner: 'JOBSITE_SUPERINTENDENT',
   dmInstallOnly: false,
   dmInstallDate: '',
+  dmInstallDateOwner: '',
   dmSplitPhase: false,
   dmSplitParts: [],
   dmShutters: false,
   hwDate: '2026-08-12',
+  hwDateOwner: 'TENTATIVE',
   hwSplitPhase: false,
   hwSplitParts: [],
   hwLockUp: false,
@@ -46,6 +54,23 @@ test('production activity schema normalizes selected Job, phase and lot range', 
   assert.equal(result.lotEnd, 70)
 })
 
+test('non-contiguous lots are grouped without filling gaps', () => {
+  const lotNumbers = ['1', '2', '3', '4', '10', '11', '12']
+
+  assert.equal(getLotsLabel(1, 12, lotNumbers), 'Lots 1–4, 10–12')
+
+  const values = calendarEventSchema.parse({
+    ...validActivity,
+    lotStart: '1',
+    lotEnd: '12',
+    lotNumbers,
+  })
+  const events = createProductionCalendarEvents(values, 'production-discrete-lots', 124)
+
+  assert.equal(events[0].title, 'EXT FRAMES • Lots 1–4, 10–12')
+  assert.deepEqual(events[0].extendedProps.lotNumbers, lotNumbers)
+})
+
 test('production activity requires one valid date for EXT, DM and HW', () => {
   const result = calendarEventSchema.safeParse({
     ...validActivity,
@@ -56,13 +81,36 @@ test('production activity requires one valid date for EXT, DM and HW', () => {
   assert.equal(result.error.issues[0].path[0], 'extDate')
 })
 
+test('production dates default to Tentative when no date type is selected', () => {
+  const result = calendarEventSchema.parse({
+    ...validActivity,
+    extDateOwner: '',
+    dmDateOwner: '',
+    hwDateOwner: '',
+  })
+
+  assert.equal(result.extDateOwner, 'TENTATIVE')
+  assert.equal(result.dmDateOwner, 'TENTATIVE')
+  assert.equal(result.hwDateOwner, 'TENTATIVE')
+})
+
+test('production dates reject unsupported date types', () => {
+  const unsupportedOwner = calendarEventSchema.safeParse({
+    ...validActivity,
+    dmDateOwner: 'CREW',
+  })
+
+  assert.equal(unsupportedOwner.success, false)
+  assert.equal(unsupportedOwner.error.issues[0].path[0], 'dmDateOwner')
+})
+
 test('DM split phase requires contiguous lot ranges with a date per division', () => {
   const result = calendarEventSchema.parse({
     ...validActivity,
     dmSplitPhase: true,
     dmSplitParts: [
-      { id: 'a', lotStart: 66, lotEnd: 68, date: '2026-08-11' },
-      { id: 'b', lotStart: 69, lotEnd: 70, date: '2026-08-13' },
+      { id: 'a', lotStart: 66, lotEnd: 68, date: '2026-08-11', dateOwner: 'SUPERVISOR' },
+      { id: 'b', lotStart: 69, lotEnd: 70, date: '2026-08-13', dateOwner: 'TENTATIVE' },
     ],
   })
 
@@ -80,13 +128,100 @@ test('EXT install only requires its separate date', () => {
   assert.equal(result.error.issues[0].path[0], 'extInstallDate')
 })
 
+test('an install-only date also defaults to Tentative when its date type is empty', () => {
+  const result = calendarEventSchema.parse({
+    ...validActivity,
+    extInstallOnly: true,
+    extInstallDate: '2026-08-14',
+    extInstallDateOwner: '',
+  })
+
+  assert.equal(result.extInstallDateOwner, 'TENTATIVE')
+})
+
+test('date notes are optional and limited to 100 characters', () => {
+  const withoutNotes = calendarEventSchema.parse(validActivity)
+  const noteTooLong = calendarEventSchema.safeParse({
+    ...validActivity,
+    extDateNote: 'x'.repeat(101),
+  })
+
+  assert.equal(withoutNotes.extDateNote, '')
+  assert.equal(withoutNotes.dmDateNote, '')
+  assert.equal(withoutNotes.hwDateNote, '')
+  assert.equal(noteTooLong.success, false)
+  assert.equal(noteTooLong.error.issues[0].path[0], 'extDateNote')
+})
+
 test('saving Production creates the EXT, DM and HW calendar events together', () => {
-  const values = calendarEventSchema.parse(validActivity)
+  const values = calendarEventSchema.parse({
+    ...validActivity,
+    extDateNote: 'Confirm frame delivery before arrival.',
+    dmDateNote: 'Meet the superintendent at lot 66.',
+    hwDateNote: 'Tentative pending hardware shipment.',
+  })
   const events = createProductionCalendarEvents(values, 'production-test', 123)
 
   assert.equal(events.length, 3)
   assert.deepEqual(events.map((event) => event.extendedProps.activityType), ['EXT', 'DM', 'HW'])
   assert.deepEqual(events.map((event) => event.start), ['2026-08-10', '2026-08-11', '2026-08-12'])
+  assert.deepEqual(
+    events.map((event) => event.extendedProps.dateOwner),
+    ['SUPERVISOR', 'JOBSITE_SUPERINTENDENT', 'TENTATIVE'],
+  )
+  assert.deepEqual(
+    events.map((event) => event.extendedProps.dateNote),
+    [
+      'Confirm frame delivery before arrival.',
+      'Meet the superintendent at lot 66.',
+      'Tentative pending hardware shipment.',
+    ],
+  )
+
+  const restoredDraft = createDraftFromProductionEvent(events[0])
+  assert.equal(restoredDraft.extDateOwner, 'SUPERVISOR')
+  assert.equal(restoredDraft.extDateNote, 'Confirm frame delivery before arrival.')
+  assert.equal(restoredDraft.dmDateOwner, 'JOBSITE_SUPERINTENDENT')
+  assert.equal(restoredDraft.hwDateOwner, 'TENTATIVE')
+})
+
+test('editing a date or date type stores its previous date, type and note', () => {
+  const originalValues = calendarEventSchema.parse({
+    ...validActivity,
+    extDateNote: 'Call before delivering frames.',
+  })
+  const originalEvent = createProductionCalendarEvents(originalValues, 'production-history', 200)[0]
+  const editedValues = calendarEventSchema.parse({
+    ...createDraftFromProductionEvent(originalEvent),
+    extDate: '2026-08-15',
+    extDateOwner: 'JOBSITE_SUPERINTENDENT',
+    extDateNote: 'New delivery window confirmed.',
+  })
+  const valuesWithHistory = recordProductionDateHistory(
+    editedValues,
+    originalEvent,
+    '2026-08-09T18:30:00.000Z',
+  )
+  const editedEvent = createProductionCalendarEvents(valuesWithHistory, 'production-history', 201)[0]
+
+  assert.deepEqual(editedEvent.extendedProps.dateHistory, [{
+    date: '2026-08-10',
+    dateOwner: 'SUPERVISOR',
+    note: 'Call before delivering frames.',
+    changedAt: '2026-08-09T18:30:00.000Z',
+  }])
+
+  const noteOnlyEdit = calendarEventSchema.parse({
+    ...createDraftFromProductionEvent(editedEvent),
+    extDateNote: 'The date stayed the same.',
+  })
+  const noteOnlyHistory = recordProductionDateHistory(
+    noteOnlyEdit,
+    editedEvent,
+    '2026-08-10T18:30:00.000Z',
+  )
+
+  assert.equal(noteOnlyHistory.extDateHistory.length, 1)
 })
 
 test('Order Material changes the EXT tone without changing DM or HW', () => {

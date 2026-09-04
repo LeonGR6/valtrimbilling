@@ -174,21 +174,31 @@
   gap: 10px;
 }
 
-.calendar-primary-tabs {
-  flex: 0 0 auto;
-  padding: 0 26px;
+.calendar-primary-tabs,
+.calendar-mode-tabs {
   border-bottom: 1px solid var(--mui-palette-divider);
 }
 
-.calendar-primary-tabs .MuiTab-root {
+.calendar-primary-tabs {
+  flex: 0 0 auto;
+  padding: 0 26px;
+}
+
+.calendar-primary-tabs .MuiTab-root,
+.calendar-mode-tabs .MuiTab-root {
   min-height: 46px;
   padding-inline: 14px;
   text-transform: none;
   font-weight: 750;
 }
 
-.calendar-primary-tabs .MuiTab-icon {
+.calendar-primary-tabs .MuiTab-icon,
+.calendar-mode-tabs .MuiTab-icon {
   font-size: 19px;
+}
+
+.calendar-mode-tabs {
+  min-width: 0;
 }
 
 .builder-date-settings {
@@ -315,28 +325,6 @@
   font-weight: 750;
 }
 
-.calendar-mode-toggle {
-  padding: 3px;
-  border: 1px solid var(--mui-palette-divider);
-  border-radius: 10px !important;
-  background: color-mix(in srgb, var(--mui-palette-background-paper) 92%, transparent);
-}
-
-.calendar-mode-toggle .MuiToggleButton-root {
-  min-height: 34px;
-  padding: 5px 13px;
-  border: 0;
-  border-radius: 7px !important;
-  text-transform: none;
-  font-size: 12px;
-  font-weight: 750;
-}
-
-.calendar-mode-toggle .MuiToggleButton-root.Mui-selected {
-  color: var(--mui-palette-primary-main);
-  background: var(--mui-palette-primary-light);
-}
-
 .calendar-toolbar {
   display: flex;
   align-items: center;
@@ -439,6 +427,7 @@
 .calendar-period {
   min-height: 64px;
   display: grid;
+  flex: 0 0 auto;
   grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
   gap: 16px;
@@ -503,6 +492,7 @@
 .calendar-all-day-note {
   min-height: 38px;
   display: flex;
+  flex: 0 0 auto;
   align-items: center;
   gap: 8px;
   padding: 7px 15px;
@@ -511,6 +501,10 @@
   background: var(--calendar-note-surface);
   font-size: 12px;
   font-weight: 600;
+}
+
+.calendar-all-day-note__mobile {
+  display: none;
 }
 
 .calendar-canvas {
@@ -1740,9 +1734,13 @@
     flex-direction: column;
   }
 
-  .calendar-mode-toggle {
-    display: grid !important;
-    grid-template-columns: 1fr 1fr;
+  .calendar-mode-tabs,
+  .calendar-mode-tabs .MuiTabs-root {
+    width: 100%;
+  }
+
+  .calendar-mode-tabs .MuiTabs-flexContainer {
+    min-width: max-content;
   }
 
   .calendar-toolbar {
@@ -1785,26 +1783,59 @@
   }
 
   .calendar-workspace {
+    min-height: 720px;
     padding-inline: 8px;
   }
 
   .calendar-period {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      "title"
+      "navigation"
+      "views";
     align-items: stretch;
-    flex-direction: column;
-    display: flex;
+    gap: 10px;
+    padding: 13px 14px;
   }
 
-  .calendar-period__navigation,
-  .calendar-period > .MuiButtonGroup-root {
-    align-self: flex-start;
+  .calendar-period__navigation {
+    grid-area: navigation;
+    justify-self: stretch;
   }
 
   .calendar-period__title {
+    grid-area: title;
+    justify-self: start;
+    width: 100%;
     font-size: 16px !important;
+  }
+
+  .calendar-view-switcher {
+    width: 100%;
+    display: grid !important;
+    grid-area: views;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    justify-self: stretch;
+  }
+
+  .calendar-view-switcher .MuiButton-root {
+    min-width: 0;
+    padding-inline: 6px;
   }
 
   .calendar-all-day-note {
     align-items: flex-start;
+    min-height: 0;
+    padding: 9px 14px;
+    line-height: 1.4;
+  }
+
+  .calendar-all-day-note__desktop {
+    display: none;
+  }
+
+  .calendar-all-day-note__mobile {
+    display: inline;
   }
 
   .calendar-canvas .fc .fc-list-event-time {

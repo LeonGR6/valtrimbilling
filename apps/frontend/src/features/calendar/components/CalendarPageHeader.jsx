@@ -3,12 +3,12 @@ import {
   Button,
   Tab,
   Tabs,
-  ToggleButton,
-  ToggleButtonGroup,
   Tooltip,
   Typography,
 } from '@mui/material'
 import CalendarMonthRoundedIcon from '@mui/icons-material/CalendarMonthRounded'
+import ConstructionRoundedIcon from '@mui/icons-material/ConstructionRounded'
+import SyncAltRoundedIcon from '@mui/icons-material/SyncAltRounded'
 import TuneRoundedIcon from '@mui/icons-material/TuneRounded'
 import ResponsiveCreateButton from '../../../components/common/ResponsiveCreateButton'
 
@@ -35,17 +35,28 @@ export default function CalendarPageHeader({
 
         {activeTab === 'SCHEDULE' && (
           <Box className="calendar-page__actions">
-            <ToggleButtonGroup
-              exclusive
-              value={calendarMode}
-              onChange={onChangeMode}
-              size="small"
-              aria-label="Calendar section"
-              className="calendar-mode-toggle"
-            >
-              <ToggleButton value="PRODUCTION">Production</ToggleButton>
-              <ToggleButton value="CHANGE_ORDERS">Extra / Change Orders</ToggleButton>
-            </ToggleButtonGroup>
+            <Box className="calendar-mode-tabs">
+              <Tabs
+                value={calendarMode}
+                onChange={onChangeMode}
+                aria-label="Calendar section"
+                variant="scrollable"
+                scrollButtons="auto"
+              >
+                <Tab
+                  value="PRODUCTION"
+                  icon={<ConstructionRoundedIcon />}
+                  iconPosition="start"
+                  label="Production"
+                />
+                <Tab
+                  value="CHANGE_ORDERS"
+                  icon={<SyncAltRoundedIcon />}
+                  iconPosition="start"
+                  label="Extra / Change Orders"
+                />
+              </Tabs>
+            </Box>
             {calendarMode === 'PRODUCTION' ? (
               <ResponsiveCreateButton label="New activity" onClick={onCreate} />
             ) : (

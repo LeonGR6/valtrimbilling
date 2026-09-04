@@ -92,12 +92,19 @@ export default function CalendarWorkspace({
 
           <Box className="calendar-all-day-note">
             <EventAvailableRoundedIcon fontSize="small" />
-            <span>
+            <span className="calendar-all-day-note__desktop">
               {viewType === 'listWeek'
                 ? 'Weekly list · Open any row to view or edit its full Production group'
                 : viewType === 'multiMonthYear'
                   ? 'Annual calendar · Review all 12 months in one view'
                   : 'All-day activities · Open any event to view or edit its full Production group'}
+            </span>
+            <span className="calendar-all-day-note__mobile">
+              {viewType === 'listWeek'
+                ? 'Open any row to view or edit its Production group'
+                : viewType === 'multiMonthYear'
+                  ? 'Review all 12 months in one view'
+                  : 'Open any event to view or edit its Production group'}
             </span>
           </Box>
 

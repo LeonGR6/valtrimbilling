@@ -21,6 +21,12 @@ import CalendarWorkspace from './CalendarWorkspace.jsx'
 import ChangeOrdersPlaceholder from './ChangeOrdersPlaceholder.jsx'
 import './CalendarScheduler.css'
 
+const initialCalendarTitle = new Intl.DateTimeFormat('en-US', {
+  month: 'long',
+  day: 'numeric',
+  year: 'numeric',
+}).format(new Date())
+
 export default function CalendarScheduler() {
   const calendarRef = useRef(null)
   const { jobs } = useJobs()
@@ -39,7 +45,7 @@ export default function CalendarScheduler() {
   const [draft, setDraft] = useState(createEmptyProductionDraft())
   const [formError, setFormError] = useState('')
   const [notice, setNotice] = useState('')
-  const [viewTitle, setViewTitle] = useState('Aug 10 – 14, 2026')
+  const [viewTitle, setViewTitle] = useState(initialCalendarTitle)
   const [viewType, setViewType] = useState('dayGridWeek')
   const [visibleTypes, setVisibleTypes] = useState(['EXT', 'SHUTTER', 'DM', 'HW'])
 

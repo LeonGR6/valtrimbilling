@@ -1106,6 +1106,44 @@
   gap: 8px;
 }
 
+.activity-detail__contact-row {
+  width: 100%;
+  display: grid !important;
+  grid-template-columns: 32px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 7px;
+  border: 1px solid transparent;
+  border-radius: 10px !important;
+  text-align: left;
+  transition: background-color 140ms ease, border-color 140ms ease;
+}
+
+.activity-detail__contact-row:not(.Mui-disabled):hover,
+.activity-detail__contact-row:not(.Mui-disabled):focus-visible {
+  border-color: color-mix(in srgb, var(--mui-palette-primary-main) 24%, transparent);
+  background: color-mix(in srgb, var(--mui-palette-primary-main) 6%, transparent);
+}
+
+.activity-detail__contact-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.activity-detail__contact-copy .MuiTypography-root {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.activity-detail__contact-action {
+  color: var(--mui-palette-primary-main);
+  font-size: 19px !important;
+}
+
 .activity-detail__row-icon {
   width: 32px;
   height: 32px;
@@ -1118,6 +1156,32 @@
 
 .activity-detail__row-icon .MuiSvgIcon-root {
   font-size: 17px;
+}
+
+.contact-action-dialog__channels {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.contact-action-dialog__channels > div {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--mui-palette-divider);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--mui-palette-text-primary) 2%, transparent);
+}
+
+.contact-action-dialog__channels .MuiSvgIcon-root {
+  color: var(--mui-palette-primary-main);
+}
+
+.contact-action-dialog__channels .MuiTypography-body2 {
+  overflow-wrap: anywhere;
 }
 
 .activity-detail__section {
@@ -1661,6 +1725,10 @@
 }
 
 @media (max-width: 700px) {
+  .contact-action-dialog__channels {
+    grid-template-columns: 1fr;
+  }
+
   .calendar-page__header {
     align-items: stretch;
     flex-direction: column;

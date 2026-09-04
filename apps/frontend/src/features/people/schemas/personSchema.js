@@ -1,20 +1,21 @@
 import { z } from 'zod'
+import { normalizePhoneNumber } from '../../../utils/phoneNumbers.js'
 
 // Builder-side types moved to features/builder-contacts. This screen only
 // holds Valtrim's own field staff.
 export const personTypeSchema = z.enum(['SUPERVISOR'])
 
 const namePattern = /^[\p{L}\p{M}\s.'-]+$/u
-const phonePattern = /^[\d\s()+.-]*$/
-
 const optionalPhone = z
   .string()
   .trim()
   .max(30, 'Use 30 characters or fewer.')
   .refine(
-    (value) => value === '' || (phonePattern.test(value) && /\d/.test(value)),
+    (value) => value === '' || (/^[\d\s()+.-]+$/.test(value) && /\d/.test(value)),
     'Enter a valid phone number.',
   )
+
+const phoneCountry = z.enum(['US', 'MX']).default('US')
 
 export const personSchema = z
   .object({
@@ -25,7 +26,9 @@ export const personSchema = z
       .max(100, 'Use 100 characters or fewer.')
       .regex(namePattern, 'Enter a valid name.'),
     phone: optionalPhone,
+    phoneCountry,
     officePhone: optionalPhone,
+    officePhoneCountry: phoneCountry,
     email: z
       .string()
       .trim()
@@ -43,6 +46,22 @@ export const personSchema = z
       .default(''),
   })
   .superRefine((person, context) => {
+    if (person.phone && !normalizePhoneNumber(person.phone, person.phoneCountry)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['phone'],
+        message: 'Enter a 10-digit U.S. or Mexico phone number.',
+      })
+    }
+
+    if (person.officePhone && !normalizePhoneNumber(person.officePhone, person.officePhoneCountry)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['officePhone'],
+        message: 'Enter a 10-digit U.S. or Mexico phone number.',
+      })
+    }
+
     if (person.types.includes('SUPERVISOR') && !person.territory) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
@@ -51,7 +70,13 @@ export const personSchema = z
       })
     }
   })
-  .transform((person) => ({
-    ...person,
-    territory: person.types.includes('SUPERVISOR') ? person.territory : '',
-  }))
+  .transform((person) => {
+    const { phoneCountry: mobileCountry, officePhoneCountry, ...savedPerson } = person
+
+    return {
+      ...savedPerson,
+      phone: normalizePhoneNumber(person.phone, mobileCountry),
+      officePhone: normalizePhoneNumber(person.officePhone, officePhoneCountry),
+      territory: person.types.includes('SUPERVISOR') ? person.territory : '',
+    }
+  })

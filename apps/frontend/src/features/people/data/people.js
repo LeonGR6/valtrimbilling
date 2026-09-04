@@ -15,7 +15,7 @@ export const initialPeople = [
   {
     id: 1,
     name: 'Lauren Mitchell',
-    phone: '(714) 555-0162',
+    phone: '+17145550162',
     officePhone: '',
     email: 'lauren.mitchell@valtriminc.com',
     types: ['SUPERVISOR'],
@@ -24,8 +24,8 @@ export const initialPeople = [
   {
     id: 2,
     name: 'Robert King',
-    phone: '(714) 555-0178',
-    officePhone: '(714) 555-0100',
+    phone: '+17145550178',
+    officePhone: '+17145550100',
     email: 'robert.king@valtriminc.com',
     types: ['SUPERVISOR'],
     territory: 'Orange County',
@@ -33,7 +33,7 @@ export const initialPeople = [
   {
     id: 3,
     name: 'Esteban Marquez',
-    phone: '(951) 555-0135',
+    phone: '+19515550135',
     officePhone: '',
     email: 'esteban.marquez@valtriminc.com',
     types: ['SUPERVISOR'],
@@ -42,8 +42,8 @@ export const initialPeople = [
   {
     id: 4,
     name: 'Nadia Haddad',
-    phone: '(909) 555-0191',
-    officePhone: '(909) 555-0100',
+    phone: '+19095550191',
+    officePhone: '+19095550100',
     email: 'nadia.haddad@valtriminc.com',
     types: ['SUPERVISOR'],
     territory: 'High Desert',

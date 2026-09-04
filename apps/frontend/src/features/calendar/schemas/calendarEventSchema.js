@@ -113,6 +113,10 @@ export const productionActivitySchema = z.object({
   hwSplitPhase: z.boolean().default(false),
   hwSplitParts: z.array(splitPartSchema).default([]),
   hwLockUp: z.boolean().default(false),
+  hwLockUpDate: z.string().default(''),
+  hwLockUpDateOwner: dateOwnerField,
+  hwLockUpDateNote: dateNoteField,
+  hwLockUpDateHistory: dateHistoryField,
 }).superRefine((value, context) => {
   if (value.lotEnd < value.lotStart) {
     context.addIssue({
@@ -159,6 +163,22 @@ export const productionActivitySchema = z.object({
       code: z.ZodIssueCode.custom,
       path: ['dmInstallDateOwner'],
       message: 'Select who owns the DM install-only date.',
+    })
+  }
+
+  if (value.hwLockUp && !/^\d{4}-\d{2}-\d{2}$/.test(value.hwLockUpDate)) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['hwLockUpDate'],
+      message: 'Select the Hardware lock-up date.',
+    })
+  }
+
+  if (value.hwLockUp && !isDateOwner(value.hwLockUpDateOwner)) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['hwLockUpDateOwner'],
+      message: 'Select who owns the Hardware lock-up date.',
     })
   }
 

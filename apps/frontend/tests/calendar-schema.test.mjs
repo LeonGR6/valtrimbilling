@@ -45,6 +45,8 @@ const validActivity = {
   hwSplitPhase: false,
   hwSplitParts: [],
   hwLockUp: false,
+  hwLockUpDate: '',
+  hwLockUpDateOwner: '',
 }
 
 test('production activity schema normalizes selected Job, phase and lot range', () => {
@@ -139,6 +141,40 @@ test('an install-only date also defaults to Tentative when its date type is empt
   })
 
   assert.equal(result.extInstallDateOwner, 'TENTATIVE')
+})
+
+test('Hardware lock up requires its separate date', () => {
+  const result = calendarEventSchema.safeParse({
+    ...validActivity,
+    hwLockUp: true,
+  })
+
+  assert.equal(result.success, false)
+  assert.equal(result.error.issues[0].path[0], 'hwLockUpDate')
+})
+
+test('the Hardware lock-up option creates a separate event', () => {
+  const values = calendarEventSchema.parse({
+    ...validActivity,
+    hwLockUp: true,
+    hwLockUpDate: '2026-08-14',
+    hwLockUpDateOwner: '',
+    hwLockUpDateNote: 'Secure the building after installation.',
+  })
+  const events = createProductionCalendarEvents(values, 'production-lock-up', 127)
+  const lockUpEvent = events.find((event) => event.extendedProps.variant === 'lock-up')
+
+  assert.equal(events.length, 4)
+  assert.equal(lockUpEvent.title, 'Hardware LOCK UP • Lots 66–70')
+  assert.equal(lockUpEvent.start, '2026-08-14')
+  assert.equal(lockUpEvent.extendedProps.activityType, 'HW')
+  assert.equal(lockUpEvent.extendedProps.dateOwner, 'TENTATIVE')
+  assert.equal(lockUpEvent.extendedProps.dateNote, 'Secure the building after installation.')
+
+  const restoredDraft = createDraftFromProductionEvent(lockUpEvent)
+  assert.equal(restoredDraft.hwLockUp, true)
+  assert.equal(restoredDraft.hwLockUpDate, '2026-08-14')
+  assert.equal(restoredDraft.hwLockUpDateOwner, 'TENTATIVE')
 })
 
 test('date notes are optional and limited to 100 characters', () => {

@@ -455,13 +455,51 @@ export default function ActivityForm({
                         )}
                       />
                       <OptionCheckbox
-                        checked={false}
-                        disabled
+                        checked={draft.hwLockUp}
                         label="Lock up"
-                        description="Hardware lock-up workflow."
-                        onChange={() => {}}
-                        endAdornment={<Chip size="small" label="Pending" />}
+                        description="Add a separate Hardware lock-up event."
+                        onChange={(checked) => onChange({
+                          hwLockUp: checked,
+                          hwLockUpDate: checked ? (draft.hwLockUpDate || draft.hwDate) : '',
+                          hwLockUpDateOwner: checked
+                            ? (draft.hwLockUpDateOwner || draft.hwDateOwner)
+                            : '',
+                          hwLockUpDateNote: checked ? draft.hwLockUpDateNote : '',
+                        })}
                       />
+                      {draft.hwLockUp && (
+                        <Box className="activity-option-date-group">
+                          <TextField
+                            label="Hardware lock-up date"
+                            type="date"
+                            value={draft.hwLockUpDate}
+                            onChange={(event) => onChange({ hwLockUpDate: event.target.value })}
+                            slotProps={{ inputLabel: { shrink: true } }}
+                            fullWidth
+                            required
+                            size="small"
+                            className="activity-option-date"
+                          />
+                          <DateOwnerSelector
+                            value={draft.hwLockUpDateOwner}
+                            onChange={(value) => onChange({ hwLockUpDateOwner: value })}
+                            label="Hardware lock-up date ownership"
+                            compact
+                          />
+                          <TextField
+                            label="Hardware lock-up date note (optional)"
+                            value={draft.hwLockUpDateNote}
+                            onChange={(event) => onChange({ hwLockUpDateNote: event.target.value })}
+                            slotProps={{ htmlInput: { maxLength: 100 } }}
+                            helperText={`${draft.hwLockUpDateNote.length}/100`}
+                            multiline
+                            minRows={2}
+                            fullWidth
+                            size="small"
+                            className="date-note-field"
+                          />
+                        </Box>
+                      )}
                     </Box>
                     {draft.hwSplitPhase && (
                       <SplitScheduleEditor

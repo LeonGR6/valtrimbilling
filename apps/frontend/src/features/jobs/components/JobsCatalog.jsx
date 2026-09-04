@@ -43,12 +43,12 @@ import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
 import ResponsiveCreateButton from '../../../components/common/ResponsiveCreateButton'
 import { BuildersCatalog } from '../../builders/index.js'
 import { useBuilders } from '../../builders/context/useBuilders.js'
-import { initialPeople } from '../../people'
+import { usePeople } from '../../people/context/usePeople.js'
 import {
   builderLabels,
   emptyContact,
-  initialContacts,
 } from '../../builder-contacts'
+import { useBuilderContacts } from '../../builder-contacts/context/useBuilderContacts.js'
 import JobDetails from './JobDetails.jsx'
 import PersonPickerField from './PersonPickerField.jsx'
 import {
@@ -282,11 +282,8 @@ export default function JobsCatalog() {
   const [searchParams] = useSearchParams()
   const { jobs, setJobs } = useJobs()
   const { builders, setBuilders } = useBuilders()
-  const [superintendents, setSuperintendents] = useState(
-    () => initialContacts.filter(
-      (contact) => contact.type === 'JOBSITE_SUPERINTENDENT',
-    ),
-  )
+  const { people } = usePeople()
+  const { contacts, setContacts } = useBuilderContacts()
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(0)
   const [rowsPerPage, setRowsPerPage] = useState(5)
@@ -296,8 +293,12 @@ export default function JobsCatalog() {
   const [deleteTarget, setDeleteTarget] = useState(null)
   const [notice, setNotice] = useState(null)
   const supervisors = useMemo(
-    () => initialPeople.filter((person) => person.types.includes('SUPERVISOR')),
-    [],
+    () => people.filter((person) => person.types.includes('SUPERVISOR')),
+    [people],
+  )
+  const superintendents = useMemo(
+    () => contacts.filter((contact) => contact.type === 'JOBSITE_SUPERINTENDENT'),
+    [contacts],
   )
   const supervisorsById = useMemo(
     () => new Map(supervisors.map((person) => [person.id, person])),
@@ -460,7 +461,7 @@ export default function JobsCatalog() {
       type: 'JOBSITE_SUPERINTENDENT',
       builder: builderCodeByName[builderName] ?? '',
     }
-    setSuperintendents((current) => [created, ...current])
+    setContacts((current) => [created, ...current])
     return created
   }
 

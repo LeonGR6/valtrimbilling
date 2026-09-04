@@ -27,6 +27,7 @@ export default function CalendarEventCard({ event, isList = false }) {
           <span>{getDateOwnerLabel(props.dateOwner, true)}</span>
           {props.orderMaterial && <span>Order material</span>}
           {props.variant === 'install-only' && <span>Install only</span>}
+          {props.variant === 'lock-up' && <span>Lock up</span>}
         </Box>
       </Box>
     )
@@ -38,6 +39,7 @@ export default function CalendarEventCard({ event, isList = false }) {
         <strong>{type.label}</strong>
         {props.orderMaterial && <span className="work-event__tag">Order material</span>}
         {props.variant === 'install-only' && <span className="work-event__tag">Install only</span>}
+        {props.variant === 'lock-up' && <span className="work-event__tag">Lock up</span>}
       </Box>
       <span className="work-event__community">Job #{props.jobCode} · {props.community}</span>
       <span className="work-event__phase-building">{props.phase} · {props.building}</span>

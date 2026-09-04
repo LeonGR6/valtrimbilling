@@ -1,10 +1,18 @@
+import { useState } from 'react'
 import {
+  Alert,
   Box,
   Button,
+  ButtonBase,
   Chip,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
   Divider,
   Paper,
   Stack,
+  TextField,
   Typography,
 } from '@mui/material'
 import ApartmentRoundedIcon from '@mui/icons-material/ApartmentRounded'
@@ -15,6 +23,9 @@ import EngineeringRoundedIcon from '@mui/icons-material/EngineeringRounded'
 import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded'
 import LayersOutlinedIcon from '@mui/icons-material/LayersOutlined'
 import LocationOnOutlinedIcon from '@mui/icons-material/LocationOnOutlined'
+import MailOutlineRoundedIcon from '@mui/icons-material/MailOutlineRounded'
+import PhoneOutlinedIcon from '@mui/icons-material/PhoneOutlined'
+import SmsOutlinedIcon from '@mui/icons-material/SmsOutlined'
 import {
   activityTypeMap,
   getActivityTone,
@@ -23,6 +34,13 @@ import {
 } from '../data/calendarEvents.js'
 import DrawerHeader from './DrawerHeader.jsx'
 import { formatDate } from './calendarSchedulerUtils.js'
+import {
+  buildEmailUrl,
+  buildSmsUrl,
+  createEventContactMessage,
+  getEventContacts,
+} from '../utils/calendarContactActions.js'
+import { formatPhoneNumber } from '../../../utils/phoneNumbers.js'
 
 function DetailRow({ icon, label, children }) {
   return (
@@ -33,6 +51,103 @@ function DetailRow({ icon, label, children }) {
         <Typography variant="body2" fontWeight={650}>{children || 'Unassigned'}</Typography>
       </Box>
     </Box>
+  )
+}
+
+function ContactDetailRow({ contact, onClick }) {
+  return (
+    <ButtonBase
+      className="activity-detail__contact-row"
+      onClick={() => onClick(contact)}
+      disabled={!contact.name}
+      aria-label={contact.name ? `Contact ${contact.role} ${contact.name}` : undefined}
+    >
+      <Box className="activity-detail__row-icon"><EngineeringRoundedIcon /></Box>
+      <Box className="activity-detail__contact-copy">
+        <Typography variant="caption" color="text.secondary">{contact.role}</Typography>
+        <Typography variant="body2" fontWeight={650}>{contact.name || 'Unassigned'}</Typography>
+        {contact.name && (
+          <Typography variant="caption" color="primary.main">Click to send email or SMS</Typography>
+        )}
+      </Box>
+      {contact.name && <MailOutlineRoundedIcon className="activity-detail__contact-action" />}
+    </ButtonBase>
+  )
+}
+
+function ContactActionDialog({ contact, eventProps, eventLabel, message, onMessageChange, onClose }) {
+  if (!contact) return null
+
+  const subject = `Valtrim Job #${eventProps.jobCode} · ${eventLabel}`
+  const emailUrl = buildEmailUrl(contact.email, subject, message)
+  const smsUrl = buildSmsUrl(contact.phone, message)
+
+  return (
+    <Dialog open onClose={onClose} fullWidth maxWidth="sm">
+      <DialogTitle sx={{ pb: 1 }}>
+        <Typography variant="h6" component="div" fontWeight={750}>Contact {contact.name}</Typography>
+        <Typography variant="body2" color="text.secondary">{contact.role}</Typography>
+      </DialogTitle>
+      <DialogContent sx={{ pt: '12px !important' }}>
+        <Stack spacing={2}>
+          <Box className="contact-action-dialog__channels">
+            <Box>
+              <MailOutlineRoundedIcon fontSize="small" />
+              <Box>
+                <Typography variant="caption" color="text.secondary">Email</Typography>
+                <Typography variant="body2">{contact.email || 'No email registered'}</Typography>
+              </Box>
+            </Box>
+            <Box>
+              <PhoneOutlinedIcon fontSize="small" />
+              <Box>
+                <Typography variant="caption" color="text.secondary">Mobile phone</Typography>
+                <Typography variant="body2">
+                  {contact.phone ? formatPhoneNumber(contact.phone) : 'No mobile number registered'}
+                </Typography>
+              </Box>
+            </Box>
+          </Box>
+
+          {!emailUrl && !smsUrl && (
+            <Alert severity="warning">
+              Add an email address or mobile phone number to this contact before sending a message.
+            </Alert>
+          )}
+
+          <TextField
+            label="Message"
+            value={message}
+            onChange={(event) => onMessageChange(event.target.value)}
+            multiline
+            minRows={5}
+            fullWidth
+          />
+        </Stack>
+      </DialogContent>
+      <DialogActions sx={{ px: 3, pb: 2.5, gap: 0.5 }}>
+        <Button color="inherit" onClick={onClose}>Cancel</Button>
+        <Button
+          component={emailUrl ? 'a' : 'button'}
+          href={emailUrl || undefined}
+          disabled={!emailUrl}
+          variant="outlined"
+          startIcon={<MailOutlineRoundedIcon />}
+        >
+          Email
+        </Button>
+        <Button
+          component={smsUrl ? 'a' : 'button'}
+          href={smsUrl || undefined}
+          disabled={!smsUrl}
+          variant="contained"
+          startIcon={<SmsOutlinedIcon />}
+          disableElevation
+        >
+          SMS
+        </Button>
+      </DialogActions>
+    </Dialog>
   )
 }
 
@@ -176,12 +291,34 @@ function StageScheduleDetail({ activityType, schedule, lotStart, lotEnd, lotNumb
             tone={tone}
           />
         )}
+        {schedule.lockUp && (
+          <ScheduleRow
+            label="Lock up"
+            lotStart={lotStart}
+            lotEnd={lotEnd}
+            lotNumbers={lotNumbers}
+            date={schedule.lockUpDate}
+            dateOwner={schedule.lockUpDateOwner}
+            note={schedule.lockUpDateNote}
+            tone={tone}
+          />
+        )}
       </Stack>
     </Box>
   )
 }
 
-export default function ActivityDetail({ event, onClose, onEdit }) {
+export default function ActivityDetail({
+  event,
+  jobs = [],
+  people = [],
+  builderContacts = [],
+  onClose,
+  onEdit,
+}) {
+  const [contactTarget, setContactTarget] = useState(null)
+  const [contactMessage, setContactMessage] = useState('')
+
   if (!event) return null
 
   const props = event.extendedProps
@@ -190,6 +327,12 @@ export default function ActivityDetail({ event, onClose, onEdit }) {
   const phaseLotNumbers = props.phaseLotNumbers ?? props.lotNumbers ?? []
   const lotStart = phaseLotNumbers[0] ?? props.lotStart
   const lotEnd = phaseLotNumbers.at(-1) ?? props.lotEnd
+  const eventContacts = getEventContacts(props, jobs, people, builderContacts)
+
+  const openContact = (contact) => {
+    setContactTarget(contact)
+    setContactMessage(createEventContactMessage(props, type.label, contact.name))
+  }
 
   return (
     <Box className="activity-drawer__layout">
@@ -212,8 +355,8 @@ export default function ActivityDetail({ event, onClose, onEdit }) {
           <DetailRow icon={<LocationOnOutlinedIcon />} label="Community">{props.community}</DetailRow>
           <DetailRow icon={<LayersOutlinedIcon />} label="Phase">{props.phase}</DetailRow>
           <DetailRow icon={<ApartmentRoundedIcon />} label="Building">{props.building}</DetailRow>
-          <DetailRow icon={<EngineeringRoundedIcon />} label="Foreman / Supervisor">{props.foreman}</DetailRow>
-          <DetailRow icon={<EngineeringRoundedIcon />} label="Jobsite Superintendent">{props.superintendent}</DetailRow>
+          <ContactDetailRow contact={eventContacts.supervisor} onClick={openContact} />
+          <ContactDetailRow contact={eventContacts.superintendent} onClick={openContact} />
         </Box>
 
         <Divider />
@@ -251,6 +394,15 @@ export default function ActivityDetail({ event, onClose, onEdit }) {
           Configure {type.shortLabel}
         </Button>
       </Box>
+
+      <ContactActionDialog
+        contact={contactTarget}
+        eventProps={props}
+        eventLabel={type.label}
+        message={contactMessage}
+        onMessageChange={setContactMessage}
+        onClose={() => setContactTarget(null)}
+      />
     </Box>
   )
 }

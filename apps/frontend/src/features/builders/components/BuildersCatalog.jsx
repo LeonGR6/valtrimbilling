@@ -36,9 +36,14 @@ import EditOutlinedIcon from '@mui/icons-material/EditOutlined'
 import FilterListRoundedIcon from '@mui/icons-material/FilterListRounded'
 import MailOutlineRoundedIcon from '@mui/icons-material/MailOutlineRounded'
 import MoreHorizRoundedIcon from '@mui/icons-material/MoreHorizRounded'
-import PhoneOutlinedIcon from '@mui/icons-material/PhoneOutlined'
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
 import ResponsiveCreateButton from '../../../components/common/ResponsiveCreateButton'
+import { FormPhoneInput } from '../../../components/common/InternationalPhoneInput.jsx'
+import {
+  formatPhoneNumber,
+  getNationalPhoneNumber,
+  getPhoneCountry,
+} from '../../../utils/phoneNumbers.js'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { Controller, useForm, useWatch } from 'react-hook-form'
 import { useBuilders } from '../context/useBuilders.js'
@@ -61,6 +66,17 @@ function OptionalLabel({ children }) {
   )
 }
 
+function getBuilderFormValues(builder) {
+  if (!builder) return { ...emptyBuilder, contactPhoneCountry: 'US' }
+
+  const contactPhoneCountry = getPhoneCountry(builder.contactPhone)
+  return {
+    ...builder,
+    contactPhoneCountry,
+    contactPhone: getNationalPhoneNumber(builder.contactPhone, contactPhoneCountry),
+  }
+}
+
 function BuilderDialog({ open, builder, builders, onClose, onSave }) {
   const schema = useMemo(
     () => createBuilderSchema(builders, builder?.id),
@@ -73,7 +89,7 @@ function BuilderDialog({ open, builder, builders, onClose, onSave }) {
     formState: { errors },
   } = useForm({
     resolver: zodResolver(schema),
-    defaultValues: builder ? { ...builder } : { ...emptyBuilder },
+    defaultValues: getBuilderFormValues(builder),
     mode: 'onTouched',
     reValidateMode: 'onChange',
   })
@@ -171,7 +187,7 @@ function BuilderDialog({ open, builder, builders, onClose, onSave }) {
                 fullWidth
                 slotProps={{ htmlInput: { maxLength: 100 } }}
               />
-              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
+              <Stack spacing={2}>
                 <TextField
                   label="Email"
                   type="email"
@@ -190,23 +206,12 @@ function BuilderDialog({ open, builder, builders, onClose, onSave }) {
                     htmlInput: { maxLength: 160 },
                   }}
                 />
-                <TextField
+                <FormPhoneInput
+                  control={control}
+                  name="contactPhone"
                   label="Phone"
-                  type="tel"
-                  {...register('contactPhone')}
-                  error={Boolean(errors.contactPhone)}
-                  helperText={errors.contactPhone?.message ?? 'Include the area code.'}
-                  fullWidth
-                  slotProps={{
-                    input: {
-                      startAdornment: (
-                        <InputAdornment position="start">
-                          <PhoneOutlinedIcon fontSize="small" />
-                        </InputAdornment>
-                      ),
-                    },
-                    htmlInput: { maxLength: 30 },
-                  }}
+                  error={errors.contactPhone}
+                  helperText="Optional · choose +1 or +52"
                 />
               </Stack>
             </Stack>
@@ -584,7 +589,7 @@ export default function BuildersCatalog({
                     </TableCell>
                     <TableCell>
                       <Typography variant="body2" color="text.secondary" noWrap>
-                        {builder.contactPhone || 'No phone'}
+                        {builder.contactPhone ? formatPhoneNumber(builder.contactPhone) : 'No phone'}
                       </Typography>
                     </TableCell>
                     <TableCell sx={{ maxWidth: 300 }}>

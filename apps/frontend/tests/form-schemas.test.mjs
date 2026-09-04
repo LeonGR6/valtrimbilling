@@ -24,6 +24,7 @@ import {
 } from '../src/features/sequence-sheets/utils/phaseBuildingCodes.js'
 import { parseLotRange } from '../src/features/sequence-sheets/utils/lotRange.js'
 import { initialContacts } from '../src/features/builder-contacts/data/builderContacts.js'
+import { createBuilderContactSchema } from '../src/features/builder-contacts/schemas/builderContactSchema.js'
 import { initialPeople } from '../src/features/people/data/people.js'
 import { personSchema } from '../src/features/people/schemas/personSchema.js'
 import { priceSchema } from '../src/features/plan-pricing/schemas/priceSchema.js'
@@ -47,7 +48,7 @@ test('builder schema normalizes values before saving', () => {
     address: 'Main Street',
     contactName: 'María López',
     contactEmail: 'contact@example.com',
-    contactPhone: '(415) 555-0128',
+    contactPhone: '+14155550128',
     isActive: true,
   })
 })
@@ -423,12 +424,46 @@ test('person schema normalizes contact information', () => {
 
   assert.deepEqual(result, {
     name: 'María López',
-    phone: '(951) 555-0184',
+    phone: '+19515550184',
     officePhone: '',
     email: 'maria.lopez@example.com',
     types: ['SUPERVISOR'],
     territory: 'Inland Empire',
   })
+})
+
+test('person schema stores Mexico numbers in E.164 format', () => {
+  const result = personSchema.parse({
+    name: 'María López',
+    phone: '55 1234 5678',
+    phoneCountry: 'MX',
+    officePhone: '+1 (714) 555-0100',
+    officePhoneCountry: 'MX',
+    email: 'maria@example.com',
+    types: ['SUPERVISOR'],
+    territory: 'México',
+  })
+
+  assert.equal(result.phone, '+525512345678')
+  assert.equal(result.officePhone, '+17145550100')
+  assert.equal('phoneCountry' in result, false)
+})
+
+test('builder contact schema stores selected phone country without guessing', () => {
+  const result = createBuilderContactSchema([], null).parse({
+    name: 'Daniel Torres',
+    type: 'JOBSITE_SUPERINTENDENT',
+    builder: 'TRUMARK',
+    email: 'daniel@example.com',
+    phone: '55 1234 5678',
+    phoneCountry: 'MX',
+    officePhone: '',
+    officePhoneCountry: 'US',
+    notes: '',
+  })
+
+  assert.equal(result.phone, '+525512345678')
+  assert.equal(result.officePhone, '')
 })
 
 test('person schema requires and normalizes a territory for Valtrim supervisors', () => {

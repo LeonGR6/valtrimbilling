@@ -144,6 +144,10 @@ export function createEmptyProductionDraft(date = new Date().toISOString().split
     hwSplitPhase: false,
     hwSplitParts: [],
     hwLockUp: false,
+    hwLockUpDate: '',
+    hwLockUpDateOwner: '',
+    hwLockUpDateNote: '',
+    hwLockUpDateHistory: [],
   }
 }
 
@@ -203,6 +207,10 @@ function buildProductionSchedule(values) {
       splitPhase: values.hwSplitPhase,
       splitParts: values.hwSplitParts,
       lockUp: values.hwLockUp,
+      lockUpDate: values.hwLockUpDate,
+      lockUpDateOwner: values.hwLockUpDateOwner,
+      lockUpDateNote: values.hwLockUpDateNote,
+      lockUpDateHistory: values.hwLockUpDateHistory,
     },
   }
 }
@@ -257,6 +265,11 @@ const stageFieldMap = {
     installDateOwner: null,
     installDateNote: null,
     installDateHistory: null,
+    lockUp: 'hwLockUp',
+    lockUpDate: 'hwLockUpDate',
+    lockUpDateOwner: 'hwLockUpDateOwner',
+    lockUpDateNote: 'hwLockUpDateNote',
+    lockUpDateHistory: 'hwLockUpDateHistory',
     splitPhase: 'hwSplitPhase',
     splitParts: 'hwSplitParts',
   },
@@ -320,6 +333,22 @@ export function recordProductionDateHistory(values, previousEvent, changedAt = n
         {
           date: values[fields.installDate],
           dateOwner: values[fields.installDateOwner],
+        },
+        changedAt,
+      )
+    }
+
+    if (fields.lockUp && previousStage.lockUp && values[fields.lockUp]) {
+      nextValues[fields.lockUpDateHistory] = appendPreviousDate(
+        values[fields.lockUpDateHistory],
+        {
+          date: previousStage.lockUpDate,
+          dateOwner: previousStage.lockUpDateOwner,
+          note: previousStage.lockUpDateNote,
+        },
+        {
+          date: values[fields.lockUpDate],
+          dateOwner: values[fields.lockUpDateOwner],
         },
         changedAt,
       )
@@ -409,6 +438,7 @@ export function createProductionCalendarEvents(values, groupId, stamp = Date.now
           splitPhase: Boolean(stage.splitPhase),
           splitParts: stage.splitParts ?? [],
           lockUp: Boolean(stage.lockUp),
+          lockUpDate: stage.lockUpDate ?? '',
           variant: stage.splitPhase ? 'division' : 'base',
         },
       }
@@ -437,6 +467,34 @@ export function createProductionCalendarEvents(values, groupId, stamp = Date.now
           splitParts: stage.splitParts ?? [],
           lockUp: Boolean(stage.lockUp),
           variant: 'install-only',
+        },
+      })
+    }
+
+    if (type.value === 'HW' && stage.lockUp) {
+      stageEvents.push({
+        id: `${groupId}-${type.value.toLowerCase()}-lock-up-${stamp}`,
+        groupId,
+        title: `${type.label} LOCK UP • ${getLotsLabel(values.lotStart, values.lotEnd, values.lotNumbers)}`,
+        start: stage.lockUpDate,
+        allDay: true,
+        extendedProps: {
+          ...commonProps,
+          activityType: type.value,
+          dateOwner: stage.lockUpDateOwner,
+          dateNote: stage.lockUpDateNote ?? '',
+          dateHistory: stage.lockUpDateHistory ?? [],
+          lotStart: values.lotStart,
+          lotEnd: values.lotEnd,
+          lotNumbers: values.lotNumbers,
+          orderMaterial: false,
+          installOnly: false,
+          installDate: '',
+          splitPhase: Boolean(stage.splitPhase),
+          splitParts: stage.splitParts ?? [],
+          lockUp: true,
+          lockUpDate: stage.lockUpDate,
+          variant: 'lock-up',
         },
       })
     }
@@ -505,6 +563,10 @@ export function createDraftFromProductionEvent(event) {
       history: (part.history ?? []).map((entry) => ({ ...entry })),
     })),
     hwLockUp: Boolean(schedule.HW.lockUp),
+    hwLockUpDate: schedule.HW.lockUpDate ?? '',
+    hwLockUpDateOwner: schedule.HW.lockUpDateOwner ?? '',
+    hwLockUpDateNote: schedule.HW.lockUpDateNote ?? '',
+    hwLockUpDateHistory: (schedule.HW.lockUpDateHistory ?? []).map((entry) => ({ ...entry })),
   }
 }
 

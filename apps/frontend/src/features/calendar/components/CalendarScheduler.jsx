@@ -3,6 +3,8 @@ import { Box, Drawer, Snackbar } from '@mui/material'
 import { useColorScheme } from '@mui/material/styles'
 import { useJobs } from '../../jobs/context/useJobs.js'
 import { useBuilders } from '../../builders/context/useBuilders.js'
+import { usePeople } from '../../people/context/usePeople.js'
+import { useBuilderContacts } from '../../builder-contacts/context/useBuilderContacts.js'
 import {
   createDraftFromProductionEvent,
   createEmptyProductionDraft,
@@ -23,6 +25,8 @@ export default function CalendarScheduler() {
   const calendarRef = useRef(null)
   const { jobs } = useJobs()
   const { builders } = useBuilders()
+  const { people } = usePeople()
+  const { contacts: builderContacts } = useBuilderContacts()
   const { mode, systemMode } = useColorScheme()
   const resolvedColorMode = mode === 'system' ? systemMode : mode
   const calendarColorMode = resolvedColorMode === 'dark' ? 'dark' : 'light'
@@ -107,7 +111,7 @@ export default function CalendarScheduler() {
       && Number(item.extendedProps.lotEnd) === Number(previousProps?.lotEnd)
     )) ?? nextEvents.find((item) => (
       item.extendedProps.activityType === savedActivityType
-      && item.extendedProps.variant !== 'install-only'
+      && !['install-only', 'lock-up'].includes(item.extendedProps.variant)
     )) ?? nextEvents[0]
     setEvents((current) => {
       const withoutEditedGroup = editingGroupId
@@ -210,7 +214,14 @@ export default function CalendarScheduler() {
         }}
       >
         {drawerMode === 'detail' ? (
-          <ActivityDetail event={selectedEvent} onClose={closeDrawer} onEdit={openEditDrawer} />
+          <ActivityDetail
+            event={selectedEvent}
+            jobs={jobs}
+            people={people}
+            builderContacts={builderContacts}
+            onClose={closeDrawer}
+            onEdit={openEditDrawer}
+          />
         ) : (
           <ActivityForm
             jobs={jobs}

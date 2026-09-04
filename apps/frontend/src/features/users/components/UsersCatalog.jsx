@@ -42,9 +42,14 @@ import MailOutlineRoundedIcon from '@mui/icons-material/MailOutlineRounded'
 import MoreHorizRoundedIcon from '@mui/icons-material/MoreHorizRounded'
 import PendingActionsRoundedIcon from '@mui/icons-material/PendingActionsRounded'
 import PersonOffRoundedIcon from '@mui/icons-material/PersonOffRounded'
-import PhoneOutlinedIcon from '@mui/icons-material/PhoneOutlined'
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
 import ResponsiveCreateButton from '../../../components/common/ResponsiveCreateButton'
+import { FormPhoneInput } from '../../../components/common/InternationalPhoneInput.jsx'
+import {
+  formatPhoneNumber,
+  getNationalPhoneNumber,
+  getPhoneCountry,
+} from '../../../utils/phoneNumbers.js'
 import {
   emptyUser,
   initialUsers,
@@ -65,6 +70,17 @@ function getInitials(name) {
     .map((part) => part[0])
     .join('')
     .toUpperCase()
+}
+
+function getUserFormValues(user) {
+  if (!user) return { ...emptyUser, phoneCountry: 'US' }
+
+  const phoneCountry = getPhoneCountry(user.phone)
+  return {
+    ...user,
+    phoneCountry,
+    phone: getNationalPhoneNumber(user.phone, phoneCountry),
+  }
 }
 
 // Summary tile shown above the table. `color` is a theme palette key, so the
@@ -116,17 +132,7 @@ function UserDialog({ user, users, onClose, onSave }) {
     formState: { errors },
   } = useForm({
     resolver: zodResolver(createUserSchema(users, user?.id ?? null)),
-    defaultValues: user
-      ? {
-          name: user.name,
-          email: user.email,
-          phone: user.phone,
-          role: user.role,
-          allProjects: user.allProjects,
-          projectAccess: [...user.projectAccess],
-          isActive: user.isActive,
-        }
-      : { ...emptyUser },
+    defaultValues: getUserFormValues(user),
     mode: 'onTouched',
     reValidateMode: 'onChange',
   })
@@ -189,23 +195,12 @@ function UserDialog({ user, users, onClose, onSave }) {
             }}
           />
 
-          <TextField
+          <FormPhoneInput
+            control={control}
+            name="phone"
             label="Phone number"
-            type="tel"
-            {...register('phone')}
-            error={Boolean(errors.phone)}
-            helperText={errors.phone?.message ?? 'Optional'}
-            fullWidth
-            slotProps={{
-              input: {
-                startAdornment: (
-                  <InputAdornment position="start">
-                    <PhoneOutlinedIcon fontSize="small" />
-                  </InputAdornment>
-                ),
-              },
-              htmlInput: { maxLength: 30 },
-            }}
+            error={errors.phone}
+            helperText="Optional · choose +1 or +52"
           />
 
           <Controller
@@ -613,7 +608,7 @@ export default function UsersCatalog() {
                     </TableCell>
                     <TableCell>
                       <Typography variant="body2" color="text.secondary" noWrap>
-                        {user.phone || 'No phone'}
+                        {user.phone ? formatPhoneNumber(user.phone) : 'No phone'}
                       </Typography>
                     </TableCell>
                     <TableCell sx={{ maxWidth: 340 }}>

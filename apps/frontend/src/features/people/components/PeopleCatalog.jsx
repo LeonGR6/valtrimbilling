@@ -27,19 +27,23 @@ import {
   TextField,
   Typography,
 } from '@mui/material'
-import ContactPhoneRoundedIcon from '@mui/icons-material/ContactPhoneRounded'
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined'
 import MailOutlineRoundedIcon from '@mui/icons-material/MailOutlineRounded'
 import MoreHorizRoundedIcon from '@mui/icons-material/MoreHorizRounded'
-import PhoneOutlinedIcon from '@mui/icons-material/PhoneOutlined'
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
 import ResponsiveCreateButton from '../../../components/common/ResponsiveCreateButton'
+import { FormPhoneInput } from '../../../components/common/InternationalPhoneInput.jsx'
+import {
+  formatPhoneNumber,
+  getNationalPhoneNumber,
+  getPhoneCountry,
+} from '../../../utils/phoneNumbers.js'
 import {
   emptyPerson,
-  initialPeople,
   personTypeLabels,
 } from '../data/people.js'
+import { usePeople } from '../context/usePeople.js'
 import { personSchema } from '../schemas/personSchema.js'
 
 function getInitials(name) {
@@ -52,23 +56,35 @@ function getInitials(name) {
     .toUpperCase()
 }
 
+function getPersonFormValues(person) {
+  if (!person) {
+    return {
+      ...emptyPerson,
+      phoneCountry: 'US',
+      officePhoneCountry: 'US',
+    }
+  }
+
+  const phoneCountry = getPhoneCountry(person.phone)
+  const officePhoneCountry = getPhoneCountry(person.officePhone)
+  return {
+    ...person,
+    phoneCountry,
+    phone: getNationalPhoneNumber(person.phone, phoneCountry),
+    officePhoneCountry,
+    officePhone: getNationalPhoneNumber(person.officePhone, officePhoneCountry),
+  }
+}
+
 function PersonDialog({ person, onClose, onSave }) {
   const {
+    control,
     register,
     handleSubmit,
     formState: { errors },
   } = useForm({
     resolver: zodResolver(personSchema),
-    defaultValues: person
-      ? {
-          name: person.name,
-          phone: person.phone,
-          officePhone: person.officePhone,
-          email: person.email,
-          types: [...person.types],
-          territory: person.territory ?? '',
-        }
-      : { ...emptyPerson },
+    defaultValues: getPersonFormValues(person),
     mode: 'onTouched',
     reValidateMode: 'onChange',
   })
@@ -104,44 +120,20 @@ function PersonDialog({ person, onClose, onSave }) {
             slotProps={{ htmlInput: { maxLength: 100 } }}
           />
 
-          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
-            <TextField
-              label="Phone number"
-              type="tel"
-              {...register('phone')}
-              error={Boolean(errors.phone)}
-              helperText={errors.phone?.message ?? 'Optional'}
-              fullWidth
-              slotProps={{
-                input: {
-                  startAdornment: (
-                    <InputAdornment position="start">
-                      <PhoneOutlinedIcon fontSize="small" />
-                    </InputAdornment>
-                  ),
-                },
-                htmlInput: { maxLength: 30 },
-              }}
-            />
-            <TextField
-              label="Office phone number"
-              type="tel"
-              {...register('officePhone')}
-              error={Boolean(errors.officePhone)}
-              helperText={errors.officePhone?.message ?? 'Optional'}
-              fullWidth
-              slotProps={{
-                input: {
-                  startAdornment: (
-                    <InputAdornment position="start">
-                      <ContactPhoneRoundedIcon fontSize="small" />
-                    </InputAdornment>
-                  ),
-                },
-                htmlInput: { maxLength: 30 },
-              }}
-            />
-          </Stack>
+          <FormPhoneInput
+            control={control}
+            name="phone"
+            label="Phone number"
+            error={errors.phone}
+            helperText="Optional · choose +1 or +52"
+          />
+          <FormPhoneInput
+            control={control}
+            name="officePhone"
+            label="Office phone number"
+            error={errors.officePhone}
+            helperText="Optional · choose +1 or +52"
+          />
 
           <TextField
             label="Email"
@@ -191,7 +183,7 @@ function PersonDialog({ person, onClose, onSave }) {
 }
 
 export default function PeopleCatalog() {
-  const [people, setPeople] = useState(initialPeople)
+  const { people, setPeople } = usePeople()
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(0)
   const [rowsPerPage, setRowsPerPage] = useState(5)
@@ -393,12 +385,12 @@ export default function PeopleCatalog() {
                     </TableCell>
                     <TableCell>
                       <Typography variant="body2" color="text.secondary" noWrap>
-                        {person.phone || 'No phone'}
+                        {person.phone ? formatPhoneNumber(person.phone) : 'No phone'}
                       </Typography>
                     </TableCell>
                     <TableCell>
                       <Typography variant="body2" color="text.secondary" noWrap>
-                        {person.officePhone || 'No office phone'}
+                        {person.officePhone ? formatPhoneNumber(person.officePhone) : 'No office phone'}
                       </Typography>
                     </TableCell>
                     <TableCell sx={{ maxWidth: 340 }}>

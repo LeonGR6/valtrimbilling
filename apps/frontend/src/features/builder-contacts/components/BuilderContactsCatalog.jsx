@@ -31,15 +31,19 @@ import {
   TextField,
   Typography,
 } from '@mui/material'
-import BusinessRoundedIcon from '@mui/icons-material/BusinessRounded'
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined'
 import FilterListRoundedIcon from '@mui/icons-material/FilterListRounded'
 import MailOutlineRoundedIcon from '@mui/icons-material/MailOutlineRounded'
 import MoreHorizRoundedIcon from '@mui/icons-material/MoreHorizRounded'
-import PhoneOutlinedIcon from '@mui/icons-material/PhoneOutlined'
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
 import ResponsiveCreateButton from '../../../components/common/ResponsiveCreateButton'
+import { FormPhoneInput } from '../../../components/common/InternationalPhoneInput.jsx'
+import {
+  formatPhoneNumber,
+  getNationalPhoneNumber,
+  getPhoneCountry,
+} from '../../../utils/phoneNumbers.js'
 import {
   builderLabels,
   builderOptions,
@@ -47,8 +51,8 @@ import {
   contactTypeLabels,
   contactTypeOptions,
   emptyContact,
-  initialContacts,
 } from '../data/builderContacts.js'
+import { useBuilderContacts } from '../context/useBuilderContacts.js'
 import { createBuilderContactSchema } from '../schemas/builderContactSchema.js'
 
 function getInitials(name) {
@@ -61,6 +65,26 @@ function getInitials(name) {
     .toUpperCase()
 }
 
+function getContactFormValues(contact) {
+  if (!contact) {
+    return {
+      ...emptyContact,
+      phoneCountry: 'US',
+      officePhoneCountry: 'US',
+    }
+  }
+
+  const phoneCountry = getPhoneCountry(contact.phone)
+  const officePhoneCountry = getPhoneCountry(contact.officePhone)
+  return {
+    ...contact,
+    phoneCountry,
+    phone: getNationalPhoneNumber(contact.phone, phoneCountry),
+    officePhoneCountry,
+    officePhone: getNationalPhoneNumber(contact.officePhone, officePhoneCountry),
+  }
+}
+
 function ContactDialog({ contact, contacts, onClose, onSave }) {
   const {
     control,
@@ -69,7 +93,7 @@ function ContactDialog({ contact, contacts, onClose, onSave }) {
     formState: { errors },
   } = useForm({
     resolver: zodResolver(createBuilderContactSchema(contacts, contact?.id ?? null)),
-    defaultValues: contact ? { ...contact } : { ...emptyContact },
+    defaultValues: getContactFormValues(contact),
     mode: 'onTouched',
     reValidateMode: 'onChange',
   })
@@ -175,44 +199,20 @@ function ContactDialog({ contact, contacts, onClose, onSave }) {
             }}
           />
 
-          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
-            <TextField
-              label="Phone number"
-              type="tel"
-              {...register('phone')}
-              error={Boolean(errors.phone)}
-              helperText={errors.phone?.message ?? 'Optional'}
-              fullWidth
-              slotProps={{
-                input: {
-                  startAdornment: (
-                    <InputAdornment position="start">
-                      <PhoneOutlinedIcon fontSize="small" />
-                    </InputAdornment>
-                  ),
-                },
-                htmlInput: { maxLength: 30 },
-              }}
-            />
-            <TextField
-              label="Office phone number"
-              type="tel"
-              {...register('officePhone')}
-              error={Boolean(errors.officePhone)}
-              helperText={errors.officePhone?.message ?? 'Optional'}
-              fullWidth
-              slotProps={{
-                input: {
-                  startAdornment: (
-                    <InputAdornment position="start">
-                      <BusinessRoundedIcon fontSize="small" />
-                    </InputAdornment>
-                  ),
-                },
-                htmlInput: { maxLength: 30 },
-              }}
-            />
-          </Stack>
+          <FormPhoneInput
+            control={control}
+            name="phone"
+            label="Phone number"
+            error={errors.phone}
+            helperText="Optional · choose +1 or +52"
+          />
+          <FormPhoneInput
+            control={control}
+            name="officePhone"
+            label="Office phone number"
+            error={errors.officePhone}
+            helperText="Optional · choose +1 or +52"
+          />
 
           <TextField
             label="Notes"
@@ -239,7 +239,7 @@ function ContactDialog({ contact, contacts, onClose, onSave }) {
 }
 
 export default function BuilderContactsCatalog() {
-  const [contacts, setContacts] = useState(initialContacts)
+  const { contacts, setContacts } = useBuilderContacts()
   const [search, setSearch] = useState('')
   const [typeFilter, setTypeFilter] = useState('all')
   const [builderFilter, setBuilderFilter] = useState('all')
@@ -503,7 +503,11 @@ export default function BuilderContactsCatalog() {
                     </TableCell>
                     <TableCell>
                       <Typography variant="body2" color="text.secondary" noWrap>
-                        {contact.phone || contact.officePhone || 'No phone'}
+                        {contact.phone
+                          ? formatPhoneNumber(contact.phone)
+                          : contact.officePhone
+                            ? formatPhoneNumber(contact.officePhone)
+                            : 'No phone'}
                       </Typography>
                     </TableCell>
                     <TableCell align="right">

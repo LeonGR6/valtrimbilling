@@ -12,6 +12,15 @@
     "build": "npm run build --workspace=@valtrimbilling/frontend",
     "lint": "npm run lint --workspace=@valtrimbilling/frontend",
     "test": "npm run test --workspace=@valtrimbilling/frontend",
-    "preview": "npm run preview --workspace=@valtrimbilling/frontend"
+    "preview": "npm run preview --workspace=@valtrimbilling/frontend",
+    "db:link": "npm run link --workspace=@valtrimbilling/backend --",
+    "db:new": "npm run migration:new --workspace=@valtrimbilling/backend --",
+    "db:push": "npm run db:push --workspace=@valtrimbilling/backend --",
+    "db:diff": "npm run db:diff --workspace=@valtrimbilling/backend --",
+    "db:lint": "npm run db:lint --workspace=@valtrimbilling/backend --",
+    "fn:new": "npm run functions:new --workspace=@valtrimbilling/backend --",
+    "fn:deploy": "npm run functions:deploy --workspace=@valtrimbilling/backend --",
+    "fn:check": "npm run functions:check --workspace=@valtrimbilling/backend",
+    "types:gen": "npm run types:gen --workspace=@valtrimbilling/backend"
   }
 }

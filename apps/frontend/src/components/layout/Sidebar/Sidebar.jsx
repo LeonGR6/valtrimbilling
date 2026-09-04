@@ -70,7 +70,7 @@ const navigationSections = [
   {
     label: 'CUSTOMER SERVICE',
     items: [
-      { label: 'Customer Service', icon: SupportAgentIcon }
+      { label: 'Customer Service', path: '/customer-service', icon: SupportAgentIcon }
     ]
   },
   {

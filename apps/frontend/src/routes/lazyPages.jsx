@@ -16,3 +16,4 @@ export const ForgotPasswordPage = lazy(() => import('../pages/Auth/ForgotPasswor
 export const ResetPasswordPage = lazy(() => import('../pages/Auth/ResetPassword'))
 export const UsersPage = lazy(() => import('../pages/Users'))
 export const BuilderContactsPage = lazy(() => import('../pages/BuilderContacts'))
+export const CustomerServicePage = lazy(() => import('../pages/CustomerService'))

@@ -1,0 +1,21 @@
+{
+  "name": "@valtrimbilling/backend",
+  "private": true,
+  "version": "0.0.0",
+  "scripts": {
+    "link": "supabase link",
+    "migration:new": "supabase migration new",
+    "db:push": "supabase db push",
+    "db:diff": "supabase db diff --linked",
+    "db:lint": "supabase db lint --linked",
+    "functions:new": "supabase functions new",
+    "functions:deploy": "supabase functions deploy --use-api",
+    "functions:check": "deno check --node-modules-dir=auto \"supabase/functions/**/*.ts\"",
+    "types:gen": "supabase gen types typescript --linked --schema public > supabase/functions/_shared/database.types.ts",
+    "secrets:set": "supabase secrets set"
+  },
+  "devDependencies": {
+    "deno": "^2.9.6",
+    "supabase": "2.116.0"
+  }
+}

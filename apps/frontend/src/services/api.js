@@ -1,3 +1,8 @@
 // Central integration point for the future Supabase/API client.
 // Catalog screens currently use local in-memory data only.
-export const api = null
+import { createClient } from '@supabase/supabase-js'
+
+const url = import.meta.env.VITE_SUPABASE_URL
+const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
+
+export const supabase = createClient(url, anonKey)

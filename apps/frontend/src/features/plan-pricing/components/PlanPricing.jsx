@@ -32,7 +32,9 @@ import LayersRoundedIcon from '@mui/icons-material/LayersRounded'
 import LocationCityRoundedIcon from '@mui/icons-material/LocationCityRounded'
 import ReceiptLongRoundedIcon from '@mui/icons-material/ReceiptLongRounded'
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
+import ConstructionRoundedIcon from '@mui/icons-material/ConstructionRounded'
 import { initialBuilders } from '../../builders/data/builders.js'
+import { useBuilderDrawSchedules } from '../../builder-draw-schedules/context/useBuilderDrawSchedules.js'
 import JobModuleNavigation from '../../jobs/components/JobModuleNavigation.jsx'
 import {
   getJobOptionCount,
@@ -46,7 +48,10 @@ import {
   jobPlanPricingPath,
   jobPlansOptionsPath,
 } from '../../jobs/utils/jobRoutes.js'
-import { priceSchema } from '../schemas/priceSchema.js'
+import {
+  createHardwarePriceSchema,
+  priceSchema,
+} from '../schemas/priceSchema.js'
 
 const currencyFormatter = new Intl.NumberFormat('en-US', {
   style: 'currency',
@@ -64,13 +69,24 @@ function formatPrice(value) {
 
 function PriceDialog({ target, onClose, onSave }) {
   const isPlan = target.type === 'plan'
-  const currentPrice = isPlan ? target.plan.price : target.option.price
+  const isHardware = target.type === 'hardware'
+  const currentPrice = isPlan
+    ? target.plan.price
+    : isHardware
+      ? target.plan.hardwarePrice
+      : target.option.price
+  const schema = useMemo(
+    () => isHardware
+      ? createHardwarePriceSchema(target.plan.price)
+      : priceSchema,
+    [isHardware, target.plan.price],
+  )
   const {
     register,
     handleSubmit,
     formState: { errors },
   } = useForm({
-    resolver: zodResolver(priceSchema),
+    resolver: zodResolver(schema),
     defaultValues: {
       amount: hasPrice(currentPrice) ? String(currentPrice) : '',
     },
@@ -90,10 +106,14 @@ function PriceDialog({ target, onClose, onSave }) {
     >
       <DialogTitle sx={{ pb: 1 }}>
         <Typography variant="h6" component="div" fontWeight={700}>
-          {isPlan ? `Edit Plan ${target.plan.code} price` : 'Edit option price'}
+          {isPlan
+            ? `Edit Plan ${target.plan.code} price`
+            : isHardware
+              ? `Edit Plan ${target.plan.code} hardware price`
+              : 'Edit option price'}
         </Typography>
         <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-          {isPlan
+          {isPlan || isHardware
             ? target.plan.name || `Plan ${target.plan.code}`
             : `${target.option.code} · ${target.option.description}`}
         </Typography>
@@ -101,17 +121,33 @@ function PriceDialog({ target, onClose, onSave }) {
       <DialogContent sx={{ pt: '16px !important' }}>
         <TextField
           autoFocus
-          label={isPlan ? 'Base plan price' : 'Option price'}
+          label={isPlan
+            ? 'Base plan price'
+            : isHardware
+              ? 'Hardware price included in plan'
+              : 'Option price'}
           type="number"
           {...register('amount')}
           error={Boolean(errors.amount)}
-          helperText={errors.amount?.message ?? 'USD · Up to 2 decimal places.'}
+          helperText={
+            errors.amount?.message
+            ?? (isHardware && hasPrice(target.plan.price)
+              ? `USD · Maximum ${formatPrice(target.plan.price)}.`
+              : 'USD · Up to 2 decimal places.')
+          }
           fullWidth
           slotProps={{
             input: {
               startAdornment: <InputAdornment position="start">$</InputAdornment>,
             },
-            htmlInput: { min: 0, step: 0.01, inputMode: 'decimal' },
+            htmlInput: {
+              min: 0,
+              max: isHardware && hasPrice(target.plan.price)
+                ? target.plan.price
+                : undefined,
+              step: 0.01,
+              inputMode: 'decimal',
+            },
           }}
         />
       </DialogContent>
@@ -168,8 +204,21 @@ function JobField({ label, value }) {
   )
 }
 
-function PlanPriceCard({ builderId, plan, position, jobId, onEditPlan, onEditOption }) {
+function PlanPriceCard({
+  builderId,
+  plan,
+  position,
+  jobId,
+  separateHardwarePrice,
+  onEditPlan,
+  onEditHardware,
+  onEditOption,
+}) {
   const options = plan.options ?? []
+  const hardwareIsPriced = hasPrice(plan.hardwarePrice)
+  const drawBasePrice = hasPrice(plan.price) && hardwareIsPriced
+    ? plan.price - plan.hardwarePrice
+    : null
 
   return (
     <Card component="article" variant="outlined" sx={{ overflow: 'hidden' }}>
@@ -231,6 +280,23 @@ function PlanPriceCard({ builderId, plan, position, jobId, onEditPlan, onEditOpt
                 {formatPrice(plan.price)}
               </Typography>
             </Box>
+            {separateHardwarePrice && (
+              <Box sx={{ minWidth: 150 }}>
+                <Typography variant="caption" color="text.secondary" component="div">
+                  Hardware price · 100%
+                </Typography>
+                <Typography
+                  variant="h6"
+                  fontWeight={800}
+                  color={hardwareIsPriced ? 'text.primary' : 'warning.main'}
+                >
+                  {formatPrice(plan.hardwarePrice)}
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  Draw base: {formatPrice(drawBasePrice)}
+                </Typography>
+              </Box>
+            )}
             <Button
               size="small"
               variant="contained"
@@ -240,6 +306,17 @@ function PlanPriceCard({ builderId, plan, position, jobId, onEditPlan, onEditOpt
             >
               Edit plan price
             </Button>
+            {separateHardwarePrice && (
+              <Button
+                size="small"
+                variant="outlined"
+                startIcon={<ConstructionRoundedIcon />}
+                onClick={onEditHardware}
+                disabled={!hasPrice(plan.price)}
+              >
+                {hardwareIsPriced ? 'Edit hardware price' : 'Set hardware price'}
+              </Button>
+            )}
           </Stack>
         </Stack>
       </Box>
@@ -585,6 +662,7 @@ export default function PlanPricing() {
   const navigate = useNavigate()
   const { builderId, jobId } = useParams()
   const { jobs, setJobs } = useJobs()
+  const { builderDrawSchedules } = useBuilderDrawSchedules()
   const [search, setSearch] = useState('')
   const [priceTarget, setPriceTarget] = useState(null)
   const [notice, setNotice] = useState(null)
@@ -596,6 +674,10 @@ export default function PlanPricing() {
       )
     : null
   const resolvedBuilderId = builderId ?? getJobBuilderId(job, initialBuilders)
+  const builderSetup = builderDrawSchedules.find(
+    (setup) => String(setup.builderId) === String(resolvedBuilderId),
+  )
+  const separateHardwarePrice = Boolean(builderSetup?.separateHardwarePrice)
   const plans = job?.sequenceSheet?.plans ?? []
   const options = plans.flatMap((plan) => plan.options ?? [])
   const pricedPlanCount = plans.filter((plan) => hasPrice(plan.price)).length
@@ -634,7 +716,20 @@ export default function PlanPricing() {
             plans: (currentJob.sequenceSheet?.plans ?? []).map((plan) => {
               if (plan.id !== priceTarget.plan.id) return plan
 
-              if (priceTarget.type === 'plan') return { ...plan, price: amount }
+              if (priceTarget.type === 'plan') {
+                return {
+                  ...plan,
+                  price: amount,
+                  hardwarePrice: hasPrice(plan.hardwarePrice)
+                    && plan.hardwarePrice <= amount
+                    ? plan.hardwarePrice
+                    : null,
+                }
+              }
+
+              if (priceTarget.type === 'hardware') {
+                return { ...plan, hardwarePrice: amount }
+              }
 
               return {
                 ...plan,
@@ -649,7 +744,12 @@ export default function PlanPricing() {
         }
       }),
     )
-    setNotice({ severity: 'success', message: 'Price updated.' })
+    setNotice({
+      severity: 'success',
+      message: priceTarget.type === 'hardware'
+        ? 'Hardware price updated.'
+        : 'Price updated.',
+    })
     setPriceTarget(null)
   }
 
@@ -819,7 +919,9 @@ export default function PlanPricing() {
                   plan={plan}
                   position={index + 1}
                   jobId={job.id}
+                  separateHardwarePrice={separateHardwarePrice}
                   onEditPlan={() => setPriceTarget({ type: 'plan', plan })}
+                  onEditHardware={() => setPriceTarget({ type: 'hardware', plan })}
                   onEditOption={(option) =>
                     setPriceTarget({ type: 'option', plan, option })
                   }

@@ -1,8 +1,7 @@
 import { z } from 'zod'
+import { normalizePhoneNumber } from '../../../utils/phoneNumbers.js'
 
 const namePattern = /^[\p{L}\s'-]*$/u
-const phonePattern = /^[\d\s()+-]*$/
-
 export function createBuilderSchema(builders, currentBuilderId) {
   return z
     .object({
@@ -40,13 +39,21 @@ export function createBuilderSchema(builders, currentBuilderId) {
         .trim()
         .max(30, 'Use 30 characters or fewer.')
         .refine(
-          (value) =>
-            value === '' || (phonePattern.test(value) && /\d/.test(value)),
+          (value) => value === '' || (/^[\d\s()+.-]+$/.test(value) && /\d/.test(value)),
           'Enter a valid phone number.',
         ),
+      contactPhoneCountry: z.enum(['US', 'MX']).default('US'),
       isActive: z.boolean(),
     })
     .superRefine((data, context) => {
+      if (data.contactPhone && !normalizePhoneNumber(data.contactPhone, data.contactPhoneCountry)) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['contactPhone'],
+          message: 'Enter a 10-digit U.S. or Mexico phone number.',
+        })
+      }
+
       const codeAlreadyExists = builders.some(
         (item) =>
           item.id !== currentBuilderId &&
@@ -59,6 +66,13 @@ export function createBuilderSchema(builders, currentBuilderId) {
           path: ['code'],
           message: 'This builder code already exists.',
         })
+      }
+    })
+    .transform((data) => {
+      const { contactPhoneCountry, ...savedBuilder } = data
+      return {
+        ...savedBuilder,
+        contactPhone: normalizePhoneNumber(data.contactPhone, contactPhoneCountry),
       }
     })
 }

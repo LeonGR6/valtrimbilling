@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { isScopedRole } from '../data/users.js'
+import { normalizePhoneNumber } from '../../../utils/phoneNumbers.js'
 
 // One role per user. Access levels are mutually exclusive, so this is an enum
 // rather than an array — see features/people for the multi-select counterpart.
@@ -13,8 +14,6 @@ export const userRoleSchema = z.enum([
 ])
 
 const namePattern = /^[\p{L}\p{M}\s.'-]+$/u
-const phonePattern = /^[\d\s()+.-]*$/
-
 export function createUserSchema(users, currentUserId) {
   return z
     .object({
@@ -36,16 +35,24 @@ export function createUserSchema(users, currentUserId) {
         .trim()
         .max(30, 'Use 30 characters or fewer.')
         .refine(
-          (value) =>
-            value === '' || (phonePattern.test(value) && /\d/.test(value)),
+          (value) => value === '' || (/^[\d\s()+.-]+$/.test(value) && /\d/.test(value)),
           'Enter a valid phone number.',
         ),
+      phoneCountry: z.enum(['US', 'MX']).default('US'),
       role: userRoleSchema,
       allProjects: z.boolean(),
       projectAccess: z.array(z.string()),
       isActive: z.boolean(),
     })
     .superRefine((data, context) => {
+      if (data.phone && !normalizePhoneNumber(data.phone, data.phoneCountry)) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['phone'],
+          message: 'Enter a 10-digit U.S. or Mexico phone number.',
+        })
+      }
+
       // Scoped roles limited to a list need at least one project, otherwise
       // they would be locked out of everything.
       if (
@@ -74,6 +81,13 @@ export function createUserSchema(users, currentUserId) {
           path: ['email'],
           message: 'This email address is already in use.',
         })
+      }
+    })
+    .transform((data) => {
+      const { phoneCountry, ...savedUser } = data
+      return {
+        ...savedUser,
+        phone: normalizePhoneNumber(data.phone, phoneCountry),
       }
     })
 }

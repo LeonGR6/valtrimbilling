@@ -1,260 +1,138 @@
 import { useMemo, useRef, useState } from 'react'
-import FullCalendar from '@fullcalendar/react'
-import dayGridPlugin from '@fullcalendar/daygrid'
-import interactionPlugin from '@fullcalendar/interaction'
+import { Box, Drawer, Snackbar } from '@mui/material'
+import { useColorScheme } from '@mui/material/styles'
+import { useJobs } from '../../jobs/context/useJobs.js'
+import { useBuilders } from '../../builders/context/useBuilders.js'
+import { usePeople } from '../../people/context/usePeople.js'
+import { useBuilderContacts } from '../../builder-contacts/context/useBuilderContacts.js'
 import {
-  Alert,
-  Box,
-  Button,
-  ButtonGroup,
-  Card,
-  CardContent,
-  Chip,
-  Dialog,
-  DialogActions,
-  DialogContent,
-  DialogTitle,
-  Divider,
-  Drawer,
-  FormControl,
-  IconButton,
-  InputLabel,
-  MenuItem,
-  Paper,
-  Select,
-  Snackbar,
-  Stack,
-  TextField,
-  Tooltip,
-  Typography,
-  useMediaQuery,
-} from '@mui/material'
-import ApartmentRoundedIcon from '@mui/icons-material/ApartmentRounded'
-import ArrowBackIosNewRoundedIcon from '@mui/icons-material/ArrowBackIosNewRounded'
-import ArrowForwardIosRoundedIcon from '@mui/icons-material/ArrowForwardIosRounded'
-import BusinessRoundedIcon from '@mui/icons-material/BusinessRounded'
-import CalendarMonthRoundedIcon from '@mui/icons-material/CalendarMonthRounded'
-import CheckCircleOutlineRoundedIcon from '@mui/icons-material/CheckCircleOutlineRounded'
-import CloseRoundedIcon from '@mui/icons-material/CloseRounded'
-import ConstructionRoundedIcon from '@mui/icons-material/ConstructionRounded'
-import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined'
-import EditOutlinedIcon from '@mui/icons-material/EditOutlined'
-import ErrorOutlineRoundedIcon from '@mui/icons-material/ErrorOutlineRounded'
-import HomeWorkOutlinedIcon from '@mui/icons-material/HomeWorkOutlined'
-import LayersOutlinedIcon from '@mui/icons-material/LayersOutlined'
-import LocationOnOutlinedIcon from '@mui/icons-material/LocationOnOutlined'
-import PaymentsOutlinedIcon from '@mui/icons-material/PaymentsOutlined'
-import ResponsiveCreateButton from '../../../components/common/ResponsiveCreateButton'
-import {
-  calendarStatusOptions,
-  calendarStatusTone,
-  emptyCalendarDraft,
+  createDraftFromProductionEvent,
+  createEmptyProductionDraft,
+  createProductionCalendarEvents,
   initialCalendarEvents,
+  recordProductionDateHistory,
 } from '../data/calendarEvents.js'
 import { calendarEventSchema } from '../schemas/calendarEventSchema.js'
+import ActivityDetail from './ActivityDetail.jsx'
+import ActivityForm from './ActivityForm.jsx'
+import BuilderDateSettings from './BuilderDateSettings.jsx'
+import CalendarPageHeader from './CalendarPageHeader.jsx'
+import CalendarWorkspace from './CalendarWorkspace.jsx'
+import ChangeOrdersPlaceholder from './ChangeOrdersPlaceholder.jsx'
 import './CalendarScheduler.css'
 
-const currencyFormatter = new Intl.NumberFormat('en-US', {
-  style: 'currency', currency: 'USD', maximumFractionDigits: 0,
-})
-
-const dateFormatter = new Intl.DateTimeFormat('en-US', {
-  weekday: 'short', day: 'numeric', month: 'short', year: 'numeric',
-})
-
-function getLocalDateInput(date) {
-  const year = date.getFullYear()
-  const month = String(date.getMonth() + 1).padStart(2, '0')
-  const day = String(date.getDate()).padStart(2, '0')
-  return `${year}-${month}-${day}`
-}
-
-function parseLocalDate(dateString) {
-  const [year, month, day] = dateString.split('-').map(Number)
-  return new Date(year, month - 1, day)
-}
-
-function getLotsLabel(lots) {
-  if (!lots) return 'No lot'
-  return lots.includes(',') || lots.includes('–') || lots.includes('-') ? `Lots ${lots}` : `Lot ${lots}`
-}
-
-function SummaryCard({ icon, label, value, tone }) {
-  return (
-    <Card variant="outlined" className={`calendar-summary calendar-summary--${tone}`}>
-      <CardContent>
-        <Box className="calendar-summary__icon">{icon}</Box>
-        <Box>
-          <Typography variant="h5" fontWeight={750} sx={{ lineHeight: 1 }}>{value}</Typography>
-          <Typography variant="body2" color="text.secondary">{label}</Typography>
-        </Box>
-      </CardContent>
-    </Card>
-  )
-}
-
-function EventCard({ event }) {
-  const { code, community, phase, building, status } = event.extendedProps
-  return (
-    <Box className={`work-event work-event--${calendarStatusTone[status] ?? 'confirmed'}`}>
-      <Box className="work-event__topline">
-        <strong>{code}</strong>
-        <span>{event.title.replace(`${code} • `, '')}</span>
-      </Box>
-      <span className="work-event__location">{community} · {phase.replace('Phase ', 'P')} · {building.replace('Building ', 'B')}</span>
-      <Box className="work-event__meta">
-        <em>{status}</em>
-      </Box>
-    </Box>
-  )
-}
-
-function DetailRow({ icon, label, children }) {
-  return (
-    <Box className="event-detail__row">
-      <Box className="event-detail__row-icon">{icon}</Box>
-      <Typography variant="body2" color="text.secondary">{label}</Typography>
-      <Typography variant="body2" fontWeight={600}>{children}</Typography>
-    </Box>
-  )
-}
-
-function EventDetail({ event, onClose, onEdit, onComplete }) {
-  if (!event) return null
-
-  const props = event.extendedProps
-  const start = parseLocalDate(event.start)
-
-  return (
-    <Box className="event-detail">
-      <Box className="event-detail__header">
-        <Box>
-          <Typography variant="overline" color="primary.main" fontWeight={800}>Activity details</Typography>
-          <Typography variant="h6" fontWeight={750}>Scheduled work</Typography>
-        </Box>
-        <IconButton onClick={onClose} aria-label="Close details" size="small">
-          <CloseRoundedIcon />
-        </IconButton>
-      </Box>
-
-      <Box className="event-detail__title">
-        <Box className={`event-detail__code event-detail__code--${calendarStatusTone[props.status]}`}>{props.code}</Box>
-        <Box>
-          <Typography variant="h6" fontWeight={750}>{props.workType}</Typography>
-          <Typography variant="body2" color="text.secondary">{getLotsLabel(props.lots)}</Typography>
-        </Box>
-      </Box>
-
-      <Chip className={`status-chip status-chip--${calendarStatusTone[props.status]}`} label={props.status} size="small" />
-
-      <Divider sx={{ my: 2.25 }} />
-
-      <Stack spacing={1.65}>
-        <DetailRow icon={<BusinessRoundedIcon />} label="Builder">{props.builder}</DetailRow>
-        <DetailRow icon={<LocationOnOutlinedIcon />} label="Community">{props.community}</DetailRow>
-        <DetailRow icon={<LayersOutlinedIcon />} label="Phase / Building">{props.phase} / {props.building}</DetailRow>
-        <DetailRow icon={<HomeWorkOutlinedIcon />} label="Lots">{props.lots}</DetailRow>
-        <DetailRow icon={<CalendarMonthRoundedIcon />} label="Date">{dateFormatter.format(start)}</DetailRow>
-        <DetailRow icon={<ConstructionRoundedIcon />} label="Responsible">{props.foreman}</DetailRow>
-      </Stack>
-
-      <Paper variant="outlined" className="draw-card">
-        <Box className="draw-card__icon"><DescriptionOutlinedIcon /></Box>
-        <Box sx={{ flex: 1 }}>
-          <Typography variant="caption" color="text.secondary">DRAW SCHEDULE</Typography>
-          <Typography variant="subtitle2" fontWeight={750}>{props.plan} · {props.progress}%</Typography>
-          <Typography variant="body2">{currencyFormatter.format(props.rate)} <Typography component="span" variant="caption" color="text.secondary">per lot</Typography></Typography>
-        </Box>
-        <ArrowForwardIosRoundedIcon fontSize="small" color="action" />
-      </Paper>
-
-      <Box className="event-detail__actions">
-        <Button variant="outlined" startIcon={<EditOutlinedIcon />} onClick={onEdit} fullWidth>
-          Edit Activity
-        </Button>
-        <Button
-          variant="contained"
-          startIcon={<CheckCircleOutlineRoundedIcon />}
-          onClick={onComplete}
-          disabled={props.status === 'Completed'}
-          fullWidth
-          disableElevation
-        >
-          {props.status === 'Completed' ? 'Work completed' : 'Mark as completed'}
-        </Button>
-      </Box>
-    </Box>
-  )
-}
-
-function EventDialog({ open, draft, isEditing, onChange, onClose, onSave }) {
-  return (
-    <Dialog open={open} onClose={onClose} fullWidth maxWidth="sm" component="form" onSubmit={onSave}>
-      <DialogTitle sx={{ pb: 1 }}>
-        <Typography variant="h6" fontWeight={750}>{isEditing ? 'Edit activity' : 'New activity'}</Typography>
-        <Typography variant="body2" color="text.secondary">Schedule the work and assign it to a location and crew.</Typography>
-      </DialogTitle>
-      <DialogContent sx={{ pt: '16px !important' }}>
-        <Stack spacing={2.25}>
-          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
-            <TextField label="Code" value={draft.code} onChange={(event) => onChange('code', event.target.value.toUpperCase())} required sx={{ flex: 0.45 }} />
-            <TextField label="Work type" value={draft.workType} onChange={(event) => onChange('workType', event.target.value)} required fullWidth />
-          </Stack>
-          <TextField label="Lots / units" placeholder="E.g. 9, 10, 11" value={draft.lots} onChange={(event) => onChange('lots', event.target.value)} required />
-          <TextField label="Date" type="date" value={draft.date} onChange={(event) => onChange('date', event.target.value)} required fullWidth slotProps={{ inputLabel: { shrink: true } }} />
-          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
-            <TextField label="Builder" value={draft.builder} onChange={(event) => onChange('builder', event.target.value)} required fullWidth />
-            <TextField label="Community" value={draft.community} onChange={(event) => onChange('community', event.target.value)} required fullWidth />
-          </Stack>
-          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
-            <TextField label="Phase" value={draft.phase} onChange={(event) => onChange('phase', event.target.value)} fullWidth />
-            <TextField label="Building" value={draft.building} onChange={(event) => onChange('building', event.target.value)} fullWidth />
-            <FormControl fullWidth>
-              <InputLabel id="event-status-label">Status</InputLabel>
-              <Select labelId="event-status-label" label="Status" value={draft.status} onChange={(event) => onChange('status', event.target.value)}>
-                {calendarStatusOptions.map((status) => <MenuItem key={status} value={status}>{status}</MenuItem>)}
-              </Select>
-            </FormControl>
-          </Stack>
-          <Alert severity="info">You can also drag an activity on the calendar to reschedule it.</Alert>
-        </Stack>
-      </DialogContent>
-      <DialogActions sx={{ px: 3, pb: 2.5 }}>
-        <Button color="inherit" onClick={onClose}>Cancel</Button>
-        <Button type="submit" variant="contained" disableElevation>{isEditing ? 'Save changes' : 'Create activity'}</Button>
-      </DialogActions>
-    </Dialog>
-  )
-}
+const initialCalendarTitle = new Intl.DateTimeFormat('en-US', {
+  month: 'long',
+  day: 'numeric',
+  year: 'numeric',
+}).format(new Date())
 
 export default function CalendarScheduler() {
   const calendarRef = useRef(null)
-  const compactDetail = useMediaQuery((theme) => theme.breakpoints.down('lg'))
+  const { jobs } = useJobs()
+  const { builders } = useBuilders()
+  const { people } = usePeople()
+  const { contacts: builderContacts } = useBuilderContacts()
+  const { mode, systemMode } = useColorScheme()
+  const resolvedColorMode = mode === 'system' ? systemMode : mode
+  const calendarColorMode = resolvedColorMode === 'dark' ? 'dark' : 'light'
+  const [calendarMode, setCalendarMode] = useState('PRODUCTION')
+  const [activeTab, setActiveTab] = useState('SCHEDULE')
   const [events, setEvents] = useState(initialCalendarEvents)
-  const [selectedId, setSelectedId] = useState('evt-101')
-  const [viewTitle, setViewTitle] = useState('Aug 10 – 14, 2026')
-  const [viewType, setViewType] = useState('dayGridWeek')
-  const [filters, setFilters] = useState({ builder: 'KB Home', community: 'Andara', phase: 'Phase 1', building: 'Building 3' })
-  const [dialogOpen, setDialogOpen] = useState(false)
-  const [editingId, setEditingId] = useState(null)
-  const [draft, setDraft] = useState(emptyCalendarDraft)
+  const [selectedId, setSelectedId] = useState(null)
+  const [drawerMode, setDrawerMode] = useState(null)
+  const [editingGroupId, setEditingGroupId] = useState(null)
+  const [draft, setDraft] = useState(createEmptyProductionDraft())
+  const [formError, setFormError] = useState('')
   const [notice, setNotice] = useState('')
-
-  const filterOptions = useMemo(() => ({
-    builder: [...new Set(events.map((event) => event.extendedProps.builder))],
-    community: [...new Set(events.map((event) => event.extendedProps.community))],
-    phase: [...new Set(events.map((event) => event.extendedProps.phase))],
-    building: [...new Set(events.map((event) => event.extendedProps.building))],
-  }), [events])
+  const [viewTitle, setViewTitle] = useState(initialCalendarTitle)
+  const [viewType, setViewType] = useState('dayGridWeek')
+  const [visibleTypes, setVisibleTypes] = useState(['EXT', 'SHUTTER', 'DM', 'HW'])
 
   const filteredEvents = useMemo(() => events.filter((event) => (
-    Object.entries(filters).every(([key, value]) => value === 'All' || event.extendedProps[key] === value)
-  )), [events, filters])
+    visibleTypes.includes(event.extendedProps.activityType)
+  )), [events, visibleTypes])
 
   const selectedEvent = events.find((event) => event.id === selectedId) ?? null
-  const completedCount = filteredEvents.filter((event) => event.extendedProps.status === 'Completed').length
-  const billingCount = filteredEvents.filter((event) => event.extendedProps.billingReady).length
-  const exceptionCount = filteredEvents.filter((event) => event.extendedProps.status === 'Exception').length
+
+  const closeDrawer = () => {
+    setDrawerMode(null)
+    setSelectedId(null)
+    setEditingGroupId(null)
+    setFormError('')
+  }
+
+  const openCreateDrawer = () => {
+    setSelectedId(null)
+    setEditingGroupId(null)
+    setDraft(createEmptyProductionDraft())
+    setFormError('')
+    setDrawerMode('create')
+  }
+
+  const openEventOptions = (eventId) => {
+    const calendarEvent = events.find((event) => event.id === eventId)
+    if (!calendarEvent) return
+
+    const groupId = calendarEvent.extendedProps.groupId ?? calendarEvent.groupId ?? calendarEvent.id
+    setSelectedId(eventId)
+    setDraft(createDraftFromProductionEvent(calendarEvent))
+    setEditingGroupId(groupId)
+    setFormError('')
+    setDrawerMode('detail')
+  }
+
+  const openEditDrawer = () => {
+    if (!selectedEvent) return
+
+    const groupId = selectedEvent.extendedProps.groupId ?? selectedEvent.groupId ?? selectedEvent.id
+    setDraft(createDraftFromProductionEvent(selectedEvent))
+    setEditingGroupId(groupId)
+    setFormError('')
+    setDrawerMode('edit')
+  }
+
+  const saveActivity = (event) => {
+    event.preventDefault()
+    const result = calendarEventSchema.safeParse(draft)
+
+    if (!result.success) {
+      setFormError(result.error.issues[0]?.message ?? 'Review the production details.')
+      return
+    }
+
+    const groupId = editingGroupId ?? `production-${Date.now()}`
+    const savedValues = editingGroupId
+      ? recordProductionDateHistory(result.data, selectedEvent)
+      : result.data
+    const nextEvents = createProductionCalendarEvents(savedValues, groupId)
+    const savedActivityType = editingGroupId
+      ? selectedEvent?.extendedProps.activityType
+      : 'EXT'
+    const previousProps = selectedEvent?.extendedProps
+    const nextSelectedEvent = nextEvents.find((item) => (
+      item.extendedProps.activityType === savedActivityType
+      && item.extendedProps.variant === previousProps?.variant
+      && Number(item.extendedProps.lotStart) === Number(previousProps?.lotStart)
+      && Number(item.extendedProps.lotEnd) === Number(previousProps?.lotEnd)
+    )) ?? nextEvents.find((item) => (
+      item.extendedProps.activityType === savedActivityType
+      && !['install-only', 'lock-up'].includes(item.extendedProps.variant)
+    )) ?? nextEvents[0]
+    setEvents((current) => {
+      const withoutEditedGroup = editingGroupId
+        ? current.filter((item) => (item.extendedProps.groupId ?? item.groupId ?? item.id) !== editingGroupId)
+        : current
+      return [...withoutEditedGroup, ...nextEvents]
+    })
+    setSelectedId(nextSelectedEvent.id)
+    setEditingGroupId(null)
+    setDrawerMode('detail')
+    setFormError('')
+    setNotice(editingGroupId
+      ? 'Production activity updated.'
+      : 'Production activity created with EXT, DM and HW.')
+  }
 
   const navigateCalendar = (direction) => {
     const api = calendarRef.current?.getApi()
@@ -269,223 +147,101 @@ export default function CalendarScheduler() {
     setViewType(nextView)
   }
 
-  const openCreateDialog = (selection) => {
-    const start = selection?.start ?? parseLocalDate(emptyCalendarDraft.date)
-    setEditingId(null)
-    setDraft({
-      ...emptyCalendarDraft,
-      date: getLocalDateInput(start),
-      builder: filters.builder === 'All' ? 'KB Home' : filters.builder,
-      community: filters.community === 'All' ? 'Andara' : filters.community,
-      phase: filters.phase === 'All' ? 'Phase 1' : filters.phase,
-      building: filters.building === 'All' ? 'Building 3' : filters.building,
-    })
-    setDialogOpen(true)
+  const toggleType = (activityType) => {
+    setVisibleTypes((current) => current.includes(activityType)
+      ? current.filter((type) => type !== activityType)
+      : [...current, activityType])
   }
 
-  const openEditDialog = () => {
-    if (!selectedEvent) return
-    setEditingId(selectedEvent.id)
-    setDraft({
-      ...emptyCalendarDraft,
-      ...selectedEvent.extendedProps,
-      date: selectedEvent.start,
-    })
-    setDialogOpen(true)
+  const changeCalendarMode = (_, nextMode) => {
+    if (!nextMode) return
+    closeDrawer()
+    setCalendarMode(nextMode)
   }
 
-  const saveEvent = (event) => {
-    event.preventDefault()
-    const result = calendarEventSchema.safeParse(draft)
-
-    if (!result.success) {
-      setNotice(result.error.issues[0]?.message ?? 'Review the activity details.')
-      return
-    }
-
-    const values = result.data
-
-    const eventData = {
-      id: editingId ?? `evt-${Date.now()}`,
-      title: `${values.code} • ${getLotsLabel(values.lots)}`,
-      start: values.date,
-      extendedProps: {
-        code: values.code,
-        workType: values.workType,
-        lots: values.lots,
-        builder: values.builder,
-        community: values.community,
-        phase: values.phase,
-        building: values.building,
-        status: values.status,
-        foreman: values.foreman,
-        crew: values.crew,
-        plan: values.plan,
-        progress: values.status === 'Completed' ? 100 : (values.progress ?? 0),
-        rate: values.rate,
-        billingReady: values.status === 'Completed' ? (values.billingReady ?? true) : false,
-      },
-    }
-
-    setEvents((current) => editingId
-      ? current.map((item) => item.id === editingId ? eventData : item)
-      : [...current, eventData])
-    setSelectedId(eventData.id)
-    setDialogOpen(false)
-    setNotice(editingId ? 'Activity updated.' : 'Activity created and added to the calendar.')
+  const changeActiveTab = (_, nextTab) => {
+    if (!nextTab) return
+    closeDrawer()
+    setActiveTab(nextTab)
   }
 
-  const updateEventDate = (changeInfo) => {
-    const changed = changeInfo.event
-    setEvents((current) => current.map((event) => event.id === changed.id ? {
-      ...event,
-      start: changed.start ? getLocalDateInput(changed.start) : event.start,
-    } : event))
-    setNotice('Activity rescheduled.')
+  const changeDraft = (draftPatch) => {
+    setDraft((current) => ({ ...current, ...draftPatch }))
+    setFormError('')
   }
-
-  const markCompleted = () => {
-    if (!selectedId) return
-    setEvents((current) => current.map((event) => event.id === selectedId ? {
-      ...event,
-      extendedProps: { ...event.extendedProps, status: 'Completed', progress: 100, billingReady: true },
-    } : event))
-    setNotice('Work completed and ready for billing.')
-  }
-
-  const detail = selectedEvent ? (
-    <EventDetail
-      event={selectedEvent}
-      onClose={() => setSelectedId(null)}
-      onEdit={openEditDialog}
-      onComplete={markCompleted}
-    />
-  ) : null
 
   return (
-    <Box className="calendar-page">
-      <Box className="calendar-page__header">
-        <Box>
-          <Typography variant="h4" fontWeight={780} letterSpacing="-0.025em">Calendar</Typography>
-          <Typography color="text.secondary">Schedule your activities by community, phase, building and lot.</Typography>
+    <Box className={`calendar-page calendar-theme--${calendarColorMode}`}>
+      <CalendarPageHeader
+        activeTab={activeTab}
+        calendarMode={calendarMode}
+        onChangeTab={changeActiveTab}
+        onChangeMode={changeCalendarMode}
+        onCreate={openCreateDrawer}
+      />
+
+      {activeTab === 'BUILDER_SETTINGS' ? (
+        <BuilderDateSettings />
+      ) : calendarMode === 'PRODUCTION' ? (
+        <CalendarWorkspace
+          calendarRef={calendarRef}
+          events={filteredEvents}
+          selectedId={selectedId}
+          viewTitle={viewTitle}
+          viewType={viewType}
+          visibleTypes={visibleTypes}
+          onChangeView={changeView}
+          onDatesSet={(title, type) => {
+            setViewTitle(title)
+            setViewType(type)
+          }}
+          onEventClick={openEventOptions}
+          onNavigate={navigateCalendar}
+          onToggleType={toggleType}
+        />
+      ) : (
+        <Box className="calendar-workspace calendar-workspace--placeholder">
+          <ChangeOrdersPlaceholder />
         </Box>
-        <ResponsiveCreateButton label="New activity" onClick={() => openCreateDialog()} />
-      </Box>
-
-      <Box className="calendar-toolbar">
-        {[
-          ['builder', 'Builder', <BusinessRoundedIcon key="builder" fontSize="small" />],
-          ['community', 'Community', <LocationOnOutlinedIcon key="community" fontSize="small" />],
-          ['phase', 'Phase', <LayersOutlinedIcon key="phase" fontSize="small" />],
-          ['building', 'Building', <ApartmentRoundedIcon key="building" fontSize="small" />],
-        ].map(([key, label, icon]) => (
-          <FormControl key={key} size="small" className="calendar-filter">
-            <InputLabel id={`${key}-filter-label`}>{label}</InputLabel>
-            <Select
-              labelId={`${key}-filter-label`}
-              label={label}
-              value={filters[key]}
-              onChange={(event) => setFilters((current) => ({ ...current, [key]: event.target.value }))}
-              startAdornment={<Box className="calendar-filter__icon">{icon}</Box>}
-            >
-              <MenuItem value="All">All</MenuItem>
-              {filterOptions[key].map((option) => <MenuItem key={option} value={option}>{option}</MenuItem>)}
-            </Select>
-          </FormControl>
-        ))}
-
-        <Box className="calendar-toolbar__spacer" />
-
-        <ButtonGroup size="small" variant="outlined" aria-label="Change view">
-          <Button className={viewType === 'dayGridWeek' ? 'is-active' : ''} onClick={() => changeView('dayGridWeek')}>Week</Button>
-          <Button className={viewType === 'dayGridDay' ? 'is-active' : ''} onClick={() => changeView('dayGridDay')}>Day</Button>
-          <Button className={viewType === 'dayGridMonth' ? 'is-active' : ''} onClick={() => changeView('dayGridMonth')}>Month</Button>
-        </ButtonGroup>
-      </Box>
-
-      <Box className="calendar-summary-row">
-        <SummaryCard icon={<CalendarMonthRoundedIcon />} value={filteredEvents.length} label="activities" tone="scheduled" />
-        <SummaryCard icon={<CheckCircleOutlineRoundedIcon />} value={completedCount} label="completed" tone="completed" />
-        <SummaryCard icon={<PaymentsOutlinedIcon />} value={billingCount} label="to bill" tone="billing" />
-        <SummaryCard icon={<ErrorOutlineRoundedIcon />} value={exceptionCount} label="exceptions" tone="exception" />
-      </Box>
-
-      <Box className="calendar-workspace">
-        <Box className="calendar-main">
-          <Box className="calendar-period">
-            <Box>
-              <Typography variant="overline" color="text.secondary" fontWeight={700}>CALENDAR</Typography>
-              <Typography variant="h6" fontWeight={750} sx={{ textTransform: 'capitalize' }}>{viewTitle}</Typography>
-            </Box>
-            <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center' }}>
-              <Button size="small" color="inherit" onClick={() => navigateCalendar('today')}>Today</Button>
-              <Tooltip title="Previous period"><IconButton size="small" onClick={() => navigateCalendar('prev')}><ArrowBackIosNewRoundedIcon fontSize="inherit" /></IconButton></Tooltip>
-              <Tooltip title="Next period"><IconButton size="small" onClick={() => navigateCalendar('next')}><ArrowForwardIosRoundedIcon fontSize="inherit" /></IconButton></Tooltip>
-            </Stack>
-          </Box>
-
-          <Box className="calendar-canvas">
-            <FullCalendar
-              ref={calendarRef}
-              plugins={[dayGridPlugin, interactionPlugin]}
-              initialView="dayGridWeek"
-              initialDate="2026-08-10"
-              firstDay={1}
-              weekends={false}
-              headerToolbar={false}
-              displayEventTime={false}
-              dayHeaderFormat={{ weekday: 'short', day: 'numeric' }}
-              height="100%"
-              expandRows
-              fixedWeekCount={false}
-              dayMaxEvents={false}
-              editable
-              eventDurationEditable={false}
-              selectable
-              selectMirror
-              events={filteredEvents}
-              eventClick={({ event }) => setSelectedId(event.id)}
-              eventContent={(info) => <EventCard event={info.event} />}
-              eventClassNames={({ event }) => [
-                `fc-work-event--${calendarStatusTone[event.extendedProps.status] ?? 'confirmed'}`,
-                event.id === selectedId ? 'fc-work-event--selected' : '',
-              ]}
-              eventDrop={updateEventDate}
-              select={(selection) => {
-                openCreateDialog(selection)
-                selection.view.calendar.unselect()
-              }}
-              dateClick={({ date }) => openCreateDialog({ start: date })}
-              datesSet={({ view }) => {
-                setViewTitle(view.title)
-                setViewType(view.type)
-              }}
-            />
-          </Box>
-        </Box>
-
-        {!compactDetail && selectedEvent && <Paper variant="outlined" className="calendar-detail-panel">{detail}</Paper>}
-      </Box>
-
-      {compactDetail && (
-        <Drawer
-          anchor="right"
-          open={Boolean(selectedEvent)}
-          onClose={() => setSelectedId(null)}
-          slotProps={{ paper: { sx: { width: { xs: '100%', sm: 360 }, maxWidth: '100%' } } }}
-        >
-          {detail}
-        </Drawer>
       )}
 
-      <EventDialog
-        open={dialogOpen}
-        draft={draft}
-        isEditing={Boolean(editingId)}
-        onChange={(field, value) => setDraft((current) => ({ ...current, [field]: value }))}
-        onClose={() => setDialogOpen(false)}
-        onSave={saveEvent}
-      />
+      <Drawer
+        anchor="right"
+        open={Boolean(drawerMode)}
+        onClose={closeDrawer}
+        slotProps={{
+          paper: {
+            className: 'activity-drawer',
+            style: {
+              '--drawer-surface': resolvedColorMode === 'dark' ? '#1e293b' : '#ffffff',
+            },
+            sx: { width: { xs: '100%', sm: 560 }, maxWidth: '100%' },
+          },
+        }}
+      >
+        {drawerMode === 'detail' ? (
+          <ActivityDetail
+            event={selectedEvent}
+            jobs={jobs}
+            people={people}
+            builderContacts={builderContacts}
+            onClose={closeDrawer}
+            onEdit={openEditDrawer}
+          />
+        ) : (
+          <ActivityForm
+            jobs={jobs}
+            builders={builders}
+            draft={draft}
+            isEditing={drawerMode === 'edit'}
+            activeActivityType={selectedEvent?.extendedProps.activityType}
+            formError={formError}
+            onChange={changeDraft}
+            onClose={closeDrawer}
+            onSave={saveActivity}
+          />
+        )}
+      </Drawer>
 
       <Snackbar open={Boolean(notice)} autoHideDuration={3200} onClose={() => setNotice('')} message={notice} />
     </Box>

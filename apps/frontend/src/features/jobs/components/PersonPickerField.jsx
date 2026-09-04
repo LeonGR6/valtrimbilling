@@ -12,6 +12,8 @@ import {
 } from '@mui/material'
 import AddRoundedIcon from '@mui/icons-material/AddRounded'
 import PersonAddAltRoundedIcon from '@mui/icons-material/PersonAddAltRounded'
+import InternationalPhoneInput from '../../../components/common/InternationalPhoneInput.jsx'
+import { normalizePhoneNumber } from '../../../utils/phoneNumbers.js'
 
 // One field for both job roles: pick someone from the roster, or add a person
 // without leaving the job form. The add button replaces the popup arrow so the
@@ -29,14 +31,30 @@ export default function PersonPickerField({
 }) {
   const [draft, setDraft] = useState(null)
 
-  const openDraft = (typed = '') => setDraft({ name: typed, email: '', phone: '' })
+  const openDraft = (typed = '') => setDraft({
+    name: typed,
+    email: '',
+    phone: '',
+    phoneCountry: 'US',
+  })
   const draftEmailIsValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(
     draft?.email.trim() ?? '',
   )
+  const normalizedDraftPhone = normalizePhoneNumber(
+    draft?.phone ?? '',
+    draft?.phoneCountry ?? 'US',
+  )
+  const draftPhoneIsValid = !draft?.phone.trim() || Boolean(normalizedDraftPhone)
 
   const save = (field) => {
     if (!onCreate || !draft) return
-    const created = onCreate(draft)
+    const contactDraft = Object.fromEntries(
+      Object.entries(draft).filter(([key]) => key !== 'phoneCountry'),
+    )
+    const created = onCreate({
+      ...contactDraft,
+      phone: normalizedDraftPhone ?? '',
+    })
     field.onChange(created.id)
     setDraft(null)
   }
@@ -159,12 +177,20 @@ export default function PersonPickerField({
                     required
                   />
                   {extraFields.includes('phone') && (
-                    <TextField
-                      label="Phone"
+                    <InternationalPhoneInput
+                      label="Phone number"
                       value={draft.phone}
-                      onChange={(event) => setDraft({ ...draft, phone: event.target.value })}
+                      country={draft.phoneCountry}
+                      onChange={(phone) => setDraft((current) => ({ ...current, phone }))}
+                      onCountryChange={(phoneCountry) => setDraft((current) => ({
+                        ...current,
+                        phoneCountry,
+                      }))}
+                      error={!draftPhoneIsValid}
+                      helperText={draftPhoneIsValid
+                        ? 'Optional · choose +1 or +52'
+                        : 'Enter a 10-digit U.S. or Mexico phone number.'}
                       size="small"
-                      fullWidth
                     />
                   )}
                 </Stack>
@@ -177,7 +203,7 @@ export default function PersonPickerField({
                     size="small"
                     variant="contained"
                     disableElevation
-                    disabled={!draft.name.trim() || !draftEmailIsValid}
+                    disabled={!draft.name.trim() || !draftEmailIsValid || !draftPhoneIsValid}
                     onClick={() => save(field)}
                   >
                     Save and assign

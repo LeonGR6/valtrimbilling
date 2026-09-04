@@ -24,6 +24,7 @@ import {
 } from '../src/features/sequence-sheets/utils/phaseBuildingCodes.js'
 import { parseLotRange } from '../src/features/sequence-sheets/utils/lotRange.js'
 import { initialContacts } from '../src/features/builder-contacts/data/builderContacts.js'
+import { createBuilderContactSchema } from '../src/features/builder-contacts/schemas/builderContactSchema.js'
 import { initialPeople } from '../src/features/people/data/people.js'
 import { personSchema } from '../src/features/people/schemas/personSchema.js'
 import { priceSchema } from '../src/features/plan-pricing/schemas/priceSchema.js'
@@ -47,7 +48,7 @@ test('builder schema normalizes values before saving', () => {
     address: 'Main Street',
     contactName: 'María López',
     contactEmail: 'contact@example.com',
-    contactPhone: '(415) 555-0128',
+    contactPhone: '+14155550128',
     isActive: true,
   })
 })
@@ -92,7 +93,6 @@ test('job schema normalizes the fields used to create a job', () => {
     code: ' job-1005 ',
     builder: ' KB Home ',
     community: ' Andara ',
-    totalLots: '24',
     supervisorId: 2,
     superintendentId: 5,
   })
@@ -101,7 +101,6 @@ test('job schema normalizes the fields used to create a job', () => {
     code: 'JOB-1005',
     builder: 'KB Home',
     community: 'Andara',
-    totalLots: 24,
     supervisorId: 2,
     superintendentId: 5,
   })
@@ -113,7 +112,6 @@ test('job schema requires a supervisor and a superintendent to be picked', () =>
     code: 'JOB-2001',
     builder: 'KB Home',
     community: 'Andara',
-    totalLots: 10,
     supervisorId: 2,
     superintendentId: 5,
   }
@@ -133,7 +131,6 @@ test('job schema rejects a duplicate job number', () => {
     code: 'JOB-1005',
     builder: 'KB Home',
     community: 'Andara',
-    totalLots: 24,
     supervisorId: 2,
     superintendentId: 5,
   }
@@ -143,7 +140,6 @@ test('job schema rejects a duplicate job number', () => {
     code: ' job-1005 ',
     builder: ' kb home ',
     community: 'andara',
-    totalLots: '24',
     supervisorId: 2,
     superintendentId: 5,
   })
@@ -176,16 +172,18 @@ test('job total lots follow phase edits and deletions', () => {
       ...job.sequenceSheet,
       phases: job.sequenceSheet.phases.map((phase) => ({
         ...phase,
-        lots: [
-          ...phase.lots,
-          {
-            id: 3103,
-            lotNumber: '3',
-            planId: 1103,
-            reverse: false,
-            optionIds: [],
-          },
-        ],
+        lots: phase.id === 2101
+          ? [
+              ...phase.lots,
+              {
+                id: 3103,
+                lotNumber: '3',
+                planId: 1103,
+                reverse: false,
+                optionIds: [],
+              },
+            ]
+          : phase.lots,
       })),
     },
   }
@@ -194,7 +192,7 @@ test('job total lots follow phase edits and deletions', () => {
     sequenceSheet: { ...editedJob.sequenceSheet, phases: [] },
   }
 
-  assert.equal(getJobUnitCount(editedJob), 3)
+  assert.equal(getJobUnitCount(editedJob), 8)
   assert.equal(getJobUnitCount(jobWithoutPhases), 0)
 })
 
@@ -203,13 +201,16 @@ test('plans and options report the lots that prevent their deletion', () => {
 
   assert.deepEqual(
     getPlanLotDependencies(job, 1101).map((dependency) => dependency.lotNumber),
-    ['2'],
+    ['67', '2'],
   )
   assert.deepEqual(
     getPlanLotDependencies(job, 1102).map((dependency) => dependency.lotNumber),
-    ['1'],
+    ['68', '69', '1'],
   )
-  assert.equal(getPlanLotDependencies(job, 1103).length, 0)
+  assert.deepEqual(
+    getPlanLotDependencies(job, 1103).map((dependency) => dependency.lotNumber),
+    ['66'],
+  )
   assert.deepEqual(
     getOptionLotDependencies(job, 110201).map(
       (dependency) => dependency.lotNumber,
@@ -265,9 +266,9 @@ test('pricing accepts USD amounts with up to two decimal places', () => {
 test('Job 1307 sequence sheet counts plans, options and visible columns', () => {
   const job = initialJobs.find((item) => item.code === '1307')
 
-  assert.equal(getJobPlanCount(job), 3)
+  assert.equal(getJobPlanCount(job), 4)
   assert.equal(getJobOptionCount(job), 11)
-  assert.equal(getJobSequenceColumnCount(job), 14)
+  assert.equal(getJobSequenceColumnCount(job), 15)
 })
 
 test('phase by lot schema normalizes lots and accepts selected plan options', () => {
@@ -301,7 +302,7 @@ test('phase by lot schema normalizes lots and accepts selected plan options', ()
 
 test('phase by lot schema supports editing the current phase and preserves lot ids', () => {
   const job = initialJobs.find((item) => item.code === '1307')
-  const phase = job.sequenceSheet.phases[0]
+  const phase = job.sequenceSheet.phases.find((item) => item.id === 2101)
   const result = createPhaseByLotSchema(job, phase.id).parse({
     phaseName: ' Phase 10 ',
     building: ' B5 ',
@@ -423,12 +424,46 @@ test('person schema normalizes contact information', () => {
 
   assert.deepEqual(result, {
     name: 'María López',
-    phone: '(951) 555-0184',
+    phone: '+19515550184',
     officePhone: '',
     email: 'maria.lopez@example.com',
     types: ['SUPERVISOR'],
     territory: 'Inland Empire',
   })
+})
+
+test('person schema stores Mexico numbers in E.164 format', () => {
+  const result = personSchema.parse({
+    name: 'María López',
+    phone: '55 1234 5678',
+    phoneCountry: 'MX',
+    officePhone: '+1 (714) 555-0100',
+    officePhoneCountry: 'MX',
+    email: 'maria@example.com',
+    types: ['SUPERVISOR'],
+    territory: 'México',
+  })
+
+  assert.equal(result.phone, '+525512345678')
+  assert.equal(result.officePhone, '+17145550100')
+  assert.equal('phoneCountry' in result, false)
+})
+
+test('builder contact schema stores selected phone country without guessing', () => {
+  const result = createBuilderContactSchema([], null).parse({
+    name: 'Daniel Torres',
+    type: 'JOBSITE_SUPERINTENDENT',
+    builder: 'TRUMARK',
+    email: 'daniel@example.com',
+    phone: '55 1234 5678',
+    phoneCountry: 'MX',
+    officePhone: '',
+    officePhoneCountry: 'US',
+    notes: '',
+  })
+
+  assert.equal(result.phone, '+525512345678')
+  assert.equal(result.officePhone, '')
 })
 
 test('person schema requires and normalizes a territory for Valtrim supervisors', () => {

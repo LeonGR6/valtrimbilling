@@ -13,7 +13,7 @@ const drawPercentageSchema = z.preprocess(
     })
     .finite('Enter a valid percentage.')
     .gt(0, 'Percentage must be greater than 0.')
-    .max(100, 'Percentage cannot exceed 100%.')
+    .max(99, 'Percentage cannot exceed 99%.')
     .refine(
       (value) => Math.abs(value * 100 - Math.round(value * 100)) < 0.000001,
       'Percentage can use up to two decimal places.',
@@ -40,6 +40,13 @@ const dayOfMonthSchema = z.coerce
   .min(1, 'Use a day between 1 and 31.')
   .max(31, 'Use a day between 1 and 31.')
 
+const optionsBillingDrawIndexSchema = z.preprocess(
+  (value) => (value === '' || value === null || value === undefined
+    ? null
+    : Number(value)),
+  z.number().int().min(0).nullable(),
+)
+
 export function createBuilderDrawScheduleSchema(schedules, currentScheduleId) {
   return z
     .object({
@@ -48,9 +55,18 @@ export function createBuilderDrawScheduleSchema(schedules, currentScheduleId) {
         z.number().int().positive('Select a builder.'),
       ),
       draws: z
-        .array(z.object({ percentage: drawPercentageSchema }))
+        .array(z.object({
+          name: z
+            .string()
+            .trim()
+            .max(80, 'Use 80 characters or fewer.')
+            .default(''),
+          percentage: drawPercentageSchema,
+        }))
         .min(MIN_DRAW_COUNT, `Configure at least ${MIN_DRAW_COUNT} draws.`)
         .max(MAX_DRAW_COUNT, `Configure no more than ${MAX_DRAW_COUNT} draws.`),
+      separateHardwarePrice: z.boolean().default(false),
+      optionsBillingDrawIndex: optionsBillingDrawIndexSchema,
       frequency: z.enum(['MONTHLY', 'SEMIMONTHLY', 'WEEKLY']),
       cutoffDay: dayOfMonthSchema,
       submissionDay: dayOfMonthSchema,
@@ -68,7 +84,7 @@ export function createBuilderDrawScheduleSchema(schedules, currentScheduleId) {
         .int('Use a whole number.')
         .min(0, 'Use 0 or more days.')
         .max(180, 'Use 180 days or fewer.'),
-      retentionEnabled: z.boolean(),
+      retentionEnabled: z.boolean().default(false),
       retentionPercentage: optionalPercentageSchema,
       ocipWrapEnabled: z.boolean(),
       ocipWrapPercentage: optionalPercentageSchema,
@@ -108,6 +124,17 @@ export function createBuilderDrawScheduleSchema(schedules, currentScheduleId) {
         })
       }
 
+      if (
+        data.optionsBillingDrawIndex !== null
+        && data.optionsBillingDrawIndex >= data.draws.length
+      ) {
+        context.addIssue({
+          code: 'custom',
+          path: ['optionsBillingDrawIndex'],
+          message: 'Select one of the configured draws.',
+        })
+      }
+
       if (data.frequency === 'SEMIMONTHLY' && data.cutoffDays.length !== 2) {
         context.addIssue({
           code: 'custom',
@@ -141,6 +168,18 @@ export function createBuilderDrawScheduleSchema(schedules, currentScheduleId) {
           code: 'custom',
           path: ['ocipWrapPercentage'],
           message: 'Enter the OCIP / WRAP insurance percentage.',
+        })
+      }
+
+      const totalDeductions = (data.retentionEnabled
+        ? data.retentionPercentage
+        : 0) + (data.ocipWrapEnabled ? data.ocipWrapPercentage : 0)
+
+      if (totalDeductions > 100) {
+        context.addIssue({
+          code: 'custom',
+          path: ['ocipWrapPercentage'],
+          message: 'Retention and OCIP / WRAP cannot exceed 100% combined.',
         })
       }
     })

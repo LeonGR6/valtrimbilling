@@ -23,6 +23,7 @@ import EventOutlinedIcon from '@mui/icons-material/EventOutlined'
 import KeyboardArrowDownRoundedIcon from '@mui/icons-material/KeyboardArrowDownRounded'
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
 import SmsOutlinedIcon from '@mui/icons-material/SmsOutlined'
+import { formatPhoneNumber } from '../../../utils/phoneNumbers.js'
 import {
   builderLabelsById,
   coordinatorLabelsById,
@@ -278,7 +279,9 @@ export default function ServiceRequestsTable({
                       {request.contactName}
                     </Typography>
                     <Box sx={{ mt: 0.25 }}>
-                      <MutedLine>{request.contactPhone}</MutedLine>
+                      <MutedLine>
+                        {formatPhoneNumber(request.contactPhone)}
+                      </MutedLine>
                       {request.contactEmail && (
                         <MutedLine>{request.contactEmail}</MutedLine>
                       )}

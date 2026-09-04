@@ -2,10 +2,12 @@ import { Box, Button, Stack } from '@mui/material'
 import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded'
 import AttachMoneyRoundedIcon from '@mui/icons-material/AttachMoneyRounded'
 import FormatListBulletedRoundedIcon from '@mui/icons-material/FormatListBulletedRounded'
+import ReceiptLongRoundedIcon from '@mui/icons-material/ReceiptLongRounded'
 import TableChartRoundedIcon from '@mui/icons-material/TableChartRounded'
 import { Link as RouterLink } from 'react-router-dom'
 import {
   builderJobsPath,
+  jobDrawInvoicePath,
   jobPlanPricingPath,
   jobPlansOptionsPath,
   jobSequenceSheetPath,
@@ -29,6 +31,12 @@ const modules = [
     label: 'Plan Pricing',
     icon: <AttachMoneyRoundedIcon fontSize="small" />,
     path: jobPlanPricingPath,
+  },
+  {
+    id: 'draw-invoice',
+    label: 'Draws',
+    icon: <ReceiptLongRoundedIcon fontSize="small" />,
+    path: jobDrawInvoicePath,
   },
 ]
 

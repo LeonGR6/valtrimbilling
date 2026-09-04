@@ -32,7 +32,12 @@ import LockOpenRoundedIcon from '@mui/icons-material/LockOpenRounded'
 import LockOutlinedIcon from '@mui/icons-material/LockOutlined'
 import FilterListRoundedIcon from '@mui/icons-material/FilterListRounded'
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
+import { FormPhoneInput } from '../../../components/common/InternationalPhoneInput.jsx'
 import ResponsiveCreateButton from '../../../components/common/ResponsiveCreateButton'
+import {
+  getNationalPhoneNumber,
+  getPhoneCountry,
+} from '../../../utils/phoneNumbers.js'
 import RequestDetailPanel from './RequestDetailPanel.jsx'
 import ServiceRequestsTable from './ServiceRequestsTable.jsx'
 import ServiceSummaryCards from './ServiceSummaryCards.jsx'
@@ -63,6 +68,23 @@ import { sortOptions, sortRequests } from '../utils/sorting.js'
 // before the coordinator has to scroll.
 const ROWS_PER_PAGE = 6
 
+function getRequestFormValues(request, requests) {
+  const formRequest = request ?? {
+    ...emptyRequest,
+    requestNumber: nextRequestNumber(requests),
+  }
+  const contactPhoneCountry = getPhoneCountry(formRequest.contactPhone)
+
+  return {
+    ...formRequest,
+    contactPhoneCountry,
+    contactPhone: getNationalPhoneNumber(
+      formRequest.contactPhone,
+      contactPhoneCountry,
+    ),
+  }
+}
+
 function RequestDialog({ request, requests, onClose, onSave }) {
   const {
     control,
@@ -75,9 +97,7 @@ function RequestDialog({ request, requests, onClose, onSave }) {
     ),
     // A new request arrives with its folio already assigned and logged under
     // the coordinator who owns the screen. Neither is typed.
-    defaultValues: request
-      ? { ...request }
-      : { ...emptyRequest, requestNumber: nextRequestNumber(requests) },
+    defaultValues: getRequestFormValues(request, requests),
     mode: 'onTouched',
     reValidateMode: 'onChange',
   })
@@ -280,13 +300,12 @@ function RequestDialog({ request, requests, onClose, onSave }) {
               fullWidth
               slotProps={{ htmlInput: { maxLength: 100 } }}
             />
-            <TextField
+            <FormPhoneInput
+              control={control}
+              name="contactPhone"
               label="Phone"
-              {...register('contactPhone')}
-              error={Boolean(errors.contactPhone)}
-              helperText={errors.contactPhone?.message ?? ' '}
-              fullWidth
-              slotProps={{ htmlInput: { maxLength: 30 } }}
+              error={errors.contactPhone}
+              helperText="Choose +1 or +52"
             />
             <TextField
               label="Email"

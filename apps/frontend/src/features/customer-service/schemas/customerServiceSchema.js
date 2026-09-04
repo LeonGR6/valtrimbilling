@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { normalizePhoneNumber } from '../../../utils/phoneNumbers.js'
 
 const namePattern = /^[\p{L}\p{M}\s.'-]+$/u
 const phonePattern = /^[\d\s()+.-]*$/
@@ -100,6 +101,7 @@ export function createServiceRequestSchema(requests, currentRequestId) {
           (value) => phonePattern.test(value) && /\d/.test(value),
           'Enter a valid phone number.',
         ),
+      contactPhoneCountry: z.enum(['US', 'MX']).default('US'),
       contactEmail: z
         .string()
         .trim()
@@ -127,6 +129,17 @@ export function createServiceRequestSchema(requests, currentRequestId) {
       notes: z.string().trim().max(500, 'Use 500 characters or fewer.'),
     })
     .superRefine((data, context) => {
+      if (
+        data.contactPhone &&
+        !normalizePhoneNumber(data.contactPhone, data.contactPhoneCountry)
+      ) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['contactPhone'],
+          message: 'Enter a 10-digit U.S. or Mexico phone number.',
+        })
+      }
+
       // Two requests sharing a number would make the builder’s follow-up
       // ambiguous, since that is the reference they quote back.
       const numberAlreadyExists = requests.some(
@@ -197,6 +210,17 @@ export function createServiceRequestSchema(requests, currentRequestId) {
             message: 'Assign a technician.',
           })
         }
+      }
+    })
+    .transform((data) => {
+      const { contactPhoneCountry, ...savedRequest } = data
+
+      return {
+        ...savedRequest,
+        contactPhone: normalizePhoneNumber(
+          data.contactPhone,
+          contactPhoneCountry,
+        ),
       }
     })
 }

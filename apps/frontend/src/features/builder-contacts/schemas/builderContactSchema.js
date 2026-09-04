@@ -1,18 +1,19 @@
 import { z } from 'zod'
+import { normalizePhoneNumber } from '../../../utils/phoneNumbers.js'
 
 export const contactTypeSchema = z.enum(['JOBSITE_SUPERINTENDENT', 'AP_CONTACT'])
 
 const namePattern = /^[\p{L}\p{M}\s.'-]+$/u
-const phonePattern = /^[\d\s()+.-]*$/
-
 const optionalPhone = z
   .string()
   .trim()
   .max(30, 'Use 30 characters or fewer.')
   .refine(
-    (value) => value === '' || (phonePattern.test(value) && /\d/.test(value)),
+    (value) => value === '' || (/^[\d\s()+.-]+$/.test(value) && /\d/.test(value)),
     'Enter a valid phone number.',
   )
+
+const phoneCountry = z.enum(['US', 'MX']).default('US')
 
 export function createBuilderContactSchema(contacts, currentContactId) {
   return z
@@ -33,10 +34,28 @@ export function createBuilderContactSchema(contacts, currentContactId) {
         .email('Enter a valid email address.')
         .transform((value) => value.toLowerCase()),
       phone: optionalPhone,
+      phoneCountry,
       officePhone: optionalPhone,
+      officePhoneCountry: phoneCountry,
       notes: z.string().trim().max(300, 'Use 300 characters or fewer.'),
     })
     .superRefine((data, context) => {
+      if (data.phone && !normalizePhoneNumber(data.phone, data.phoneCountry)) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['phone'],
+          message: 'Enter a 10-digit U.S. or Mexico phone number.',
+        })
+      }
+
+      if (data.officePhone && !normalizePhoneNumber(data.officePhone, data.officePhoneCountry)) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['officePhone'],
+          message: 'Enter a 10-digit U.S. or Mexico phone number.',
+        })
+      }
+
       // The same address twice would send the billing package to one person
       // and the follow-up to a duplicate record.
       const emailAlreadyExists = contacts.some(
@@ -51,6 +70,15 @@ export function createBuilderContactSchema(contacts, currentContactId) {
           path: ['email'],
           message: 'This email address is already used by another contact.',
         })
+      }
+    })
+    .transform((data) => {
+      const { phoneCountry: mobileCountry, officePhoneCountry, ...savedContact } = data
+
+      return {
+        ...savedContact,
+        phone: normalizePhoneNumber(data.phone, mobileCountry),
+        officePhone: normalizePhoneNumber(data.officePhone, officePhoneCountry),
       }
     })
 }

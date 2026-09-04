@@ -22,6 +22,64 @@ test('Builder Draw Schedule accepts 3 draws totaling 100 percent', () => {
 
   assert.equal(result.builderId, 2)
   assert.equal(result.draws.length, 3)
+  assert.equal(result.separateHardwarePrice, false)
+})
+
+test('Builder Draw Schedule can separate hardware at 100 percent', () => {
+  const result = createBuilderDrawScheduleSchema([], null).parse(validSetup({
+    separateHardwarePrice: true,
+  }))
+
+  assert.equal(result.separateHardwarePrice, true)
+})
+
+test('Builder Draw Schedule stores the draw used to bill selected options', () => {
+  const result = createBuilderDrawScheduleSchema([], null).parse(validSetup({
+    optionsBillingDrawIndex: '2',
+  }))
+
+  assert.equal(result.optionsBillingDrawIndex, 2)
+})
+
+test('options billing draw must point to a configured draw', () => {
+  const result = createBuilderDrawScheduleSchema([], null).safeParse(validSetup({
+    optionsBillingDrawIndex: 3,
+  }))
+
+  assert.equal(result.success, false)
+  assert.deepEqual(result.error.flatten().fieldErrors.optionsBillingDrawIndex, [
+    'Select one of the configured draws.',
+  ])
+})
+
+test('Builder Draw Schedule stores and trims optional draw names', () => {
+  const result = createBuilderDrawScheduleSchema([], null).parse(validSetup({
+    draws: [
+      { name: ' Trim Complete ', percentage: 10 },
+      { name: '', percentage: 75 },
+      { percentage: 15 },
+    ],
+  }))
+
+  assert.equal(result.draws[0].name, 'Trim Complete')
+  assert.equal(result.draws[1].name, '')
+  assert.equal(result.draws[2].name, '')
+})
+
+test('Builder Draw Schedule limits draw names to 80 characters', () => {
+  const result = createBuilderDrawScheduleSchema([], null).safeParse(validSetup({
+    draws: [
+      { name: 'x'.repeat(81), percentage: 10 },
+      { percentage: 75 },
+      { percentage: 15 },
+    ],
+  }))
+
+  assert.equal(result.success, false)
+  assert.equal(
+    result.error.issues.some((issue) => issue.path.join('.') === 'draws.0.name'),
+    true,
+  )
 })
 
 test('Builder Draw Schedule accepts 5 draws with two-decimal percentages', () => {
@@ -53,9 +111,9 @@ test('Builder Draw Schedule rejects totals other than 100 percent', () => {
   ])
 })
 
-test('Builder Draw Schedule requires between 3 and 5 draws', () => {
+test('Builder Draw Schedule requires between 2 and 5 draws', () => {
   const tooFew = createBuilderDrawScheduleSchema([], null).safeParse(validSetup({
-    draws: [{ percentage: 50 }, { percentage: 50 }],
+    draws: [{ percentage: 100 }],
   }))
   const tooMany = createBuilderDrawScheduleSchema([], null).safeParse(validSetup({
     draws: Array.from({ length: 6 }, (_, index) => ({
@@ -108,6 +166,18 @@ test('disabled retention and OCIP options clear hidden percentages', () => {
 
   assert.equal(result.retentionPercentage, 0)
   assert.equal(result.ocipWrapPercentage, 0)
+})
+
+test('retention and OCIP / WRAP cannot exceed 100 percent combined', () => {
+  const result = createBuilderDrawScheduleSchema([], null).safeParse(validSetup({
+    retentionEnabled: true,
+    retentionPercentage: 60,
+    ocipWrapEnabled: true,
+    ocipWrapPercentage: 50,
+  }))
+
+  assert.equal(result.success, false)
+  assert.ok(result.error.flatten().fieldErrors.ocipWrapPercentage)
 })
 
 test('enabled retention and OCIP options require a percentage', () => {

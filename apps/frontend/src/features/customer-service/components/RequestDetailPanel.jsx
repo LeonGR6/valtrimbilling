@@ -8,6 +8,7 @@ import {
 } from '@mui/material'
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded'
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined'
+import { formatPhoneNumber } from '../../../utils/phoneNumbers.js'
 import EmailOutlinedIcon from '@mui/icons-material/EmailOutlined'
 import PhoneRoundedIcon from '@mui/icons-material/PhoneRounded'
 import SmsOutlinedIcon from '@mui/icons-material/SmsOutlined'
@@ -195,7 +196,7 @@ export default function RequestDetailPanel({ request, onClose, onEdit }) {
           </Box>
         </Typography>
         <Typography variant="body2" color="text.secondary" sx={{ mt: 0.25 }}>
-          {request.contactPhone}
+          {formatPhoneNumber(request.contactPhone)}
         </Typography>
         {request.contactEmail && (
           <Typography variant="body2" color="text.secondary">

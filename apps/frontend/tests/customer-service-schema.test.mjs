@@ -20,6 +20,7 @@ function validRequest(overrides = {}) {
     plan: 'Plan 2',
     contactName: 'Maria Lopez',
     contactPhone: '(951) 555-0123',
+    contactPhoneCountry: 'US',
     contactEmail: 'Maria.Lopez@Example.com',
     type: 'WARRANTY',
     issue: 'Interior door rubbing',
@@ -42,7 +43,31 @@ test('service request normalizes the number, lot, state and email', () => {
   assert.equal(result.requestNumber, 'CS-2100')
   assert.equal(result.lotNumber, '24A')
   assert.equal(result.state, 'CA')
+  assert.equal(result.contactPhone, '+19515550123')
+  assert.equal('contactPhoneCountry' in result, false)
   assert.equal(result.contactEmail, 'maria.lopez@example.com')
+})
+
+test('the homeowner phone uses the selected Mexico country code', () => {
+  const result = createServiceRequestSchema([], null).parse(
+    validRequest({
+      contactPhone: '55 1234 5678',
+      contactPhoneCountry: 'MX',
+    }),
+  )
+
+  assert.equal(result.contactPhone, '+525512345678')
+})
+
+test('the homeowner phone must have ten national digits', () => {
+  const result = createServiceRequestSchema([], null).safeParse(
+    validRequest({ contactPhone: '555-1234' }),
+  )
+
+  assert.equal(result.success, false)
+  assert.ok(
+    result.error.issues.some((issue) => issue.path[0] === 'contactPhone'),
+  )
 })
 
 test('service request rejects a number another request already uses', () => {

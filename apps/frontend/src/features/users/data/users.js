@@ -168,4 +168,20 @@ export const initialUsers = [
     isActive: false,
     lastLoginAt: '2026-05-30T16:44:00',
   },
+  {
+    id: 9,
+    name: 'Anelda Calvillo',
+    email: 'anelda.calvillo@valtrim.com',
+    phone: '(951) 555-0195',
+    // Service requests come in from every community, so the coordinator who
+    // works them is not scoped to a subset of projects.
+    allProjects: true,
+    projectAccess: [],
+    // Closest role in the catalog to what she actually does, which is booking
+    // technician visits. A dedicated Customer Service role is a permissions
+    // decision that belongs with RLS.
+    role: 'SCHEDULING',
+    isActive: true,
+    lastLoginAt: '2026-08-28T07:58:00',
+  },
 ]

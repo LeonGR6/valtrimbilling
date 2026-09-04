@@ -10,6 +10,7 @@ import {
   PricingPage,
   SequenceSheetsPage,
   BuilderContactsPage,
+  CustomerServicePage,
   UsersPage,
 } from './lazyPages.jsx'
 
@@ -33,6 +34,7 @@ export const navigationRoutes = [
   { path: '/financials', label: 'Financials', icon: 'financials', element: <FinancialsPage /> },
   { path: '/users', label: 'Users', icon: 'users', element: <UsersPage /> },
   { path: '/builder-contacts', label: 'Builder Contacts', icon: 'builder-contacts', element: <BuilderContactsPage /> },
+  { path: '/customer-service', label: 'Customer Service', icon: 'customer-service', element: <CustomerServicePage /> },
 
 ]
 

@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useForm, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { Link as RouterLink } from 'react-router-dom'
-import { Box, Button, Link, Stack } from '@mui/material'
+import { Alert, Box, Button, Link, Stack } from '@mui/material'
 import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded'
 import MailOutlineRoundedIcon from '@mui/icons-material/MailOutlineRounded'
 import MarkEmailReadOutlinedIcon from '@mui/icons-material/MarkEmailReadOutlined'
@@ -13,18 +13,31 @@ import AuthShell, {
   submitButtonSx,
 } from '../../common'
 import { forgotPasswordSchema } from '../schemas/forgotPassword'
+import { useAuth } from '../../context/useAuth.js'
 
 export default function ForgotPasswordForm() {
+  const { configured, requestPasswordReset } = useAuth()
   const [submittedEmail, setSubmittedEmail] = useState(null)
+  const [submitError, setSubmitError] = useState(null)
+  const [submitting, setSubmitting] = useState(false)
   const { control, handleSubmit } = useForm({
     resolver: zodResolver(forgotPasswordSchema),
     mode: 'onTouched',
     defaultValues: { email: '' },
   })
 
-  const onSubmit = (data) => {
-    // TODO: trigger the reset email through Supabase.
-    setSubmittedEmail(data.email)
+  const onSubmit = async (data) => {
+    setSubmitError(null)
+    setSubmitting(true)
+
+    try {
+      await requestPasswordReset(data.email)
+      setSubmittedEmail(data.email)
+    } catch (error) {
+      setSubmitError(error.message)
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   return (
@@ -72,6 +85,14 @@ export default function ForgotPasswordForm() {
             subtitle="Enter your email and we'll send you a link to reset your password."
           />
           <Box component="form" onSubmit={handleSubmit(onSubmit)} noValidate>
+            {!configured && (
+              <Alert severity="error" sx={{ mb: 2 }}>
+                Supabase is not configured. Add the project URL and publishable key to
+                apps/frontend/.env.
+              </Alert>
+            )}
+            {submitError && <Alert severity="error" sx={{ mb: 2 }}>{submitError}</Alert>}
+
             <Controller
               name="email"
               control={control}
@@ -96,9 +117,10 @@ export default function ForgotPasswordForm() {
               size="medium"
               fullWidth
               disableElevation
+              disabled={!configured || submitting}
               sx={submitButtonSx}
             >
-              Send reset link
+              {submitting ? 'Sending…' : 'Send reset link'}
             </Button>
           </Box>
         </>

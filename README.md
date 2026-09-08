@@ -1,8 +1,8 @@
 # ValtrimBilling
 
 ValtrimBilling is organized as an npm-workspaces monorepo. The existing React
-application lives in `apps/frontend`; `apps/backend` is reserved for the future
-API.
+application lives in `apps/frontend`; `apps/backend` contains the Supabase
+configuration, migrations, database tests, and Edge Functions.
 
 ## Repository structure
 
@@ -15,7 +15,7 @@ valtrimbilling/
 │   │   ├── tests/
 │   │   ├── package.json
 │   │   └── vite.config.js
-│   └── backend/           # Reserved for the backend
+│   └── backend/           # Supabase migrations, tests, and Edge Functions
 ├── packages/              # Future packages shared by multiple applications
 ├── .openai/               # Repository-level hosting configuration
 ├── package.json           # Workspace scripts
@@ -52,6 +52,7 @@ default.
 | `npm run preview` | Serves the production build locally |
 | `npm run lint` | Runs frontend lint checks |
 | `npm test` | Runs frontend tests |
+| `npm run db:test` | Runs the Supabase pgTAP database tests |
 
 Commands can also be executed directly against the frontend workspace:
 
@@ -71,12 +72,12 @@ with the `VITE_` prefix.
 
 ## Backend
 
-`apps/backend` is intentionally empty for now. When backend development starts,
-add its own `package.json`, source directory, tests, and environment template.
-Because the root workspace uses `apps/*`, npm will discover it automatically.
+Supabase assets live under `apps/backend/supabase`. The Phase 0 rollout and the
+safe procedure for reconciling the existing remote schema with migration
+history are documented in [docs/supabase-phase-0.md](docs/supabase-phase-0.md).
 
-Backend secrets must stay in backend-only environment variables and must never
-use the frontend's `VITE_` prefix.
+Backend secrets must stay in Supabase secrets or backend-only environment
+variables and must never use the frontend's `VITE_` prefix.
 
 ## Shared code
 

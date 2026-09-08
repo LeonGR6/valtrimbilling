@@ -46,9 +46,16 @@ function StageBadge({ label, tone }) {
 }
 
 export default function BuilderDateSettings() {
-  const { builders, updateBuilderDateConfiguration } = useBuilders()
+  const {
+    builders,
+    loading,
+    error,
+    canManageBuilders,
+    updateBuilderDateConfiguration,
+  } = useBuilders()
   const [drafts, setDrafts] = useState(() => createDrafts(builders))
-  const [notice, setNotice] = useState('')
+  const [savingBuilderId, setSavingBuilderId] = useState(null)
+  const [notice, setNotice] = useState(null)
 
   const changeDraft = (builderId, field, value) => {
     setDrafts((current) => ({
@@ -61,7 +68,7 @@ export default function BuilderDateSettings() {
     }))
   }
 
-  const saveConfiguration = (builder) => {
+  const saveConfiguration = async (builder) => {
     const draft = drafts[builder.id] ?? getBuilderDateConfiguration(builder)
     const extToDmWeeks = parseWeeks(draft.extToDmWeeks)
     const shutterBeforeDmWeeks = parseWeeks(draft.shutterBeforeDmWeeks, 1)
@@ -69,16 +76,36 @@ export default function BuilderDateSettings() {
     if (extToDmWeeks == null || shutterBeforeDmWeeks == null || dmToHwWeeks == null) return
 
     const configuration = { extToDmWeeks, shutterBeforeDmWeeks, dmToHwWeeks }
-    updateBuilderDateConfiguration(builder.id, configuration)
-    setDrafts((current) => ({ ...current, [builder.id]: configuration }))
-    setNotice(`${builder.name} date configuration saved.`)
+    setSavingBuilderId(builder.id)
+    try {
+      await updateBuilderDateConfiguration(builder.id, configuration)
+      setDrafts((current) => ({ ...current, [builder.id]: configuration }))
+      setNotice({
+        severity: 'success',
+        message: `${builder.name} date configuration saved.`,
+      })
+    } catch (saveError) {
+      setNotice({ severity: 'error', message: saveError.message })
+    } finally {
+      setSavingBuilderId(null)
+    }
   }
 
-  const resetConfiguration = (builder) => {
+  const resetConfiguration = async (builder) => {
     const configuration = { ...defaultBuilderDateConfiguration }
-    updateBuilderDateConfiguration(builder.id, configuration)
-    setDrafts((current) => ({ ...current, [builder.id]: configuration }))
-    setNotice(`${builder.name} restored to the default spacing.`)
+    setSavingBuilderId(builder.id)
+    try {
+      await updateBuilderDateConfiguration(builder.id, configuration)
+      setDrafts((current) => ({ ...current, [builder.id]: configuration }))
+      setNotice({
+        severity: 'success',
+        message: `${builder.name} restored to the default spacing.`,
+      })
+    } catch (saveError) {
+      setNotice({ severity: 'error', message: saveError.message })
+    } finally {
+      setSavingBuilderId(null)
+    }
   }
 
   return (
@@ -102,6 +129,12 @@ export default function BuilderDateSettings() {
         The seven configured U.S. holidays and their observed weekdays are excluded from the week count.
         Moving DM recalculates Shutter when the Shutter option is enabled on that DM event.
       </Alert>
+
+      {error && <Alert severity="error">{error}</Alert>}
+      {!canManageBuilders && !loading && (
+        <Alert severity="info">Your role has read-only access to builder date settings.</Alert>
+      )}
+      {loading && <Typography color="text.secondary">Loading builders...</Typography>}
 
       <Box className="builder-date-settings__grid">
         {builders.map((builder) => {
@@ -140,6 +173,7 @@ export default function BuilderDateSettings() {
                   type="number"
                   value={draft.extToDmWeeks}
                   onChange={(event) => changeDraft(builder.id, 'extToDmWeeks', event.target.value)}
+                  disabled={!canManageBuilders || savingBuilderId === builder.id}
                   error={!extToDmValid}
                   helperText={extToDmValid ? 'Weeks' : 'Use 0–52 whole weeks.'}
                   size="small"
@@ -157,6 +191,7 @@ export default function BuilderDateSettings() {
                   type="number"
                   value={draft.dmToHwWeeks}
                   onChange={(event) => changeDraft(builder.id, 'dmToHwWeeks', event.target.value)}
+                  disabled={!canManageBuilders || savingBuilderId === builder.id}
                   error={!dmToHwValid}
                   helperText={dmToHwValid ? 'Weeks' : 'Use 0–52 whole weeks.'}
                   size="small"
@@ -183,6 +218,7 @@ export default function BuilderDateSettings() {
                   type="number"
                   value={draft.shutterBeforeDmWeeks}
                   onChange={(event) => changeDraft(builder.id, 'shutterBeforeDmWeeks', event.target.value)}
+                  disabled={!canManageBuilders || savingBuilderId === builder.id}
                   error={!shutterBeforeDmValid}
                   helperText={shutterBeforeDmValid ? 'Weeks before DM' : 'Use 1–52 whole weeks.'}
                   size="small"
@@ -199,6 +235,7 @@ export default function BuilderDateSettings() {
                   color="inherit"
                   startIcon={<RestartAltRoundedIcon />}
                   onClick={() => resetConfiguration(builder)}
+                  disabled={!canManageBuilders || savingBuilderId === builder.id}
                 >
                   Reset default
                 </Button>
@@ -207,7 +244,13 @@ export default function BuilderDateSettings() {
                   variant="contained"
                   startIcon={<SaveRoundedIcon />}
                   onClick={() => saveConfiguration(builder)}
-                  disabled={!extToDmValid || !shutterBeforeDmValid || !dmToHwValid}
+                  disabled={
+                    !canManageBuilders
+                    || savingBuilderId === builder.id
+                    || !extToDmValid
+                    || !shutterBeforeDmValid
+                    || !dmToHwValid
+                  }
                   disableElevation
                 >
                   Save
@@ -221,9 +264,16 @@ export default function BuilderDateSettings() {
       <Snackbar
         open={Boolean(notice)}
         autoHideDuration={3000}
-        onClose={() => setNotice('')}
-        message={notice}
-      />
+        onClose={() => setNotice(null)}
+      >
+        <Alert
+          severity={notice?.severity ?? 'success'}
+          onClose={() => setNotice(null)}
+          variant="filled"
+        >
+          {notice?.message}
+        </Alert>
+      </Snackbar>
     </Box>
   )
 }

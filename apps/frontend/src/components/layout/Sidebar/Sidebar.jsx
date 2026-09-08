@@ -44,11 +44,13 @@ import SellIcon from '@mui/icons-material/Sell';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import BarChartIcon from '@mui/icons-material/BarChart'
 import SupportAgentIcon from '@mui/icons-material/SupportAgent';
+import LogoutRoundedIcon from '@mui/icons-material/LogoutRounded'
 
 import valtrimLogoDark from '../../../assets/icons/Valtrim-White-Transparent.png'
 import valtrimLogoLight from '../../../assets/icons/Valtrim-Blue-Transparent.png'
 import { navigationRoutes } from '../../../routes/navigation.jsx'
 import ColorModeToggle from '../../common/ColorModeToggle'
+import { useAuth } from '../../../features/auth/context/useAuth.js'
 
 const DRAWER_WIDTH = 256
 const RAIL_WIDTH = 72
@@ -297,6 +299,21 @@ function hasAvailableItem(section) {
 }
 
 function SidebarContent({ onNavigate, collapsed = false, onToggleCollapsed }) {
+  const { profile, signOut, user } = useAuth()
+  const displayName = profile?.name || user?.email || 'User'
+  const displayEmail = profile?.email || user?.email || ''
+  const initials = displayName
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join('') || 'U'
+
+  const handleSignOut = async () => {
+    await signOut()
+    onNavigate?.()
+  }
+
   return (
     <>
       <Box
@@ -407,7 +424,7 @@ function SidebarContent({ onNavigate, collapsed = false, onToggleCollapsed }) {
         </List>
       </Box>
 
-      {/* User profile (static placeholder) + theme toggle */}
+      {/* Authenticated user profile, session controls, and theme toggle. */}
       <Divider />
       <Box
         sx={{
@@ -419,27 +436,37 @@ function SidebarContent({ onNavigate, collapsed = false, onToggleCollapsed }) {
         }}
       >
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexGrow: 1, minWidth: 0 }}>
-          <Tooltip title={collapsed ? 'user@valtriminc.com' : ''} placement="right">
+          <Tooltip title={collapsed ? displayEmail : ''} placement="right">
             <Avatar
               sx={{ bgcolor: 'primary.light', color: 'primary.main', width: 32, height: 32, fontSize: 14, fontWeight: 600 }}
             >
-              U
+              {initials}
             </Avatar>
           </Tooltip>
           {!collapsed && (
             <>
               <Box sx={{ minWidth: 0, flexGrow: 1 }}>
                 <Typography noWrap sx={{ fontSize: 14, fontWeight: 500, color: 'text.primary' }}>
-                  User
+                  {displayName}
                 </Typography>
                 <Typography noWrap sx={{ fontSize: 12, color: 'text.secondary' }}>
-                  user@valtriminc.com
+                  {displayEmail}
                 </Typography>
               </Box>
             </>
           )}
         </Box>
         <ColorModeToggle />
+        <Tooltip title="Sign out" placement="right">
+          <IconButton
+            size="small"
+            aria-label="Sign out"
+            onClick={handleSignOut}
+            sx={{ color: 'text.secondary' }}
+          >
+            <LogoutRoundedIcon fontSize="small" />
+          </IconButton>
+        </Tooltip>
       </Box>
     </>
   )

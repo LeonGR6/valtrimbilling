@@ -18,6 +18,7 @@
     "db:push": "npm run db:push --workspace=@valtrimbilling/backend --",
     "db:diff": "npm run db:diff --workspace=@valtrimbilling/backend --",
     "db:lint": "npm run db:lint --workspace=@valtrimbilling/backend --",
+    "db:test": "npm run db:test --workspace=@valtrimbilling/backend --",
     "fn:new": "npm run functions:new --workspace=@valtrimbilling/backend --",
     "fn:deploy": "npm run functions:deploy --workspace=@valtrimbilling/backend --",
     "fn:check": "npm run functions:check --workspace=@valtrimbilling/backend",

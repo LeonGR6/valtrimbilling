@@ -44,6 +44,7 @@ export const personSchema = z
       .trim()
       .max(80, 'Use 80 characters or fewer.')
       .default(''),
+    isActive: z.boolean().default(true),
   })
   .superRefine((person, context) => {
     if (person.phone && !normalizePhoneNumber(person.phone, person.phoneCountry)) {

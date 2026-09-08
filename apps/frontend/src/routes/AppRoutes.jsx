@@ -10,6 +10,7 @@ import NotFound from '../pages/NotFound'
 import { DEFAULT_ROUTE } from '../config/appConfig.js'
 import { contextualRoutes, navigationRoutes } from './navigation.jsx'
 import { LoginPage, ForgotPasswordPage, ResetPasswordPage } from './lazyPages.jsx'
+import RequireAuth from '../features/auth/context/RequireAuth.jsx'
 
 export const appRouter = createBrowserRouter([
   {
@@ -28,7 +29,9 @@ export const appRouter = createBrowserRouter([
     path: '/',
     element: (
       <Suspense fallback={<RouteLoading />}>
-        <AppLayout />
+        <RequireAuth>
+          <AppLayout />
+        </RequireAuth>
       </Suspense>
     ),
     errorElement: <ErrorPage />,

@@ -1,7 +1,8 @@
+import { useState } from 'react'
 import { useForm, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { Link as RouterLink } from 'react-router-dom'
-import { Box, Button, Link, Stack } from '@mui/material'
+import { Link as RouterLink, useLocation, useNavigate } from 'react-router-dom'
+import { Alert, Box, Button, Link, Stack } from '@mui/material'
 import LockOutlinedIcon from '@mui/icons-material/LockOutlined'
 import MailOutlineRoundedIcon from '@mui/icons-material/MailOutlineRounded'
 import AuthShell, {
@@ -11,17 +12,37 @@ import AuthShell, {
   submitButtonSx,
 } from '../../common'
 import { loginSchema } from '../schemas/login'
+import { useAuth } from '../../context/useAuth.js'
+import { DEFAULT_ROUTE } from '../../../../config/appConfig.js'
 
 export default function LoginForm() {
+  const navigate = useNavigate()
+  const location = useLocation()
+  const { configured, signIn } = useAuth()
+  const [submitError, setSubmitError] = useState(null)
+  const [submitting, setSubmitting] = useState(false)
   const { control, handleSubmit } = useForm({
     resolver: zodResolver(loginSchema),
     mode: 'onTouched',
     defaultValues: { email: '', password: '' },
   })
 
-  const onSubmit = (data) => {
-    // TODO: authenticate against Supabase with the validated data.
-    void data
+  const onSubmit = async (data) => {
+    setSubmitError(null)
+    setSubmitting(true)
+
+    try {
+      await signIn(data)
+      const requestedPath = location.state?.from
+      const destination = typeof requestedPath === 'string' && requestedPath.startsWith('/')
+        ? requestedPath
+        : DEFAULT_ROUTE
+      navigate(destination, { replace: true })
+    } catch (error) {
+      setSubmitError(error.message)
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   return (
@@ -31,6 +52,14 @@ export default function LoginForm() {
 
       <Box component="form" onSubmit={handleSubmit(onSubmit)} noValidate>
         <Stack spacing={2}>
+          {!configured && (
+            <Alert severity="error">
+              Supabase is not configured. Add the project URL and publishable key to
+              apps/frontend/.env.
+            </Alert>
+          )}
+          {submitError && <Alert severity="error">{submitError}</Alert>}
+
           <Controller
             name="email"
             control={control}
@@ -85,9 +114,10 @@ export default function LoginForm() {
           size="medium"
           fullWidth
           disableElevation
+          disabled={!configured || submitting}
           sx={submitButtonSx}
         >
-          Sign in
+          {submitting ? 'Signing in…' : 'Sign in'}
         </Button>
       </Box>
     </AuthShell>

@@ -6,21 +6,24 @@ import { DrawInvoicePackagesProvider } from './features/draw-invoice/context/Dra
 import { BuildersProvider } from './features/builders/context/BuildersContext.jsx'
 import { PeopleProvider } from './features/people/context/PeopleContext.jsx'
 import { BuilderContactsProvider } from './features/builder-contacts/context/BuilderContactsContext.jsx'
+import { AuthProvider } from './features/auth/context/AuthProvider.jsx'
 
 export default function App() {
   return (
-    <BuildersProvider>
-      <PeopleProvider>
-        <BuilderContactsProvider>
-          <JobsProvider>
-            <BuilderDrawSchedulesProvider>
-              <DrawInvoicePackagesProvider>
-                <RouterProvider router={appRouter} />
-              </DrawInvoicePackagesProvider>
-            </BuilderDrawSchedulesProvider>
-          </JobsProvider>
-        </BuilderContactsProvider>
-      </PeopleProvider>
-    </BuildersProvider>
+    <AuthProvider>
+      <BuildersProvider>
+        <PeopleProvider>
+          <BuilderContactsProvider>
+            <JobsProvider>
+              <BuilderDrawSchedulesProvider>
+                <DrawInvoicePackagesProvider>
+                  <RouterProvider router={appRouter} />
+                </DrawInvoicePackagesProvider>
+              </BuilderDrawSchedulesProvider>
+            </JobsProvider>
+          </BuilderContactsProvider>
+        </PeopleProvider>
+      </BuildersProvider>
+    </AuthProvider>
   )
 }

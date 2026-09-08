@@ -581,15 +581,6 @@ function BuilderDrawScheduleDialog({
                 fullWidth
                 slotProps={{ htmlInput: { min: 1, max: 31, step: 1 } }}
               />
-              <TextField
-                label="Days until due"
-                type="number"
-                {...register('submissionOffsetDays')}
-                error={Boolean(errors.submissionOffsetDays)}
-                helperText={errors.submissionOffsetDays?.message ?? 'After each cutoff'}
-                fullWidth
-                slotProps={{ htmlInput: { min: 0, max: 30, step: 1 } }}
-              />
             </Stack>
           )}
 
@@ -615,15 +606,7 @@ function BuilderDrawScheduleDialog({
                   </FormControl>
                 )}
               />
-              <TextField
-                label="Days until due"
-                type="number"
-                {...register('submissionOffsetDays')}
-                error={Boolean(errors.submissionOffsetDays)}
-                helperText={errors.submissionOffsetDays?.message ?? 'After each cutoff'}
-                fullWidth
-                slotProps={{ htmlInput: { min: 0, max: 30, step: 1 } }}
-              />
+              
             </Stack>
           )}
 

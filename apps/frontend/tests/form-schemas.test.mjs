@@ -429,6 +429,7 @@ test('person schema normalizes contact information', () => {
     email: 'maria.lopez@example.com',
     types: ['SUPERVISOR'],
     territory: 'Inland Empire',
+    isActive: true,
   })
 })
 

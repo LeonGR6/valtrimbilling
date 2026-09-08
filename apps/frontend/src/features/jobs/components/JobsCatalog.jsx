@@ -281,7 +281,7 @@ export default function JobsCatalog() {
   const { builderId, jobId } = useParams()
   const [searchParams] = useSearchParams()
   const { jobs, setJobs } = useJobs()
-  const { builders, setBuilders } = useBuilders()
+  const { builders } = useBuilders()
   const { people } = usePeople()
   const { contacts, setContacts } = useBuilderContacts()
   const [search, setSearch] = useState('')
@@ -518,8 +518,6 @@ export default function JobsCatalog() {
   if (!selectedBuilder) {
     return (
       <BuildersCatalog
-        builders={builders}
-        setBuilders={setBuilders}
         getBuilderJobCount={(builder) =>
           jobs.filter((job) => job.builder === builder.name).length
         }

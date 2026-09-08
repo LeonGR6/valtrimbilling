@@ -35,7 +35,7 @@ Deno.serve(async (req) => {
     return json({
       ok: true,
       database: 'reachable',
-      userCount: count,
+      userCount: count ?? 0,
       caller: user ? { id: user.id, email: user.email } : null,
     })
   } catch (error) {

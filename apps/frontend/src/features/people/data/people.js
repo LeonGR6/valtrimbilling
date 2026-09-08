@@ -20,6 +20,7 @@ export const initialPeople = [
     email: 'lauren.mitchell@valtriminc.com',
     types: ['SUPERVISOR'],
     territory: 'Inland Empire',
+    isActive: true,
   },
   {
     id: 2,
@@ -29,6 +30,7 @@ export const initialPeople = [
     email: 'robert.king@valtriminc.com',
     types: ['SUPERVISOR'],
     territory: 'Orange County',
+    isActive: true,
   },
   {
     id: 3,
@@ -38,6 +40,7 @@ export const initialPeople = [
     email: 'esteban.marquez@valtriminc.com',
     types: ['SUPERVISOR'],
     territory: 'Riverside County',
+    isActive: true,
   },
   {
     id: 4,
@@ -47,6 +50,7 @@ export const initialPeople = [
     email: 'nadia.haddad@valtriminc.com',
     types: ['SUPERVISOR'],
     territory: 'High Desert',
+    isActive: true,
   },
 ]
 
@@ -58,4 +62,5 @@ export const emptyPerson = {
   // Supervisor is the only role this screen holds today, so it starts checked.
   types: ['SUPERVISOR'],
   territory: '',
+  isActive: true,
 }

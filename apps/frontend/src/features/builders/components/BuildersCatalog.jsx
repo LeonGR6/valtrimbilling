@@ -31,7 +31,7 @@ import {
 } from '@mui/material'
 import BusinessRoundedIcon from '@mui/icons-material/BusinessRounded'
 import ArrowForwardRoundedIcon from '@mui/icons-material/ArrowForwardRounded'
-import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
+import BlockRoundedIcon from '@mui/icons-material/BlockRounded'
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined'
 import FilterListRoundedIcon from '@mui/icons-material/FilterListRounded'
 import MailOutlineRoundedIcon from '@mui/icons-material/MailOutlineRounded'
@@ -47,7 +47,7 @@ import {
 import { zodResolver } from '@hookform/resolvers/zod'
 import { Controller, useForm, useWatch } from 'react-hook-form'
 import { useBuilders } from '../context/useBuilders.js'
-import { emptyBuilder, withDefaultBuilderDateConfiguration } from '../data/builders.js'
+import { emptyBuilder } from '../data/builders.js'
 import { createBuilderSchema } from '../schemas/builderSchema.js'
 
 function OptionalLabel({ children }) {
@@ -77,7 +77,7 @@ function getBuilderFormValues(builder) {
   }
 }
 
-function BuilderDialog({ open, builder, builders, onClose, onSave }) {
+function BuilderDialog({ open, builder, builders, onClose, onSave, submitting }) {
   const schema = useMemo(
     () => createBuilderSchema(builders, builder?.id),
     [builder?.id, builders],
@@ -98,7 +98,7 @@ function BuilderDialog({ open, builder, builders, onClose, onSave }) {
   return (
     <Dialog
       open={open}
-      onClose={onClose}
+      onClose={submitting ? undefined : onClose}
       fullWidth
       maxWidth="md"
       component="form"
@@ -258,11 +258,13 @@ function BuilderDialog({ open, builder, builders, onClose, onSave }) {
       </DialogContent>
 
       <DialogActions sx={{ px: 3, pb: 2.5, pt: 1.5 }}>
-        <Button color="inherit" onClick={onClose}>
+        <Button color="inherit" onClick={onClose} disabled={submitting}>
           Cancel
         </Button>
-        <Button variant="contained" type="submit" disableElevation>
-          {builder ? 'Save changes' : 'Create builder'}
+        <Button variant="contained" type="submit" disabled={submitting} disableElevation>
+          {submitting
+            ? 'Saving...'
+            : builder ? 'Save changes' : 'Create builder'}
         </Button>
       </DialogActions>
     </Dialog>
@@ -270,16 +272,21 @@ function BuilderDialog({ open, builder, builders, onClose, onSave }) {
 }
 
 export default function BuildersCatalog({
-  builders: controlledBuilders,
-  setBuilders: setControlledBuilders,
   getBuilderJobCount,
   onBuilderRenamed,
   onSelectBuilder,
 }) {
   const isJobsEntry = Boolean(onSelectBuilder)
-  const { builders: sharedBuilders, setBuilders: setSharedBuilders } = useBuilders()
-  const builders = controlledBuilders ?? sharedBuilders
-  const setBuilders = setControlledBuilders ?? setSharedBuilders
+  const {
+    builders,
+    loading,
+    error,
+    canManageBuilders,
+    refreshBuilders,
+    createBuilder,
+    updateBuilder,
+    deactivateBuilder,
+  } = useBuilders()
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState('all')
   const [page, setPage] = useState(0)
@@ -287,7 +294,8 @@ export default function BuildersCatalog({
   const [menuAnchor, setMenuAnchor] = useState(null)
   const [selectedBuilder, setSelectedBuilder] = useState(null)
   const [dialogState, setDialogState] = useState(null)
-  const [deleteTarget, setDeleteTarget] = useState(null)
+  const [deactivateTarget, setDeactivateTarget] = useState(null)
+  const [submitting, setSubmitting] = useState(false)
   const [notice, setNotice] = useState(null)
 
   const filteredBuilders = useMemo(() => {
@@ -320,8 +328,8 @@ export default function BuildersCatalog({
     page * rowsPerPage,
     page * rowsPerPage + rowsPerPage,
   )
-  const deleteTargetJobCount = deleteTarget
-    ? getBuilderJobCount?.(deleteTarget) ?? 0
+  const deactivateTargetJobCount = deactivateTarget
+    ? getBuilderJobCount?.(deactivateTarget) ?? 0
     : 0
 
   const handleMenuOpen = (event, builder) => {
@@ -340,52 +348,47 @@ export default function BuildersCatalog({
     handleMenuClose()
   }
 
-  const openDeleteDialog = () => {
-    setDeleteTarget(selectedBuilder)
+  const openDeactivateDialog = () => {
+    setDeactivateTarget(selectedBuilder)
     handleMenuClose()
   }
 
-  const handleSave = (form) => {
-    if (dialogState?.mode === 'edit') {
-      const previousBuilder = dialogState.builder
-      setBuilders((current) =>
-        current.map((item) =>
-          item.id === previousBuilder.id ? { ...item, ...form } : item,
-        ),
-      )
-      if (previousBuilder.name !== form.name) {
-        onBuilderRenamed?.(previousBuilder.name, form.name)
+  const handleSave = async (form) => {
+    setSubmitting(true)
+    try {
+      if (dialogState?.mode === 'edit') {
+        const previousBuilder = dialogState.builder
+        const updated = await updateBuilder(previousBuilder.id, form)
+        if (previousBuilder.name !== updated.name) {
+          onBuilderRenamed?.(previousBuilder.name, updated.name)
+        }
+        setNotice({ severity: 'success', message: 'Builder updated.' })
+      } else {
+        await createBuilder(form)
+        setPage(0)
+        setNotice({ severity: 'success', message: 'Builder created.' })
       }
-      setNotice({ severity: 'success', message: 'Builder updated.' })
-    } else {
-      setBuilders((current) => [
-        withDefaultBuilderDateConfiguration({ ...form, id: Date.now() }),
-        ...current,
-      ])
-      setPage(0)
-      setNotice({ severity: 'success', message: 'Builder created.' })
-    }
 
-    setDialogState(null)
+      setDialogState(null)
+    } catch (saveError) {
+      setNotice({ severity: 'error', message: saveError.message })
+    } finally {
+      setSubmitting(false)
+    }
   }
 
-  const handleDelete = () => {
-    const jobCount = getBuilderJobCount?.(deleteTarget) ?? 0
-    if (jobCount > 0) {
-      setDeleteTarget(null)
-      setNotice({
-        severity: 'error',
-        message: `Reassign or delete ${jobCount} ${jobCount === 1 ? 'job' : 'jobs'} before deleting this builder.`,
-      })
-      return
+  const handleDeactivate = async () => {
+    setSubmitting(true)
+    try {
+      await deactivateBuilder(deactivateTarget.id)
+      setDeactivateTarget(null)
+      setPage(0)
+      setNotice({ severity: 'success', message: 'Builder deactivated.' })
+    } catch (deactivateError) {
+      setNotice({ severity: 'error', message: deactivateError.message })
+    } finally {
+      setSubmitting(false)
     }
-
-    setBuilders((current) =>
-      current.filter((item) => item.id !== deleteTarget.id),
-    )
-    setDeleteTarget(null)
-    setPage(0)
-    setNotice({ severity: 'success', message: 'Builder deleted.' })
   }
 
   const changeSearch = (event) => {
@@ -434,10 +437,12 @@ export default function BuildersCatalog({
               : 'Manage builder companies and their primary contact information.'}
           </Typography>
         </Box>
-        <ResponsiveCreateButton
-          label="New builder"
-          onClick={() => setDialogState({ mode: 'create' })}
-        />
+        {canManageBuilders && (
+          <ResponsiveCreateButton
+            label="New builder"
+            onClick={() => setDialogState({ mode: 'create' })}
+          />
+        )}
       </Box>
 
       <Box sx={{ p: { xs: 2.5, md: 4 } }}>
@@ -501,6 +506,20 @@ export default function BuildersCatalog({
             </FormControl>
           </Stack>
 
+          {error && (
+            <Alert
+              severity="error"
+              action={(
+                <Button color="inherit" size="small" onClick={() => refreshBuilders().catch(() => {})}>
+                  Retry
+                </Button>
+              )}
+              sx={{ borderRadius: 0 }}
+            >
+              {error}
+            </Alert>
+          )}
+
           <TableContainer>
             <Table sx={{ minWidth: 1000 }}>
               <TableHead>
@@ -522,7 +541,9 @@ export default function BuildersCatalog({
                   <TableCell>Address</TableCell>
                   {getBuilderJobCount && <TableCell width={100}>Jobs</TableCell>}
                   <TableCell>Status</TableCell>
-                  <TableCell align="right" width={72}>Actions</TableCell>
+                  {canManageBuilders && (
+                    <TableCell align="right" width={72}>Actions</TableCell>
+                  )}
                 </TableRow>
               </TableHead>
               <TableBody>
@@ -632,22 +653,35 @@ export default function BuildersCatalog({
                         }}
                       />
                     </TableCell>
-                    <TableCell align="right">
-                      <IconButton
-                        size="small"
-                        aria-label={`Actions for ${builder.name}`}
-                        onClick={(event) => handleMenuOpen(event, builder)}
-                      >
-                        <MoreHorizRoundedIcon />
-                      </IconButton>
-                    </TableCell>
+                    {canManageBuilders && (
+                      <TableCell align="right">
+                        <IconButton
+                          size="small"
+                          aria-label={`Actions for ${builder.name}`}
+                          onClick={(event) => handleMenuOpen(event, builder)}
+                        >
+                          <MoreHorizRoundedIcon />
+                        </IconButton>
+                      </TableCell>
+                    )}
                   </TableRow>
                 ))}
 
-                {visibleBuilders.length === 0 && (
+                {loading && visibleBuilders.length === 0 && (
                   <TableRow>
                     <TableCell
-                      colSpan={getBuilderJobCount ? 7 : 6}
+                      colSpan={5 + Number(Boolean(getBuilderJobCount)) + Number(canManageBuilders)}
+                      sx={{ py: 8, textAlign: 'center' }}
+                    >
+                      <Typography color="text.secondary">Loading builders...</Typography>
+                    </TableCell>
+                  </TableRow>
+                )}
+
+                {!loading && visibleBuilders.length === 0 && (
+                  <TableRow>
+                    <TableCell
+                      colSpan={5 + Number(Boolean(getBuilderJobCount)) + Number(canManageBuilders)}
                       sx={{ py: 8, textAlign: 'center' }}
                     >
                       <Box
@@ -667,7 +701,9 @@ export default function BuildersCatalog({
                       </Box>
                       <Typography fontWeight={600}>No builders found</Typography>
                       <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-                        Try changing your search or status filter.
+                        {builders.length === 0
+                          ? 'Create the first builder to start the catalog.'
+                          : 'Try changing your search or status filter.'}
                       </Typography>
                     </TableCell>
                   </TableRow>
@@ -702,9 +738,13 @@ export default function BuildersCatalog({
           <EditOutlinedIcon fontSize="small" sx={{ mr: 1.25 }} />
           Edit
         </MenuItem>
-        <MenuItem onClick={openDeleteDialog} sx={{ color: 'error.main' }}>
-          <DeleteOutlineRoundedIcon fontSize="small" sx={{ mr: 1.25 }} />
-          Delete
+        <MenuItem
+          onClick={openDeactivateDialog}
+          disabled={!selectedBuilder?.isActive}
+          sx={{ color: 'error.main' }}
+        >
+          <BlockRoundedIcon fontSize="small" sx={{ mr: 1.25 }} />
+          Deactivate
         </MenuItem>
       </Menu>
 
@@ -716,37 +756,36 @@ export default function BuildersCatalog({
           builders={builders}
           onClose={() => setDialogState(null)}
           onSave={handleSave}
+          submitting={submitting}
         />
       )}
 
       <Dialog
-        open={Boolean(deleteTarget)}
-        onClose={() => setDeleteTarget(null)}
+        open={Boolean(deactivateTarget)}
+        onClose={submitting ? undefined : () => setDeactivateTarget(null)}
         fullWidth
         maxWidth="xs"
       >
-        <DialogTitle>Delete builder?</DialogTitle>
+        <DialogTitle>Deactivate builder?</DialogTitle>
         <DialogContent>
           <Typography variant="body2" color="text.secondary">
-            {deleteTarget
-              ? deleteTargetJobCount > 0
-                ? `${deleteTarget.name} has ${deleteTargetJobCount} ${deleteTargetJobCount === 1 ? 'job' : 'jobs'}. Reassign or delete them before deleting this builder.`
-                : `${deleteTarget.name} (${deleteTarget.code}) will be removed from this catalog.`
+            {deactivateTarget
+              ? `${deactivateTarget.name} (${deactivateTarget.code}) will remain in the catalog as inactive. ${deactivateTargetJobCount > 0 ? `Its ${deactivateTargetJobCount} existing ${deactivateTargetJobCount === 1 ? 'job will' : 'jobs will'} be preserved.` : 'No existing jobs will be affected.'}`
               : ''}
           </Typography>
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2.5 }}>
-          <Button color="inherit" onClick={() => setDeleteTarget(null)}>
+          <Button color="inherit" onClick={() => setDeactivateTarget(null)} disabled={submitting}>
             Cancel
           </Button>
           <Button
             color="error"
             variant="contained"
-            onClick={handleDelete}
-            disabled={deleteTargetJobCount > 0}
+            onClick={handleDeactivate}
+            disabled={submitting}
             disableElevation
           >
-            Delete builder
+            {submitting ? 'Deactivating...' : 'Deactivate builder'}
           </Button>
         </DialogActions>
       </Dialog>

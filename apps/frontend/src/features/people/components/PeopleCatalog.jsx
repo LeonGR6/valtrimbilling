@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { useForm } from 'react-hook-form'
+import { Controller, useForm } from 'react-hook-form'
 import {
   Alert,
   Avatar,
@@ -11,12 +11,17 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
+  FormControl,
+  FormControlLabel,
   IconButton,
   InputAdornment,
+  InputLabel,
   Menu,
   MenuItem,
+  Select,
   Snackbar,
   Stack,
+  Switch,
   Table,
   TableBody,
   TableCell,
@@ -27,8 +32,9 @@ import {
   TextField,
   Typography,
 } from '@mui/material'
-import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
+import BlockRoundedIcon from '@mui/icons-material/BlockRounded'
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined'
+import FilterListRoundedIcon from '@mui/icons-material/FilterListRounded'
 import MailOutlineRoundedIcon from '@mui/icons-material/MailOutlineRounded'
 import MoreHorizRoundedIcon from '@mui/icons-material/MoreHorizRounded'
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
@@ -76,7 +82,7 @@ function getPersonFormValues(person) {
   }
 }
 
-function PersonDialog({ person, onClose, onSave }) {
+function PersonDialog({ person, onClose, onSave, submitting }) {
   const {
     control,
     register,
@@ -91,7 +97,7 @@ function PersonDialog({ person, onClose, onSave }) {
   return (
     <Dialog
       open
-      onClose={onClose}
+      onClose={submitting ? undefined : onClose}
       fullWidth
       maxWidth="sm"
       component="form"
@@ -167,15 +173,57 @@ function PersonDialog({ person, onClose, onSave }) {
             fullWidth
             slotProps={{ htmlInput: { maxLength: 80 } }}
           />
+
+          {person && (
+            <Box
+              sx={{
+                border: 1,
+                borderColor: 'divider',
+                borderRadius: 2,
+                px: 2,
+                py: 1,
+              }}
+            >
+              <FormControlLabel
+                sx={{ m: 0, width: '100%', justifyContent: 'space-between' }}
+                labelPlacement="start"
+                control={(
+                  <Controller
+                    name="isActive"
+                    control={control}
+                    render={({ field }) => (
+                      <Switch
+                        checked={field.value}
+                        onChange={(_, checked) => field.onChange(checked)}
+                        slotProps={{ input: { ref: field.ref } }}
+                      />
+                    )}
+                  />
+                )}
+                label={(
+                  <Box>
+                    <Typography variant="body2" fontWeight={600}>
+                      Active supervisor
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      Inactive supervisors remain visible in the roster.
+                    </Typography>
+                  </Box>
+                )}
+              />
+            </Box>
+          )}
         </Stack>
       </DialogContent>
 
       <DialogActions sx={{ px: 3, pb: 2.5, pt: 1.5 }}>
-        <Button color="inherit" onClick={onClose}>
+        <Button color="inherit" onClick={onClose} disabled={submitting}>
           Cancel
         </Button>
-        <Button type="submit" variant="contained" disableElevation>
-          {person ? 'Save changes' : 'Create supervisor'}
+        <Button type="submit" variant="contained" disabled={submitting} disableElevation>
+          {submitting
+            ? 'Saving...'
+            : person ? 'Save changes' : 'Create supervisor'}
         </Button>
       </DialogActions>
     </Dialog>
@@ -183,14 +231,25 @@ function PersonDialog({ person, onClose, onSave }) {
 }
 
 export default function PeopleCatalog() {
-  const { people, setPeople } = usePeople()
+  const {
+    people,
+    loading,
+    error,
+    canManageSupervisors,
+    refreshPeople,
+    createSupervisor,
+    updateSupervisor,
+    deactivateSupervisor,
+  } = usePeople()
   const [search, setSearch] = useState('')
+  const [status, setStatus] = useState('all')
   const [page, setPage] = useState(0)
   const [rowsPerPage, setRowsPerPage] = useState(5)
   const [menuAnchor, setMenuAnchor] = useState(null)
   const [selectedPerson, setSelectedPerson] = useState(null)
   const [dialogState, setDialogState] = useState(null)
-  const [deleteTarget, setDeleteTarget] = useState(null)
+  const [deactivateTarget, setDeactivateTarget] = useState(null)
+  const [submitting, setSubmitting] = useState(false)
   const [notice, setNotice] = useState(null)
 
   const filteredPeople = useMemo(() => {
@@ -203,9 +262,13 @@ export default function PeopleCatalog() {
           .join(' ')
           .toLowerCase()
           .includes(query)
-      return matchesSearch
+      const matchesStatus =
+        status === 'all' ||
+        (status === 'active' ? person.isActive : !person.isActive)
+
+      return matchesSearch && matchesStatus
     })
-  }, [people, search])
+  }, [people, search, status])
 
   const visiblePeople = filteredPeople.slice(
     page * rowsPerPage,
@@ -227,35 +290,43 @@ export default function PeopleCatalog() {
     handleMenuClose()
   }
 
-  const openDeleteDialog = () => {
-    setDeleteTarget(selectedPerson)
+  const openDeactivateDialog = () => {
+    setDeactivateTarget(selectedPerson)
     handleMenuClose()
   }
 
-  const handleSave = (form) => {
-    if (dialogState?.mode === 'edit') {
-      setPeople((current) =>
-        current.map((person) =>
-          person.id === dialogState.person.id ? { ...person, ...form } : person,
-        ),
-      )
-      setNotice({ severity: 'success', message: 'Supervisor updated.' })
-    } else {
-      setPeople((current) => [{ ...form, id: Date.now() }, ...current])
-      setPage(0)
-      setNotice({ severity: 'success', message: 'Supervisor created.' })
-    }
+  const handleSave = async (form) => {
+    setSubmitting(true)
+    try {
+      if (dialogState?.mode === 'edit') {
+        await updateSupervisor(dialogState.person.id, form)
+        setNotice({ severity: 'success', message: 'Supervisor updated.' })
+      } else {
+        await createSupervisor(form)
+        setPage(0)
+        setNotice({ severity: 'success', message: 'Supervisor created.' })
+      }
 
-    setDialogState(null)
+      setDialogState(null)
+    } catch (saveError) {
+      setNotice({ severity: 'error', message: saveError.message })
+    } finally {
+      setSubmitting(false)
+    }
   }
 
-  const handleDelete = () => {
-    setPeople((current) =>
-      current.filter((person) => person.id !== deleteTarget.id),
-    )
-    setDeleteTarget(null)
-    setPage(0)
-    setNotice({ severity: 'success', message: 'Supervisor deleted.' })
+  const handleDeactivate = async () => {
+    setSubmitting(true)
+    try {
+      await deactivateSupervisor(deactivateTarget.id)
+      setDeactivateTarget(null)
+      setPage(0)
+      setNotice({ severity: 'success', message: 'Supervisor deactivated.' })
+    } catch (deactivateError) {
+      setNotice({ severity: 'error', message: deactivateError.message })
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   return (
@@ -282,10 +353,12 @@ export default function PeopleCatalog() {
             Manage Valtrim supervisors available for job assignments.
           </Typography>
         </Box>
-        <ResponsiveCreateButton
-          label="New supervisor"
-          onClick={() => setDialogState({ mode: 'create' })}
-        />
+        {canManageSupervisors && (
+          <ResponsiveCreateButton
+            label="New supervisor"
+            onClick={() => setDialogState({ mode: 'create' })}
+          />
+        )}
       </Box>
 
       <Box sx={{ p: { xs: 2.5, md: 4 } }}>
@@ -322,7 +395,42 @@ export default function PeopleCatalog() {
                 },
               }}
             />
+            <FormControl size="small" sx={{ minWidth: 180 }}>
+              <InputLabel id="supervisor-status-filter-label">Status</InputLabel>
+              <Select
+                labelId="supervisor-status-filter-label"
+                label="Status"
+                value={status}
+                onChange={(event) => {
+                  setStatus(event.target.value)
+                  setPage(0)
+                }}
+                startAdornment={(
+                  <InputAdornment position="start">
+                    <FilterListRoundedIcon fontSize="small" color="action" />
+                  </InputAdornment>
+                )}
+              >
+                <MenuItem value="all">All supervisors</MenuItem>
+                <MenuItem value="active">Active</MenuItem>
+                <MenuItem value="inactive">Inactive</MenuItem>
+              </Select>
+            </FormControl>
           </Stack>
+
+          {error && (
+            <Alert
+              severity="error"
+              action={(
+                <Button color="inherit" size="small" onClick={() => refreshPeople().catch(() => {})}>
+                  Retry
+                </Button>
+              )}
+              sx={{ borderRadius: 0 }}
+            >
+              {error}
+            </Alert>
+          )}
 
           <TableContainer>
             <Table sx={{ minWidth: 900 }}>
@@ -344,7 +452,10 @@ export default function PeopleCatalog() {
                   <TableCell>Office phone number</TableCell>
                   <TableCell>Person type</TableCell>
                   <TableCell>Territory</TableCell>
-                  <TableCell align="right" width={72}>Actions</TableCell>
+                  <TableCell>Status</TableCell>
+                  {canManageSupervisors && (
+                    <TableCell align="right" width={72}>Actions</TableCell>
+                  )}
                 </TableRow>
               </TableHead>
               <TableBody>
@@ -418,25 +529,58 @@ export default function PeopleCatalog() {
                           : '—'}
                       </Typography>
                     </TableCell>
-                    <TableCell align="right">
-                      <IconButton
+                    <TableCell>
+                      <Chip
+                        label={person.isActive ? 'Active' : 'Inactive'}
                         size="small"
-                        aria-label={`Actions for ${person.name}`}
-                        onClick={(event) => handleMenuOpen(event, person)}
-                      >
-                        <MoreHorizRoundedIcon />
-                      </IconButton>
+                        color={person.isActive ? 'success' : 'default'}
+                        variant={person.isActive ? 'filled' : 'outlined'}
+                        sx={{
+                          fontWeight: 600,
+                          ...(person.isActive && {
+                            bgcolor: 'success.light',
+                            color: 'success.dark',
+                          }),
+                        }}
+                      />
                     </TableCell>
+                    {canManageSupervisors && (
+                      <TableCell align="right">
+                        <IconButton
+                          size="small"
+                          aria-label={`Actions for ${person.name}`}
+                          onClick={(event) => handleMenuOpen(event, person)}
+                        >
+                          <MoreHorizRoundedIcon />
+                        </IconButton>
+                      </TableCell>
+                    )}
                   </TableRow>
                 ))}
 
-                {visiblePeople.length === 0 && (
+                {loading && visiblePeople.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={6} sx={{ py: 8, textAlign: 'center' }}>
+                    <TableCell
+                      colSpan={6 + Number(canManageSupervisors)}
+                      sx={{ py: 8, textAlign: 'center' }}
+                    >
+                      <Typography color="text.secondary">Loading supervisors...</Typography>
+                    </TableCell>
+                  </TableRow>
+                )}
+
+                {!loading && visiblePeople.length === 0 && (
+                  <TableRow>
+                    <TableCell
+                      colSpan={6 + Number(canManageSupervisors)}
+                      sx={{ py: 8, textAlign: 'center' }}
+                    >
                       <SearchRoundedIcon color="action" sx={{ fontSize: 40, mb: 1 }} />
                       <Typography fontWeight={600}>No supervisors found</Typography>
                       <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-                        Try changing your search.
+                        {people.length === 0
+                          ? 'Create the first supervisor to start the roster.'
+                          : 'Try changing your search or status filter.'}
                       </Typography>
                     </TableCell>
                   </TableRow>
@@ -471,9 +615,13 @@ export default function PeopleCatalog() {
           <EditOutlinedIcon fontSize="small" sx={{ mr: 1.25 }} />
           Edit
         </MenuItem>
-        <MenuItem onClick={openDeleteDialog} sx={{ color: 'error.main' }}>
-          <DeleteOutlineRoundedIcon fontSize="small" sx={{ mr: 1.25 }} />
-          Delete
+        <MenuItem
+          onClick={openDeactivateDialog}
+          disabled={!selectedPerson?.isActive}
+          sx={{ color: 'error.main' }}
+        >
+          <BlockRoundedIcon fontSize="small" sx={{ mr: 1.25 }} />
+          Deactivate
         </MenuItem>
       </Menu>
 
@@ -483,29 +631,40 @@ export default function PeopleCatalog() {
           person={dialogState.person}
           onClose={() => setDialogState(null)}
           onSave={handleSave}
+          submitting={submitting}
         />
       )}
 
       <Dialog
-        open={Boolean(deleteTarget)}
-        onClose={() => setDeleteTarget(null)}
+        open={Boolean(deactivateTarget)}
+        onClose={submitting ? undefined : () => setDeactivateTarget(null)}
         fullWidth
         maxWidth="xs"
       >
-        <DialogTitle>Delete person?</DialogTitle>
+        <DialogTitle>Deactivate supervisor?</DialogTitle>
         <DialogContent>
           <Typography variant="body2" color="text.secondary">
-            {deleteTarget
-              ? `${deleteTarget.name} will be removed from Crews & Foremen.`
+            {deactivateTarget
+              ? `${deactivateTarget.name} will remain in the roster as inactive.`
               : ''}
           </Typography>
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2.5 }}>
-          <Button color="inherit" onClick={() => setDeleteTarget(null)}>
+          <Button
+            color="inherit"
+            onClick={() => setDeactivateTarget(null)}
+            disabled={submitting}
+          >
             Cancel
           </Button>
-          <Button color="error" variant="contained" onClick={handleDelete} disableElevation>
-            Delete supervisor
+          <Button
+            color="error"
+            variant="contained"
+            onClick={handleDeactivate}
+            disabled={submitting}
+            disableElevation
+          >
+            {submitting ? 'Deactivating...' : 'Deactivate supervisor'}
           </Button>
         </DialogActions>
       </Dialog>

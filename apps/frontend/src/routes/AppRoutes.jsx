@@ -8,9 +8,9 @@ import AppLayout from '../components/layout/AppLayout'
 import ErrorPage from '../pages/ErrorPage'
 import NotFound from '../pages/NotFound'
 import { DEFAULT_ROUTE } from '../config/appConfig.js'
-import { RequireAuth } from '../features/auth/AuthContext.jsx'
 import { contextualRoutes, navigationRoutes } from './navigation.jsx'
 import { LoginPage, ForgotPasswordPage, ResetPasswordPage } from './lazyPages.jsx'
+import RequireAuth from '../features/auth/context/RequireAuth.jsx'
 
 export const appRouter = createBrowserRouter([
   {

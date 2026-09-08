@@ -4,13 +4,13 @@
 -- Esta migracion NO crea autenticacion, perfiles, grants para el cliente ni RLS.
 -- Las columnas *_by son UUID sin FK para que la migracion de Auth pueda
 -- enlazarlas posteriormente con la tabla de perfiles elegida por el equipo.
--- Las tablas se crean en public y permanecen cerradas para los clientes
--- hasta que se aplique la migracion final de Auth + grants + RLS.
+-- El esquema valtrim permanece cerrado a PUBLIC hasta que se aplique la
+-- migracion final de Auth + grants + RLS.
 
 begin;
 
--- El esquema public ya existe en todos los proyectos de Supabase.
-set local search_path = public, pg_catalog;
+create schema valtrim;
+set local search_path = valtrim, pg_catalog;
 
 create domain email_address as varchar(160)
   check (
@@ -949,7 +949,7 @@ create table service_request_attachments (
 create function set_updated_at()
 returns trigger
 language plpgsql
-set search_path = public, pg_catalog
+set search_path = valtrim, pg_catalog
 as $$
 begin
   new.updated_at := now();
@@ -960,7 +960,7 @@ $$;
 create function validate_person_role()
 returns trigger
 language plpgsql
-set search_path = public, pg_catalog
+set search_path = valtrim, pg_catalog
 as $$
 declare
   v_territory text;
@@ -981,7 +981,7 @@ $$;
 create function validate_person_update()
 returns trigger
 language plpgsql
-set search_path = public, pg_catalog
+set search_path = valtrim, pg_catalog
 as $$
 begin
   if exists (
@@ -997,7 +997,7 @@ $$;
 create function initialize_builder_billing()
 returns trigger
 language plpgsql
-set search_path = public, pg_catalog
+set search_path = valtrim, pg_catalog
 as $$
 begin
   insert into billing_setups (builder_id, created_by)
@@ -1009,7 +1009,7 @@ $$;
 create function validate_setup_version(p_version_id bigint)
 returns void
 language plpgsql
-set search_path = public, pg_catalog
+set search_path = valtrim, pg_catalog
 as $$
 declare
   v_count integer;
@@ -1057,7 +1057,7 @@ $$;
 create function protect_billing_setup_version()
 returns trigger
 language plpgsql
-set search_path = public, pg_catalog
+set search_path = valtrim, pg_catalog
 as $$
 begin
   if old.status <> 'DRAFT' then
@@ -1081,7 +1081,7 @@ $$;
 create function protect_billing_version_child()
 returns trigger
 language plpgsql
-set search_path = public, pg_catalog
+set search_path = valtrim, pg_catalog
 as $$
 declare
   v_version_id bigint;
@@ -1118,7 +1118,7 @@ create function save_billing_setup_version(
 )
 returns bigint
 language plpgsql
-set search_path = public, pg_catalog
+set search_path = valtrim, pg_catalog
 as $$
 declare
   v_setup_id bigint;
@@ -1262,7 +1262,7 @@ create function activate_billing_setup_version(
 )
 returns void
 language plpgsql
-set search_path = public, pg_catalog
+set search_path = valtrim, pg_catalog
 as $$
 declare
   v_setup_id bigint;
@@ -1296,7 +1296,7 @@ $$;
 create function validate_job()
 returns trigger
 language plpgsql
-set search_path = public, pg_catalog
+set search_path = valtrim, pg_catalog
 as $$
 begin
   if not exists (
@@ -1351,7 +1351,7 @@ create function save_job_phase(
 )
 returns bigint
 language plpgsql
-set search_path = public, pg_catalog
+set search_path = valtrim, pg_catalog
 as $$
 declare
   v_phase_id bigint;
@@ -1410,7 +1410,7 @@ $$;
 create function record_production_date_change()
 returns trigger
 language plpgsql
-set search_path = public, pg_catalog
+set search_path = valtrim, pg_catalog
 as $$
 begin
   if new.scheduled_date is distinct from old.scheduled_date
@@ -1440,7 +1440,7 @@ create function create_production_activity(
 )
 returns bigint
 language plpgsql
-set search_path = public, pg_catalog
+set search_path = valtrim, pg_catalog
 as $$
 declare
   v_activity_id bigint;
@@ -1578,7 +1578,7 @@ $$;
 create function prevent_price_overlap()
 returns trigger
 language plpgsql
-set search_path = public, pg_catalog
+set search_path = valtrim, pg_catalog
 as $$
 declare
   v_overlap boolean;
@@ -1611,7 +1611,7 @@ $$;
 create function prepare_draw_package()
 returns trigger
 language plpgsql
-set search_path = public, pg_catalog
+set search_path = valtrim, pg_catalog
 as $$
 declare
   v_terms smallint;
@@ -1659,7 +1659,7 @@ $$;
 create function prepare_package_draw()
 returns trigger
 language plpgsql
-set search_path = public, pg_catalog
+set search_path = valtrim, pg_catalog
 as $$
 declare
   v_record record;
@@ -1776,7 +1776,7 @@ $$;
 create function populate_package_options()
 returns trigger
 language plpgsql
-set search_path = public, pg_catalog
+set search_path = valtrim, pg_catalog
 as $$
 begin
   if new.draw_number = (
@@ -1810,7 +1810,7 @@ $$;
 create function reject_package_line_change()
 returns trigger
 language plpgsql
-set search_path = public, pg_catalog
+set search_path = valtrim, pg_catalog
 as $$
 begin
   raise exception 'Las lineas calculadas de un draw package son inmutables; anule y recree el package';
@@ -1820,7 +1820,7 @@ $$;
 create function recalculate_invoice_totals()
 returns trigger
 language plpgsql
-set search_path = public, pg_catalog
+set search_path = valtrim, pg_catalog
 as $$
 declare
   v_package_id bigint;
@@ -1847,7 +1847,7 @@ $$;
 create function validate_package_status_change()
 returns trigger
 language plpgsql
-set search_path = public, pg_catalog
+set search_path = valtrim, pg_catalog
 as $$
 declare
   v_invoice_status invoice_status;
@@ -1899,7 +1899,7 @@ $$;
 create function prepare_invoice()
 returns trigger
 language plpgsql
-set search_path = public, pg_catalog
+set search_path = valtrim, pg_catalog
 as $$
 declare
   v_terms smallint;
@@ -1918,7 +1918,7 @@ $$;
 create function recalculate_invoice_payment()
 returns trigger
 language plpgsql
-set search_path = public, pg_catalog
+set search_path = valtrim, pg_catalog
 as $$
 declare
   v_invoice_id bigint;
@@ -1971,7 +1971,7 @@ create function create_draw_package(
 )
 returns bigint
 language plpgsql
-set search_path = public, pg_catalog
+set search_path = valtrim, pg_catalog
 as $$
 declare
   v_package_id bigint;
@@ -2067,7 +2067,7 @@ create function issue_invoice(
 )
 returns bigint
 language plpgsql
-set search_path = public, pg_catalog
+set search_path = valtrim, pg_catalog
 as $$
 declare
   v_invoice_id bigint;
@@ -2098,7 +2098,7 @@ create function submit_draw_package(
 )
 returns void
 language plpgsql
-set search_path = public, pg_catalog
+set search_path = valtrim, pg_catalog
 as $$
 begin
   update invoices
@@ -2123,7 +2123,7 @@ $$;
 create function normalize_service_request()
 returns trigger
 language plpgsql
-set search_path = public, pg_catalog
+set search_path = valtrim, pg_catalog
 as $$
 begin
   new.tag := case new.status
@@ -2141,7 +2141,7 @@ $$;
 create function record_service_status_change()
 returns trigger
 language plpgsql
-set search_path = public, pg_catalog
+set search_path = valtrim, pg_catalog
 as $$
 begin
   if tg_op = 'INSERT' or new.status is distinct from old.status then
@@ -2160,7 +2160,7 @@ $$;
 create function validate_service_appointment()
 returns trigger
 language plpgsql
-set search_path = public, pg_catalog
+set search_path = valtrim, pg_catalog
 as $$
 begin
   if new.technician_id is not null and not exists (
@@ -2192,7 +2192,7 @@ create function replace_current_service_appointment(
 )
 returns bigint
 language plpgsql
-set search_path = public, pg_catalog
+set search_path = valtrim, pg_catalog
 as $$
 declare
   v_appointment_id bigint;
@@ -2237,7 +2237,7 @@ create function close_service_request(
 )
 returns void
 language plpgsql
-set search_path = public, pg_catalog
+set search_path = valtrim, pg_catalog
 as $$
 begin
   if p_reason is null or btrim(p_reason) = '' then
@@ -2264,7 +2264,7 @@ create function reopen_service_request(
 )
 returns void
 language plpgsql
-set search_path = public, pg_catalog
+set search_path = valtrim, pg_catalog
 as $$
 begin
   update service_requests
@@ -2556,18 +2556,11 @@ left join service_appointments appointment
   on appointment.request_id = sr.id and appointment.is_current
 left join people technician on technician.id = appointment.technician_id;
 
--- El acceso queda deliberadamente cerrado para los clientes. La migracion
--- de Auth debe crear perfiles/roles, grants y politicas RLS.
-revoke all on all tables in schema public from anon, authenticated;
-revoke all on all sequences in schema public from anon, authenticated;
-revoke execute on all functions in schema public
-  from public, anon, authenticated;
-
--- Las Edge Functions que usen service_role conservan acceso administrativo.
-grant usage on schema public to service_role;
-grant all on all tables in schema public to service_role;
-grant all on all sequences in schema public to service_role;
-grant execute on all functions in schema public to service_role;
+-- El acceso queda deliberadamente cerrado. La migracion de Auth debe crear
+-- perfiles/roles, grants y politicas RLS y despues habilitar RLS por tabla.
+revoke all on schema valtrim from public;
+revoke all on all tables in schema valtrim from public;
+revoke all on all sequences in schema valtrim from public;
+revoke execute on all functions in schema valtrim from public;
 
 commit;
-

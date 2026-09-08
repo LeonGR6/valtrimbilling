@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useForm, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useNavigate } from 'react-router-dom'
-import { Alert, Box, Button, Stack } from '@mui/material'
+import { Alert, Box, Button, CircularProgress, Stack } from '@mui/material'
 import CheckCircleOutlineRoundedIcon from '@mui/icons-material/CheckCircleOutlineRounded'
 import LockOutlinedIcon from '@mui/icons-material/LockOutlined'
 import LockResetRoundedIcon from '@mui/icons-material/LockResetRounded'
@@ -13,16 +13,14 @@ import AuthShell, {
   submitButtonSx,
 } from '../../common'
 import { resetPasswordSchema } from '../schemas/resetPassword'
-import { DEFAULT_ROUTE } from '../../../../config/appConfig.js'
-import { useAuth } from '../../useAuth.js'
-import { supabase } from '../../../../services/api.js'
+import { useAuth } from '../../context/useAuth.js'
 
 export default function ResetPasswordForm() {
   const navigate = useNavigate()
-  const { session, loading: sessionLoading } = useAuth()
+  const { configured, loading, session, updatePassword } = useAuth()
   const [done, setDone] = useState(false)
-  const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState(null)
+  const [submitting, setSubmitting] = useState(false)
   const { control, handleSubmit } = useForm({
     resolver: zodResolver(resetPasswordSchema),
     mode: 'onTouched',
@@ -30,18 +28,17 @@ export default function ResetPasswordForm() {
   })
 
   const onSubmit = async ({ password }) => {
-    setSubmitting(true)
     setSubmitError(null)
+    setSubmitting(true)
 
-    const { error } = await supabase.auth.updateUser({ password })
-
-    setSubmitting(false)
-    if (error) {
+    try {
+      await updatePassword(password)
+      setDone(true)
+    } catch (error) {
       setSubmitError(error.message)
-      return
+    } finally {
+      setSubmitting(false)
     }
-
-    setDone(true)
   }
 
   if (done) {
@@ -50,7 +47,7 @@ export default function ResetPasswordForm() {
         <Brand />
         <AuthHeading
           title="Password updated"
-          subtitle="Your password is ready. Continue to the application."
+          subtitle="You can now sign in with your new password."
         />
         <Stack spacing={3} sx={{ alignItems: 'center' }}>
           <Box
@@ -75,45 +72,12 @@ export default function ResetPasswordForm() {
             size="medium"
             fullWidth
             disableElevation
-            onClick={() => navigate(DEFAULT_ROUTE, { replace: true })}
+            onClick={() => navigate('/login')}
             sx={submitButtonSx}
           >
-            Continue
+            Go to sign in
           </Button>
         </Stack>
-      </AuthShell>
-    )
-  }
-
-  if (sessionLoading) {
-    return (
-      <AuthShell>
-        <Brand />
-        <AuthHeading
-          title="Checking link…"
-          subtitle="We are validating your invitation or recovery link."
-        />
-      </AuthShell>
-    )
-  }
-
-  if (!session) {
-    return (
-      <AuthShell>
-        <Brand />
-        <AuthHeading
-          title="Link unavailable"
-          subtitle="This link is invalid, expired, or has already been used."
-        />
-        <Button
-          variant="contained"
-          fullWidth
-          disableElevation
-          onClick={() => navigate('/login', { replace: true })}
-          sx={submitButtonSx}
-        >
-          Go to sign in
-        </Button>
       </AuthShell>
     )
   }
@@ -128,7 +92,24 @@ export default function ResetPasswordForm() {
 
       <Box component="form" onSubmit={handleSubmit(onSubmit)} noValidate>
         <Stack spacing={2}>
+          {!configured && (
+            <Alert severity="error">
+              Supabase is not configured. Add the project URL and publishable key to
+              apps/frontend/.env.
+            </Alert>
+          )}
+          {configured && loading && (
+            <Alert severity="info" icon={<CircularProgress size={18} />}>
+              Validating the recovery link…
+            </Alert>
+          )}
+          {configured && !loading && !session && (
+            <Alert severity="error">
+              This recovery link is invalid or has expired. Request a new link.
+            </Alert>
+          )}
           {submitError && <Alert severity="error">{submitError}</Alert>}
+
           <Controller
             name="password"
             control={control}
@@ -172,10 +153,10 @@ export default function ResetPasswordForm() {
           size="medium"
           fullWidth
           disableElevation
-          disabled={submitting}
+          disabled={!configured || loading || !session || submitting}
           sx={submitButtonSx}
         >
-          {submitting ? 'Saving…' : 'Save password'}
+          {submitting ? 'Updating…' : 'Reset password'}
         </Button>
       </Box>
     </AuthShell>

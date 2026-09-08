@@ -13,4 +13,4 @@ export const emailField = z
 export const passwordField = z
   .string()
   .min(8, 'Password must be at least 8 characters')
-  .max(16, 'Password is too long')
+  .max(12, 'Password is too long')

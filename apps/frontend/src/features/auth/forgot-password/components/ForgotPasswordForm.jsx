@@ -13,12 +13,13 @@ import AuthShell, {
   submitButtonSx,
 } from '../../common'
 import { forgotPasswordSchema } from '../schemas/forgotPassword'
-import { supabase } from '../../../../services/api.js'
+import { useAuth } from '../../context/useAuth.js'
 
 export default function ForgotPasswordForm() {
+  const { configured, requestPasswordReset } = useAuth()
   const [submittedEmail, setSubmittedEmail] = useState(null)
-  const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState(null)
+  const [submitting, setSubmitting] = useState(false)
   const { control, handleSubmit } = useForm({
     resolver: zodResolver(forgotPasswordSchema),
     mode: 'onTouched',
@@ -26,20 +27,17 @@ export default function ForgotPasswordForm() {
   })
 
   const onSubmit = async (data) => {
-    setSubmitting(true)
     setSubmitError(null)
+    setSubmitting(true)
 
-    const { error } = await supabase.auth.resetPasswordForEmail(data.email, {
-      redirectTo: new URL('/reset-password', window.location.origin).toString(),
-    })
-
-    setSubmitting(false)
-    if (error) {
+    try {
+      await requestPasswordReset(data.email)
+      setSubmittedEmail(data.email)
+    } catch (error) {
       setSubmitError(error.message)
-      return
+    } finally {
+      setSubmitting(false)
     }
-
-    setSubmittedEmail(data.email)
   }
 
   return (
@@ -87,11 +85,14 @@ export default function ForgotPasswordForm() {
             subtitle="Enter your email and we'll send you a link to reset your password."
           />
           <Box component="form" onSubmit={handleSubmit(onSubmit)} noValidate>
-            {submitError && (
+            {!configured && (
               <Alert severity="error" sx={{ mb: 2 }}>
-                {submitError}
+                Supabase is not configured. Add the project URL and publishable key to
+                apps/frontend/.env.
               </Alert>
             )}
+            {submitError && <Alert severity="error" sx={{ mb: 2 }}>{submitError}</Alert>}
+
             <Controller
               name="email"
               control={control}
@@ -116,7 +117,7 @@ export default function ForgotPasswordForm() {
               size="medium"
               fullWidth
               disableElevation
-              disabled={submitting}
+              disabled={!configured || submitting}
               sx={submitButtonSx}
             >
               {submitting ? 'Sending…' : 'Send reset link'}

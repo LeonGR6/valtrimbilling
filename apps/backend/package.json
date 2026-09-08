@@ -8,10 +8,11 @@
     "db:push": "supabase db push",
     "db:diff": "supabase db diff --linked",
     "db:lint": "supabase db lint --linked",
+    "db:test": "supabase test db",
     "functions:new": "supabase functions new",
     "functions:deploy": "supabase functions deploy --use-api",
     "functions:check": "deno check --node-modules-dir=auto \"supabase/functions/**/*.ts\"",
-    "types:gen": "supabase gen types typescript --linked --schema public > supabase/functions/_shared/database.types.ts",
+    "types:gen": "supabase gen types typescript --linked --schema valtrim > supabase/functions/_shared/database.types.ts",
     "secrets:set": "supabase secrets set"
   },
   "devDependencies": {

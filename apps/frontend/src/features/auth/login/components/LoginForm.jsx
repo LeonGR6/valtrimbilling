@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useForm, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { Link as RouterLink, useLocation, useNavigate } from 'react-router-dom'
@@ -12,45 +12,37 @@ import AuthShell, {
   submitButtonSx,
 } from '../../common'
 import { loginSchema } from '../schemas/login'
+import { useAuth } from '../../context/useAuth.js'
 import { DEFAULT_ROUTE } from '../../../../config/appConfig.js'
-import { useAuth } from '../../useAuth.js'
-import { supabase } from '../../../../services/api.js'
 
 export default function LoginForm() {
   const navigate = useNavigate()
   const location = useLocation()
-  const { session, loading: sessionLoading } = useAuth()
-  const [submitting, setSubmitting] = useState(false)
+  const { configured, signIn } = useAuth()
   const [submitError, setSubmitError] = useState(null)
+  const [submitting, setSubmitting] = useState(false)
   const { control, handleSubmit } = useForm({
     resolver: zodResolver(loginSchema),
     mode: 'onTouched',
     defaultValues: { email: '', password: '' },
   })
 
-  const destination = location.state?.from || DEFAULT_ROUTE
-
-  useEffect(() => {
-    if (!sessionLoading && session) navigate(destination, { replace: true })
-  }, [destination, navigate, session, sessionLoading])
-
   const onSubmit = async (data) => {
-    setSubmitting(true)
     setSubmitError(null)
+    setSubmitting(true)
 
-    const { error } = await supabase.auth.signInWithPassword(data)
-
-    if (error) {
-      setSubmitError(
-        error.code === 'invalid_credentials'
-          ? 'Email or password is incorrect.'
-          : error.message,
-      )
+    try {
+      await signIn(data)
+      const requestedPath = location.state?.from
+      const destination = typeof requestedPath === 'string' && requestedPath.startsWith('/')
+        ? requestedPath
+        : DEFAULT_ROUTE
+      navigate(destination, { replace: true })
+    } catch (error) {
+      setSubmitError(error.message)
+    } finally {
       setSubmitting(false)
-      return
     }
-
-    navigate(destination, { replace: true })
   }
 
   return (
@@ -60,7 +52,14 @@ export default function LoginForm() {
 
       <Box component="form" onSubmit={handleSubmit(onSubmit)} noValidate>
         <Stack spacing={2}>
+          {!configured && (
+            <Alert severity="error">
+              Supabase is not configured. Add the project URL and publishable key to
+              apps/frontend/.env.
+            </Alert>
+          )}
           {submitError && <Alert severity="error">{submitError}</Alert>}
+
           <Controller
             name="email"
             control={control}
@@ -115,7 +114,7 @@ export default function LoginForm() {
           size="medium"
           fullWidth
           disableElevation
-          disabled={submitting || sessionLoading}
+          disabled={!configured || submitting}
           sx={submitButtonSx}
         >
           {submitting ? 'Signing in…' : 'Sign in'}

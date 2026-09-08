@@ -1,9 +1,9 @@
 // The half of the users CRUD that cannot run in the browser.
 //
-// Listing and editing users go straight to PostgREST -- they are ordinary
-// reads and updates on app_users, and RLS already says who may do them.
-// Creating and deactivating cannot: both call the Auth Admin API, which needs
-// the service role key, which must never reach a browser.
+// Reading users can go through PostgREST, where RLS controls visibility.
+// Identity and access mutations go through this trusted boundary because they
+// require either the Auth Admin API or service-role access; neither belongs in
+// a browser.
 //
 // One function handles every admin action instead of three tiny ones. That is
 // Supabase's own advice (fewer, larger functions: less cold start, less to
@@ -134,7 +134,7 @@ async function createUser(payload: CreatePayload): Promise<Response> {
   const { data: profile, error: profileError } = await db
     .from('app_users')
     .update({
-      phone: payload.phone?.trim() ?? '',
+      phone: payload.phone?.trim() || null,
       role: payload.role ?? 'READ_ONLY',
       all_projects: payload.allProjects ?? true,
     })

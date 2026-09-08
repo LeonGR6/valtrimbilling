@@ -1,7 +1,8 @@
+import { useEffect, useState } from 'react'
 import { useForm, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { Link as RouterLink } from 'react-router-dom'
-import { Box, Button, Link, Stack } from '@mui/material'
+import { Link as RouterLink, useLocation, useNavigate } from 'react-router-dom'
+import { Alert, Box, Button, Link, Stack } from '@mui/material'
 import LockOutlinedIcon from '@mui/icons-material/LockOutlined'
 import MailOutlineRoundedIcon from '@mui/icons-material/MailOutlineRounded'
 import AuthShell, {
@@ -11,17 +12,45 @@ import AuthShell, {
   submitButtonSx,
 } from '../../common'
 import { loginSchema } from '../schemas/login'
+import { DEFAULT_ROUTE } from '../../../../config/appConfig.js'
+import { useAuth } from '../../useAuth.js'
+import { supabase } from '../../../../services/api.js'
 
 export default function LoginForm() {
+  const navigate = useNavigate()
+  const location = useLocation()
+  const { session, loading: sessionLoading } = useAuth()
+  const [submitting, setSubmitting] = useState(false)
+  const [submitError, setSubmitError] = useState(null)
   const { control, handleSubmit } = useForm({
     resolver: zodResolver(loginSchema),
     mode: 'onTouched',
     defaultValues: { email: '', password: '' },
   })
 
-  const onSubmit = (data) => {
-    // TODO: authenticate against Supabase with the validated data.
-    void data
+  const destination = location.state?.from || DEFAULT_ROUTE
+
+  useEffect(() => {
+    if (!sessionLoading && session) navigate(destination, { replace: true })
+  }, [destination, navigate, session, sessionLoading])
+
+  const onSubmit = async (data) => {
+    setSubmitting(true)
+    setSubmitError(null)
+
+    const { error } = await supabase.auth.signInWithPassword(data)
+
+    if (error) {
+      setSubmitError(
+        error.code === 'invalid_credentials'
+          ? 'Email or password is incorrect.'
+          : error.message,
+      )
+      setSubmitting(false)
+      return
+    }
+
+    navigate(destination, { replace: true })
   }
 
   return (
@@ -31,6 +60,7 @@ export default function LoginForm() {
 
       <Box component="form" onSubmit={handleSubmit(onSubmit)} noValidate>
         <Stack spacing={2}>
+          {submitError && <Alert severity="error">{submitError}</Alert>}
           <Controller
             name="email"
             control={control}
@@ -85,9 +115,10 @@ export default function LoginForm() {
           size="medium"
           fullWidth
           disableElevation
+          disabled={submitting || sessionLoading}
           sx={submitButtonSx}
         >
-          Sign in
+          {submitting ? 'Signing in…' : 'Sign in'}
         </Button>
       </Box>
     </AuthShell>

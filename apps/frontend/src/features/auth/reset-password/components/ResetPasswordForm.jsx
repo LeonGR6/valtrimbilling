@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useForm, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useNavigate } from 'react-router-dom'
-import { Box, Button, Stack } from '@mui/material'
+import { Alert, Box, Button, Stack } from '@mui/material'
 import CheckCircleOutlineRoundedIcon from '@mui/icons-material/CheckCircleOutlineRounded'
 import LockOutlinedIcon from '@mui/icons-material/LockOutlined'
 import LockResetRoundedIcon from '@mui/icons-material/LockResetRounded'
@@ -13,18 +13,34 @@ import AuthShell, {
   submitButtonSx,
 } from '../../common'
 import { resetPasswordSchema } from '../schemas/resetPassword'
+import { DEFAULT_ROUTE } from '../../../../config/appConfig.js'
+import { useAuth } from '../../useAuth.js'
+import { supabase } from '../../../../services/api.js'
 
 export default function ResetPasswordForm() {
   const navigate = useNavigate()
+  const { session, loading: sessionLoading } = useAuth()
   const [done, setDone] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+  const [submitError, setSubmitError] = useState(null)
   const { control, handleSubmit } = useForm({
     resolver: zodResolver(resetPasswordSchema),
     mode: 'onTouched',
     defaultValues: { password: '', confirm: '' },
   })
 
-  const onSubmit = () => {
-    // TODO: update the password through Supabase.
+  const onSubmit = async ({ password }) => {
+    setSubmitting(true)
+    setSubmitError(null)
+
+    const { error } = await supabase.auth.updateUser({ password })
+
+    setSubmitting(false)
+    if (error) {
+      setSubmitError(error.message)
+      return
+    }
+
     setDone(true)
   }
 
@@ -34,7 +50,7 @@ export default function ResetPasswordForm() {
         <Brand />
         <AuthHeading
           title="Password updated"
-          subtitle="You can now sign in with your new password."
+          subtitle="Your password is ready. Continue to the application."
         />
         <Stack spacing={3} sx={{ alignItems: 'center' }}>
           <Box
@@ -59,12 +75,45 @@ export default function ResetPasswordForm() {
             size="medium"
             fullWidth
             disableElevation
-            onClick={() => navigate('/login')}
+            onClick={() => navigate(DEFAULT_ROUTE, { replace: true })}
             sx={submitButtonSx}
           >
-            Go to sign in
+            Continue
           </Button>
         </Stack>
+      </AuthShell>
+    )
+  }
+
+  if (sessionLoading) {
+    return (
+      <AuthShell>
+        <Brand />
+        <AuthHeading
+          title="Checking link…"
+          subtitle="We are validating your invitation or recovery link."
+        />
+      </AuthShell>
+    )
+  }
+
+  if (!session) {
+    return (
+      <AuthShell>
+        <Brand />
+        <AuthHeading
+          title="Link unavailable"
+          subtitle="This link is invalid, expired, or has already been used."
+        />
+        <Button
+          variant="contained"
+          fullWidth
+          disableElevation
+          onClick={() => navigate('/login', { replace: true })}
+          sx={submitButtonSx}
+        >
+          Go to sign in
+        </Button>
       </AuthShell>
     )
   }
@@ -79,6 +128,7 @@ export default function ResetPasswordForm() {
 
       <Box component="form" onSubmit={handleSubmit(onSubmit)} noValidate>
         <Stack spacing={2}>
+          {submitError && <Alert severity="error">{submitError}</Alert>}
           <Controller
             name="password"
             control={control}
@@ -122,9 +172,10 @@ export default function ResetPasswordForm() {
           size="medium"
           fullWidth
           disableElevation
+          disabled={submitting}
           sx={submitButtonSx}
         >
-          Reset password
+          {submitting ? 'Saving…' : 'Save password'}
         </Button>
       </Box>
     </AuthShell>

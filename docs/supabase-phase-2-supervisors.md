@@ -1,7 +1,7 @@
 # Supabase Phase 2: Supervisors
 
-Phase 2 persists Valtrim People with the `SUPERVISOR` role. Communities,
-jobsites, Jobs, and the other person roles remain outside this phase.
+Phase 2 persists Valtrim People with the `SUPERVISOR` role. Builder Contacts,
+Communities, Jobs, and the other person roles remain outside this phase.
 
 ## Included
 
@@ -54,6 +54,6 @@ node --test --test-name-pattern="person|supervisor" \
 npm run build
 ```
 
-The next persistence slice is communities/jobsites and their Builder and
-Supervisor relationships. Jobs should remain closed until those parent records
-are stable.
+Builder Contacts are implemented in Phase 3. Community remains a separate
+future entity, and Jobs should remain closed until their parent records are
+stable.

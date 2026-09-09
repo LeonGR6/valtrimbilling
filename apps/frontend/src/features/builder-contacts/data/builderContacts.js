@@ -23,8 +23,8 @@ export const contactTypeDescriptions = Object.fromEntries(
   contactTypeOptions.map(({ value, description }) => [value, description]),
 )
 
-// Placeholder builder list. Replace with the builders table once the backend
-// exists — this becomes a foreign key.
+// Legacy mock options still used by the out-of-scope Customer Service fixture.
+// Builder Contacts themselves use the persisted Builders context and builderId.
 export const builderOptions = [
   { value: 'KB_HOME', label: 'KB Home' },
   { value: 'TRUMARK', label: 'Trumark Homes' },
@@ -39,11 +39,12 @@ export const builderLabels = Object.fromEntries(
 export const emptyContact = {
   name: '',
   type: 'JOBSITE_SUPERINTENDENT',
-  builder: '',
+  builderId: '',
   email: '',
   phone: '',
   officePhone: '',
   notes: '',
+  isActive: true,
 }
 
 export const initialContacts = [
@@ -51,7 +52,7 @@ export const initialContacts = [
     id: 1,
     name: 'Daniel Torres',
     type: 'JOBSITE_SUPERINTENDENT',
-    builder: 'KB_HOME',
+    builderId: 4,
     email: 'daniel.torres@kbhome.com',
     phone: '+19515550184',
     officePhone: '+19515550100',
@@ -61,7 +62,7 @@ export const initialContacts = [
     id: 2,
     name: 'Andrea Collins',
     type: 'JOBSITE_SUPERINTENDENT',
-    builder: 'CITY_VENTURES',
+    builderId: 1,
     email: 'a.collins@cityventures.com',
     phone: '+14155550132',
     officePhone: '',
@@ -71,7 +72,7 @@ export const initialContacts = [
     id: 3,
     name: 'Marcus Webb',
     type: 'AP_CONTACT',
-    builder: 'KB_HOME',
+    builderId: 4,
     email: 'ap.riverside@kbhome.com',
     phone: '',
     officePhone: '+19515550177',
@@ -81,7 +82,7 @@ export const initialContacts = [
     id: 4,
     name: 'Yuki Tanaka',
     type: 'AP_CONTACT',
-    builder: 'TRUMARK',
+    builderId: 2,
     email: 'accounts.payable@trumarkhomes.com',
     phone: '',
     officePhone: '+19255550190',
@@ -91,7 +92,7 @@ export const initialContacts = [
     id: 5,
     name: 'Olusegun Adeyemi',
     type: 'JOBSITE_SUPERINTENDENT',
-    builder: 'BROOKFIELD',
+    builderId: 3,
     email: 'o.adeyemi@brookfieldrp.com',
     phone: '+17145550146',
     officePhone: '',
@@ -101,10 +102,10 @@ export const initialContacts = [
     id: 6,
     name: 'Rebecca Lindqvist',
     type: 'AP_CONTACT',
-    builder: 'CITY_VENTURES',
+    builderId: 1,
     email: 'r.lindqvist@cityventures.com',
     phone: '+14155550158',
     officePhone: '+14155550100',
     notes: 'Prefers the payment schedule as Excel.',
   },
-]
+].map((contact) => ({ ...contact, isActive: true }))

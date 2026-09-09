@@ -454,7 +454,7 @@ test('builder contact schema stores selected phone country without guessing', ()
   const result = createBuilderContactSchema([], null).parse({
     name: 'Daniel Torres',
     type: 'JOBSITE_SUPERINTENDENT',
-    builder: 'TRUMARK',
+    builderId: 2,
     email: 'daniel@example.com',
     phone: '55 1234 5678',
     phoneCountry: 'MX',
@@ -465,6 +465,8 @@ test('builder contact schema stores selected phone country without guessing', ()
 
   assert.equal(result.phone, '+525512345678')
   assert.equal(result.officePhone, '')
+  assert.equal(result.builderId, 2)
+  assert.equal(result.isActive, true)
 })
 
 test('person schema requires and normalizes a territory for Valtrim supervisors', () => {

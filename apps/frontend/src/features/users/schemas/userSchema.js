@@ -41,7 +41,7 @@ export function createUserSchema(users, currentUserId) {
       phoneCountry: z.enum(['US', 'MX']).default('US'),
       role: userRoleSchema,
       allProjects: z.boolean(),
-      projectAccess: z.array(z.string()),
+      projectAccess: z.array(z.number().int().positive()),
       isActive: z.boolean(),
     })
     .superRefine((data, context) => {
@@ -67,8 +67,8 @@ export function createUserSchema(users, currentUserId) {
         })
       }
 
-      // Email is the sign-in identity, so it has to be unique. Once Supabase
-      // Auth backs this screen, the constraint moves to the database.
+      // Catch duplicates immediately in the form. Supabase Auth remains the
+      // authoritative uniqueness check in case another admin changed it.
       const emailAlreadyExists = users.some(
         (item) =>
           item.id !== currentUserId &&

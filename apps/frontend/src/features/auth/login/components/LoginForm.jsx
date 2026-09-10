@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useForm, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { Link as RouterLink, useLocation, useNavigate } from 'react-router-dom'
-import { Alert, Box, Button, Link, Stack } from '@mui/material'
+import { Alert, Box, Button, CircularProgress, Link, Stack } from '@mui/material'
 import LockOutlinedIcon from '@mui/icons-material/LockOutlined'
 import MailOutlineRoundedIcon from '@mui/icons-material/MailOutlineRounded'
 import AuthShell, {
@@ -115,6 +115,15 @@ export default function LoginForm() {
           fullWidth
           disableElevation
           disabled={!configured || submitting}
+          aria-busy={submitting}
+          startIcon={submitting ? (
+            <CircularProgress
+              aria-hidden="true"
+              color="inherit"
+              size={16}
+              thickness={5}
+            />
+          ) : undefined}
           sx={submitButtonSx}
         >
           {submitting ? 'Signing in…' : 'Sign in'}

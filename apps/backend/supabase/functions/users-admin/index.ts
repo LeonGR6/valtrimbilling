@@ -1,18 +1,15 @@
-// The half of the users CRUD that cannot run in the browser.
+// Trusted user administration boundary.
 //
-// Reading users can go through PostgREST, where RLS controls visibility.
-// Identity and access mutations go through this trusted boundary because they
-// require either the Auth Admin API or service-role access; neither belongs in
-// a browser.
+// The browser can never receive the service-role key. Every action first
+// validates the caller's JWT and ADMIN profile, then uses the Auth Admin API
+// and the valtrim profile/access tables on the caller's behalf.
 //
-// One function handles every admin action instead of three tiny ones. That is
-// Supabase's own advice (fewer, larger functions: less cold start, less to
-// deploy) and it keeps the admin check in a single place.
-//
-// POST body: { action: 'create' | 'deactivate' | 'reactivate', ... }
+// POST body: { action: 'list' | 'invite' | 'resend-invite' | 'update' | 'deactivate' | 'reactivate', ... }
 
 import { handlePreflight, json } from '../_shared/cors.ts'
 import { serviceClient, userClient } from '../_shared/supabase.ts'
+import { getAccountStatus } from './user-status.ts'
+import type { User } from 'jsr:@supabase/supabase-js@2'
 
 const ROLES = [
   'ADMIN',
@@ -25,14 +22,36 @@ const ROLES = [
 
 type Role = (typeof ROLES)[number]
 
-interface CreatePayload {
+const SCOPED_ROLES: readonly Role[] = [
+  'PROJECT_MANAGEMENT',
+  'SCHEDULING',
+  'FIELD',
+]
+
+interface UserPayload {
   email: string
   name: string
-  password: string
   phone?: string
   role?: Role
   allProjects?: boolean
+  projectAccess?: number[]
 }
+
+interface InvitePayload extends UserPayload {
+  redirectTo: string
+}
+
+interface ResendInvitePayload {
+  userId: string
+  redirectTo: string
+}
+
+interface UpdatePayload extends UserPayload {
+  userId: string
+  isActive: boolean
+}
+
+type AdminClient = ReturnType<typeof serviceClient>
 
 Deno.serve(async (req) => {
   const preflight = handlePreflight(req)
@@ -43,10 +62,6 @@ Deno.serve(async (req) => {
   }
 
   try {
-    // Authorize before doing anything else. The caller's own client is used on
-    // purpose: reading their profile through RLS proves the token is valid and
-    // that the row is really theirs. Asking the service client "what role does
-    // this id have" would prove neither.
     const caller = userClient(req)
     const {
       data: { user },
@@ -73,8 +88,14 @@ Deno.serve(async (req) => {
     }
 
     switch (body.action) {
-      case 'create':
-        return await createUser(body as CreatePayload)
+      case 'list':
+        return await listUsers()
+      case 'invite':
+        return await inviteUser(body as InvitePayload, user.id)
+      case 'resend-invite':
+        return await resendInvitation(body as ResendInvitePayload)
+      case 'update':
+        return await updateUser(body as UpdatePayload, user.id)
       case 'deactivate':
         return await setActive(body.userId, false)
       case 'reactivate':
@@ -87,113 +108,454 @@ Deno.serve(async (req) => {
   }
 })
 
-// The form is validated in the browser too, but that validation is a courtesy
-// to the person typing -- it is not a control. Anything that reaches the
-// database is checked here as well.
-function validateCreate(payload: CreatePayload): string | null {
-  if (!payload.email?.includes('@')) return 'Enter a valid email address.'
+function isRole(value: unknown): value is Role {
+  return typeof value === 'string' && ROLES.includes(value as Role)
+}
+
+function normalizedAccess(payload: UserPayload) {
+  const role = payload.role ?? 'READ_ONLY'
+  const allProjects = SCOPED_ROLES.includes(role)
+    ? payload.allProjects ?? true
+    : true
+  const projectAccess = allProjects
+    ? []
+    : [...new Set(payload.projectAccess ?? [])]
+
+  return { role, allProjects, projectAccess }
+}
+
+function validateUser(payload: UserPayload): string | null {
+  if (!payload.email?.trim().includes('@')) return 'Enter a valid email address.'
   if (!payload.name?.trim()) return 'Enter the user’s name.'
-  if (!payload.password || payload.password.length < 8) {
-    return 'The password must be at least 8 characters.'
+  if (payload.role && !isRole(payload.role)) return `Unknown role: ${payload.role}`
+  if (
+    payload.projectAccess !== undefined
+    && (!Array.isArray(payload.projectAccess)
+      || payload.projectAccess.some((id) => !Number.isSafeInteger(id) || id <= 0))
+  ) {
+    return 'Project access contains an invalid community.'
   }
-  if (payload.role && !ROLES.includes(payload.role)) {
-    return `Unknown role: ${payload.role}`
+
+  const { role, allProjects, projectAccess } = normalizedAccess(payload)
+  if (SCOPED_ROLES.includes(role) && !allProjects && projectAccess.length === 0) {
+    return 'Select at least one project for this role.'
+  }
+
+  return null
+}
+
+function validateUserId(userId: unknown): userId is string {
+  return typeof userId === 'string'
+    && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(userId)
+}
+
+function validateRedirect(redirectTo: string): string | null {
+  try {
+    const url = new URL(redirectTo)
+    if (!['http:', 'https:'].includes(url.protocol) || url.pathname !== '/accept-invite') {
+      return 'The invitation redirect must point to /accept-invite.'
+    }
+    return null
+  } catch {
+    return 'The invitation redirect is invalid.'
+  }
+}
+
+async function validateCommunities(
+  db: AdminClient,
+  communityIds: number[],
+): Promise<string | null> {
+  if (communityIds.length === 0) return null
+
+  const { data, error } = await db
+    .from('communities')
+    .select('id')
+    .in('id', communityIds)
+
+  if (error) throw error
+  if (data.length !== communityIds.length) {
+    return 'One or more selected projects no longer exist.'
   }
   return null
 }
 
-async function createUser(payload: CreatePayload): Promise<Response> {
-  const invalid = validateCreate(payload)
+async function replaceCommunityAccess(
+  db: AdminClient,
+  userId: string,
+  communityIds: number[],
+  grantedBy: string,
+) {
+  // Delete first so a partial failure removes access instead of accidentally
+  // retaining communities that the administrator intended to revoke.
+  const { error: deleteError } = await db
+    .from('user_community_access')
+    .delete()
+    .eq('user_id', userId)
+
+  if (deleteError) throw deleteError
+  if (communityIds.length === 0) return
+
+  const { error: insertError } = await db
+    .from('user_community_access')
+    .insert(communityIds.map((communityId) => ({
+      user_id: userId,
+      community_id: communityId,
+      granted_by: grantedBy,
+    })))
+
+  if (insertError) throw insertError
+}
+
+function toUser(
+  profile: Record<string, unknown>,
+  projectAccess: number[],
+  authUser: User,
+) {
+  const lastSignInAt = authUser.last_sign_in_at ?? null
+  const lastPasswordLoginAt = profile.last_password_login_at ?? null
+
+  return {
+    id: profile.id,
+    name: profile.name,
+    email: profile.email,
+    phone: profile.phone ?? '',
+    role: profile.role,
+    allProjects: profile.all_projects,
+    isActive: profile.is_active,
+    accountStatus: getAccountStatus(
+      Boolean(profile.is_active),
+      authUser.email_confirmed_at,
+      lastPasswordLoginAt as string | null,
+    ),
+    emailConfirmedAt: authUser.email_confirmed_at ?? null,
+    createdAt: authUser.created_at,
+    invitedAt: authUser.invited_at ?? null,
+    confirmationSentAt: authUser.confirmation_sent_at ?? null,
+    lastSignInAt,
+    lastPasswordLoginAt,
+    lastLoginAt: lastPasswordLoginAt,
+    projectAccess,
+  }
+}
+
+async function getUser(db: AdminClient, userId: string) {
+  const [profileResult, accessResult, authResult] = await Promise.all([
+    db
+      .from('app_users')
+      .select('id, name, email, phone, role, all_projects, is_active, last_login_at, last_password_login_at')
+      .eq('id', userId)
+      .single(),
+    db
+      .from('user_community_access')
+      .select('community_id')
+      .eq('user_id', userId),
+    db.auth.admin.getUserById(userId),
+  ])
+
+  if (profileResult.error) throw profileResult.error
+  if (accessResult.error) throw accessResult.error
+  if (authResult.error) throw authResult.error
+
+  return toUser(
+    profileResult.data,
+    accessResult.data.map(({ community_id }) => Number(community_id)),
+    authResult.data.user,
+  )
+}
+
+async function listAllAuthUsers(db: AdminClient): Promise<User[]> {
+  const users: User[] = []
+  const perPage = 1000
+
+  for (let page = 1; ; page += 1) {
+    const { data, error } = await db.auth.admin.listUsers({ page, perPage })
+    if (error) throw error
+
+    users.push(...data.users)
+    if (data.users.length < perPage) return users
+  }
+}
+
+async function listUsers(): Promise<Response> {
+  const db = serviceClient()
+  const [profilesResult, accessResult, communitiesResult, authUsers] = await Promise.all([
+    db
+      .from('app_users')
+      .select('id, name, email, phone, role, all_projects, is_active, last_login_at, last_password_login_at')
+      .order('name', { ascending: true }),
+    db
+      .from('user_community_access')
+      .select('user_id, community_id'),
+    db
+      .from('communities')
+      .select('id, code, name, is_active')
+      .order('name', { ascending: true }),
+    listAllAuthUsers(db),
+  ])
+
+  if (profilesResult.error) return json({ error: profilesResult.error.message }, 500)
+  if (accessResult.error) return json({ error: accessResult.error.message }, 500)
+  if (communitiesResult.error) return json({ error: communitiesResult.error.message }, 500)
+
+  const accessByUser = new Map<string, number[]>()
+  for (const access of accessResult.data) {
+    const current = accessByUser.get(access.user_id) ?? []
+    current.push(Number(access.community_id))
+    accessByUser.set(access.user_id, current)
+  }
+
+  const authByUserId = new Map(authUsers.map((user) => [user.id, user]))
+  const missingAuthUser = profilesResult.data.find(
+    (profile) => !authByUserId.has(profile.id),
+  )
+  if (missingAuthUser) {
+    return json({ error: `Auth user not found for profile ${missingAuthUser.id}.` }, 500)
+  }
+
+  return json({
+    users: profilesResult.data.map((profile) => (
+      toUser(
+        profile,
+        accessByUser.get(profile.id) ?? [],
+        authByUserId.get(profile.id)!,
+      )
+    )),
+    communities: communitiesResult.data.map((community) => ({
+      id: Number(community.id),
+      code: community.code ?? '',
+      name: community.name,
+      isActive: community.is_active,
+    })),
+  })
+}
+
+async function inviteUser(payload: InvitePayload, callerId: string): Promise<Response> {
+  const invalid = validateUser(payload) ?? validateRedirect(payload.redirectTo)
   if (invalid) return json({ error: invalid }, 400)
 
   const db = serviceClient()
   const email = payload.email.trim().toLowerCase()
+  const name = payload.name.trim()
+  const { role, allProjects, projectAccess } = normalizedAccess(payload)
+  const invalidCommunities = await validateCommunities(db, projectAccess)
+  if (invalidCommunities) return json({ error: invalidCommunities }, 400)
 
-  // Creating the identity also creates the profile row: the trigger on
-  // auth.users fires in the same transaction, reading the name out of the
-  // metadata passed here.
-  //
-  // email_confirm skips the confirmation mail because an admin is creating
-  // this account deliberately. Switch to inviteUserByEmail() once SMTP is
-  // configured and the person should pick their own password.
-  const { data: created, error: createError } = await db.auth.admin.createUser({
+  // Supabase creates auth.users, sends the SMTP invitation and runs the
+  // database trigger that creates valtrim.app_users. The invitation opens the
+  // dedicated /accept-invite view so the person chooses their own password.
+  const { data: invited, error: inviteError } = await db.auth.admin.inviteUserByEmail(
     email,
-    password: payload.password,
-    email_confirm: true,
-    user_metadata: { name: payload.name.trim() },
-  })
+    {
+      data: { name },
+      redirectTo: payload.redirectTo,
+    },
+  )
 
-  if (createError) {
-    // 422 is what the Auth API returns for an email already registered.
-    const status = createError.status === 422 ? 409 : 500
-    return json({ error: createError.message }, status)
+  if (inviteError) {
+    const status = inviteError.status === 422 ? 409 : 500
+    return json({ error: inviteError.message }, status)
   }
 
-  // The trigger filled in id, name and email. The rest of the record is the
-  // app's business and is set here.
-  const { data: profile, error: profileError } = await db
+  const { error: profileError } = await db
     .from('app_users')
     .update({
+      name,
       phone: payload.phone?.trim() || null,
-      role: payload.role ?? 'READ_ONLY',
-      all_projects: payload.allProjects ?? true,
+      role,
+      all_projects: allProjects,
+      is_active: true,
     })
-    .eq('id', created.user.id)
-    .select()
-    .single()
+    .eq('id', invited.user.id)
 
   if (profileError) {
-    // The identity exists but the profile could not be completed. Roll the
-    // identity back rather than leaving a user who can sign in with a role
-    // nobody chose.
-    await db.auth.admin.deleteUser(created.user.id)
+    await db.auth.admin.deleteUser(invited.user.id)
     return json({ error: profileError.message }, 500)
   }
 
-  return json({ user: profile }, 201)
+  try {
+    await replaceCommunityAccess(db, invited.user.id, projectAccess, callerId)
+    return json({ user: await getUser(db, invited.user.id) }, 201)
+  } catch (error) {
+    await db.auth.admin.deleteUser(invited.user.id)
+    return json({ error: (error as Error).message }, 500)
+  }
 }
 
-// Users are never deleted -- they are referenced by the invoices and draws
-// they created. Two things happen instead, and both are needed:
-//
-//   is_active = false   every RLS policy goes through has_app_role(), which
-//                       matches nothing for an inactive user, so they lose
-//                       access to every table at once.
-//   ban                 an already-issued JWT stays valid until it expires.
-//                       Banning stops it being refreshed and ends the session.
-async function setActive(userId: string, isActive: boolean): Promise<Response> {
-  if (!userId) return json({ error: 'Missing userId.' }, 400)
+async function resendInvitation(payload: ResendInvitePayload): Promise<Response> {
+  if (!validateUserId(payload.userId)) return json({ error: 'Invalid userId.' }, 400)
+
+  const invalidRedirect = validateRedirect(payload.redirectTo)
+  if (invalidRedirect) return json({ error: invalidRedirect }, 400)
 
   const db = serviceClient()
-
-  // Deactivating the last admin locks everyone out of user management for
-  // good: no admin left means no one can call this function to undo it, and
-  // the way back is editing the table by hand.
-  if (!isActive) {
-    const { count } = await db
+  const [profileResult, authResult] = await Promise.all([
+    db
       .from('app_users')
-      .select('id', { count: 'exact', head: true })
-      .eq('role', 'ADMIN')
-      .eq('is_active', true)
-      .neq('id', userId)
+      .select('id, name, email, is_active')
+      .eq('id', payload.userId)
+      .maybeSingle(),
+    db.auth.admin.getUserById(payload.userId),
+  ])
 
-    if (!count) {
-      return json({ error: 'This is the last active admin.' }, 409)
-    }
+  if (profileResult.error) return json({ error: profileResult.error.message }, 500)
+  if (authResult.error) {
+    const status = authResult.error.status === 404 ? 404 : 500
+    return json({ error: authResult.error.message }, status)
+  }
+  if (!profileResult.data) return json({ error: 'User not found.' }, 404)
+  if (!profileResult.data.is_active) {
+    return json({ error: 'Reactivate this user before resending the invitation.' }, 409)
   }
 
-  const { data: profile, error } = await db
+  const authUser = authResult.data.user
+  if (authUser.email_confirmed_at) {
+    return json({ error: 'Only pending invitations can be resent.' }, 409)
+  }
+  if (!authUser.email) return json({ error: 'The invited user has no email address.' }, 409)
+
+  const { error: inviteError } = await db.auth.admin.inviteUserByEmail(
+    authUser.email,
+    {
+      data: {
+        ...authUser.user_metadata,
+        name: profileResult.data.name,
+      },
+      redirectTo: payload.redirectTo,
+    },
+  )
+
+  if (inviteError) {
+    const status = inviteError.status === 429
+      ? 429
+      : inviteError.status === 422
+        ? 409
+        : 500
+    return json({ error: inviteError.message }, status)
+  }
+
+  return json({ user: await getUser(db, payload.userId) })
+}
+
+async function otherActiveAdminExists(db: AdminClient, userId: string) {
+  const { count, error } = await db
     .from('app_users')
-    .update({ is_active: isActive })
-    .eq('id', userId)
-    .select()
-    .single()
+    .select('id', { count: 'exact', head: true })
+    .eq('role', 'ADMIN')
+    .eq('is_active', true)
+    .neq('id', userId)
 
-  if (error) return json({ error: error.message }, 500)
+  if (error) throw error
+  return Boolean(count)
+}
 
-  await db.auth.admin.updateUserById(userId, {
-    ban_duration: isActive ? 'none' : '876000h',
+async function updateUser(payload: UpdatePayload, callerId: string): Promise<Response> {
+  if (!validateUserId(payload.userId)) return json({ error: 'Invalid userId.' }, 400)
+
+  const invalid = validateUser(payload)
+  if (invalid) return json({ error: invalid }, 400)
+  if (typeof payload.isActive !== 'boolean') {
+    return json({ error: 'Missing user status.' }, 400)
+  }
+
+  const db = serviceClient()
+  const { data: current, error: currentError } = await db
+    .from('app_users')
+    .select('role, is_active')
+    .eq('id', payload.userId)
+    .maybeSingle()
+
+  if (currentError) return json({ error: currentError.message }, 500)
+  if (!current) return json({ error: 'User not found.' }, 404)
+
+  const { role, allProjects, projectAccess } = normalizedAccess(payload)
+  const removesActiveAdmin = current.role === 'ADMIN'
+    && current.is_active
+    && (role !== 'ADMIN' || !payload.isActive)
+
+  if (removesActiveAdmin && !(await otherActiveAdminExists(db, payload.userId))) {
+    return json({ error: 'This is the last active admin.' }, 409)
+  }
+
+  const invalidCommunities = await validateCommunities(db, projectAccess)
+  if (invalidCommunities) return json({ error: invalidCommunities }, 400)
+
+  const email = payload.email.trim().toLowerCase()
+  const name = payload.name.trim()
+  const { error: authUpdateError } = await db.auth.admin.updateUserById(payload.userId, {
+    email,
+    user_metadata: { name },
+    ban_duration: payload.isActive ? 'none' : '876000h',
   })
 
-  return json({ user: profile })
+  if (authUpdateError) {
+    const status = authUpdateError.status === 422 ? 409 : 500
+    return json({ error: authUpdateError.message }, status)
+  }
+
+  const { error: profileError } = await db
+    .from('app_users')
+    .update({
+      name,
+      email,
+      phone: payload.phone?.trim() || null,
+      role,
+      all_projects: allProjects,
+      is_active: payload.isActive,
+    })
+    .eq('id', payload.userId)
+
+  if (profileError) return json({ error: profileError.message }, 500)
+
+  try {
+    await replaceCommunityAccess(db, payload.userId, projectAccess, callerId)
+    return json({ user: await getUser(db, payload.userId) })
+  } catch (error) {
+    return json({ error: (error as Error).message }, 500)
+  }
+}
+
+async function setActive(userId: unknown, isActive: boolean): Promise<Response> {
+  if (!validateUserId(userId)) return json({ error: 'Invalid userId.' }, 400)
+
+  const db = serviceClient()
+  const { data: current, error: currentError } = await db
+    .from('app_users')
+    .select('role, is_active')
+    .eq('id', userId)
+    .maybeSingle()
+
+  if (currentError) return json({ error: currentError.message }, 500)
+  if (!current) return json({ error: 'User not found.' }, 404)
+
+  if (
+    !isActive
+    && current.role === 'ADMIN'
+    && current.is_active
+    && !(await otherActiveAdminExists(db, userId))
+  ) {
+    return json({ error: 'This is the last active admin.' }, 409)
+  }
+
+  if (!isActive) {
+    const { error: profileError } = await db
+      .from('app_users')
+      .update({ is_active: false })
+      .eq('id', userId)
+    if (profileError) return json({ error: profileError.message }, 500)
+  }
+
+  const { error: authUpdateError } = await db.auth.admin.updateUserById(userId, {
+    ban_duration: isActive ? 'none' : '876000h',
+  })
+  if (authUpdateError) return json({ error: authUpdateError.message }, 500)
+
+  if (isActive) {
+    const { error: profileError } = await db
+      .from('app_users')
+      .update({ is_active: true })
+      .eq('id', userId)
+    if (profileError) return json({ error: profileError.message }, 500)
+  }
+
+  return json({ user: await getUser(db, userId) })
 }

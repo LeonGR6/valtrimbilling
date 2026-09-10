@@ -3,12 +3,16 @@ import {
   isSupabaseConfigured,
   requireSupabase,
 } from '../../../services/api.js'
+import {
+  ensurePasswordFlowUser,
+  establishCapturedPasswordFlow,
+} from '../reset-password/services/passwordFlow.js'
 import { AuthContext } from './authContext.js'
 
 async function fetchProfile(client, userId) {
   const { data, error } = await client
     .from('app_users')
-    .select('id, name, email, phone, role, all_projects, is_active, last_login_at')
+    .select('id, name, email, phone, role, all_projects, is_active, last_login_at, last_password_login_at')
     .eq('id', userId)
     .maybeSingle()
 
@@ -26,13 +30,23 @@ async function fetchProfile(client, userId) {
     allProjects: data.all_projects,
     isActive: data.is_active,
     lastLoginAt: data.last_login_at,
+    lastPasswordLoginAt: data.last_password_login_at,
   }
+}
+
+async function recordPasswordLogin(client) {
+  const { data, error } = await client.rpc('record_password_login')
+  if (error) throw error
+  return data
 }
 
 export function AuthProvider({ children }) {
   const [session, setSession] = useState(null)
   const [profile, setProfile] = useState(null)
   const [sessionLoading, setSessionLoading] = useState(isSupabaseConfigured)
+  const [passwordFlow, setPasswordFlow] = useState(null)
+  const [passwordFlowError, setPasswordFlowError] = useState(null)
+  const [passwordFlowLoading, setPasswordFlowLoading] = useState(isSupabaseConfigured)
   const [error, setError] = useState(
     isSupabaseConfigured
       ? null
@@ -71,13 +85,6 @@ export function AuthProvider({ children }) {
       .then((client) => {
         if (!mounted) return
 
-        client.auth.getSession().then(({ data, error: sessionError }) => {
-          if (!mounted) return
-          setSession(data.session ?? null)
-          setError(sessionError?.message ?? null)
-          setSessionLoading(false)
-        })
-
         const authListener = client.auth.onAuthStateChange((_event, nextSession) => {
           if (!mounted) return
           setSession(nextSession)
@@ -86,11 +93,36 @@ export function AuthProvider({ children }) {
           }
         })
         subscription = authListener.data.subscription
+
+        establishCapturedPasswordFlow(client)
+          .then((nextPasswordFlow) => {
+            if (!mounted) return
+            setPasswordFlow(nextPasswordFlow)
+            setPasswordFlowError(null)
+          })
+          .catch((passwordError) => {
+            if (!mounted) return
+            setPasswordFlow(null)
+            setPasswordFlowError(passwordError.message)
+          })
+          .finally(() => {
+            if (!mounted) return
+            setPasswordFlowLoading(false)
+
+            client.auth.getSession().then(({ data, error: sessionError }) => {
+              if (!mounted) return
+              setSession(data.session ?? null)
+              setError(sessionError?.message ?? null)
+              setSessionLoading(false)
+            })
+          })
       })
       .catch((clientError) => {
         if (!mounted) return
         setError(clientError.message)
         setSessionLoading(false)
+        setPasswordFlowError(clientError.message)
+        setPasswordFlowLoading(false)
       })
 
     return () => {
@@ -122,6 +154,10 @@ export function AuthProvider({ children }) {
 
     try {
       await loadProfile(data.user.id)
+      const lastPasswordLoginAt = await recordPasswordLogin(client)
+      setProfile((current) => current?.id === data.user.id
+        ? { ...current, lastPasswordLoginAt }
+        : current)
     } catch (profileError) {
       await client.auth.signOut()
       setSession(null)
@@ -139,6 +175,8 @@ export function AuthProvider({ children }) {
     setSession(null)
     setProfile(null)
     setError(null)
+    setPasswordFlow(null)
+    setPasswordFlowError(null)
   }, [])
 
   const requestPasswordReset = useCallback(async (email) => {
@@ -150,13 +188,23 @@ export function AuthProvider({ children }) {
     if (resetError) throw resetError
   }, [])
 
-  const updatePassword = useCallback(async (password) => {
+  const updatePassword = useCallback(async (password, expectedUserId) => {
     const client = await requireSupabase()
+    const {
+      data: { user },
+      error: userError,
+    } = await client.auth.getUser()
+
+    if (userError) throw userError
+    ensurePasswordFlowUser(user, expectedUserId)
+
     const { error: updateError } = await client.auth.updateUser({ password })
     if (updateError) throw updateError
     await client.auth.signOut()
     setSession(null)
     setProfile(null)
+    setPasswordFlow(null)
+    setPasswordFlowError(null)
   }, [])
 
   const value = useMemo(() => ({
@@ -164,6 +212,9 @@ export function AuthProvider({ children }) {
     session,
     user: session?.user ?? null,
     profile,
+    passwordFlow,
+    passwordFlowError,
+    passwordFlowLoading,
     loading: sessionLoading || Boolean(
       session
       && profile?.id !== session.user.id
@@ -181,6 +232,9 @@ export function AuthProvider({ children }) {
     error,
     loadProfile,
     profile,
+    passwordFlow,
+    passwordFlowError,
+    passwordFlowLoading,
     requestPasswordReset,
     session,
     sessionLoading,

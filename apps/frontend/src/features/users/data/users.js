@@ -68,6 +68,17 @@ export const userRoleDescriptions = Object.fromEntries(
   userRoleOptions.map(({ value, description }) => [value, description]),
 )
 
+export const userStatusOptions = [
+  { value: 'PENDING_INVITE', label: 'Invitation pending', color: 'warning' },
+  { value: 'NEVER_SIGNED_IN', label: 'Never signed in', color: 'info' },
+  { value: 'ACTIVE', label: 'Active', color: 'success' },
+  { value: 'INACTIVE', label: 'Inactive', color: 'error' },
+]
+
+export const userStatusByValue = Object.fromEntries(
+  userStatusOptions.map((status) => [status.value, status]),
+)
+
 export const emptyUser = {
   name: '',
   email: '',

@@ -33,3 +33,6 @@ docs/architecture.md
 *.njsproj
 *.sln
 *.sw?
+
+# Supabase CLI temporary files created from the repository root
+/supabase/.temp/*

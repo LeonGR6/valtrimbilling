@@ -28,7 +28,7 @@ export default function CalendarPageHeader({
             {activeTab === 'BUILDER_SETTINGS'
               ? 'Configure the automatic EXT, Shutter, DM and HW date spacing for each builder.'
               : calendarMode === 'PRODUCTION'
-                ? 'Schedule EXT, optional Shutter, DM and HW as one production activity.'
+                ? 'Schedule EXT, DM and HW as one production activity.'
                 : 'Track extra work and change orders separately.'}
           </Typography>
         </Box>

@@ -259,6 +259,9 @@ create table communities (
 create unique index communities_builder_name_uq
   on communities (builder_id, lower(btrim(name)));
 
+comment on table communities is
+  'Legacy catalog pending retirement. Do not use for Jobs. It remains closed while user_community_access and service_properties still depend on it.';
+
 create table billing_setups (
   id bigint generated always as identity primary key,
   builder_id bigint not null unique references builders(id) on delete restrict,
@@ -392,16 +395,16 @@ create table jobs (
   id bigint generated always as identity primary key,
   code varchar(40) not null unique
     check (code = upper(btrim(code)) and code <> ''),
-  name varchar(120) not null check (btrim(name) <> ''),
   builder_id bigint not null references builders(id) on delete restrict,
-  community_id bigint not null,
+  community text not null check (
+    community = btrim(community)
+    and community <> ''
+    and char_length(community) <= 100
+  ),
   supervisor_id bigint not null references people(id) on delete restrict,
   superintendent_id bigint not null,
   superintendent_type contact_type generated always as
     ('JOBSITE_SUPERINTENDENT'::contact_type) stored,
-  ap_contact_id bigint not null,
-  ap_contact_type contact_type generated always as
-    ('AP_CONTACT'::contact_type) stored,
   billing_setup_version_id bigint not null,
   sequence_sheet_name varchar(120),
   status varchar(16) not null default 'ACTIVE'
@@ -412,20 +415,18 @@ create table jobs (
   updated_by uuid,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  foreign key (community_id, builder_id)
-    references communities(id, builder_id) on delete restrict,
   foreign key (superintendent_id, builder_id, superintendent_type)
-    references builder_contacts(id, builder_id, type) on delete restrict,
-  foreign key (ap_contact_id, builder_id, ap_contact_type)
     references builder_contacts(id, builder_id, type) on delete restrict,
   foreign key (billing_setup_version_id, builder_id)
     references billing_setup_versions(id, builder_id) on delete restrict,
-  unique (id, builder_id),
-  unique (id, community_id)
+  unique (id, builder_id)
 );
 
-create unique index jobs_builder_name_uq
-  on jobs (builder_id, lower(btrim(name)));
+comment on table jobs is
+  'Jobs are identified by code. Community is required text; Supervisor and Jobsite Superintendent are the only Job-level contact assignments.';
+
+comment on column jobs.billing_setup_version_id is
+  'Assigned automatically from the Builder ACTIVE Billing Setup version on Job creation or Builder change, then retained as an immutable historical reference.';
 
 create table plans (
   id bigint generated always as identity primary key,
@@ -1299,41 +1300,68 @@ language plpgsql
 set search_path = valtrim, pg_catalog
 as $$
 begin
+  new.community := btrim(new.community);
+
   if not exists (
     select 1
-    from people p
-    join person_roles r on r.person_id = p.id and r.role = 'SUPERVISOR'
-    where p.id = new.supervisor_id and p.is_active
+    from people person
+    join person_roles role
+      on role.person_id = person.id
+     and role.role = 'SUPERVISOR'
+    where person.id = new.supervisor_id
+      and person.is_active
   ) then
     raise exception 'El supervisor debe estar activo y tener rol SUPERVISOR';
   end if;
+
   if not exists (
-    select 1 from builders where id = new.builder_id and is_active
+    select 1
+    from builders builder
+    where builder.id = new.builder_id
+      and builder.is_active
   ) then
     raise exception 'El builder debe estar activo';
   end if;
+
   if not exists (
-    select 1 from communities
-    where id = new.community_id and builder_id = new.builder_id and is_active
+    select 1
+    from builder_contacts superintendent
+    where superintendent.id = new.superintendent_id
+      and superintendent.builder_id = new.builder_id
+      and superintendent.type = 'JOBSITE_SUPERINTENDENT'
+      and superintendent.is_active
   ) then
-    raise exception 'La comunidad debe estar activa y pertenecer al builder';
+    raise exception
+      'El Jobsite Superintendent debe estar activo y pertenecer al builder';
   end if;
-  if not exists (
-    select 1 from builder_contacts
-    where id in (new.superintendent_id, new.ap_contact_id)
-      and builder_id = new.builder_id and is_active
-    group by builder_id
-    having count(*) = 2
-  ) then
-    raise exception 'Superintendent y AP Contact deben estar activos y pertenecer al builder';
+
+  if tg_op = 'INSERT'
+     or new.builder_id is distinct from old.builder_id then
+    select version.id
+    into new.billing_setup_version_id
+    from billing_setup_versions version
+    where version.builder_id = new.builder_id
+      and version.status = 'ACTIVE';
+
+    if new.billing_setup_version_id is null then
+      raise exception
+        'El builder debe tener una version ACTIVE de Billing Setup';
+    end if;
+  else
+    new.billing_setup_version_id := old.billing_setup_version_id;
+
+    if not exists (
+      select 1
+      from billing_setup_versions version
+      where version.id = new.billing_setup_version_id
+        and version.builder_id = new.builder_id
+        and version.status in ('ACTIVE', 'SUPERSEDED')
+    ) then
+      raise exception
+        'El Job debe conservar una version valida de Billing Setup';
+    end if;
   end if;
-  if not exists (
-    select 1 from billing_setup_versions
-    where id = new.billing_setup_version_id
-      and builder_id = new.builder_id and status = 'ACTIVE'
-  ) then
-    raise exception 'El job debe usar una version ACTIVE de billing del builder';
-  end if;
+
   return new;
 end;
 $$;
@@ -2401,11 +2429,12 @@ create index builder_contacts_builder_idx on builder_contacts (builder_id, type,
 create index communities_builder_idx on communities (builder_id, is_active);
 create index billing_setup_versions_builder_idx on billing_setup_versions (builder_id, status);
 create index billing_setup_versions_setup_builder_idx on billing_setup_versions (setup_id, builder_id);
-create index jobs_community_idx on jobs (community_id, builder_id);
+create index jobs_builder_community_idx on jobs (builder_id, lower(community));
 create index jobs_supervisor_idx on jobs (supervisor_id);
 create index jobs_superintendent_idx on jobs (superintendent_id, builder_id, superintendent_type);
-create index jobs_ap_contact_idx on jobs (ap_contact_id, builder_id, ap_contact_type);
 create index jobs_setup_version_idx on jobs (billing_setup_version_id, builder_id);
+create index jobs_created_by_idx on jobs (created_by) where created_by is not null;
+create index jobs_updated_by_idx on jobs (updated_by) where updated_by is not null;
 create index plans_job_active_idx on plans (job_id, is_active);
 create index plan_prices_plan_period_idx on plan_prices (plan_id, effective_from, effective_to);
 create index plan_options_plan_active_idx on plan_options (plan_id, is_active);
@@ -2465,31 +2494,25 @@ as
 select
   j.id,
   j.code,
-  j.name,
   j.status,
   j.is_active,
   j.builder_id,
   b.name as builder_name,
-  j.community_id,
-  c.name as community_name,
+  j.community,
   j.supervisor_id,
   supervisor.name as supervisor_name,
   j.superintendent_id,
   superintendent.name as superintendent_name,
-  j.ap_contact_id,
-  ap.name as ap_contact_name,
   j.billing_setup_version_id,
   count(distinct p.id) as phase_count,
   count(distinct l.id) as lot_count
 from jobs j
 join builders b on b.id = j.builder_id
-join communities c on c.id = j.community_id
 join people supervisor on supervisor.id = j.supervisor_id
 join builder_contacts superintendent on superintendent.id = j.superintendent_id
-join builder_contacts ap on ap.id = j.ap_contact_id
 left join phases p on p.job_id = j.id
 left join lots l on l.phase_id = p.id
-group by j.id, b.name, c.name, supervisor.name, superintendent.name, ap.name;
+group by j.id, b.name, supervisor.name, superintendent.name;
 
 create view draw_package_overview
 with (security_invoker = true)
@@ -2503,7 +2526,6 @@ select
   b.name as builder_name,
   dp.job_id,
   j.code as job_code,
-  j.name as job_name,
   dp.phase_id,
   p.code as phase_code,
   i.id as invoice_id,
@@ -2522,7 +2544,7 @@ join jobs j on j.id = dp.job_id
 join phases p on p.id = dp.phase_id
 join invoices i on i.package_id = dp.id
 left join package_draws pd on pd.package_id = dp.id
-group by dp.id, b.name, j.code, j.name, p.code, i.id;
+group by dp.id, b.name, j.code, p.code, i.id;
 
 create view service_request_overview
 with (security_invoker = true)

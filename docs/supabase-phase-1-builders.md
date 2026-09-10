@@ -2,7 +2,8 @@
 
 Phase 1 persists the Builders catalog in Supabase. Supervisors, Builder
 Contacts, Communities, Jobs, and billing setup configuration remain outside
-this phase.
+this historical phase. Billing Setup configuration was subsequently opened in
+Phase 4; see `supabase-phase-4-builder-billing-setups.md`.
 
 ## Included
 
@@ -61,6 +62,7 @@ npm test
 npm run build
 ```
 
-People with the `SUPERVISOR` role are implemented in Phase 2 and Builder
-Contacts are implemented in Phase 3. Community remains a separate future
-entity, and Jobs should remain closed until their parent records are stable.
+People with the `SUPERVISOR` role are implemented in Phase 2, Builder Contacts
+in Phase 3, Billing Setup versions in Phase 4, and Jobs in Phase 5. Community is
+no longer a catalog relation for Jobs and remains only as a closed legacy table
+pending removal after its remaining dependencies are migrated.

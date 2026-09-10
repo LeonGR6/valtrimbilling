@@ -67,7 +67,7 @@ function formatPrice(value) {
   return hasPrice(value) ? currencyFormatter.format(value) : 'Not priced'
 }
 
-function PriceDialog({ target, onClose, onSave }) {
+function PriceDialog({ target, onClose, onSave, submitting }) {
   const isPlan = target.type === 'plan'
   const isHardware = target.type === 'hardware'
   const currentPrice = isPlan
@@ -97,7 +97,7 @@ function PriceDialog({ target, onClose, onSave }) {
   return (
     <Dialog
       open
-      onClose={onClose}
+      onClose={submitting ? undefined : onClose}
       fullWidth
       maxWidth="xs"
       component="form"
@@ -152,9 +152,9 @@ function PriceDialog({ target, onClose, onSave }) {
         />
       </DialogContent>
       <DialogActions sx={{ px: 3, pb: 2.5 }}>
-        <Button color="inherit" onClick={onClose}>Cancel</Button>
-        <Button type="submit" variant="contained" disableElevation>
-          Save price
+        <Button color="inherit" onClick={onClose} disabled={submitting}>Cancel</Button>
+        <Button type="submit" variant="contained" disableElevation disabled={submitting}>
+          {submitting ? 'Saving...' : 'Save price'}
         </Button>
       </DialogActions>
     </Dialog>
@@ -209,6 +209,8 @@ function PlanPriceCard({
   plan,
   position,
   jobId,
+  canManage,
+  submitting,
   separateHardwarePrice,
   onEditPlan,
   onEditHardware,
@@ -302,6 +304,7 @@ function PlanPriceCard({
               variant="contained"
               startIcon={<EditOutlinedIcon />}
               onClick={onEditPlan}
+              disabled={!canManage || submitting}
               disableElevation
             >
               Edit plan price
@@ -312,7 +315,7 @@ function PlanPriceCard({
                 variant="outlined"
                 startIcon={<ConstructionRoundedIcon />}
                 onClick={onEditHardware}
-                disabled={!hasPrice(plan.price)}
+                disabled={!canManage || submitting || !hasPrice(plan.price)}
               >
                 {hardwareIsPriced ? 'Edit hardware price' : 'Set hardware price'}
               </Button>
@@ -445,6 +448,7 @@ function PlanPriceCard({
                   color="inherit"
                   startIcon={<EditOutlinedIcon />}
                   onClick={() => onEditOption(option)}
+                  disabled={!canManage || submitting}
                   sx={{ justifySelf: { xs: 'start', md: 'end' } }}
                 >
                   Edit price
@@ -487,7 +491,16 @@ function PlanPriceCard({
   )
 }
 
-function JobPricingSelector({ jobs, filteredJobs, search, onSearchChange, onSelectJob }) {
+function JobPricingSelector({
+  jobs,
+  filteredJobs,
+  search,
+  loading,
+  error,
+  onSearchChange,
+  onSelectJob,
+  onRetry,
+}) {
   return (
     <Box sx={{ minHeight: '100%', bgcolor: 'background.default' }}>
       <Box
@@ -511,6 +524,15 @@ function JobPricingSelector({ jobs, filteredJobs, search, onSearchChange, onSele
       </Box>
 
       <Box sx={{ p: { xs: 2.5, md: 4 } }}>
+        {error && (
+          <Alert
+            severity="error"
+            action={<Button color="inherit" size="small" onClick={onRetry}>Retry</Button>}
+            sx={{ mb: 2.5 }}
+          >
+            {error}
+          </Alert>
+        )}
         <Card variant="outlined">
           <CardContent sx={{ p: { xs: 2, sm: 2.5 } }}>
             <Stack
@@ -555,7 +577,11 @@ function JobPricingSelector({ jobs, filteredJobs, search, onSearchChange, onSele
             />
           </CardContent>
 
-          {filteredJobs.length > 0 ? (
+          {loading ? (
+            <Box sx={{ py: 7, px: 3, textAlign: 'center', borderTop: 1, borderColor: 'divider' }}>
+              <Typography color="text.secondary">Loading Jobs, Plans and Options...</Typography>
+            </Box>
+          ) : filteredJobs.length > 0 ? (
             <Stack divider={<Divider flexItem />}>
               {filteredJobs.map((job) => {
                 const plans = job.sequenceSheet?.plans ?? []
@@ -661,10 +687,19 @@ function JobPricingSelector({ jobs, filteredJobs, search, onSearchChange, onSele
 export default function PlanPricing() {
   const navigate = useNavigate()
   const { builderId, jobId } = useParams()
-  const { jobs, setJobs } = useJobs()
+  const {
+    jobs,
+    loading,
+    error,
+    canManageJobs,
+    refreshJobs,
+    saveJobPlanPrice,
+    savePlanOptionPrice,
+  } = useJobs()
   const { builderDrawSchedules } = useBuilderDrawSchedules()
   const [search, setSearch] = useState('')
   const [priceTarget, setPriceTarget] = useState(null)
+  const [submitting, setSubmitting] = useState(false)
   const [notice, setNotice] = useState(null)
   const job = jobId
     ? jobs.find(
@@ -678,6 +713,7 @@ export default function PlanPricing() {
     (setup) => String(setup.builderId) === String(resolvedBuilderId),
   )
   const separateHardwarePrice = Boolean(builderSetup?.separateHardwarePrice)
+  const canManagePricing = canManageJobs && job?.isActive
   const plans = job?.sequenceSheet?.plans ?? []
   const options = plans.flatMap((plan) => plan.options ?? [])
   const pricedPlanCount = plans.filter((plan) => hasPrice(plan.price)).length
@@ -704,53 +740,43 @@ export default function PlanPricing() {
     navigate(jobPlanPricingPath(selectedBuilderId, selectedJob.id))
   }
 
-  const handlePriceSave = ({ amount }) => {
-    setJobs((currentJobs) =>
-      currentJobs.map((currentJob) => {
-        if (currentJob.id !== job.id) return currentJob
+  const handlePriceSave = async ({ amount }) => {
+    setSubmitting(true)
+    try {
+      if (priceTarget.type === 'option') {
+        await savePlanOptionPrice(
+          job.id,
+          priceTarget.plan.id,
+          priceTarget.option.id,
+          amount,
+        )
+      } else {
+        const hardwarePrice = priceTarget.type === 'hardware'
+          ? amount
+          : hasPrice(priceTarget.plan.hardwarePrice)
+              && priceTarget.plan.hardwarePrice <= amount
+            ? priceTarget.plan.hardwarePrice
+            : null
+        await saveJobPlanPrice(
+          job.id,
+          priceTarget.plan.id,
+          priceTarget.type === 'hardware' ? priceTarget.plan.price : amount,
+          hardwarePrice,
+        )
+      }
 
-        return {
-          ...currentJob,
-          sequenceSheet: {
-            ...currentJob.sequenceSheet,
-            plans: (currentJob.sequenceSheet?.plans ?? []).map((plan) => {
-              if (plan.id !== priceTarget.plan.id) return plan
-
-              if (priceTarget.type === 'plan') {
-                return {
-                  ...plan,
-                  price: amount,
-                  hardwarePrice: hasPrice(plan.hardwarePrice)
-                    && plan.hardwarePrice <= amount
-                    ? plan.hardwarePrice
-                    : null,
-                }
-              }
-
-              if (priceTarget.type === 'hardware') {
-                return { ...plan, hardwarePrice: amount }
-              }
-
-              return {
-                ...plan,
-                options: (plan.options ?? []).map((option) =>
-                  option.id === priceTarget.option.id
-                    ? { ...option, price: amount }
-                    : option,
-                ),
-              }
-            }),
-          },
-        }
-      }),
-    )
-    setNotice({
-      severity: 'success',
-      message: priceTarget.type === 'hardware'
-        ? 'Hardware price updated.'
-        : 'Price updated.',
-    })
-    setPriceTarget(null)
+      setNotice({
+        severity: 'success',
+        message: priceTarget.type === 'hardware'
+          ? 'Hardware price updated.'
+          : 'Price updated.',
+      })
+      setPriceTarget(null)
+    } catch (saveError) {
+      setNotice({ severity: 'error', message: saveError.message })
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   if (!jobId) {
@@ -759,9 +785,20 @@ export default function PlanPricing() {
         jobs={jobs}
         filteredJobs={filteredJobs}
         search={search}
+        loading={loading}
+        error={error}
         onSearchChange={setSearch}
         onSelectJob={selectJob}
+        onRetry={() => refreshJobs().catch(() => {})}
       />
+    )
+  }
+
+  if (loading && !job) {
+    return (
+      <Box sx={{ py: 10, px: 3, textAlign: 'center' }}>
+        <Typography color="text.secondary">Loading Job pricing...</Typography>
+      </Box>
     )
   }
 
@@ -808,7 +845,12 @@ export default function PlanPricing() {
             <Typography variant="h5" fontWeight={700} color="text.primary">
               Job {job.code} · Plan pricing
             </Typography>
-            <Chip label="Active" size="small" color="success" variant="outlined" />
+            <Chip
+              label={job.isActive ? 'Active' : 'Inactive'}
+              size="small"
+              color={job.isActive ? 'success' : 'default'}
+              variant="outlined"
+            />
           </Stack>
           <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
             {job.builder} · {job.community}
@@ -831,6 +873,27 @@ export default function PlanPricing() {
       />
 
       <Box sx={{ p: { xs: 2.5, md: 4 } }}>
+        {error && (
+          <Alert
+            severity="error"
+            action={(
+              <Button color="inherit" size="small" onClick={() => refreshJobs().catch(() => {})}>
+                Retry
+              </Button>
+            )}
+            sx={{ mb: 2.5 }}
+          >
+            {error}
+          </Alert>
+        )}
+        {!canManagePricing && (
+          <Alert severity="info" sx={{ mb: 2.5 }}>
+            {job.isActive
+              ? 'You can review pricing, but your role cannot change it.'
+              : 'This Job is inactive. Its Plan and Option prices are read-only.'}
+          </Alert>
+        )}
+
         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} sx={{ mb: 3 }}>
           <DetailMetric
             icon={<ApartmentRoundedIcon />}
@@ -919,6 +982,8 @@ export default function PlanPricing() {
                   plan={plan}
                   position={index + 1}
                   jobId={job.id}
+                  canManage={canManagePricing}
+                  submitting={submitting}
                   separateHardwarePrice={separateHardwarePrice}
                   onEditPlan={() => setPriceTarget({ type: 'plan', plan })}
                   onEditHardware={() => setPriceTarget({ type: 'hardware', plan })}
@@ -953,6 +1018,7 @@ export default function PlanPricing() {
           target={priceTarget}
           onClose={() => setPriceTarget(null)}
           onSave={handlePriceSave}
+          submitting={submitting}
         />
       )}
 

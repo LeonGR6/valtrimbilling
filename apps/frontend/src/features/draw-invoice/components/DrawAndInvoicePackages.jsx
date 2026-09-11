@@ -8,6 +8,7 @@ import {
   CardContent,
   Checkbox,
   Chip,
+  CircularProgress,
   Dialog,
   DialogActions,
   DialogContent,
@@ -52,6 +53,10 @@ import {
 } from '../../sequence-sheets/utils/phaseBuildingCodes.js'
 import { useDrawInvoicePackages } from '../context/useDrawInvoicePackages.js'
 import {
+  DRAW_PACKAGE_STATUSES,
+  DRAW_PACKAGE_STATUS_LABELS,
+} from '../services/drawInvoicePackageRecord.js'
+import {
   buildUsedDrawSelections,
   drawSelectionKey,
   makePackageSelections,
@@ -73,10 +78,7 @@ const packageTableColumns = [
   { key: 'current-draw', width: 135 },
   { key: 'retention-wrap', width: 180 },
   { key: 'invoice-amount', width: 140 },
-  { key: 'documents', width: 110 },
-  { key: 'quickbooks', width: 115 },
-  { key: 'submission', width: 115 },
-  { key: 'status', width: 120 },
+  { key: 'status', width: 155 },
   { key: 'action', width: 90 },
 ]
 
@@ -84,15 +86,6 @@ const packageTableMinimumWidth = packageTableColumns.reduce(
   (total, column) => total + column.width,
   0,
 )
-
-const packageStatusLabels = {
-  DRAFT: 'Draft',
-  READY: 'Ready',
-  INVOICED: 'Invoiced',
-  SUBMITTED: 'Submitted',
-  PAID: 'Paid',
-  VOIDED: 'Voided',
-}
 
 function formatCurrency(value) {
   return typeof value === 'number' && Number.isFinite(value)
@@ -155,10 +148,10 @@ function ReadinessChip({ worksheet }) {
 
 function PackageStatusChip({ status }) {
   const color =
-    status === 'PAID' || status === 'SUBMITTED'
+    status === 'PAID_CLOSED'
       ? 'success'
-      : status === 'VOIDED'
-        ? 'default'
+      : status === 'AWAITING_PAYMENT'
+        ? 'info'
         : status === 'DRAFT'
           ? 'warning'
           : 'primary'
@@ -168,9 +161,29 @@ function PackageStatusChip({ status }) {
       size="small"
       color={color}
       variant={status === 'DRAFT' ? 'outlined' : 'filled'}
-      label={packageStatusLabels[status] ?? status}
+      label={DRAW_PACKAGE_STATUS_LABELS[status] ?? status}
       sx={{ fontWeight: 750 }}
     />
+  )
+}
+
+function PackageStatusControl({ status, disabled, onChange }) {
+  return (
+    <TextField
+      select
+      size="small"
+      label="Package status"
+      value={status}
+      onChange={onChange}
+      disabled={disabled}
+      sx={{ minWidth: 190 }}
+    >
+      {DRAW_PACKAGE_STATUSES.map((packageStatus) => (
+        <MenuItem key={packageStatus} value={packageStatus}>
+          {DRAW_PACKAGE_STATUS_LABELS[packageStatus]}
+        </MenuItem>
+      ))}
+    </TextField>
   )
 }
 
@@ -257,6 +270,8 @@ function CreateDrawDialog({
   )
   const [selectedLotIds, setSelectedLotIds] = useState([])
   const [selectedDrawIndexes, setSelectedDrawIndexes] = useState([])
+  const [submitting, setSubmitting] = useState(false)
+  const [submitError, setSubmitError] = useState(null)
 
   const job = jobs.find((candidate) => String(candidate.id) === selectedJobId)
   const phases = job?.sequenceSheet?.phases ?? []
@@ -334,6 +349,23 @@ function CreateDrawDialog({
     selectedDrawIndexes.length > 0 &&
     summary.unpricedOptionCount === 0
 
+  const handleSubmit = async () => {
+    setSubmitting(true)
+    setSubmitError(null)
+    try {
+      await onCreate({
+        jobId: job.id,
+        phaseId: phase.id,
+        lotIds: selectedLotIds,
+        drawIndexes: selectedDrawIndexes,
+        schedule,
+      })
+    } catch (error) {
+      setSubmitError(error.message)
+      setSubmitting(false)
+    }
+  }
+
   return (
     <Dialog open onClose={onClose} fullWidth maxWidth="md">
       <DialogTitle sx={{ pb: 1 }}>
@@ -341,7 +373,8 @@ function CreateDrawDialog({
           Create Draw
         </Typography>
         <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-          A Draw creates one package with an invoice and its required documents.
+          A Draw creates one persisted package, its immutable calculated lines,
+          and an invoice total snapshot.
         </Typography>
       </DialogTitle>
       <DialogContent sx={{ pt: '16px !important' }}>
@@ -589,6 +622,8 @@ function CreateDrawDialog({
               </CardContent>
             </Card>
           )}
+
+          {submitError && <Alert severity="error">{submitError}</Alert>}
         </Stack>
       </DialogContent>
       <DialogActions sx={{ px: 3, pb: 2.5 }}>
@@ -596,19 +631,11 @@ function CreateDrawDialog({
         <Button
           variant="contained"
           startIcon={<AddRoundedIcon />}
-          disabled={!canCreate}
+          disabled={!canCreate || submitting}
           disableElevation
-          onClick={() =>
-            onCreate({
-              jobId: job.id,
-              phaseId: phase.id,
-              lotIds: selectedLotIds,
-              drawIndexes: selectedDrawIndexes,
-              schedule,
-            })
-          }
+          onClick={handleSubmit}
         >
-          Create package
+          {submitting ? 'Creating…' : 'Create package'}
         </Button>
       </DialogActions>
     </Dialog>
@@ -892,7 +919,16 @@ function PackageOptionsTable({ summary }) {
   )
 }
 
-function PackageCatalog({ jobs, schedules, packages, onOpen, onCreate }) {
+function PackageCatalog({
+  jobs,
+  schedules,
+  packages,
+  canManage,
+  error,
+  onRetry,
+  onOpen,
+  onCreate,
+}) {
   const [search, setSearch] = useState('')
   const contexts = useMemo(
     () => packages.map((record) => getPackageContext(record, jobs, schedules)).filter(Boolean),
@@ -933,14 +969,15 @@ function PackageCatalog({ jobs, schedules, packages, onOpen, onCreate }) {
             </Typography>
             <Typography variant="h5" fontWeight={800}>Packages</Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, maxWidth: 760 }}>
-              Each package contains one invoice for the selected lots and draws,
-              plus the documents required by the builder.
+              Each package stores its selected lots and draws plus an immutable
+              calculated invoice snapshot.
             </Typography>
           </Box>
           <Button
             variant="contained"
             startIcon={<AddRoundedIcon />}
             onClick={onCreate}
+            disabled={!canManage}
             disableElevation
           >
             Create Draw
@@ -949,6 +986,15 @@ function PackageCatalog({ jobs, schedules, packages, onOpen, onCreate }) {
       </Box>
 
       <Box sx={{ p: { xs: 2.5, md: 4 } }}>
+        {error && (
+          <Alert
+            severity="error"
+            action={<Button color="inherit" onClick={onRetry}>Retry</Button>}
+            sx={{ mb: 2 }}
+          >
+            {error}
+          </Alert>
+        )}
         <TextField
           value={search}
           onChange={(event) => setSearch(event.target.value)}
@@ -994,19 +1040,12 @@ function PackageCatalog({ jobs, schedules, packages, onOpen, onCreate }) {
                   <TableCell>Current Draw</TableCell>
                   <TableCell>Retention / WRAP Insurance</TableCell>
                   <TableCell>Invoice Amount</TableCell>
-                  <TableCell>Documents</TableCell>
-                  <TableCell>QuickBooks</TableCell>
-                  <TableCell>Submission</TableCell>
                   <TableCell>Status</TableCell>
                   <TableCell>Action</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
-                {filteredContexts.map(({ record, job, phase, summary }) => {
-                  const completeDocuments = record.documents.filter(
-                    (document) => document.status === 'COMPLETE',
-                  ).length
-                  return (
+                {filteredContexts.map(({ record, job, phase, summary }) => (
                     <TableRow key={record.id} hover>
                       <TableCell>
                         <Typography fontWeight={800}>{record.packageNumber}</Typography>
@@ -1049,14 +1088,6 @@ function PackageCatalog({ jobs, schedules, packages, onOpen, onCreate }) {
                           </Typography>
                         )}
                       </TableCell>
-                      <TableCell>
-                        <Typography>{completeDocuments} of {record.documents.length}</Typography>
-                        <Typography variant="caption" color={completeDocuments === record.documents.length ? 'success.main' : 'text.secondary'}>
-                          {completeDocuments === record.documents.length ? 'Complete' : 'Pending'}
-                        </Typography>
-                      </TableCell>
-                      <TableCell>{record.quickbooksStatus === 'CREATED' ? 'Created' : 'Not created'}</TableCell>
-                      <TableCell>{record.submissionStatus === 'SUBMITTED' ? 'Submitted' : 'Not submitted'}</TableCell>
                       <TableCell><PackageStatusChip status={record.status} /></TableCell>
                       <TableCell>
                         <Button size="small" variant="contained" onClick={() => onOpen(record, job, phase)}>
@@ -1064,8 +1095,7 @@ function PackageCatalog({ jobs, schedules, packages, onOpen, onCreate }) {
                         </Button>
                       </TableCell>
                     </TableRow>
-                  )
-                })}
+                ))}
               </TableBody>
             </Table>
           </TableContainer>
@@ -1088,13 +1118,27 @@ function PackageCatalog({ jobs, schedules, packages, onOpen, onCreate }) {
 export default function DrawAndInvoicePackages() {
   const navigate = useNavigate()
   const { builderId, jobId, phaseId, packageId } = useParams()
-  const { jobs } = useJobs()
+  const {
+    jobs,
+    loading: jobsLoading,
+    error: jobsError,
+    refreshJobs,
+  } = useJobs()
   const { builderDrawSchedules } = useBuilderDrawSchedules()
-  const { drawInvoicePackages, createDrawInvoicePackage } = useDrawInvoicePackages()
+  const {
+    drawInvoicePackages,
+    loading: packagesLoading,
+    error: packagesError,
+    saving,
+    canManageDrawInvoicePackages,
+    refreshDrawInvoicePackages,
+    createDrawInvoicePackage,
+    updateDrawInvoicePackageStatus,
+  } = useDrawInvoicePackages()
   const [createDialogOpen, setCreateDialogOpen] = useState(false)
 
-  const handleCreate = (input) => {
-    const record = createDrawInvoicePackage(input)
+  const handleCreate = async (input) => {
+    const record = await createDrawInvoicePackage(input)
     const job = jobs.find((candidate) => String(candidate.id) === String(record.jobId))
     setCreateDialogOpen(false)
     navigate(
@@ -1107,6 +1151,27 @@ export default function DrawAndInvoicePackages() {
     )
   }
 
+  const handleRetry = () => {
+    Promise.all([
+      refreshJobs(),
+      refreshDrawInvoicePackages(),
+    ]).catch(() => {})
+  }
+
+  const loading = jobsLoading || packagesLoading
+  const error = jobsError || packagesError
+
+  if (loading && (jobs.length === 0 || drawInvoicePackages.length === 0)) {
+    return (
+      <Box sx={{ minHeight: 320, display: 'grid', placeItems: 'center' }}>
+        <Stack spacing={1.5} sx={{ alignItems: 'center' }}>
+          <CircularProgress size={32} />
+          <Typography color="text.secondary">Loading Draw & Invoice Packages…</Typography>
+        </Stack>
+      </Box>
+    )
+  }
+
   if (jobId == null) {
     return (
       <>
@@ -1114,6 +1179,9 @@ export default function DrawAndInvoicePackages() {
           jobs={jobs}
           schedules={builderDrawSchedules}
           packages={drawInvoicePackages}
+          canManage={canManageDrawInvoicePackages}
+          error={error}
+          onRetry={handleRetry}
           onCreate={() => setCreateDialogOpen(true)}
           onOpen={(record, job, phase) =>
             navigate(
@@ -1179,6 +1247,11 @@ export default function DrawAndInvoicePackages() {
     navigate(jobDrawInvoicePath(focusedBuilderId, focusedJob.id, event.target.value))
   }
 
+  const handlePackageStatusChange = (event) => {
+    updateDrawInvoicePackageStatus(focusedPackage.id, event.target.value)
+      .catch(() => {})
+  }
+
   return (
     <Box sx={{ minHeight: '100%', bgcolor: 'background.default' }}>
       <Box
@@ -1222,7 +1295,15 @@ export default function DrawAndInvoicePackages() {
           </Box>
           <Stack direction="row" spacing={1}>
             {focusedPackage ? (
-              <PackageStatusChip status={focusedPackage.status} />
+              canManageDrawInvoicePackages ? (
+                <PackageStatusControl
+                  status={focusedPackage.status}
+                  disabled={saving}
+                  onChange={handlePackageStatusChange}
+                />
+              ) : (
+                <PackageStatusChip status={focusedPackage.status} />
+              )
             ) : (
               <ReadinessChip worksheet={worksheet} />
             )}
@@ -1230,6 +1311,7 @@ export default function DrawAndInvoicePackages() {
               variant="contained"
               startIcon={<AddRoundedIcon />}
               onClick={() => setCreateDialogOpen(true)}
+              disabled={!canManageDrawInvoicePackages || saving}
               disableElevation
             >
               Create Draw
@@ -1241,6 +1323,15 @@ export default function DrawAndInvoicePackages() {
       <JobModuleNavigation active="draw-invoice" builderId={focusedBuilderId} jobId={focusedJob.id} />
 
       <Box sx={{ p: { xs: 2.5, md: 4 } }}>
+        {error && (
+          <Alert
+            severity="error"
+            action={<Button color="inherit" onClick={handleRetry}>Retry</Button>}
+            sx={{ mb: 2.5 }}
+          >
+            {error}
+          </Alert>
+        )}
         {phases.length === 0 ? (
           <Alert
             severity="info"
@@ -1337,25 +1428,6 @@ export default function DrawAndInvoicePackages() {
               >
                 Complete missing plan assignments and prices before creating a package.
               </Alert>
-            )}
-
-            {focusedPackage && (
-              <Card variant="outlined">
-                <CardContent>
-                  <Typography fontWeight={800}>Package documents</Typography>
-                  <Stack direction="row" spacing={1} useFlexGap sx={{ mt: 1, flexWrap: 'wrap' }}>
-                    {focusedPackage.documents.map((document) => (
-                      <Chip
-                        key={document.type}
-                        color={document.status === 'COMPLETE' ? 'success' : 'default'}
-                        variant={document.status === 'COMPLETE' ? 'filled' : 'outlined'}
-                        icon={document.status === 'COMPLETE' ? <CheckCircleRoundedIcon /> : undefined}
-                        label={`${document.label} · ${document.status === 'COMPLETE' ? 'Complete' : 'Pending'}`}
-                      />
-                    ))}
-                  </Stack>
-                </CardContent>
-              </Card>
             )}
 
             <DrawWorksheetTable

@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { initialBuilderDrawSchedules } from '../src/features/builder-draw-schedules/data/builderDrawSchedules.js'
-import { initialDrawInvoicePackages } from '../src/features/draw-invoice/data/drawInvoicePackages.js'
 import {
   buildUsedDrawSelections,
   drawSelectionKey,
@@ -10,6 +9,20 @@ import {
   summarizeDrawPackage,
 } from '../src/features/draw-invoice/utils/drawPackages.js'
 import { testJobs } from './fixtures/jobs.mjs'
+
+const persistedPackageFixture = {
+  id: 1,
+  packageNumber: 'DP-00000001',
+  jobId: 1,
+  phaseId: 2102,
+  lotIds: [3201, 3202, 3203, 3204, 3205],
+  drawIndexes: [0],
+  selections: [3201, 3202, 3203, 3204, 3205].map((lotId) => ({
+    lotId,
+    drawIndex: 0,
+  })),
+  status: 'AWAITING_PAYMENT',
+}
 
 test('a package uses the cross product of its selected lots and draws', () => {
   assert.deepEqual(makePackageSelections([18, 19, 20], [0, 2]), [
@@ -30,8 +43,8 @@ test('lot ranges remain compact without hiding unselected lots', () => {
 })
 
 test('used lot and draw combinations point back to their package', () => {
-  const used = buildUsedDrawSelections(initialDrawInvoicePackages)
-  const record = initialDrawInvoicePackages[0]
+  const used = buildUsedDrawSelections([persistedPackageFixture])
+  const record = persistedPackageFixture
 
   assert.equal(
     used.get(drawSelectionKey(1, 2102, 3201, 0)),
@@ -40,10 +53,10 @@ test('used lot and draw combinations point back to their package', () => {
   assert.equal(used.has(drawSelectionKey(1, 2102, 3201, 1)), false)
 })
 
-test('voided packages preserve the historical lot and draw usage', () => {
+test('paid and closed packages preserve the historical lot and draw usage', () => {
   const record = {
-    ...initialDrawInvoicePackages[0],
-    status: 'VOIDED',
+    ...persistedPackageFixture,
+    status: 'PAID_CLOSED',
   }
 
   assert.equal(buildUsedDrawSelections([record]).size, 5)
@@ -143,4 +156,44 @@ test('an unpriced option is reported when its billing draw is selected', () => {
 
   assert.equal(summary.unpricedOptionCount, 1)
   assert.equal(summary.optionsTotal, 0)
+})
+
+test('persisted package totals use immutable database snapshots', () => {
+  const record = {
+    lotIds: [1],
+    drawIndexes: [1],
+    selections: makePackageSelections([1], [1]),
+    optionsBillingDrawIndex: 1,
+    persistedInvoice: {
+      grossAmount: 1125.5,
+      retentionAmount: 56.28,
+      wrapAmount: 22.51,
+      netAmount: 1046.71,
+    },
+    persistedDrawLines: [{ lotId: 1, lotNumber: '19' }],
+    persistedOptionLines: [{
+      id: '1:10',
+      lotId: 1,
+      lotNumber: '19',
+      planCode: 'A',
+      optionId: 10,
+      optionCode: 'OPT-10',
+      description: 'Door upgrade',
+      price: 125,
+      issue: null,
+    }],
+  }
+  const summary = summarizeDrawPackage(
+    record,
+    { sequenceSheet: { plans: [] } },
+    { lots: [] },
+    { draws: [{ percentage: 50 }, { percentage: 50 }] },
+  )
+
+  assert.equal(summary.currentDraw, 1125.5)
+  assert.equal(summary.retention, 56.28)
+  assert.equal(summary.wrapInsurance, 22.51)
+  assert.equal(summary.invoiceAmount, 1046.71)
+  assert.equal(summary.optionsTotal, 125)
+  assert.equal(summary.lotRange, '19')
 })

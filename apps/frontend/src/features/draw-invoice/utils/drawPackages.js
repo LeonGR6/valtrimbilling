@@ -126,12 +126,47 @@ export function summarizeDrawPackage(record, job, phase, schedule) {
   const selectedRows = (record?.lotIds ?? [])
     .map((lotId) => rowsById.get(String(lotId)))
     .filter(Boolean)
-  const selectedOptionRows = getSelectedOptionRows(selectedRows)
+  const currentSelectedOptionRows = getSelectedOptionRows(selectedRows)
   const optionsBillingDrawIndex = getOptionsBillingDrawIndex(record, schedule)
   const optionsAreDue = optionsBillingDrawIndex !== null
     && (record?.drawIndexes ?? []).some(
       (drawIndex) => Number(drawIndex) === optionsBillingDrawIndex,
     )
+
+  if (record?.persistedInvoice) {
+    const persistedLines = record.persistedDrawLines ?? []
+    const persistedOptionLines = record.persistedOptionLines ?? []
+    const selectedOptionRows = optionsAreDue
+      ? persistedOptionLines
+      : currentSelectedOptionRows
+    const optionRows = optionsAreDue ? persistedOptionLines : []
+    const optionsTotal = optionRows.reduce(
+      (total, option) => addCurrencyAmounts(total, option.price),
+      0,
+    )
+    const lotNumbers = persistedLines.map((line) => line.lotNumber)
+
+    return {
+      worksheet,
+      selectedRows,
+      lotCount: new Set(persistedLines.map((line) => String(line.lotId))).size,
+      lotRange: formatLotRange(lotNumbers),
+      scopeCount: persistedLines.length,
+      currentDraw: record.persistedInvoice.grossAmount,
+      selectedOptionRows,
+      optionRows,
+      optionsBillingDrawIndex,
+      optionsAreDue,
+      optionsTotal,
+      unpricedOptionCount: 0,
+      grossAmount: record.persistedInvoice.grossAmount,
+      retention: record.persistedInvoice.retentionAmount,
+      wrapInsurance: record.persistedInvoice.wrapAmount,
+      invoiceAmount: record.persistedInvoice.netAmount,
+    }
+  }
+
+  const selectedOptionRows = currentSelectedOptionRows
   const optionRows = optionsAreDue ? selectedOptionRows : []
   const unpricedOptionCount = optionRows.filter(
     (option) => option.issue === 'PRICE_MISSING',

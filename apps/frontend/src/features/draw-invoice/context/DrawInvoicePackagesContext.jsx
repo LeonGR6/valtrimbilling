@@ -1,71 +1,115 @@
-import { useMemo, useRef, useState } from 'react'
-import { initialDrawInvoicePackages } from '../data/drawInvoicePackages.js'
-import { makePackageSelections } from '../utils/drawPackages.js'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useAuth } from '../../auth/context/useAuth.js'
+import {
+  createDrawInvoicePackage as createDrawInvoicePackageRecord,
+  listDrawInvoicePackages,
+  updateDrawInvoicePackageStatus as updateDrawInvoicePackageStatusRecord,
+} from '../services/drawInvoicePackagesRepository.js'
 import { DrawInvoicePackagesContext } from './drawInvoicePackagesContext.js'
 
-function requiredDocumentsForSchedule(schedule) {
-  return [
-    { type: 'INVOICE', label: 'Invoice', status: 'MISSING' },
-    schedule?.requiresRelease
-      ? { type: 'RELEASE', label: 'Release', status: 'MISSING' }
-      : null,
-    schedule?.requiresPaymentSchedule
-      ? {
-          type: 'PAYMENT_SCHEDULE',
-          label: 'Payment schedule',
-          status: 'MISSING',
-        }
-      : null,
-    schedule?.requiresBackup
-      ? { type: 'BACKUP', label: 'Backup', status: 'MISSING' }
-      : null,
-  ].filter(Boolean)
-}
-
 export function DrawInvoicePackagesProvider({ children }) {
-  const [drawInvoicePackages, setDrawInvoicePackages] = useState(
-    initialDrawInvoicePackages,
-  )
-  const nextSequence = useRef(initialDrawInvoicePackages.length + 1)
+  const { profile } = useAuth()
+  const [drawInvoicePackages, setDrawInvoicePackages] = useState([])
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState(null)
+  const [saving, setSaving] = useState(false)
+  const canManageDrawInvoicePackages = [
+    'ADMIN',
+    'PROJECT_MANAGEMENT',
+  ].includes(profile?.role)
+
+  const refreshDrawInvoicePackages = useCallback(async () => {
+    if (!profile?.id) {
+      setDrawInvoicePackages([])
+      setError(null)
+      return []
+    }
+
+    setLoading(true)
+    try {
+      const packages = await listDrawInvoicePackages()
+      setDrawInvoicePackages(packages)
+      setError(null)
+      return packages
+    } catch (loadError) {
+      setError(loadError.message)
+      throw loadError
+    } finally {
+      setLoading(false)
+    }
+  }, [profile?.id])
+
+  useEffect(() => {
+    if (!profile?.id) {
+      // Authentication is the source of truth for clearing tenant data.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setDrawInvoicePackages([])
+      setError(null)
+      setLoading(false)
+      return undefined
+    }
+
+    refreshDrawInvoicePackages().catch(() => {})
+    return undefined
+  }, [profile?.id, refreshDrawInvoicePackages])
+
+  const createDrawInvoicePackage = useCallback(async (input) => {
+    setSaving(true)
+    try {
+      const { created, packages } = await createDrawInvoicePackageRecord(input)
+      setDrawInvoicePackages(packages)
+      setError(null)
+      return created
+    } catch (saveError) {
+      setError(saveError.message)
+      throw saveError
+    } finally {
+      setSaving(false)
+    }
+  }, [])
+
+  const updateDrawInvoicePackageStatus = useCallback(async (
+    packageId,
+    status,
+  ) => {
+    setSaving(true)
+    try {
+      const { updated, packages } = await updateDrawInvoicePackageStatusRecord(
+        packageId,
+        status,
+      )
+      setDrawInvoicePackages(packages)
+      setError(null)
+      return updated
+    } catch (saveError) {
+      setError(saveError.message)
+      throw saveError
+    } finally {
+      setSaving(false)
+    }
+  }, [])
 
   const value = useMemo(
     () => ({
       drawInvoicePackages,
-      createDrawInvoicePackage({
-        jobId,
-        phaseId,
-        lotIds,
-        drawIndexes,
-        schedule,
-      }) {
-        const sequence = nextSequence.current
-        nextSequence.current += 1
-        const now = new Date().toISOString()
-        const record = {
-          id: `draw-package-${sequence}`,
-          packageNumber: `PKG-${String(sequence).padStart(4, '0')}`,
-          jobId,
-          phaseId,
-          lotIds: [...lotIds],
-          drawIndexes: [...drawIndexes],
-          optionsBillingDrawIndex: schedule?.optionsBillingDrawIndex ?? null,
-          selections: makePackageSelections(lotIds, drawIndexes),
-          invoiceNumber: null,
-          invoiceDate: null,
-          billingPeriodStart: null,
-          billingPeriodEnd: null,
-          status: 'DRAFT',
-          documents: requiredDocumentsForSchedule(schedule),
-          quickbooksStatus: 'NOT_CREATED',
-          submissionStatus: 'NOT_SUBMITTED',
-          createdAt: now,
-        }
-
-        setDrawInvoicePackages((current) => [record, ...current])
-        return record
-      },
+      loading,
+      error,
+      saving,
+      canManageDrawInvoicePackages,
+      refreshDrawInvoicePackages,
+      createDrawInvoicePackage,
+      updateDrawInvoicePackageStatus,
     }),
-    [drawInvoicePackages],
+    [
+      canManageDrawInvoicePackages,
+      createDrawInvoicePackage,
+      drawInvoicePackages,
+      error,
+      loading,
+      refreshDrawInvoicePackages,
+      saving,
+      updateDrawInvoicePackageStatus,
+    ],
   )
 
   return (

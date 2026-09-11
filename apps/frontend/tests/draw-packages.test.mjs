@@ -9,7 +9,7 @@ import {
   makePackageSelections,
   summarizeDrawPackage,
 } from '../src/features/draw-invoice/utils/drawPackages.js'
-import { initialJobs } from '../src/features/jobs/data/jobs.js'
+import { testJobs } from './fixtures/jobs.mjs'
 
 test('a package uses the cross product of its selected lots and draws', () => {
   assert.deepEqual(makePackageSelections([18, 19, 20], [0, 2]), [
@@ -50,7 +50,7 @@ test('voided packages preserve the historical lot and draw usage', () => {
 })
 
 test('package totals include only selected lots and draws', () => {
-  const job = initialJobs.find((item) => item.code === '1307')
+  const job = testJobs.find((item) => item.code === '1307')
   const phase = job.sequenceSheet.phases.find((item) => item.id === 2101)
   const schedule = initialBuilderDrawSchedules.find(
     (item) => item.builderId === job.builderId,
@@ -66,9 +66,9 @@ test('package totals include only selected lots and draws', () => {
   assert.equal(summary.lotRange, '18–20')
   assert.equal(summary.scopeCount, 3)
   assert.equal(summary.currentDraw, 15042.75)
-  assert.equal(summary.retention, 0)
-  assert.equal(summary.wrapInsurance, 0)
-  assert.equal(summary.invoiceAmount, 15042.75)
+  assert.equal(summary.retention, 752.14)
+  assert.equal(summary.wrapInsurance, 376.07)
+  assert.equal(summary.invoiceAmount, 13914.54)
 })
 
 test('options are added once when the package includes the builder billing draw', () => {

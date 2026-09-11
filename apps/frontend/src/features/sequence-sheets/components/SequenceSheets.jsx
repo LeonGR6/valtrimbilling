@@ -56,7 +56,6 @@ import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded'
 import TableChartRoundedIcon from '@mui/icons-material/TableChartRounded'
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
-import { initialBuilders } from '../../builders/data/builders.js'
 import JobModuleNavigation from '../../jobs/components/JobModuleNavigation.jsx'
 import { useJobs } from '../../jobs/context/useJobs.js'
 import {
@@ -969,9 +968,9 @@ export default function SequenceSheets() {
   const focusedJob = jobs.find(
     (job) =>
       String(job.id) === focusedJobId &&
-      (!builderId || jobBelongsToBuilder(job, builderId, initialBuilders)),
+      (!builderId || jobBelongsToBuilder(job, builderId)),
   )
-  const focusedBuilderId = builderId ?? getJobBuilderId(focusedJob, initialBuilders)
+  const focusedBuilderId = builderId ?? getJobBuilderId(focusedJob)
   const scopedJobs = useMemo(
     () => (focusedJob ? [focusedJob] : jobId ? [] : jobs),
     [focusedJob, jobId, jobs],
@@ -1012,7 +1011,7 @@ export default function SequenceSheets() {
     if (jobId || !legacyJobId) return
 
     const legacyJob = jobs.find((job) => String(job.id) === legacyJobId)
-    const legacyBuilderId = getJobBuilderId(legacyJob, initialBuilders)
+    const legacyBuilderId = getJobBuilderId(legacyJob)
     if (!legacyJob || legacyBuilderId == null) return
 
     navigate(
@@ -1042,7 +1041,7 @@ export default function SequenceSheets() {
   }
 
   const openPhaseDetails = (job, phase) => {
-    const phaseBuilderId = getJobBuilderId(job, initialBuilders)
+    const phaseBuilderId = getJobBuilderId(job)
     if (phaseBuilderId == null) return
 
     navigate(jobSequenceSheetPath(phaseBuilderId, job.id, phase.id))

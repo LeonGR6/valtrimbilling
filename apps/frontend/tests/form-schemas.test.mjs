@@ -9,8 +9,8 @@ import {
   getJobUnitCount,
   getOptionLotDependencies,
   getPlanLotDependencies,
-  initialJobs,
 } from '../src/features/jobs/data/jobs.js'
+import { testJobs } from './fixtures/jobs.mjs'
 import {
   createJobPlanSchema,
   planOptionSchema,
@@ -165,7 +165,7 @@ test('job total lots are calculated from all phase lots', () => {
 })
 
 test('job total lots follow phase edits and deletions', () => {
-  const job = initialJobs.find((item) => item.code === '1307')
+  const job = testJobs.find((item) => item.code === '1307')
   const editedJob = {
     ...job,
     sequenceSheet: {
@@ -192,30 +192,30 @@ test('job total lots follow phase edits and deletions', () => {
     sequenceSheet: { ...editedJob.sequenceSheet, phases: [] },
   }
 
-  assert.equal(getJobUnitCount(editedJob), 8)
+  assert.equal(getJobUnitCount(editedJob), 11)
   assert.equal(getJobUnitCount(jobWithoutPhases), 0)
 })
 
 test('plans and options report the lots that prevent their deletion', () => {
-  const job = initialJobs.find((item) => item.code === '1307')
+  const job = testJobs.find((item) => item.code === '1307')
 
   assert.deepEqual(
     getPlanLotDependencies(job, 1101).map((dependency) => dependency.lotNumber),
-    ['67', '2'],
+    ['67', '19', '21'],
   )
   assert.deepEqual(
     getPlanLotDependencies(job, 1102).map((dependency) => dependency.lotNumber),
-    ['68', '69', '1'],
+    ['68', '69', '20'],
   )
   assert.deepEqual(
     getPlanLotDependencies(job, 1103).map((dependency) => dependency.lotNumber),
-    ['66'],
+    ['66', '18', '22'],
   )
   assert.deepEqual(
     getOptionLotDependencies(job, 110201).map(
       (dependency) => dependency.lotNumber,
     ),
-    ['1'],
+    ['20'],
   )
   assert.equal(getOptionLotDependencies(job, 110203).length, 0)
 })
@@ -264,7 +264,7 @@ test('pricing accepts USD amounts with up to two decimal places', () => {
 })
 
 test('Job 1307 sequence sheet counts plans, options and visible columns', () => {
-  const job = initialJobs.find((item) => item.code === '1307')
+  const job = testJobs.find((item) => item.code === '1307')
 
   assert.equal(getJobPlanCount(job), 4)
   assert.equal(getJobOptionCount(job), 11)
@@ -272,7 +272,7 @@ test('Job 1307 sequence sheet counts plans, options and visible columns', () => 
 })
 
 test('phase by lot schema normalizes lots and accepts selected plan options', () => {
-  const job = initialJobs.find((item) => item.code === '1307')
+  const job = testJobs.find((item) => item.code === '1307')
   const result = createPhaseByLotSchema(job).parse({
     phaseName: ' 11 ',
     building: ' c5 ',
@@ -301,7 +301,7 @@ test('phase by lot schema normalizes lots and accepts selected plan options', ()
 })
 
 test('phase by lot schema supports editing the current phase and preserves lot ids', () => {
-  const job = initialJobs.find((item) => item.code === '1307')
+  const job = testJobs.find((item) => item.code === '1307')
   const phase = job.sequenceSheet.phases.find((item) => item.id === 2101)
   const result = createPhaseByLotSchema(job, phase.id).parse({
     phaseName: ' Phase 10 ',
@@ -359,9 +359,9 @@ test('lot ranges reject invalid, reversed and oversized ranges', () => {
 })
 
 test('phase by lot schema rejects duplicate phase names and lot numbers', () => {
-  const job = initialJobs.find((item) => item.code === '1307')
+  const job = testJobs.find((item) => item.code === '1307')
   const result = createPhaseByLotSchema(job).safeParse({
-    phaseName: ' p10 ',
+    phaseName: ' p2 ',
     building: '4',
     lots: [
       { lotNumber: '1', planId: 1101, reverse: false, optionIds: [] },
@@ -376,7 +376,7 @@ test('phase by lot schema rejects duplicate phase names and lot numbers', () => 
 })
 
 test('phase by lot schema rejects options from another plan', () => {
-  const job = initialJobs.find((item) => item.code === '1307')
+  const job = testJobs.find((item) => item.code === '1307')
   const result = createPhaseByLotSchema(job).safeParse({
     phaseName: 'Phase 12',
     building: 'B6',
@@ -399,7 +399,7 @@ test('phase by lot schema rejects options from another plan', () => {
 })
 
 test('phase by lot schema requires a building', () => {
-  const job = initialJobs.find((item) => item.code === '1307')
+  const job = testJobs.find((item) => item.code === '1307')
   const result = createPhaseByLotSchema(job).safeParse({
     phaseName: 'Phase 13',
     building: ' ',

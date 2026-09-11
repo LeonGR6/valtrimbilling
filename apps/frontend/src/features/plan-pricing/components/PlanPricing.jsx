@@ -33,7 +33,6 @@ import LocationCityRoundedIcon from '@mui/icons-material/LocationCityRounded'
 import ReceiptLongRoundedIcon from '@mui/icons-material/ReceiptLongRounded'
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
 import ConstructionRoundedIcon from '@mui/icons-material/ConstructionRounded'
-import { initialBuilders } from '../../builders/data/builders.js'
 import { useBuilderDrawSchedules } from '../../builder-draw-schedules/context/useBuilderDrawSchedules.js'
 import JobModuleNavigation from '../../jobs/components/JobModuleNavigation.jsx'
 import {
@@ -705,10 +704,10 @@ export default function PlanPricing() {
     ? jobs.find(
         (item) =>
           String(item.id) === jobId &&
-          jobBelongsToBuilder(item, builderId, initialBuilders),
+          jobBelongsToBuilder(item, builderId),
       )
     : null
-  const resolvedBuilderId = builderId ?? getJobBuilderId(job, initialBuilders)
+  const resolvedBuilderId = builderId ?? getJobBuilderId(job)
   const builderSetup = builderDrawSchedules.find(
     (setup) => String(setup.builderId) === String(resolvedBuilderId),
   )
@@ -734,7 +733,7 @@ export default function PlanPricing() {
     const selectedJob = jobs.find(
       (item) => String(item.id) === String(selectedJobId),
     )
-    const selectedBuilderId = getJobBuilderId(selectedJob, initialBuilders)
+    const selectedBuilderId = getJobBuilderId(selectedJob)
     if (!selectedJob || selectedBuilderId == null) return
 
     navigate(jobPlanPricingPath(selectedBuilderId, selectedJob.id))

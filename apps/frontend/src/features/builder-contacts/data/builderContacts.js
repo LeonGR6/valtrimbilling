@@ -23,19 +23,6 @@ export const contactTypeDescriptions = Object.fromEntries(
   contactTypeOptions.map(({ value, description }) => [value, description]),
 )
 
-// Legacy mock options still used by the out-of-scope Customer Service fixture.
-// Builder Contacts themselves use the persisted Builders context and builderId.
-export const builderOptions = [
-  { value: 'KB_HOME', label: 'KB Home' },
-  { value: 'TRUMARK', label: 'Trumark Homes' },
-  { value: 'CITY_VENTURES', label: 'City Ventures' },
-  { value: 'BROOKFIELD', label: 'Brookfield Residential' },
-]
-
-export const builderLabels = Object.fromEntries(
-  builderOptions.map(({ value, label }) => [value, label]),
-)
-
 export const emptyContact = {
   name: '',
   type: 'JOBSITE_SUPERINTENDENT',

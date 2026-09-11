@@ -393,7 +393,7 @@ export default function JobsCatalog() {
 
     const legacyJob = jobs.find((job) => String(job.id) === legacyJobId)
     const resolvedBuilderId = legacyJob
-      ? getJobBuilderId(legacyJob, builders)
+      ? getJobBuilderId(legacyJob)
       : legacyBuilderId
 
     if (legacyJob && resolvedBuilderId != null) {
@@ -408,7 +408,6 @@ export default function JobsCatalog() {
     }
   }, [
     builderId,
-    builders,
     jobId,
     jobs,
     legacyBuilderId,

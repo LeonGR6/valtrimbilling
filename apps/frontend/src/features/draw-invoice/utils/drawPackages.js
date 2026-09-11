@@ -126,12 +126,19 @@ export function summarizeDrawPackage(record, job, phase, schedule) {
   const selectedRows = (record?.lotIds ?? [])
     .map((lotId) => rowsById.get(String(lotId)))
     .filter(Boolean)
-  const currentSelectedOptionRows = getSelectedOptionRows(selectedRows)
   const optionsBillingDrawIndex = getOptionsBillingDrawIndex(record, schedule)
+  const optionBillingLotIds = new Set(
+    selections
+      .filter(
+        ({ drawIndex }) => Number(drawIndex) === optionsBillingDrawIndex,
+      )
+      .map(({ lotId }) => String(lotId)),
+  )
+  const currentSelectedOptionRows = getSelectedOptionRows(
+    selectedRows.filter((row) => optionBillingLotIds.has(String(row.id))),
+  )
   const optionsAreDue = optionsBillingDrawIndex !== null
-    && (record?.drawIndexes ?? []).some(
-      (drawIndex) => Number(drawIndex) === optionsBillingDrawIndex,
-    )
+    && optionBillingLotIds.size > 0
 
   if (record?.persistedInvoice) {
     const persistedLines = record.persistedDrawLines ?? []

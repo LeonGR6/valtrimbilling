@@ -113,7 +113,7 @@ select ok(
 select ok(
   has_function_privilege(
     'authenticated',
-    'valtrim.create_draw_invoice_package(bigint,smallint[],bigint[],date,date,date,text)',
+    'valtrim.create_draw_invoice_package(bigint,jsonb,date,date,date,text)',
     'execute'
   ),
   'Authenticated users can call the role-checked Package creator'
@@ -129,7 +129,7 @@ select ok(
 select ok(
   not has_function_privilege(
     'anon',
-    'valtrim.create_draw_invoice_package(bigint,smallint[],bigint[],date,date,date,text)',
+    'valtrim.create_draw_invoice_package(bigint,jsonb,date,date,date,text)',
     'execute'
   )
   and not has_function_privilege(
@@ -144,7 +144,7 @@ select ok(
   (
     select prosecdef
     from pg_proc
-    where oid = 'private.create_draw_invoice_package(bigint,smallint[],bigint[],date,date,date,text)'::regprocedure
+    where oid = 'private.create_draw_invoice_package(bigint,jsonb,date,date,date,text)'::regprocedure
   )
   and (
     select prosecdef
@@ -157,7 +157,7 @@ select ok(
   not (
     select prosecdef
     from pg_proc
-    where oid = 'valtrim.create_draw_invoice_package(bigint,smallint[],bigint[],date,date,date,text)'::regprocedure
+    where oid = 'valtrim.create_draw_invoice_package(bigint,jsonb,date,date,date,text)'::regprocedure
   )
   and not (
     select prosecdef
@@ -170,7 +170,7 @@ select ok(
   coalesce((
     select array_to_string(proconfig, ',') = 'search_path=""'
     from pg_proc
-    where oid = 'private.create_draw_invoice_package(bigint,smallint[],bigint[],date,date,date,text)'::regprocedure
+    where oid = 'private.create_draw_invoice_package(bigint,jsonb,date,date,date,text)'::regprocedure
   ), false)
   and coalesce((
     select array_to_string(proconfig, ',') = 'search_path=""'

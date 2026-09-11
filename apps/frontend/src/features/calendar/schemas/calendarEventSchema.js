@@ -15,6 +15,10 @@ const dateOwnerField = z.preprocess(
   z.string().refine(isDateOwner, 'Select a supported date type.'),
 )
 const dateNoteField = z.string().trim().max(100, 'Use 100 characters or fewer.').optional().default('')
+const persistedIdField = z.preprocess(
+  (value) => (value === '' || value == null ? null : value),
+  z.coerce.number().int().positive().nullable(),
+)
 
 const dateHistoryEntrySchema = z.object({
   date: dateField,
@@ -27,6 +31,7 @@ const dateHistoryField = z.array(dateHistoryEntrySchema).default([])
 
 const splitPartSchema = z.object({
   id: z.string(),
+  scheduleId: persistedIdField.optional().default(null),
   lotStart: lotField,
   lotEnd: lotField,
   date: dateField,
@@ -66,6 +71,7 @@ function validateSplitParts(value, context, enabledField, partsField) {
 }
 
 export const productionActivitySchema = z.object({
+  activityId: persistedIdField.optional().default(null),
   calendarType: z.literal('PRODUCTION').default('PRODUCTION'),
   jobId: z.coerce.number().int().positive('Select a job.'),
   phaseId: z.coerce.number().int().positive('Select a phase.'),
@@ -77,6 +83,7 @@ export const productionActivitySchema = z.object({
   lotStart: lotField,
   lotEnd: lotField,
   lotNumbers: z.array(requiredText('Every lot needs a number.', 40)).min(1, 'The selected phase has no lots.'),
+  lotIds: z.array(z.coerce.number().int().positive()).min(1, 'The selected phase has no persisted lots.'),
   foreman: z.string().trim().max(100, 'Use 100 characters or fewer.').optional().default(''),
   superintendent: z.string().trim().max(100, 'Use 100 characters or fewer.').optional().default(''),
   notes: z.string().trim().max(500, 'Use 500 characters or fewer.').optional().default(''),
@@ -84,32 +91,38 @@ export const productionActivitySchema = z.object({
   extDateOwner: dateOwnerField,
   extDateNote: dateNoteField,
   extDateHistory: dateHistoryField,
+  extScheduleId: persistedIdField.optional().default(null),
   extOrderMaterial: z.boolean().default(false),
   extInstallOnly: z.boolean().default(false),
   extInstallDate: z.string().default(''),
   extInstallDateOwner: dateOwnerField,
   extInstallDateNote: dateNoteField,
   extInstallDateHistory: dateHistoryField,
+  extInstallScheduleId: persistedIdField.optional().default(null),
   dmShutters: z.boolean().default(false),
   shutterDate: z.string().default(''),
   shutterDateOwner: dateOwnerField,
   shutterDateNote: dateNoteField,
   shutterDateHistory: dateHistoryField,
+  shutterScheduleId: persistedIdField.optional().default(null),
   dmDate: dateField,
   dmDateOwner: dateOwnerField,
   dmDateNote: dateNoteField,
   dmDateHistory: dateHistoryField,
+  dmScheduleId: persistedIdField.optional().default(null),
   dmInstallOnly: z.boolean().default(false),
   dmInstallDate: z.string().default(''),
   dmInstallDateOwner: dateOwnerField,
   dmInstallDateNote: dateNoteField,
   dmInstallDateHistory: dateHistoryField,
+  dmInstallScheduleId: persistedIdField.optional().default(null),
   dmSplitPhase: z.boolean().default(false),
   dmSplitParts: z.array(splitPartSchema).default([]),
   hwDate: dateField,
   hwDateOwner: dateOwnerField,
   hwDateNote: dateNoteField,
   hwDateHistory: dateHistoryField,
+  hwScheduleId: persistedIdField.optional().default(null),
   hwSplitPhase: z.boolean().default(false),
   hwSplitParts: z.array(splitPartSchema).default([]),
   hwLockUp: z.boolean().default(false),
@@ -117,12 +130,22 @@ export const productionActivitySchema = z.object({
   hwLockUpDateOwner: dateOwnerField,
   hwLockUpDateNote: dateNoteField,
   hwLockUpDateHistory: dateHistoryField,
+  hwLockUpScheduleId: persistedIdField.optional().default(null),
 }).superRefine((value, context) => {
   if (value.lotEnd < value.lotStart) {
     context.addIssue({
       code: z.ZodIssueCode.custom,
       path: ['lotEnd'],
       message: 'The selected phase has an invalid lot range.',
+    })
+  }
+
+  if (value.lotIds.length !== value.lotNumbers.length
+      || new Set(value.lotIds).size !== value.lotIds.length) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['lotIds'],
+      message: 'Every selected Lot needs one unique persisted id.',
     })
   }
 

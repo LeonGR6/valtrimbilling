@@ -7,6 +7,7 @@ import { BuildersProvider } from './features/builders/context/BuildersContext.js
 import { PeopleProvider } from './features/people/context/PeopleContext.jsx'
 import { BuilderContactsProvider } from './features/builder-contacts/context/BuilderContactsContext.jsx'
 import { AuthProvider } from './features/auth/context/AuthProvider.jsx'
+import { ProductionActivitiesProvider } from './features/calendar/context/ProductionActivitiesContext.jsx'
 
 export default function App() {
   return (
@@ -15,11 +16,13 @@ export default function App() {
         <PeopleProvider>
           <BuilderContactsProvider>
             <JobsProvider>
-              <BuilderDrawSchedulesProvider>
-                <DrawInvoicePackagesProvider>
-                  <RouterProvider router={appRouter} />
-                </DrawInvoicePackagesProvider>
-              </BuilderDrawSchedulesProvider>
+              <ProductionActivitiesProvider>
+                <BuilderDrawSchedulesProvider>
+                  <DrawInvoicePackagesProvider>
+                    <RouterProvider router={appRouter} />
+                  </DrawInvoicePackagesProvider>
+                </BuilderDrawSchedulesProvider>
+              </ProductionActivitiesProvider>
             </JobsProvider>
           </BuilderContactsProvider>
         </PeopleProvider>

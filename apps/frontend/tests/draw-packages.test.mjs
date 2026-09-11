@@ -24,7 +24,7 @@ const persistedPackageFixture = {
   status: 'AWAITING_PAYMENT',
 }
 
-test('a package uses the cross product of its selected lots and draws', () => {
+test('the uniform-selection helper expands lots and draws into cells', () => {
   assert.deepEqual(makePackageSelections([18, 19, 20], [0, 2]), [
     { lotId: 18, drawIndex: 0 },
     { lotId: 18, drawIndex: 2 },
@@ -33,6 +33,42 @@ test('a package uses the cross product of its selected lots and draws', () => {
     { lotId: 20, drawIndex: 0 },
     { lotId: 20, drawIndex: 2 },
   ])
+})
+
+test('a Package can mix different Draws for different Lots', () => {
+  const job = testJobs.find((item) => item.code === '1307')
+  const phase = job.sequenceSheet.phases.find((item) => item.id === 2101)
+  const schedule = initialBuilderDrawSchedules.find(
+    (item) => item.builderId === job.builderId,
+  )
+  const firstPackage = {
+    id: 90,
+    jobId: job.id,
+    phaseId: phase.id,
+    selections: makePackageSelections([3101, 3102, 3103], [0]),
+  }
+  const selections = [
+    { lotId: 3104, drawIndex: 0 },
+    { lotId: 3105, drawIndex: 0 },
+    { lotId: 3101, drawIndex: 1 },
+    { lotId: 3102, drawIndex: 1 },
+    { lotId: 3103, drawIndex: 1 },
+  ]
+  const used = buildUsedDrawSelections([firstPackage])
+  const summary = summarizeDrawPackage({
+    lotIds: [3101, 3102, 3103, 3104, 3105],
+    drawIndexes: [0, 1],
+    selections,
+  }, job, phase, schedule)
+
+  assert.equal(
+    selections.every(({ lotId, drawIndex }) => (
+      !used.has(drawSelectionKey(job.id, phase.id, lotId, drawIndex))
+    )),
+    true,
+  )
+  assert.equal(summary.lotCount, 5)
+  assert.equal(summary.scopeCount, 5)
 })
 
 test('lot ranges remain compact without hiding unselected lots', () => {
@@ -127,6 +163,43 @@ test('options are added once when the package includes the builder billing draw'
   assert.equal(secondSummary.grossAmount, 600)
   assert.equal(secondSummary.retention, 60)
   assert.equal(secondSummary.invoiceAmount, 540)
+})
+
+test('options apply only to Lots selected on the configured billing Draw', () => {
+  const job = {
+    sequenceSheet: {
+      plans: [{
+        id: 1,
+        code: 'A',
+        price: 1000,
+        options: [{ id: 10, code: 'OPT-10', description: 'Door upgrade', price: 100 }],
+      }],
+    },
+  }
+  const phase = {
+    lots: [
+      { id: 1, lotNumber: '19', planId: 1, optionIds: [10] },
+      { id: 2, lotNumber: '20', planId: 1, optionIds: [10] },
+    ],
+  }
+  const schedule = {
+    draws: [{ percentage: 50 }, { percentage: 50 }],
+    optionsBillingDrawIndex: 1,
+  }
+  const summary = summarizeDrawPackage({
+    lotIds: [1, 2],
+    drawIndexes: [0, 1],
+    selections: [
+      { lotId: 1, drawIndex: 1 },
+      { lotId: 2, drawIndex: 0 },
+    ],
+  }, job, phase, schedule)
+
+  assert.equal(summary.scopeCount, 2)
+  assert.equal(summary.optionsAreDue, true)
+  assert.equal(summary.selectedOptionRows.length, 1)
+  assert.equal(summary.selectedOptionRows[0].lotId, 1)
+  assert.equal(summary.optionsTotal, 100)
 })
 
 test('an unpriced option is reported when its billing draw is selected', () => {

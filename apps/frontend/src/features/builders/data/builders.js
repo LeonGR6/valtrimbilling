@@ -41,6 +41,16 @@ export function withDefaultBuilderDateConfiguration(builder) {
   }
 }
 
+export function toBuilderDateConfigurationRpc(builderId, configuration) {
+  const normalized = normalizeBuilderDateConfiguration(configuration)
+  return {
+    p_builder_id: Number(builderId),
+    p_ext_to_dm_weeks: normalized.extToDmWeeks,
+    p_shutter_before_dm_weeks: normalized.shutterBeforeDmWeeks,
+    p_dm_to_hw_weeks: normalized.dmToHwWeeks,
+  }
+}
+
 export const emptyBuilder = {
   code: '',
   name: '',

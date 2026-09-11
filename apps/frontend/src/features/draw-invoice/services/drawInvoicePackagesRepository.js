@@ -96,7 +96,7 @@ function throwRepositoryError(error) {
     })
   }
 
-  if (['23514', '22023', '22P02'].includes(error.code)) {
+  if (['23514', '22003', '22023', '22P02'].includes(error.code)) {
     throw new Error(error.message || 'Review the Package selections and status.', {
       cause: error,
     })

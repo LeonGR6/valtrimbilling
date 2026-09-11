@@ -39,9 +39,8 @@ The browser has no access to Package QuickBooks fields, `package_documents`,
 
 - the Phase and Job are active;
 - the Job Billing Setup snapshot is active or superseded;
-- every requested Lot belongs to the Phase;
-- every requested Draw belongs to the Billing Setup;
-- Lot and Draw selections are unique;
+- every requested Lot / Draw cell belongs to the Phase and Billing Setup;
+- Lot / Draw cells are unique;
 - the billing period is valid; and
 - every requested calculated line is created.
 

@@ -18,6 +18,7 @@ export default function CalendarPageHeader({
   onChangeTab,
   onChangeMode,
   onCreate,
+  canCreate = true,
 }) {
   return (
     <>
@@ -58,7 +59,11 @@ export default function CalendarPageHeader({
               </Tabs>
             </Box>
             {calendarMode === 'PRODUCTION' ? (
-              <ResponsiveCreateButton label="New activity" onClick={onCreate} />
+              <Tooltip title={canCreate ? '' : 'Your role has read-only access to Production activities.'}>
+                <span>
+                  <ResponsiveCreateButton label="New activity" onClick={onCreate} disabled={!canCreate} />
+                </span>
+              </Tooltip>
             ) : (
               <Tooltip title="Extra / Change Orders is pending">
                 <span><Button variant="contained" disabled>New change order</Button></span>

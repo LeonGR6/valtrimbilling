@@ -97,12 +97,18 @@ test('maps persisted package, invoice and calculated snapshots to the UI model',
 test('builds Package creation RPC values from UI draw indexes', () => {
   assert.deepEqual(toCreateDrawPackageRpc({
     phaseId: '21',
-    lotIds: ['41', 42],
-    drawIndexes: [0, 2],
+    selections: [
+      { lotId: '41', drawIndex: 0 },
+      { lotId: 42, drawIndex: 2 },
+      { lotId: 41, drawIndex: 1 },
+    ],
   }), {
     p_phase_id: 21,
-    p_lot_ids: [41, 42],
-    p_draw_numbers: [1, 3],
+    p_selections: [
+      { lot_id: 41, draw_number: 1 },
+      { lot_id: 42, draw_number: 3 },
+      { lot_id: 41, draw_number: 2 },
+    ],
   })
 })
 

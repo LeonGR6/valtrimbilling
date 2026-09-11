@@ -2,6 +2,7 @@ import { requireSupabase } from '../../../services/api.js'
 import {
   defaultBuilderDateConfiguration,
   normalizeBuilderDateConfiguration,
+  toBuilderDateConfigurationRpc,
 } from '../data/builders.js'
 
 const BUILDER_COLUMNS = [
@@ -67,6 +68,10 @@ function throwRepositoryError(error) {
     throw new Error('You do not have permission to change builders.', { cause: error })
   }
 
+  if (error.code === '23503' || error.code === 'P0002') {
+    throw new Error('The selected builder is no longer available.', { cause: error })
+  }
+
   throw new Error(error.message || 'The builders request failed.', { cause: error })
 }
 
@@ -129,16 +134,17 @@ export async function deactivateBuilder(builderId) {
 
 export async function updateBuilderDateConfiguration(builderId, configuration) {
   const client = await requireSupabase()
-  const normalized = normalizeBuilderDateConfiguration(configuration)
+  const { error: saveError } = await client.rpc(
+    'save_builder_date_configuration',
+    toBuilderDateConfigurationRpc(builderId, configuration),
+  )
+
+  throwRepositoryError(saveError)
+
   const { data, error } = await client
     .from('builders')
-    .update({
-      ext_to_dm_weeks: normalized.extToDmWeeks,
-      shutter_before_dm_weeks: normalized.shutterBeforeDmWeeks,
-      dm_to_hw_weeks: normalized.dmToHwWeeks,
-    })
-    .eq('id', builderId)
     .select(BUILDER_COLUMNS)
+    .eq('id', builderId)
     .single()
 
   throwRepositoryError(error)

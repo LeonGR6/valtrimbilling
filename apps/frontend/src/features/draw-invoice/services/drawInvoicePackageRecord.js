@@ -117,11 +117,13 @@ export function toDrawInvoicePackage(
   }
 }
 
-export function toCreateDrawPackageRpc({ phaseId, lotIds, drawIndexes }) {
+export function toCreateDrawPackageRpc({ phaseId, selections }) {
   return {
     p_phase_id: Number(phaseId),
-    p_lot_ids: lotIds.map(Number),
-    p_draw_numbers: drawIndexes.map((drawIndex) => Number(drawIndex) + 1),
+    p_selections: selections.map(({ lotId, drawIndex }) => ({
+      lot_id: Number(lotId),
+      draw_number: Number(drawIndex) + 1,
+    })),
   }
 }
 

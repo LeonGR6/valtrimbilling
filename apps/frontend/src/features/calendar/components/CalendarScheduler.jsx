@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from 'react'
-import { Box, Drawer, Snackbar } from '@mui/material'
+import { Alert, Box, Button, Drawer, LinearProgress, Snackbar } from '@mui/material'
 import { useColorScheme } from '@mui/material/styles'
 import { useJobs } from '../../jobs/context/useJobs.js'
 import { useBuilders } from '../../builders/context/useBuilders.js'
@@ -8,10 +8,8 @@ import { useBuilderContacts } from '../../builder-contacts/context/useBuilderCon
 import {
   createDraftFromProductionEvent,
   createEmptyProductionDraft,
-  createProductionCalendarEvents,
-  initialCalendarEvents,
-  recordProductionDateHistory,
 } from '../data/calendarEvents.js'
+import { useProductionActivities } from '../context/useProductionActivities.js'
 import { calendarEventSchema } from '../schemas/calendarEventSchema.js'
 import ActivityDetail from './ActivityDetail.jsx'
 import ActivityForm from './ActivityForm.jsx'
@@ -33,17 +31,26 @@ export default function CalendarScheduler() {
   const { builders } = useBuilders()
   const { people } = usePeople()
   const { contacts: builderContacts } = useBuilderContacts()
+  const {
+    events,
+    loading: productionLoading,
+    error: productionError,
+    canManageProductionActivities,
+    refreshProductionActivities,
+    saveProductionActivity,
+    cancelProductionActivity,
+  } = useProductionActivities()
   const { mode, systemMode } = useColorScheme()
   const resolvedColorMode = mode === 'system' ? systemMode : mode
   const calendarColorMode = resolvedColorMode === 'dark' ? 'dark' : 'light'
   const [calendarMode, setCalendarMode] = useState('PRODUCTION')
   const [activeTab, setActiveTab] = useState('SCHEDULE')
-  const [events, setEvents] = useState(initialCalendarEvents)
   const [selectedId, setSelectedId] = useState(null)
   const [drawerMode, setDrawerMode] = useState(null)
-  const [editingGroupId, setEditingGroupId] = useState(null)
   const [draft, setDraft] = useState(createEmptyProductionDraft())
   const [formError, setFormError] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [deleting, setDeleting] = useState(false)
   const [notice, setNotice] = useState('')
   const [viewTitle, setViewTitle] = useState(initialCalendarTitle)
   const [viewType, setViewType] = useState('dayGridWeek')
@@ -58,13 +65,12 @@ export default function CalendarScheduler() {
   const closeDrawer = () => {
     setDrawerMode(null)
     setSelectedId(null)
-    setEditingGroupId(null)
     setFormError('')
   }
 
   const openCreateDrawer = () => {
+    if (!canManageProductionActivities) return
     setSelectedId(null)
-    setEditingGroupId(null)
     setDraft(createEmptyProductionDraft())
     setFormError('')
     setDrawerMode('create')
@@ -74,25 +80,21 @@ export default function CalendarScheduler() {
     const calendarEvent = events.find((event) => event.id === eventId)
     if (!calendarEvent) return
 
-    const groupId = calendarEvent.extendedProps.groupId ?? calendarEvent.groupId ?? calendarEvent.id
     setSelectedId(eventId)
     setDraft(createDraftFromProductionEvent(calendarEvent))
-    setEditingGroupId(groupId)
     setFormError('')
     setDrawerMode('detail')
   }
 
   const openEditDrawer = () => {
-    if (!selectedEvent) return
+    if (!selectedEvent || !canManageProductionActivities) return
 
-    const groupId = selectedEvent.extendedProps.groupId ?? selectedEvent.groupId ?? selectedEvent.id
     setDraft(createDraftFromProductionEvent(selectedEvent))
-    setEditingGroupId(groupId)
     setFormError('')
     setDrawerMode('edit')
   }
 
-  const saveActivity = (event) => {
+  const saveActivity = async (event) => {
     event.preventDefault()
     const result = calendarEventSchema.safeParse(draft)
 
@@ -101,37 +103,51 @@ export default function CalendarScheduler() {
       return
     }
 
-    const groupId = editingGroupId ?? `production-${Date.now()}`
-    const savedValues = editingGroupId
-      ? recordProductionDateHistory(result.data, selectedEvent)
-      : result.data
-    const nextEvents = createProductionCalendarEvents(savedValues, groupId)
-    const savedActivityType = editingGroupId
+    const isEditing = Boolean(result.data.activityId)
+    const savedActivityType = isEditing
       ? selectedEvent?.extendedProps.activityType
       : 'EXT'
     const previousProps = selectedEvent?.extendedProps
-    const nextSelectedEvent = nextEvents.find((item) => (
-      item.extendedProps.activityType === savedActivityType
-      && item.extendedProps.variant === previousProps?.variant
-      && Number(item.extendedProps.lotStart) === Number(previousProps?.lotStart)
-      && Number(item.extendedProps.lotEnd) === Number(previousProps?.lotEnd)
-    )) ?? nextEvents.find((item) => (
-      item.extendedProps.activityType === savedActivityType
-      && !['install-only', 'lock-up'].includes(item.extendedProps.variant)
-    )) ?? nextEvents[0]
-    setEvents((current) => {
-      const withoutEditedGroup = editingGroupId
-        ? current.filter((item) => (item.extendedProps.groupId ?? item.groupId ?? item.id) !== editingGroupId)
-        : current
-      return [...withoutEditedGroup, ...nextEvents]
-    })
-    setSelectedId(nextSelectedEvent.id)
-    setEditingGroupId(null)
-    setDrawerMode('detail')
-    setFormError('')
-    setNotice(editingGroupId
-      ? 'Production activity updated.'
-      : 'Production activity created with EXT, DM and HW.')
+    setSaving(true)
+    try {
+      const { events: savedEvents } = await saveProductionActivity(result.data)
+      const nextSelectedEvent = savedEvents.find((item) => (
+        item.extendedProps.activityType === savedActivityType
+        && item.extendedProps.variant === previousProps?.variant
+        && Number(item.extendedProps.lotStart) === Number(previousProps?.lotStart)
+        && Number(item.extendedProps.lotEnd) === Number(previousProps?.lotEnd)
+      )) ?? savedEvents.find((item) => (
+        item.extendedProps.activityType === savedActivityType
+        && !['install-only', 'lock-up'].includes(item.extendedProps.variant)
+      )) ?? savedEvents[0]
+
+      setSelectedId(nextSelectedEvent?.id ?? null)
+      setDrawerMode(nextSelectedEvent ? 'detail' : null)
+      setFormError('')
+      setNotice(isEditing
+        ? 'Production activity updated.'
+        : 'Production activity created with EXT, DM and HW.')
+    } catch (saveError) {
+      setFormError(saveError.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const deleteActivity = async () => {
+    const activityId = selectedEvent?.extendedProps.activityId
+    if (!activityId || !canManageProductionActivities) {
+      throw new Error('Select a persisted Production activity to delete.')
+    }
+
+    setDeleting(true)
+    try {
+      await cancelProductionActivity(activityId)
+      closeDrawer()
+      setNotice('Production activity deleted from Calendar.')
+    } finally {
+      setDeleting(false)
+    }
   }
 
   const navigateCalendar = (direction) => {
@@ -178,27 +194,43 @@ export default function CalendarScheduler() {
         onChangeTab={changeActiveTab}
         onChangeMode={changeCalendarMode}
         onCreate={openCreateDrawer}
+        canCreate={canManageProductionActivities}
       />
 
       {activeTab === 'BUILDER_SETTINGS' ? (
         <BuilderDateSettings />
       ) : calendarMode === 'PRODUCTION' ? (
-        <CalendarWorkspace
-          calendarRef={calendarRef}
-          events={filteredEvents}
-          selectedId={selectedId}
-          viewTitle={viewTitle}
-          viewType={viewType}
-          visibleTypes={visibleTypes}
-          onChangeView={changeView}
-          onDatesSet={(title, type) => {
-            setViewTitle(title)
-            setViewType(type)
-          }}
-          onEventClick={openEventOptions}
-          onNavigate={navigateCalendar}
-          onToggleType={toggleType}
-        />
+        <>
+          {productionLoading && <LinearProgress />}
+          {productionError && (
+            <Alert
+              severity="error"
+              action={(
+                <Button color="inherit" size="small" onClick={() => refreshProductionActivities().catch(() => {})}>
+                  Retry
+                </Button>
+              )}
+            >
+              {productionError}
+            </Alert>
+          )}
+          <CalendarWorkspace
+            calendarRef={calendarRef}
+            events={filteredEvents}
+            selectedId={selectedId}
+            viewTitle={viewTitle}
+            viewType={viewType}
+            visibleTypes={visibleTypes}
+            onChangeView={changeView}
+            onDatesSet={(title, type) => {
+              setViewTitle(title)
+              setViewType(type)
+            }}
+            onEventClick={openEventOptions}
+            onNavigate={navigateCalendar}
+            onToggleType={toggleType}
+          />
+        </>
       ) : (
         <Box className="calendar-workspace calendar-workspace--placeholder">
           <ChangeOrdersPlaceholder />
@@ -227,11 +259,16 @@ export default function CalendarScheduler() {
             builderContacts={builderContacts}
             onClose={closeDrawer}
             onEdit={openEditDrawer}
+            onDelete={deleteActivity}
+            canEdit={canManageProductionActivities}
+            deleting={deleting}
           />
         ) : (
           <ActivityForm
             jobs={jobs}
             builders={builders}
+            people={people}
+            builderContacts={builderContacts}
             draft={draft}
             isEditing={drawerMode === 'edit'}
             activeActivityType={selectedEvent?.extendedProps.activityType}
@@ -239,6 +276,7 @@ export default function CalendarScheduler() {
             onChange={changeDraft}
             onClose={closeDrawer}
             onSave={saveActivity}
+            saving={saving}
           />
         )}
       </Drawer>

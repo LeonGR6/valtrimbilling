@@ -59,7 +59,6 @@ import {
 import {
   buildUsedDrawSelections,
   drawSelectionKey,
-  makePackageSelections,
   summarizeDrawPackage,
 } from '../utils/drawPackages.js'
 import { buildDrawWorksheet } from '../utils/drawWorksheet.js'
@@ -268,8 +267,7 @@ function CreateDrawDialog({
   const [selectedPhaseId, setSelectedPhaseId] = useState(
     firstPhase == null ? '' : String(firstPhase.id),
   )
-  const [selectedLotIds, setSelectedLotIds] = useState([])
-  const [selectedDrawIndexes, setSelectedDrawIndexes] = useState([])
+  const [selectedSelections, setSelectedSelections] = useState([])
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState(null)
 
@@ -287,19 +285,23 @@ function CreateDrawDialog({
     () => buildUsedDrawSelections(packages),
     [packages],
   )
-  const selectedLotIdSet = new Set(selectedLotIds.map(String))
-  const selectedDrawIndexSet = new Set(selectedDrawIndexes)
+  const selectedSelectionKeys = new Set(
+    selectedSelections.map(({ lotId, drawIndex }) => `${lotId}:${drawIndex}`),
+  )
+  const selectedLotIds = [...new Set(
+    selectedSelections.map(({ lotId }) => lotId),
+  )]
+  const selectedDrawIndexes = [...new Set(
+    selectedSelections.map(({ drawIndex }) => drawIndex),
+  )].sort((left, right) => left - right)
 
   const selectionIsUsed = (lotId, drawIndex) =>
     usedSelections.has(
       drawSelectionKey(job?.id, phase?.id, lotId, drawIndex),
     )
 
-  const lotConflictsWithSelectedDraws = (lotId) =>
-    selectedDrawIndexes.some((drawIndex) => selectionIsUsed(lotId, drawIndex))
-
-  const lotHasAvailableDraw = (lotId) =>
-    worksheet.draws.some((_, drawIndex) => !selectionIsUsed(lotId, drawIndex))
+  const selectionIsSelected = (lotId, drawIndex) =>
+    selectedSelectionKeys.has(`${lotId}:${drawIndex}`)
 
   const handleJobChange = (event) => {
     const nextJobId = event.target.value
@@ -310,43 +312,87 @@ function CreateDrawDialog({
         ? ''
         : String(nextJob.sequenceSheet.phases[0].id),
     )
-    setSelectedLotIds([])
-    setSelectedDrawIndexes([])
+    setSelectedSelections([])
   }
 
   const handlePhaseChange = (event) => {
     setSelectedPhaseId(event.target.value)
-    setSelectedLotIds([])
-    setSelectedDrawIndexes([])
+    setSelectedSelections([])
   }
 
-  const toggleLot = (lotId) => {
-    setSelectedLotIds((current) =>
-      current.some((value) => String(value) === String(lotId))
-        ? current.filter((value) => String(value) !== String(lotId))
-        : [...current, lotId],
+  const toggleSelection = (lotId, drawIndex) => {
+    if (selectionIsUsed(lotId, drawIndex)) return
+
+    const key = `${lotId}:${drawIndex}`
+    setSelectedSelections((current) =>
+      current.some(
+        (selection) => `${selection.lotId}:${selection.drawIndex}` === key,
+      )
+        ? current.filter(
+            (selection) => `${selection.lotId}:${selection.drawIndex}` !== key,
+          )
+        : [...current, { lotId, drawIndex }],
     )
   }
 
-  const toggleDraw = (drawIndex) => {
-    setSelectedDrawIndexes((current) =>
-      current.includes(drawIndex)
-        ? current.filter((value) => value !== drawIndex)
-        : [...current, drawIndex].sort((left, right) => left - right),
+  const toggleSelectionGroup = (available) => {
+    const availableKeys = new Set(
+      available.map(
+        ({ lotId, drawIndex }) => `${lotId}:${drawIndex}`,
+      ),
     )
+
+    setSelectedSelections((current) => {
+      const currentKeys = new Set(
+        current.map(
+          ({ lotId, drawIndex }) => `${lotId}:${drawIndex}`,
+        ),
+      )
+      const allSelected = available.length > 0 && available.every(
+        ({ lotId, drawIndex }) => currentKeys.has(`${lotId}:${drawIndex}`),
+      )
+
+      return allSelected
+        ? current.filter(
+          (selection) => !availableKeys.has(
+            `${selection.lotId}:${selection.drawIndex}`,
+          ),
+        )
+        : [
+            ...current,
+            ...available.filter(
+              ({ lotId, drawIndex }) => !currentKeys.has(`${lotId}:${drawIndex}`),
+            ),
+          ]
+    })
+  }
+
+  const toggleLotSelections = (lotId) => {
+    const available = worksheet.draws
+      .map((_, drawIndex) => ({ lotId, drawIndex }))
+      .filter(({ drawIndex }) => !selectionIsUsed(lotId, drawIndex))
+
+    toggleSelectionGroup(available)
+  }
+
+  const toggleDrawSelections = (drawIndex) => {
+    const available = worksheet.rows
+      .map((row) => ({ lotId: row.id, drawIndex }))
+      .filter(({ lotId }) => !selectionIsUsed(lotId, drawIndex))
+
+    toggleSelectionGroup(available)
   }
 
   const draftRecord = {
     lotIds: selectedLotIds,
     drawIndexes: selectedDrawIndexes,
     optionsBillingDrawIndex: schedule?.optionsBillingDrawIndex ?? null,
-    selections: makePackageSelections(selectedLotIds, selectedDrawIndexes),
+    selections: selectedSelections,
   }
   const summary = summarizeDrawPackage(draftRecord, job, phase, schedule)
   const canCreate =
     worksheet.isReady &&
-    selectedLotIds.length > 0 &&
-    selectedDrawIndexes.length > 0 &&
+    selectedSelections.length > 0 &&
     summary.unpricedOptionCount === 0
 
   const handleSubmit = async () => {
@@ -356,8 +402,7 @@ function CreateDrawDialog({
       await onCreate({
         jobId: job.id,
         phaseId: phase.id,
-        lotIds: selectedLotIds,
-        drawIndexes: selectedDrawIndexes,
+        selections: selectedSelections,
         schedule,
       })
     } catch (error) {
@@ -367,7 +412,7 @@ function CreateDrawDialog({
   }
 
   return (
-    <Dialog open onClose={onClose} fullWidth maxWidth="md">
+    <Dialog open onClose={onClose} fullWidth maxWidth="lg">
       <DialogTitle sx={{ pb: 1 }}>
         <Typography variant="h6" component="div" fontWeight={800}>
           Create Draw
@@ -419,152 +464,261 @@ function CreateDrawDialog({
 
           <Box>
             <Stack
-              direction="row"
+              direction={{ xs: 'column', sm: 'row' }}
               spacing={1}
-              sx={{ alignItems: 'center', justifyContent: 'space-between', mb: 1 }}
+              sx={{ alignItems: { sm: 'center' }, justifyContent: 'space-between', mb: 1 }}
             >
               <Box>
-                <Typography fontWeight={800}>1. Select lots</Typography>
+                <Typography fontWeight={800}>Select Lot / Draw cells</Typography>
                 <Typography variant="body2" color="text.secondary">
-                  You can choose any subset of lots in this phase-building.
+                  Choose each cell independently. Yellow cells already belong to
+                  another Package; use a row or Draw checkbox to select all remaining cells.
                 </Typography>
               </Box>
               <Chip
                 size="small"
-                variant="outlined"
-                label={`${selectedLotIds.length} selected`}
+                color={selectedSelections.length > 0 ? 'primary' : 'default'}
+                variant={selectedSelections.length > 0 ? 'filled' : 'outlined'}
+                label={`${selectedSelections.length} ${selectedSelections.length === 1 ? 'cell' : 'cells'} selected`}
               />
             </Stack>
-            <Card variant="outlined">
-              <TableContainer sx={{ maxHeight: 260 }}>
-                <Table size="small" stickyHeader aria-label="Lots available for this package">
+            <Card variant="outlined" sx={{ overflow: 'hidden' }}>
+              <TableContainer sx={{ maxHeight: 460 }}>
+                <Table
+                  size="small"
+                  stickyHeader
+                  aria-label="Lot and Draw cells available for this package"
+                  sx={{
+                    minWidth: 300 + worksheet.draws.length * 155,
+                    '& .MuiTableCell-root': { px: 1.2, py: 1 },
+                  }}
+                >
                   <TableHead>
                     <TableRow>
-                      <TableCell padding="checkbox" />
-                      <TableCell>Lot</TableCell>
-                      <TableCell>Plan</TableCell>
-                      <TableCell>Options</TableCell>
-                      <TableCell align="right">Price per lot</TableCell>
-                      <TableCell>Availability</TableCell>
+                      <TableCell rowSpan={2} sx={{ width: 95, fontWeight: 800 }}>
+                        Lot
+                      </TableCell>
+                      <TableCell rowSpan={2} sx={{ width: 90, fontWeight: 800 }}>
+                        Plan
+                      </TableCell>
+                      <TableCell
+                        rowSpan={2}
+                        align="right"
+                        sx={{ width: 115, fontWeight: 800 }}
+                      >
+                        {worksheet.separateHardwarePrice ? 'Draw base / lot' : 'Price per lot'}
+                      </TableCell>
+                      {worksheet.draws.map((draw, drawIndex) => (
+                        <TableCell
+                          key={`select-draw-heading-${drawIndex}`}
+                          align="center"
+                          sx={{
+                            minWidth: 155,
+                            borderLeft: 1,
+                            borderColor: 'divider',
+                            bgcolor: 'primary.light',
+                          }}
+                        >
+                          <Typography color="primary.main" fontWeight={850}>
+                            Draw #{drawIndex + 1}
+                          </Typography>
+                          <Typography
+                            variant="caption"
+                            color="primary.main"
+                            fontWeight={750}
+                            component="div"
+                          >
+                            {formatPercentage(draw.percentage)}%
+                            {draw.name?.trim() ? ` · ${draw.name.trim()}` : ''}
+                          </Typography>
+                        </TableCell>
+                      ))}
+                    </TableRow>
+                    <TableRow>
+                      {worksheet.draws.map((_, drawIndex) => {
+                        const availableRows = worksheet.rows.filter(
+                          (row) => !selectionIsUsed(row.id, drawIndex),
+                        )
+                        const selectedCount = availableRows.filter(
+                          (row) => selectionIsSelected(row.id, drawIndex),
+                        ).length
+                        const allSelected = availableRows.length > 0
+                          && selectedCount === availableRows.length
+
+                        return (
+                          <TableCell
+                            key={`select-draw-${drawIndex}`}
+                            align="center"
+                            sx={{ borderLeft: 1, borderColor: 'divider' }}
+                          >
+                            <Stack
+                              direction="row"
+                              spacing={0.25}
+                              sx={{ alignItems: 'center', justifyContent: 'center' }}
+                            >
+                              <Checkbox
+                                size="small"
+                                checked={allSelected}
+                                indeterminate={selectedCount > 0 && !allSelected}
+                                disabled={availableRows.length === 0}
+                                onChange={() => toggleDrawSelections(drawIndex)}
+                                inputProps={{
+                                  'aria-label': `Select available cells for Draw ${drawIndex + 1}`,
+                                }}
+                              />
+                              <Typography variant="caption" color="text.secondary">
+                                {selectedCount}/{availableRows.length}
+                              </Typography>
+                            </Stack>
+                          </TableCell>
+                        )
+                      })}
                     </TableRow>
                   </TableHead>
                   <TableBody>
                     {worksheet.rows.map((row) => {
-                      const selected = selectedLotIdSet.has(String(row.id))
-                      const unavailable =
-                        !lotHasAvailableDraw(row.id) ||
-                        lotConflictsWithSelectedDraws(row.id)
-                      const availableDrawCount = worksheet.draws.filter(
-                        (_, drawIndex) => !selectionIsUsed(row.id, drawIndex),
+                      const availableDrawIndexes = worksheet.draws
+                        .map((_, drawIndex) => drawIndex)
+                        .filter((drawIndex) => !selectionIsUsed(row.id, drawIndex))
+                      const selectedCount = availableDrawIndexes.filter(
+                        (drawIndex) => selectionIsSelected(row.id, drawIndex),
                       ).length
+                      const allSelected = availableDrawIndexes.length > 0
+                        && selectedCount === availableDrawIndexes.length
 
                       return (
-                        <TableRow
-                          key={row.id}
-                          hover
-                          selected={selected}
-                          onClick={() => !unavailable && toggleLot(row.id)}
-                          sx={{ cursor: unavailable ? 'default' : 'pointer' }}
-                        >
-                          <TableCell padding="checkbox">
-                            <Checkbox
-                              checked={selected}
-                              disabled={unavailable}
-                              onClick={(event) => event.stopPropagation()}
-                              onChange={() => toggleLot(row.id)}
-                              inputProps={{ 'aria-label': `Select lot ${row.lotNumber}` }}
-                            />
-                          </TableCell>
+                        <TableRow key={row.id} hover>
                           <TableCell>
-                            <Typography color="error.main" fontWeight={850}>
-                              {row.lotNumber}
-                            </Typography>
-                          </TableCell>
-                          <TableCell>{row.planCode ?? '—'}</TableCell>
-                          <TableCell>
-                            {(row.selectedOptions?.length ?? 0) > 0 ? (
-                              <Chip
+                            <Stack direction="row" spacing={0.25} sx={{ alignItems: 'center' }}>
+                              <Checkbox
                                 size="small"
-                                variant="outlined"
-                                label={`${row.selectedOptions.length} selected`}
+                                checked={allSelected}
+                                indeterminate={selectedCount > 0 && !allSelected}
+                                disabled={availableDrawIndexes.length === 0}
+                                onChange={() => toggleLotSelections(row.id)}
+                                inputProps={{
+                                  'aria-label': `Select available Draws for lot ${row.lotNumber}`,
+                                }}
                               />
-                            ) : (
+                              <Typography color="error.main" fontWeight={850}>
+                                {row.lotNumber}
+                              </Typography>
+                            </Stack>
+                          </TableCell>
+                          <TableCell>
+                            <Typography fontWeight={750}>{row.planCode ?? '—'}</Typography>
+                            {(row.selectedOptions?.length ?? 0) > 0 && (
                               <Typography variant="caption" color="text.secondary">
-                                None
+                                {row.selectedOptions.length}{' '}
+                                {row.selectedOptions.length === 1 ? 'option' : 'options'}
                               </Typography>
                             )}
                           </TableCell>
                           <TableCell align="right">
-                            {formatCurrency(row.drawBasePrice)}
-                          </TableCell>
-                          <TableCell>
-                            <Typography variant="body2" color="text.secondary">
-                              {availableDrawCount} of {worksheet.draws.length} draws available
+                            <Typography fontWeight={750}>
+                              {formatCurrency(row.drawBasePrice)}
                             </Typography>
                           </TableCell>
+                          {worksheet.draws.map((_, drawIndex) => {
+                            const key = drawSelectionKey(
+                              job?.id,
+                              phase?.id,
+                              row.id,
+                              drawIndex,
+                            )
+                            const owner = usedSelections.get(key)
+                            const selected = selectionIsSelected(row.id, drawIndex)
+
+                            return (
+                              <TableCell
+                                key={key}
+                                align="center"
+                                onClick={() => !owner && toggleSelection(row.id, drawIndex)}
+                                sx={{
+                                  borderLeft: 1,
+                                  borderColor: selected ? 'primary.main' : 'divider',
+                                  bgcolor: owner
+                                    ? 'warning.light'
+                                    : selected
+                                      ? 'primary.light'
+                                      : undefined,
+                                  cursor: owner ? 'default' : 'pointer',
+                                }}
+                              >
+                                {owner ? (
+                                  <Box>
+                                    <Stack
+                                      direction="row"
+                                      spacing={0.5}
+                                      sx={{ alignItems: 'center', justifyContent: 'center' }}
+                                    >
+                                      <LockRoundedIcon sx={{ fontSize: 14 }} />
+                                      <Typography variant="caption" fontWeight={850}>
+                                        {owner.packageNumber}
+                                      </Typography>
+                                    </Stack>
+                                    <Typography variant="caption" component="div">
+                                      {formatCurrency(row.drawAmounts[drawIndex])}
+                                    </Typography>
+                                  </Box>
+                                ) : (
+                                  <Stack
+                                    direction="row"
+                                    spacing={0.25}
+                                    sx={{ alignItems: 'center', justifyContent: 'center' }}
+                                  >
+                                    <Checkbox
+                                      size="small"
+                                      checked={selected}
+                                      onClick={(event) => event.stopPropagation()}
+                                      onChange={() => toggleSelection(row.id, drawIndex)}
+                                      inputProps={{
+                                        'aria-label': `Select lot ${row.lotNumber}, Draw ${drawIndex + 1}`,
+                                      }}
+                                    />
+                                    <Typography variant="body2" fontWeight={850}>
+                                      {formatCurrency(row.drawAmounts[drawIndex])}
+                                    </Typography>
+                                  </Stack>
+                                )}
+                              </TableCell>
+                            )
+                          })}
                         </TableRow>
                       )
                     })}
                   </TableBody>
+                  {worksheet.rows.length > 0 && (
+                    <TableFooter>
+                      <TableRow>
+                        <TableCell colSpan={3}>
+                          <Typography fontWeight={850}>
+                            {selectedLotIds.length}{' '}
+                            {selectedLotIds.length === 1 ? 'lot' : 'lots'} ·{' '}
+                            {selectedSelections.length}{' '}
+                            {selectedSelections.length === 1 ? 'cell' : 'cells'}
+                          </Typography>
+                        </TableCell>
+                        {worksheet.draws.map((_, drawIndex) => (
+                          <TableCell
+                            key={`selected-total-${drawIndex}`}
+                            align="center"
+                            sx={{ borderLeft: 1, borderColor: 'divider' }}
+                          >
+                            <Typography variant="caption" color="text.secondary">
+                              {selectedSelections.filter(
+                                (selection) => selection.drawIndex === drawIndex,
+                              ).length}{' '}
+                              selected
+                            </Typography>
+                          </TableCell>
+                        ))}
+                      </TableRow>
+                    </TableFooter>
+                  )}
                 </Table>
               </TableContainer>
             </Card>
-          </Box>
-
-          <Box>
-            <Typography fontWeight={800}>2. Select one or more draws</Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-              Each selected draw will be included for every selected lot.
-            </Typography>
-            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.25}>
-              {worksheet.draws.map((draw, drawIndex) => {
-                const conflictCount = selectedLotIds.filter((lotId) =>
-                  selectionIsUsed(lotId, drawIndex),
-                ).length
-                const disabled = selectedLotIds.length === 0 || conflictCount > 0
-                const selected = selectedDrawIndexSet.has(drawIndex)
-
-                return (
-                  <Card
-                    key={drawIndex}
-                    variant="outlined"
-                    onClick={() => !disabled && toggleDraw(drawIndex)}
-                    sx={{
-                      flex: 1,
-                      cursor: disabled ? 'default' : 'pointer',
-                      borderColor: selected ? 'primary.main' : 'divider',
-                      bgcolor: selected ? 'primary.light' : 'background.paper',
-                      opacity: disabled ? 0.65 : 1,
-                    }}
-                  >
-                    <CardContent sx={{ p: '12px !important' }}>
-                      <Stack direction="row" spacing={0.75} sx={{ alignItems: 'flex-start' }}>
-                        <Checkbox
-                          checked={selected}
-                          disabled={disabled}
-                          onClick={(event) => event.stopPropagation()}
-                          onChange={() => toggleDraw(drawIndex)}
-                          sx={{ p: 0 }}
-                          inputProps={{ 'aria-label': `Select draw ${drawIndex + 1}` }}
-                        />
-                        <Box>
-                          <Typography fontWeight={850}>Draw #{drawIndex + 1}</Typography>
-                          <Typography variant="body2" color="text.secondary">
-                            {formatPercentage(draw.percentage)}%
-                            {draw.name?.trim() ? ` · ${draw.name.trim()}` : ''}
-                          </Typography>
-                          {conflictCount > 0 && (
-                            <Typography variant="caption" color="warning.main">
-                              Used for {conflictCount} selected lot{conflictCount === 1 ? '' : 's'}
-                            </Typography>
-                          )}
-                        </Box>
-                      </Stack>
-                    </CardContent>
-                  </Card>
-                )
-              })}
-            </Stack>
           </Box>
 
           {summary.optionsAreDue && summary.selectedOptionRows.length > 0 && (

@@ -1051,6 +1051,14 @@
   font-weight: 750;
 }
 
+.activity-drawer__footer--detail {
+  flex-wrap: wrap;
+}
+
+.activity-drawer__delete-action {
+  margin-right: auto !important;
+}
+
 .activity-detail__hero {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;

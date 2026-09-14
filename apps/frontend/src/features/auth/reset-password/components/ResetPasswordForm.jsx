@@ -15,9 +15,15 @@ import AuthShell, {
 import { resetPasswordSchema } from '../schemas/resetPassword'
 import { useAuth } from '../../context/useAuth.js'
 
-export default function ResetPasswordForm() {
+export default function ResetPasswordForm({ flowType = 'recovery' }) {
   const navigate = useNavigate()
-  const { configured, loading, session, updatePassword } = useAuth()
+  const {
+    configured,
+    passwordFlow,
+    passwordFlowError,
+    passwordFlowLoading,
+    updatePassword,
+  } = useAuth()
   const [done, setDone] = useState(false)
   const [submitError, setSubmitError] = useState(null)
   const [submitting, setSubmitting] = useState(false)
@@ -26,13 +32,15 @@ export default function ResetPasswordForm() {
     mode: 'onTouched',
     defaultValues: { password: '', confirm: '' },
   })
+  const isInvite = flowType === 'invite'
+  const flowIsReady = passwordFlow?.type === flowType
 
   const onSubmit = async ({ password }) => {
     setSubmitError(null)
     setSubmitting(true)
 
     try {
-      await updatePassword(password)
+      await updatePassword(password, passwordFlow?.userId)
       setDone(true)
     } catch (error) {
       setSubmitError(error.message)
@@ -46,8 +54,10 @@ export default function ResetPasswordForm() {
       <AuthShell>
         <Brand />
         <AuthHeading
-          title="Password updated"
-          subtitle="You can now sign in with your new password."
+          title={isInvite ? 'Account ready' : 'Password updated'}
+          subtitle={isInvite
+            ? 'Your password was created. You can now sign in.'
+            : 'You can now sign in with your new password.'}
         />
         <Stack spacing={3} sx={{ alignItems: 'center' }}>
           <Box
@@ -86,8 +96,12 @@ export default function ResetPasswordForm() {
     <AuthShell>
       <Brand />
       <AuthHeading
-        title="New password"
-        subtitle="Choose a secure password for your account."
+        title={isInvite ? 'Create your password' : 'New password'}
+        subtitle={flowIsReady && passwordFlow.email
+          ? `${isInvite ? 'Creating' : 'Resetting'} the password for ${passwordFlow.email}.`
+          : isInvite
+            ? 'Validate your invitation to finish setting up your account.'
+            : 'Validate your recovery link to choose a new password.'}
       />
 
       <Box component="form" onSubmit={handleSubmit(onSubmit)} noValidate>
@@ -98,66 +112,78 @@ export default function ResetPasswordForm() {
               apps/frontend/.env.
             </Alert>
           )}
-          {configured && loading && (
+          {configured && passwordFlowLoading && (
             <Alert severity="info" icon={<CircularProgress size={18} />}>
-              Validating the recovery link…
+              {isInvite ? 'Validating the invitation link…' : 'Validating the recovery link…'}
             </Alert>
           )}
-          {configured && !loading && !session && (
+          {configured && !passwordFlowLoading && !flowIsReady && (
             <Alert severity="error">
-              This recovery link is invalid or has expired. Request a new link.
+              {passwordFlowError || (isInvite
+                ? 'This invitation link is invalid or has expired. Ask an administrator for a new invitation.'
+                : 'This recovery link is invalid or has expired. Request a new link.')}
             </Alert>
           )}
           {submitError && <Alert severity="error">{submitError}</Alert>}
 
-          <Controller
-            name="password"
-            control={control}
-            render={({ field: { ref, ...field }, fieldState }) => (
-              <AuthTextField
-                {...field}
-                inputRef={ref}
-                id="password"
-                label="New password"
-                autoComplete="new-password"
-                icon={LockResetRoundedIcon}
-                isPassword
-                error={Boolean(fieldState.error)}
-                helperText={fieldState.error?.message}
+          {flowIsReady && (
+            <>
+              <Controller
+                name="password"
+                control={control}
+                render={({ field: { ref, ...field }, fieldState }) => (
+                  <AuthTextField
+                    {...field}
+                    inputRef={ref}
+                    id="password"
+                    label="New password"
+                    autoComplete="new-password"
+                    icon={LockResetRoundedIcon}
+                    isPassword
+                    error={Boolean(fieldState.error)}
+                    helperText={fieldState.error?.message}
+                  />
+                )}
               />
-            )}
-          />
 
-          <Controller
-            name="confirm"
-            control={control}
-            render={({ field: { ref, ...field }, fieldState }) => (
-              <AuthTextField
-                {...field}
-                inputRef={ref}
-                id="confirm"
-                label="Confirm password"
-                autoComplete="new-password"
-                icon={LockOutlinedIcon}
-                isPassword
-                error={Boolean(fieldState.error)}
-                helperText={fieldState.error?.message}
+              <Controller
+                name="confirm"
+                control={control}
+                render={({ field: { ref, ...field }, fieldState }) => (
+                  <AuthTextField
+                    {...field}
+                    inputRef={ref}
+                    id="confirm"
+                    label="Confirm password"
+                    autoComplete="new-password"
+                    icon={LockOutlinedIcon}
+                    isPassword
+                    error={Boolean(fieldState.error)}
+                    helperText={fieldState.error?.message}
+                  />
+                )}
               />
-            )}
-          />
+            </>
+          )}
         </Stack>
 
-        <Button
-          type="submit"
-          variant="contained"
-          size="medium"
-          fullWidth
-          disableElevation
-          disabled={!configured || loading || !session || submitting}
-          sx={submitButtonSx}
-        >
-          {submitting ? 'Updating…' : 'Reset password'}
-        </Button>
+        {flowIsReady && (
+          <Button
+            type="submit"
+            variant="contained"
+            size="medium"
+            fullWidth
+            disableElevation
+            disabled={!configured || passwordFlowLoading || submitting}
+            sx={submitButtonSx}
+          >
+            {submitting
+              ? 'Updating…'
+              : isInvite
+                ? 'Create password'
+                : 'Reset password'}
+          </Button>
+        )}
       </Box>
     </AuthShell>
   )

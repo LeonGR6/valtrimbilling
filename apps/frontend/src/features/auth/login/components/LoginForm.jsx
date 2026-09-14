@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useForm, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { Link as RouterLink, useLocation, useNavigate } from 'react-router-dom'
-import { Alert, Box, Button, Link, Stack } from '@mui/material'
+import { Alert, Box, Button, CircularProgress, Link, Stack } from '@mui/material'
 import LockOutlinedIcon from '@mui/icons-material/LockOutlined'
 import MailOutlineRoundedIcon from '@mui/icons-material/MailOutlineRounded'
 import AuthShell, {
@@ -13,7 +13,10 @@ import AuthShell, {
 } from '../../common'
 import { loginSchema } from '../schemas/login'
 import { useAuth } from '../../context/useAuth.js'
-import { DEFAULT_ROUTE } from '../../../../config/appConfig.js'
+import {
+  DEFAULT_ROUTE,
+  MANUAL_SIGN_OUT_STORAGE_KEY,
+} from '../../../../config/appConfig.js'
 
 export default function LoginForm() {
   const navigate = useNavigate()
@@ -33,10 +36,15 @@ export default function LoginForm() {
 
     try {
       await signIn(data)
+      const manualSignOut = location.state?.reason === 'manual-sign-out'
+        || window.sessionStorage.getItem(MANUAL_SIGN_OUT_STORAGE_KEY) === 'true'
       const requestedPath = location.state?.from
-      const destination = typeof requestedPath === 'string' && requestedPath.startsWith('/')
-        ? requestedPath
-        : DEFAULT_ROUTE
+      const destination = manualSignOut
+        ? DEFAULT_ROUTE
+        : typeof requestedPath === 'string' && requestedPath.startsWith('/')
+          ? requestedPath
+          : DEFAULT_ROUTE
+      window.sessionStorage.removeItem(MANUAL_SIGN_OUT_STORAGE_KEY)
       navigate(destination, { replace: true })
     } catch (error) {
       setSubmitError(error.message)
@@ -115,6 +123,15 @@ export default function LoginForm() {
           fullWidth
           disableElevation
           disabled={!configured || submitting}
+          aria-busy={submitting}
+          startIcon={submitting ? (
+            <CircularProgress
+              aria-hidden="true"
+              color="inherit"
+              size={16}
+              thickness={5}
+            />
+          ) : undefined}
           sx={submitButtonSx}
         >
           {submitting ? 'Signing in…' : 'Sign in'}

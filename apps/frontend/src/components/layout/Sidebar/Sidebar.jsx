@@ -1,10 +1,17 @@
 import { useEffect, useState } from 'react'
-import { NavLink } from 'react-router-dom'
+import { NavLink, useNavigate } from 'react-router-dom'
 import { useTheme } from '@mui/material/styles'
 import {
+  Alert,
   Drawer,
   Box,
   Button,
+  CircularProgress,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogContentText,
+  DialogTitle,
   List,
   ListItem,
   ListItemButton,
@@ -51,11 +58,16 @@ import valtrimLogoLight from '../../../assets/icons/Valtrim-Blue-Transparent.png
 import { navigationRoutes } from '../../../routes/navigation.jsx'
 import ColorModeToggle from '../../common/ColorModeToggle'
 import { useAuth } from '../../../features/auth/context/useAuth.js'
+import { isRoleAllowed } from '../../../features/auth/authorization/roleAccess.js'
+import { MANUAL_SIGN_OUT_STORAGE_KEY } from '../../../config/appConfig.js'
 
 const DRAWER_WIDTH = 256
 const RAIL_WIDTH = 72
 const COLLAPSED_KEY = 'valtrim.sidebar.collapsed'
 const availablePaths = new Set(navigationRoutes.map(({ path }) => path))
+const routeAccessByPath = new Map(
+  navigationRoutes.map(({ path, allowedRoles }) => [path, allowedRoles]),
+)
 
 const homeItem = { label: 'Home', path: '/', icon: HomeRoundedIcon }
 
@@ -299,7 +311,11 @@ function hasAvailableItem(section) {
 }
 
 function SidebarContent({ onNavigate, collapsed = false, onToggleCollapsed }) {
+  const navigate = useNavigate()
   const { profile, signOut, user } = useAuth()
+  const [signOutDialogOpen, setSignOutDialogOpen] = useState(false)
+  const [signingOut, setSigningOut] = useState(false)
+  const [signOutError, setSignOutError] = useState(null)
   const displayName = profile?.name || user?.email || 'User'
   const displayEmail = profile?.email || user?.email || ''
   const initials = displayName
@@ -309,9 +325,36 @@ function SidebarContent({ onNavigate, collapsed = false, onToggleCollapsed }) {
     .map((part) => part[0]?.toUpperCase())
     .join('') || 'U'
 
+  const openSignOutDialog = () => {
+    setSignOutError(null)
+    setSignOutDialogOpen(true)
+  }
+
+  const closeSignOutDialog = () => {
+    if (!signingOut) setSignOutDialogOpen(false)
+  }
+
   const handleSignOut = async () => {
-    await signOut()
-    onNavigate?.()
+    if (signingOut) return
+
+    setSigningOut(true)
+    setSignOutError(null)
+
+    try {
+      window.sessionStorage.setItem(MANUAL_SIGN_OUT_STORAGE_KEY, 'true')
+      await signOut()
+      setSignOutDialogOpen(false)
+      onNavigate?.()
+      navigate('/login', {
+        replace: true,
+        state: { reason: 'manual-sign-out' },
+      })
+    } catch (error) {
+      window.sessionStorage.removeItem(MANUAL_SIGN_OUT_STORAGE_KEY)
+      setSignOutError(error.message || 'The session could not be closed. Try again.')
+    } finally {
+      setSigningOut(false)
+    }
   }
 
   return (
@@ -403,7 +446,12 @@ function SidebarContent({ onNavigate, collapsed = false, onToggleCollapsed }) {
                   ? { 'aria-label': section.label }
                   : { 'aria-labelledby': sectionHeadingId(section.label) })}
               >
-                {section.items.map((item) => (
+                {section.items
+                  .filter((item) => isRoleAllowed(
+                    profile?.role,
+                    routeAccessByPath.get(item.path),
+                  ))
+                  .map((item) => (
                   item.children ? (
                     // Submenus cannot open inside a 72px rail, so they wait.
                     collapsed ? null : (
@@ -461,13 +509,58 @@ function SidebarContent({ onNavigate, collapsed = false, onToggleCollapsed }) {
           <IconButton
             size="small"
             aria-label="Sign out"
-            onClick={handleSignOut}
+            onClick={openSignOutDialog}
             sx={{ color: 'text.secondary' }}
           >
             <LogoutRoundedIcon fontSize="small" />
           </IconButton>
         </Tooltip>
       </Box>
+
+      <Dialog
+        open={signOutDialogOpen}
+        onClose={closeSignOutDialog}
+        aria-labelledby="sign-out-dialog-title"
+        aria-describedby="sign-out-dialog-description"
+        fullWidth
+        maxWidth="xs"
+      >
+        <DialogTitle id="sign-out-dialog-title">Sign out?</DialogTitle>
+        <DialogContent>
+          <DialogContentText id="sign-out-dialog-description">
+            Are you sure you want to sign out of ValtrimBilling?
+          </DialogContentText>
+          {signOutError && (
+            <Alert severity="error" sx={{ mt: 2 }}>
+              {signOutError}
+            </Alert>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2.5 }}>
+          <Button onClick={closeSignOutDialog} disabled={signingOut}>
+            Cancel
+          </Button>
+          <Button
+            variant="contained"
+            color="error"
+            onClick={handleSignOut}
+            disabled={signingOut}
+            aria-busy={signingOut}
+            startIcon={signingOut ? (
+              <CircularProgress
+                aria-hidden="true"
+                color="inherit"
+                size={16}
+                thickness={5}
+              />
+            ) : (
+              <LogoutRoundedIcon fontSize="small" />
+            )}
+          >
+            {signingOut ? 'Signing out…' : 'Sign out'}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </>
   )
 }

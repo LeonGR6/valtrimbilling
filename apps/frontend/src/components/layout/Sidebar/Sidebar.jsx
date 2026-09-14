@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { NavLink } from 'react-router-dom'
+import { NavLink, useNavigate } from 'react-router-dom'
 import { useTheme } from '@mui/material/styles'
 import {
   Alert,
@@ -59,6 +59,7 @@ import { navigationRoutes } from '../../../routes/navigation.jsx'
 import ColorModeToggle from '../../common/ColorModeToggle'
 import { useAuth } from '../../../features/auth/context/useAuth.js'
 import { isRoleAllowed } from '../../../features/auth/authorization/roleAccess.js'
+import { MANUAL_SIGN_OUT_STORAGE_KEY } from '../../../config/appConfig.js'
 
 const DRAWER_WIDTH = 256
 const RAIL_WIDTH = 72
@@ -310,6 +311,7 @@ function hasAvailableItem(section) {
 }
 
 function SidebarContent({ onNavigate, collapsed = false, onToggleCollapsed }) {
+  const navigate = useNavigate()
   const { profile, signOut, user } = useAuth()
   const [signOutDialogOpen, setSignOutDialogOpen] = useState(false)
   const [signingOut, setSigningOut] = useState(false)
@@ -339,10 +341,16 @@ function SidebarContent({ onNavigate, collapsed = false, onToggleCollapsed }) {
     setSignOutError(null)
 
     try {
+      window.sessionStorage.setItem(MANUAL_SIGN_OUT_STORAGE_KEY, 'true')
       await signOut()
       setSignOutDialogOpen(false)
       onNavigate?.()
+      navigate('/login', {
+        replace: true,
+        state: { reason: 'manual-sign-out' },
+      })
     } catch (error) {
+      window.sessionStorage.removeItem(MANUAL_SIGN_OUT_STORAGE_KEY)
       setSignOutError(error.message || 'The session could not be closed. Try again.')
     } finally {
       setSigningOut(false)

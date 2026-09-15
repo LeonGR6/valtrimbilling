@@ -403,6 +403,20 @@ verify_jwt = false
 [functions.users-admin]
 verify_jwt = true
 
+# A signed-in administrator initiates OAuth. Google then returns through the
+# callback without a Supabase JWT; its one-time, expiring state is the trust
+# boundary before the callback performs any privileged write.
+[functions.google-calendar-oauth-start]
+verify_jwt = true
+
+[functions.google-calendar-oauth-callback]
+verify_jwt = false
+
+# A signed-in administrator requests one-way synchronization. The function
+# validates that user before service-role access to Vault and event mappings.
+[functions.google-calendar-sync]
+verify_jwt = true
+
 [analytics]
 enabled = true
 port = 54327

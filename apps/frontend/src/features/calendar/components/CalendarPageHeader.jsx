@@ -7,8 +7,11 @@ import {
   Typography,
 } from '@mui/material'
 import CalendarMonthRoundedIcon from '@mui/icons-material/CalendarMonthRounded'
+import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded'
 import ConstructionRoundedIcon from '@mui/icons-material/ConstructionRounded'
+import EventAvailableRoundedIcon from '@mui/icons-material/EventAvailableRounded'
 import SyncAltRoundedIcon from '@mui/icons-material/SyncAltRounded'
+import SyncRoundedIcon from '@mui/icons-material/SyncRounded'
 import TuneRoundedIcon from '@mui/icons-material/TuneRounded'
 import ResponsiveCreateButton from '../../../components/common/ResponsiveCreateButton'
 
@@ -17,9 +20,26 @@ export default function CalendarPageHeader({
   calendarMode,
   onChangeTab,
   onChangeMode,
+  onConnectGoogleCalendar,
+  onSyncGoogleCalendar,
   onCreate,
+  canConnectGoogleCalendar = false,
   canCreate = true,
+  googleCalendarConnected = false,
+  googleCalendarLoading = false,
+  googleCalendarSyncing = false,
 }) {
+  const googleButtonLabel = googleCalendarLoading
+    ? 'Checking Google…'
+    : googleCalendarConnected
+      ? 'Google connected'
+      : 'Connect Google Calendar'
+  const googleButtonTitle = !canConnectGoogleCalendar
+    ? 'Only an administrator can connect Google Calendar.'
+    : googleCalendarConnected
+      ? 'The dedicated Google calendar is connected. Select to reconnect.'
+      : 'Connect a dedicated calendar owned by your Google account.'
+
   return (
     <>
       <Box className="calendar-page__header">
@@ -58,6 +78,39 @@ export default function CalendarPageHeader({
                 />
               </Tabs>
             </Box>
+            <Tooltip title={googleButtonTitle}>
+              <span>
+                <Button
+                  variant={googleCalendarConnected ? 'outlined' : 'contained'}
+                  color={googleCalendarConnected ? 'success' : 'primary'}
+                  startIcon={googleCalendarConnected
+                    ? <CheckCircleRoundedIcon />
+                    : <EventAvailableRoundedIcon />}
+                  onClick={onConnectGoogleCalendar}
+                  disabled={
+                    !canConnectGoogleCalendar
+                    || googleCalendarLoading
+                    || googleCalendarSyncing
+                  }
+                >
+                  {googleButtonLabel}
+                </Button>
+              </span>
+            </Tooltip>
+            {googleCalendarConnected && (
+              <Tooltip title="Copy the current ValtrimBilling Production calendar to Google Calendar.">
+                <span>
+                  <Button
+                    variant="contained"
+                    startIcon={<SyncRoundedIcon />}
+                    onClick={onSyncGoogleCalendar}
+                    disabled={!canConnectGoogleCalendar || googleCalendarSyncing}
+                  >
+                    {googleCalendarSyncing ? 'Syncing…' : 'Sync now'}
+                  </Button>
+                </span>
+              </Tooltip>
+            )}
             {calendarMode === 'PRODUCTION' ? (
               <Tooltip title={canCreate ? '' : 'Your role has read-only access to Production activities.'}>
                 <span>

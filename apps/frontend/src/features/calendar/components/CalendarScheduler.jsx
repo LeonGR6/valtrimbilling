@@ -1,6 +1,7 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Alert, Box, Button, Drawer, LinearProgress, Snackbar } from '@mui/material'
 import { useColorScheme } from '@mui/material/styles'
+import { useAuth } from '../../auth/context/useAuth.js'
 import { useJobs } from '../../jobs/context/useJobs.js'
 import { useBuilders } from '../../builders/context/useBuilders.js'
 import { usePeople } from '../../people/context/usePeople.js'
@@ -11,6 +12,15 @@ import {
 } from '../data/calendarEvents.js'
 import { useProductionActivities } from '../context/useProductionActivities.js'
 import { calendarEventSchema } from '../schemas/calendarEventSchema.js'
+import {
+  getGoogleCalendarConnection,
+  startGoogleCalendarOAuth,
+  syncGoogleCalendarNow,
+} from '../services/googleCalendarRepository.js'
+import {
+  googleOAuthReturnMessage,
+  googleSyncSummary,
+} from '../services/googleCalendarRecord.js'
 import ActivityDetail from './ActivityDetail.jsx'
 import ActivityForm from './ActivityForm.jsx'
 import BuilderDateSettings from './BuilderDateSettings.jsx'
@@ -27,6 +37,7 @@ const initialCalendarTitle = new Intl.DateTimeFormat('en-US', {
 
 export default function CalendarScheduler() {
   const calendarRef = useRef(null)
+  const { profile } = useAuth()
   const { jobs } = useJobs()
   const { builders } = useBuilders()
   const { people } = usePeople()
@@ -52,9 +63,56 @@ export default function CalendarScheduler() {
   const [saving, setSaving] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [notice, setNotice] = useState('')
+  const [googleCalendarConnection, setGoogleCalendarConnection] = useState(null)
+  const [googleCalendarLoading, setGoogleCalendarLoading] = useState(true)
+  const [googleCalendarSyncing, setGoogleCalendarSyncing] = useState(false)
+  const [googleCalendarError, setGoogleCalendarError] = useState('')
   const [viewTitle, setViewTitle] = useState(initialCalendarTitle)
   const [viewType, setViewType] = useState('dayGridWeek')
   const [visibleTypes, setVisibleTypes] = useState(['EXT', 'SHUTTER', 'DM', 'HW'])
+
+  useEffect(() => {
+    if (!profile?.id) return undefined
+
+    let mounted = true
+    getGoogleCalendarConnection()
+      .then((connection) => {
+        if (!mounted) return
+        setGoogleCalendarConnection(connection)
+        setGoogleCalendarError('')
+      })
+      .catch((connectionError) => {
+        if (!mounted) return
+        setGoogleCalendarError(connectionError.message)
+      })
+      .finally(() => {
+        if (mounted) setGoogleCalendarLoading(false)
+      })
+
+    return () => {
+      mounted = false
+    }
+  }, [profile?.id])
+
+  useEffect(() => {
+    const currentUrl = new URL(window.location.href)
+    const googleResult = currentUrl.searchParams.get('google')
+    if (!googleResult) return
+
+    if (googleResult === 'connected') {
+      // OAuth is an external navigation result synchronized into local UI state.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setNotice('Google Calendar connected.')
+    } else {
+      setGoogleCalendarError(googleOAuthReturnMessage(
+        currentUrl.searchParams.get('reason'),
+      ))
+    }
+
+    currentUrl.searchParams.delete('google')
+    currentUrl.searchParams.delete('reason')
+    window.history.replaceState({}, '', currentUrl)
+  }, [])
 
   const filteredEvents = useMemo(() => events.filter((event) => (
     visibleTypes.includes(event.extendedProps.activityType)
@@ -186,6 +244,47 @@ export default function CalendarScheduler() {
     setFormError('')
   }
 
+  const connectGoogleCalendar = async () => {
+    if (profile?.role !== 'ADMIN') return
+
+    setGoogleCalendarLoading(true)
+    setGoogleCalendarError('')
+    try {
+      const authorizationUrl = await startGoogleCalendarOAuth()
+      window.location.assign(authorizationUrl)
+    } catch (connectionError) {
+      setGoogleCalendarError(connectionError.message)
+      setGoogleCalendarLoading(false)
+    }
+  }
+
+  const syncGoogleCalendar = async () => {
+    if (
+      profile?.role !== 'ADMIN'
+      || googleCalendarConnection?.status !== 'CONNECTED'
+    ) return
+
+    setGoogleCalendarSyncing(true)
+    setGoogleCalendarError('')
+    try {
+      const result = await syncGoogleCalendarNow()
+      const connection = await getGoogleCalendarConnection()
+      setGoogleCalendarConnection(connection)
+      if (result.failed > 0) {
+        setGoogleCalendarError(googleSyncSummary(result))
+      } else {
+        setNotice(googleSyncSummary(result))
+      }
+    } catch (syncError) {
+      setGoogleCalendarError(syncError.message)
+      getGoogleCalendarConnection()
+        .then(setGoogleCalendarConnection)
+        .catch(() => {})
+    } finally {
+      setGoogleCalendarSyncing(false)
+    }
+  }
+
   return (
     <Box className={`calendar-page calendar-theme--${calendarColorMode}`}>
       <CalendarPageHeader
@@ -193,8 +292,14 @@ export default function CalendarScheduler() {
         calendarMode={calendarMode}
         onChangeTab={changeActiveTab}
         onChangeMode={changeCalendarMode}
+        onConnectGoogleCalendar={connectGoogleCalendar}
+        onSyncGoogleCalendar={syncGoogleCalendar}
         onCreate={openCreateDrawer}
+        canConnectGoogleCalendar={profile?.role === 'ADMIN'}
         canCreate={canManageProductionActivities}
+        googleCalendarConnected={googleCalendarConnection?.status === 'CONNECTED'}
+        googleCalendarLoading={googleCalendarLoading}
+        googleCalendarSyncing={googleCalendarSyncing}
       />
 
       {activeTab === 'BUILDER_SETTINGS' ? (
@@ -212,6 +317,11 @@ export default function CalendarScheduler() {
               )}
             >
               {productionError}
+            </Alert>
+          )}
+          {googleCalendarError && (
+            <Alert severity="error" onClose={() => setGoogleCalendarError('')}>
+              {googleCalendarError}
             </Alert>
           )}
           <CalendarWorkspace

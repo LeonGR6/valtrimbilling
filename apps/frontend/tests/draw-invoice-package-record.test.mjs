@@ -2,9 +2,13 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   DRAW_PACKAGE_STATUSES,
+  canCorrectDrawPackage,
+  toCancelDrawPackageRpc,
   toCreateDrawPackageRpc,
   toDrawInvoicePackage,
+  toEditDrawPackageRpc,
   toPackageStatusRpc,
+  toTransferDrawPackageRpc,
 } from '../src/features/draw-invoice/services/drawInvoicePackageRecord.js'
 
 const packageRow = {
@@ -128,4 +132,75 @@ test('exposes exactly the requested Package statuses', () => {
     () => toPackageStatusRpc(91, 'VOIDED'),
     /valid Package status/,
   )
+})
+
+test('maps cancelled Packages and correction history without active cells', () => {
+  const correction = { id: 7, action: 'CANCEL', reason: 'Wrong scope' }
+  const record = toDrawInvoicePackage(
+    {
+      ...packageRow,
+      status: 'VOIDED',
+      voided_at: '2026-09-15T12:00:00Z',
+      void_reason: 'Wrong scope',
+    },
+    {
+      id: 101,
+      status: 'DRAFT',
+      gross_amount: '0',
+      net_amount: '0',
+      paid_amount: '0',
+    },
+    [], [], null, [correction],
+  )
+
+  assert.equal(record.status, 'CANCELLED')
+  assert.equal(record.cancellationReason, 'Wrong scope')
+  assert.equal(record.persistedInvoice.netAmount, 0)
+  assert.deepEqual(record.selections, [])
+  assert.deepEqual(record.corrections, [correction])
+  assert.equal(canCorrectDrawPackage(record), false)
+})
+
+test('only unissued and unsynced drafts are correctable', () => {
+  const draft = toDrawInvoicePackage(
+    { ...packageRow, status: 'DRAFT', workflow_status: 'DRAFT' },
+    { id: 101, status: 'DRAFT', paid_amount: '0' },
+  )
+  assert.equal(canCorrectDrawPackage(draft), true)
+  assert.equal(canCorrectDrawPackage({ ...draft, quickbooksStatus: 'CREATED' }), false)
+  assert.equal(canCorrectDrawPackage({ ...draft, invoiceNumber: 'INV-1' }), false)
+  assert.equal(canCorrectDrawPackage({ ...draft, submissionStatus: 'SUBMITTED' }), false)
+  assert.equal(canCorrectDrawPackage({ ...draft, status: 'AWAITING_PAYMENT' }), false)
+})
+
+test('builds edit, transfer and cancel RPC payloads with exact Lot / Draw cells', () => {
+  const selections = [{ lotId: '41', drawIndex: 0 }, { lotId: 42, drawIndex: 2 }]
+  const cells = [
+    { lot_id: 41, draw_number: 1 },
+    { lot_id: 42, draw_number: 3 },
+  ]
+  assert.deepEqual(toEditDrawPackageRpc({
+    packageId: '91', selections, reason: ' Fix scope ',
+    billingPeriodStart: '2026-09-01', billingPeriodEnd: '', notes: ' Draft ',
+  }), {
+    p_package_id: 91,
+    p_selections: cells,
+    p_reason: 'Fix scope',
+    p_period_start: '2026-09-01',
+    p_period_end: null,
+    p_notes: 'Draft',
+  })
+  assert.deepEqual(toTransferDrawPackageRpc({
+    toPackageId: 91, fromPackageId: '92', selections, reason: ' Put in earlier package ',
+  }), {
+    p_to_package_id: 91,
+    p_from_package_id: 92,
+    p_selections: cells,
+    p_reason: 'Put in earlier package',
+  })
+  assert.deepEqual(toCancelDrawPackageRpc('92', ' Wrong job '), {
+    p_package_id: 92,
+    p_reason: 'Wrong job',
+  })
+  assert.throws(() => toEditDrawPackageRpc({ selections: [] }), /Select at least one/)
 })

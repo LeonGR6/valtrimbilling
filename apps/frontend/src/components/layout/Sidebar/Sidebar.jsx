@@ -135,7 +135,7 @@ const navigationSections = [
     label: 'ADMINISTRATION',
     items: [
       { label: 'Users & Roles', path: '/users', icon: ManageAccountsRoundedIcon },
-      { label: 'Configuration', icon: SettingsRoundedIcon },
+      { label: 'Settings', icon: SettingsRoundedIcon },
     ],
   },
 ]

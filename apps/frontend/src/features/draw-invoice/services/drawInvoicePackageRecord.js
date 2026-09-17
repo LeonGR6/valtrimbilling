@@ -10,6 +10,7 @@ export const DRAW_PACKAGE_STATUS_LABELS = {
   READY_TO_SUBMIT: 'Ready to submit',
   AWAITING_PAYMENT: 'Awaiting payment',
   PAID_CLOSED: 'Paid / Closed',
+  CANCELLED: 'Cancelled',
 }
 
 function toNumber(value) {
@@ -28,6 +29,7 @@ export function toDrawInvoicePackage(
   drawRows = [],
   optionRows = [],
   setupVersion = null,
+  corrections = [],
 ) {
   const sortedDrawRows = [...drawRows].sort(
     (left, right) => left.draw_number - right.draw_number
@@ -54,7 +56,16 @@ export function toDrawInvoicePackage(
     paymentTermsDays: packageRow.payment_terms_days,
     invoiceLineFormat: packageRow.invoice_line_format,
     portalName: packageRow.portal_name ?? '',
-    status: packageRow.workflow_status,
+    quickbooksStatus: packageRow.quickbooks_status ?? 'NOT_CREATED',
+    quickbooksReference: packageRow.quickbooks_reference ?? null,
+    submissionStatus: packageRow.submission_status ?? 'NOT_SUBMITTED',
+    submittedAt: packageRow.submitted_at ?? null,
+    status: packageRow.status === 'VOIDED'
+      ? 'CANCELLED'
+      : packageRow.workflow_status,
+    cancelledAt: packageRow.voided_at ?? null,
+    cancellationReason: packageRow.void_reason ?? null,
+    corrections,
     notes: packageRow.notes ?? '',
     statusChangedAt: packageRow.status_changed_at,
     statusChangedBy: packageRow.status_changed_by,
@@ -135,5 +146,67 @@ export function toPackageStatusRpc(packageId, status) {
   return {
     p_package_id: Number(packageId),
     p_status: status,
+  }
+}
+
+function toSelectionRecords(selections) {
+  if (!Array.isArray(selections) || selections.length === 0) {
+    throw new Error('Select at least one Lot / Draw cell.')
+  }
+  return selections.map(({ lotId, drawIndex }) => ({
+    lot_id: Number(lotId),
+    draw_number: Number(drawIndex) + 1,
+  }))
+}
+
+export function canCorrectDrawPackage(record) {
+  return record != null
+    && ['DRAFT', 'READY_TO_SUBMIT'].includes(record.status)
+    && record.persistedInvoice?.status === 'DRAFT'
+    && !record.invoiceNumber
+    && !record.invoiceDate
+    && record.persistedInvoice.paidAmount === 0
+    && record.quickbooksStatus === 'NOT_CREATED'
+    && !record.quickbooksReference
+    && record.submissionStatus === 'NOT_SUBMITTED'
+    && !record.submittedAt
+}
+
+export function toEditDrawPackageRpc({
+  packageId,
+  selections,
+  reason,
+  billingPeriodStart,
+  billingPeriodEnd,
+  notes,
+}) {
+  return {
+    p_package_id: Number(packageId),
+    p_selections: toSelectionRecords(selections),
+    p_reason: String(reason ?? '').trim(),
+    p_period_start: billingPeriodStart || null,
+    p_period_end: billingPeriodEnd || null,
+    p_notes: String(notes ?? '').trim() || null,
+  }
+}
+
+export function toTransferDrawPackageRpc({
+  toPackageId,
+  fromPackageId,
+  selections,
+  reason,
+}) {
+  return {
+    p_to_package_id: Number(toPackageId),
+    p_from_package_id: Number(fromPackageId),
+    p_selections: toSelectionRecords(selections),
+    p_reason: String(reason ?? '').trim(),
+  }
+}
+
+export function toCancelDrawPackageRpc(packageId, reason) {
+  return {
+    p_package_id: Number(packageId),
+    p_reason: String(reason ?? '').trim(),
   }
 }

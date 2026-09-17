@@ -1,8 +1,11 @@
 import { requireSupabase } from '../../../services/api.js'
 import {
+  toCancelDrawPackageRpc,
   toCreateDrawPackageRpc,
   toDrawInvoicePackage,
+  toEditDrawPackageRpc,
   toPackageStatusRpc,
+  toTransferDrawPackageRpc,
 } from './drawInvoicePackageRecord.js'
 
 const PACKAGE_COLUMNS = [
@@ -19,6 +22,9 @@ const PACKAGE_COLUMNS = [
   'invoice_line_format',
   'portal_name',
   'workflow_status',
+  'status',
+  'voided_at',
+  'void_reason',
   'notes',
   'created_at',
   'updated_at',
@@ -72,6 +78,20 @@ const SETUP_COLUMNS = [
   'options_billing_draw_number',
 ].join(', ')
 
+const CORRECTION_COLUMNS = [
+  'id',
+  'package_id',
+  'other_package_id',
+  'action',
+  'removed_cells',
+  'added_cells',
+  'previous_details',
+  'next_details',
+  'reason',
+  'changed_by',
+  'changed_at',
+].join(', ')
+
 const PAGE_SIZE = 1000
 const FILTER_BATCH_SIZE = 200
 
@@ -85,7 +105,7 @@ function throwRepositoryError(error) {
   }
 
   if (error.code === '23505') {
-    throw new Error('One or more selected Lot / Draw combinations are already packaged.', {
+    throw new Error(error.message || 'One or more Lot / Draw cells belong to another Package.', {
       cause: error,
     })
   }
@@ -176,7 +196,7 @@ export async function listDrawInvoicePackages() {
   const setupVersionIds = [...new Set(
     packages.map(({ setup_version_id: setupVersionId }) => setupVersionId),
   )]
-  const [invoices, draws, options, setupVersions] = await Promise.all([
+  const [invoices, draws, options, corrections, setupVersions] = await Promise.all([
     listRowsInBatches(
       client,
       packageIds,
@@ -198,6 +218,13 @@ export async function listDrawInvoicePackages() {
       OPTION_COLUMNS,
       [['package_id', true], ['lot_id', true], ['option_id', true]],
     ),
+    listRowsInBatches(
+      client,
+      packageIds,
+      'draw_package_corrections',
+      CORRECTION_COLUMNS,
+      [['package_id', true], ['changed_at', false]],
+    ),
     Promise.all(inBatches(setupVersionIds).map((batch) => listAllRows(() => client
       .from('billing_setup_versions')
       .select(SETUP_COLUMNS)
@@ -211,6 +238,15 @@ export async function listDrawInvoicePackages() {
   )
   const drawsByPackage = groupByPackage(draws)
   const optionsByPackage = groupByPackage(options)
+  const correctionsByPackage = groupByPackage(corrections)
+  const correctionsBySource = corrections.reduce((grouped, correction) => {
+    if (correction.other_package_id != null) {
+      const items = grouped.get(correction.other_package_id) ?? []
+      items.push(correction)
+      grouped.set(correction.other_package_id, items)
+    }
+    return grouped
+  }, new Map())
   const setupVersionsById = new Map(
     setupVersions.map((version) => [version.id, version]),
   )
@@ -221,6 +257,10 @@ export async function listDrawInvoicePackages() {
     drawsByPackage.get(packageRow.id) ?? [],
     optionsByPackage.get(packageRow.id) ?? [],
     setupVersionsById.get(packageRow.setup_version_id),
+    [
+      ...(correctionsByPackage.get(packageRow.id) ?? []),
+      ...(correctionsBySource.get(packageRow.id) ?? []),
+    ].sort((left, right) => right.changed_at.localeCompare(left.changed_at)),
   ))
 }
 
@@ -262,4 +302,40 @@ export async function updateDrawInvoicePackageStatus(packageId, status) {
   }
 
   return { updated, packages }
+}
+
+async function correctDrawInvoicePackage(rpcName, payload) {
+  const client = await requireSupabase()
+  const { data: packageId, error } = await client.rpc(rpcName, payload)
+  throwRepositoryError(error)
+
+  const packages = await listDrawInvoicePackages()
+  const updated = packages.find(
+    (record) => String(record.id) === String(packageId),
+  )
+  if (!updated) {
+    throw new Error('The corrected Draw Package could not be reloaded.')
+  }
+  return { updated, packages }
+}
+
+export function editDrawInvoicePackage(input) {
+  return correctDrawInvoicePackage(
+    'edit_draw_invoice_package',
+    toEditDrawPackageRpc(input),
+  )
+}
+
+export function transferDrawPackageCells(input) {
+  return correctDrawInvoicePackage(
+    'transfer_draw_package_cells',
+    toTransferDrawPackageRpc(input),
+  )
+}
+
+export function cancelDrawInvoicePackage(packageId, reason) {
+  return correctDrawInvoicePackage(
+    'cancel_draw_invoice_package',
+    toCancelDrawPackageRpc(packageId, reason),
+  )
 }

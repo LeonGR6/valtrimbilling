@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useAuth } from '../../auth/context/useAuth.js'
 import {
+  cancelDrawInvoicePackage as cancelDrawInvoicePackageRecord,
   createDrawInvoicePackage as createDrawInvoicePackageRecord,
+  editDrawInvoicePackage as editDrawInvoicePackageRecord,
   listDrawInvoicePackages,
+  transferDrawPackageCells as transferDrawPackageCellsRecord,
   updateDrawInvoicePackageStatus as updateDrawInvoicePackageStatusRecord,
 } from '../services/drawInvoicePackagesRepository.js'
 import { DrawInvoicePackagesContext } from './drawInvoicePackagesContext.js'
@@ -89,6 +92,36 @@ export function DrawInvoicePackagesProvider({ children }) {
     }
   }, [])
 
+  const runCorrection = useCallback(async (operation) => {
+    setSaving(true)
+    try {
+      const { updated, packages } = await operation()
+      setDrawInvoicePackages(packages)
+      setError(null)
+      return updated
+    } catch (saveError) {
+      setError(saveError.message)
+      throw saveError
+    } finally {
+      setSaving(false)
+    }
+  }, [])
+
+  const editDrawInvoicePackage = useCallback(
+    (input) => runCorrection(() => editDrawInvoicePackageRecord(input)),
+    [runCorrection],
+  )
+  const transferDrawPackageCells = useCallback(
+    (input) => runCorrection(() => transferDrawPackageCellsRecord(input)),
+    [runCorrection],
+  )
+  const cancelDrawInvoicePackage = useCallback(
+    (packageId, reason) => runCorrection(
+      () => cancelDrawInvoicePackageRecord(packageId, reason),
+    ),
+    [runCorrection],
+  )
+
   const value = useMemo(
     () => ({
       drawInvoicePackages,
@@ -99,16 +132,22 @@ export function DrawInvoicePackagesProvider({ children }) {
       refreshDrawInvoicePackages,
       createDrawInvoicePackage,
       updateDrawInvoicePackageStatus,
+      editDrawInvoicePackage,
+      transferDrawPackageCells,
+      cancelDrawInvoicePackage,
     }),
     [
       canManageDrawInvoicePackages,
       createDrawInvoicePackage,
+      editDrawInvoicePackage,
       drawInvoicePackages,
       error,
       loading,
       refreshDrawInvoicePackages,
       saving,
       updateDrawInvoicePackageStatus,
+      transferDrawPackageCells,
+      cancelDrawInvoicePackage,
     ],
   )
 

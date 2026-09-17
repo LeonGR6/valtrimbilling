@@ -4,7 +4,9 @@ import {
   Alert,
   Box,
   Button,
+  ButtonGroup,
   Card,
+  CardActionArea,
   CardContent,
   Checkbox,
   Chip,
@@ -15,6 +17,8 @@ import {
   DialogTitle,
   Divider,
   InputAdornment,
+  ListItemIcon,
+  Menu,
   MenuItem,
   Stack,
   Table,
@@ -24,10 +28,16 @@ import {
   TableFooter,
   TableHead,
   TableRow,
+  Tab,
+  Tabs,
   TextField,
   Typography,
 } from '@mui/material'
 import AddRoundedIcon from '@mui/icons-material/AddRounded'
+import ArrowDropDownRoundedIcon from '@mui/icons-material/ArrowDropDownRounded'
+import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
+import EditRoundedIcon from '@mui/icons-material/EditRounded'
+import MoveToInboxRoundedIcon from '@mui/icons-material/MoveToInboxRounded'
 import ApartmentRoundedIcon from '@mui/icons-material/ApartmentRounded'
 import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded'
 import AttachMoneyRoundedIcon from '@mui/icons-material/AttachMoneyRounded'
@@ -53,8 +63,14 @@ import {
 } from '../../sequence-sheets/utils/phaseBuildingCodes.js'
 import { useDrawInvoicePackages } from '../context/useDrawInvoicePackages.js'
 import {
+  CancelDrawPackageDialog,
+  EditDrawPackageDialog,
+  TransferDrawPackageCellsDialog,
+} from './DrawPackageCorrectionDialogs.jsx'
+import {
   DRAW_PACKAGE_STATUSES,
   DRAW_PACKAGE_STATUS_LABELS,
+  canCorrectDrawPackage,
 } from '../services/drawInvoicePackageRecord.js'
 import {
   buildUsedDrawSelections,
@@ -62,6 +78,14 @@ import {
   summarizeDrawPackage,
 } from '../utils/drawPackages.js'
 import { buildDrawWorksheet } from '../utils/drawWorksheet.js'
+import {
+  PACKAGE_CATALOG_TABS,
+  canDeleteDraftPackage,
+  filterPackageCatalogContexts,
+  packageCatalogBuilderOptions,
+  packageCatalogCommunityOptions,
+  summarizePackageCatalogStatuses,
+} from '../utils/packageCatalog.js'
 
 const currencyFormatter = new Intl.NumberFormat('en-US', {
   style: 'currency',
@@ -78,7 +102,7 @@ const packageTableColumns = [
   { key: 'retention-wrap', width: 180 },
   { key: 'invoice-amount', width: 140 },
   { key: 'status', width: 155 },
-  { key: 'action', width: 90 },
+  { key: 'action', width: 140 },
 ]
 
 const packageTableMinimumWidth = packageTableColumns.reduce(
@@ -147,13 +171,15 @@ function ReadinessChip({ worksheet }) {
 
 function PackageStatusChip({ status }) {
   const color =
-    status === 'PAID_CLOSED'
-      ? 'success'
-      : status === 'AWAITING_PAYMENT'
-        ? 'info'
-        : status === 'DRAFT'
-          ? 'warning'
-          : 'primary'
+    status === 'CANCELLED'
+      ? 'default'
+      : status === 'PAID_CLOSED'
+        ? 'success'
+        : status === 'AWAITING_PAYMENT'
+          ? 'info'
+          : status === 'DRAFT'
+            ? 'warning'
+            : 'primary'
 
   return (
     <Chip
@@ -1073,6 +1099,98 @@ function PackageOptionsTable({ summary }) {
   )
 }
 
+const packageSummaryCards = [
+  { status: 'DRAFT', icon: <ReceiptLongRoundedIcon />, color: 'primary.main' },
+  { status: 'READY_TO_SUBMIT', icon: <CheckCircleRoundedIcon />, color: 'success.main' },
+  { status: 'AWAITING_PAYMENT', icon: <AttachMoneyRoundedIcon />, color: 'info.main' },
+  { status: 'PAID_CLOSED', icon: <LockRoundedIcon />, color: 'success.main' },
+]
+
+function PackageSummaryCard({ status, icon, color, count, total, selected, onSelect }) {
+  return (
+    <Card
+      variant="outlined"
+      sx={{ borderColor: selected ? color : 'divider', minWidth: 0 }}
+    >
+      <CardActionArea onClick={onSelect} aria-label={`Show ${DRAW_PACKAGE_STATUS_LABELS[status]} Packages`}>
+        <CardContent sx={{ p: '18px !important' }}>
+          <Stack direction="row" spacing={1.5} sx={{ alignItems: 'flex-start' }}>
+            <Box sx={{
+              width: 42, height: 42, flexShrink: 0, borderRadius: 1.5,
+              display: 'grid', placeItems: 'center',
+              bgcolor: 'action.hover', color,
+            }}>
+              {icon}
+            </Box>
+            <Box>
+              <Typography variant="body2" fontWeight={750} color="text.secondary">
+                {DRAW_PACKAGE_STATUS_LABELS[status]}
+              </Typography>
+              <Typography variant="h5" fontWeight={850} sx={{ lineHeight: 1.3 }}>
+                {count}
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                {formatCurrency(total)} invoice total
+              </Typography>
+            </Box>
+          </Stack>
+        </CardContent>
+      </CardActionArea>
+    </Card>
+  )
+}
+
+function PackageActionMenu({ context, canManage, onOpen, onAction }) {
+  const [anchorEl, setAnchorEl] = useState(null)
+  const { record } = context
+  const editable = canManage && canCorrectDrawPackage(record)
+  const deletable = canManage && canDeleteDraftPackage(record)
+  const close = () => setAnchorEl(null)
+  const choose = (action) => {
+    close()
+    if (action === 'open') onOpen(context)
+    else onAction(action, context)
+  }
+
+  return (
+    <>
+      <ButtonGroup size="small" variant="contained" disableElevation>
+        <Button onClick={() => onOpen(context)}>Open</Button>
+        <Button
+          aria-label={`More actions for ${record.packageNumber}`}
+          aria-haspopup="menu"
+          aria-expanded={Boolean(anchorEl)}
+          onClick={(event) => setAnchorEl(event.currentTarget)}
+          sx={{ minWidth: 32, px: 0.5 }}
+        >
+          <ArrowDropDownRoundedIcon />
+        </Button>
+      </ButtonGroup>
+      <Menu anchorEl={anchorEl} open={Boolean(anchorEl)} onClose={close}>
+        <MenuItem onClick={() => choose('open')}>Open Package</MenuItem>
+        {editable && (
+          <MenuItem onClick={() => choose('edit')}>
+            <ListItemIcon><EditRoundedIcon fontSize="small" /></ListItemIcon>
+            Edit Package
+          </MenuItem>
+        )}
+        {editable && (
+          <MenuItem onClick={() => choose('transfer')}>
+            <ListItemIcon><MoveToInboxRoundedIcon fontSize="small" /></ListItemIcon>
+            Move cells here
+          </MenuItem>
+        )}
+        {deletable && (
+          <MenuItem onClick={() => choose('delete')} sx={{ color: 'error.main' }}>
+            <ListItemIcon><DeleteOutlineRoundedIcon fontSize="small" color="error" /></ListItemIcon>
+            Delete draft
+          </MenuItem>
+        )}
+      </Menu>
+    </>
+  )
+}
+
 function PackageCatalog({
   jobs,
   schedules,
@@ -1082,24 +1200,54 @@ function PackageCatalog({
   onRetry,
   onOpen,
   onCreate,
+  onEdit,
+  onTransfer,
+  onDelete,
 }) {
   const [search, setSearch] = useState('')
+  const [statusTab, setStatusTab] = useState('ALL')
+  const [builderFilter, setBuilderFilter] = useState('ALL')
+  const [communityFilter, setCommunityFilter] = useState('ALL')
+  const [catalogAction, setCatalogAction] = useState(null)
   const contexts = useMemo(
     () => packages.map((record) => getPackageContext(record, jobs, schedules)).filter(Boolean),
     [jobs, packages, schedules],
   )
-  const normalizedSearch = search.trim().toLowerCase()
-  const filteredContexts = contexts.filter(({ record, job, phase }) =>
-    [
-      record.packageNumber,
-      record.invoiceNumber,
-      job.code,
-      job.builder,
-      job.community,
-      phase.name,
-      phase.building,
-    ].some((value) => String(value ?? '').toLowerCase().includes(normalizedSearch)),
+  const activeContexts = useMemo(
+    () => filterPackageCatalogContexts(contexts),
+    [contexts],
   )
+  const builderOptions = useMemo(
+    () => packageCatalogBuilderOptions(contexts),
+    [contexts],
+  )
+  const communityOptions = useMemo(
+    () => packageCatalogCommunityOptions(contexts, builderFilter),
+    [contexts, builderFilter],
+  )
+  const scopedContexts = useMemo(
+    () => filterPackageCatalogContexts(activeContexts, {
+      search, builderId: builderFilter, community: communityFilter,
+    }),
+    [activeContexts, search, builderFilter, communityFilter],
+  )
+  const statusSummary = useMemo(
+    () => summarizePackageCatalogStatuses(scopedContexts),
+    [scopedContexts],
+  )
+  const filteredContexts = useMemo(
+    () => filterPackageCatalogContexts(scopedContexts, { status: statusTab }),
+    [scopedContexts, statusTab],
+  )
+  const selectedContext = contexts.find(
+    ({ record }) => String(record.id) === String(catalogAction?.packageId),
+  )
+  const clearFilters = () => {
+    setSearch('')
+    setBuilderFilter('ALL')
+    setCommunityFilter('ALL')
+    setStatusTab('ALL')
+  }
 
   return (
     <Box sx={{ minHeight: '100%', bgcolor: 'background.default' }}>
@@ -1123,8 +1271,8 @@ function PackageCatalog({
             </Typography>
             <Typography variant="h5" fontWeight={800}>Packages</Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, maxWidth: 760 }}>
-              Each package stores its selected lots and draws plus an immutable
-              calculated invoice snapshot.
+              Review active Packages by status. Draft corrections retain an
+              audit history; deleted drafts leave this active list.
             </Typography>
           </Box>
           <Button
@@ -1149,24 +1297,106 @@ function PackageCatalog({
             {error}
           </Alert>
         )}
-        <TextField
-          value={search}
-          onChange={(event) => setSearch(event.target.value)}
-          placeholder="Search package, invoice, Job#, builder, project, phase or building"
-          fullWidth
-          sx={{ mb: 2 }}
-          slotProps={{
-            input: {
-              startAdornment: (
-                <InputAdornment position="start">
-                  <SearchRoundedIcon color="action" />
-                </InputAdornment>
-              ),
-            },
-          }}
-        />
+        <Box sx={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))',
+          gap: 1.5,
+          mb: 2.5,
+        }}>
+          {packageSummaryCards.map(({ status, icon, color }) => (
+            <PackageSummaryCard
+              key={status}
+              status={status}
+              icon={icon}
+              color={color}
+              count={statusSummary[status].count}
+              total={statusSummary[status].total}
+              selected={statusTab === status}
+              onSelect={() => setStatusTab(status)}
+            />
+          ))}
+        </Box>
 
         <Box sx={{ bgcolor: 'background.paper', border: 1, borderColor: 'divider', borderRadius: 2, overflow: 'hidden' }}>
+          <Tabs
+            value={statusTab}
+            onChange={(_, value) => setStatusTab(value)}
+            variant="scrollable"
+            scrollButtons="auto"
+            aria-label="Filter Packages by status"
+            sx={{ borderBottom: 1, borderColor: 'divider', px: 1 }}
+          >
+            {PACKAGE_CATALOG_TABS.map(({ value, label }) => (
+              <Tab
+                key={value}
+                value={value}
+                label={`${label} (${value === 'ALL'
+                  ? scopedContexts.length
+                  : statusSummary[value].count})`}
+              />
+            ))}
+          </Tabs>
+          <Stack
+            direction={{ xs: 'column', md: 'row' }}
+            spacing={1.5}
+            sx={{ p: 2, alignItems: { md: 'center' } }}
+          >
+            <TextField
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search Package, Invoice, Job or Phase"
+              size="small"
+              aria-label="Search Packages"
+              sx={{ flex: 2, minWidth: { md: 230 } }}
+              slotProps={{
+                input: {
+                  startAdornment: (
+                    <InputAdornment position="start">
+                      <SearchRoundedIcon color="action" />
+                    </InputAdornment>
+                  ),
+                },
+              }}
+            />
+            <TextField
+              select
+              size="small"
+              label="Builder"
+              value={builderFilter}
+              onChange={(event) => {
+                setBuilderFilter(event.target.value)
+                setCommunityFilter('ALL')
+              }}
+              sx={{ flex: 1, minWidth: { md: 170 } }}
+            >
+              <MenuItem value="ALL">All builders</MenuItem>
+              {builderOptions.map(({ id, name }) => (
+                <MenuItem key={id} value={id}>{name}</MenuItem>
+              ))}
+            </TextField>
+            <TextField
+              select
+              size="small"
+              label="Community"
+              value={communityFilter}
+              onChange={(event) => setCommunityFilter(event.target.value)}
+              sx={{ flex: 1, minWidth: { md: 170 } }}
+            >
+              <MenuItem value="ALL">All communities</MenuItem>
+              {communityOptions.map((community) => (
+                <MenuItem key={community} value={community}>{community}</MenuItem>
+              ))}
+            </TextField>
+            <Button color="inherit" onClick={clearFilters} sx={{ flexShrink: 0 }}>
+              Clear filters
+            </Button>
+          </Stack>
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', px: 2, pb: 1.5 }}>
+            Cards summarize all active statuses in the current Builder, Community and search scope.
+          </Typography>
+        </Box>
+
+        <Box sx={{ bgcolor: 'background.paper', border: 1, borderColor: 'divider', borderRadius: 2, overflow: 'hidden', mt: 1.5 }}>
           <TableContainer>
             <Table sx={{ minWidth: packageTableMinimumWidth, tableLayout: 'fixed' }}>
               <colgroup>
@@ -1200,9 +1430,31 @@ function PackageCatalog({
               </TableHead>
               <TableBody>
                 {filteredContexts.map(({ record, job, phase, summary }) => (
-                    <TableRow key={record.id} hover>
+                    <TableRow
+                      key={record.id}
+                      hover
+                      onClick={() => onOpen(record, job, phase)}
+                      sx={{ cursor: 'pointer' }}
+                    >
                       <TableCell>
-                        <Typography fontWeight={800}>{record.packageNumber}</Typography>
+                        <Button
+                          color="inherit"
+                          size="small"
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            onOpen(record, job, phase)
+                          }}
+                          sx={{
+                            p: 0,
+                            minWidth: 0,
+                            fontWeight: 800,
+                            fontSize: '1rem',
+                            textTransform: 'none',
+                            justifyContent: 'flex-start',
+                          }}
+                        >
+                          {record.packageNumber}
+                        </Button>
                         <Typography variant="body2" color="text.secondary">
                           Job #{job.code} · {formatPhase(phase.name)} / {formatBuilding(phase.building)}
                         </Typography>
@@ -1243,10 +1495,17 @@ function PackageCatalog({
                         )}
                       </TableCell>
                       <TableCell><PackageStatusChip status={record.status} /></TableCell>
-                      <TableCell>
-                        <Button size="small" variant="contained" onClick={() => onOpen(record, job, phase)}>
-                          Open
-                        </Button>
+                      <TableCell onClick={(event) => event.stopPropagation()}>
+                        <PackageActionMenu
+                          context={{ record, job, phase, summary }}
+                          canManage={canManage}
+                          onOpen={(selected) => onOpen(
+                            selected.record, selected.job, selected.phase,
+                          )}
+                          onAction={(action, selected) => setCatalogAction({
+                            action, packageId: selected.record.id,
+                          })}
+                        />
                       </TableCell>
                     </TableRow>
                 ))}
@@ -1258,13 +1517,44 @@ function PackageCatalog({
         {filteredContexts.length === 0 && (
           <Card variant="outlined" sx={{ p: 5, textAlign: 'center', mt: 2 }}>
             <ReceiptLongRoundedIcon color="disabled" sx={{ fontSize: 42 }} />
-            <Typography fontWeight={750} sx={{ mt: 1 }}>No packages found</Typography>
-            <Typography variant="body2" color="text.secondary">
-              Create a Draw and choose its Job, phase-building, lots and draws.
+            <Typography fontWeight={750} sx={{ mt: 1 }}>
+              {activeContexts.length === 0 ? 'No active Packages yet' : 'No Packages match these filters'}
             </Typography>
+            <Typography variant="body2" color="text.secondary">
+              Cancelled Packages are kept in audit history, not in this table.
+            </Typography>
+            {activeContexts.length > 0 && (
+              <Button onClick={clearFilters} sx={{ mt: 1 }}>Clear filters</Button>
+            )}
           </Card>
         )}
       </Box>
+      {catalogAction?.action === 'edit' && selectedContext && (
+        <EditDrawPackageDialog
+          record={selectedContext.record}
+          job={selectedContext.job}
+          phase={selectedContext.phase}
+          schedule={selectedContext.schedule}
+          packages={packages}
+          onClose={() => setCatalogAction(null)}
+          onSave={onEdit}
+        />
+      )}
+      {catalogAction?.action === 'transfer' && selectedContext && (
+        <TransferDrawPackageCellsDialog
+          target={selectedContext.record}
+          packages={packages}
+          onClose={() => setCatalogAction(null)}
+          onTransfer={onTransfer}
+        />
+      )}
+      {catalogAction?.action === 'delete' && selectedContext && (
+        <CancelDrawPackageDialog
+          record={selectedContext.record}
+          onClose={() => setCatalogAction(null)}
+          onCancel={onDelete}
+        />
+      )}
     </Box>
   )
 }
@@ -1288,8 +1578,12 @@ export default function DrawAndInvoicePackages() {
     refreshDrawInvoicePackages,
     createDrawInvoicePackage,
     updateDrawInvoicePackageStatus,
+    editDrawInvoicePackage,
+    transferDrawPackageCells,
+    cancelDrawInvoicePackage,
   } = useDrawInvoicePackages()
   const [createDialogOpen, setCreateDialogOpen] = useState(false)
+  const [correctionDialog, setCorrectionDialog] = useState(null)
 
   const handleCreate = async (input) => {
     const record = await createDrawInvoicePackage(input)
@@ -1337,6 +1631,9 @@ export default function DrawAndInvoicePackages() {
           error={error}
           onRetry={handleRetry}
           onCreate={() => setCreateDialogOpen(true)}
+          onEdit={editDrawInvoicePackage}
+          onTransfer={transferDrawPackageCells}
+          onDelete={cancelDrawInvoicePackage}
           onOpen={(record, job, phase) =>
             navigate(
               jobDrawInvoicePath(
@@ -1396,6 +1693,10 @@ export default function DrawAndInvoicePackages() {
   const packageSummary = focusedPackage
     ? summarizeDrawPackage(focusedPackage, focusedJob, selectedPhase, schedule)
     : null
+  const canCorrectFocusedPackage = canManageDrawInvoicePackages
+    && canCorrectDrawPackage(focusedPackage)
+  const canDeleteFocusedPackage = canManageDrawInvoicePackages
+    && canDeleteDraftPackage(focusedPackage)
 
   const handlePhaseChange = (event) => {
     navigate(jobDrawInvoicePath(focusedBuilderId, focusedJob.id, event.target.value))
@@ -1447,9 +1748,9 @@ export default function DrawAndInvoicePackages() {
               </Typography>
             )}
           </Box>
-          <Stack direction="row" spacing={1}>
+          <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: 'wrap' }}>
             {focusedPackage ? (
-              canManageDrawInvoicePackages ? (
+              canManageDrawInvoicePackages && focusedPackage.status !== 'CANCELLED' ? (
                 <PackageStatusControl
                   status={focusedPackage.status}
                   disabled={saving}
@@ -1460,6 +1761,37 @@ export default function DrawAndInvoicePackages() {
               )
             ) : (
               <ReadinessChip worksheet={worksheet} />
+            )}
+            {canCorrectFocusedPackage && (
+              <>
+                <Button
+                  variant="outlined"
+                  startIcon={<EditRoundedIcon />}
+                  onClick={() => setCorrectionDialog('edit')}
+                  disabled={saving}
+                >
+                  Edit Package
+                </Button>
+                <Button
+                  variant="outlined"
+                  startIcon={<MoveToInboxRoundedIcon />}
+                  onClick={() => setCorrectionDialog('transfer')}
+                  disabled={saving}
+                >
+                  Move cells here
+                </Button>
+              </>
+            )}
+            {canDeleteFocusedPackage && (
+              <Button
+                color="error"
+                variant="outlined"
+                startIcon={<DeleteOutlineRoundedIcon />}
+                onClick={() => setCorrectionDialog('delete')}
+                disabled={saving}
+              >
+                Delete draft
+              </Button>
             )}
             <Button
               variant="contained"
@@ -1484,6 +1816,13 @@ export default function DrawAndInvoicePackages() {
             sx={{ mb: 2.5 }}
           >
             {error}
+          </Alert>
+        )}
+        {focusedPackage?.status === 'CANCELLED' && (
+          <Alert severity="info" sx={{ mb: 2.5 }}>
+            This Package was cancelled on {formatDate(focusedPackage.cancelledAt?.slice(0, 10))}.
+            Its Lot / Draw cells were released; the Package number remains for history.
+            {focusedPackage.cancellationReason && ` Reason: ${focusedPackage.cancellationReason}`}
           </Alert>
         )}
         {phases.length === 0 ? (
@@ -1593,6 +1932,31 @@ export default function DrawAndInvoicePackages() {
             />
 
             {focusedPackage && <PackageOptionsTable summary={packageSummary} />}
+            {focusedPackage?.corrections?.length > 0 && (
+              <Card variant="outlined">
+                <CardContent>
+                  <Typography fontWeight={800} sx={{ mb: 1 }}>Correction history</Typography>
+                  <Stack spacing={1}>
+                    {focusedPackage.corrections.map((correction) => (
+                      <Typography key={correction.id} variant="body2" color="text.secondary">
+                        {new Date(correction.changed_at).toLocaleString('en-US')} ·{' '}
+                        {correction.action === 'TRANSFER'
+                          ? String(correction.package_id) === String(focusedPackage.id)
+                            ? 'Cells moved here'
+                            : 'Cells moved out'
+                          : correction.action.toLowerCase()} ·{' '}
+                        {correction.reason}
+                        {correction.action === 'TRANSFER' && ` · Other Package ID ${
+                          String(correction.package_id) === String(focusedPackage.id)
+                            ? correction.other_package_id
+                            : correction.package_id
+                        }`}
+                      </Typography>
+                    ))}
+                  </Stack>
+                </CardContent>
+              </Card>
+            )}
           </Stack>
         )}
       </Box>
@@ -1606,6 +1970,32 @@ export default function DrawAndInvoicePackages() {
           initialPhaseId={selectedPhase?.id}
           onClose={() => setCreateDialogOpen(false)}
           onCreate={handleCreate}
+        />
+      )}
+      {correctionDialog === 'edit' && focusedPackage && (
+        <EditDrawPackageDialog
+          record={focusedPackage}
+          job={focusedJob}
+          phase={selectedPhase}
+          schedule={schedule}
+          packages={drawInvoicePackages}
+          onClose={() => setCorrectionDialog(null)}
+          onSave={editDrawInvoicePackage}
+        />
+      )}
+      {correctionDialog === 'transfer' && focusedPackage && (
+        <TransferDrawPackageCellsDialog
+          target={focusedPackage}
+          packages={drawInvoicePackages}
+          onClose={() => setCorrectionDialog(null)}
+          onTransfer={transferDrawPackageCells}
+        />
+      )}
+      {correctionDialog === 'delete' && focusedPackage && (
+        <CancelDrawPackageDialog
+          record={focusedPackage}
+          onClose={() => setCorrectionDialog(null)}
+          onCancel={cancelDrawInvoicePackage}
         />
       )}
     </Box>

@@ -10,6 +10,7 @@ import CalendarMonthRoundedIcon from '@mui/icons-material/CalendarMonthRounded'
 import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded'
 import ConstructionRoundedIcon from '@mui/icons-material/ConstructionRounded'
 import EventAvailableRoundedIcon from '@mui/icons-material/EventAvailableRounded'
+import ForwardToInboxRoundedIcon from '@mui/icons-material/ForwardToInboxRounded'
 import SyncAltRoundedIcon from '@mui/icons-material/SyncAltRounded'
 import SyncRoundedIcon from '@mui/icons-material/SyncRounded'
 import TuneRoundedIcon from '@mui/icons-material/TuneRounded'
@@ -48,6 +49,8 @@ export default function CalendarPageHeader({
           <Typography color="text.secondary">
             {activeTab === 'BUILDER_SETTINGS'
               ? 'Configure the automatic EXT, Shutter, DM and HW date spacing for each builder.'
+              : activeTab === 'FOLLOW_UPS'
+                ? 'Prepare and track scheduling emails to each Jobsite Superintendent.'
               : calendarMode === 'PRODUCTION'
                 ? 'Schedule EXT, DM and HW as one production activity.'
                 : 'Track extra work and change orders separately.'}
@@ -145,6 +148,12 @@ export default function CalendarPageHeader({
             icon={<TuneRoundedIcon />}
             iconPosition="start"
             label="Builder date configuration"
+          />
+          <Tab
+            value="FOLLOW_UPS"
+            icon={<ForwardToInboxRoundedIcon />}
+            iconPosition="start"
+            label="Builder follow-ups"
           />
         </Tabs>
       </Box>

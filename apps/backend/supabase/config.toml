@@ -417,6 +417,12 @@ verify_jwt = false
 [functions.google-calendar-sync]
 verify_jwt = true
 
+# Browser requests are authorized inside the function, while scheduled runs use
+# a separate high-entropy FOLLOW_UP_CRON_SECRET. No request is trusted solely
+# because it reached this public endpoint.
+[functions.builder-follow-up-email]
+verify_jwt = false
+
 [analytics]
 enabled = true
 port = 54327

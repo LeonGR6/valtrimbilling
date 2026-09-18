@@ -24,6 +24,7 @@ import {
 import ActivityDetail from './ActivityDetail.jsx'
 import ActivityForm from './ActivityForm.jsx'
 import BuilderDateSettings from './BuilderDateSettings.jsx'
+import BuilderFollowUpQueue from './BuilderFollowUpQueue.jsx'
 import CalendarPageHeader from './CalendarPageHeader.jsx'
 import CalendarWorkspace from './CalendarWorkspace.jsx'
 import ChangeOrdersPlaceholder from './ChangeOrdersPlaceholder.jsx'
@@ -304,6 +305,8 @@ export default function CalendarScheduler() {
 
       {activeTab === 'BUILDER_SETTINGS' ? (
         <BuilderDateSettings />
+      ) : activeTab === 'FOLLOW_UPS' ? (
+        <BuilderFollowUpQueue canManage={canManageProductionActivities} />
       ) : calendarMode === 'PRODUCTION' ? (
         <>
           {productionLoading && <LinearProgress />}

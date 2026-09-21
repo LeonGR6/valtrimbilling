@@ -423,6 +423,12 @@ verify_jwt = true
 [functions.builder-follow-up-email]
 verify_jwt = false
 
+# Jobsite Superintendents do not have ValtrimBilling accounts. The function is
+# public at the gateway, then validates a signed one-time response token before
+# any service-role RPC. GET-style inspection is read-only; submission is POST.
+[functions.builder-follow-up-response]
+verify_jwt = false
+
 [analytics]
 enabled = true
 port = 54327

@@ -306,7 +306,10 @@ export default function CalendarScheduler() {
       {activeTab === 'BUILDER_SETTINGS' ? (
         <BuilderDateSettings />
       ) : activeTab === 'FOLLOW_UPS' ? (
-        <BuilderFollowUpQueue canManage={canManageProductionActivities} />
+        <BuilderFollowUpQueue
+          canManage={canManageProductionActivities}
+          canConfigure={profile?.role === 'ADMIN'}
+        />
       ) : calendarMode === 'PRODUCTION' ? (
         <>
           {productionLoading && <LinearProgress />}

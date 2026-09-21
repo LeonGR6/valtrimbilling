@@ -1,16 +1,30 @@
 import {
+  type BuilderFollowUpEscalationSnapshot,
   type BuilderFollowUpEmailSnapshot,
+  renderBuilderFollowUpEscalationEmail,
   renderBuilderFollowUpEmail,
+  sendBuilderFollowUpEscalationWithResend,
   sendBuilderFollowUpWithResend,
 } from '../_shared/builderFollowUpEmail.ts'
+import {
+  buildBuilderFollowUpResponseLinks,
+  createBuilderFollowUpResponseToken,
+} from '../_shared/builderFollowUpResponse.ts'
 import { handlePreflight, json } from '../_shared/cors.ts'
 import { serviceClient, userClient } from '../_shared/supabase.ts'
 
-type Action = 'status' | 'preview_checkpoint' | 'send_checkpoint' | 'send_due'
+type Action =
+  | 'status'
+  | 'preview_checkpoint'
+  | 'send_checkpoint'
+  | 'preview_escalation'
+  | 'send_escalation'
+  | 'send_due'
 
 interface RequestBody {
   action?: Action
   checkpointId?: string | number
+  escalationId?: string | number
   limit?: number
 }
 
@@ -24,6 +38,12 @@ function requiredLiveEnv(name: string) {
   const value = Deno.env.get(name)?.trim()
   if (!value) throw new Error(`Missing Edge Function secret: ${name}.`)
   return value
+}
+
+function previewResponseLinks() {
+  const base = Deno.env.get('FOLLOW_UP_PUBLIC_APP_URL')?.trim()
+    || 'http://localhost:5173'
+  return buildBuilderFollowUpResponseLinks(base, 'preview-token')
 }
 
 function safeError(error: unknown) {
@@ -82,6 +102,14 @@ function checkpointId(value: unknown) {
   return normalized
 }
 
+function escalationId(value: unknown) {
+  const normalized = String(value ?? '').trim()
+  if (!/^[1-9][0-9]*$/u.test(normalized)) {
+    throw new Error('Select a valid no-response escalation.')
+  }
+  return normalized
+}
+
 function isSnapshot(value: unknown): value is BuilderFollowUpEmailSnapshot {
   if (!value || typeof value !== 'object') return false
   const snapshot = value as Record<string, unknown>
@@ -94,6 +122,25 @@ function isSnapshot(value: unknown): value is BuilderFollowUpEmailSnapshot {
     && ['EXT', 'DM', 'HW'].includes(String(snapshot.stageType))
     && typeof snapshot.recipientName === 'string'
     && typeof snapshot.recipientEmail === 'string'
+}
+
+function isEscalationSnapshot(value: unknown): value is BuilderFollowUpEscalationSnapshot {
+  if (!value || typeof value !== 'object') return false
+  const snapshot = value as Record<string, unknown>
+  if (snapshot.alreadySent === true) return true
+  return typeof snapshot.escalationId === 'string'
+    && typeof snapshot.idempotencyKey === 'string'
+    && typeof snapshot.noResponseEventId === 'string'
+    && typeof snapshot.scheduleId === 'string'
+    && typeof snapshot.noResponseSince === 'string'
+    && typeof snapshot.waitBusinessDays === 'number'
+    && typeof snapshot.workDate === 'string'
+    && ['EXT', 'SHUTTER', 'DM', 'HW'].includes(String(snapshot.stageType))
+    && typeof snapshot.superintendentName === 'string'
+    && typeof snapshot.superintendentEmail === 'string'
+    && Array.isArray(snapshot.recipientEmails)
+    && snapshot.recipientEmails.length > 0
+    && snapshot.recipientEmails.every((email) => typeof email === 'string')
 }
 
 async function prepareEmail(
@@ -110,6 +157,44 @@ async function prepareEmail(
   return data
 }
 
+async function prepareEscalation(
+  admin: ReturnType<typeof serviceClient>,
+  id: string,
+  preview: boolean,
+) {
+  const { data, error } = await admin.rpc('prepare_builder_follow_up_escalation', {
+    p_escalation_id: id,
+    p_preview: preview,
+  })
+  if (error) throw error
+  if (!isEscalationSnapshot(data)) {
+    throw new Error('The no-response escalation snapshot is invalid.')
+  }
+  return data
+}
+
+async function issueResponseLinks(
+  admin: ReturnType<typeof serviceClient>,
+  snapshot: BuilderFollowUpEmailSnapshot,
+) {
+  if (!snapshot.outboxId) throw new Error('The Builder follow-up outbox item is missing.')
+  const { data, error } = await admin.rpc('issue_builder_follow_up_response_token', {
+    p_outbox_id: snapshot.outboxId,
+  })
+  if (error) throw error
+
+  const publicId = String(data?.publicId ?? '').trim()
+  if (!publicId) throw new Error('The Builder follow-up response id is missing.')
+  const token = await createBuilderFollowUpResponseToken(
+    publicId,
+    requiredLiveEnv('FOLLOW_UP_RESPONSE_SECRET'),
+  )
+  return buildBuilderFollowUpResponseLinks(
+    requiredLiveEnv('FOLLOW_UP_PUBLIC_APP_URL'),
+    token,
+  )
+}
+
 async function finishEmail(
   admin: ReturnType<typeof serviceClient>,
   snapshot: BuilderFollowUpEmailSnapshot,
@@ -121,6 +206,27 @@ async function finishEmail(
   if (!snapshot.outboxId) throw new Error('The Builder follow-up outbox item is missing.')
   const { data, error } = await admin.rpc('finish_builder_follow_up_email', {
     p_outbox_id: snapshot.outboxId,
+    p_success: success,
+    p_subject: rendered.subject,
+    p_text_body: rendered.text,
+    p_html_body: rendered.html,
+    p_provider_message_id: providerMessageId,
+    p_last_error: lastError,
+  })
+  if (error) throw error
+  return data as string
+}
+
+async function finishEscalation(
+  admin: ReturnType<typeof serviceClient>,
+  snapshot: BuilderFollowUpEscalationSnapshot,
+  rendered: ReturnType<typeof renderBuilderFollowUpEscalationEmail>,
+  success: boolean,
+  providerMessageId: string | null,
+  lastError: string | null,
+) {
+  const { data, error } = await admin.rpc('finish_builder_follow_up_escalation', {
+    p_escalation_id: snapshot.escalationId,
     p_success: success,
     p_subject: rendered.subject,
     p_text_body: rendered.text,
@@ -148,7 +254,7 @@ async function processCheckpoint(
     }
   }
 
-  const rendered = renderBuilderFollowUpEmail(snapshot)
+  let rendered = renderBuilderFollowUpEmail(snapshot, previewResponseLinks())
   if (preview) {
     return { checkpointId: id, sent: false, preview: true, snapshot, rendered }
   }
@@ -158,6 +264,10 @@ async function processCheckpoint(
   const replyTo = requiredLiveEnv('FOLLOW_UP_REPLY_TO')
 
   try {
+    rendered = renderBuilderFollowUpEmail(
+      snapshot,
+      await issueResponseLinks(admin, snapshot),
+    )
     const providerMessageId = await sendBuilderFollowUpWithResend({
       apiKey,
       from,
@@ -185,6 +295,73 @@ async function processCheckpoint(
   }
 }
 
+async function processEscalation(
+  admin: ReturnType<typeof serviceClient>,
+  id: string,
+  mode: 'PREVIEW' | 'LIVE',
+) {
+  const preview = mode !== 'LIVE'
+  const snapshot = await prepareEscalation(admin, id, preview)
+  if (snapshot.alreadySent) {
+    return {
+      type: 'ESCALATION' as const,
+      escalationId: id,
+      sent: true,
+      alreadySent: true,
+      providerMessageId: snapshot.providerMessageId,
+    }
+  }
+
+  const rendered = renderBuilderFollowUpEscalationEmail(snapshot)
+  if (preview) {
+    return {
+      type: 'ESCALATION' as const,
+      escalationId: id,
+      sent: false,
+      preview: true,
+      snapshot,
+      rendered,
+    }
+  }
+
+  const apiKey = requiredLiveEnv('RESEND_API_KEY')
+  const from = requiredLiveEnv('FOLLOW_UP_FROM_EMAIL')
+  const replyTo = requiredLiveEnv('FOLLOW_UP_REPLY_TO')
+
+  try {
+    const providerMessageId = await sendBuilderFollowUpEscalationWithResend({
+      apiKey,
+      from,
+      replyTo,
+      snapshot,
+      rendered,
+    })
+    const sentAt = await finishEscalation(
+      admin,
+      snapshot,
+      rendered,
+      true,
+      providerMessageId,
+      null,
+    )
+    return {
+      type: 'ESCALATION' as const,
+      escalationId: id,
+      sent: true,
+      providerMessageId,
+      sentAt,
+    }
+  } catch (error) {
+    const message = safeError(error)
+    try {
+      await finishEscalation(admin, snapshot, rendered, false, null, message)
+    } catch (finishError) {
+      console.error('Recording no-response escalation delivery failure failed:', finishError)
+    }
+    throw error
+  }
+}
+
 Deno.serve(async (req) => {
   const preflight = handlePreflight(req)
   if (preflight) return preflight
@@ -193,7 +370,14 @@ Deno.serve(async (req) => {
   try {
     const body = await req.json().catch(() => ({})) as RequestBody
     const action = body.action ?? 'status'
-    if (!['status', 'preview_checkpoint', 'send_checkpoint', 'send_due'].includes(action)) {
+    if (![
+      'status',
+      'preview_checkpoint',
+      'send_checkpoint',
+      'preview_escalation',
+      'send_escalation',
+      'send_due',
+    ].includes(action)) {
       return json({ error: 'Select a supported Builder follow-up action.' }, 400)
     }
 
@@ -213,7 +397,23 @@ Deno.serve(async (req) => {
         mode,
         preview: true,
         snapshot,
-        rendered: renderBuilderFollowUpEmail(snapshot),
+        rendered: renderBuilderFollowUpEmail(snapshot, previewResponseLinks()),
+      })
+    }
+
+    if (action === 'preview_escalation') {
+      const admin = serviceClient()
+      const snapshot = await prepareEscalation(
+        admin,
+        escalationId(body.escalationId),
+        true,
+      )
+      if (snapshot.alreadySent) return json({ mode, alreadySent: true, snapshot })
+      return json({
+        mode,
+        preview: true,
+        snapshot,
+        rendered: renderBuilderFollowUpEscalationEmail(snapshot),
       })
     }
 
@@ -233,9 +433,53 @@ Deno.serve(async (req) => {
       return json({ mode, ...result })
     }
 
+
+    if (action === 'send_escalation') {
+      const result = await processEscalation(
+        admin,
+        escalationId(body.escalationId),
+        mode,
+      )
+      return json({ mode, ...result })
+    }
+
     const limit = Math.min(Math.max(Number(body.limit) || 25, 1), 50)
-    const { error: refreshError } = await admin.rpc('refresh_builder_follow_up_checkpoints')
-    if (refreshError) throw refreshError
+    const [checkpointRefresh, escalationRefresh] = await Promise.all([
+      admin.rpc('refresh_builder_follow_up_checkpoints'),
+      admin.rpc('refresh_builder_follow_up_escalations'),
+    ])
+    if (checkpointRefresh.error) throw checkpointRefresh.error
+    if (escalationRefresh.error) throw escalationRefresh.error
+
+    const { data: dueEscalations, error: escalationError } = await admin
+      .from('builder_follow_up_attention_queue')
+      .select('escalation_id')
+      .in('delivery_status', ['DUE', 'OVERDUE', 'FAILED'])
+      .not('escalation_id', 'is', null)
+      .order('due_on', { ascending: true })
+      .order('escalation_id', { ascending: true })
+      .limit(limit)
+    if (escalationError) throw escalationError
+
+    const results = []
+    for (const row of dueEscalations ?? []) {
+      try {
+        results.push(await processEscalation(
+          admin,
+          String(row.escalation_id),
+          mode,
+        ))
+      } catch (error) {
+        results.push({
+          type: 'ESCALATION',
+          escalationId: String(row.escalation_id),
+          sent: false,
+          error: safeError(error),
+        })
+      }
+    }
+
+    const remaining = Math.max(limit - results.length, 0)
     const { data: dueRows, error: dueError } = await admin
       .from('builder_follow_up_queue')
       .select('checkpoint_id')
@@ -243,15 +487,18 @@ Deno.serve(async (req) => {
       .in('delivery_status', ['DUE', 'OVERDUE', 'FAILED'])
       .order('due_on', { ascending: true })
       .order('checkpoint_id', { ascending: true })
-      .limit(limit)
+      .limit(remaining)
     if (dueError) throw dueError
 
-    const results = []
     for (const row of dueRows ?? []) {
       try {
-        results.push(await processCheckpoint(admin, String(row.checkpoint_id), mode))
+        results.push({
+          type: 'FOLLOW_UP',
+          ...await processCheckpoint(admin, String(row.checkpoint_id), mode),
+        })
       } catch (error) {
         results.push({
+          type: 'FOLLOW_UP',
           checkpointId: String(row.checkpoint_id),
           sent: false,
           error: safeError(error),
@@ -263,11 +510,14 @@ Deno.serve(async (req) => {
     const sent = results.filter((result) => (
       result.sent && !('alreadySent' in result && result.alreadySent)
     )).length
+    const escalationCount = results.filter((result) => result.type === 'ESCALATION').length
     return json({
       mode,
       processed: results.length,
       sent,
       failed,
+      escalations: escalationCount,
+      followUps: results.length - escalationCount,
       results,
     }, failed > 0 ? 207 : 200)
   } catch (error) {

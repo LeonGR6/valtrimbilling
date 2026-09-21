@@ -58,9 +58,14 @@ export function buildUsedDrawSelections(packages = [], excludedPackageId = null)
   packages
     .filter((record) => record.id !== excludedPackageId)
     .forEach((record) => {
-      record.selections.forEach(({ lotId, drawIndex }) => {
+      record.selections.forEach(({ phaseId, lotId, drawIndex }) => {
         used.set(
-          drawSelectionKey(record.jobId, record.phaseId, lotId, drawIndex),
+          drawSelectionKey(
+            record.jobId,
+            phaseId ?? record.phaseId,
+            lotId,
+            drawIndex,
+          ),
           record,
         )
       })
@@ -69,9 +74,9 @@ export function buildUsedDrawSelections(packages = [], excludedPackageId = null)
   return used
 }
 
-function sumSelectionAmounts(selections, rowsById, field) {
-  const totalCents = selections.reduce((total, { lotId, drawIndex }) => {
-    const amount = rowsById.get(String(lotId))?.[field]?.[drawIndex]
+function sumSelectionAmounts(selections, rowForSelection, field) {
+  const totalCents = selections.reduce((total, selection) => {
+    const amount = rowForSelection(selection)?.[field]?.[selection.drawIndex]
     return total + (Number.isFinite(amount) ? Math.round(amount * 100) : 0)
   }, 0)
 
@@ -104,7 +109,10 @@ function getOptionsBillingDrawIndex(record, schedule) {
 function getSelectedOptionRows(selectedRows) {
   return selectedRows.flatMap((row) =>
     (row.selectedOptions ?? []).map((option) => ({
-      id: `${row.id}:${option.id}`,
+      id: `${row.phaseId}:${row.id}:${option.id}`,
+      phaseId: row.phaseId,
+      phaseCode: row.phaseCode,
+      building: row.building,
       lotId: row.id,
       lotNumber: row.lotNumber,
       planCode: row.planCode,
@@ -117,28 +125,121 @@ function getSelectedOptionRows(selectedRows) {
   )
 }
 
-export function summarizeDrawPackage(record, job, phase, schedule) {
-  const worksheet = buildDrawWorksheet(job, phase, schedule)
-  const rowsById = new Map(
-    worksheet.rows.map((row) => [String(row.id), row]),
-  )
-  const selections = record?.selections ?? []
-  const selectedRows = (record?.lotIds ?? [])
-    .map((lotId) => rowsById.get(String(lotId)))
+function phaseDisplayName(phase, fallbackCode) {
+  const name = phase?.name ?? phase?.code ?? fallbackCode
+  return name == null || name === '' ? 'Phase' : `Phase ${name}`
+}
+
+function buildPhaseSummaries(lines, phaseById) {
+  const grouped = new Map()
+
+  for (const line of lines) {
+    const phaseId = line.phaseId ?? 'unknown'
+    const group = grouped.get(String(phaseId)) ?? {
+      phaseId,
+      phaseCode: line.phaseCode ?? phaseById.get(String(phaseId))?.name ?? null,
+      building: line.building ?? phaseById.get(String(phaseId))?.building ?? null,
+      lotNumbers: [],
+      draws: new Map(),
+    }
+    group.lotNumbers.push(line.lotNumber)
+    const draw = group.draws.get(line.drawIndex) ?? {
+      drawIndex: line.drawIndex,
+      lotNumbers: [],
+    }
+    draw.lotNumbers.push(line.lotNumber)
+    group.draws.set(line.drawIndex, draw)
+    grouped.set(String(phaseId), group)
+  }
+
+  return [...grouped.values()]
+    .map((group) => ({
+      phaseId: group.phaseId,
+      phaseCode: group.phaseCode,
+      building: group.building,
+      lotRange: formatLotRange(group.lotNumbers),
+      draws: [...group.draws.values()]
+        .sort((left, right) => left.drawIndex - right.drawIndex)
+        .map((draw) => ({
+          ...draw,
+          lotRange: formatLotRange(draw.lotNumbers),
+        })),
+    }))
+    .sort((left, right) => String(left.phaseCode ?? '').localeCompare(
+      String(right.phaseCode ?? ''),
+      'en',
+      { numeric: true, sensitivity: 'base' },
+    ))
+}
+
+export function summarizeDrawPackage(record, job, phaseOrPhases, schedule) {
+  const phases = (Array.isArray(phaseOrPhases) ? phaseOrPhases : [phaseOrPhases])
     .filter(Boolean)
+  const phaseScopes = phases.map((phase, index) => {
+    const phaseId = phase.id ?? `phase-${index}`
+    const worksheet = buildDrawWorksheet(job, phase, schedule)
+    return {
+      phase,
+      phaseId,
+      worksheet,
+      rowsById: new Map(worksheet.rows.map((row) => [String(row.id), row])),
+    }
+  })
+  const phaseById = new Map(
+    phaseScopes.map(({ phaseId, phase }) => [String(phaseId), phase]),
+  )
+  const scopeByPhaseId = new Map(
+    phaseScopes.map((scope) => [String(scope.phaseId), scope]),
+  )
+  const scopesByLotId = new Map()
+  for (const scope of phaseScopes) {
+    for (const row of scope.worksheet.rows) {
+      const scopes = scopesByLotId.get(String(row.id)) ?? []
+      scopes.push(scope)
+      scopesByLotId.set(String(row.id), scopes)
+    }
+  }
+  const scopeForSelection = (selection) => {
+    if (selection.phaseId != null) {
+      return scopeByPhaseId.get(String(selection.phaseId))
+    }
+    return scopesByLotId.get(String(selection.lotId))?.[0]
+  }
+  const rowForSelection = (selection) => scopeForSelection(selection)
+    ?.rowsById.get(String(selection.lotId))
+  const selections = record?.selections ?? []
+  const selectedRows = [...new Map(selections.map((selection) => {
+    const scope = scopeForSelection(selection)
+    const row = rowForSelection(selection)
+    if (!scope || !row) return [null, null]
+    return [
+      `${scope.phaseId}:${row.id}`,
+      {
+        ...row,
+        phaseId: scope.phaseId,
+        phaseCode: scope.phase.name ?? scope.phase.code ?? null,
+        building: scope.phase.building ?? null,
+      },
+    ]
+  }).filter(([key]) => key != null)).values()]
   const optionsBillingDrawIndex = getOptionsBillingDrawIndex(record, schedule)
-  const optionBillingLotIds = new Set(
+  const optionBillingLotKeys = new Set(
     selections
       .filter(
         ({ drawIndex }) => Number(drawIndex) === optionsBillingDrawIndex,
       )
-      .map(({ lotId }) => String(lotId)),
+      .map((selection) => {
+        const scope = scopeForSelection(selection)
+        return `${scope?.phaseId ?? selection.phaseId}:${selection.lotId}`
+      }),
   )
   const currentSelectedOptionRows = getSelectedOptionRows(
-    selectedRows.filter((row) => optionBillingLotIds.has(String(row.id))),
+    selectedRows.filter((row) => (
+      optionBillingLotKeys.has(`${row.phaseId}:${row.id}`)
+    )),
   )
   const optionsAreDue = optionsBillingDrawIndex !== null
-    && optionBillingLotIds.size > 0
+    && optionBillingLotKeys.size > 0
 
   if (record?.persistedInvoice) {
     const persistedLines = record.persistedDrawLines ?? []
@@ -152,12 +253,22 @@ export function summarizeDrawPackage(record, job, phase, schedule) {
       0,
     )
     const lotNumbers = persistedLines.map((line) => line.lotNumber)
+    const phaseSummaries = buildPhaseSummaries(persistedLines, phaseById)
 
     return {
-      worksheet,
+      worksheet: phaseScopes[0]?.worksheet ?? buildDrawWorksheet(job, null, schedule),
+      worksheets: phaseScopes.map(({ phase, phaseId, worksheet }) => ({
+        phase, phaseId, worksheet,
+      })),
       selectedRows,
       lotCount: new Set(persistedLines.map((line) => String(line.lotId))).size,
-      lotRange: formatLotRange(lotNumbers),
+      lotRange: phaseSummaries.length <= 1
+        ? formatLotRange(lotNumbers)
+        : phaseSummaries.map((scope) => (
+            `${phaseDisplayName(phaseById.get(String(scope.phaseId)), scope.phaseCode)}: ${scope.lotRange}`
+          )).join(' · '),
+      phaseSummaries,
+      phaseCount: phaseSummaries.length,
       scopeCount: persistedLines.length,
       currentDraw: record.persistedInvoice.grossAmount,
       selectedOptionRows,
@@ -184,31 +295,54 @@ export function summarizeDrawPackage(record, job, phase, schedule) {
   )
   const currentDraw = sumSelectionAmounts(
     selections,
-    rowsById,
+    rowForSelection,
     'drawAmounts',
   )
   const baseRetention = sumSelectionAmounts(
     selections,
-    rowsById,
+    rowForSelection,
     'drawRetentionAmounts',
   )
   const baseWrapInsurance = sumSelectionAmounts(
     selections,
-    rowsById,
+    rowForSelection,
     'drawWrapInsuranceAmounts',
   )
   const baseInvoiceAmount = sumSelectionAmounts(
     selections,
-    rowsById,
+    rowForSelection,
     'drawInvoiceAmounts',
   )
   const optionFinancials = calculateInvoiceAmounts(optionsTotal, schedule)
+  const selectedLines = selections.map((selection) => {
+    const scope = scopeForSelection(selection)
+    const row = rowForSelection(selection)
+    if (!scope || !row) return null
+    return {
+      phaseId: scope.phaseId,
+      phaseCode: scope.phase.name ?? scope.phase.code ?? null,
+      building: scope.phase.building ?? null,
+      lotId: row.id,
+      lotNumber: row.lotNumber,
+      drawIndex: selection.drawIndex,
+    }
+  }).filter(Boolean)
+  const phaseSummaries = buildPhaseSummaries(selectedLines, phaseById)
 
   return {
-    worksheet,
+    worksheet: phaseScopes[0]?.worksheet ?? buildDrawWorksheet(job, null, schedule),
+    worksheets: phaseScopes.map(({ phase, phaseId, worksheet }) => ({
+      phase, phaseId, worksheet,
+    })),
     selectedRows,
     lotCount: selectedRows.length,
-    lotRange: formatLotRange(selectedRows.map((row) => row.lotNumber)),
+    lotRange: phaseSummaries.length <= 1
+      ? formatLotRange(selectedRows.map((row) => row.lotNumber))
+      : phaseSummaries.map((scope) => (
+          `${phaseDisplayName(phaseById.get(String(scope.phaseId)), scope.phaseCode)}: ${scope.lotRange}`
+        )).join(' · '),
+    phaseSummaries,
+    phaseCount: phaseSummaries.length,
     scopeCount: selections.length,
     currentDraw,
     selectedOptionRows,

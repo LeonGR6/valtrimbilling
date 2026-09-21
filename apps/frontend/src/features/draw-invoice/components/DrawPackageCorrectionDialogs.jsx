@@ -26,8 +26,8 @@ import {
 } from '../utils/drawPackages.js'
 import { buildDrawWorksheet } from '../utils/drawWorksheet.js'
 
-function cellKey({ lotId, drawIndex }) {
-  return `${lotId}:${drawIndex}`
+function cellKey({ phaseId, lotId, drawIndex }) {
+  return `${phaseId}:${lotId}:${drawIndex}`
 }
 
 function validateReason(reason) {
@@ -43,6 +43,10 @@ export function EditDrawPackageDialog({
   onClose,
   onSave,
 }) {
+  const availablePhases = job.sequenceSheet?.phases ?? []
+  const [activePhaseId, setActivePhaseId] = useState(
+    phase?.id ?? availablePhases[0]?.id ?? '',
+  )
   const [selections, setSelections] = useState(record.selections)
   const [periodStart, setPeriodStart] = useState(record.billingPeriodStart ?? '')
   const [periodEnd, setPeriodEnd] = useState(record.billingPeriodEnd ?? '')
@@ -50,7 +54,10 @@ export function EditDrawPackageDialog({
   const [reason, setReason] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState(null)
-  const worksheet = buildDrawWorksheet(job, phase, schedule)
+  const activePhase = availablePhases.find(
+    (candidate) => String(candidate.id) === String(activePhaseId),
+  )
+  const worksheet = buildDrawWorksheet(job, activePhase, schedule)
   const occupied = useMemo(
     () => buildUsedDrawSelections(packages, record.id),
     [packages, record.id],
@@ -72,12 +79,12 @@ export function EditDrawPackageDialog({
     && validateReason(reason) && validPeriod && notes.trim().length <= 500
 
   const toggle = (lotId, drawIndex) => {
-    const key = `${lotId}:${drawIndex}`
+    const key = `${activePhase.id}:${lotId}:${drawIndex}`
     setSelections((current) => current.some(
       (selection) => cellKey(selection) === key,
     )
       ? current.filter((selection) => cellKey(selection) !== key)
-      : [...current, { lotId, drawIndex }])
+      : [...current, { phaseId: activePhase.id, lotId, drawIndex }])
   }
 
   const save = async () => {
@@ -108,11 +115,24 @@ export function EditDrawPackageDialog({
             Keep at least one cell. Yellow cells belong to another Package;
             use “Move cells here” to transfer them. Unchanged cells retain
             their saved prices, while newly added cells are priced using this
-            Package’s date ({record.packageDate}). Job, Phase, Billing Setup
-            and Package date cannot be edited; cancel and recreate a draft if
-            those were selected incorrectly.
+            Package’s date ({record.packageDate}). You may add cells from any
+            Phase in this Job. Job, Billing Setup and Package date cannot be edited.
           </Alert>
           {error && <Alert severity="error">{error}</Alert>}
+          <TextField
+            select
+            label="Phase / Building"
+            value={activePhaseId}
+            onChange={(event) => setActivePhaseId(event.target.value)}
+            disabled={submitting}
+          >
+            {availablePhases.map((candidate) => (
+              <MenuItem key={candidate.id} value={candidate.id}>
+                Phase {candidate.name} · Building {candidate.building} ·{' '}
+                {candidate.lots?.length ?? 0} lots
+              </MenuItem>
+            ))}
+          </TextField>
           <TableContainer sx={{ maxHeight: 440, border: 1, borderColor: 'divider' }}>
             <Table size="small" stickyHeader aria-label="Edit Package Lot and Draw cells">
               <TableHead>
@@ -133,9 +153,11 @@ export function EditDrawPackageDialog({
                     <TableCell>{row.planCode ?? '—'}</TableCell>
                     {worksheet.draws.map((_, drawIndex) => {
                       const owner = occupied.get(drawSelectionKey(
-                        record.jobId, record.phaseId, row.id, drawIndex,
+                        record.jobId, activePhase.id, row.id, drawIndex,
                       ))
-                      const selected = selectedKeys.has(`${row.id}:${drawIndex}`)
+                      const selected = selectedKeys.has(
+                        `${activePhase.id}:${row.id}:${drawIndex}`,
+                      )
                       return (
                         <TableCell
                           key={drawIndex}
@@ -224,7 +246,6 @@ export function TransferDrawPackageCellsDialog({
 }) {
   const sources = packages.filter((candidate) => candidate.id !== target.id
     && String(candidate.jobId) === String(target.jobId)
-    && String(candidate.phaseId) === String(target.phaseId)
     && String(candidate.setupVersionId) === String(target.setupVersionId)
     && canCorrectDrawPackage(candidate)
     && candidate.selections.length > 0)
@@ -273,7 +294,7 @@ export function TransferDrawPackageCellsDialog({
           {error && <Alert severity="error">{error}</Alert>}
           {sources.length === 0 ? (
             <Alert severity="warning">
-              No other editable Package has cells for this Job, Phase and Billing Setup.
+              No other editable Package has cells for this Job and Billing Setup.
             </Alert>
           ) : (
             <>
@@ -295,6 +316,7 @@ export function TransferDrawPackageCellsDialog({
               <Box sx={{ border: 1, borderColor: 'divider', borderRadius: 1 }}>
                 {source?.persistedDrawLines.map((line) => {
                   const selection = {
+                    phaseId: line.phaseId,
                     lotId: line.lotId,
                     drawIndex: line.drawIndex,
                   }
@@ -314,6 +336,7 @@ export function TransferDrawPackageCellsDialog({
                         }}
                       />
                       <Typography variant="body2">
+                        Phase {line.phaseCode} / Building {line.building} ·{' '}
                         Lot {line.lotNumber} · Draw #{line.drawIndex + 1} · {line.planCode}
                       </Typography>
                     </Stack>

@@ -250,9 +250,14 @@ function MetricCard({ icon, label, value, detail }) {
 
 function getPackageContext(record, jobs, schedules) {
   const job = jobs.find((candidate) => String(candidate.id) === String(record.jobId))
-  const phase = job?.sequenceSheet?.phases?.find(
-    (candidate) => String(candidate.id) === String(record.phaseId),
+  const jobPhases = job?.sequenceSheet?.phases ?? []
+  const phaseIds = new Set(
+    (record.phaseIds?.length ? record.phaseIds : [record.phaseId])
+      .filter((value) => value != null)
+      .map(String),
   )
+  const phases = jobPhases.filter((candidate) => phaseIds.has(String(candidate.id)))
+  const phase = phases[0]
   const schedule = schedules.find(
     (candidate) =>
       String(candidate.builderId) === String(getJobBuilderId(job)),
@@ -263,8 +268,9 @@ function getPackageContext(record, jobs, schedules) {
     record,
     job,
     phase,
+    phases,
     schedule,
-    summary: summarizeDrawPackage(record, job, phase, schedule),
+    summary: summarizeDrawPackage(record, job, phases, schedule),
   }
 }
 
@@ -312,10 +318,12 @@ function CreateDrawDialog({
     [packages],
   )
   const selectedSelectionKeys = new Set(
-    selectedSelections.map(({ lotId, drawIndex }) => `${lotId}:${drawIndex}`),
+    selectedSelections.map(
+      ({ phaseId, lotId, drawIndex }) => `${phaseId}:${lotId}:${drawIndex}`,
+    ),
   )
-  const selectedLotIds = [...new Set(
-    selectedSelections.map(({ lotId }) => lotId),
+  const selectedLotKeys = [...new Set(
+    selectedSelections.map(({ phaseId, lotId }) => `${phaseId}:${lotId}`),
   )]
   const selectedDrawIndexes = [...new Set(
     selectedSelections.map(({ drawIndex }) => drawIndex),
@@ -327,7 +335,7 @@ function CreateDrawDialog({
     )
 
   const selectionIsSelected = (lotId, drawIndex) =>
-    selectedSelectionKeys.has(`${lotId}:${drawIndex}`)
+    selectedSelectionKeys.has(`${phase?.id}:${lotId}:${drawIndex}`)
 
   const handleJobChange = (event) => {
     const nextJobId = event.target.value
@@ -343,51 +351,58 @@ function CreateDrawDialog({
 
   const handlePhaseChange = (event) => {
     setSelectedPhaseId(event.target.value)
-    setSelectedSelections([])
   }
 
   const toggleSelection = (lotId, drawIndex) => {
     if (selectionIsUsed(lotId, drawIndex)) return
 
-    const key = `${lotId}:${drawIndex}`
+    const key = `${phase.id}:${lotId}:${drawIndex}`
     setSelectedSelections((current) =>
       current.some(
-        (selection) => `${selection.lotId}:${selection.drawIndex}` === key,
+        (selection) => (
+          `${selection.phaseId}:${selection.lotId}:${selection.drawIndex}` === key
+        ),
       )
         ? current.filter(
-            (selection) => `${selection.lotId}:${selection.drawIndex}` !== key,
+            (selection) => (
+              `${selection.phaseId}:${selection.lotId}:${selection.drawIndex}` !== key
+            ),
           )
-        : [...current, { lotId, drawIndex }],
+        : [...current, { phaseId: phase.id, lotId, drawIndex }],
     )
   }
 
   const toggleSelectionGroup = (available) => {
     const availableKeys = new Set(
       available.map(
-        ({ lotId, drawIndex }) => `${lotId}:${drawIndex}`,
+        ({ phaseId, lotId, drawIndex }) => `${phaseId}:${lotId}:${drawIndex}`,
       ),
     )
 
     setSelectedSelections((current) => {
       const currentKeys = new Set(
         current.map(
-          ({ lotId, drawIndex }) => `${lotId}:${drawIndex}`,
+          ({ phaseId, lotId, drawIndex }) => `${phaseId}:${lotId}:${drawIndex}`,
         ),
       )
       const allSelected = available.length > 0 && available.every(
-        ({ lotId, drawIndex }) => currentKeys.has(`${lotId}:${drawIndex}`),
+        ({ phaseId, lotId, drawIndex }) => (
+          currentKeys.has(`${phaseId}:${lotId}:${drawIndex}`)
+        ),
       )
 
       return allSelected
         ? current.filter(
           (selection) => !availableKeys.has(
-            `${selection.lotId}:${selection.drawIndex}`,
+            `${selection.phaseId}:${selection.lotId}:${selection.drawIndex}`,
           ),
         )
         : [
             ...current,
             ...available.filter(
-              ({ lotId, drawIndex }) => !currentKeys.has(`${lotId}:${drawIndex}`),
+              ({ phaseId, lotId, drawIndex }) => !currentKeys.has(
+                `${phaseId}:${lotId}:${drawIndex}`,
+              ),
             ),
           ]
     })
@@ -395,7 +410,7 @@ function CreateDrawDialog({
 
   const toggleLotSelections = (lotId) => {
     const available = worksheet.draws
-      .map((_, drawIndex) => ({ lotId, drawIndex }))
+      .map((_, drawIndex) => ({ phaseId: phase.id, lotId, drawIndex }))
       .filter(({ drawIndex }) => !selectionIsUsed(lotId, drawIndex))
 
     toggleSelectionGroup(available)
@@ -403,21 +418,27 @@ function CreateDrawDialog({
 
   const toggleDrawSelections = (drawIndex) => {
     const available = worksheet.rows
-      .map((row) => ({ lotId: row.id, drawIndex }))
+      .map((row) => ({ phaseId: phase.id, lotId: row.id, drawIndex }))
       .filter(({ lotId }) => !selectionIsUsed(lotId, drawIndex))
 
     toggleSelectionGroup(available)
   }
 
   const draftRecord = {
-    lotIds: selectedLotIds,
+    lotIds: selectedSelections.map(({ lotId }) => lotId),
     drawIndexes: selectedDrawIndexes,
     optionsBillingDrawIndex: schedule?.optionsBillingDrawIndex ?? null,
     selections: selectedSelections,
   }
-  const summary = summarizeDrawPackage(draftRecord, job, phase, schedule)
+  const summary = summarizeDrawPackage(draftRecord, job, phases, schedule)
+  const selectedPhaseIds = new Set(
+    selectedSelections.map(({ phaseId }) => String(phaseId)),
+  )
+  const selectedPhasesAreReady = phases
+    .filter((candidate) => selectedPhaseIds.has(String(candidate.id)))
+    .every((candidate) => buildDrawWorksheet(job, candidate, schedule).isReady)
   const canCreate =
-    worksheet.isReady &&
+    selectedPhasesAreReady &&
     selectedSelections.length > 0 &&
     summary.unpricedOptionCount === 0
 
@@ -427,7 +448,6 @@ function CreateDrawDialog({
     try {
       await onCreate({
         jobId: job.id,
-        phaseId: phase.id,
         selections: selectedSelections,
         schedule,
       })
@@ -498,7 +518,8 @@ function CreateDrawDialog({
                 <Typography fontWeight={800}>Select Lot / Draw cells</Typography>
                 <Typography variant="body2" color="text.secondary">
                   Choose each cell independently. Yellow cells already belong to
-                  another Package; use a row or Draw checkbox to select all remaining cells.
+                  another Package. Change Phase to add more cells from this same Job;
+                  selections from earlier Phases remain included.
                 </Typography>
               </Box>
               <Chip
@@ -719,8 +740,8 @@ function CreateDrawDialog({
                       <TableRow>
                         <TableCell colSpan={3}>
                           <Typography fontWeight={850}>
-                            {selectedLotIds.length}{' '}
-                            {selectedLotIds.length === 1 ? 'lot' : 'lots'} ·{' '}
+                            {selectedLotKeys.length}{' '}
+                            {selectedLotKeys.length === 1 ? 'lot' : 'lots'} ·{' '}
                             {selectedSelections.length}{' '}
                             {selectedSelections.length === 1 ? 'cell' : 'cells'}
                           </Typography>
@@ -733,7 +754,10 @@ function CreateDrawDialog({
                           >
                             <Typography variant="caption" color="text.secondary">
                               {selectedSelections.filter(
-                                (selection) => selection.drawIndex === drawIndex,
+                                (selection) => (
+                                  String(selection.phaseId) === String(phase.id)
+                                  && selection.drawIndex === drawIndex
+                                ),
                               ).length}{' '}
                               selected
                             </Typography>
@@ -777,6 +801,26 @@ function CreateDrawDialog({
             <Card variant="outlined" sx={{ bgcolor: 'action.hover' }}>
               <CardContent sx={{ p: '16px !important' }}>
                 <Typography fontWeight={800}>Package preview</Typography>
+                <Stack spacing={0.75} sx={{ mt: 1 }}>
+                  {summary.phaseSummaries.map((phaseSummary) => (
+                    <Box key={phaseSummary.phaseId}>
+                      <Typography variant="body2" fontWeight={800}>
+                        {formatPhase(phaseSummary.phaseCode)} ·{' '}
+                        {formatBuilding(phaseSummary.building)}
+                      </Typography>
+                      {phaseSummary.draws.map((draw) => (
+                        <Typography
+                          key={`${phaseSummary.phaseId}:${draw.drawIndex}`}
+                          variant="caption"
+                          color="text.secondary"
+                          component="div"
+                        >
+                          Lots {draw.lotRange} · Draw #{draw.drawIndex + 1}
+                        </Typography>
+                      ))}
+                    </Box>
+                  ))}
+                </Stack>
                 <Stack
                   direction={{ xs: 'column', sm: 'row' }}
                   spacing={2}
@@ -1035,6 +1079,7 @@ function PackageOptionsTable({ summary }) {
           <Table size="small" aria-label="Options selected for this package">
             <TableHead>
               <TableRow>
+                <TableCell>Phase</TableCell>
                 <TableCell>Lot</TableCell>
                 <TableCell>Plan</TableCell>
                 <TableCell>Option</TableCell>
@@ -1051,6 +1096,9 @@ function PackageOptionsTable({ summary }) {
 
                 return (
                   <TableRow key={option.id} hover>
+                    <TableCell>
+                      {formatPhase(option.phaseCode)} / {formatBuilding(option.building)}
+                    </TableCell>
                     <TableCell>
                       <Typography color="error.main" fontWeight={850}>
                         {option.lotNumber}
@@ -1082,7 +1130,7 @@ function PackageOptionsTable({ summary }) {
             {summary.optionsAreDue && (
               <TableFooter>
                 <TableRow>
-                  <TableCell colSpan={5}>
+                  <TableCell colSpan={6}>
                     <Typography fontWeight={850}>Options total</Typography>
                   </TableCell>
                   <TableCell align="right">
@@ -1429,7 +1477,7 @@ function PackageCatalog({
                 </TableRow>
               </TableHead>
               <TableBody>
-                {filteredContexts.map(({ record, job, phase, summary }) => (
+                {filteredContexts.map(({ record, job, phase, phases, summary }) => (
                     <TableRow
                       key={record.id}
                       hover
@@ -1456,11 +1504,22 @@ function PackageCatalog({
                           {record.packageNumber}
                         </Button>
                         <Typography variant="body2" color="text.secondary">
-                          Job #{job.code} · {formatPhase(phase.name)} / {formatBuilding(phase.building)}
+                          Job #{job.code} · {summary.phaseCount === 1
+                            ? `${formatPhase(phase.name)} / ${formatBuilding(phase.building)}`
+                            : `${summary.phaseCount} Phases`}
                         </Typography>
-                        <Typography variant="caption" color="text.secondary">
-                          {record.drawIndexes.map((drawIndex) => `Draw ${drawIndex + 1}`).join(', ')}
-                        </Typography>
+                        {summary.phaseSummaries.map((scope) => (
+                          <Typography
+                            key={scope.phaseId}
+                            variant="caption"
+                            color="text.secondary"
+                            component="div"
+                          >
+                            {formatPhase(scope.phaseCode)}: {scope.draws.map(
+                              (draw) => `Lots ${draw.lotRange} / Draw ${draw.drawIndex + 1}`,
+                            ).join(' · ')}
+                          </Typography>
+                        ))}
                       </TableCell>
                       <TableCell>
                         <Typography color="text.primary">{job.builder}</Typography>
@@ -1497,7 +1556,7 @@ function PackageCatalog({
                       <TableCell><PackageStatusChip status={record.status} /></TableCell>
                       <TableCell onClick={(event) => event.stopPropagation()}>
                         <PackageActionMenu
-                          context={{ record, job, phase, summary }}
+                          context={{ record, job, phase, phases, summary }}
                           canManage={canManage}
                           onOpen={(selected) => onOpen(
                             selected.record, selected.job, selected.phase,
@@ -1534,6 +1593,7 @@ function PackageCatalog({
           record={selectedContext.record}
           job={selectedContext.job}
           phase={selectedContext.phase}
+          phases={selectedContext.phases}
           schedule={selectedContext.schedule}
           packages={packages}
           onClose={() => setCatalogAction(null)}
@@ -1687,11 +1747,25 @@ export default function DrawAndInvoicePackages() {
   const focusedPackage = drawInvoicePackages.find(
     (record) =>
       String(record.id) === String(packageId) &&
-      String(record.jobId) === String(focusedJob.id) &&
-      String(record.phaseId) === String(selectedPhase?.id),
+      String(record.jobId) === String(focusedJob.id),
+  )
+  const focusedPackagePhaseIds = new Set(
+    (focusedPackage?.phaseIds?.length
+      ? focusedPackage.phaseIds
+      : [focusedPackage?.phaseId])
+      .filter((value) => value != null)
+      .map(String),
+  )
+  const focusedPackagePhases = phases.filter(
+    (phase) => focusedPackagePhaseIds.has(String(phase.id)),
   )
   const packageSummary = focusedPackage
-    ? summarizeDrawPackage(focusedPackage, focusedJob, selectedPhase, schedule)
+    ? summarizeDrawPackage(
+        focusedPackage,
+        focusedJob,
+        focusedPackagePhases,
+        schedule,
+      )
     : null
   const canCorrectFocusedPackage = canManageDrawInvoicePackages
     && canCorrectDrawPackage(focusedPackage)
@@ -1742,6 +1816,9 @@ export default function DrawAndInvoicePackages() {
               <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
                 Job #{focusedJob.code} · {formatPhase(selectedPhase.name)} ·{' '}
                 {formatBuilding(selectedPhase.building)}
+                {focusedPackage && packageSummary?.phaseCount > 1
+                  ? ` · ${packageSummary.phaseCount} Phases in Package`
+                  : ''}
                 {focusedPackage?.invoiceNumber
                   ? ` · Invoice ${focusedPackage.invoiceNumber}`
                   : ''}
@@ -1977,6 +2054,7 @@ export default function DrawAndInvoicePackages() {
           record={focusedPackage}
           job={focusedJob}
           phase={selectedPhase}
+          phases={focusedPackagePhases}
           schedule={schedule}
           packages={drawInvoicePackages}
           onClose={() => setCorrectionDialog(null)}

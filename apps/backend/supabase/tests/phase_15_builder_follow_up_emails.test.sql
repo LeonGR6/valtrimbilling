@@ -52,7 +52,10 @@ select set_eq(
     ('builder_follow_up_states:builder_follow_up_states_select'),
     ('builder_follow_up_checkpoints:builder_follow_up_checkpoints_select'),
     ('builder_follow_up_emails:builder_follow_up_emails_select'),
-    ('builder_follow_up_events:builder_follow_up_events_select')
+    ('builder_follow_up_events:builder_follow_up_events_select'),
+    ('builder_follow_up_reschedule_requests:builder_follow_up_reschedule_requests_select'),
+    ('builder_follow_up_escalation_settings:builder_follow_up_escalation_settings_select'),
+    ('builder_follow_up_escalations:builder_follow_up_escalations_select')
   $$,
   'Follow-up tables expose only active-user read policies'
 );

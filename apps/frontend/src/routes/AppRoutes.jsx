@@ -9,6 +9,7 @@ import NotFound from '../pages/NotFound'
 import { contextualRoutes, navigationRoutes } from './navigation.jsx'
 import {
   AcceptInvitePage,
+  BuilderFollowUpResponsePage,
   ForgotPasswordPage,
   LoginPage,
   ResetPasswordPage,
@@ -37,6 +38,10 @@ export const appRouter = createBrowserRouter([
   {
     path: '/accept-invite',
     element: <Suspense fallback={<RouteLoading />}><AcceptInvitePage /></Suspense>,
+  },
+  {
+    path: '/follow-up/respond',
+    element: <Suspense fallback={<RouteLoading />}><BuilderFollowUpResponsePage /></Suspense>,
   },
   {
     path: '/',

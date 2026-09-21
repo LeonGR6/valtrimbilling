@@ -23,7 +23,7 @@ export function filterPackageCatalogContexts(contexts, {
   status = 'ALL',
 } = {}) {
   const normalizedSearch = String(search).trim().toLowerCase()
-  return contexts.filter(({ record, job, phase }) => {
+  return contexts.filter(({ record, job, phase, phases = [phase] }) => {
     if (record.status === 'CANCELLED') return false
     if (status !== 'ALL' && record.status !== status) return false
     if (builderId !== 'ALL' && String(record.builderId) !== String(builderId)) {
@@ -38,8 +38,7 @@ export function filterPackageCatalogContexts(contexts, {
       job.code,
       job.builder,
       job.community,
-      phase.name,
-      phase.building,
+      ...phases.flatMap((candidate) => [candidate?.name, candidate?.building]),
     ].some((value) => String(value ?? '').toLowerCase().includes(normalizedSearch))
   })
 }

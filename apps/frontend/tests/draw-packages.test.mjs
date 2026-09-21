@@ -71,6 +71,37 @@ test('a Package can mix different Draws for different Lots', () => {
   assert.equal(summary.scopeCount, 5)
 })
 
+test('a Package can combine Draw selections from multiple Phases of one Job', () => {
+  const job = testJobs.find((item) => item.code === '1307')
+  const phases = job.sequenceSheet.phases
+  const schedule = initialBuilderDrawSchedules.find(
+    (item) => item.builderId === job.builderId,
+  )
+  const record = {
+    jobId: job.id,
+    selections: [
+      { phaseId: 2101, lotId: 3101, drawIndex: 2 },
+      { phaseId: 2101, lotId: 3102, drawIndex: 2 },
+      { phaseId: 2102, lotId: 3201, drawIndex: 1 },
+      { phaseId: 2102, lotId: 3202, drawIndex: 1 },
+    ],
+  }
+
+  const summary = summarizeDrawPackage(record, job, phases, schedule)
+
+  assert.equal(summary.phaseCount, 2)
+  assert.equal(summary.lotCount, 4)
+  assert.equal(summary.scopeCount, 4)
+  assert.deepEqual(summary.phaseSummaries.map((scope) => ({
+    phaseId: scope.phaseId,
+    draw: scope.draws[0].drawIndex,
+    lots: scope.draws[0].lotRange,
+  })), [
+    { phaseId: 2102, draw: 1, lots: '66–67' },
+    { phaseId: 2101, draw: 2, lots: '18–19' },
+  ])
+})
+
 test('lot ranges remain compact without hiding unselected lots', () => {
   assert.equal(formatLotRange(['22', '18', '19', '20']), '18–20, 22')
   assert.equal(formatLotRange(['66', '67', '68', '69', '70']), '66–70')

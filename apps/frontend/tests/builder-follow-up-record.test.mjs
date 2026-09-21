@@ -2,8 +2,12 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   followUpDeliveryLabel,
+  followUpEscalationLabel,
   followUpLotsLabel,
+  toBuilderFollowUpAttentionItem,
+  toBuilderFollowUpEscalationSettings,
   toBuilderFollowUpItem,
+  toBuilderFollowUpRescheduleRequest,
   toFollowUpEmailResult,
 } from '../src/features/calendar/services/builderFollowUpRecord.js'
 
@@ -56,4 +60,87 @@ test('rejects unknown delivery states and invalid function modes', () => {
 test('accepts explicit PREVIEW and LIVE Edge Function modes', () => {
   assert.equal(toFollowUpEmailResult({ mode: 'PREVIEW' }).mode, 'PREVIEW')
   assert.equal(toFollowUpEmailResult({ mode: 'LIVE' }).mode, 'LIVE')
+})
+
+test('maps the immediate no-response attention signal and internal escalation', () => {
+  const attention = toBuilderFollowUpAttentionItem({
+    escalation_id: 501,
+    no_response_event_id: 401,
+    schedule_id: 101,
+    no_response_since: '2026-09-18T15:30:00Z',
+    work_date: '2026-10-15',
+    stage_type: 'EXT',
+    variant: 'BASE',
+    job_code: 'JOB-01',
+    community: 'River Walk',
+    builder_name: 'Acme Builder',
+    phase_code: '2',
+    building: 'B',
+    lot_start_label: '1',
+    lot_end_label: '4',
+    superintendent_contact_id: 88,
+    superintendent_name: 'Jamie Superintendent',
+    superintendent_email: 'jamie@example.com',
+    escalation_enabled: true,
+    wait_business_days: 2,
+    recipient_emails: ['andres@valtrim.com'],
+    due_on: '2026-09-22',
+    escalation_status: 'PENDING',
+    sent_at: null,
+    last_error: null,
+    delivery_status: 'PENDING',
+    days_until_due: 4,
+  })
+
+  assert.equal(attention.escalationId, '501')
+  assert.equal(attention.noResponseEventId, '401')
+  assert.deepEqual(attention.recipientEmails, ['andres@valtrim.com'])
+  assert.equal(followUpEscalationLabel(attention), 'Internal alert in 4 days')
+})
+
+test('maps escalation settings and rejects missing internal recipients', () => {
+  assert.deepEqual(toBuilderFollowUpEscalationSettings({
+    is_enabled: true,
+    wait_business_days: 2,
+    recipient_emails: ['andres@valtrim.com'],
+  }), {
+    isEnabled: true,
+    waitBusinessDays: 2,
+    recipientEmails: ['andres@valtrim.com'],
+  })
+  assert.throws(() => toBuilderFollowUpEscalationSettings({
+    is_enabled: true,
+    wait_business_days: 2,
+    recipient_emails: [],
+  }), /recipients are missing/)
+})
+
+test('maps a Superintendent requested date for internal review', () => {
+  const request = toBuilderFollowUpRescheduleRequest({
+    request_id: 701,
+    schedule_id: 101,
+    target_work_date: '2026-10-15',
+    current_work_date: '2026-10-15',
+    proposed_work_date: '2026-10-22',
+    requested_shift_days: 7,
+    reason: 'Material delivery delayed',
+    status: 'PENDING',
+    submitted_at: '2026-09-21T12:00:00Z',
+    superintendent_contact_id: 88,
+    superintendent_name: 'Jamie Superintendent',
+    superintendent_email: 'jamie@example.com',
+    stage_type: 'EXT',
+    variant: 'BASE',
+    job_code: 'JOB-01',
+    community: 'River Walk',
+    builder_name: 'Acme Builder',
+    phase_code: '2',
+    building: 'B',
+    lot_start_label: '1',
+    lot_end_label: '4',
+  })
+
+  assert.equal(request.requestId, '701')
+  assert.equal(request.requestedShiftDays, 7)
+  assert.equal(request.reason, 'Material delivery delayed')
 })

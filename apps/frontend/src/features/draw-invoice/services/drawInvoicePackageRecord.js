@@ -32,7 +32,12 @@ export function toDrawInvoicePackage(
   corrections = [],
 ) {
   const sortedDrawRows = [...drawRows].sort(
-    (left, right) => left.draw_number - right.draw_number
+    (left, right) => String(left.phase_code ?? '').localeCompare(
+      String(right.phase_code ?? ''),
+      'en',
+      { numeric: true, sensitivity: 'base' },
+    )
+      || left.draw_number - right.draw_number
       || String(left.lot_number).localeCompare(String(right.lot_number), 'en', {
         numeric: true,
         sensitivity: 'base',
@@ -42,13 +47,18 @@ export function toDrawInvoicePackage(
     sortedDrawRows.map((row) => [`${row.lot_id}:${row.draw_id}`, row]),
   )
   const optionsBillingDrawNumber = setupVersion?.options_billing_draw_number
+  const phaseIds = uniqueSortedNumbers(
+    sortedDrawRows.map((row) => row.phase_id),
+  )
+  const primaryPhaseId = packageRow.phase_id ?? phaseIds[0] ?? null
 
   return {
     id: packageRow.id,
     packageNumber: packageRow.package_number,
     builderId: packageRow.builder_id,
     jobId: packageRow.job_id,
-    phaseId: packageRow.phase_id,
+    phaseId: primaryPhaseId,
+    phaseIds,
     setupVersionId: packageRow.setup_version_id,
     packageDate: packageRow.package_date,
     billingPeriodStart: packageRow.billing_period_start,
@@ -76,6 +86,7 @@ export function toDrawInvoicePackage(
       sortedDrawRows.map((row) => Number(row.draw_number) - 1),
     ),
     selections: sortedDrawRows.map((row) => ({
+      phaseId: row.phase_id,
       lotId: row.lot_id,
       drawIndex: Number(row.draw_number) - 1,
     })),
@@ -97,6 +108,9 @@ export function toDrawInvoicePackage(
         }
       : null,
     persistedDrawLines: sortedDrawRows.map((row) => ({
+      phaseId: row.phase_id,
+      phaseCode: row.phase_code,
+      building: row.building,
       lotId: row.lot_id,
       drawId: row.draw_id,
       lotNumber: row.lot_number,
@@ -115,6 +129,9 @@ export function toDrawInvoicePackage(
       const drawRow = drawRowsByLotAndDraw.get(`${row.lot_id}:${row.draw_id}`)
       return {
         id: `${row.lot_id}:${row.option_id}`,
+        phaseId: drawRow?.phase_id ?? null,
+        phaseCode: drawRow?.phase_code ?? null,
+        building: drawRow?.building ?? null,
         lotId: row.lot_id,
         lotNumber: drawRow?.lot_number ?? '',
         planCode: drawRow?.plan_code ?? null,
@@ -128,9 +145,9 @@ export function toDrawInvoicePackage(
   }
 }
 
-export function toCreateDrawPackageRpc({ phaseId, selections }) {
+export function toCreateDrawPackageRpc({ jobId, selections }) {
   return {
-    p_phase_id: Number(phaseId),
+    p_job_id: Number(jobId),
     p_selections: selections.map(({ lotId, drawIndex }) => ({
       lot_id: Number(lotId),
       draw_number: Number(drawIndex) + 1,

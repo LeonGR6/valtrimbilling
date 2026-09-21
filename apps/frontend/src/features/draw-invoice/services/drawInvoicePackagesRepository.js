@@ -48,6 +48,9 @@ const INVOICE_COLUMNS = [
 
 const DRAW_COLUMNS = [
   'package_id',
+  'phase_id',
+  'phase_code',
+  'building',
   'lot_id',
   'draw_id',
   'lot_number',
@@ -209,7 +212,7 @@ export async function listDrawInvoicePackages() {
       packageIds,
       'package_draws',
       DRAW_COLUMNS,
-      [['package_id', true], ['draw_number', true], ['lot_number', true]],
+      [['package_id', true], ['phase_code', true], ['draw_number', true], ['lot_number', true]],
     ),
     listRowsInBatches(
       client,

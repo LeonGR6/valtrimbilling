@@ -57,6 +57,31 @@ export function getDateOwnerLabel(value, short = false) {
   return short ? option.shortLabel : option.label
 }
 
+export function getFollowUpStatusMeta(followUp) {
+  if (!followUp?.status) return null
+  const rescheduledByJobsite = followUp.status === 'RESCHEDULED'
+    && String(followUp.note ?? '').includes('Jobsite Superintendent')
+  const values = {
+    SCHEDULED: { label: 'Awaiting response', color: 'info', tone: 'scheduled' },
+    CONFIRMED: { label: 'Confirmed', color: 'success', tone: 'confirmed' },
+    RESCHEDULED: {
+      label: rescheduledByJobsite ? 'Rescheduled by Jobsite' : 'Rescheduled',
+      color: 'warning',
+      tone: 'rescheduled',
+    },
+    RESCHEDULE_REQUESTED: { label: 'Date review pending', color: 'warning', tone: 'rescheduled' },
+    NO_RESPONSE: { label: 'No response', color: 'error', tone: 'no-response' },
+    ON_HOLD: { label: 'On hold', color: 'warning', tone: 'on-hold' },
+    COMPLETED: { label: 'Completed', color: 'success', tone: 'confirmed' },
+    CANCELLED: { label: 'Cancelled', color: 'default', tone: 'cancelled' },
+  }
+  return values[followUp.status] ?? {
+    label: String(followUp.status).replaceAll('_', ' ').toLowerCase(),
+    color: 'default',
+    tone: 'cancelled',
+  }
+}
+
 export function getActivityTone(activityType, orderMaterial = false) {
   if (activityType === 'EXT' && orderMaterial) return 'ext-order'
   return activityTypeMap[activityType]?.tone ?? 'ext'
@@ -98,6 +123,7 @@ export function getLotsLabel(lotStart, lotEnd, lotNumbers = []) {
 export function createEmptyProductionDraft(date = new Date().toISOString().split('T')[0]) {
   return {
     activityId: null,
+    followUpStates: {},
     calendarType: 'PRODUCTION',
     jobId: '',
     phaseId: '',
@@ -414,6 +440,7 @@ export function createProductionCalendarEvents(values, groupId, stamp = Date.now
     superintendent: values.superintendent,
     notes: values.notes,
     productionSchedule,
+    followUpStates: values.followUpStates ?? {},
   }
 
   return activityTypeOptions.flatMap((type) => {
@@ -431,13 +458,14 @@ export function createProductionCalendarEvents(values, groupId, stamp = Date.now
         history: stage.history,
       }]
     const stageEvents = schedules.map((schedule, index) => {
+      const scheduleId = schedule.scheduleId ?? schedule.id ?? stage.id ?? null
       const scheduleLotNumbers = values.lotNumbers.filter((lot) => (
         Number(lot) >= Number(schedule.lotStart) && Number(lot) <= Number(schedule.lotEnd)
       ))
 
       return {
-        id: schedule.scheduleId || schedule.id || stage.id
-          ? `production-schedule-${schedule.scheduleId ?? schedule.id ?? stage.id}`
+        id: scheduleId
+          ? `production-schedule-${scheduleId}`
           : `${groupId}-${type.value.toLowerCase()}-${stamp}-${index}`,
         groupId,
         title: `${type.label} • ${getLotsLabel(schedule.lotStart, schedule.lotEnd, scheduleLotNumbers)}`,
@@ -446,7 +474,8 @@ export function createProductionCalendarEvents(values, groupId, stamp = Date.now
         extendedProps: {
           ...commonProps,
           activityType: type.value,
-          scheduleId: schedule.scheduleId ?? schedule.id ?? stage.id ?? null,
+          scheduleId,
+          followUp: values.followUpStates?.[String(scheduleId)] ?? null,
           dateOwner: schedule.dateOwner ?? stage.dateOwner,
           dateNote: schedule.note ?? stage.note ?? '',
           dateHistory: schedule.history ?? stage.history ?? [],
@@ -478,6 +507,7 @@ export function createProductionCalendarEvents(values, groupId, stamp = Date.now
           ...commonProps,
           activityType: type.value,
           scheduleId: stage.installScheduleId ?? null,
+          followUp: values.followUpStates?.[String(stage.installScheduleId)] ?? null,
           dateOwner: stage.installDateOwner,
           dateNote: stage.installDateNote ?? '',
           dateHistory: stage.installDateHistory ?? [],
@@ -508,6 +538,7 @@ export function createProductionCalendarEvents(values, groupId, stamp = Date.now
           ...commonProps,
           activityType: type.value,
           scheduleId: stage.lockUpScheduleId ?? null,
+          followUp: values.followUpStates?.[String(stage.lockUpScheduleId)] ?? null,
           dateOwner: stage.lockUpDateOwner,
           dateNote: stage.lockUpDateNote ?? '',
           dateHistory: stage.lockUpDateHistory ?? [],
@@ -539,6 +570,7 @@ export function createDraftFromProductionEvent(event) {
   return {
     ...createEmptyProductionDraft(schedule.EXT.date),
     activityId: props.activityId ?? null,
+    followUpStates: props.followUpStates ?? {},
     jobId: props.jobId,
     phaseId: props.phaseId,
     jobCode: props.jobCode,

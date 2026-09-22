@@ -11,22 +11,36 @@ export function toBuilderFollowUpPublicResponse(payload) {
     throw new Error('The follow-up response is invalid.')
   }
 
-  if (payload.alreadySubmitted) {
+  if (payload.alreadySubmitted || payload.responseAction) {
     const responseAction = requiredString(payload.responseAction, 'action')
     if (!RESPONSE_ACTIONS.has(responseAction)) {
       throw new Error('The follow-up response action is invalid.')
     }
     return {
       alreadySubmitted: true,
+      scheduleId: payload.scheduleId ? String(payload.scheduleId) : null,
+      checkpointId: payload.checkpointId ? String(payload.checkpointId) : null,
       responseAction,
       respondedAt: payload.respondedAt ?? null,
       workDate: requiredString(payload.workDate, 'work date'),
       proposedWorkDate: payload.proposedWorkDate
         ? String(payload.proposedWorkDate)
         : null,
+      finalWorkDate: payload.finalWorkDate
+        ? String(payload.finalWorkDate)
+        : requiredString(
+          payload.proposedWorkDate ?? payload.workDate,
+          'final work date',
+        ),
+      currentWorkDate: payload.currentWorkDate
+        ? String(payload.currentWorkDate)
+        : null,
       requestStatus: payload.requestStatus ? String(payload.requestStatus) : null,
       requestId: payload.requestId ? String(payload.requestId) : null,
       recipientName: payload.recipientName ? String(payload.recipientName) : '',
+      notificationIds: Array.isArray(payload.notificationIds)
+        ? payload.notificationIds.map(String)
+        : [],
     }
   }
 

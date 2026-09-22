@@ -153,6 +153,44 @@ export function toBuilderFollowUpRescheduleRequest(row) {
   }
 }
 
+export function toBuilderFollowUpResponseHistory(row) {
+  if (!row || typeof row !== 'object') {
+    throw new Error('Builder follow-up response history row is invalid.')
+  }
+  const responseAction = requiredString(row.response_action, 'response action')
+  if (!['CONFIRMED', 'NOT_READY'].includes(responseAction)) {
+    throw new Error('Builder follow-up response action is invalid.')
+  }
+
+  return {
+    responseEventId: requiredString(row.response_event_id, 'response event id'),
+    scheduleId: requiredString(row.schedule_id, 'schedule id'),
+    responseAction,
+    targetWorkDate: requiredString(row.target_work_date, 'original work date'),
+    proposedWorkDate: row.proposed_work_date ? String(row.proposed_work_date) : null,
+    finalWorkDate: requiredString(row.final_work_date, 'final work date'),
+    currentWorkDate: requiredString(row.current_work_date, 'current Production date'),
+    requestId: row.request_id ? String(row.request_id) : null,
+    requestStatus: row.request_status ? String(row.request_status) : null,
+    respondedAt: requiredString(row.responded_at, 'response timestamp'),
+    superintendentContactId: row.superintendent_contact_id
+      ? String(row.superintendent_contact_id)
+      : null,
+    superintendentName: requiredString(row.superintendent_name, 'Superintendent name'),
+    superintendentEmail: requiredString(row.superintendent_email, 'Superintendent email'),
+    reason: String(row.reason ?? '').trim(),
+    stageType: requiredString(row.stage_type, 'stage type'),
+    variant: requiredString(row.variant, 'variant'),
+    jobCode: requiredString(row.job_code, 'Job code'),
+    community: String(row.community ?? '').trim(),
+    builderName: requiredString(row.builder_name, 'Builder'),
+    phaseCode: requiredString(row.phase_code, 'Phase'),
+    building: String(row.building ?? '').trim(),
+    lotStartLabel: String(row.lot_start_label ?? '').trim(),
+    lotEndLabel: String(row.lot_end_label ?? '').trim(),
+  }
+}
+
 export function followUpLotsLabel(item) {
   if (!item.lotStartLabel && !item.lotEndLabel) return 'Lots not specified'
   if (!item.lotEndLabel || item.lotStartLabel === item.lotEndLabel) {

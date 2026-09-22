@@ -1,6 +1,11 @@
 import {
   verifyBuilderFollowUpResponseToken,
 } from '../_shared/builderFollowUpResponse.ts'
+import {
+  type BuilderFollowUpResponseEmailSnapshot,
+  renderBuilderFollowUpResponseEmail,
+  sendBuilderFollowUpResponseWithResend,
+} from '../_shared/builderFollowUpEmail.ts'
 import { handlePreflight, json } from '../_shared/cors.ts'
 import { serviceClient } from '../_shared/supabase.ts'
 
@@ -17,6 +22,18 @@ interface ResponseBody {
 function responseSecret() {
   const value = Deno.env.get('FOLLOW_UP_RESPONSE_SECRET')?.trim()
   if (!value) throw new Error('Builder follow-up responses are not configured.')
+  return value
+}
+
+function emailMode() {
+  return Deno.env.get('FOLLOW_UP_EMAIL_MODE')?.trim().toUpperCase() === 'LIVE'
+    ? 'LIVE'
+    : 'PREVIEW'
+}
+
+function requiredLiveEnv(name: string) {
+  const value = Deno.env.get(name)?.trim()
+  if (!value) throw new Error(`Missing Edge Function secret: ${name}.`)
   return value
 }
 
@@ -48,6 +65,84 @@ function tokenValue(value: unknown) {
   const normalized = String(value ?? '').trim()
   if (!normalized || normalized.length > 160) return null
   return normalized
+}
+
+function isResponseEmailSnapshot(
+  value: unknown,
+): value is BuilderFollowUpResponseEmailSnapshot {
+  if (!value || typeof value !== 'object') return false
+  const snapshot = value as Record<string, unknown>
+  if (snapshot.alreadySent === true) {
+    return typeof snapshot.notificationId === 'string'
+  }
+  return typeof snapshot.notificationId === 'string'
+    && ['JOBSITE_RECEIPT', 'INTERNAL_ALERT'].includes(String(snapshot.notificationType))
+    && typeof snapshot.idempotencyKey === 'string'
+    && Array.isArray(snapshot.recipientEmails)
+    && snapshot.recipientEmails.length > 0
+    && snapshot.recipientEmails.every((email) => typeof email === 'string')
+    && ['CONFIRMED', 'NOT_READY'].includes(String(snapshot.responseAction))
+    && typeof snapshot.targetWorkDate === 'string'
+    && typeof snapshot.finalWorkDate === 'string'
+    && typeof snapshot.superintendentName === 'string'
+}
+
+async function finishResponseEmail(
+  admin: ReturnType<typeof serviceClient>,
+  snapshot: BuilderFollowUpResponseEmailSnapshot,
+  rendered: ReturnType<typeof renderBuilderFollowUpResponseEmail>,
+  success: boolean,
+  providerMessageId: string | null,
+  lastError: string | null,
+) {
+  const { error } = await admin.rpc('finish_builder_follow_up_response_email', {
+    p_notification_id: snapshot.notificationId,
+    p_success: success,
+    p_subject: rendered.subject,
+    p_text_body: rendered.text,
+    p_html_body: rendered.html,
+    p_provider_message_id: providerMessageId,
+    p_last_error: lastError,
+  })
+  if (error) throw error
+}
+
+async function deliverResponseEmail(
+  admin: ReturnType<typeof serviceClient>,
+  notificationId: string,
+) {
+  const apiKey = requiredLiveEnv('RESEND_API_KEY')
+  const from = requiredLiveEnv('FOLLOW_UP_FROM_EMAIL')
+  const replyTo = requiredLiveEnv('FOLLOW_UP_REPLY_TO')
+  const { data, error } = await admin.rpc('prepare_builder_follow_up_response_email', {
+    p_notification_id: notificationId,
+  })
+  if (error) throw error
+  if (!isResponseEmailSnapshot(data)) {
+    throw new Error('The follow-up response email snapshot is invalid.')
+  }
+  if (data.alreadySent) return { notificationId, alreadySent: true }
+
+  const rendered = renderBuilderFollowUpResponseEmail(data)
+  try {
+    const providerMessageId = await sendBuilderFollowUpResponseWithResend({
+      apiKey,
+      from,
+      replyTo,
+      snapshot: data,
+      rendered,
+    })
+    await finishResponseEmail(admin, data, rendered, true, providerMessageId, null)
+    return { notificationId, sent: true, providerMessageId }
+  } catch (deliveryError) {
+    const message = safeError(deliveryError)
+    try {
+      await finishResponseEmail(admin, data, rendered, false, null, message)
+    } catch (finishError) {
+      console.error('Recording follow-up response email failure failed:', finishError)
+    }
+    throw deliveryError
+  }
 }
 
 Deno.serve(async (req) => {
@@ -107,6 +202,22 @@ Deno.serve(async (req) => {
       p_reason: reason,
     })
     if (error) throw error
+
+    if (emailMode() === 'LIVE') {
+      const notificationIds = Array.isArray(data?.notificationIds)
+        ? data.notificationIds.map(String).filter(Boolean)
+        : []
+      for (const notificationId of notificationIds) {
+        try {
+          await deliverResponseEmail(admin, notificationId)
+        } catch (deliveryError) {
+          console.error(
+            `Follow-up response ${notificationId} was saved but its email remains queued:`,
+            deliveryError,
+          )
+        }
+      }
+    }
     return json({ response: data })
   } catch (error) {
     console.error('Public Builder follow-up response failed:', error)

@@ -29,27 +29,42 @@ test('maps a pending public response without losing schedule identity', () => {
   assert.equal(response.recipientName, 'Jamie Superintendent')
 })
 
-test('maps an idempotent submitted response and rejects an unknown action', () => {
-  assert.deepEqual(toBuilderFollowUpPublicResponse({
-    alreadySubmitted: true,
-    responseAction: 'NOT_READY',
+test('maps first-submit and idempotent response payloads without requiring pending fields', () => {
+  const firstSubmit = toBuilderFollowUpPublicResponse({
+    alreadySubmitted: false,
+    scheduleId: '101',
+    checkpointId: '301',
+    responseAction: 'CONFIRMED',
     respondedAt: '2026-09-21T12:00:00Z',
     workDate: '2026-10-15',
-    proposedWorkDate: '2026-10-22',
-    requestStatus: 'PENDING',
-    requestId: '701',
+    finalWorkDate: '2026-10-15',
     recipientName: 'Jamie Superintendent',
-  }), {
+    notificationIds: ['801'],
+  })
+  assert.equal(firstSubmit.alreadySubmitted, true)
+  assert.equal(firstSubmit.scheduleId, '101')
+  assert.equal(firstSubmit.finalWorkDate, '2026-10-15')
+  assert.deepEqual(firstSubmit.notificationIds, ['801'])
+
+  const idempotent = toBuilderFollowUpPublicResponse({
     alreadySubmitted: true,
+    scheduleId: '101',
+    checkpointId: '301',
     responseAction: 'NOT_READY',
     respondedAt: '2026-09-21T12:00:00Z',
     workDate: '2026-10-15',
     proposedWorkDate: '2026-10-22',
-    requestStatus: 'PENDING',
+    finalWorkDate: '2026-10-22',
+    currentWorkDate: '2026-10-22',
+    requestStatus: 'APPROVED',
     requestId: '701',
     recipientName: 'Jamie Superintendent',
   })
+  assert.equal(idempotent.requestStatus, 'APPROVED')
+  assert.equal(idempotent.finalWorkDate, '2026-10-22')
+})
 
+test('rejects an unknown submitted action', () => {
   assert.throws(() => toBuilderFollowUpPublicResponse({
     alreadySubmitted: true,
     responseAction: 'MAYBE',

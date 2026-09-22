@@ -1,10 +1,13 @@
 import {
   type BuilderFollowUpEscalationSnapshot,
   type BuilderFollowUpEmailSnapshot,
+  type BuilderFollowUpResponseEmailSnapshot,
   renderBuilderFollowUpEscalationEmail,
   renderBuilderFollowUpEmail,
+  renderBuilderFollowUpResponseEmail,
   sendBuilderFollowUpEscalationWithResend,
   sendBuilderFollowUpWithResend,
+  sendBuilderFollowUpResponseWithResend,
 } from '../_shared/builderFollowUpEmail.ts'
 import {
   buildBuilderFollowUpResponseLinks,
@@ -143,6 +146,26 @@ function isEscalationSnapshot(value: unknown): value is BuilderFollowUpEscalatio
     && snapshot.recipientEmails.every((email) => typeof email === 'string')
 }
 
+function isResponseEmailSnapshot(
+  value: unknown,
+): value is BuilderFollowUpResponseEmailSnapshot {
+  if (!value || typeof value !== 'object') return false
+  const snapshot = value as Record<string, unknown>
+  if (snapshot.alreadySent === true) {
+    return typeof snapshot.notificationId === 'string'
+  }
+  return typeof snapshot.notificationId === 'string'
+    && ['JOBSITE_RECEIPT', 'INTERNAL_ALERT'].includes(String(snapshot.notificationType))
+    && typeof snapshot.idempotencyKey === 'string'
+    && Array.isArray(snapshot.recipientEmails)
+    && snapshot.recipientEmails.length > 0
+    && snapshot.recipientEmails.every((email) => typeof email === 'string')
+    && ['CONFIRMED', 'NOT_READY'].includes(String(snapshot.responseAction))
+    && typeof snapshot.targetWorkDate === 'string'
+    && typeof snapshot.finalWorkDate === 'string'
+    && typeof snapshot.superintendentName === 'string'
+}
+
 async function prepareEmail(
   admin: ReturnType<typeof serviceClient>,
   id: string,
@@ -227,6 +250,27 @@ async function finishEscalation(
 ) {
   const { data, error } = await admin.rpc('finish_builder_follow_up_escalation', {
     p_escalation_id: snapshot.escalationId,
+    p_success: success,
+    p_subject: rendered.subject,
+    p_text_body: rendered.text,
+    p_html_body: rendered.html,
+    p_provider_message_id: providerMessageId,
+    p_last_error: lastError,
+  })
+  if (error) throw error
+  return data as string
+}
+
+async function finishResponseEmail(
+  admin: ReturnType<typeof serviceClient>,
+  snapshot: BuilderFollowUpResponseEmailSnapshot,
+  rendered: ReturnType<typeof renderBuilderFollowUpResponseEmail>,
+  success: boolean,
+  providerMessageId: string | null,
+  lastError: string | null,
+) {
+  const { data, error } = await admin.rpc('finish_builder_follow_up_response_email', {
+    p_notification_id: snapshot.notificationId,
     p_success: success,
     p_subject: rendered.subject,
     p_text_body: rendered.text,
@@ -362,6 +406,62 @@ async function processEscalation(
   }
 }
 
+async function processResponseEmail(
+  admin: ReturnType<typeof serviceClient>,
+  id: string,
+) {
+  const { data, error } = await admin.rpc('prepare_builder_follow_up_response_email', {
+    p_notification_id: id,
+  })
+  if (error) throw error
+  if (!isResponseEmailSnapshot(data)) {
+    throw new Error('The follow-up response email snapshot is invalid.')
+  }
+  if (data.alreadySent) {
+    return {
+      type: 'RESPONSE_NOTIFICATION' as const,
+      notificationId: id,
+      sent: true,
+      alreadySent: true,
+      providerMessageId: data.providerMessageId,
+    }
+  }
+
+  const rendered = renderBuilderFollowUpResponseEmail(data)
+  try {
+    const providerMessageId = await sendBuilderFollowUpResponseWithResend({
+      apiKey: requiredLiveEnv('RESEND_API_KEY'),
+      from: requiredLiveEnv('FOLLOW_UP_FROM_EMAIL'),
+      replyTo: requiredLiveEnv('FOLLOW_UP_REPLY_TO'),
+      snapshot: data,
+      rendered,
+    })
+    const sentAt = await finishResponseEmail(
+      admin,
+      data,
+      rendered,
+      true,
+      providerMessageId,
+      null,
+    )
+    return {
+      type: 'RESPONSE_NOTIFICATION' as const,
+      notificationId: id,
+      sent: true,
+      providerMessageId,
+      sentAt,
+    }
+  } catch (deliveryError) {
+    const message = safeError(deliveryError)
+    try {
+      await finishResponseEmail(admin, data, rendered, false, null, message)
+    } catch (finishError) {
+      console.error('Recording follow-up response email failure failed:', finishError)
+    }
+    throw deliveryError
+  }
+}
+
 Deno.serve(async (req) => {
   const preflight = handlePreflight(req)
   if (preflight) return preflight
@@ -451,17 +551,46 @@ Deno.serve(async (req) => {
     if (checkpointRefresh.error) throw checkpointRefresh.error
     if (escalationRefresh.error) throw escalationRefresh.error
 
-    const { data: dueEscalations, error: escalationError } = await admin
-      .from('builder_follow_up_attention_queue')
-      .select('escalation_id')
-      .in('delivery_status', ['DUE', 'OVERDUE', 'FAILED'])
-      .not('escalation_id', 'is', null)
-      .order('due_on', { ascending: true })
-      .order('escalation_id', { ascending: true })
-      .limit(limit)
-    if (escalationError) throw escalationError
-
     const results = []
+    if (mode === 'LIVE') {
+      const { data: responseEmails, error: responseEmailError } = await admin
+        .from('builder_follow_up_response_emails')
+        .select('id')
+        .in('status', ['PENDING', 'FAILED'])
+        .order('created_at', { ascending: true })
+        .order('id', { ascending: true })
+        .limit(limit)
+      if (responseEmailError) throw responseEmailError
+
+      for (const row of responseEmails ?? []) {
+        try {
+          results.push(await processResponseEmail(admin, String(row.id)))
+        } catch (error) {
+          results.push({
+            type: 'RESPONSE_NOTIFICATION',
+            notificationId: String(row.id),
+            sent: false,
+            error: safeError(error),
+          })
+        }
+      }
+    }
+
+    const remainingAfterResponses = Math.max(limit - results.length, 0)
+    let dueEscalations: Array<{ escalation_id: string | number }> = []
+    if (remainingAfterResponses > 0) {
+      const { data, error: escalationError } = await admin
+        .from('builder_follow_up_attention_queue')
+        .select('escalation_id')
+        .in('delivery_status', ['DUE', 'OVERDUE', 'FAILED'])
+        .not('escalation_id', 'is', null)
+        .order('due_on', { ascending: true })
+        .order('escalation_id', { ascending: true })
+        .limit(remainingAfterResponses)
+      if (escalationError) throw escalationError
+      dueEscalations = data ?? []
+    }
+
     for (const row of dueEscalations ?? []) {
       try {
         results.push(await processEscalation(
@@ -480,15 +609,19 @@ Deno.serve(async (req) => {
     }
 
     const remaining = Math.max(limit - results.length, 0)
-    const { data: dueRows, error: dueError } = await admin
-      .from('builder_follow_up_queue')
-      .select('checkpoint_id')
-      .eq('checkpoint_status', 'PENDING')
-      .in('delivery_status', ['DUE', 'OVERDUE', 'FAILED'])
-      .order('due_on', { ascending: true })
-      .order('checkpoint_id', { ascending: true })
-      .limit(remaining)
-    if (dueError) throw dueError
+    let dueRows: Array<{ checkpoint_id: string | number }> = []
+    if (remaining > 0) {
+      const { data, error: dueError } = await admin
+        .from('builder_follow_up_queue')
+        .select('checkpoint_id')
+        .eq('checkpoint_status', 'PENDING')
+        .in('delivery_status', ['DUE', 'OVERDUE', 'FAILED'])
+        .order('due_on', { ascending: true })
+        .order('checkpoint_id', { ascending: true })
+        .limit(remaining)
+      if (dueError) throw dueError
+      dueRows = data ?? []
+    }
 
     for (const row of dueRows ?? []) {
       try {
@@ -511,13 +644,18 @@ Deno.serve(async (req) => {
       result.sent && !('alreadySent' in result && result.alreadySent)
     )).length
     const escalationCount = results.filter((result) => result.type === 'ESCALATION').length
+    const responseNotificationCount = results.filter(
+      (result) => result.type === 'RESPONSE_NOTIFICATION',
+    ).length
+    const followUpCount = results.filter((result) => result.type === 'FOLLOW_UP').length
     return json({
       mode,
       processed: results.length,
       sent,
       failed,
       escalations: escalationCount,
-      followUps: results.length - escalationCount,
+      responseNotifications: responseNotificationCount,
+      followUps: followUpCount,
       results,
     }, failed > 0 ? 207 : 200)
   } catch (error) {

@@ -105,6 +105,14 @@ test('persisted Production rows restore stable schedule ids and date history', (
           dateOwner: 'SUPERVISOR',
           note: 'Current EXT.',
           lotIds: [101, 102],
+          followUpState: {
+            status: 'CONFIRMED',
+            confirmedForDate: '2026-09-10',
+            confirmedAt: '2026-09-08T19:00:00Z',
+            lastResponseAt: '2026-09-08T19:00:00Z',
+            note: 'Confirmed by the Jobsite Superintendent.',
+            updatedAt: '2026-09-08T19:00:00Z',
+          },
           history: [{
             previousDate: '2026-09-09',
             previousOwner: 'TENTATIVE',
@@ -171,4 +179,6 @@ test('persisted Production rows restore stable schedule ids and date history', (
     'production-schedule-1002',
     'production-schedule-1003',
   ])
+  assert.equal(events[0].extendedProps.followUp.status, 'CONFIRMED')
+  assert.equal(events[0].extendedProps.followUp.confirmedForDate, '2026-09-10')
 })

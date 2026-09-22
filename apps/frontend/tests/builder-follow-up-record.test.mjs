@@ -7,6 +7,7 @@ import {
   toBuilderFollowUpAttentionItem,
   toBuilderFollowUpEscalationSettings,
   toBuilderFollowUpItem,
+  toBuilderFollowUpResponseHistory,
   toBuilderFollowUpRescheduleRequest,
   toFollowUpEmailResult,
 } from '../src/features/calendar/services/builderFollowUpRecord.js'
@@ -143,4 +144,37 @@ test('maps a Superintendent requested date for internal review', () => {
   assert.equal(request.requestId, '701')
   assert.equal(request.requestedShiftDays, 7)
   assert.equal(request.reason, 'Material delivery delayed')
+})
+
+test('maps an automatically applied Jobsite date change for recent responses', () => {
+  const response = toBuilderFollowUpResponseHistory({
+    response_event_id: 901,
+    schedule_id: 101,
+    response_action: 'NOT_READY',
+    target_work_date: '2026-10-15',
+    proposed_work_date: '2026-10-22',
+    final_work_date: '2026-10-22',
+    current_work_date: '2026-10-22',
+    request_id: 701,
+    request_status: 'APPROVED',
+    responded_at: '2026-09-21T12:00:00Z',
+    superintendent_contact_id: 88,
+    superintendent_name: 'Jamie Superintendent',
+    superintendent_email: 'jamie@example.com',
+    reason: 'Material delivery delayed',
+    stage_type: 'EXT',
+    variant: 'BASE',
+    job_code: 'JOB-01',
+    community: 'River Walk',
+    builder_name: 'Acme Builder',
+    phase_code: '2',
+    building: 'B',
+    lot_start_label: '1',
+    lot_end_label: '4',
+  })
+
+  assert.equal(response.responseEventId, '901')
+  assert.equal(response.responseAction, 'NOT_READY')
+  assert.equal(response.requestStatus, 'APPROVED')
+  assert.equal(response.finalWorkDate, '2026-10-22')
 })

@@ -46,6 +46,15 @@ const HISTORY_COLUMNS = [
   'new_note',
   'changed_at',
 ].join(', ')
+const FOLLOW_UP_STATE_COLUMNS = [
+  'schedule_id',
+  'status',
+  'confirmed_for_date',
+  'confirmed_at',
+  'last_response_at',
+  'note',
+  'updated_at',
+].join(', ')
 
 const PAGE_SIZE = 1000
 const FILTER_BATCH_SIZE = 200
@@ -144,7 +153,19 @@ function toHistory(row) {
   }
 }
 
-function toSchedule(row, lotIds, history) {
+function toFollowUpState(row) {
+  if (!row) return null
+  return {
+    status: row.status,
+    confirmedForDate: row.confirmed_for_date,
+    confirmedAt: row.confirmed_at,
+    lastResponseAt: row.last_response_at,
+    note: row.note ?? '',
+    updatedAt: row.updated_at,
+  }
+}
+
+function toSchedule(row, lotIds, history, followUpState) {
   return {
     id: row.id,
     stageId: row.stage_id,
@@ -158,6 +179,7 @@ function toSchedule(row, lotIds, history) {
     isActive: row.is_active,
     lotIds: [...lotIds],
     history: history.map(toHistory),
+    followUpState: toFollowUpState(followUpState),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   }
@@ -236,7 +258,7 @@ export async function listProductionActivities() {
     row.is_active && activeStageIds.has(row.stage_id)
   ))
   const scheduleIds = activeSchedules.map(({ id }) => id)
-  const [scheduleLotRows, historyRows] = await Promise.all([
+  const [scheduleLotRows, historyRows, followUpStateRows] = await Promise.all([
     listRowsInBatches(
       client,
       scheduleIds,
@@ -253,6 +275,14 @@ export async function listProductionActivities() {
       'schedule_id',
       [['schedule_id', true], ['changed_at', true], ['id', true]],
     ),
+    listRowsInBatches(
+      client,
+      scheduleIds,
+      'builder_follow_up_states',
+      FOLLOW_UP_STATE_COLUMNS,
+      'schedule_id',
+      [['schedule_id', true]],
+    ),
   ])
 
   const activityLots = groupRows(activityLotRows, 'activity_id')
@@ -260,6 +290,9 @@ export async function listProductionActivities() {
   const schedulesByStage = groupRows(activeSchedules, 'stage_id')
   const lotsBySchedule = groupRows(scheduleLotRows, 'schedule_id')
   const historyBySchedule = groupRows(historyRows, 'schedule_id')
+  const followUpBySchedule = new Map(
+    followUpStateRows.map((row) => [row.schedule_id, row]),
+  )
 
   return activityRows.map((row) => toActivity(
     row,
@@ -270,6 +303,7 @@ export async function listProductionActivities() {
         schedule,
         (lotsBySchedule.get(schedule.id) ?? []).map(({ lot_id: lotId }) => lotId),
         historyBySchedule.get(schedule.id) ?? [],
+        followUpBySchedule.get(schedule.id) ?? null,
       )),
     )),
   ))

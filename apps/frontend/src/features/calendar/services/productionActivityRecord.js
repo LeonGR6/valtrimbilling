@@ -239,10 +239,16 @@ export function toProductionActivityDraft(activity, jobs) {
   const shutter = findSchedule(shutterStage, 'BASE')
   const lockUp = findSchedule(hwStage, 'LOCK_UP')
   const lotNumbers = selectedLots.map((lot) => String(lot.lotNumber))
+  const followUpStates = Object.fromEntries(
+    activity.stages.flatMap((stage) => stage.schedules)
+      .filter((schedule) => schedule.id && schedule.followUpState)
+      .map((schedule) => [String(schedule.id), schedule.followUpState]),
+  )
 
   return {
     ...createEmptyProductionDraft(ext.date),
     activityId: activity.id,
+    followUpStates,
     jobId: activity.jobId,
     phaseId: activity.phaseId,
     jobCode: job.code,

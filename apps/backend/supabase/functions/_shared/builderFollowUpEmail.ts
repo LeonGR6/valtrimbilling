@@ -66,6 +66,33 @@ export interface RenderedBuilderFollowUpEscalationEmail {
   html: string
 }
 
+export interface BuilderFollowUpResponseEmailSnapshot {
+  alreadySent: boolean
+  providerMessageId?: string
+  notificationId: string
+  notificationType: 'JOBSITE_RECEIPT' | 'INTERNAL_ALERT'
+  idempotencyKey: string
+  recipientEmails: string[]
+  responseTokenId: string
+  scheduleId: string
+  responseAction: 'CONFIRMED' | 'NOT_READY'
+  respondedAt: string
+  targetWorkDate: string
+  finalWorkDate: string
+  stageType: 'EXT' | 'SHUTTER' | 'DM' | 'HW'
+  variant: string
+  jobCode: string
+  community: string
+  builderName: string
+  phaseCode: string
+  building: string
+  lotStartLabel: string
+  lotEndLabel: string
+  superintendentName: string
+  superintendentEmail: string
+  reason: string | null
+}
+
 interface ResendOptions {
   apiKey: string
   from: string
@@ -80,6 +107,14 @@ interface EscalationResendOptions {
   replyTo: string
   snapshot: BuilderFollowUpEscalationSnapshot
   rendered: RenderedBuilderFollowUpEscalationEmail
+}
+
+interface ResponseResendOptions {
+  apiKey: string
+  from: string
+  replyTo: string
+  snapshot: BuilderFollowUpResponseEmailSnapshot
+  rendered: RenderedBuilderFollowUpEmail
 }
 
 function escapeHtml(value: string) {
@@ -119,6 +154,17 @@ function escalationLotLabel(snapshot: BuilderFollowUpEscalationSnapshot) {
   return `Lots ${snapshot.lotStartLabel}–${snapshot.lotEndLabel}`
 }
 
+const stageTypeLabels = {
+  EXT: 'Exterior Frames',
+  SHUTTER: 'Shutter',
+  DM: 'Doors and Moldings',
+  HW: 'Hardware',
+} as const
+
+function stageTypeLabel(stageType: string) {
+  return stageTypeLabels[stageType as keyof typeof stageTypeLabels] ?? stageType
+}
+
 export function renderBuilderFollowUpEmail(
   snapshot: BuilderFollowUpEmailSnapshot,
   responseLinks?: BuilderFollowUpResponseLinks,
@@ -126,23 +172,24 @@ export function renderBuilderFollowUpEmail(
   const workDate = formatWorkDate(snapshot.workDate)
   const lots = lotLabel(snapshot)
   const location = snapshot.community.trim()
-  const subject = `Action requested: confirm ${snapshot.stageType} for ${snapshot.jobCode} on ${snapshot.workDate}`
+  const stage = stageTypeLabel(snapshot.stageType)
+  const subject = `Action requested: confirm ${stage} for ${snapshot.jobCode} on ${snapshot.workDate}`
   const greeting = `Hello ${snapshot.recipientName},`
-  const request = `ValTrim is following up to confirm ${snapshot.stageType} work for ${snapshot.jobCode} (${location}), ${lots}, scheduled for ${workDate}.`
+  const request = `ValTrim is following up to confirm ${stage} work for ${snapshot.jobCode} (${location}), ${lots}, scheduled for ${workDate}.`
   const response = responseLinks
-    ? 'Please select Confirmed, or select Not ready to request a different date.'
+    ? 'Please select Confirmed, or select Not ready and choose the new Production date.'
     : 'Please reply to confirm the date, request a reschedule, or let us know about any readiness or scheduling conflict.'
   const reference = `Reference: ${snapshot.checkpointCode.replaceAll('_', ' ')} follow-up (${snapshot.daysBefore} days before work).`
   const responseText = responseLinks
     ? [
       '',
       `Confirmed: ${responseLinks.confirmed}`,
-      `Not ready / request another date: ${responseLinks.notReady}`,
+      `Not ready / choose a new date: ${responseLinks.notReady}`,
       '',
       'Opening a link does not record a response. Review the details and submit the response on the secure ValTrim page.',
     ]
     : []
-  const footer = 'ValtrimBilling is the source of truth for this schedule. Only a submitted response can confirm the date or create a date-change request.'
+  const footer = 'ValtrimBilling is the source of truth for this schedule. A submitted Not ready response immediately updates the official Production date to the date selected on the secure page.'
   const text = [
     greeting,
     '',
@@ -163,7 +210,7 @@ export function renderBuilderFollowUpEmail(
             <a href="${escapeHtml(responseLinks.confirmed)}" style="display:inline-block;background:#16803c;color:#fff;text-decoration:none;font-weight:700;padding:12px 20px;border-radius:8px">Confirmed</a>
           </td>
           <td style="padding-bottom:10px">
-            <a href="${escapeHtml(responseLinks.notReady)}" style="display:inline-block;background:#b54708;color:#fff;text-decoration:none;font-weight:700;padding:12px 20px;border-radius:8px">Not ready / Request another date</a>
+            <a href="${escapeHtml(responseLinks.notReady)}" style="display:inline-block;background:#b54708;color:#fff;text-decoration:none;font-weight:700;padding:12px 20px;border-radius:8px">Not ready / Choose a new date</a>
           </td>
         </tr>
       </table>
@@ -191,9 +238,10 @@ export function renderBuilderFollowUpEscalationEmail(
   const workDate = formatWorkDate(snapshot.workDate)
   const lots = escalationLotLabel(snapshot)
   const recipients = snapshot.recipientEmails.join(', ')
-  const subject = `Needs attention: no response for ${snapshot.stageType} • ${snapshot.jobCode}`
+  const stage = stageTypeLabel(snapshot.stageType)
+  const subject = `Needs attention: no response for ${stage} • ${snapshot.jobCode}`
   const summary = `No response has been recorded from ${snapshot.superintendentName} (${snapshot.superintendentEmail}) after ${snapshot.waitBusinessDays} business days.`
-  const schedule = `${snapshot.stageType} for ${snapshot.jobCode} (${snapshot.community}), ${lots}, is scheduled for ${workDate}.`
+  const schedule = `${stage} for ${snapshot.jobCode} (${snapshot.community}), ${lots}, is scheduled for ${workDate}.`
   const request = 'Please review the Jobsite status and decide whether to contact the Superintendent again, reschedule, place the work on hold, or record a response in ValtrimBilling.'
   const reference = `Escalation ${snapshot.escalationId}; no response recorded ${snapshot.noResponseSince}; internal recipients: ${recipients}.`
   const footer = 'ValtrimBilling remains the source of truth. This alert does not change the Production date or confirmation status.'
@@ -221,6 +269,80 @@ export function renderBuilderFollowUpEscalationEmail(
     </div>
   `.trim()
 
+  return { subject, text, html }
+}
+
+function responseLotLabel(snapshot: BuilderFollowUpResponseEmailSnapshot) {
+  if (!snapshot.lotStartLabel && !snapshot.lotEndLabel) return 'Lots not specified'
+  if (!snapshot.lotEndLabel || snapshot.lotStartLabel === snapshot.lotEndLabel) {
+    return `Lot ${snapshot.lotStartLabel || snapshot.lotEndLabel}`
+  }
+  return `Lots ${snapshot.lotStartLabel}–${snapshot.lotEndLabel}`
+}
+
+export function renderBuilderFollowUpResponseEmail(
+  snapshot: BuilderFollowUpResponseEmailSnapshot,
+): RenderedBuilderFollowUpEmail {
+  const originalDate = formatWorkDate(snapshot.targetWorkDate)
+  const finalDate = formatWorkDate(snapshot.finalWorkDate)
+  const lots = responseLotLabel(snapshot)
+  const reason = snapshot.reason?.trim() || 'No readiness note was provided.'
+  const isRescheduled = snapshot.responseAction === 'NOT_READY'
+  const stage = stageTypeLabel(snapshot.stageType)
+
+  if (snapshot.notificationType === 'INTERNAL_ALERT') {
+    const subject = `Schedule changed by Jobsite: ${stage} • ${snapshot.jobCode}`
+    const summary = `${snapshot.superintendentName} (${snapshot.superintendentEmail}) selected Not ready and moved the official ${stage} Production date for ${snapshot.jobCode}.`
+    const change = `${originalDate} → ${finalDate}; ${snapshot.community}; ${lots}.`
+    const text = [
+      'ValTrim scheduling update.',
+      '',
+      summary,
+      change,
+      '',
+      `Jobsite note: ${reason}`,
+      '',
+      'The change is already recorded in ValtrimBilling; no approval is required.',
+    ].join('\n')
+    const html = `
+      <div style="font-family:Arial,sans-serif;color:#172033;line-height:1.55;max-width:680px">
+        <p style="font-size:18px;font-weight:700;color:#b54708">ValTrim scheduling update.</p>
+        <p>${escapeHtml(summary)}</p>
+        <p><strong>${escapeHtml(change)}</strong></p>
+        <p>Jobsite note: ${escapeHtml(reason)}</p>
+        <hr style="border:0;border-top:1px solid #d5dce7;margin:24px 0" />
+        <p style="font-size:12px;color:#64748b">The change is already recorded in ValtrimBilling; no approval is required.</p>
+      </div>
+    `.trim()
+    return { subject, text, html }
+  }
+
+  const subject = isRescheduled
+    ? `Updated: ${stage} for ${snapshot.jobCode} moved to ${snapshot.finalWorkDate}`
+    : `Confirmed: ${stage} for ${snapshot.jobCode} on ${snapshot.finalWorkDate}`
+  const greeting = `Hello ${snapshot.superintendentName},`
+  const summary = isRescheduled
+    ? `Your response was received. The official ${stage} Production date for ${snapshot.jobCode} (${snapshot.community}), ${lots}, was changed from ${originalDate} to ${finalDate}.`
+    : `Your response was received. ${stage} work for ${snapshot.jobCode} (${snapshot.community}), ${lots}, is confirmed for ${finalDate}.`
+  const note = isRescheduled ? `Your readiness note: ${reason}` : null
+  const footer = 'ValtrimBilling is the source of truth for this Production schedule. Please contact ValTrim scheduling if another change is needed.'
+  const text = [
+    greeting,
+    '',
+    summary,
+    ...(note ? ['', note] : []),
+    '',
+    footer,
+  ].join('\n')
+  const html = `
+    <div style="font-family:Arial,sans-serif;color:#172033;line-height:1.55;max-width:640px">
+      <p>${escapeHtml(greeting)}</p>
+      <p><strong>${escapeHtml(summary)}</strong></p>
+      ${note ? `<p>${escapeHtml(note)}</p>` : ''}
+      <hr style="border:0;border-top:1px solid #d5dce7;margin:24px 0" />
+      <p style="font-size:12px;color:#64748b">${escapeHtml(footer)}</p>
+    </div>
+  `.trim()
   return { subject, text, html }
 }
 
@@ -284,6 +406,20 @@ export async function sendBuilderFollowUpWithResend(
 
 export async function sendBuilderFollowUpEscalationWithResend(
   options: EscalationResendOptions,
+  fetcher: typeof fetch = fetch,
+) {
+  return sendWithResend({
+    apiKey: options.apiKey,
+    from: options.from,
+    replyTo: options.replyTo,
+    idempotencyKey: options.snapshot.idempotencyKey,
+    recipients: options.snapshot.recipientEmails,
+    rendered: options.rendered,
+  }, fetcher)
+}
+
+export async function sendBuilderFollowUpResponseWithResend(
+  options: ResponseResendOptions,
   fetcher: typeof fetch = fetch,
 ) {
   return sendWithResend({

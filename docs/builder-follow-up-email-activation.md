@@ -11,11 +11,13 @@ idempotent internal email becomes due. The default recipient is
 `andres@valtrim.com`; an Administrator can change the recipients, wait period,
 or enablement from **Calendar → Builder follow-ups → Escalation settings**.
 
-Each Superintendent email also contains **Confirmed** and **Not ready / Request
-another date** buttons. They open the public `/follow-up/respond` page. Opening
+Each Superintendent email also contains **Confirmed** and **Not ready / Choose
+a new date** buttons. They open the public `/follow-up/respond` page. Opening
 the page is read-only; the response is recorded only after the Superintendent
-submits it. A Not ready response stops no-response reminders and creates an
-internal requested-date review. It never changes the Production date by itself.
+submits it. **Confirmed** binds the confirmation to the current date.
+**Not ready** immediately changes the official Production date to the selected
+date, writes the date history, rebuilds follow-up checkpoints, and does not
+require an internal approval.
 
 ## Delivery prerequisites
 
@@ -146,12 +148,25 @@ The next due run will:
 
 When a Superintendent submits **Confirmed**, ValtrimBilling binds the
 confirmation to the exact current Production date and closes the remaining
-checkpoints for that date. **Not ready** records the response and proposed date,
-then displays it under **Calendar → Builder follow-ups**. Scheduling can either
-approve the proposed date or keep the current date and place the follow-up on
-hold. Approval updates the Production schedule, writes the existing date
-history, and rebuilds follow-up checkpoints. Google Calendar remains downstream
-and receives the changed date through the existing manual synchronization.
+checkpoints for that date. **Not ready** atomically records the response and
+moves that exact Production event to the selected date. The calendar, date
+history, follow-up state, and new checkpoint matrix are updated in the same
+database transaction. Google Calendar remains downstream and receives the
+changed date through the existing manual synchronization.
+
+Every submitted response creates a durable acknowledgement for the Jobsite
+Superintendent. A Not ready response also creates a durable internal schedule-
+change alert using the recipients configured under **Escalation settings**.
+ValtrimBilling attempts these messages immediately in LIVE mode; failed or
+interrupted deliveries remain in
+`valtrim.builder_follow_up_response_emails` and the scheduled `send_due` run
+retries them with a stable Resend idempotency key. Email delivery failure never
+rolls back an already valid Jobsite response or its Production date change.
+
+The **Recent Jobsite responses** panel shows who confirmed, who rescheduled,
+the original and final dates, the note, and the response time. Production
+calendar cards also show the current follow-up state. Legacy pending requests
+created before this automatic behavior remain reviewable until resolved.
 
 It will also prioritize due no-response escalations before normal checkpoints.
 Each `NO_RESPONSE` activity event owns at most one internal email. Repeated

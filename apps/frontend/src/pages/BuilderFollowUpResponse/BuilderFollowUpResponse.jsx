@@ -45,7 +45,7 @@ function submittedMessage(response) {
   if (response.responseAction === 'CONFIRMED') {
     return 'Thank you. ValTrim received your confirmation.'
   }
-  return 'Thank you. ValTrim received your requested date. The Production date will remain unchanged until the scheduling team reviews it.'
+  return 'Thank you. ValTrim updated the official Production date.'
 }
 
 export default function BuilderFollowUpResponse() {
@@ -152,9 +152,14 @@ export default function BuilderFollowUpResponse() {
                 </Box>
                 <Alert severity={response.responseAction === 'CONFIRMED' ? 'success' : 'info'}>
                   {response.responseAction === 'CONFIRMED'
-                    ? `Confirmed for ${formatDate(response.workDate)}.`
-                    : `Requested date: ${formatDate(response.proposedWorkDate)}.`}
+                    ? `Confirmed for ${formatDate(response.finalWorkDate ?? response.workDate)}.`
+                    : `New Production date: ${formatDate(response.finalWorkDate ?? response.proposedWorkDate)}.`}
                 </Alert>
+                {response.notificationIds?.length > 0 && (
+                  <Typography variant="body2" color="text.secondary">
+                    A confirmation email has been queued for you.
+                  </Typography>
+                )}
                 <Typography variant="body2" color="text.secondary">
                   You can close this page. Reopening the link will not create a duplicate response.
                 </Typography>
@@ -213,7 +218,7 @@ export default function BuilderFollowUpResponse() {
                   <Stack spacing={2}>
                     <Divider />
                     <Alert severity="warning">
-                      This requests a date for ValTrim to review. It does not move the official Production date automatically.
+                      Submitting this response immediately changes the official Production date to the date you select. No additional approval is required.
                     </Alert>
                     <TextField
                       label="Requested work date"
@@ -254,7 +259,7 @@ export default function BuilderFollowUpResponse() {
                     ? 'Submitting…'
                     : intent === 'CONFIRMED'
                       ? 'Submit confirmation'
-                      : 'Submit requested date'}
+                      : 'Update Production date'}
                 </Button>
               </Stack>
             )}

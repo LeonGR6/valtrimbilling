@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import {
   Alert,
   Box,
@@ -34,6 +34,7 @@ import {
   getBuilderFollowUpEscalationSettings,
   getBuilderFollowUpEmailMode,
   listBuilderFollowUpAttention,
+  listBuilderFollowUpResponses,
   listBuilderFollowUpRescheduleRequests,
   listBuilderFollowUps,
   previewBuilderFollowUpEscalation,
@@ -59,8 +60,18 @@ const dateFormatter = new Intl.DateTimeFormat('en-US', {
   timeZone: 'UTC',
 })
 
+const timestampFormatter = new Intl.DateTimeFormat('en-US', {
+  dateStyle: 'medium',
+  timeStyle: 'short',
+})
+
 function formatDate(value) {
   return dateFormatter.format(new Date(`${value}T12:00:00Z`))
+}
+
+function formatTimestamp(value) {
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? '' : timestampFormatter.format(date)
 }
 
 function statusColor(status) {
@@ -82,6 +93,7 @@ export default function BuilderFollowUpQueue({ canManage = false, canConfigure =
   const [items, setItems] = useState([])
   const [attentionItems, setAttentionItems] = useState([])
   const [rescheduleItems, setRescheduleItems] = useState([])
+  const [responseItems, setResponseItems] = useState([])
   const [settings, setSettings] = useState(null)
   const [mode, setMode] = useState('PREVIEW')
   const [loading, setLoading] = useState(true)
@@ -108,12 +120,14 @@ export default function BuilderFollowUpQueue({ canManage = false, canConfigure =
         nextItems,
         nextAttentionItems,
         nextRescheduleItems,
+        nextResponseItems,
         nextSettings,
         status,
       ] = await Promise.all([
         listBuilderFollowUps(),
         listBuilderFollowUpAttention(),
         listBuilderFollowUpRescheduleRequests(),
+        listBuilderFollowUpResponses(),
         getBuilderFollowUpEscalationSettings(),
         canManage
           ? getBuilderFollowUpEmailMode()
@@ -122,6 +136,7 @@ export default function BuilderFollowUpQueue({ canManage = false, canConfigure =
       setItems(nextItems)
       setAttentionItems(nextAttentionItems)
       setRescheduleItems(nextRescheduleItems)
+      setResponseItems(nextResponseItems)
       setSettings(nextSettings)
       setMode(status.mode)
     } catch (loadError) {
@@ -136,14 +151,6 @@ export default function BuilderFollowUpQueue({ canManage = false, canConfigure =
     // eslint-disable-next-line react-hooks/set-state-in-effect
     load().catch(() => {})
   }, [load])
-
-  const dueCount = useMemo(() => items.filter(({ deliveryStatus }) => (
-    ['DUE', 'OVERDUE', 'FAILED'].includes(deliveryStatus)
-  )).length, [items])
-
-  const dueAttentionCount = useMemo(() => attentionItems.filter(({ deliveryStatus }) => (
-    ['DUE', 'OVERDUE', 'FAILED'].includes(deliveryStatus)
-  )).length, [attentionItems])
 
   const openPreview = async (item) => {
     setWorkingId(item.checkpointId)
@@ -236,7 +243,8 @@ export default function BuilderFollowUpQueue({ canManage = false, canConfigure =
       const result = await sendDueBuilderFollowUpEmails(25)
       setNotice(
         `Due email run finished: ${result.sent} sent, ${result.failed} failed `
-        + `(${result.escalations ?? 0} internal alert${result.escalations === 1 ? '' : 's'} processed).`,
+        + `(${result.responseNotifications ?? 0} response confirmation${result.responseNotifications === 1 ? '' : 's'}, `
+        + `${result.escalations ?? 0} internal alert${result.escalations === 1 ? '' : 's'} processed).`,
       )
       await load()
     } catch (runError) {
@@ -343,7 +351,6 @@ export default function BuilderFollowUpQueue({ canManage = false, canConfigure =
             disabled={
               !canManage
               || mode !== 'LIVE'
-              || dueCount + dueAttentionCount === 0
               || Boolean(workingId)
             }
           >
@@ -360,6 +367,61 @@ export default function BuilderFollowUpQueue({ canManage = false, canConfigure =
       {error && <Alert severity="error" onClose={() => setError('')}>{error}</Alert>}
       {notice && <Alert severity="success" onClose={() => setNotice('')}>{notice}</Alert>}
 
+      {!loading && responseItems.length > 0 && (
+        <Paper variant="outlined" sx={{ p: 2, mb: 2, borderColor: 'success.light' }}>
+          <Stack spacing={1.5}>
+            <Box>
+              <Typography fontWeight={780}>Recent Jobsite responses</Typography>
+              <Typography variant="body2" color="text.secondary">
+                Confirmations and date changes submitted from secure email links.
+              </Typography>
+            </Box>
+            {responseItems.map((item) => {
+              const rescheduled = item.responseAction === 'NOT_READY'
+              const currentChangedAgain = item.currentWorkDate !== item.finalWorkDate
+              return (
+                <Paper key={item.responseEventId} variant="outlined" sx={{ p: 1.5 }}>
+                  <Stack
+                    direction={{ xs: 'column', md: 'row' }}
+                    spacing={1.5}
+                    justifyContent="space-between"
+                    alignItems={{ xs: 'stretch', md: 'center' }}
+                  >
+                    <Box>
+                      <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
+                        <Typography fontWeight={760}>{item.stageType} · {item.jobCode}</Typography>
+                        <Chip
+                          size="small"
+                          color={rescheduled ? 'warning' : 'success'}
+                          label={rescheduled ? 'Rescheduled by Jobsite' : 'Confirmed'}
+                        />
+                      </Stack>
+                      <Typography variant="body2">
+                        {rescheduled
+                          ? <>{formatDate(item.targetWorkDate)} → <strong>{formatDate(item.finalWorkDate)}</strong></>
+                          : <>Confirmed for <strong>{formatDate(item.finalWorkDate)}</strong></>}
+                      </Typography>
+                      <Typography variant="body2" color="text.secondary">
+                        {item.superintendentName} · {item.superintendentEmail}
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary" display="block">
+                        {formatTimestamp(item.respondedAt)} · {followUpLotsLabel(item)}
+                        {item.reason ? ` · ${item.reason}` : ''}
+                      </Typography>
+                      {currentChangedAgain && (
+                        <Typography variant="caption" color="warning.dark" display="block">
+                          The Production date was changed again later; current date: {formatDate(item.currentWorkDate)}.
+                        </Typography>
+                      )}
+                    </Box>
+                  </Stack>
+                </Paper>
+              )
+            })}
+          </Stack>
+        </Paper>
+      )}
+
       {!loading && rescheduleItems.length > 0 && (
         <Paper variant="outlined" sx={{ p: 2, mb: 2, borderColor: 'warning.light' }}>
           <Stack spacing={1.5}>
@@ -370,7 +432,7 @@ export default function BuilderFollowUpQueue({ canManage = false, canConfigure =
                   {rescheduleItems.length} requested date{rescheduleItems.length === 1 ? '' : 's'} to review
                 </Typography>
                 <Typography variant="body2" color="text.secondary">
-                  The Superintendent responded Not ready. The Production date has not changed.
+                  Legacy requests created before automatic rescheduling still need a one-time review.
                 </Typography>
               </Box>
             </Stack>

@@ -31,6 +31,7 @@ import {
   activityTypeMap,
   getActivityTone,
   getDateOwnerLabel,
+  getFollowUpStatusMeta,
   getLotsLabel,
 } from '../data/calendarEvents.js'
 import DrawerHeader from './DrawerHeader.jsx'
@@ -334,6 +335,7 @@ export default function ActivityDetail({
   const lotStart = phaseLotNumbers[0] ?? props.lotStart
   const lotEnd = phaseLotNumbers.at(-1) ?? props.lotEnd
   const eventContacts = getEventContacts(props, jobs, people, builderContacts)
+  const followUp = getFollowUpStatusMeta(props.followUp)
 
   const openContact = (contact) => {
     setContactTarget(contact)
@@ -370,6 +372,24 @@ export default function ActivityDetail({
           </Box>
           <Chip size="small" label="Production" className="activity-detail__chip" />
         </Box>
+
+        {followUp && (
+          <Alert severity={followUp.color === 'default' ? 'info' : followUp.color}>
+            <Typography variant="body2" fontWeight={760}>
+              Builder follow-up: {followUp.label}
+            </Typography>
+            {props.followUp?.confirmedForDate && (
+              <Typography variant="caption" display="block">
+                Confirmed date: {formatDate(props.followUp.confirmedForDate)}
+              </Typography>
+            )}
+            {props.followUp?.note && (
+              <Typography variant="caption" display="block">
+                {props.followUp.note}
+              </Typography>
+            )}
+          </Alert>
+        )}
 
         <Box className="activity-detail__grid">
           <DetailRow icon={<BusinessRoundedIcon />} label="Builder">{props.builder}</DetailRow>

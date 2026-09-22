@@ -3,6 +3,7 @@ import {
   toBuilderFollowUpAttentionItem,
   toBuilderFollowUpEscalationSettings,
   toBuilderFollowUpItem,
+  toBuilderFollowUpResponseHistory,
   toBuilderFollowUpRescheduleRequest,
   toFollowUpEmailResult,
 } from './builderFollowUpRecord.js'
@@ -79,6 +80,32 @@ const RESCHEDULE_COLUMNS = [
   'superintendent_contact_id',
   'superintendent_name',
   'superintendent_email',
+  'stage_type',
+  'variant',
+  'job_code',
+  'community',
+  'builder_name',
+  'phase_code',
+  'building',
+  'lot_start_label',
+  'lot_end_label',
+].join(', ')
+
+const RESPONSE_HISTORY_COLUMNS = [
+  'response_event_id',
+  'schedule_id',
+  'response_action',
+  'target_work_date',
+  'proposed_work_date',
+  'final_work_date',
+  'current_work_date',
+  'request_id',
+  'request_status',
+  'responded_at',
+  'superintendent_contact_id',
+  'superintendent_name',
+  'superintendent_email',
+  'reason',
   'stage_type',
   'variant',
   'job_code',
@@ -170,6 +197,18 @@ export async function listBuilderFollowUpRescheduleRequests() {
     .order('request_id', { ascending: true })
   repositoryError(error)
   return (data ?? []).map(toBuilderFollowUpRescheduleRequest)
+}
+
+export async function listBuilderFollowUpResponses(limit = 25) {
+  const client = await requireSupabase()
+  const { data, error } = await client
+    .from('builder_follow_up_response_history')
+    .select(RESPONSE_HISTORY_COLUMNS)
+    .order('responded_at', { ascending: false })
+    .order('response_event_id', { ascending: false })
+    .limit(Math.min(Math.max(Number(limit) || 25, 1), 100))
+  repositoryError(error)
+  return (data ?? []).map(toBuilderFollowUpResponseHistory)
 }
 
 export async function resolveBuilderFollowUpRescheduleRequest(

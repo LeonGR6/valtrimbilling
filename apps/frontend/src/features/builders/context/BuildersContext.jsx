@@ -19,6 +19,11 @@ export function BuildersProvider({ children }) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const canManageBuilders = ['ADMIN', 'PROJECT_MANAGEMENT'].includes(profile?.role)
+  const canManageBuilderDateConfiguration = [
+    'ADMIN',
+    'PROJECT_MANAGEMENT',
+    'SCHEDULING',
+  ].includes(profile?.role)
 
   const refreshBuilders = useCallback(async () => {
     if (!profile?.id) {
@@ -94,6 +99,7 @@ export function BuildersProvider({ children }) {
     loading,
     error,
     canManageBuilders,
+    canManageBuilderDateConfiguration,
     refreshBuilders,
     createBuilder,
     updateBuilder,
@@ -101,6 +107,7 @@ export function BuildersProvider({ children }) {
     updateBuilderDateConfiguration,
   }), [
     builders,
+    canManageBuilderDateConfiguration,
     canManageBuilders,
     createBuilder,
     deactivateBuilder,

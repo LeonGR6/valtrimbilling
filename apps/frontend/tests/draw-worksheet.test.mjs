@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { initialBuilderDrawSchedules } from '../src/features/builder-draw-schedules/data/builderDrawSchedules.js'
-import { initialJobs } from '../src/features/jobs/data/jobs.js'
+import { testJobs } from './fixtures/jobs.mjs'
 import {
   allocateDrawAmounts,
   buildDrawWorksheet,
@@ -48,7 +48,7 @@ test('rounding remains inside the final draw so allocations equal the base price
 })
 
 test('Job 1307 Phase 2 Building 15 produces a ready five-lot worksheet', () => {
-  const job = initialJobs.find((item) => item.code === '1307')
+  const job = testJobs.find((item) => item.code === '1307')
   const phase = job.sequenceSheet.phases.find(
     (item) => item.name === '2' && item.building === '15',
   )

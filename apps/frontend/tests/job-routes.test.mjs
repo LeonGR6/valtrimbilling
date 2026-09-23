@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { initialBuilders } from '../src/features/builders/data/builders.js'
-import { initialJobs } from '../src/features/jobs/data/jobs.js'
+import { testJobs } from './fixtures/jobs.mjs'
 import {
   builderJobsPath,
   getJobBuilderId,
@@ -45,9 +44,9 @@ test('Job module routes keep the builder and Job identifiers', () => {
 })
 
 test('Jobs resolve and validate their builder relationship', () => {
-  const job = initialJobs.find((item) => item.id === 1)
+  const job = testJobs.find((item) => item.id === 1)
 
-  assert.equal(getJobBuilderId(job, initialBuilders), 2)
-  assert.equal(jobBelongsToBuilder(job, 2, initialBuilders), true)
-  assert.equal(jobBelongsToBuilder(job, 1, initialBuilders), false)
+  assert.equal(getJobBuilderId(job), 2)
+  assert.equal(jobBelongsToBuilder(job, 2), true)
+  assert.equal(jobBelongsToBuilder(job, 1), false)
 })

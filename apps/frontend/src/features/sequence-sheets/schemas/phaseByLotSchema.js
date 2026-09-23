@@ -12,7 +12,7 @@ const phaseCodeSchema = z
   .string()
   .trim()
   .min(1, 'Enter a phase number or code.')
-  .max(100, 'Use 100 characters or fewer.')
+  .max(40, 'Use 40 characters or fewer.')
   .transform(normalizePhaseCode)
   .refine((value) => value.length > 0, 'Enter a phase number or code.')
 

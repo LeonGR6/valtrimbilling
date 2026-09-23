@@ -18,6 +18,7 @@ import {
 import ApartmentRoundedIcon from '@mui/icons-material/ApartmentRounded'
 import BusinessRoundedIcon from '@mui/icons-material/BusinessRounded'
 import CalendarMonthRoundedIcon from '@mui/icons-material/CalendarMonthRounded'
+import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined'
 import EngineeringRoundedIcon from '@mui/icons-material/EngineeringRounded'
 import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded'
@@ -30,6 +31,7 @@ import {
   activityTypeMap,
   getActivityTone,
   getDateOwnerLabel,
+  getFollowUpStatusMeta,
   getLotsLabel,
 } from '../data/calendarEvents.js'
 import DrawerHeader from './DrawerHeader.jsx'
@@ -315,9 +317,14 @@ export default function ActivityDetail({
   builderContacts = [],
   onClose,
   onEdit,
+  onDelete,
+  canEdit = true,
+  deleting = false,
 }) {
   const [contactTarget, setContactTarget] = useState(null)
   const [contactMessage, setContactMessage] = useState('')
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [deleteError, setDeleteError] = useState('')
 
   if (!event) return null
 
@@ -328,10 +335,26 @@ export default function ActivityDetail({
   const lotStart = phaseLotNumbers[0] ?? props.lotStart
   const lotEnd = phaseLotNumbers.at(-1) ?? props.lotEnd
   const eventContacts = getEventContacts(props, jobs, people, builderContacts)
+  const followUp = getFollowUpStatusMeta(props.followUp)
 
   const openContact = (contact) => {
     setContactTarget(contact)
     setContactMessage(createEventContactMessage(props, type.label, contact.name))
+  }
+
+  const closeDeleteDialog = () => {
+    if (deleting) return
+    setDeleteDialogOpen(false)
+    setDeleteError('')
+  }
+
+  const confirmDelete = async () => {
+    setDeleteError('')
+    try {
+      await onDelete()
+    } catch (error) {
+      setDeleteError(error.message)
+    }
   }
 
   return (
@@ -349,6 +372,24 @@ export default function ActivityDetail({
           </Box>
           <Chip size="small" label="Production" className="activity-detail__chip" />
         </Box>
+
+        {followUp && (
+          <Alert severity={followUp.color === 'default' ? 'info' : followUp.color}>
+            <Typography variant="body2" fontWeight={760}>
+              Builder follow-up: {followUp.label}
+            </Typography>
+            {props.followUp?.confirmedForDate && (
+              <Typography variant="caption" display="block">
+                Confirmed date: {formatDate(props.followUp.confirmedForDate)}
+              </Typography>
+            )}
+            {props.followUp?.note && (
+              <Typography variant="caption" display="block">
+                {props.followUp.note}
+              </Typography>
+            )}
+          </Alert>
+        )}
 
         <Box className="activity-detail__grid">
           <DetailRow icon={<BusinessRoundedIcon />} label="Builder">{props.builder}</DetailRow>
@@ -388,12 +429,55 @@ export default function ActivityDetail({
         )}
       </Box>
 
-      <Box className="activity-drawer__footer">
+      <Box className="activity-drawer__footer activity-drawer__footer--detail">
+        <Button
+          variant="outlined"
+          color="error"
+          startIcon={<DeleteOutlineRoundedIcon />}
+          onClick={() => setDeleteDialogOpen(true)}
+          disabled={!canEdit || deleting}
+          className="activity-drawer__delete-action"
+        >
+          Delete
+        </Button>
         <Button variant="outlined" color="inherit" onClick={onClose}>Close</Button>
-        <Button variant="contained" startIcon={<EditOutlinedIcon />} onClick={onEdit} disableElevation>
+        <Button
+          variant="contained"
+          startIcon={<EditOutlinedIcon />}
+          onClick={onEdit}
+          disabled={!canEdit || deleting}
+          disableElevation
+        >
           Configure {type.shortLabel}
         </Button>
       </Box>
+
+      <Dialog open={deleteDialogOpen} onClose={closeDeleteDialog} fullWidth maxWidth="xs">
+        <DialogTitle>Delete Production activity?</DialogTitle>
+        <DialogContent>
+          <Stack spacing={2} sx={{ pt: 0.5 }}>
+            <Typography variant="body2" color="text.secondary">
+              This removes every calendar event in this activity, including EXT, Shutter,
+              DM, HW and their variants. The persisted activity and its audit history will
+              be retained.
+            </Typography>
+            {deleteError && <Alert severity="error">{deleteError}</Alert>}
+          </Stack>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2.5 }}>
+          <Button color="inherit" onClick={closeDeleteDialog} disabled={deleting}>Cancel</Button>
+          <Button
+            variant="contained"
+            color="error"
+            startIcon={<DeleteOutlineRoundedIcon />}
+            onClick={confirmDelete}
+            disabled={deleting}
+            disableElevation
+          >
+            {deleting ? 'Deleting…' : 'Delete activity'}
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       <ContactActionDialog
         contact={contactTarget}

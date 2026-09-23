@@ -4,16 +4,21 @@ import {
   Alert,
   Box,
   Button,
+  ButtonGroup,
   Card,
+  CardActionArea,
   CardContent,
   Checkbox,
   Chip,
+  CircularProgress,
   Dialog,
   DialogActions,
   DialogContent,
   DialogTitle,
   Divider,
   InputAdornment,
+  ListItemIcon,
+  Menu,
   MenuItem,
   Stack,
   Table,
@@ -23,10 +28,16 @@ import {
   TableFooter,
   TableHead,
   TableRow,
+  Tab,
+  Tabs,
   TextField,
   Typography,
 } from '@mui/material'
 import AddRoundedIcon from '@mui/icons-material/AddRounded'
+import ArrowDropDownRoundedIcon from '@mui/icons-material/ArrowDropDownRounded'
+import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
+import EditRoundedIcon from '@mui/icons-material/EditRounded'
+import MoveToInboxRoundedIcon from '@mui/icons-material/MoveToInboxRounded'
 import ApartmentRoundedIcon from '@mui/icons-material/ApartmentRounded'
 import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded'
 import AttachMoneyRoundedIcon from '@mui/icons-material/AttachMoneyRounded'
@@ -52,12 +63,29 @@ import {
 } from '../../sequence-sheets/utils/phaseBuildingCodes.js'
 import { useDrawInvoicePackages } from '../context/useDrawInvoicePackages.js'
 import {
+  CancelDrawPackageDialog,
+  EditDrawPackageDialog,
+  TransferDrawPackageCellsDialog,
+} from './DrawPackageCorrectionDialogs.jsx'
+import {
+  DRAW_PACKAGE_STATUSES,
+  DRAW_PACKAGE_STATUS_LABELS,
+  canCorrectDrawPackage,
+} from '../services/drawInvoicePackageRecord.js'
+import {
   buildUsedDrawSelections,
   drawSelectionKey,
-  makePackageSelections,
   summarizeDrawPackage,
 } from '../utils/drawPackages.js'
 import { buildDrawWorksheet } from '../utils/drawWorksheet.js'
+import {
+  PACKAGE_CATALOG_TABS,
+  canDeleteDraftPackage,
+  filterPackageCatalogContexts,
+  packageCatalogBuilderOptions,
+  packageCatalogCommunityOptions,
+  summarizePackageCatalogStatuses,
+} from '../utils/packageCatalog.js'
 
 const currencyFormatter = new Intl.NumberFormat('en-US', {
   style: 'currency',
@@ -73,26 +101,14 @@ const packageTableColumns = [
   { key: 'current-draw', width: 135 },
   { key: 'retention-wrap', width: 180 },
   { key: 'invoice-amount', width: 140 },
-  { key: 'documents', width: 110 },
-  { key: 'quickbooks', width: 115 },
-  { key: 'submission', width: 115 },
-  { key: 'status', width: 120 },
-  { key: 'action', width: 90 },
+  { key: 'status', width: 155 },
+  { key: 'action', width: 140 },
 ]
 
 const packageTableMinimumWidth = packageTableColumns.reduce(
   (total, column) => total + column.width,
   0,
 )
-
-const packageStatusLabels = {
-  DRAFT: 'Draft',
-  READY: 'Ready',
-  INVOICED: 'Invoiced',
-  SUBMITTED: 'Submitted',
-  PAID: 'Paid',
-  VOIDED: 'Voided',
-}
 
 function formatCurrency(value) {
   return typeof value === 'number' && Number.isFinite(value)
@@ -155,22 +171,44 @@ function ReadinessChip({ worksheet }) {
 
 function PackageStatusChip({ status }) {
   const color =
-    status === 'PAID' || status === 'SUBMITTED'
-      ? 'success'
-      : status === 'VOIDED'
-        ? 'default'
-        : status === 'DRAFT'
-          ? 'warning'
-          : 'primary'
+    status === 'CANCELLED'
+      ? 'default'
+      : status === 'PAID_CLOSED'
+        ? 'success'
+        : status === 'AWAITING_PAYMENT'
+          ? 'info'
+          : status === 'DRAFT'
+            ? 'warning'
+            : 'primary'
 
   return (
     <Chip
       size="small"
       color={color}
       variant={status === 'DRAFT' ? 'outlined' : 'filled'}
-      label={packageStatusLabels[status] ?? status}
+      label={DRAW_PACKAGE_STATUS_LABELS[status] ?? status}
       sx={{ fontWeight: 750 }}
     />
+  )
+}
+
+function PackageStatusControl({ status, disabled, onChange }) {
+  return (
+    <TextField
+      select
+      size="small"
+      label="Package status"
+      value={status}
+      onChange={onChange}
+      disabled={disabled}
+      sx={{ minWidth: 190 }}
+    >
+      {DRAW_PACKAGE_STATUSES.map((packageStatus) => (
+        <MenuItem key={packageStatus} value={packageStatus}>
+          {DRAW_PACKAGE_STATUS_LABELS[packageStatus]}
+        </MenuItem>
+      ))}
+    </TextField>
   )
 }
 
@@ -212,9 +250,14 @@ function MetricCard({ icon, label, value, detail }) {
 
 function getPackageContext(record, jobs, schedules) {
   const job = jobs.find((candidate) => String(candidate.id) === String(record.jobId))
-  const phase = job?.sequenceSheet?.phases?.find(
-    (candidate) => String(candidate.id) === String(record.phaseId),
+  const jobPhases = job?.sequenceSheet?.phases ?? []
+  const phaseIds = new Set(
+    (record.phaseIds?.length ? record.phaseIds : [record.phaseId])
+      .filter((value) => value != null)
+      .map(String),
   )
+  const phases = jobPhases.filter((candidate) => phaseIds.has(String(candidate.id)))
+  const phase = phases[0]
   const schedule = schedules.find(
     (candidate) =>
       String(candidate.builderId) === String(getJobBuilderId(job)),
@@ -225,8 +268,9 @@ function getPackageContext(record, jobs, schedules) {
     record,
     job,
     phase,
+    phases,
     schedule,
-    summary: summarizeDrawPackage(record, job, phase, schedule),
+    summary: summarizeDrawPackage(record, job, phases, schedule),
   }
 }
 
@@ -255,8 +299,9 @@ function CreateDrawDialog({
   const [selectedPhaseId, setSelectedPhaseId] = useState(
     firstPhase == null ? '' : String(firstPhase.id),
   )
-  const [selectedLotIds, setSelectedLotIds] = useState([])
-  const [selectedDrawIndexes, setSelectedDrawIndexes] = useState([])
+  const [selectedSelections, setSelectedSelections] = useState([])
+  const [submitting, setSubmitting] = useState(false)
+  const [submitError, setSubmitError] = useState(null)
 
   const job = jobs.find((candidate) => String(candidate.id) === selectedJobId)
   const phases = job?.sequenceSheet?.phases ?? []
@@ -272,19 +317,25 @@ function CreateDrawDialog({
     () => buildUsedDrawSelections(packages),
     [packages],
   )
-  const selectedLotIdSet = new Set(selectedLotIds.map(String))
-  const selectedDrawIndexSet = new Set(selectedDrawIndexes)
+  const selectedSelectionKeys = new Set(
+    selectedSelections.map(
+      ({ phaseId, lotId, drawIndex }) => `${phaseId}:${lotId}:${drawIndex}`,
+    ),
+  )
+  const selectedLotKeys = [...new Set(
+    selectedSelections.map(({ phaseId, lotId }) => `${phaseId}:${lotId}`),
+  )]
+  const selectedDrawIndexes = [...new Set(
+    selectedSelections.map(({ drawIndex }) => drawIndex),
+  )].sort((left, right) => left - right)
 
   const selectionIsUsed = (lotId, drawIndex) =>
     usedSelections.has(
       drawSelectionKey(job?.id, phase?.id, lotId, drawIndex),
     )
 
-  const lotConflictsWithSelectedDraws = (lotId) =>
-    selectedDrawIndexes.some((drawIndex) => selectionIsUsed(lotId, drawIndex))
-
-  const lotHasAvailableDraw = (lotId) =>
-    worksheet.draws.some((_, drawIndex) => !selectionIsUsed(lotId, drawIndex))
+  const selectionIsSelected = (lotId, drawIndex) =>
+    selectedSelectionKeys.has(`${phase?.id}:${lotId}:${drawIndex}`)
 
   const handleJobChange = (event) => {
     const nextJobId = event.target.value
@@ -295,53 +346,126 @@ function CreateDrawDialog({
         ? ''
         : String(nextJob.sequenceSheet.phases[0].id),
     )
-    setSelectedLotIds([])
-    setSelectedDrawIndexes([])
+    setSelectedSelections([])
   }
 
   const handlePhaseChange = (event) => {
     setSelectedPhaseId(event.target.value)
-    setSelectedLotIds([])
-    setSelectedDrawIndexes([])
   }
 
-  const toggleLot = (lotId) => {
-    setSelectedLotIds((current) =>
-      current.some((value) => String(value) === String(lotId))
-        ? current.filter((value) => String(value) !== String(lotId))
-        : [...current, lotId],
+  const toggleSelection = (lotId, drawIndex) => {
+    if (selectionIsUsed(lotId, drawIndex)) return
+
+    const key = `${phase.id}:${lotId}:${drawIndex}`
+    setSelectedSelections((current) =>
+      current.some(
+        (selection) => (
+          `${selection.phaseId}:${selection.lotId}:${selection.drawIndex}` === key
+        ),
+      )
+        ? current.filter(
+            (selection) => (
+              `${selection.phaseId}:${selection.lotId}:${selection.drawIndex}` !== key
+            ),
+          )
+        : [...current, { phaseId: phase.id, lotId, drawIndex }],
     )
   }
 
-  const toggleDraw = (drawIndex) => {
-    setSelectedDrawIndexes((current) =>
-      current.includes(drawIndex)
-        ? current.filter((value) => value !== drawIndex)
-        : [...current, drawIndex].sort((left, right) => left - right),
+  const toggleSelectionGroup = (available) => {
+    const availableKeys = new Set(
+      available.map(
+        ({ phaseId, lotId, drawIndex }) => `${phaseId}:${lotId}:${drawIndex}`,
+      ),
     )
+
+    setSelectedSelections((current) => {
+      const currentKeys = new Set(
+        current.map(
+          ({ phaseId, lotId, drawIndex }) => `${phaseId}:${lotId}:${drawIndex}`,
+        ),
+      )
+      const allSelected = available.length > 0 && available.every(
+        ({ phaseId, lotId, drawIndex }) => (
+          currentKeys.has(`${phaseId}:${lotId}:${drawIndex}`)
+        ),
+      )
+
+      return allSelected
+        ? current.filter(
+          (selection) => !availableKeys.has(
+            `${selection.phaseId}:${selection.lotId}:${selection.drawIndex}`,
+          ),
+        )
+        : [
+            ...current,
+            ...available.filter(
+              ({ phaseId, lotId, drawIndex }) => !currentKeys.has(
+                `${phaseId}:${lotId}:${drawIndex}`,
+              ),
+            ),
+          ]
+    })
+  }
+
+  const toggleLotSelections = (lotId) => {
+    const available = worksheet.draws
+      .map((_, drawIndex) => ({ phaseId: phase.id, lotId, drawIndex }))
+      .filter(({ drawIndex }) => !selectionIsUsed(lotId, drawIndex))
+
+    toggleSelectionGroup(available)
+  }
+
+  const toggleDrawSelections = (drawIndex) => {
+    const available = worksheet.rows
+      .map((row) => ({ phaseId: phase.id, lotId: row.id, drawIndex }))
+      .filter(({ lotId }) => !selectionIsUsed(lotId, drawIndex))
+
+    toggleSelectionGroup(available)
   }
 
   const draftRecord = {
-    lotIds: selectedLotIds,
+    lotIds: selectedSelections.map(({ lotId }) => lotId),
     drawIndexes: selectedDrawIndexes,
     optionsBillingDrawIndex: schedule?.optionsBillingDrawIndex ?? null,
-    selections: makePackageSelections(selectedLotIds, selectedDrawIndexes),
+    selections: selectedSelections,
   }
-  const summary = summarizeDrawPackage(draftRecord, job, phase, schedule)
+  const summary = summarizeDrawPackage(draftRecord, job, phases, schedule)
+  const selectedPhaseIds = new Set(
+    selectedSelections.map(({ phaseId }) => String(phaseId)),
+  )
+  const selectedPhasesAreReady = phases
+    .filter((candidate) => selectedPhaseIds.has(String(candidate.id)))
+    .every((candidate) => buildDrawWorksheet(job, candidate, schedule).isReady)
   const canCreate =
-    worksheet.isReady &&
-    selectedLotIds.length > 0 &&
-    selectedDrawIndexes.length > 0 &&
+    selectedPhasesAreReady &&
+    selectedSelections.length > 0 &&
     summary.unpricedOptionCount === 0
 
+  const handleSubmit = async () => {
+    setSubmitting(true)
+    setSubmitError(null)
+    try {
+      await onCreate({
+        jobId: job.id,
+        selections: selectedSelections,
+        schedule,
+      })
+    } catch (error) {
+      setSubmitError(error.message)
+      setSubmitting(false)
+    }
+  }
+
   return (
-    <Dialog open onClose={onClose} fullWidth maxWidth="md">
+    <Dialog open onClose={onClose} fullWidth maxWidth="lg">
       <DialogTitle sx={{ pb: 1 }}>
         <Typography variant="h6" component="div" fontWeight={800}>
           Create Draw
         </Typography>
         <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-          A Draw creates one package with an invoice and its required documents.
+          A Draw creates one persisted package, its immutable calculated lines,
+          and an invoice total snapshot.
         </Typography>
       </DialogTitle>
       <DialogContent sx={{ pt: '16px !important' }}>
@@ -386,152 +510,265 @@ function CreateDrawDialog({
 
           <Box>
             <Stack
-              direction="row"
+              direction={{ xs: 'column', sm: 'row' }}
               spacing={1}
-              sx={{ alignItems: 'center', justifyContent: 'space-between', mb: 1 }}
+              sx={{ alignItems: { sm: 'center' }, justifyContent: 'space-between', mb: 1 }}
             >
               <Box>
-                <Typography fontWeight={800}>1. Select lots</Typography>
+                <Typography fontWeight={800}>Select Lot / Draw cells</Typography>
                 <Typography variant="body2" color="text.secondary">
-                  You can choose any subset of lots in this phase-building.
+                  Choose each cell independently. Yellow cells already belong to
+                  another Package. Change Phase to add more cells from this same Job;
+                  selections from earlier Phases remain included.
                 </Typography>
               </Box>
               <Chip
                 size="small"
-                variant="outlined"
-                label={`${selectedLotIds.length} selected`}
+                color={selectedSelections.length > 0 ? 'primary' : 'default'}
+                variant={selectedSelections.length > 0 ? 'filled' : 'outlined'}
+                label={`${selectedSelections.length} ${selectedSelections.length === 1 ? 'cell' : 'cells'} selected`}
               />
             </Stack>
-            <Card variant="outlined">
-              <TableContainer sx={{ maxHeight: 260 }}>
-                <Table size="small" stickyHeader aria-label="Lots available for this package">
+            <Card variant="outlined" sx={{ overflow: 'hidden' }}>
+              <TableContainer sx={{ maxHeight: 460 }}>
+                <Table
+                  size="small"
+                  stickyHeader
+                  aria-label="Lot and Draw cells available for this package"
+                  sx={{
+                    minWidth: 300 + worksheet.draws.length * 155,
+                    '& .MuiTableCell-root': { px: 1.2, py: 1 },
+                  }}
+                >
                   <TableHead>
                     <TableRow>
-                      <TableCell padding="checkbox" />
-                      <TableCell>Lot</TableCell>
-                      <TableCell>Plan</TableCell>
-                      <TableCell>Options</TableCell>
-                      <TableCell align="right">Price per lot</TableCell>
-                      <TableCell>Availability</TableCell>
+                      <TableCell rowSpan={2} sx={{ width: 95, fontWeight: 800 }}>
+                        Lot
+                      </TableCell>
+                      <TableCell rowSpan={2} sx={{ width: 90, fontWeight: 800 }}>
+                        Plan
+                      </TableCell>
+                      <TableCell
+                        rowSpan={2}
+                        align="right"
+                        sx={{ width: 115, fontWeight: 800 }}
+                      >
+                        {worksheet.separateHardwarePrice ? 'Draw base / lot' : 'Price per lot'}
+                      </TableCell>
+                      {worksheet.draws.map((draw, drawIndex) => (
+                        <TableCell
+                          key={`select-draw-heading-${drawIndex}`}
+                          align="center"
+                          sx={{
+                            minWidth: 155,
+                            borderLeft: 1,
+                            borderColor: 'divider',
+                            bgcolor: 'primary.light',
+                          }}
+                        >
+                          <Typography color="primary.main" fontWeight={850}>
+                            Draw #{drawIndex + 1}
+                          </Typography>
+                          <Typography
+                            variant="caption"
+                            color="primary.main"
+                            fontWeight={750}
+                            component="div"
+                          >
+                            {formatPercentage(draw.percentage)}%
+                            {draw.name?.trim() ? ` · ${draw.name.trim()}` : ''}
+                          </Typography>
+                        </TableCell>
+                      ))}
+                    </TableRow>
+                    <TableRow>
+                      {worksheet.draws.map((_, drawIndex) => {
+                        const availableRows = worksheet.rows.filter(
+                          (row) => !selectionIsUsed(row.id, drawIndex),
+                        )
+                        const selectedCount = availableRows.filter(
+                          (row) => selectionIsSelected(row.id, drawIndex),
+                        ).length
+                        const allSelected = availableRows.length > 0
+                          && selectedCount === availableRows.length
+
+                        return (
+                          <TableCell
+                            key={`select-draw-${drawIndex}`}
+                            align="center"
+                            sx={{ borderLeft: 1, borderColor: 'divider' }}
+                          >
+                            <Stack
+                              direction="row"
+                              spacing={0.25}
+                              sx={{ alignItems: 'center', justifyContent: 'center' }}
+                            >
+                              <Checkbox
+                                size="small"
+                                checked={allSelected}
+                                indeterminate={selectedCount > 0 && !allSelected}
+                                disabled={availableRows.length === 0}
+                                onChange={() => toggleDrawSelections(drawIndex)}
+                                inputProps={{
+                                  'aria-label': `Select available cells for Draw ${drawIndex + 1}`,
+                                }}
+                              />
+                              <Typography variant="caption" color="text.secondary">
+                                {selectedCount}/{availableRows.length}
+                              </Typography>
+                            </Stack>
+                          </TableCell>
+                        )
+                      })}
                     </TableRow>
                   </TableHead>
                   <TableBody>
                     {worksheet.rows.map((row) => {
-                      const selected = selectedLotIdSet.has(String(row.id))
-                      const unavailable =
-                        !lotHasAvailableDraw(row.id) ||
-                        lotConflictsWithSelectedDraws(row.id)
-                      const availableDrawCount = worksheet.draws.filter(
-                        (_, drawIndex) => !selectionIsUsed(row.id, drawIndex),
+                      const availableDrawIndexes = worksheet.draws
+                        .map((_, drawIndex) => drawIndex)
+                        .filter((drawIndex) => !selectionIsUsed(row.id, drawIndex))
+                      const selectedCount = availableDrawIndexes.filter(
+                        (drawIndex) => selectionIsSelected(row.id, drawIndex),
                       ).length
+                      const allSelected = availableDrawIndexes.length > 0
+                        && selectedCount === availableDrawIndexes.length
 
                       return (
-                        <TableRow
-                          key={row.id}
-                          hover
-                          selected={selected}
-                          onClick={() => !unavailable && toggleLot(row.id)}
-                          sx={{ cursor: unavailable ? 'default' : 'pointer' }}
-                        >
-                          <TableCell padding="checkbox">
-                            <Checkbox
-                              checked={selected}
-                              disabled={unavailable}
-                              onClick={(event) => event.stopPropagation()}
-                              onChange={() => toggleLot(row.id)}
-                              inputProps={{ 'aria-label': `Select lot ${row.lotNumber}` }}
-                            />
-                          </TableCell>
+                        <TableRow key={row.id} hover>
                           <TableCell>
-                            <Typography color="error.main" fontWeight={850}>
-                              {row.lotNumber}
-                            </Typography>
-                          </TableCell>
-                          <TableCell>{row.planCode ?? '—'}</TableCell>
-                          <TableCell>
-                            {(row.selectedOptions?.length ?? 0) > 0 ? (
-                              <Chip
+                            <Stack direction="row" spacing={0.25} sx={{ alignItems: 'center' }}>
+                              <Checkbox
                                 size="small"
-                                variant="outlined"
-                                label={`${row.selectedOptions.length} selected`}
+                                checked={allSelected}
+                                indeterminate={selectedCount > 0 && !allSelected}
+                                disabled={availableDrawIndexes.length === 0}
+                                onChange={() => toggleLotSelections(row.id)}
+                                inputProps={{
+                                  'aria-label': `Select available Draws for lot ${row.lotNumber}`,
+                                }}
                               />
-                            ) : (
+                              <Typography color="error.main" fontWeight={850}>
+                                {row.lotNumber}
+                              </Typography>
+                            </Stack>
+                          </TableCell>
+                          <TableCell>
+                            <Typography fontWeight={750}>{row.planCode ?? '—'}</Typography>
+                            {(row.selectedOptions?.length ?? 0) > 0 && (
                               <Typography variant="caption" color="text.secondary">
-                                None
+                                {row.selectedOptions.length}{' '}
+                                {row.selectedOptions.length === 1 ? 'option' : 'options'}
                               </Typography>
                             )}
                           </TableCell>
                           <TableCell align="right">
-                            {formatCurrency(row.drawBasePrice)}
-                          </TableCell>
-                          <TableCell>
-                            <Typography variant="body2" color="text.secondary">
-                              {availableDrawCount} of {worksheet.draws.length} draws available
+                            <Typography fontWeight={750}>
+                              {formatCurrency(row.drawBasePrice)}
                             </Typography>
                           </TableCell>
+                          {worksheet.draws.map((_, drawIndex) => {
+                            const key = drawSelectionKey(
+                              job?.id,
+                              phase?.id,
+                              row.id,
+                              drawIndex,
+                            )
+                            const owner = usedSelections.get(key)
+                            const selected = selectionIsSelected(row.id, drawIndex)
+
+                            return (
+                              <TableCell
+                                key={key}
+                                align="center"
+                                onClick={() => !owner && toggleSelection(row.id, drawIndex)}
+                                sx={{
+                                  borderLeft: 1,
+                                  borderColor: selected ? 'primary.main' : 'divider',
+                                  bgcolor: owner
+                                    ? 'warning.light'
+                                    : selected
+                                      ? 'primary.light'
+                                      : undefined,
+                                  cursor: owner ? 'default' : 'pointer',
+                                }}
+                              >
+                                {owner ? (
+                                  <Box>
+                                    <Stack
+                                      direction="row"
+                                      spacing={0.5}
+                                      sx={{ alignItems: 'center', justifyContent: 'center' }}
+                                    >
+                                      <LockRoundedIcon sx={{ fontSize: 14 }} />
+                                      <Typography variant="caption" fontWeight={850}>
+                                        {owner.packageNumber}
+                                      </Typography>
+                                    </Stack>
+                                    <Typography variant="caption" component="div">
+                                      {formatCurrency(row.drawAmounts[drawIndex])}
+                                    </Typography>
+                                  </Box>
+                                ) : (
+                                  <Stack
+                                    direction="row"
+                                    spacing={0.25}
+                                    sx={{ alignItems: 'center', justifyContent: 'center' }}
+                                  >
+                                    <Checkbox
+                                      size="small"
+                                      checked={selected}
+                                      onClick={(event) => event.stopPropagation()}
+                                      onChange={() => toggleSelection(row.id, drawIndex)}
+                                      inputProps={{
+                                        'aria-label': `Select lot ${row.lotNumber}, Draw ${drawIndex + 1}`,
+                                      }}
+                                    />
+                                    <Typography variant="body2" fontWeight={850}>
+                                      {formatCurrency(row.drawAmounts[drawIndex])}
+                                    </Typography>
+                                  </Stack>
+                                )}
+                              </TableCell>
+                            )
+                          })}
                         </TableRow>
                       )
                     })}
                   </TableBody>
+                  {worksheet.rows.length > 0 && (
+                    <TableFooter>
+                      <TableRow>
+                        <TableCell colSpan={3}>
+                          <Typography fontWeight={850}>
+                            {selectedLotKeys.length}{' '}
+                            {selectedLotKeys.length === 1 ? 'lot' : 'lots'} ·{' '}
+                            {selectedSelections.length}{' '}
+                            {selectedSelections.length === 1 ? 'cell' : 'cells'}
+                          </Typography>
+                        </TableCell>
+                        {worksheet.draws.map((_, drawIndex) => (
+                          <TableCell
+                            key={`selected-total-${drawIndex}`}
+                            align="center"
+                            sx={{ borderLeft: 1, borderColor: 'divider' }}
+                          >
+                            <Typography variant="caption" color="text.secondary">
+                              {selectedSelections.filter(
+                                (selection) => (
+                                  String(selection.phaseId) === String(phase.id)
+                                  && selection.drawIndex === drawIndex
+                                ),
+                              ).length}{' '}
+                              selected
+                            </Typography>
+                          </TableCell>
+                        ))}
+                      </TableRow>
+                    </TableFooter>
+                  )}
                 </Table>
               </TableContainer>
             </Card>
-          </Box>
-
-          <Box>
-            <Typography fontWeight={800}>2. Select one or more draws</Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-              Each selected draw will be included for every selected lot.
-            </Typography>
-            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.25}>
-              {worksheet.draws.map((draw, drawIndex) => {
-                const conflictCount = selectedLotIds.filter((lotId) =>
-                  selectionIsUsed(lotId, drawIndex),
-                ).length
-                const disabled = selectedLotIds.length === 0 || conflictCount > 0
-                const selected = selectedDrawIndexSet.has(drawIndex)
-
-                return (
-                  <Card
-                    key={drawIndex}
-                    variant="outlined"
-                    onClick={() => !disabled && toggleDraw(drawIndex)}
-                    sx={{
-                      flex: 1,
-                      cursor: disabled ? 'default' : 'pointer',
-                      borderColor: selected ? 'primary.main' : 'divider',
-                      bgcolor: selected ? 'primary.light' : 'background.paper',
-                      opacity: disabled ? 0.65 : 1,
-                    }}
-                  >
-                    <CardContent sx={{ p: '12px !important' }}>
-                      <Stack direction="row" spacing={0.75} sx={{ alignItems: 'flex-start' }}>
-                        <Checkbox
-                          checked={selected}
-                          disabled={disabled}
-                          onClick={(event) => event.stopPropagation()}
-                          onChange={() => toggleDraw(drawIndex)}
-                          sx={{ p: 0 }}
-                          inputProps={{ 'aria-label': `Select draw ${drawIndex + 1}` }}
-                        />
-                        <Box>
-                          <Typography fontWeight={850}>Draw #{drawIndex + 1}</Typography>
-                          <Typography variant="body2" color="text.secondary">
-                            {formatPercentage(draw.percentage)}%
-                            {draw.name?.trim() ? ` · ${draw.name.trim()}` : ''}
-                          </Typography>
-                          {conflictCount > 0 && (
-                            <Typography variant="caption" color="warning.main">
-                              Used for {conflictCount} selected lot{conflictCount === 1 ? '' : 's'}
-                            </Typography>
-                          )}
-                        </Box>
-                      </Stack>
-                    </CardContent>
-                  </Card>
-                )
-              })}
-            </Stack>
           </Box>
 
           {summary.optionsAreDue && summary.selectedOptionRows.length > 0 && (
@@ -564,6 +801,26 @@ function CreateDrawDialog({
             <Card variant="outlined" sx={{ bgcolor: 'action.hover' }}>
               <CardContent sx={{ p: '16px !important' }}>
                 <Typography fontWeight={800}>Package preview</Typography>
+                <Stack spacing={0.75} sx={{ mt: 1 }}>
+                  {summary.phaseSummaries.map((phaseSummary) => (
+                    <Box key={phaseSummary.phaseId}>
+                      <Typography variant="body2" fontWeight={800}>
+                        {formatPhase(phaseSummary.phaseCode)} ·{' '}
+                        {formatBuilding(phaseSummary.building)}
+                      </Typography>
+                      {phaseSummary.draws.map((draw) => (
+                        <Typography
+                          key={`${phaseSummary.phaseId}:${draw.drawIndex}`}
+                          variant="caption"
+                          color="text.secondary"
+                          component="div"
+                        >
+                          Lots {draw.lotRange} · Draw #{draw.drawIndex + 1}
+                        </Typography>
+                      ))}
+                    </Box>
+                  ))}
+                </Stack>
                 <Stack
                   direction={{ xs: 'column', sm: 'row' }}
                   spacing={2}
@@ -589,6 +846,8 @@ function CreateDrawDialog({
               </CardContent>
             </Card>
           )}
+
+          {submitError && <Alert severity="error">{submitError}</Alert>}
         </Stack>
       </DialogContent>
       <DialogActions sx={{ px: 3, pb: 2.5 }}>
@@ -596,19 +855,11 @@ function CreateDrawDialog({
         <Button
           variant="contained"
           startIcon={<AddRoundedIcon />}
-          disabled={!canCreate}
+          disabled={!canCreate || submitting}
           disableElevation
-          onClick={() =>
-            onCreate({
-              jobId: job.id,
-              phaseId: phase.id,
-              lotIds: selectedLotIds,
-              drawIndexes: selectedDrawIndexes,
-              schedule,
-            })
-          }
+          onClick={handleSubmit}
         >
-          Create package
+          {submitting ? 'Creating…' : 'Create package'}
         </Button>
       </DialogActions>
     </Dialog>
@@ -828,6 +1079,7 @@ function PackageOptionsTable({ summary }) {
           <Table size="small" aria-label="Options selected for this package">
             <TableHead>
               <TableRow>
+                <TableCell>Phase</TableCell>
                 <TableCell>Lot</TableCell>
                 <TableCell>Plan</TableCell>
                 <TableCell>Option</TableCell>
@@ -844,6 +1096,9 @@ function PackageOptionsTable({ summary }) {
 
                 return (
                   <TableRow key={option.id} hover>
+                    <TableCell>
+                      {formatPhase(option.phaseCode)} / {formatBuilding(option.building)}
+                    </TableCell>
                     <TableCell>
                       <Typography color="error.main" fontWeight={850}>
                         {option.lotNumber}
@@ -875,7 +1130,7 @@ function PackageOptionsTable({ summary }) {
             {summary.optionsAreDue && (
               <TableFooter>
                 <TableRow>
-                  <TableCell colSpan={5}>
+                  <TableCell colSpan={6}>
                     <Typography fontWeight={850}>Options total</Typography>
                   </TableCell>
                   <TableCell align="right">
@@ -892,24 +1147,155 @@ function PackageOptionsTable({ summary }) {
   )
 }
 
-function PackageCatalog({ jobs, schedules, packages, onOpen, onCreate }) {
+const packageSummaryCards = [
+  { status: 'DRAFT', icon: <ReceiptLongRoundedIcon />, color: 'primary.main' },
+  { status: 'READY_TO_SUBMIT', icon: <CheckCircleRoundedIcon />, color: 'success.main' },
+  { status: 'AWAITING_PAYMENT', icon: <AttachMoneyRoundedIcon />, color: 'info.main' },
+  { status: 'PAID_CLOSED', icon: <LockRoundedIcon />, color: 'success.main' },
+]
+
+function PackageSummaryCard({ status, icon, color, count, total, selected, onSelect }) {
+  return (
+    <Card
+      variant="outlined"
+      sx={{ borderColor: selected ? color : 'divider', minWidth: 0 }}
+    >
+      <CardActionArea onClick={onSelect} aria-label={`Show ${DRAW_PACKAGE_STATUS_LABELS[status]} Packages`}>
+        <CardContent sx={{ p: '18px !important' }}>
+          <Stack direction="row" spacing={1.5} sx={{ alignItems: 'flex-start' }}>
+            <Box sx={{
+              width: 42, height: 42, flexShrink: 0, borderRadius: 1.5,
+              display: 'grid', placeItems: 'center',
+              bgcolor: 'action.hover', color,
+            }}>
+              {icon}
+            </Box>
+            <Box>
+              <Typography variant="body2" fontWeight={750} color="text.secondary">
+                {DRAW_PACKAGE_STATUS_LABELS[status]}
+              </Typography>
+              <Typography variant="h5" fontWeight={850} sx={{ lineHeight: 1.3 }}>
+                {count}
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                {formatCurrency(total)} invoice total
+              </Typography>
+            </Box>
+          </Stack>
+        </CardContent>
+      </CardActionArea>
+    </Card>
+  )
+}
+
+function PackageActionMenu({ context, canManage, onOpen, onAction }) {
+  const [anchorEl, setAnchorEl] = useState(null)
+  const { record } = context
+  const editable = canManage && canCorrectDrawPackage(record)
+  const deletable = canManage && canDeleteDraftPackage(record)
+  const close = () => setAnchorEl(null)
+  const choose = (action) => {
+    close()
+    if (action === 'open') onOpen(context)
+    else onAction(action, context)
+  }
+
+  return (
+    <>
+      <ButtonGroup size="small" variant="contained" disableElevation>
+        <Button onClick={() => onOpen(context)}>Open</Button>
+        <Button
+          aria-label={`More actions for ${record.packageNumber}`}
+          aria-haspopup="menu"
+          aria-expanded={Boolean(anchorEl)}
+          onClick={(event) => setAnchorEl(event.currentTarget)}
+          sx={{ minWidth: 32, px: 0.5 }}
+        >
+          <ArrowDropDownRoundedIcon />
+        </Button>
+      </ButtonGroup>
+      <Menu anchorEl={anchorEl} open={Boolean(anchorEl)} onClose={close}>
+        <MenuItem onClick={() => choose('open')}>Open Package</MenuItem>
+        {editable && (
+          <MenuItem onClick={() => choose('edit')}>
+            <ListItemIcon><EditRoundedIcon fontSize="small" /></ListItemIcon>
+            Edit Package
+          </MenuItem>
+        )}
+        {editable && (
+          <MenuItem onClick={() => choose('transfer')}>
+            <ListItemIcon><MoveToInboxRoundedIcon fontSize="small" /></ListItemIcon>
+            Move cells here
+          </MenuItem>
+        )}
+        {deletable && (
+          <MenuItem onClick={() => choose('delete')} sx={{ color: 'error.main' }}>
+            <ListItemIcon><DeleteOutlineRoundedIcon fontSize="small" color="error" /></ListItemIcon>
+            Delete draft
+          </MenuItem>
+        )}
+      </Menu>
+    </>
+  )
+}
+
+function PackageCatalog({
+  jobs,
+  schedules,
+  packages,
+  canManage,
+  error,
+  onRetry,
+  onOpen,
+  onCreate,
+  onEdit,
+  onTransfer,
+  onDelete,
+}) {
   const [search, setSearch] = useState('')
+  const [statusTab, setStatusTab] = useState('ALL')
+  const [builderFilter, setBuilderFilter] = useState('ALL')
+  const [communityFilter, setCommunityFilter] = useState('ALL')
+  const [catalogAction, setCatalogAction] = useState(null)
   const contexts = useMemo(
     () => packages.map((record) => getPackageContext(record, jobs, schedules)).filter(Boolean),
     [jobs, packages, schedules],
   )
-  const normalizedSearch = search.trim().toLowerCase()
-  const filteredContexts = contexts.filter(({ record, job, phase }) =>
-    [
-      record.packageNumber,
-      record.invoiceNumber,
-      job.code,
-      job.builder,
-      job.community,
-      phase.name,
-      phase.building,
-    ].some((value) => String(value ?? '').toLowerCase().includes(normalizedSearch)),
+  const activeContexts = useMemo(
+    () => filterPackageCatalogContexts(contexts),
+    [contexts],
   )
+  const builderOptions = useMemo(
+    () => packageCatalogBuilderOptions(contexts),
+    [contexts],
+  )
+  const communityOptions = useMemo(
+    () => packageCatalogCommunityOptions(contexts, builderFilter),
+    [contexts, builderFilter],
+  )
+  const scopedContexts = useMemo(
+    () => filterPackageCatalogContexts(activeContexts, {
+      search, builderId: builderFilter, community: communityFilter,
+    }),
+    [activeContexts, search, builderFilter, communityFilter],
+  )
+  const statusSummary = useMemo(
+    () => summarizePackageCatalogStatuses(scopedContexts),
+    [scopedContexts],
+  )
+  const filteredContexts = useMemo(
+    () => filterPackageCatalogContexts(scopedContexts, { status: statusTab }),
+    [scopedContexts, statusTab],
+  )
+  const selectedContext = contexts.find(
+    ({ record }) => String(record.id) === String(catalogAction?.packageId),
+  )
+  const clearFilters = () => {
+    setSearch('')
+    setBuilderFilter('ALL')
+    setCommunityFilter('ALL')
+    setStatusTab('ALL')
+  }
 
   return (
     <Box sx={{ minHeight: '100%', bgcolor: 'background.default' }}>
@@ -933,14 +1319,15 @@ function PackageCatalog({ jobs, schedules, packages, onOpen, onCreate }) {
             </Typography>
             <Typography variant="h5" fontWeight={800}>Packages</Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, maxWidth: 760 }}>
-              Each package contains one invoice for the selected lots and draws,
-              plus the documents required by the builder.
+              Review active Packages by status. Draft corrections retain an
+              audit history; deleted drafts leave this active list.
             </Typography>
           </Box>
           <Button
             variant="contained"
             startIcon={<AddRoundedIcon />}
             onClick={onCreate}
+            disabled={!canManage}
             disableElevation
           >
             Create Draw
@@ -949,24 +1336,115 @@ function PackageCatalog({ jobs, schedules, packages, onOpen, onCreate }) {
       </Box>
 
       <Box sx={{ p: { xs: 2.5, md: 4 } }}>
-        <TextField
-          value={search}
-          onChange={(event) => setSearch(event.target.value)}
-          placeholder="Search package, invoice, Job#, builder, project, phase or building"
-          fullWidth
-          sx={{ mb: 2 }}
-          slotProps={{
-            input: {
-              startAdornment: (
-                <InputAdornment position="start">
-                  <SearchRoundedIcon color="action" />
-                </InputAdornment>
-              ),
-            },
-          }}
-        />
+        {error && (
+          <Alert
+            severity="error"
+            action={<Button color="inherit" onClick={onRetry}>Retry</Button>}
+            sx={{ mb: 2 }}
+          >
+            {error}
+          </Alert>
+        )}
+        <Box sx={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))',
+          gap: 1.5,
+          mb: 2.5,
+        }}>
+          {packageSummaryCards.map(({ status, icon, color }) => (
+            <PackageSummaryCard
+              key={status}
+              status={status}
+              icon={icon}
+              color={color}
+              count={statusSummary[status].count}
+              total={statusSummary[status].total}
+              selected={statusTab === status}
+              onSelect={() => setStatusTab(status)}
+            />
+          ))}
+        </Box>
 
         <Box sx={{ bgcolor: 'background.paper', border: 1, borderColor: 'divider', borderRadius: 2, overflow: 'hidden' }}>
+          <Tabs
+            value={statusTab}
+            onChange={(_, value) => setStatusTab(value)}
+            variant="scrollable"
+            scrollButtons="auto"
+            aria-label="Filter Packages by status"
+            sx={{ borderBottom: 1, borderColor: 'divider', px: 1 }}
+          >
+            {PACKAGE_CATALOG_TABS.map(({ value, label }) => (
+              <Tab
+                key={value}
+                value={value}
+                label={`${label} (${value === 'ALL'
+                  ? scopedContexts.length
+                  : statusSummary[value].count})`}
+              />
+            ))}
+          </Tabs>
+          <Stack
+            direction={{ xs: 'column', md: 'row' }}
+            spacing={1.5}
+            sx={{ p: 2, alignItems: { md: 'center' } }}
+          >
+            <TextField
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search Package, Invoice, Job or Phase"
+              size="small"
+              aria-label="Search Packages"
+              sx={{ flex: 2, minWidth: { md: 230 } }}
+              slotProps={{
+                input: {
+                  startAdornment: (
+                    <InputAdornment position="start">
+                      <SearchRoundedIcon color="action" />
+                    </InputAdornment>
+                  ),
+                },
+              }}
+            />
+            <TextField
+              select
+              size="small"
+              label="Builder"
+              value={builderFilter}
+              onChange={(event) => {
+                setBuilderFilter(event.target.value)
+                setCommunityFilter('ALL')
+              }}
+              sx={{ flex: 1, minWidth: { md: 170 } }}
+            >
+              <MenuItem value="ALL">All builders</MenuItem>
+              {builderOptions.map(({ id, name }) => (
+                <MenuItem key={id} value={id}>{name}</MenuItem>
+              ))}
+            </TextField>
+            <TextField
+              select
+              size="small"
+              label="Community"
+              value={communityFilter}
+              onChange={(event) => setCommunityFilter(event.target.value)}
+              sx={{ flex: 1, minWidth: { md: 170 } }}
+            >
+              <MenuItem value="ALL">All communities</MenuItem>
+              {communityOptions.map((community) => (
+                <MenuItem key={community} value={community}>{community}</MenuItem>
+              ))}
+            </TextField>
+            <Button color="inherit" onClick={clearFilters} sx={{ flexShrink: 0 }}>
+              Clear filters
+            </Button>
+          </Stack>
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', px: 2, pb: 1.5 }}>
+            Cards summarize all active statuses in the current Builder, Community and search scope.
+          </Typography>
+        </Box>
+
+        <Box sx={{ bgcolor: 'background.paper', border: 1, borderColor: 'divider', borderRadius: 2, overflow: 'hidden', mt: 1.5 }}>
           <TableContainer>
             <Table sx={{ minWidth: packageTableMinimumWidth, tableLayout: 'fixed' }}>
               <colgroup>
@@ -994,28 +1472,54 @@ function PackageCatalog({ jobs, schedules, packages, onOpen, onCreate }) {
                   <TableCell>Current Draw</TableCell>
                   <TableCell>Retention / WRAP Insurance</TableCell>
                   <TableCell>Invoice Amount</TableCell>
-                  <TableCell>Documents</TableCell>
-                  <TableCell>QuickBooks</TableCell>
-                  <TableCell>Submission</TableCell>
                   <TableCell>Status</TableCell>
                   <TableCell>Action</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
-                {filteredContexts.map(({ record, job, phase, summary }) => {
-                  const completeDocuments = record.documents.filter(
-                    (document) => document.status === 'COMPLETE',
-                  ).length
-                  return (
-                    <TableRow key={record.id} hover>
+                {filteredContexts.map(({ record, job, phase, phases, summary }) => (
+                    <TableRow
+                      key={record.id}
+                      hover
+                      onClick={() => onOpen(record, job, phase)}
+                      sx={{ cursor: 'pointer' }}
+                    >
                       <TableCell>
-                        <Typography fontWeight={800}>{record.packageNumber}</Typography>
+                        <Button
+                          color="inherit"
+                          size="small"
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            onOpen(record, job, phase)
+                          }}
+                          sx={{
+                            p: 0,
+                            minWidth: 0,
+                            fontWeight: 800,
+                            fontSize: '1rem',
+                            textTransform: 'none',
+                            justifyContent: 'flex-start',
+                          }}
+                        >
+                          {record.packageNumber}
+                        </Button>
                         <Typography variant="body2" color="text.secondary">
-                          Job #{job.code} · {formatPhase(phase.name)} / {formatBuilding(phase.building)}
+                          Job #{job.code} · {summary.phaseCount === 1
+                            ? `${formatPhase(phase.name)} / ${formatBuilding(phase.building)}`
+                            : `${summary.phaseCount} Phases`}
                         </Typography>
-                        <Typography variant="caption" color="text.secondary">
-                          {record.drawIndexes.map((drawIndex) => `Draw ${drawIndex + 1}`).join(', ')}
-                        </Typography>
+                        {summary.phaseSummaries.map((scope) => (
+                          <Typography
+                            key={scope.phaseId}
+                            variant="caption"
+                            color="text.secondary"
+                            component="div"
+                          >
+                            {formatPhase(scope.phaseCode)}: {scope.draws.map(
+                              (draw) => `Lots ${draw.lotRange} / Draw ${draw.drawIndex + 1}`,
+                            ).join(' · ')}
+                          </Typography>
+                        ))}
                       </TableCell>
                       <TableCell>
                         <Typography color="text.primary">{job.builder}</Typography>
@@ -1049,23 +1553,21 @@ function PackageCatalog({ jobs, schedules, packages, onOpen, onCreate }) {
                           </Typography>
                         )}
                       </TableCell>
-                      <TableCell>
-                        <Typography>{completeDocuments} of {record.documents.length}</Typography>
-                        <Typography variant="caption" color={completeDocuments === record.documents.length ? 'success.main' : 'text.secondary'}>
-                          {completeDocuments === record.documents.length ? 'Complete' : 'Pending'}
-                        </Typography>
-                      </TableCell>
-                      <TableCell>{record.quickbooksStatus === 'CREATED' ? 'Created' : 'Not created'}</TableCell>
-                      <TableCell>{record.submissionStatus === 'SUBMITTED' ? 'Submitted' : 'Not submitted'}</TableCell>
                       <TableCell><PackageStatusChip status={record.status} /></TableCell>
-                      <TableCell>
-                        <Button size="small" variant="contained" onClick={() => onOpen(record, job, phase)}>
-                          Open
-                        </Button>
+                      <TableCell onClick={(event) => event.stopPropagation()}>
+                        <PackageActionMenu
+                          context={{ record, job, phase, phases, summary }}
+                          canManage={canManage}
+                          onOpen={(selected) => onOpen(
+                            selected.record, selected.job, selected.phase,
+                          )}
+                          onAction={(action, selected) => setCatalogAction({
+                            action, packageId: selected.record.id,
+                          })}
+                        />
                       </TableCell>
                     </TableRow>
-                  )
-                })}
+                ))}
               </TableBody>
             </Table>
           </TableContainer>
@@ -1074,13 +1576,45 @@ function PackageCatalog({ jobs, schedules, packages, onOpen, onCreate }) {
         {filteredContexts.length === 0 && (
           <Card variant="outlined" sx={{ p: 5, textAlign: 'center', mt: 2 }}>
             <ReceiptLongRoundedIcon color="disabled" sx={{ fontSize: 42 }} />
-            <Typography fontWeight={750} sx={{ mt: 1 }}>No packages found</Typography>
-            <Typography variant="body2" color="text.secondary">
-              Create a Draw and choose its Job, phase-building, lots and draws.
+            <Typography fontWeight={750} sx={{ mt: 1 }}>
+              {activeContexts.length === 0 ? 'No active Packages yet' : 'No Packages match these filters'}
             </Typography>
+            <Typography variant="body2" color="text.secondary">
+              Cancelled Packages are kept in audit history, not in this table.
+            </Typography>
+            {activeContexts.length > 0 && (
+              <Button onClick={clearFilters} sx={{ mt: 1 }}>Clear filters</Button>
+            )}
           </Card>
         )}
       </Box>
+      {catalogAction?.action === 'edit' && selectedContext && (
+        <EditDrawPackageDialog
+          record={selectedContext.record}
+          job={selectedContext.job}
+          phase={selectedContext.phase}
+          phases={selectedContext.phases}
+          schedule={selectedContext.schedule}
+          packages={packages}
+          onClose={() => setCatalogAction(null)}
+          onSave={onEdit}
+        />
+      )}
+      {catalogAction?.action === 'transfer' && selectedContext && (
+        <TransferDrawPackageCellsDialog
+          target={selectedContext.record}
+          packages={packages}
+          onClose={() => setCatalogAction(null)}
+          onTransfer={onTransfer}
+        />
+      )}
+      {catalogAction?.action === 'delete' && selectedContext && (
+        <CancelDrawPackageDialog
+          record={selectedContext.record}
+          onClose={() => setCatalogAction(null)}
+          onCancel={onDelete}
+        />
+      )}
     </Box>
   )
 }
@@ -1088,13 +1622,31 @@ function PackageCatalog({ jobs, schedules, packages, onOpen, onCreate }) {
 export default function DrawAndInvoicePackages() {
   const navigate = useNavigate()
   const { builderId, jobId, phaseId, packageId } = useParams()
-  const { jobs } = useJobs()
+  const {
+    jobs,
+    loading: jobsLoading,
+    error: jobsError,
+    refreshJobs,
+  } = useJobs()
   const { builderDrawSchedules } = useBuilderDrawSchedules()
-  const { drawInvoicePackages, createDrawInvoicePackage } = useDrawInvoicePackages()
+  const {
+    drawInvoicePackages,
+    loading: packagesLoading,
+    error: packagesError,
+    saving,
+    canManageDrawInvoicePackages,
+    refreshDrawInvoicePackages,
+    createDrawInvoicePackage,
+    updateDrawInvoicePackageStatus,
+    editDrawInvoicePackage,
+    transferDrawPackageCells,
+    cancelDrawInvoicePackage,
+  } = useDrawInvoicePackages()
   const [createDialogOpen, setCreateDialogOpen] = useState(false)
+  const [correctionDialog, setCorrectionDialog] = useState(null)
 
-  const handleCreate = (input) => {
-    const record = createDrawInvoicePackage(input)
+  const handleCreate = async (input) => {
+    const record = await createDrawInvoicePackage(input)
     const job = jobs.find((candidate) => String(candidate.id) === String(record.jobId))
     setCreateDialogOpen(false)
     navigate(
@@ -1107,6 +1659,27 @@ export default function DrawAndInvoicePackages() {
     )
   }
 
+  const handleRetry = () => {
+    Promise.all([
+      refreshJobs(),
+      refreshDrawInvoicePackages(),
+    ]).catch(() => {})
+  }
+
+  const loading = jobsLoading || packagesLoading
+  const error = jobsError || packagesError
+
+  if (loading && (jobs.length === 0 || drawInvoicePackages.length === 0)) {
+    return (
+      <Box sx={{ minHeight: 320, display: 'grid', placeItems: 'center' }}>
+        <Stack spacing={1.5} sx={{ alignItems: 'center' }}>
+          <CircularProgress size={32} />
+          <Typography color="text.secondary">Loading Draw & Invoice Packages…</Typography>
+        </Stack>
+      </Box>
+    )
+  }
+
   if (jobId == null) {
     return (
       <>
@@ -1114,7 +1687,13 @@ export default function DrawAndInvoicePackages() {
           jobs={jobs}
           schedules={builderDrawSchedules}
           packages={drawInvoicePackages}
+          canManage={canManageDrawInvoicePackages}
+          error={error}
+          onRetry={handleRetry}
           onCreate={() => setCreateDialogOpen(true)}
+          onEdit={editDrawInvoicePackage}
+          onTransfer={transferDrawPackageCells}
+          onDelete={cancelDrawInvoicePackage}
           onOpen={(record, job, phase) =>
             navigate(
               jobDrawInvoicePath(
@@ -1168,15 +1747,38 @@ export default function DrawAndInvoicePackages() {
   const focusedPackage = drawInvoicePackages.find(
     (record) =>
       String(record.id) === String(packageId) &&
-      String(record.jobId) === String(focusedJob.id) &&
-      String(record.phaseId) === String(selectedPhase?.id),
+      String(record.jobId) === String(focusedJob.id),
+  )
+  const focusedPackagePhaseIds = new Set(
+    (focusedPackage?.phaseIds?.length
+      ? focusedPackage.phaseIds
+      : [focusedPackage?.phaseId])
+      .filter((value) => value != null)
+      .map(String),
+  )
+  const focusedPackagePhases = phases.filter(
+    (phase) => focusedPackagePhaseIds.has(String(phase.id)),
   )
   const packageSummary = focusedPackage
-    ? summarizeDrawPackage(focusedPackage, focusedJob, selectedPhase, schedule)
+    ? summarizeDrawPackage(
+        focusedPackage,
+        focusedJob,
+        focusedPackagePhases,
+        schedule,
+      )
     : null
+  const canCorrectFocusedPackage = canManageDrawInvoicePackages
+    && canCorrectDrawPackage(focusedPackage)
+  const canDeleteFocusedPackage = canManageDrawInvoicePackages
+    && canDeleteDraftPackage(focusedPackage)
 
   const handlePhaseChange = (event) => {
     navigate(jobDrawInvoicePath(focusedBuilderId, focusedJob.id, event.target.value))
+  }
+
+  const handlePackageStatusChange = (event) => {
+    updateDrawInvoicePackageStatus(focusedPackage.id, event.target.value)
+      .catch(() => {})
   }
 
   return (
@@ -1214,22 +1816,65 @@ export default function DrawAndInvoicePackages() {
               <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
                 Job #{focusedJob.code} · {formatPhase(selectedPhase.name)} ·{' '}
                 {formatBuilding(selectedPhase.building)}
+                {focusedPackage && packageSummary?.phaseCount > 1
+                  ? ` · ${packageSummary.phaseCount} Phases in Package`
+                  : ''}
                 {focusedPackage?.invoiceNumber
                   ? ` · Invoice ${focusedPackage.invoiceNumber}`
                   : ''}
               </Typography>
             )}
           </Box>
-          <Stack direction="row" spacing={1}>
+          <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: 'wrap' }}>
             {focusedPackage ? (
-              <PackageStatusChip status={focusedPackage.status} />
+              canManageDrawInvoicePackages && focusedPackage.status !== 'CANCELLED' ? (
+                <PackageStatusControl
+                  status={focusedPackage.status}
+                  disabled={saving}
+                  onChange={handlePackageStatusChange}
+                />
+              ) : (
+                <PackageStatusChip status={focusedPackage.status} />
+              )
             ) : (
               <ReadinessChip worksheet={worksheet} />
+            )}
+            {canCorrectFocusedPackage && (
+              <>
+                <Button
+                  variant="outlined"
+                  startIcon={<EditRoundedIcon />}
+                  onClick={() => setCorrectionDialog('edit')}
+                  disabled={saving}
+                >
+                  Edit Package
+                </Button>
+                <Button
+                  variant="outlined"
+                  startIcon={<MoveToInboxRoundedIcon />}
+                  onClick={() => setCorrectionDialog('transfer')}
+                  disabled={saving}
+                >
+                  Move cells here
+                </Button>
+              </>
+            )}
+            {canDeleteFocusedPackage && (
+              <Button
+                color="error"
+                variant="outlined"
+                startIcon={<DeleteOutlineRoundedIcon />}
+                onClick={() => setCorrectionDialog('delete')}
+                disabled={saving}
+              >
+                Delete draft
+              </Button>
             )}
             <Button
               variant="contained"
               startIcon={<AddRoundedIcon />}
               onClick={() => setCreateDialogOpen(true)}
+              disabled={!canManageDrawInvoicePackages || saving}
               disableElevation
             >
               Create Draw
@@ -1241,6 +1886,22 @@ export default function DrawAndInvoicePackages() {
       <JobModuleNavigation active="draw-invoice" builderId={focusedBuilderId} jobId={focusedJob.id} />
 
       <Box sx={{ p: { xs: 2.5, md: 4 } }}>
+        {error && (
+          <Alert
+            severity="error"
+            action={<Button color="inherit" onClick={handleRetry}>Retry</Button>}
+            sx={{ mb: 2.5 }}
+          >
+            {error}
+          </Alert>
+        )}
+        {focusedPackage?.status === 'CANCELLED' && (
+          <Alert severity="info" sx={{ mb: 2.5 }}>
+            This Package was cancelled on {formatDate(focusedPackage.cancelledAt?.slice(0, 10))}.
+            Its Lot / Draw cells were released; the Package number remains for history.
+            {focusedPackage.cancellationReason && ` Reason: ${focusedPackage.cancellationReason}`}
+          </Alert>
+        )}
         {phases.length === 0 ? (
           <Alert
             severity="info"
@@ -1339,25 +2000,6 @@ export default function DrawAndInvoicePackages() {
               </Alert>
             )}
 
-            {focusedPackage && (
-              <Card variant="outlined">
-                <CardContent>
-                  <Typography fontWeight={800}>Package documents</Typography>
-                  <Stack direction="row" spacing={1} useFlexGap sx={{ mt: 1, flexWrap: 'wrap' }}>
-                    {focusedPackage.documents.map((document) => (
-                      <Chip
-                        key={document.type}
-                        color={document.status === 'COMPLETE' ? 'success' : 'default'}
-                        variant={document.status === 'COMPLETE' ? 'filled' : 'outlined'}
-                        icon={document.status === 'COMPLETE' ? <CheckCircleRoundedIcon /> : undefined}
-                        label={`${document.label} · ${document.status === 'COMPLETE' ? 'Complete' : 'Pending'}`}
-                      />
-                    ))}
-                  </Stack>
-                </CardContent>
-              </Card>
-            )}
-
             <DrawWorksheetTable
               job={focusedJob}
               phase={selectedPhase}
@@ -1367,6 +2009,31 @@ export default function DrawAndInvoicePackages() {
             />
 
             {focusedPackage && <PackageOptionsTable summary={packageSummary} />}
+            {focusedPackage?.corrections?.length > 0 && (
+              <Card variant="outlined">
+                <CardContent>
+                  <Typography fontWeight={800} sx={{ mb: 1 }}>Correction history</Typography>
+                  <Stack spacing={1}>
+                    {focusedPackage.corrections.map((correction) => (
+                      <Typography key={correction.id} variant="body2" color="text.secondary">
+                        {new Date(correction.changed_at).toLocaleString('en-US')} ·{' '}
+                        {correction.action === 'TRANSFER'
+                          ? String(correction.package_id) === String(focusedPackage.id)
+                            ? 'Cells moved here'
+                            : 'Cells moved out'
+                          : correction.action.toLowerCase()} ·{' '}
+                        {correction.reason}
+                        {correction.action === 'TRANSFER' && ` · Other Package ID ${
+                          String(correction.package_id) === String(focusedPackage.id)
+                            ? correction.other_package_id
+                            : correction.package_id
+                        }`}
+                      </Typography>
+                    ))}
+                  </Stack>
+                </CardContent>
+              </Card>
+            )}
           </Stack>
         )}
       </Box>
@@ -1380,6 +2047,33 @@ export default function DrawAndInvoicePackages() {
           initialPhaseId={selectedPhase?.id}
           onClose={() => setCreateDialogOpen(false)}
           onCreate={handleCreate}
+        />
+      )}
+      {correctionDialog === 'edit' && focusedPackage && (
+        <EditDrawPackageDialog
+          record={focusedPackage}
+          job={focusedJob}
+          phase={selectedPhase}
+          phases={focusedPackagePhases}
+          schedule={schedule}
+          packages={drawInvoicePackages}
+          onClose={() => setCorrectionDialog(null)}
+          onSave={editDrawInvoicePackage}
+        />
+      )}
+      {correctionDialog === 'transfer' && focusedPackage && (
+        <TransferDrawPackageCellsDialog
+          target={focusedPackage}
+          packages={drawInvoicePackages}
+          onClose={() => setCorrectionDialog(null)}
+          onTransfer={transferDrawPackageCells}
+        />
+      )}
+      {correctionDialog === 'delete' && focusedPackage && (
+        <CancelDrawPackageDialog
+          record={focusedPackage}
+          onClose={() => setCorrectionDialog(null)}
+          onCancel={cancelDrawInvoicePackage}
         />
       )}
     </Box>

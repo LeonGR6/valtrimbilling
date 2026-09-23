@@ -1,15 +1,9 @@
-import { initialContacts } from '../../builder-contacts/data/builderContacts.js'
-import { initialPeople } from '../../people/data/people.js'
-
 const dateFormatter = new Intl.DateTimeFormat('en-US', {
   weekday: 'short',
   day: 'numeric',
   month: 'short',
   year: 'numeric',
 })
-
-const supervisorsById = new Map(initialPeople.map((person) => [person.id, person]))
-const superintendentsById = new Map(initialContacts.map((person) => [person.id, person]))
 
 function parseLocalDate(dateString) {
   const [year, month, day] = dateString.split('-').map(Number)
@@ -32,9 +26,13 @@ function sortLotNumbers(lots) {
   return [...lots].sort((a, b) => Number(a.lotNumber) - Number(b.lotNumber))
 }
 
-export function getPhasePatch(job, phase) {
+export function getPhasePatch(job, phase, people = [], builderContacts = []) {
   const lots = sortLotNumbers(phase?.lots ?? [])
   const lotNumbers = lots.map((lot) => String(lot.lotNumber))
+  const supervisor = people.find((person) => person.id === job?.supervisorId)
+  const superintendent = builderContacts.find(
+    (contact) => contact.id === job?.superintendentId,
+  )
 
   return {
     jobId: job?.id ?? '',
@@ -47,8 +45,9 @@ export function getPhasePatch(job, phase) {
     lotStart: Number(lotNumbers[0]) || 1,
     lotEnd: Number(lotNumbers.at(-1)) || 1,
     lotNumbers,
-    foreman: supervisorsById.get(job?.supervisorId)?.name ?? '',
-    superintendent: superintendentsById.get(job?.superintendentId)?.name ?? '',
+    lotIds: lots.map((lot) => Number(lot.id)),
+    foreman: supervisor?.name ?? '',
+    superintendent: superintendent?.name ?? '',
     dmSplitPhase: false,
     dmSplitParts: [],
     hwSplitPhase: false,

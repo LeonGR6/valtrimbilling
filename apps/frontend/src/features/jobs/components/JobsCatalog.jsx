@@ -8,6 +8,7 @@ import {
   Button,
   Card,
   CardContent,
+  Chip,
   Dialog,
   DialogActions,
   DialogContent,
@@ -34,7 +35,7 @@ import {
 import ApartmentRoundedIcon from '@mui/icons-material/ApartmentRounded'
 import BackupTableRoundedIcon from '@mui/icons-material/BackupTableRounded'
 import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded'
-import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
+import BlockRoundedIcon from '@mui/icons-material/BlockRounded'
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined'
 import HomeWorkRoundedIcon from '@mui/icons-material/HomeWorkRounded'
 import LayersRoundedIcon from '@mui/icons-material/LayersRounded'
@@ -44,10 +45,7 @@ import ResponsiveCreateButton from '../../../components/common/ResponsiveCreateB
 import { BuildersCatalog } from '../../builders/index.js'
 import { useBuilders } from '../../builders/context/useBuilders.js'
 import { usePeople } from '../../people/context/usePeople.js'
-import {
-  builderLabels,
-  emptyContact,
-} from '../../builder-contacts'
+import { emptyContact } from '../../builder-contacts'
 import { useBuilderContacts } from '../../builder-contacts/context/useBuilderContacts.js'
 import JobDetails from './JobDetails.jsx'
 import PersonPickerField from './PersonPickerField.jsx'
@@ -64,14 +62,11 @@ import {
   jobPlansOptionsPath,
 } from '../utils/jobRoutes.js'
 
-const builderCodeByName = Object.fromEntries(
-  Object.entries(builderLabels).map(([code, name]) => [name, code]),
-)
-
 const personName = (index, id) => index.get(id)?.name ?? 'Unassigned'
 
 function JobDialog({
   builderOptions,
+  builderIdsByName,
   defaultBuilder,
   supervisors,
   superintendents,
@@ -80,6 +75,7 @@ function JobDialog({
   onClose,
   onCreateSuperintendent,
   onSave,
+  submitting,
 }) {
 
   const schema = useMemo(
@@ -106,24 +102,26 @@ function JobDialog({
     reValidateMode: 'onChange',
   })
   const selectedBuilderName = useWatch({ control, name: 'builder' })
-  const selectedBuilderCode = builderCodeByName[selectedBuilderName]
+  const selectedBuilderId = builderIdsByName.get(selectedBuilderName)
   const availableSuperintendents = useMemo(
     () => superintendents.filter(
       (contact) =>
         contact.type === 'JOBSITE_SUPERINTENDENT'
         && (
-          !selectedBuilderCode
-          || contact.builder === selectedBuilderCode
-          || contact.id === job?.superintendentId
+          contact.id === job?.superintendentId
+          || (
+            contact.isActive
+            && (!selectedBuilderId || contact.builderId === selectedBuilderId)
+          )
         ),
     ),
-    [job?.superintendentId, selectedBuilderCode, superintendents],
+    [job?.superintendentId, selectedBuilderId, superintendents],
   )
 
   return (
     <Dialog
       open
-      onClose={onClose}
+      onClose={submitting ? undefined : onClose}
       fullWidth
       maxWidth="md"
       component="form"
@@ -219,9 +217,9 @@ function JobDialog({
                 control={control}
                 error={errors.superintendentId}
                 people={availableSuperintendents}
-                onCreate={(draft) =>
-                  onCreateSuperintendent(draft, selectedBuilderName)
-                }
+                onCreate={onCreateSuperintendent
+                  ? (draft) => onCreateSuperintendent(draft, selectedBuilderName)
+                  : undefined}
                 createTitle="Add new superintendent"
                 extraFields={['phone']}
               />
@@ -235,10 +233,10 @@ function JobDialog({
       </DialogContent>
 
       <DialogActions sx={{ px: 3, pb: 2.5, pt: 1.5 }}>
-        <Button color="inherit" onClick={onClose}>
+        <Button color="inherit" onClick={onClose} disabled={submitting}>
           Cancel
         </Button>
-        <Button type="submit" variant="contained" disableElevation>
+        <Button type="submit" variant="contained" disabled={submitting} disableElevation>
           {job ? 'Save changes' : 'Create job'}
         </Button>
       </DialogActions>
@@ -280,17 +278,31 @@ export default function JobsCatalog() {
   const navigate = useNavigate()
   const { builderId, jobId } = useParams()
   const [searchParams] = useSearchParams()
-  const { jobs, setJobs } = useJobs()
+  const {
+    jobs,
+    loading,
+    error,
+    canManageJobs,
+    refreshJobs,
+    createJob,
+    updateJob,
+    deactivateJob,
+  } = useJobs()
   const { builders } = useBuilders()
   const { people } = usePeople()
-  const { contacts, setContacts } = useBuilderContacts()
+  const {
+    contacts,
+    canManageBuilderContacts,
+    createBuilderContact,
+  } = useBuilderContacts()
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(0)
   const [rowsPerPage, setRowsPerPage] = useState(5)
   const [menuAnchor, setMenuAnchor] = useState(null)
   const [selectedJob, setSelectedJob] = useState(null)
   const [editTarget, setEditTarget] = useState(null)
-  const [deleteTarget, setDeleteTarget] = useState(null)
+  const [deactivateTarget, setDeactivateTarget] = useState(null)
+  const [submitting, setSubmitting] = useState(false)
   const [notice, setNotice] = useState(null)
   const supervisors = useMemo(
     () => people.filter((person) => person.types.includes('SUPERVISOR')),
@@ -299,6 +311,10 @@ export default function JobsCatalog() {
   const superintendents = useMemo(
     () => contacts.filter((contact) => contact.type === 'JOBSITE_SUPERINTENDENT'),
     [contacts],
+  )
+  const builderIdsByName = useMemo(
+    () => new Map(builders.map((builder) => [builder.name, builder.id])),
+    [builders],
   )
   const supervisorsById = useMemo(
     () => new Map(supervisors.map((person) => [person.id, person])),
@@ -313,13 +329,17 @@ export default function JobsCatalog() {
   const legacyBuilderId = searchParams.get('builder')
   const legacyJobId = searchParams.get('job')
   const dialogJob = editTarget ?? (createRequested ? null : undefined)
-  const dialogOpen = createRequested || Boolean(editTarget)
   const selectedBuilder = builders.find(
     (builder) => String(builder.id) === builderId,
   )
+  const dialogOpen = canManageJobs && (
+    Boolean(editTarget) || (createRequested && selectedBuilder?.isActive)
+  )
   const builderJobs = useMemo(
     () => selectedBuilder
-      ? jobs.filter((job) => job.builder === selectedBuilder.name)
+      ? jobs.filter(
+          (job) => String(job.builderId) === String(selectedBuilder.id),
+        )
       : [],
     [jobs, selectedBuilder],
   )
@@ -365,12 +385,15 @@ export default function JobsCatalog() {
         builder.name === editTarget?.builder,
     )
     .map((builder) => builder.name)
+  const availableSupervisors = supervisors.filter(
+    (supervisor) => supervisor.isActive || supervisor.id === editTarget?.supervisorId,
+  )
   useEffect(() => {
     if (builderId || jobId || (!legacyBuilderId && !legacyJobId)) return
 
     const legacyJob = jobs.find((job) => String(job.id) === legacyJobId)
     const resolvedBuilderId = legacyJob
-      ? getJobBuilderId(legacyJob, builders)
+      ? getJobBuilderId(legacyJob)
       : legacyBuilderId
 
     if (legacyJob && resolvedBuilderId != null) {
@@ -385,7 +408,6 @@ export default function JobsCatalog() {
     }
   }, [
     builderId,
-    builders,
     jobId,
     jobs,
     legacyBuilderId,
@@ -438,8 +460,8 @@ export default function JobsCatalog() {
     handleMenuClose()
   }
 
-  const openDeleteDialog = () => {
-    setDeleteTarget(selectedJob)
+  const openDeactivateDialog = () => {
+    setDeactivateTarget(selectedJob)
     handleMenuClose()
   }
 
@@ -453,75 +475,68 @@ export default function JobsCatalog() {
     if (job) openJobDetails(job)
   }
 
-  const handleCreateSuperintendent = (draft, builderName) => {
-    const created = {
+  const handleCreateSuperintendent = async (draft, builderName) => {
+    const builderIdForContact = builderIdsByName.get(builderName)
+    if (!builderIdForContact) {
+      throw new Error('Select a persisted Builder before adding a superintendent.')
+    }
+
+    return createBuilderContact({
       ...emptyContact,
       ...draft,
-      id: Date.now(),
       type: 'JOBSITE_SUPERINTENDENT',
-      builder: builderCodeByName[builderName] ?? '',
-    }
-    setContacts((current) => [created, ...current])
-    return created
+      builderId: builderIdForContact,
+      isActive: true,
+    })
   }
 
-  const handleSave = (form) => {
+  const handleSave = async (form) => {
     const savedBuilderId = builders.find(
       (builder) => builder.name === form.builder,
     )?.id ?? editTarget?.builderId ?? selectedBuilder.id
 
-    if (editTarget) {
-      setJobs((current) =>
-        current.map((job) =>
-          job.id === editTarget.id
-            ? { ...job, ...form, builderId: savedBuilderId }
-            : job,
-        ),
-      )
-      setNotice({ severity: 'success', message: 'Job updated.' })
-    } else {
-      setJobs((current) => [
-        {
-          ...form,
-          id: Date.now(),
-          builderId: savedBuilderId,
-          sequenceSheet: {
-            name: 'Options Sequence Sheet',
-            plans: [],
-            phases: [],
-          },
-        },
-        ...current,
-      ])
-      setPage(0)
-      setNotice({ severity: 'success', message: 'Job created.' })
+    setSubmitting(true)
+    try {
+      const mutation = { ...form, builderId: savedBuilderId }
+      if (editTarget) {
+        await updateJob(editTarget.id, mutation)
+        setNotice({ severity: 'success', message: 'Job updated.' })
+      } else {
+        await createJob(mutation)
+        setPage(0)
+        setNotice({ severity: 'success', message: 'Job created.' })
+      }
+
+      closeDialog()
+    } catch (saveError) {
+      setNotice({ severity: 'error', message: saveError.message })
+    } finally {
+      setSubmitting(false)
     }
-
-    closeDialog()
   }
 
-  const handleDelete = () => {
-    setJobs((current) => current.filter((job) => job.id !== deleteTarget.id))
-    setDeleteTarget(null)
-    setPage(0)
-    setNotice({ severity: 'success', message: 'Job deleted.' })
-  }
+  const handleDeactivate = async () => {
+    if (!deactivateTarget) return
 
-  const handleBuilderRenamed = (previousName, nextName) => {
-    setJobs((current) =>
-      current.map((job) =>
-        job.builder === previousName ? { ...job, builder: nextName } : job,
-      ),
-    )
+    setSubmitting(true)
+    try {
+      await deactivateJob(deactivateTarget.id)
+      setDeactivateTarget(null)
+      setPage(0)
+      setNotice({ severity: 'success', message: 'Job deactivated.' })
+    } catch (deactivateError) {
+      setNotice({ severity: 'error', message: deactivateError.message })
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   if (!selectedBuilder) {
     return (
       <BuildersCatalog
         getBuilderJobCount={(builder) =>
-          jobs.filter((job) => job.builder === builder.name).length
+          jobs.filter((job) => String(job.builderId) === String(builder.id)).length
         }
-        onBuilderRenamed={handleBuilderRenamed}
         onSelectBuilder={openBuilderJobs}
       />
     )
@@ -533,11 +548,6 @@ export default function JobsCatalog() {
         job={detailJob}
         builderId={selectedBuilder.id}
         onBack={() => navigate(builderJobsPath(selectedBuilder.id))}
-        onChange={(updatedJob) => {
-          setJobs((current) =>
-            current.map((job) => (job.id === updatedJob.id ? updatedJob : job)),
-          )
-        }}
       />
     )
   }
@@ -585,10 +595,12 @@ export default function JobsCatalog() {
             </Typography>
           </Box>
         </Stack>
-        <ResponsiveCreateButton
-          label="New job"
-          onClick={openCreateDialog}
-        />
+        {canManageJobs && selectedBuilder.isActive && (
+          <ResponsiveCreateButton
+            label="New job"
+            onClick={openCreateDialog}
+          />
+        )}
       </Box>
 
       <Box sx={{ p: { xs: 2.5, md: 4 } }}>
@@ -605,6 +617,20 @@ export default function JobsCatalog() {
           <SummaryCard icon={<LayersRoundedIcon />} label="Plans" value={totalPlans} />
           <SummaryCard icon={<ApartmentRoundedIcon />} label="Lots from phases" value={totalUnits} />
         </Stack>
+
+        {error && (
+          <Alert
+            severity="error"
+            action={(
+              <Button color="inherit" size="small" onClick={() => refreshJobs().catch(() => {})}>
+                Retry
+              </Button>
+            )}
+            sx={{ mb: 2.5 }}
+          >
+            {error}
+          </Alert>
+        )}
 
         <Box
           sx={{
@@ -704,9 +730,14 @@ export default function JobsCatalog() {
                           <BackupTableRoundedIcon fontSize="small" />
                         </Box>
                         <Box>
-                          <Typography variant="body2" fontWeight={700} noWrap color="primary.main">
-                            {job.code}
-                          </Typography>
+                          <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+                            <Typography variant="body2" fontWeight={700} noWrap color="primary.main">
+                              {job.code}
+                            </Typography>
+                            {!job.isActive && (
+                              <Chip label="Inactive" size="small" variant="outlined" />
+                            )}
+                          </Stack>
                           <Typography variant="caption" color="text.secondary">
                             {getJobPlanCount(job)}{' '}
                             {getJobPlanCount(job) === 1 ? 'plan' : 'plans'}
@@ -741,19 +772,29 @@ export default function JobsCatalog() {
                         <Typography variant="body2" fontWeight={600}>
                           {getJobUnitCount(job)}
                         </Typography>
-                        <IconButton
-                          size="small"
-                          aria-label={`Actions for ${job.code}`}
-                          onClick={(event) => handleMenuOpen(event, job)}
-                        >
-                          <MoreHorizRoundedIcon />
-                        </IconButton>
+                        {canManageJobs && (
+                          <IconButton
+                            size="small"
+                            aria-label={`Actions for ${job.code}`}
+                            onClick={(event) => handleMenuOpen(event, job)}
+                          >
+                            <MoreHorizRoundedIcon />
+                          </IconButton>
+                        )}
                       </Stack>
                     </TableCell>
                   </TableRow>
                 ))}
 
-                {visibleJobs.length === 0 && (
+                {loading && visibleJobs.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={5} sx={{ py: 8, textAlign: 'center' }}>
+                      <Typography color="text.secondary">Loading Jobs...</Typography>
+                    </TableCell>
+                  </TableRow>
+                )}
+
+                {!loading && visibleJobs.length === 0 && (
                   <TableRow>
                     <TableCell colSpan={5} sx={{ py: 8, textAlign: 'center' }}>
                       <SearchRoundedIcon color="action" sx={{ fontSize: 40, mb: 1 }} />
@@ -800,9 +841,13 @@ export default function JobsCatalog() {
           <EditOutlinedIcon fontSize="small" sx={{ mr: 1.25 }} />
           Edit
         </MenuItem>
-        <MenuItem onClick={openDeleteDialog} sx={{ color: 'error.main' }}>
-          <DeleteOutlineRoundedIcon fontSize="small" sx={{ mr: 1.25 }} />
-          Delete
+        <MenuItem
+          onClick={openDeactivateDialog}
+          disabled={!selectedJob?.isActive}
+          sx={{ color: 'error.main' }}
+        >
+          <BlockRoundedIcon fontSize="small" sx={{ mr: 1.25 }} />
+          Deactivate
         </MenuItem>
       </Menu>
 
@@ -810,37 +855,47 @@ export default function JobsCatalog() {
         <JobDialog
           key={dialogJob?.id ?? 'new'}
           builderOptions={builderOptions}
+          builderIdsByName={builderIdsByName}
           defaultBuilder={selectedBuilder.name}
-          supervisors={supervisors}
+          supervisors={availableSupervisors}
           superintendents={superintendents}
           job={dialogJob}
           jobs={jobs}
           onClose={closeDialog}
-          onCreateSuperintendent={handleCreateSuperintendent}
+          onCreateSuperintendent={
+            canManageBuilderContacts ? handleCreateSuperintendent : undefined
+          }
           onSave={handleSave}
+          submitting={submitting}
         />
       )}
 
       <Dialog
-        open={Boolean(deleteTarget)}
-        onClose={() => setDeleteTarget(null)}
+        open={Boolean(deactivateTarget)}
+        onClose={submitting ? undefined : () => setDeactivateTarget(null)}
         fullWidth
         maxWidth="xs"
       >
-        <DialogTitle>Delete job?</DialogTitle>
+        <DialogTitle>Deactivate Job?</DialogTitle>
         <DialogContent>
           <Typography variant="body2" color="text.secondary">
-            {deleteTarget
-              ? `${deleteTarget.code} — ${deleteTarget.community} / ${deleteTarget.builder} will be removed.`
+            {deactivateTarget
+              ? `${deactivateTarget.code} — ${deactivateTarget.community} / ${deactivateTarget.builder} will remain in the catalog as inactive. Its existing configuration will be preserved.`
               : ''}
           </Typography>
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2.5 }}>
-          <Button color="inherit" onClick={() => setDeleteTarget(null)}>
+          <Button color="inherit" onClick={() => setDeactivateTarget(null)} disabled={submitting}>
             Cancel
           </Button>
-          <Button color="error" variant="contained" onClick={handleDelete} disableElevation>
-            Delete job
+          <Button
+            color="error"
+            variant="contained"
+            onClick={handleDeactivate}
+            disabled={submitting}
+            disableElevation
+          >
+            Deactivate Job
           </Button>
         </DialogActions>
       </Dialog>

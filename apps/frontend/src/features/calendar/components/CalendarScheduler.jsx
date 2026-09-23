@@ -1,6 +1,7 @@
-import { useMemo, useRef, useState } from 'react'
-import { Box, Drawer, Snackbar } from '@mui/material'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { Alert, Box, Button, Drawer, LinearProgress, Snackbar } from '@mui/material'
 import { useColorScheme } from '@mui/material/styles'
+import { useAuth } from '../../auth/context/useAuth.js'
 import { useJobs } from '../../jobs/context/useJobs.js'
 import { useBuilders } from '../../builders/context/useBuilders.js'
 import { usePeople } from '../../people/context/usePeople.js'
@@ -8,14 +9,22 @@ import { useBuilderContacts } from '../../builder-contacts/context/useBuilderCon
 import {
   createDraftFromProductionEvent,
   createEmptyProductionDraft,
-  createProductionCalendarEvents,
-  initialCalendarEvents,
-  recordProductionDateHistory,
 } from '../data/calendarEvents.js'
+import { useProductionActivities } from '../context/useProductionActivities.js'
 import { calendarEventSchema } from '../schemas/calendarEventSchema.js'
+import {
+  getGoogleCalendarConnection,
+  startGoogleCalendarOAuth,
+  syncGoogleCalendarNow,
+} from '../services/googleCalendarRepository.js'
+import {
+  googleOAuthReturnMessage,
+  googleSyncSummary,
+} from '../services/googleCalendarRecord.js'
 import ActivityDetail from './ActivityDetail.jsx'
 import ActivityForm from './ActivityForm.jsx'
 import BuilderDateSettings from './BuilderDateSettings.jsx'
+import BuilderFollowUpQueue from './BuilderFollowUpQueue.jsx'
 import CalendarPageHeader from './CalendarPageHeader.jsx'
 import CalendarWorkspace from './CalendarWorkspace.jsx'
 import ChangeOrdersPlaceholder from './ChangeOrdersPlaceholder.jsx'
@@ -29,25 +38,82 @@ const initialCalendarTitle = new Intl.DateTimeFormat('en-US', {
 
 export default function CalendarScheduler() {
   const calendarRef = useRef(null)
+  const { profile } = useAuth()
   const { jobs } = useJobs()
   const { builders } = useBuilders()
   const { people } = usePeople()
   const { contacts: builderContacts } = useBuilderContacts()
+  const {
+    events,
+    loading: productionLoading,
+    error: productionError,
+    canManageProductionActivities,
+    refreshProductionActivities,
+    saveProductionActivity,
+    cancelProductionActivity,
+  } = useProductionActivities()
   const { mode, systemMode } = useColorScheme()
   const resolvedColorMode = mode === 'system' ? systemMode : mode
   const calendarColorMode = resolvedColorMode === 'dark' ? 'dark' : 'light'
   const [calendarMode, setCalendarMode] = useState('PRODUCTION')
   const [activeTab, setActiveTab] = useState('SCHEDULE')
-  const [events, setEvents] = useState(initialCalendarEvents)
   const [selectedId, setSelectedId] = useState(null)
   const [drawerMode, setDrawerMode] = useState(null)
-  const [editingGroupId, setEditingGroupId] = useState(null)
   const [draft, setDraft] = useState(createEmptyProductionDraft())
   const [formError, setFormError] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [deleting, setDeleting] = useState(false)
   const [notice, setNotice] = useState('')
+  const [googleCalendarConnection, setGoogleCalendarConnection] = useState(null)
+  const [googleCalendarLoading, setGoogleCalendarLoading] = useState(true)
+  const [googleCalendarSyncing, setGoogleCalendarSyncing] = useState(false)
+  const [googleCalendarError, setGoogleCalendarError] = useState('')
   const [viewTitle, setViewTitle] = useState(initialCalendarTitle)
   const [viewType, setViewType] = useState('dayGridWeek')
   const [visibleTypes, setVisibleTypes] = useState(['EXT', 'SHUTTER', 'DM', 'HW'])
+
+  useEffect(() => {
+    if (!profile?.id) return undefined
+
+    let mounted = true
+    getGoogleCalendarConnection()
+      .then((connection) => {
+        if (!mounted) return
+        setGoogleCalendarConnection(connection)
+        setGoogleCalendarError('')
+      })
+      .catch((connectionError) => {
+        if (!mounted) return
+        setGoogleCalendarError(connectionError.message)
+      })
+      .finally(() => {
+        if (mounted) setGoogleCalendarLoading(false)
+      })
+
+    return () => {
+      mounted = false
+    }
+  }, [profile?.id])
+
+  useEffect(() => {
+    const currentUrl = new URL(window.location.href)
+    const googleResult = currentUrl.searchParams.get('google')
+    if (!googleResult) return
+
+    if (googleResult === 'connected') {
+      // OAuth is an external navigation result synchronized into local UI state.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setNotice('Google Calendar connected.')
+    } else {
+      setGoogleCalendarError(googleOAuthReturnMessage(
+        currentUrl.searchParams.get('reason'),
+      ))
+    }
+
+    currentUrl.searchParams.delete('google')
+    currentUrl.searchParams.delete('reason')
+    window.history.replaceState({}, '', currentUrl)
+  }, [])
 
   const filteredEvents = useMemo(() => events.filter((event) => (
     visibleTypes.includes(event.extendedProps.activityType)
@@ -58,13 +124,12 @@ export default function CalendarScheduler() {
   const closeDrawer = () => {
     setDrawerMode(null)
     setSelectedId(null)
-    setEditingGroupId(null)
     setFormError('')
   }
 
   const openCreateDrawer = () => {
+    if (!canManageProductionActivities) return
     setSelectedId(null)
-    setEditingGroupId(null)
     setDraft(createEmptyProductionDraft())
     setFormError('')
     setDrawerMode('create')
@@ -74,25 +139,21 @@ export default function CalendarScheduler() {
     const calendarEvent = events.find((event) => event.id === eventId)
     if (!calendarEvent) return
 
-    const groupId = calendarEvent.extendedProps.groupId ?? calendarEvent.groupId ?? calendarEvent.id
     setSelectedId(eventId)
     setDraft(createDraftFromProductionEvent(calendarEvent))
-    setEditingGroupId(groupId)
     setFormError('')
     setDrawerMode('detail')
   }
 
   const openEditDrawer = () => {
-    if (!selectedEvent) return
+    if (!selectedEvent || !canManageProductionActivities) return
 
-    const groupId = selectedEvent.extendedProps.groupId ?? selectedEvent.groupId ?? selectedEvent.id
     setDraft(createDraftFromProductionEvent(selectedEvent))
-    setEditingGroupId(groupId)
     setFormError('')
     setDrawerMode('edit')
   }
 
-  const saveActivity = (event) => {
+  const saveActivity = async (event) => {
     event.preventDefault()
     const result = calendarEventSchema.safeParse(draft)
 
@@ -101,37 +162,51 @@ export default function CalendarScheduler() {
       return
     }
 
-    const groupId = editingGroupId ?? `production-${Date.now()}`
-    const savedValues = editingGroupId
-      ? recordProductionDateHistory(result.data, selectedEvent)
-      : result.data
-    const nextEvents = createProductionCalendarEvents(savedValues, groupId)
-    const savedActivityType = editingGroupId
+    const isEditing = Boolean(result.data.activityId)
+    const savedActivityType = isEditing
       ? selectedEvent?.extendedProps.activityType
       : 'EXT'
     const previousProps = selectedEvent?.extendedProps
-    const nextSelectedEvent = nextEvents.find((item) => (
-      item.extendedProps.activityType === savedActivityType
-      && item.extendedProps.variant === previousProps?.variant
-      && Number(item.extendedProps.lotStart) === Number(previousProps?.lotStart)
-      && Number(item.extendedProps.lotEnd) === Number(previousProps?.lotEnd)
-    )) ?? nextEvents.find((item) => (
-      item.extendedProps.activityType === savedActivityType
-      && !['install-only', 'lock-up'].includes(item.extendedProps.variant)
-    )) ?? nextEvents[0]
-    setEvents((current) => {
-      const withoutEditedGroup = editingGroupId
-        ? current.filter((item) => (item.extendedProps.groupId ?? item.groupId ?? item.id) !== editingGroupId)
-        : current
-      return [...withoutEditedGroup, ...nextEvents]
-    })
-    setSelectedId(nextSelectedEvent.id)
-    setEditingGroupId(null)
-    setDrawerMode('detail')
-    setFormError('')
-    setNotice(editingGroupId
-      ? 'Production activity updated.'
-      : 'Production activity created with EXT, DM and HW.')
+    setSaving(true)
+    try {
+      const { events: savedEvents } = await saveProductionActivity(result.data)
+      const nextSelectedEvent = savedEvents.find((item) => (
+        item.extendedProps.activityType === savedActivityType
+        && item.extendedProps.variant === previousProps?.variant
+        && Number(item.extendedProps.lotStart) === Number(previousProps?.lotStart)
+        && Number(item.extendedProps.lotEnd) === Number(previousProps?.lotEnd)
+      )) ?? savedEvents.find((item) => (
+        item.extendedProps.activityType === savedActivityType
+        && !['install-only', 'lock-up'].includes(item.extendedProps.variant)
+      )) ?? savedEvents[0]
+
+      setSelectedId(nextSelectedEvent?.id ?? null)
+      setDrawerMode(nextSelectedEvent ? 'detail' : null)
+      setFormError('')
+      setNotice(isEditing
+        ? 'Production activity updated.'
+        : 'Production activity created with EXT, DM and HW.')
+    } catch (saveError) {
+      setFormError(saveError.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const deleteActivity = async () => {
+    const activityId = selectedEvent?.extendedProps.activityId
+    if (!activityId || !canManageProductionActivities) {
+      throw new Error('Select a persisted Production activity to delete.')
+    }
+
+    setDeleting(true)
+    try {
+      await cancelProductionActivity(activityId)
+      closeDrawer()
+      setNotice('Production activity deleted from Calendar.')
+    } finally {
+      setDeleting(false)
+    }
   }
 
   const navigateCalendar = (direction) => {
@@ -170,6 +245,47 @@ export default function CalendarScheduler() {
     setFormError('')
   }
 
+  const connectGoogleCalendar = async () => {
+    if (profile?.role !== 'ADMIN') return
+
+    setGoogleCalendarLoading(true)
+    setGoogleCalendarError('')
+    try {
+      const authorizationUrl = await startGoogleCalendarOAuth()
+      window.location.assign(authorizationUrl)
+    } catch (connectionError) {
+      setGoogleCalendarError(connectionError.message)
+      setGoogleCalendarLoading(false)
+    }
+  }
+
+  const syncGoogleCalendar = async () => {
+    if (
+      profile?.role !== 'ADMIN'
+      || googleCalendarConnection?.status !== 'CONNECTED'
+    ) return
+
+    setGoogleCalendarSyncing(true)
+    setGoogleCalendarError('')
+    try {
+      const result = await syncGoogleCalendarNow()
+      const connection = await getGoogleCalendarConnection()
+      setGoogleCalendarConnection(connection)
+      if (result.failed > 0) {
+        setGoogleCalendarError(googleSyncSummary(result))
+      } else {
+        setNotice(googleSyncSummary(result))
+      }
+    } catch (syncError) {
+      setGoogleCalendarError(syncError.message)
+      getGoogleCalendarConnection()
+        .then(setGoogleCalendarConnection)
+        .catch(() => {})
+    } finally {
+      setGoogleCalendarSyncing(false)
+    }
+  }
+
   return (
     <Box className={`calendar-page calendar-theme--${calendarColorMode}`}>
       <CalendarPageHeader
@@ -177,28 +293,61 @@ export default function CalendarScheduler() {
         calendarMode={calendarMode}
         onChangeTab={changeActiveTab}
         onChangeMode={changeCalendarMode}
+        onConnectGoogleCalendar={connectGoogleCalendar}
+        onSyncGoogleCalendar={syncGoogleCalendar}
         onCreate={openCreateDrawer}
+        canConnectGoogleCalendar={profile?.role === 'ADMIN'}
+        canCreate={canManageProductionActivities}
+        googleCalendarConnected={googleCalendarConnection?.status === 'CONNECTED'}
+        googleCalendarLastSyncAt={googleCalendarConnection?.lastSyncAt}
+        googleCalendarLoading={googleCalendarLoading}
+        googleCalendarSyncing={googleCalendarSyncing}
       />
 
       {activeTab === 'BUILDER_SETTINGS' ? (
         <BuilderDateSettings />
-      ) : calendarMode === 'PRODUCTION' ? (
-        <CalendarWorkspace
-          calendarRef={calendarRef}
-          events={filteredEvents}
-          selectedId={selectedId}
-          viewTitle={viewTitle}
-          viewType={viewType}
-          visibleTypes={visibleTypes}
-          onChangeView={changeView}
-          onDatesSet={(title, type) => {
-            setViewTitle(title)
-            setViewType(type)
-          }}
-          onEventClick={openEventOptions}
-          onNavigate={navigateCalendar}
-          onToggleType={toggleType}
+      ) : activeTab === 'FOLLOW_UPS' ? (
+        <BuilderFollowUpQueue
+          canManage={canManageProductionActivities}
+          canConfigure={profile?.role === 'ADMIN'}
         />
+      ) : calendarMode === 'PRODUCTION' ? (
+        <>
+          {productionLoading && <LinearProgress />}
+          {productionError && (
+            <Alert
+              severity="error"
+              action={(
+                <Button color="inherit" size="small" onClick={() => refreshProductionActivities().catch(() => {})}>
+                  Retry
+                </Button>
+              )}
+            >
+              {productionError}
+            </Alert>
+          )}
+          {googleCalendarError && (
+            <Alert severity="error" onClose={() => setGoogleCalendarError('')}>
+              {googleCalendarError}
+            </Alert>
+          )}
+          <CalendarWorkspace
+            calendarRef={calendarRef}
+            events={filteredEvents}
+            selectedId={selectedId}
+            viewTitle={viewTitle}
+            viewType={viewType}
+            visibleTypes={visibleTypes}
+            onChangeView={changeView}
+            onDatesSet={(title, type) => {
+              setViewTitle(title)
+              setViewType(type)
+            }}
+            onEventClick={openEventOptions}
+            onNavigate={navigateCalendar}
+            onToggleType={toggleType}
+          />
+        </>
       ) : (
         <Box className="calendar-workspace calendar-workspace--placeholder">
           <ChangeOrdersPlaceholder />
@@ -227,11 +376,16 @@ export default function CalendarScheduler() {
             builderContacts={builderContacts}
             onClose={closeDrawer}
             onEdit={openEditDrawer}
+            onDelete={deleteActivity}
+            canEdit={canManageProductionActivities}
+            deleting={deleting}
           />
         ) : (
           <ActivityForm
             jobs={jobs}
             builders={builders}
+            people={people}
+            builderContacts={builderContacts}
             draft={draft}
             isEditing={drawerMode === 'edit'}
             activeActivityType={selectedEvent?.extendedProps.activityType}
@@ -239,6 +393,7 @@ export default function CalendarScheduler() {
             onChange={changeDraft}
             onClose={closeDrawer}
             onSave={saveActivity}
+            saving={saving}
           />
         )}
       </Drawer>

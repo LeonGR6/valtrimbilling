@@ -36,6 +36,8 @@ const QUEUE_COLUMNS = [
   'last_error',
   'delivery_status',
   'days_until_due',
+  'confirmed_at',
+  'last_response_at',
 ].join(', ')
 
 const ATTENTION_COLUMNS = [
@@ -169,7 +171,7 @@ export async function listBuilderFollowUps() {
   const { data, error } = await client
     .from('builder_follow_up_queue')
     .select(QUEUE_COLUMNS)
-    .eq('checkpoint_status', 'PENDING')
+    .order('work_date', { ascending: true })
     .order('due_on', { ascending: true })
     .order('checkpoint_id', { ascending: true })
   repositoryError(error)

@@ -39,6 +39,8 @@ const row = {
   last_error: null,
   delivery_status: 'OVERDUE',
   days_until_due: -2,
+  confirmed_at: null,
+  last_response_at: null,
 }
 
 test('maps a follow-up queue row without losing bigint identities', () => {
@@ -61,6 +63,25 @@ test('rejects unknown delivery states and invalid function modes', () => {
 test('accepts explicit PREVIEW and LIVE Edge Function modes', () => {
   assert.equal(toFollowUpEmailResult({ mode: 'PREVIEW' }).mode, 'PREVIEW')
   assert.equal(toFollowUpEmailResult({ mode: 'LIVE' }).mode, 'LIVE')
+})
+
+test('maps a sent checkpoint without losing its delivery and response timestamps', () => {
+  const item = toBuilderFollowUpItem({
+    ...row,
+    checkpoint_status: 'COMPLETED',
+    follow_up_status: 'CONFIRMED',
+    email_status: 'SENT',
+    sent_at: '2026-09-17T15:30:00Z',
+    delivery_status: 'SENT',
+    confirmed_at: '2026-09-17T16:00:00Z',
+    last_response_at: '2026-09-17T16:00:00Z',
+  })
+
+  assert.equal(item.checkpointStatus, 'COMPLETED')
+  assert.equal(item.emailStatus, 'SENT')
+  assert.equal(item.confirmedAt, '2026-09-17T16:00:00Z')
+  assert.equal(item.lastResponseAt, '2026-09-17T16:00:00Z')
+  assert.equal(followUpDeliveryLabel(item), 'Sent')
 })
 
 test('maps the immediate no-response attention signal and internal escalation', () => {

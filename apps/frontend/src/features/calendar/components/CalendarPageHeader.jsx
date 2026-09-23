@@ -15,6 +15,7 @@ import SyncAltRoundedIcon from '@mui/icons-material/SyncAltRounded'
 import SyncRoundedIcon from '@mui/icons-material/SyncRounded'
 import TuneRoundedIcon from '@mui/icons-material/TuneRounded'
 import ResponsiveCreateButton from '../../../components/common/ResponsiveCreateButton'
+import { googleCalendarLastSyncLabel } from '../services/googleCalendarRecord.js'
 
 export default function CalendarPageHeader({
   activeTab,
@@ -27,6 +28,7 @@ export default function CalendarPageHeader({
   canConnectGoogleCalendar = false,
   canCreate = true,
   googleCalendarConnected = false,
+  googleCalendarLastSyncAt = null,
   googleCalendarLoading = false,
   googleCalendarSyncing = false,
 }) {
@@ -101,18 +103,27 @@ export default function CalendarPageHeader({
               </span>
             </Tooltip>
             {googleCalendarConnected && (
-              <Tooltip title="Copy the current ValtrimBilling Production calendar to Google Calendar.">
-                <span>
-                  <Button
-                    variant="contained"
-                    startIcon={<SyncRoundedIcon />}
-                    onClick={onSyncGoogleCalendar}
-                    disabled={!canConnectGoogleCalendar || googleCalendarSyncing}
-                  >
-                    {googleCalendarSyncing ? 'Syncing…' : 'Sync now'}
-                  </Button>
-                </span>
-              </Tooltip>
+              <Box className="google-calendar-sync-action">
+                <Tooltip title="Copy the current ValtrimBilling Production calendar to Google Calendar.">
+                  <span>
+                    <Button
+                      variant="contained"
+                      startIcon={<SyncRoundedIcon />}
+                      onClick={onSyncGoogleCalendar}
+                      disabled={!canConnectGoogleCalendar || googleCalendarSyncing}
+                    >
+                      {googleCalendarSyncing ? 'Syncing…' : 'Sync now'}
+                    </Button>
+                  </span>
+                </Tooltip>
+                <Typography
+                  className="google-calendar-sync-action__timestamp"
+                  variant="caption"
+                  color="text.secondary"
+                >
+                  {googleCalendarLastSyncLabel(googleCalendarLastSyncAt)}
+                </Typography>
+              </Box>
             )}
             {calendarMode === 'PRODUCTION' ? (
               <Tooltip title={canCreate ? '' : 'Your role has read-only access to Production activities.'}>

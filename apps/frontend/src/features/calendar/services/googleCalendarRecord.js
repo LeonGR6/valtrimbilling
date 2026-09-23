@@ -1,3 +1,11 @@
+const googleCalendarLastSyncFormatter = new Intl.DateTimeFormat('en-US', {
+  month: 'short',
+  day: 'numeric',
+  year: 'numeric',
+  hour: 'numeric',
+  minute: '2-digit',
+})
+
 export function toGoogleCalendarConnection(row) {
   if (!row) return null
   return {
@@ -17,6 +25,15 @@ export function toGoogleCalendarConnection(row) {
     lastSyncFailedCount: Number(row.last_sync_failed_count ?? 0),
     updatedAt: row.updated_at,
   }
+}
+
+export function googleCalendarLastSyncLabel(value) {
+  if (!value) return 'Not synced yet'
+
+  const timestamp = new Date(value)
+  if (Number.isNaN(timestamp.getTime())) return 'Sync time unavailable'
+
+  return `Last sync: ${googleCalendarLastSyncFormatter.format(timestamp)}`
 }
 
 export function toGoogleCalendarSyncResult(data) {

@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(18);
+select plan(19);
 
 select has_table(
   'valtrim',
@@ -75,6 +75,17 @@ select ok(
     where oid = 'valtrim.builder_follow_up_response_history'::regclass
   ), false),
   'Recent responses preserve caller RLS with security_invoker'
+);
+select ok(
+  pg_get_viewdef(
+    'valtrim.builder_follow_up_response_history'::regclass,
+    true
+  ) like '%schedule.is_active%'
+  and pg_get_viewdef(
+    'valtrim.builder_follow_up_response_history'::regclass,
+    true
+  ) like '%activity.status = ''ACTIVE''%',
+  'Recent responses exclude inactive schedules and cancelled Production activities'
 );
 
 select has_function(

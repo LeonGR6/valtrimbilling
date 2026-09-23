@@ -1,11 +1,21 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
+  googleCalendarLastSyncLabel,
   googleOAuthReturnMessage,
   googleSyncSummary,
   toGoogleCalendarConnection,
   toGoogleCalendarSyncResult,
 } from '../src/features/calendar/services/googleCalendarRecord.js'
+
+test('Google Calendar last sync labels include a local date and time', () => {
+  const label = googleCalendarLastSyncLabel('2026-09-14T21:00:00Z')
+
+  assert.match(label, /^Last sync: /)
+  assert.match(label, /2026/)
+  assert.equal(googleCalendarLastSyncLabel(null), 'Not synced yet')
+  assert.equal(googleCalendarLastSyncLabel('invalid'), 'Sync time unavailable')
+})
 
 test('Google Calendar connection rows omit the Vault secret boundary', () => {
   const connection = toGoogleCalendarConnection({

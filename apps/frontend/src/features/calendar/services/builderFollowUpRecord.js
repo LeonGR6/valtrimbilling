@@ -4,6 +4,7 @@ const DELIVERY_STATUSES = new Set([
   'OVERDUE',
   'PROCESSING',
   'FAILED',
+  'SENT',
   'COMPLETED',
   'SKIPPED',
   'CANCELLED',
@@ -62,6 +63,8 @@ export function toBuilderFollowUpItem(row) {
     lastError: row.last_error ?? null,
     deliveryStatus,
     daysUntilDue: Number(row.days_until_due),
+    confirmedAt: row.confirmed_at ?? null,
+    lastResponseAt: row.last_response_at ?? null,
   }
 }
 
@@ -200,6 +203,7 @@ export function followUpLotsLabel(item) {
 }
 
 export function followUpDeliveryLabel(item) {
+  if (item.deliveryStatus === 'SENT') return 'Sent'
   if (item.deliveryStatus === 'OVERDUE') {
     return `${Math.abs(item.daysUntilDue)} day${Math.abs(item.daysUntilDue) === 1 ? '' : 's'} overdue`
   }

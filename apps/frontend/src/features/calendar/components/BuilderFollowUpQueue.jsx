@@ -5,6 +5,7 @@ import {
   Button,
   Chip,
   CircularProgress,
+  Collapse,
   Dialog,
   DialogActions,
   DialogContent,
@@ -24,6 +25,8 @@ import {
 } from '@mui/material'
 import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded'
 import EmailRoundedIcon from '@mui/icons-material/EmailRounded'
+import ExpandLessRoundedIcon from '@mui/icons-material/ExpandLessRounded'
+import ExpandMoreRoundedIcon from '@mui/icons-material/ExpandMoreRounded'
 import MarkEmailReadRoundedIcon from '@mui/icons-material/MarkEmailReadRounded'
 import EventRepeatRoundedIcon from '@mui/icons-material/EventRepeatRounded'
 import ReportProblemRoundedIcon from '@mui/icons-material/ReportProblemRounded'
@@ -74,10 +77,55 @@ function formatTimestamp(value) {
   return Number.isNaN(date.getTime()) ? '' : timestampFormatter.format(date)
 }
 
+function emailPreviewDocument(html) {
+  return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+      html { color-scheme: light; }
+      body { min-width: 320px; margin: 0; background: #f4f7fb; }
+      a { pointer-events: none; cursor: default; }
+    </style>
+  </head>
+  <body>${html}</body>
+</html>`
+}
+
+function previewRecipientLabel(preview) {
+  if (Array.isArray(preview?.snapshot?.recipientEmails)) {
+    return preview.snapshot.recipientEmails.join(', ')
+  }
+  const name = String(preview?.snapshot?.recipientName ?? '').trim()
+  const email = String(preview?.snapshot?.recipientEmail ?? '').trim()
+  if (name && email) return `${name} <${email}>`
+  return email || name || 'Recipient not available'
+}
+
 function statusColor(status) {
   if (status === 'OVERDUE' || status === 'FAILED') return 'error'
   if (status === 'DUE') return 'warning'
   if (status === 'UPCOMING') return 'info'
+  if (status === 'SENT') return 'success'
+  return 'default'
+}
+
+function responseLabel(status) {
+  if (status === 'CONFIRMED') return 'Confirmed'
+  if (status === 'RESCHEDULED') return 'Rescheduled'
+  if (status === 'NO_RESPONSE') return 'No response'
+  if (status === 'ON_HOLD') return 'On hold'
+  if (status === 'COMPLETED') return 'Completed'
+  if (status === 'CANCELLED') return 'Cancelled'
+  return 'Awaiting response'
+}
+
+function responseColor(status) {
+  if (status === 'CONFIRMED') return 'success'
+  if (status === 'RESCHEDULED') return 'warning'
+  if (status === 'NO_RESPONSE') return 'error'
+  if (status === 'ON_HOLD') return 'warning'
   return 'default'
 }
 
@@ -102,6 +150,7 @@ export default function BuilderFollowUpQueue({ canManage = false, canConfigure =
   const [notice, setNotice] = useState('')
   const [preview, setPreview] = useState(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [responsesOpen, setResponsesOpen] = useState(false)
   const [reviewRequest, setReviewRequest] = useState(null)
   const [reviewDecision, setReviewDecision] = useState('APPROVED')
   const [reviewNote, setReviewNote] = useState('')
@@ -314,13 +363,26 @@ export default function BuilderFollowUpQueue({ canManage = false, canConfigure =
     }
   }
 
+  const confirmedResponseCount = responseItems.filter(
+    (item) => item.responseAction === 'CONFIRMED',
+  ).length
+  const rescheduledResponseCount = responseItems.filter(
+    (item) => item.responseAction === 'NOT_READY',
+  ).length
+  const pendingItemCount = items.filter(
+    (item) => item.checkpointStatus === 'PENDING',
+  ).length
+  const sentItemCount = items.filter(
+    (item) => item.emailStatus === 'SENT',
+  ).length
+
   return (
     <Box className="builder-follow-up-queue">
       <Box className="builder-follow-up-queue__toolbar">
         <Box>
           <Typography variant="h6" fontWeight={780}>Builder follow-up queue</Typography>
           <Typography color="text.secondary" variant="body2">
-            {items.length} open checkpoint{items.length === 1 ? '' : 's'};{' '}
+            {pendingItemCount} scheduled; {sentItemCount} sent;{' '}
             {attentionItems.length + rescheduleItems.length}{' '}
             need{attentionItems.length + rescheduleItems.length === 1 ? 's' : ''} attention.
           </Typography>
@@ -368,32 +430,77 @@ export default function BuilderFollowUpQueue({ canManage = false, canConfigure =
       {notice && <Alert severity="success" onClose={() => setNotice('')}>{notice}</Alert>}
 
       {!loading && responseItems.length > 0 && (
-        <Paper variant="outlined" sx={{ p: 2, mb: 2, borderColor: 'success.light' }}>
-          <Stack spacing={1.5}>
-            <Box>
+        <Paper
+          variant="outlined"
+          className="builder-follow-up-responses"
+          sx={{ borderColor: 'success.light' }}
+        >
+          <Box className="builder-follow-up-responses__header">
+            <Box className="builder-follow-up-responses__heading">
               <Typography fontWeight={780}>Recent Jobsite responses</Typography>
               <Typography variant="body2" color="text.secondary">
-                Confirmations and date changes submitted from secure email links.
+                {responseItems.length} recent response{responseItems.length === 1 ? '' : 's'} from secure email links.
               </Typography>
             </Box>
-            {responseItems.map((item) => {
-              const rescheduled = item.responseAction === 'NOT_READY'
-              const currentChangedAgain = item.currentWorkDate !== item.finalWorkDate
-              return (
-                <Paper key={item.responseEventId} variant="outlined" sx={{ p: 1.5 }}>
-                  <Stack
-                    direction={{ xs: 'column', md: 'row' }}
-                    spacing={1.5}
-                    justifyContent="space-between"
-                    alignItems={{ xs: 'stretch', md: 'center' }}
+            <Stack
+              className="builder-follow-up-responses__summary"
+              direction="row"
+              spacing={0.75}
+              alignItems="center"
+              flexWrap="wrap"
+              useFlexGap
+            >
+              {confirmedResponseCount > 0 && (
+                <Chip
+                  size="small"
+                  color="success"
+                  variant="outlined"
+                  label={`${confirmedResponseCount} confirmed`}
+                />
+              )}
+              {rescheduledResponseCount > 0 && (
+                <Chip
+                  size="small"
+                  color="warning"
+                  variant="outlined"
+                  label={`${rescheduledResponseCount} rescheduled`}
+                />
+              )}
+              <Button
+                size="small"
+                variant={responsesOpen ? 'outlined' : 'text'}
+                endIcon={responsesOpen
+                  ? <ExpandLessRoundedIcon />
+                  : <ExpandMoreRoundedIcon />}
+                onClick={() => setResponsesOpen((open) => !open)}
+                aria-expanded={responsesOpen}
+                aria-controls="recent-jobsite-responses"
+              >
+                {responsesOpen ? 'Hide responses' : 'View responses'}
+              </Button>
+            </Stack>
+          </Box>
+          <Collapse in={responsesOpen} timeout="auto">
+            <Box
+              id="recent-jobsite-responses"
+              className="builder-follow-up-responses__list"
+            >
+              {responseItems.map((item) => {
+                const rescheduled = item.responseAction === 'NOT_READY'
+                const currentChangedAgain = item.currentWorkDate !== item.finalWorkDate
+                return (
+                  <Paper
+                    key={item.responseEventId}
+                    variant="outlined"
+                    className="builder-follow-up-responses__card"
                   >
-                    <Box>
-                      <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
+                    <Stack spacing={0.35} minWidth={0}>
+                      <Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap" useFlexGap>
                         <Typography fontWeight={760}>{item.stageType} · {item.jobCode}</Typography>
                         <Chip
                           size="small"
                           color={rescheduled ? 'warning' : 'success'}
-                          label={rescheduled ? 'Rescheduled by Jobsite' : 'Confirmed'}
+                          label={rescheduled ? 'Rescheduled' : 'Confirmed'}
                         />
                       </Stack>
                       <Typography variant="body2">
@@ -401,24 +508,33 @@ export default function BuilderFollowUpQueue({ canManage = false, canConfigure =
                           ? <>{formatDate(item.targetWorkDate)} → <strong>{formatDate(item.finalWorkDate)}</strong></>
                           : <>Confirmed for <strong>{formatDate(item.finalWorkDate)}</strong></>}
                       </Typography>
-                      <Typography variant="body2" color="text.secondary">
+                      <Typography variant="caption" color="text.secondary" fontWeight={650}>
+                        Phase {item.phaseCode} · {' '}
+                        {item.building ? `Building ${item.building}` : 'Building not specified'} · {' '}
+                        {followUpLotsLabel(item)}
+                      </Typography>
+                      <Typography
+                        variant="body2"
+                        color="text.secondary"
+                        className="builder-follow-up-responses__contact"
+                      >
                         {item.superintendentName} · {item.superintendentEmail}
                       </Typography>
                       <Typography variant="caption" color="text.secondary" display="block">
-                        {formatTimestamp(item.respondedAt)} · {followUpLotsLabel(item)}
+                        {formatTimestamp(item.respondedAt)}
                         {item.reason ? ` · ${item.reason}` : ''}
                       </Typography>
                       {currentChangedAgain && (
                         <Typography variant="caption" color="warning.dark" display="block">
-                          The Production date was changed again later; current date: {formatDate(item.currentWorkDate)}.
+                          Changed again later; current date: {formatDate(item.currentWorkDate)}.
                         </Typography>
                       )}
-                    </Box>
-                  </Stack>
-                </Paper>
-              )
-            })}
-          </Stack>
+                    </Stack>
+                  </Paper>
+                )
+              })}
+            </Box>
+          </Collapse>
         </Paper>
       )}
 
@@ -568,16 +684,18 @@ export default function BuilderFollowUpQueue({ canManage = false, canConfigure =
       ) : items.length === 0 ? (
         <Paper variant="outlined" className="builder-follow-up-queue__empty">
           <CheckCircleRoundedIcon color="success" />
-          <Typography fontWeight={720}>No open scheduled follow-up emails.</Typography>
+          <Typography fontWeight={720}>No scheduled or sent follow-up emails for active events.</Typography>
         </Paper>
       ) : (
         <TableContainer component={Paper} variant="outlined">
           <Table size="small" aria-label="Builder follow-up queue">
             <TableHead>
               <TableRow>
-                <TableCell>Due</TableCell>
+                <TableCell>Follow-up</TableCell>
                 <TableCell>Work</TableCell>
                 <TableCell>Job / Lots</TableCell>
+                <TableCell>Email</TableCell>
+                <TableCell>Jobsite response</TableCell>
                 <TableCell>Jobsite Superintendent</TableCell>
                 <TableCell align="right">Actions</TableCell>
               </TableRow>
@@ -587,23 +705,20 @@ export default function BuilderFollowUpQueue({ canManage = false, canConfigure =
                 const isWorking = workingId === item.checkpointId
                 const canSend = canManage
                   && mode === 'LIVE'
+                  && item.checkpointStatus === 'PENDING'
                   && ['DUE', 'OVERDUE', 'FAILED'].includes(item.deliveryStatus)
                   && item.recipientIsActive
+                const canPreview = canManage && item.checkpointStatus === 'PENDING'
                 return (
                   <TableRow key={item.checkpointId} hover>
                     <TableCell>
                       <Stack spacing={0.5} alignItems="flex-start">
-                        <Chip
-                          size="small"
-                          color={statusColor(item.deliveryStatus)}
-                          label={followUpDeliveryLabel(item)}
-                        />
-                        <Typography variant="caption" color="text.secondary">
-                          {formatDate(item.dueOn)} · {item.daysBefore} days
+                        <Typography fontWeight={760}>
+                          {item.daysBefore} days before
                         </Typography>
-                        {item.followUpStatus === 'NO_RESPONSE' && (
-                          <Chip size="small" color="error" label="No response" />
-                        )}
+                        <Typography variant="caption" color="text.secondary">
+                          Due {formatDate(item.dueOn)}
+                        </Typography>
                       </Stack>
                     </TableCell>
                     <TableCell>
@@ -615,6 +730,44 @@ export default function BuilderFollowUpQueue({ canManage = false, canConfigure =
                       <Typography variant="body2" color="text.secondary">
                         {item.community} · {followUpLotsLabel(item)}
                       </Typography>
+                    </TableCell>
+                    <TableCell className="builder-follow-up-queue__status-cell">
+                      <Stack spacing={0.5} alignItems="flex-start">
+                        <Chip
+                          size="small"
+                          color={statusColor(item.deliveryStatus)}
+                          variant={item.deliveryStatus === 'SENT' ? 'filled' : 'outlined'}
+                          icon={item.deliveryStatus === 'SENT'
+                            ? <MarkEmailReadRoundedIcon />
+                            : undefined}
+                          label={followUpDeliveryLabel(item)}
+                        />
+                        {item.sentAt && (
+                          <Typography variant="caption" color="text.secondary">
+                            {formatTimestamp(item.sentAt)}
+                          </Typography>
+                        )}
+                        {item.deliveryStatus === 'FAILED' && item.lastError && (
+                          <Typography variant="caption" color="error.main">
+                            {item.lastError}
+                          </Typography>
+                        )}
+                      </Stack>
+                    </TableCell>
+                    <TableCell className="builder-follow-up-queue__status-cell">
+                      <Stack spacing={0.5} alignItems="flex-start">
+                        <Chip
+                          size="small"
+                          color={responseColor(item.followUpStatus)}
+                          variant={item.followUpStatus === 'SCHEDULED' ? 'outlined' : 'filled'}
+                          label={responseLabel(item.followUpStatus)}
+                        />
+                        {item.lastResponseAt && (
+                          <Typography variant="caption" color="text.secondary">
+                            {formatTimestamp(item.lastResponseAt)}
+                          </Typography>
+                        )}
+                      </Stack>
                     </TableCell>
                     <TableCell>
                       <Typography>{item.recipientName}</Typography>
@@ -628,7 +781,7 @@ export default function BuilderFollowUpQueue({ canManage = false, canConfigure =
                           size="small"
                           startIcon={<VisibilityRoundedIcon />}
                           onClick={() => openPreview(item)}
-                          disabled={!canManage || isWorking}
+                          disabled={!canPreview || isWorking}
                         >
                           Preview
                         </Button>
@@ -644,9 +797,13 @@ export default function BuilderFollowUpQueue({ canManage = false, canConfigure =
                           size="small"
                           color="success"
                           onClick={() => recordStatus(item, 'CONFIRMED')}
-                          disabled={!canManage || isWorking}
+                          disabled={
+                            !canManage
+                            || isWorking
+                            || item.followUpStatus === 'CONFIRMED'
+                          }
                         >
-                          Confirmed
+                          Mark confirmed
                         </Button>
                         <Button
                           size="small"
@@ -658,7 +815,7 @@ export default function BuilderFollowUpQueue({ canManage = false, canConfigure =
                             || item.followUpStatus === 'NO_RESPONSE'
                           }
                         >
-                          No response
+                          Mark no response
                         </Button>
                       </Stack>
                     </TableCell>
@@ -670,25 +827,64 @@ export default function BuilderFollowUpQueue({ canManage = false, canConfigure =
         </TableContainer>
       )}
 
-      <Dialog open={Boolean(preview)} onClose={() => setPreview(null)} fullWidth maxWidth="md">
-        <DialogTitle>Email preview</DialogTitle>
-        <DialogContent dividers>
+      <Dialog
+        open={Boolean(preview)}
+        onClose={() => setPreview(null)}
+        fullWidth
+        maxWidth="lg"
+        slotProps={{ paper: { className: 'builder-follow-up-preview-dialog' } }}
+      >
+        <DialogTitle>
+          <Stack
+            direction={{ xs: 'column', sm: 'row' }}
+            spacing={1}
+            alignItems={{ xs: 'flex-start', sm: 'center' }}
+            justifyContent="space-between"
+          >
+            <Box>
+              <Typography variant="h5" component="h2">Email preview</Typography>
+              <Typography variant="body2" color="text.secondary">
+                This is how the recipient will see the message.
+              </Typography>
+            </Box>
+            <Chip size="small" color="info" variant="outlined" label="Preview only · not sent" />
+          </Stack>
+        </DialogTitle>
+        <DialogContent dividers className="builder-follow-up-preview-dialog__content">
           {preview?.rendered && (
-            <Stack spacing={2}>
-              <Box>
-                <Typography variant="caption" color="text.secondary">To</Typography>
-                <Typography>
-                  {Array.isArray(preview.snapshot?.recipientEmails)
-                    ? preview.snapshot.recipientEmails.join(', ')
-                    : `${preview.snapshot?.recipientName} <${preview.snapshot?.recipientEmail}>`}
-                </Typography>
-              </Box>
-              <Box>
-                <Typography variant="caption" color="text.secondary">Subject</Typography>
-                <Typography fontWeight={730}>{preview.rendered.subject}</Typography>
-              </Box>
-              <Paper variant="outlined" className="builder-follow-up-queue__preview">
-                <Typography component="pre">{preview.rendered.text}</Typography>
+            <Stack spacing={2.25}>
+              <Paper variant="outlined" className="builder-follow-up-preview-dialog__metadata">
+                <Box className="builder-follow-up-preview-dialog__metadata-row">
+                  <Typography variant="caption" color="text.secondary">To</Typography>
+                  <Typography>{previewRecipientLabel(preview)}</Typography>
+                </Box>
+                <Box className="builder-follow-up-preview-dialog__metadata-row">
+                  <Typography variant="caption" color="text.secondary">Subject</Typography>
+                  <Typography fontWeight={730}>{preview.rendered.subject}</Typography>
+                </Box>
+              </Paper>
+
+              <Paper variant="outlined" className="builder-follow-up-preview-dialog__message">
+                <Box className="builder-follow-up-preview-dialog__message-bar">
+                  <Typography variant="overline" color="text.secondary">
+                    Rendered email
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    Links are disabled in preview
+                  </Typography>
+                </Box>
+                {preview.rendered.html ? (
+                  <iframe
+                    className="builder-follow-up-preview-dialog__frame"
+                    title="Rendered follow-up email"
+                    srcDoc={emailPreviewDocument(preview.rendered.html)}
+                    sandbox=""
+                  />
+                ) : (
+                  <Box className="builder-follow-up-preview-dialog__text-fallback">
+                    <Typography component="pre">{preview.rendered.text}</Typography>
+                  </Box>
+                )}
               </Paper>
             </Stack>
           )}

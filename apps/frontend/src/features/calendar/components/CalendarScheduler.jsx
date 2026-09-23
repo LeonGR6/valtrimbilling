@@ -299,6 +299,7 @@ export default function CalendarScheduler() {
         canConnectGoogleCalendar={profile?.role === 'ADMIN'}
         canCreate={canManageProductionActivities}
         googleCalendarConnected={googleCalendarConnection?.status === 'CONNECTED'}
+        googleCalendarLastSyncAt={googleCalendarConnection?.lastSyncAt}
         googleCalendarLoading={googleCalendarLoading}
         googleCalendarSyncing={googleCalendarSyncing}
       />

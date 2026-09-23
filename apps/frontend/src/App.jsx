@@ -7,6 +7,7 @@ import { BuildersProvider } from './features/builders/context/BuildersContext.js
 import { PeopleProvider } from './features/people/context/PeopleContext.jsx'
 import { BuilderContactsProvider } from './features/builder-contacts/context/BuilderContactsContext.jsx'
 import { AuthProvider } from './features/auth/context/AuthProvider.jsx'
+import { CustomerServiceCalendarProvider } from './features/customer-service/context/CustomerServiceCalendarContext.jsx'
 
 export default function App() {
   return (
@@ -17,7 +18,9 @@ export default function App() {
             <JobsProvider>
               <BuilderDrawSchedulesProvider>
                 <DrawInvoicePackagesProvider>
-                  <RouterProvider router={appRouter} />
+                  <CustomerServiceCalendarProvider>
+                    <RouterProvider router={appRouter} />
+                  </CustomerServiceCalendarProvider>
                 </DrawInvoicePackagesProvider>
               </BuilderDrawSchedulesProvider>
             </JobsProvider>

@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Controller } from 'react-hook-form'
 import {
   Autocomplete,
+  Alert,
   Box,
   Button,
   IconButton,
@@ -30,6 +31,8 @@ export default function PersonPickerField({
   extraFields = [],
 }) {
   const [draft, setDraft] = useState(null)
+  const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState('')
 
   const openDraft = (typed = '') => setDraft({
     name: typed,
@@ -46,17 +49,25 @@ export default function PersonPickerField({
   )
   const draftPhoneIsValid = !draft?.phone.trim() || Boolean(normalizedDraftPhone)
 
-  const save = (field) => {
+  const save = async (field) => {
     if (!onCreate || !draft) return
     const contactDraft = Object.fromEntries(
       Object.entries(draft).filter(([key]) => key !== 'phoneCountry'),
     )
-    const created = onCreate({
-      ...contactDraft,
-      phone: normalizedDraftPhone ?? '',
-    })
-    field.onChange(created.id)
-    setDraft(null)
+    setSaving(true)
+    setSaveError('')
+    try {
+      const created = await onCreate({
+        ...contactDraft,
+        phone: normalizedDraftPhone ?? '',
+      })
+      field.onChange(created.id)
+      setDraft(null)
+    } catch (error) {
+      setSaveError(error.message || 'The person could not be created.')
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
@@ -154,6 +165,7 @@ export default function PersonPickerField({
                 </Stack>
 
                 <Stack spacing={1.5}>
+                  {saveError && <Alert severity="error">{saveError}</Alert>}
                   <TextField
                     label="Name"
                     value={draft.name}
@@ -196,17 +208,25 @@ export default function PersonPickerField({
                 </Stack>
 
                 <Stack direction="row" spacing={1} sx={{ justifyContent: 'flex-end', mt: 1.5 }}>
-                  <Button size="small" color="inherit" onClick={() => setDraft(null)}>
+                  <Button
+                    size="small"
+                    color="inherit"
+                    disabled={saving}
+                    onClick={() => {
+                      setDraft(null)
+                      setSaveError('')
+                    }}
+                  >
                     Cancel
                   </Button>
                   <Button
                     size="small"
                     variant="contained"
                     disableElevation
-                    disabled={!draft.name.trim() || !draftEmailIsValid || !draftPhoneIsValid}
+                    disabled={saving || !draft.name.trim() || !draftEmailIsValid || !draftPhoneIsValid}
                     onClick={() => save(field)}
                   >
-                    Save and assign
+                    {saving ? 'Saving...' : 'Save and assign'}
                   </Button>
                 </Stack>
               </Box>

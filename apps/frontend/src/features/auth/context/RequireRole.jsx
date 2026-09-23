@@ -11,7 +11,7 @@ export default function RequireRole({ allowedRoles, children }) {
     <Box sx={{ p: { xs: 2.5, md: 4 } }}>
       <Alert severity="error" variant="outlined">
         <AlertTitle>Access denied</AlertTitle>
-        Your account does not have permission to manage users and roles.
+        Your account does not have permission to access this section.
       </Alert>
     </Box>
   )

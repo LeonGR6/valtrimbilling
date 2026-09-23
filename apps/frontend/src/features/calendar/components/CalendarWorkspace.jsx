@@ -22,6 +22,7 @@ import {
   getActivityTone,
 } from '../data/calendarEvents.js'
 import CalendarEventCard from './CalendarEventCard.jsx'
+import { getServiceEventTone } from '../../customer-service/data/serviceCalendarEvents.js'
 
 export default function CalendarWorkspace({
   calendarRef,
@@ -30,11 +31,13 @@ export default function CalendarWorkspace({
   viewTitle,
   viewType,
   visibleTypes,
+  showCustomerService,
   onChangeView,
   onDatesSet,
   onEventClick,
   onNavigate,
   onToggleType,
+  onToggleCustomerService,
 }) {
   return (
     <>
@@ -58,6 +61,17 @@ export default function CalendarWorkspace({
             <span />
             EXT · Order Material
           </Box>
+          <FormControlLabel
+            className="calendar-type-filter calendar-type-filter--service"
+            control={(
+              <Checkbox
+                checked={showCustomerService}
+                onChange={(event) => onToggleCustomerService(event.target.checked)}
+                size="small"
+              />
+            )}
+            label="Customer Service"
+          />
         </Box>
       </Box>
 
@@ -133,7 +147,7 @@ export default function CalendarWorkspace({
               }}
               listDayFormat={{ weekday: 'long', month: 'short', day: 'numeric' }}
               listDaySideFormat={{ year: 'numeric' }}
-              noEventsContent="No production activities in this period"
+              noEventsContent="No calendar events in this period"
               height="100%"
               expandRows
               fixedWeekCount={false}
@@ -147,6 +161,14 @@ export default function CalendarWorkspace({
               eventClick={({ event }) => onEventClick(event.id)}
               eventContent={(info) => <CalendarEventCard event={info.event} isList={info.view.type === 'listWeek'} />}
               eventClassNames={({ event }) => {
+                if (event.extendedProps.calendarType === 'CUSTOMER_SERVICE') {
+                  const serviceTone = getServiceEventTone(event.extendedProps.status)
+                  return [
+                    `fc-service--${serviceTone}`,
+                    `service-tone--${serviceTone}`,
+                    event.id === selectedId ? 'is-selected' : '',
+                  ]
+                }
                 const tone = getActivityTone(event.extendedProps.activityType, event.extendedProps.orderMaterial)
                 return [`fc-activity--${tone}`, `activity-tone--${tone}`, event.id === selectedId ? 'is-selected' : '']
               }}

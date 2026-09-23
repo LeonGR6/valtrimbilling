@@ -7,6 +7,7 @@ import {
   getEventContacts,
   normalizeSmsPhone,
 } from '../src/features/calendar/utils/calendarContactActions.js'
+import { getPhasePatch } from '../src/features/calendar/components/calendarSchedulerUtils.js'
 
 const eventProps = {
   jobId: 7,
@@ -30,6 +31,25 @@ test('event contacts resolve the latest registered email and phone through the J
   assert.equal(contacts.supervisor.email, 'lauren@example.com')
   assert.equal(contacts.superintendent.name, 'Daniel Torres')
   assert.equal(contacts.superintendent.phone, '+19515550184')
+})
+
+test('calendar phase summaries use the contacts currently loaded from Supabase', () => {
+  const patch = getPhasePatch(
+    {
+      id: 7,
+      code: '1307',
+      builder: 'KB Home',
+      community: 'Andara',
+      supervisorId: 11,
+      superintendentId: 21,
+    },
+    { id: 3, name: '2', building: '15', lots: [{ lotNumber: 67 }] },
+    [{ id: 11, name: 'Lauren Mitchell' }],
+    [{ id: 21, name: 'Daniel Torres' }],
+  )
+
+  assert.equal(patch.foreman, 'Lauren Mitchell')
+  assert.equal(patch.superintendent, 'Daniel Torres')
 })
 
 test('event contacts can fall back to a registered person with the saved event name', () => {

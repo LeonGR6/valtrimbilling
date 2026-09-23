@@ -25,13 +25,9 @@ import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
 import SmsOutlinedIcon from '@mui/icons-material/SmsOutlined'
 import { formatPhoneNumber } from '../../../utils/phoneNumbers.js'
 import {
-  builderLabelsById,
-  coordinatorLabelsById,
-  isClosed,
   prioritiesByValue,
   requestTagsByValue,
   statusesByValue,
-  technicianLabelsById,
 } from '../data/customerService.js'
 
 import Pill from './Pill.jsx'
@@ -71,11 +67,7 @@ function ContactAction({ title, href, color, icon: Icon }) {
   )
 }
 
-function AppointmentCell({ request, onSchedule }) {
-  const technician = technicianLabelsById[request.technicianId]
-  // A closed request is frozen, so it stops offering to book anything.
-  const locked = isClosed(request)
-
+function AppointmentCell({ request }) {
   if (request.appointmentState === 'NOT_SCHEDULED') {
     return (
       <Stack spacing={1} sx={{ alignItems: 'flex-start' }}>
@@ -87,18 +79,6 @@ function AppointmentCell({ request, onSchedule }) {
             Not scheduled
           </Typography>
         </Stack>
-        {!locked && (
-          <Button
-            size="small"
-            variant="outlined"
-            onClick={(event) => {
-              event.stopPropagation()
-              onSchedule(request)
-            }}
-          >
-            Schedule
-          </Button>
-        )}
       </Stack>
     )
   }
@@ -115,18 +95,6 @@ function AppointmentCell({ request, onSchedule }) {
         <MutedLine>
           Was due {formatShortDate(request.appointmentDate)}
         </MutedLine>
-        {!locked && (
-          <Button
-            size="small"
-            variant="outlined"
-            onClick={(event) => {
-              event.stopPropagation()
-              onSchedule(request)
-            }}
-          >
-            Schedule
-          </Button>
-        )}
       </Stack>
     )
   }
@@ -155,7 +123,7 @@ function AppointmentCell({ request, onSchedule }) {
           ? formatShortDate(request.appointmentDate)
           : `${formatTime(request.appointmentStart)} – ${formatTime(request.appointmentEnd)}`}
       </MutedLine>
-      {technician && <MutedLine>{technician}</MutedLine>}
+      {request.technicianName && <MutedLine>{request.technicianName}</MutedLine>}
     </Stack>
   )
 }
@@ -179,7 +147,6 @@ export default function ServiceRequestsTable({
   selectedId,
   onSelect,
   onOpen,
-  onSchedule,
   onMenuOpen,
   onPageChange,
 }) {
@@ -254,21 +221,23 @@ export default function ServiceRequestsTable({
                       <MutedLine>
                         {formatShortDate(request.reportedAt)}
                       </MutedLine>
-                      <MutedLine>
-                        By: {coordinatorLabelsById[request.createdById] ?? '—'}
-                      </MutedLine>
+                      <MutedLine>Due {formatShortDate(request.dueOn)}</MutedLine>
                     </Box>
                   </TableCell>
 
                   <TableCell sx={{ maxWidth: 260 }}>
                     <Typography variant="body2" fontWeight={600}>
-                      {builderLabelsById[request.builder] ?? request.builder} ·{' '}
-                      {request.community} · Lot {request.lotNumber}
+                      {request.street}
                     </Typography>
                     <Box sx={{ mt: 0.25 }}>
-                      <MutedLine>{request.street}</MutedLine>
+                      {(request.builderName || request.community || request.lotNumber) && (
+                        <MutedLine>
+                          {[request.builderName, request.community, request.lotNumber && `Lot ${request.lotNumber}`]
+                            .filter(Boolean).join(' · ')}
+                        </MutedLine>
+                      )}
                       <MutedLine>
-                        {request.city}, {request.state} {request.postalCode}
+                        {[request.city, request.state, request.postalCode].filter(Boolean).join(', ')}
                       </MutedLine>
                       {request.plan && <MutedLine>{request.plan}</MutedLine>}
                     </Box>
@@ -309,10 +278,7 @@ export default function ServiceRequestsTable({
                   </TableCell>
 
                   <TableCell sx={{ minWidth: 170 }}>
-                    <AppointmentCell
-                      request={request}
-                      onSchedule={onSchedule}
-                    />
+                    <AppointmentCell request={request} />
                   </TableCell>
 
                   <TableCell>

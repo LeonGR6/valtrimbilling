@@ -79,6 +79,8 @@ function findJobBuilder(job, builders) {
 export default function ActivityForm({
   jobs,
   builders = [],
+  people = [],
+  builderContacts = [],
   draft,
   isEditing,
   activeActivityType,
@@ -98,7 +100,7 @@ export default function ActivityForm({
     const dateConfiguration = getBuilderDateConfiguration(findJobBuilder(job, builders))
     const automaticDates = job ? calculateProductionDates(draft.extDate, dateConfiguration) : {}
     onChange({
-      ...getPhasePatch(job, null),
+      ...getPhasePatch(job, null, people, builderContacts),
       jobId: job?.id ?? '',
       ...automaticDates,
       dmShutters: false,
@@ -108,7 +110,7 @@ export default function ActivityForm({
 
   const changePhase = (phaseId) => {
     const phase = phases.find((item) => item.id === Number(phaseId)) ?? null
-    onChange(getPhasePatch(selectedJob, phase))
+    onChange(getPhasePatch(selectedJob, phase, people, builderContacts))
   }
 
   const toggleSplit = (prefix, checked, date, dateOwner, dateNote) => {

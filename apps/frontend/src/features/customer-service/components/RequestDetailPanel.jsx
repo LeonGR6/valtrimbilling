@@ -8,23 +8,34 @@ import {
 } from '@mui/material'
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded'
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined'
-import { formatPhoneNumber } from '../../../utils/phoneNumbers.js'
 import EmailOutlinedIcon from '@mui/icons-material/EmailOutlined'
+import MapOutlinedIcon from '@mui/icons-material/MapOutlined'
 import PhoneRoundedIcon from '@mui/icons-material/PhoneRounded'
 import SmsOutlinedIcon from '@mui/icons-material/SmsOutlined'
+import { formatPhoneNumber } from '../../../utils/phoneNumbers.js'
 import Pill from './Pill.jsx'
 import {
   appointmentStateLabels,
-  builderLabelsById,
-  coordinatorLabelsById,
+  isClosed,
   prioritiesByValue,
   requestTagsByValue,
-  isClosed,
   requestTypeLabels,
   statusesByValue,
-  technicianLabelsById,
 } from '../data/customerService.js'
 import { formatLongDate, formatShortDate, formatTime } from '../utils/dates.js'
+import { suggestServiceWorkdays } from '../utils/suggestedServiceWindows.js'
+
+const workTypeLabels = {
+  HW: 'HW',
+  WS: 'WS',
+  HW_WS: 'HW & WS',
+}
+
+const distanceColors = {
+  GREEN: 'success.main',
+  YELLOW: 'warning.main',
+  RED: 'error.main',
+}
 
 function Field({ label, children }) {
   return (
@@ -37,7 +48,7 @@ function Field({ label, children }) {
   )
 }
 
-function TextField({ label, value }) {
+function TextValue({ label, value }) {
   return (
     <Field label={label}>
       <Typography variant="body2" color="text.primary">
@@ -63,9 +74,7 @@ function PanelCard({ title, action, children }) {
         spacing={1}
         sx={{ alignItems: 'center', justifyContent: 'space-between', mb: 1.75 }}
       >
-        <Typography variant="subtitle2" fontWeight={700}>
-          {title}
-        </Typography>
+        <Typography variant="subtitle2" fontWeight={700}>{title}</Typography>
         {action}
       </Stack>
       <Stack spacing={1.75}>{children}</Stack>
@@ -73,16 +82,30 @@ function PanelCard({ title, action, children }) {
   )
 }
 
-export default function RequestDetailPanel({ request, onClose, onEdit }) {
-  const status = statusesByValue[request.status]
+function formatAvailability(value) {
+  if (!value) return ''
+  const [date, time] = value.split('T')
+  return `${formatLongDate(date)} at ${formatTime(time)}`
+}
+
+export default function RequestDetailPanel({ request, settings, onClose, onEdit }) {
+  const status = statusesByValue[request.status] ?? {
+    label: request.status,
+    color: 'neutral',
+  }
   const tag = requestTagsByValue[request.tag]
   const priority = prioritiesByValue[request.priority]
-  const technician = technicianLabelsById[request.technicianId]
   const closed = isClosed(request)
-  const isOverdue = request.appointmentState === 'OVERDUE'
-  const hasVisit =
-    request.appointmentState === 'SCHEDULED' ||
-    request.appointmentState === 'COMPLETED'
+  const hasAppointment = request.appointmentState !== 'NOT_SCHEDULED'
+  const coordinates = request.latitude !== null && request.longitude !== null
+    ? `${request.latitude}, ${request.longitude}`
+    : ''
+  const suggestions = suggestServiceWorkdays(
+    request.createdAt,
+    settings,
+    new Date(),
+    request.dueOn,
+  )
 
   return (
     <Box
@@ -95,23 +118,11 @@ export default function RequestDetailPanel({ request, onClose, onEdit }) {
       }}
     >
       <Box sx={{ p: 2.5, borderBottom: 1, borderColor: 'divider' }}>
-        <Stack
-          direction="row"
-          spacing={1}
-          sx={{ alignItems: 'flex-start', justifyContent: 'space-between' }}
-        >
+        <Stack direction="row" spacing={1} sx={{ alignItems: 'flex-start', justifyContent: 'space-between' }}>
           <Box sx={{ minWidth: 0 }}>
-            <Typography variant="caption" color="text.secondary">
-              Service Request
-            </Typography>
-            <Stack
-              direction="row"
-              spacing={1}
-              sx={{ alignItems: 'center', flexWrap: 'wrap', mt: 0.25 }}
-            >
-              <Typography variant="h6" fontWeight={700}>
-                {request.requestNumber}
-              </Typography>
+            <Typography variant="caption" color="text.secondary">Service Request</Typography>
+            <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexWrap: 'wrap', mt: 0.25 }}>
+              <Typography variant="h6" fontWeight={700}>{request.requestNumber}</Typography>
               <Pill label={status.label} color={status.color} />
               {tag && <Pill dense label={tag.label} color={tag.color} />}
             </Stack>
@@ -121,8 +132,6 @@ export default function RequestDetailPanel({ request, onClose, onEdit }) {
           </IconButton>
         </Stack>
 
-        {/* Handing the call off to the device rather than pretending the app
-            can place it. */}
         <Stack direction="row" spacing={1} sx={{ mt: 2, flexWrap: 'wrap' }}>
           <Button
             size="small"
@@ -155,137 +164,149 @@ export default function RequestDetailPanel({ request, onClose, onEdit }) {
           )}
         </Stack>
 
-        <Stack
-          direction="row"
-          spacing={2}
-          sx={{ mt: 2, flexWrap: 'wrap', rowGap: 1 }}
-        >
-          <TextField
-            label="Requested"
-            value={formatShortDate(request.reportedAt)}
-          />
-          <TextField
-            label="Logged by"
-            value={coordinatorLabelsById[request.createdById]}
-          />
+        <Stack direction="row" spacing={3} sx={{ mt: 2, flexWrap: 'wrap', rowGap: 1 }}>
+          <TextValue label="Created" value={formatShortDate(suggestions.createdOn)} />
+          <TextValue label="Reported" value={formatShortDate(request.reportedAt)} />
+          <TextValue label="Due" value={formatShortDate(request.dueOn)} />
         </Stack>
       </Box>
 
       <Box sx={{ p: 2.5 }}>
         <Typography variant="body2" fontWeight={700}>
-          {builderLabelsById[request.builder] ?? request.builder} ·{' '}
-          {request.community} · Lot {request.lotNumber}
-        </Typography>
-        <Typography variant="body2" color="text.secondary" sx={{ mt: 0.25 }}>
           {request.street}
         </Typography>
+        {(request.builderName || request.community || request.lotNumber) && (
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 0.25 }}>
+            {[request.builderName, request.community, request.lotNumber && `Lot ${request.lotNumber}`]
+              .filter(Boolean).join(' · ')}
+          </Typography>
+        )}
         <Typography variant="body2" color="text.secondary">
-          {request.city}, {request.state} {request.postalCode}
+          {[request.city, request.state, request.postalCode].filter(Boolean).join(', ')}
           {request.plan ? ` · ${request.plan}` : ''}
         </Typography>
 
         <Divider sx={{ my: 2 }} />
 
-        <Typography variant="body2" fontWeight={700}>
-          {request.contactName}{' '}
-          <Box
-            component="span"
-            sx={{ color: 'text.secondary', fontWeight: 400 }}
-          >
-            (Homeowner)
-          </Box>
-        </Typography>
+        <Typography variant="body2" fontWeight={700}>{request.contactName}</Typography>
         <Typography variant="body2" color="text.secondary" sx={{ mt: 0.25 }}>
           {formatPhoneNumber(request.contactPhone)}
         </Typography>
-        {request.contactEmail && (
-          <Typography variant="body2" color="text.secondary">
-            {request.contactEmail}
-          </Typography>
-        )}
+        <Typography variant="body2" color="text.secondary">{request.contactEmail}</Typography>
 
         <Stack spacing={2} sx={{ mt: 2.5 }}>
           <PanelCard
-            title="Request Information"
-            action={
-              closed ? (
-                <Typography variant="caption" color="text.secondary">
-                  Closed {formatShortDate(request.closedAt)}
-                </Typography>
-              ) : (
-                <Button
-                  size="small"
-                  startIcon={<EditOutlinedIcon />}
-                  onClick={() => onEdit(request)}
-                >
-                  Edit
-                </Button>
-              )
-            }
+            title="Request information"
+            action={closed ? (
+              <Typography variant="caption" color="text.secondary">
+                Closed {formatShortDate(request.closedAt?.slice(0, 10))}
+              </Typography>
+            ) : (
+              <Button size="small" startIcon={<EditOutlinedIcon />} onClick={() => onEdit(request)}>
+                Edit
+              </Button>
+            )}
           >
-            <TextField label="Issue" value={request.issue} />
-            <TextField
-              label="Service classification"
-              value={requestTypeLabels[request.type]}
+            <TextValue label="Issue" value={request.issue} />
+            <TextValue label="Classification" value={requestTypeLabels[request.type]} />
+            <TextValue label="Work type" value={workTypeLabels[request.workType]} />
+            <TextValue
+              label="Estimated duration"
+              value={request.estimatedDurationMinutes
+                ? `${request.estimatedDurationMinutes} minutes`
+                : ''}
             />
             <Field label="Priority">
-              <Typography
-                variant="body2"
-                fontWeight={600}
-                sx={{ color: priority.color }}
-              >
-                {priority.label}
+              <Typography variant="body2" fontWeight={600} sx={{ color: priority?.color }}>
+                {priority?.label ?? request.priority}
               </Typography>
             </Field>
-            <Field label="Status">
-              <Stack
-                direction="row"
-                spacing={1}
-                sx={{ alignItems: 'center', flexWrap: 'wrap' }}
+            <TextValue label="Internal notes" value={request.internalNotes} />
+            {closed && <TextValue label="Close reason" value={request.closeReason} />}
+          </PanelCard>
+
+          <PanelCard title="Location and distance">
+            <TextValue label="Coordinates" value={coordinates} />
+            <Field label="Straight-line distance from Valtrim">
+              <Typography
+                variant="body2"
+                fontWeight={700}
+                sx={{ color: distanceColors[request.distanceBand] ?? 'text.primary' }}
               >
-                <Pill label={status.label} color={status.color} />
-                {request.statusNote && (
-                  <Typography variant="body2" color="text.secondary">
-                    {request.statusNote}
+                {request.distanceMiles === null
+                  ? '—'
+                  : `${request.distanceMiles.toFixed(1)} miles · ${request.distanceBand.toLowerCase()}`}
+              </Typography>
+            </Field>
+            {coordinates && (
+              <Button
+                size="small"
+                variant="outlined"
+                component="a"
+                href={`https://www.google.com/maps/search/?api=1&query=${request.latitude},${request.longitude}`}
+                target="_blank"
+                rel="noreferrer"
+                startIcon={<MapOutlinedIcon />}
+                sx={{ alignSelf: 'flex-start' }}
+              >
+                Open coordinates
+              </Button>
+            )}
+          </PanelCard>
+
+          <PanelCard title="Suggested visit days">
+            <Typography variant="body2" color="text.secondary">
+              Workday proposals only; the customer has not confirmed these times.
+            </Typography>
+            {suggestions.days.length ? suggestions.days.map((day) => (
+              <Typography key={day.date} variant="body2">
+                {formatLongDate(day.date)} · {formatTime(day.availableFrom.slice(11))}
+                {' – '}{formatTime(day.availableUntil.slice(11))}
+              </Typography>
+            )) : (
+              <Typography variant="body2" color="text.secondary">
+                No workday remains before this request's deadline.
+              </Typography>
+            )}
+          </PanelCard>
+
+          <PanelCard title="Customer availability">
+            {request.availability.length ? request.availability.map((window, index) => (
+              <Box key={window.id ?? `${window.availableFrom}-${index}`}>
+                <Typography variant="body2" fontWeight={600}>
+                  {formatAvailability(window.availableFrom)}
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  Until {formatAvailability(window.availableUntil)}
+                </Typography>
+                {window.notes && (
+                  <Typography variant="caption" color="text.secondary">
+                    {window.notes}
                   </Typography>
                 )}
-              </Stack>
-            </Field>
+              </Box>
+            )) : (
+              <Typography variant="body2" color="text.secondary">No availability registered.</Typography>
+            )}
+            <TextValue label="General notes" value={request.customerAvailabilityNotes} />
           </PanelCard>
 
           <PanelCard title="Appointment">
-            <TextField
+            <TextValue
               label="State"
-              value={appointmentStateLabels[request.appointmentState]}
+              value={appointmentStateLabels[request.appointmentState] ?? request.appointmentState}
             />
-            {(hasVisit || isOverdue) && (
-              <TextField
-                label={isOverdue ? 'Was due on' : 'Date'}
-                value={formatLongDate(request.appointmentDate)}
+            {hasAppointment && request.appointmentDate && (
+              <TextValue label="Date" value={formatLongDate(request.appointmentDate)} />
+            )}
+            {request.appointmentStart && request.appointmentEnd && (
+              <TextValue
+                label="Arrival window"
+                value={`${formatTime(request.appointmentStart)} – ${formatTime(request.appointmentEnd)}`}
               />
             )}
-            {hasVisit && (
-              <>
-                <TextField
-                  label="Arrival window"
-                  value={`${formatTime(request.appointmentStart)} – ${formatTime(request.appointmentEnd)}`}
-                />
-                <TextField label="Technician" value={technician} />
-              </>
-            )}
-            <TextField label="Access notes" value={request.notes} />
-            {!closed && (
-              <Button
-                variant="outlined"
-                size="small"
-                onClick={() => onEdit(request)}
-                sx={{ alignSelf: 'flex-start' }}
-              >
-                {request.appointmentState === 'NOT_SCHEDULED'
-                  ? 'Schedule appointment'
-                  : 'Reschedule appointment'}
-              </Button>
-            )}
+            <TextValue label="Technician" value={request.technicianName} />
+            <TextValue label="Customer confirmation" value={request.confirmationStatus} />
           </PanelCard>
         </Stack>
       </Box>

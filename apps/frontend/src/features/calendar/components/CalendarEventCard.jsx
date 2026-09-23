@@ -5,9 +5,15 @@ import {
   getDateOwnerLabel,
   getLotsLabel,
 } from '../data/calendarEvents.js'
+import CustomerServiceEventCard from '../../customer-service/components/CustomerServiceEventCard.jsx'
 
 export default function CalendarEventCard({ event, isList = false }) {
   const props = event.extendedProps
+
+  if (props.calendarType === 'CUSTOMER_SERVICE') {
+    return <CustomerServiceEventCard event={event} isList={isList} />
+  }
+
   const type = activityTypeMap[props.activityType]
   const tone = getActivityTone(props.activityType, props.orderMaterial)
 

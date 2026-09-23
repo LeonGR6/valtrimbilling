@@ -13,6 +13,8 @@ import {
   recordProductionDateHistory,
 } from '../data/calendarEvents.js'
 import { calendarEventSchema } from '../schemas/calendarEventSchema.js'
+import { useCustomerServiceCalendar } from '../../customer-service/context/useCustomerServiceCalendar.js'
+import CustomerServiceCalendarDetail from '../../customer-service/components/CustomerServiceCalendarDetail.jsx'
 import ActivityDetail from './ActivityDetail.jsx'
 import ActivityForm from './ActivityForm.jsx'
 import BuilderDateSettings from './BuilderDateSettings.jsx'
@@ -33,6 +35,7 @@ export default function CalendarScheduler() {
   const { builders } = useBuilders()
   const { people } = usePeople()
   const { contacts: builderContacts } = useBuilderContacts()
+  const { serviceEvents } = useCustomerServiceCalendar()
   const { mode, systemMode } = useColorScheme()
   const resolvedColorMode = mode === 'system' ? systemMode : mode
   const calendarColorMode = resolvedColorMode === 'dark' ? 'dark' : 'light'
@@ -48,12 +51,18 @@ export default function CalendarScheduler() {
   const [viewTitle, setViewTitle] = useState(initialCalendarTitle)
   const [viewType, setViewType] = useState('dayGridWeek')
   const [visibleTypes, setVisibleTypes] = useState(['EXT', 'SHUTTER', 'DM', 'HW'])
+  const [showCustomerService, setShowCustomerService] = useState(false)
 
-  const filteredEvents = useMemo(() => events.filter((event) => (
-    visibleTypes.includes(event.extendedProps.activityType)
-  )), [events, visibleTypes])
+  const filteredEvents = useMemo(() => {
+    const productionEvents = events.filter((event) => (
+      visibleTypes.includes(event.extendedProps.activityType)
+    ))
+    return showCustomerService
+      ? [...productionEvents, ...serviceEvents]
+      : productionEvents
+  }, [events, serviceEvents, showCustomerService, visibleTypes])
 
-  const selectedEvent = events.find((event) => event.id === selectedId) ?? null
+  const selectedEvent = filteredEvents.find((event) => event.id === selectedId) ?? null
 
   const closeDrawer = () => {
     setDrawerMode(null)
@@ -71,8 +80,16 @@ export default function CalendarScheduler() {
   }
 
   const openEventOptions = (eventId) => {
-    const calendarEvent = events.find((event) => event.id === eventId)
+    const calendarEvent = filteredEvents.find((event) => event.id === eventId)
     if (!calendarEvent) return
+
+    if (calendarEvent.extendedProps.calendarType === 'CUSTOMER_SERVICE') {
+      setSelectedId(eventId)
+      setEditingGroupId(null)
+      setFormError('')
+      setDrawerMode('service-detail')
+      return
+    }
 
     const groupId = calendarEvent.extendedProps.groupId ?? calendarEvent.groupId ?? calendarEvent.id
     setSelectedId(eventId)
@@ -190,6 +207,7 @@ export default function CalendarScheduler() {
           viewTitle={viewTitle}
           viewType={viewType}
           visibleTypes={visibleTypes}
+          showCustomerService={showCustomerService}
           onChangeView={changeView}
           onDatesSet={(title, type) => {
             setViewTitle(title)
@@ -198,6 +216,12 @@ export default function CalendarScheduler() {
           onEventClick={openEventOptions}
           onNavigate={navigateCalendar}
           onToggleType={toggleType}
+          onToggleCustomerService={(checked) => {
+            setShowCustomerService(checked)
+            if (!checked && selectedEvent?.extendedProps.calendarType === 'CUSTOMER_SERVICE') {
+              closeDrawer()
+            }
+          }}
         />
       ) : (
         <Box className="calendar-workspace calendar-workspace--placeholder">
@@ -219,7 +243,13 @@ export default function CalendarScheduler() {
           },
         }}
       >
-        {drawerMode === 'detail' ? (
+        {drawerMode === 'service-detail' ? (
+          <CustomerServiceCalendarDetail
+            event={selectedEvent}
+            onClose={closeDrawer}
+            onEdit={() => setNotice('Visit editing is visual-only in this frontend prototype.')}
+          />
+        ) : drawerMode === 'detail' ? (
           <ActivityDetail
             event={selectedEvent}
             jobs={jobs}
@@ -232,6 +262,8 @@ export default function CalendarScheduler() {
           <ActivityForm
             jobs={jobs}
             builders={builders}
+            people={people}
+            builderContacts={builderContacts}
             draft={draft}
             isEditing={drawerMode === 'edit'}
             activeActivityType={selectedEvent?.extendedProps.activityType}

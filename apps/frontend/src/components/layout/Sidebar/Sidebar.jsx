@@ -52,6 +52,7 @@ import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import BarChartIcon from '@mui/icons-material/BarChart'
 import SupportAgentIcon from '@mui/icons-material/SupportAgent';
 import LogoutRoundedIcon from '@mui/icons-material/LogoutRounded'
+import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded'
 
 import valtrimLogoDark from '../../../assets/icons/Valtrim-White-Transparent.png'
 import valtrimLogoLight from '../../../assets/icons/Valtrim-Blue-Transparent.png'
@@ -134,13 +135,14 @@ const navigationSections = [
   {
     label: 'ADMINISTRATION',
     items: [
-      { label: 'Users & Roles', path: '/users', icon: ManageAccountsRoundedIcon },
+      { label: 'Users & Roles', path: '/users', icon: ManageAccountsRoundedIcon, end: true },
+      { label: 'Activity History', path: '/history', icon: HistoryRoundedIcon, end: true },
       { label: 'Configuration', icon: SettingsRoundedIcon },
     ],
   },
 ]
 
-function NavigationItem({ label, path, icon: Icon, nested = false, onNavigate, collapsed }) {
+function NavigationItem({ label, path, icon: Icon, nested = false, onNavigate, collapsed, end }) {
   const isAvailable = Boolean(path && availablePaths.has(path))
 
   // A grey icon with no label explains nothing, so unbuilt screens step out of
@@ -152,7 +154,7 @@ function NavigationItem({ label, path, icon: Icon, nested = false, onNavigate, c
       <ListItem disablePadding sx={{ mb: 0.25 }}>
       <ListItemButton
         {...(isAvailable
-          ? { component: NavLink, to: path, end: path === '/', onClick: onNavigate }
+          ? { component: NavLink, to: path, end: end ?? path === '/', onClick: onNavigate }
           : { component: 'div' })}
         disabled={!isAvailable}
         sx={{

@@ -7,6 +7,7 @@ import {
   Box,
   Button,
   Chip,
+  CircularProgress,
   Dialog,
   DialogActions,
   DialogContent,
@@ -31,7 +32,8 @@ import {
   TextField,
   Typography,
 } from '@mui/material'
-import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
+import BlockRoundedIcon from '@mui/icons-material/BlockRounded'
+import CheckCircleOutlineRoundedIcon from '@mui/icons-material/CheckCircleOutlineRounded'
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined'
 import FilterListRoundedIcon from '@mui/icons-material/FilterListRounded'
 import MailOutlineRoundedIcon from '@mui/icons-material/MailOutlineRounded'
@@ -39,14 +41,13 @@ import MoreHorizRoundedIcon from '@mui/icons-material/MoreHorizRounded'
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
 import ResponsiveCreateButton from '../../../components/common/ResponsiveCreateButton'
 import { FormPhoneInput } from '../../../components/common/InternationalPhoneInput.jsx'
+import { useBuilders } from '../../builders/context/useBuilders.js'
 import {
   formatPhoneNumber,
   getNationalPhoneNumber,
   getPhoneCountry,
 } from '../../../utils/phoneNumbers.js'
 import {
-  builderLabels,
-  builderOptions,
   contactTypeDescriptions,
   contactTypeLabels,
   contactTypeOptions,
@@ -85,7 +86,7 @@ function getContactFormValues(contact) {
   }
 }
 
-function ContactDialog({ contact, contacts, onClose, onSave }) {
+function ContactDialog({ contact, contacts, builders, submitting, onClose, onSave }) {
   const {
     control,
     register,
@@ -131,10 +132,10 @@ function ContactDialog({ contact, contacts, onClose, onSave }) {
           />
 
           <Controller
-            name="builder"
+            name="builderId"
             control={control}
             render={({ field }) => (
-              <FormControl error={Boolean(errors.builder)} fullWidth>
+              <FormControl error={Boolean(errors.builderId)} fullWidth>
                 <InputLabel id="contact-builder-label">Builder</InputLabel>
                 <Select
                   labelId="contact-builder-label"
@@ -143,13 +144,13 @@ function ContactDialog({ contact, contacts, onClose, onSave }) {
                   onChange={field.onChange}
                   onBlur={field.onBlur}
                 >
-                  {builderOptions.map((option) => (
-                    <MenuItem key={option.value} value={option.value}>
-                      {option.label}
+                  {builders.map((builder) => (
+                    <MenuItem key={builder.id} value={builder.id}>
+                      {builder.name}
                     </MenuItem>
                   ))}
                 </Select>
-                <FormHelperText>{errors.builder?.message ?? ' '}</FormHelperText>
+                <FormHelperText>{errors.builderId?.message ?? ' '}</FormHelperText>
               </FormControl>
             )}
           />
@@ -227,11 +228,11 @@ function ContactDialog({ contact, contacts, onClose, onSave }) {
       </DialogContent>
 
       <DialogActions sx={{ px: 3, pb: 2.5, pt: 1.5 }}>
-        <Button color="inherit" onClick={onClose}>
+        <Button color="inherit" onClick={onClose} disabled={submitting}>
           Cancel
         </Button>
-        <Button type="submit" variant="contained" disableElevation>
-          {contact ? 'Save changes' : 'Create contact'}
+        <Button type="submit" variant="contained" disabled={submitting} disableElevation>
+          {submitting ? 'Saving...' : contact ? 'Save changes' : 'Create contact'}
         </Button>
       </DialogActions>
     </Dialog>
@@ -239,17 +240,34 @@ function ContactDialog({ contact, contacts, onClose, onSave }) {
 }
 
 export default function BuilderContactsCatalog() {
-  const { contacts, setContacts } = useBuilderContacts()
+  const {
+    contacts,
+    loading,
+    error,
+    canManageBuilderContacts,
+    refreshContacts,
+    createContact,
+    updateContact,
+    deactivateContact,
+    reactivateContact,
+  } = useBuilderContacts()
+  const { builders } = useBuilders()
   const [search, setSearch] = useState('')
   const [typeFilter, setTypeFilter] = useState('all')
   const [builderFilter, setBuilderFilter] = useState('all')
+  const [statusFilter, setStatusFilter] = useState('active')
   const [page, setPage] = useState(0)
   const [rowsPerPage, setRowsPerPage] = useState(5)
   const [menuAnchor, setMenuAnchor] = useState(null)
   const [selectedContact, setSelectedContact] = useState(null)
   const [dialogState, setDialogState] = useState(null)
-  const [deleteTarget, setDeleteTarget] = useState(null)
+  const [statusTarget, setStatusTarget] = useState(null)
+  const [submitting, setSubmitting] = useState(false)
   const [notice, setNotice] = useState(null)
+
+  const availableBuilders = useMemo(() => builders.filter((builder) => (
+    builder.isActive || contacts.some((contact) => contact.builderId === builder.id)
+  )), [builders, contacts])
 
   const filteredContacts = useMemo(() => {
     const query = search.trim().toLowerCase()
@@ -257,18 +275,28 @@ export default function BuilderContactsCatalog() {
     return contacts.filter((contact) => {
       const matchesSearch =
         !query ||
-        [contact.name, contact.email, contact.phone, contact.officePhone, builderLabels[contact.builder]]
+        [
+          contact.name,
+          contact.email,
+          contact.phone,
+          contact.officePhone,
+          contact.builderCode,
+          contact.builderName,
+        ]
           .filter(Boolean)
           .join(' ')
           .toLowerCase()
           .includes(query)
       const matchesType = typeFilter === 'all' || contact.type === typeFilter
       const matchesBuilder =
-        builderFilter === 'all' || contact.builder === builderFilter
+        builderFilter === 'all' || contact.builderId === Number(builderFilter)
+      const matchesStatus =
+        statusFilter === 'all'
+        || (statusFilter === 'active' ? contact.isActive : !contact.isActive)
 
-      return matchesSearch && matchesType && matchesBuilder
+      return matchesSearch && matchesType && matchesBuilder && matchesStatus
     })
-  }, [contacts, search, typeFilter, builderFilter])
+  }, [builderFilter, contacts, search, statusFilter, typeFilter])
 
   const visibleContacts = filteredContacts.slice(
     page * rowsPerPage,
@@ -290,35 +318,50 @@ export default function BuilderContactsCatalog() {
     handleMenuClose()
   }
 
-  const openDeleteDialog = () => {
-    setDeleteTarget(selectedContact)
+  const openStatusDialog = () => {
+    setStatusTarget(selectedContact)
     handleMenuClose()
   }
 
-  const handleSave = (form) => {
-    if (dialogState?.mode === 'edit') {
-      setContacts((current) =>
-        current.map((contact) =>
-          contact.id === dialogState.contact.id ? { ...contact, ...form } : contact,
-        ),
-      )
-      setNotice({ severity: 'success', message: 'Contact updated.' })
-    } else {
-      setContacts((current) => [{ ...form, id: Date.now() }, ...current])
-      setPage(0)
-      setNotice({ severity: 'success', message: 'Contact created.' })
-    }
+  const handleSave = async (form) => {
+    setSubmitting(true)
+    try {
+      if (dialogState?.mode === 'edit') {
+        await updateContact(dialogState.contact.id, form)
+        setNotice({ severity: 'success', message: 'Contact updated.' })
+      } else {
+        await createContact(form)
+        setPage(0)
+        setNotice({ severity: 'success', message: 'Contact created.' })
+      }
 
-    setDialogState(null)
+      setDialogState(null)
+    } catch (saveError) {
+      setNotice({ severity: 'error', message: saveError.message })
+    } finally {
+      setSubmitting(false)
+    }
   }
 
-  const handleDelete = () => {
-    setContacts((current) =>
-      current.filter((contact) => contact.id !== deleteTarget.id),
-    )
-    setDeleteTarget(null)
-    setPage(0)
-    setNotice({ severity: 'success', message: 'Contact deleted.' })
+  const handleStatusChange = async () => {
+    if (!statusTarget) return
+
+    setSubmitting(true)
+    try {
+      if (statusTarget.isActive) {
+        await deactivateContact(statusTarget.id)
+        setNotice({ severity: 'success', message: 'Contact deactivated.' })
+      } else {
+        await reactivateContact(statusTarget.id)
+        setNotice({ severity: 'success', message: 'Contact reactivated.' })
+      }
+      setStatusTarget(null)
+      setPage(0)
+    } catch (statusError) {
+      setNotice({ severity: 'error', message: statusError.message })
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   return (
@@ -345,10 +388,12 @@ export default function BuilderContactsCatalog() {
             Superintendents and accounts payable contacts on the builder side.
           </Typography>
         </Box>
-        <ResponsiveCreateButton
-          label="New contact"
-          onClick={() => setDialogState({ mode: 'create' })}
-        />
+        {canManageBuilderContacts && (
+          <ResponsiveCreateButton
+            label="New contact"
+            onClick={() => setDialogState({ mode: 'create' })}
+          />
+        )}
       </Box>
 
       <Box sx={{ p: { xs: 2.5, md: 4 } }}>
@@ -402,9 +447,9 @@ export default function BuilderContactsCatalog() {
                 }
               >
                 <MenuItem value="all">All builders</MenuItem>
-                {builderOptions.map((option) => (
-                  <MenuItem key={option.value} value={option.value}>
-                    {option.label}
+                {availableBuilders.map((builder) => (
+                  <MenuItem key={builder.id} value={builder.id}>
+                    {builder.name}
                   </MenuItem>
                 ))}
               </Select>
@@ -428,10 +473,40 @@ export default function BuilderContactsCatalog() {
                 ))}
               </Select>
             </FormControl>
+            <FormControl size="small" sx={{ minWidth: 170 }}>
+              <InputLabel id="contact-status-filter-label">Status</InputLabel>
+              <Select
+                labelId="contact-status-filter-label"
+                label="Status"
+                value={statusFilter}
+                onChange={(event) => {
+                  setStatusFilter(event.target.value)
+                  setPage(0)
+                }}
+              >
+                <MenuItem value="all">All contacts</MenuItem>
+                <MenuItem value="active">Active</MenuItem>
+                <MenuItem value="inactive">Inactive</MenuItem>
+              </Select>
+            </FormControl>
           </Stack>
 
+          {error && (
+            <Alert
+              severity="error"
+              action={(
+                <Button color="inherit" size="small" onClick={() => refreshContacts().catch(() => {})}>
+                  Retry
+                </Button>
+              )}
+              sx={{ borderRadius: 0 }}
+            >
+              {error}
+            </Alert>
+          )}
+
           <TableContainer>
-            <Table sx={{ minWidth: 900 }}>
+            <Table sx={{ minWidth: 1000 }}>
               <TableHead>
                 <TableRow
                   sx={{
@@ -449,11 +524,28 @@ export default function BuilderContactsCatalog() {
                   <TableCell>Builder</TableCell>
                   <TableCell>Type</TableCell>
                   <TableCell>Phone</TableCell>
-                  <TableCell align="right" width={72}>Actions</TableCell>
+                  <TableCell>Status</TableCell>
+                  {canManageBuilderContacts && (
+                    <TableCell align="right" width={72}>Actions</TableCell>
+                  )}
                 </TableRow>
               </TableHead>
               <TableBody>
-                {visibleContacts.map((contact) => (
+                {loading && (
+                  <TableRow>
+                    <TableCell
+                      colSpan={canManageBuilderContacts ? 6 : 5}
+                      sx={{ py: 8, textAlign: 'center' }}
+                    >
+                      <CircularProgress size={32} aria-label="Loading Builder Contacts" />
+                      <Typography variant="body2" color="text.secondary" sx={{ mt: 1.5 }}>
+                        Loading Builder Contacts…
+                      </Typography>
+                    </TableCell>
+                  </TableRow>
+                )}
+
+                {!loading && visibleContacts.map((contact) => (
                   <TableRow
                     key={contact.id}
                     hover
@@ -490,7 +582,7 @@ export default function BuilderContactsCatalog() {
                     </TableCell>
                     <TableCell>
                       <Typography variant="body2" color="text.secondary" noWrap>
-                        {builderLabels[contact.builder] ?? contact.builder}
+                        {contact.builderName}
                       </Typography>
                     </TableCell>
                     <TableCell>
@@ -510,25 +602,38 @@ export default function BuilderContactsCatalog() {
                             : 'No phone'}
                       </Typography>
                     </TableCell>
-                    <TableCell align="right">
-                      <IconButton
+                    <TableCell>
+                      <Chip
+                        label={contact.isActive ? 'Active' : 'Inactive'}
+                        color={contact.isActive ? 'success' : 'default'}
                         size="small"
-                        aria-label={`Actions for ${contact.name}`}
-                        onClick={(event) => handleMenuOpen(event, contact)}
-                      >
-                        <MoreHorizRoundedIcon />
-                      </IconButton>
+                        variant="outlined"
+                      />
                     </TableCell>
+                    {canManageBuilderContacts && (
+                      <TableCell align="right">
+                        <IconButton
+                          size="small"
+                          aria-label={`Actions for ${contact.name}`}
+                          onClick={(event) => handleMenuOpen(event, contact)}
+                        >
+                          <MoreHorizRoundedIcon />
+                        </IconButton>
+                      </TableCell>
+                    )}
                   </TableRow>
                 ))}
 
-                {visibleContacts.length === 0 && (
+                {!loading && visibleContacts.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={5} sx={{ py: 8, textAlign: 'center' }}>
+                    <TableCell
+                      colSpan={canManageBuilderContacts ? 6 : 5}
+                      sx={{ py: 8, textAlign: 'center' }}
+                    >
                       <SearchRoundedIcon color="action" sx={{ fontSize: 40, mb: 1 }} />
                       <Typography fontWeight={600}>No contacts found</Typography>
                       <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-                        Try changing your search, builder or type filter.
+                        Try changing your search, builder, type or status filter.
                       </Typography>
                     </TableCell>
                   </TableRow>
@@ -563,9 +668,14 @@ export default function BuilderContactsCatalog() {
           <EditOutlinedIcon fontSize="small" sx={{ mr: 1.25 }} />
           Edit
         </MenuItem>
-        <MenuItem onClick={openDeleteDialog} sx={{ color: 'error.main' }}>
-          <DeleteOutlineRoundedIcon fontSize="small" sx={{ mr: 1.25 }} />
-          Delete
+        <MenuItem
+          onClick={openStatusDialog}
+          sx={{ color: selectedContact?.isActive ? 'error.main' : 'success.main' }}
+        >
+          {selectedContact?.isActive
+            ? <BlockRoundedIcon fontSize="small" sx={{ mr: 1.25 }} />
+            : <CheckCircleOutlineRoundedIcon fontSize="small" sx={{ mr: 1.25 }} />}
+          {selectedContact?.isActive ? 'Deactivate' : 'Reactivate'}
         </MenuItem>
       </Menu>
 
@@ -574,31 +684,45 @@ export default function BuilderContactsCatalog() {
           key={dialogState.contact?.id ?? 'new'}
           contact={dialogState.contact}
           contacts={contacts}
+          builders={builders.filter((builder) => (
+            builder.isActive || builder.id === dialogState.contact?.builderId
+          ))}
+          submitting={submitting}
           onClose={() => setDialogState(null)}
           onSave={handleSave}
         />
       )}
 
       <Dialog
-        open={Boolean(deleteTarget)}
-        onClose={() => setDeleteTarget(null)}
+        open={Boolean(statusTarget)}
+        onClose={() => !submitting && setStatusTarget(null)}
         fullWidth
         maxWidth="xs"
       >
-        <DialogTitle>Delete contact?</DialogTitle>
+        <DialogTitle>
+          {statusTarget?.isActive ? 'Deactivate contact?' : 'Reactivate contact?'}
+        </DialogTitle>
         <DialogContent>
           <Typography variant="body2" color="text.secondary">
-            {deleteTarget
-              ? `${deleteTarget.name} will be removed from the ${builderLabels[deleteTarget.builder]} contact list.`
-              : ''}
+            {statusTarget?.isActive
+              ? `${statusTarget.name} will remain in the history but will no longer be available for new assignments.`
+              : `${statusTarget?.name ?? 'This contact'} will be available for assignments again.`}
           </Typography>
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2.5 }}>
-          <Button color="inherit" onClick={() => setDeleteTarget(null)}>
+          <Button color="inherit" disabled={submitting} onClick={() => setStatusTarget(null)}>
             Cancel
           </Button>
-          <Button color="error" variant="contained" onClick={handleDelete} disableElevation>
-            Delete contact
+          <Button
+            color={statusTarget?.isActive ? 'error' : 'success'}
+            variant="contained"
+            disabled={submitting}
+            onClick={handleStatusChange}
+            disableElevation
+          >
+            {submitting
+              ? 'Saving...'
+              : statusTarget?.isActive ? 'Deactivate contact' : 'Reactivate contact'}
           </Button>
         </DialogActions>
       </Dialog>

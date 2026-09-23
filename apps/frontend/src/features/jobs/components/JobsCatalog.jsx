@@ -44,10 +44,7 @@ import ResponsiveCreateButton from '../../../components/common/ResponsiveCreateB
 import { BuildersCatalog } from '../../builders/index.js'
 import { useBuilders } from '../../builders/context/useBuilders.js'
 import { usePeople } from '../../people/context/usePeople.js'
-import {
-  builderLabels,
-  emptyContact,
-} from '../../builder-contacts'
+import { emptyContact } from '../../builder-contacts'
 import { useBuilderContacts } from '../../builder-contacts/context/useBuilderContacts.js'
 import JobDetails from './JobDetails.jsx'
 import PersonPickerField from './PersonPickerField.jsx'
@@ -63,10 +60,6 @@ import {
   getJobBuilderId,
   jobPlansOptionsPath,
 } from '../utils/jobRoutes.js'
-
-const builderCodeByName = Object.fromEntries(
-  Object.entries(builderLabels).map(([code, name]) => [name, code]),
-)
 
 const personName = (index, id) => index.get(id)?.name ?? 'Unassigned'
 
@@ -106,18 +99,20 @@ function JobDialog({
     reValidateMode: 'onChange',
   })
   const selectedBuilderName = useWatch({ control, name: 'builder' })
-  const selectedBuilderCode = builderCodeByName[selectedBuilderName]
+  const selectedBuilderId = builderOptions.find(
+    (builder) => builder.name === selectedBuilderName,
+  )?.id
   const availableSuperintendents = useMemo(
     () => superintendents.filter(
       (contact) =>
         contact.type === 'JOBSITE_SUPERINTENDENT'
         && (
-          !selectedBuilderCode
-          || contact.builder === selectedBuilderCode
+          !selectedBuilderId
+          || contact.builderId === selectedBuilderId
           || contact.id === job?.superintendentId
         ),
     ),
-    [job?.superintendentId, selectedBuilderCode, superintendents],
+    [job?.superintendentId, selectedBuilderId, superintendents],
   )
 
   return (
@@ -167,8 +162,8 @@ function JobDialog({
                         label="Builder / Client"
                       >
                         {builderOptions.map((builder) => (
-                          <MenuItem key={builder} value={builder}>
-                            {builder}
+                          <MenuItem key={builder.id} value={builder.name}>
+                            {builder.name}
                           </MenuItem>
                         ))}
                       </Select>
@@ -219,9 +214,9 @@ function JobDialog({
                 control={control}
                 error={errors.superintendentId}
                 people={availableSuperintendents}
-                onCreate={(draft) =>
-                  onCreateSuperintendent(draft, selectedBuilderName)
-                }
+                onCreate={onCreateSuperintendent
+                  ? (draft) => onCreateSuperintendent(draft, selectedBuilderName)
+                  : undefined}
                 createTitle="Add new superintendent"
                 extraFields={['phone']}
               />
@@ -283,7 +278,11 @@ export default function JobsCatalog() {
   const { jobs, setJobs } = useJobs()
   const { builders } = useBuilders()
   const { people } = usePeople()
-  const { contacts, setContacts } = useBuilderContacts()
+  const {
+    contacts,
+    canManageBuilderContacts,
+    createContact,
+  } = useBuilderContacts()
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(0)
   const [rowsPerPage, setRowsPerPage] = useState(5)
@@ -297,7 +296,9 @@ export default function JobsCatalog() {
     [people],
   )
   const superintendents = useMemo(
-    () => contacts.filter((contact) => contact.type === 'JOBSITE_SUPERINTENDENT'),
+    () => contacts.filter(
+      (contact) => contact.type === 'JOBSITE_SUPERINTENDENT' && contact.isActive,
+    ),
     [contacts],
   )
   const supervisorsById = useMemo(
@@ -364,7 +365,7 @@ export default function JobsCatalog() {
         builder.name === selectedBuilder?.name ||
         builder.name === editTarget?.builder,
     )
-    .map((builder) => builder.name)
+
   useEffect(() => {
     if (builderId || jobId || (!legacyBuilderId && !legacyJobId)) return
 
@@ -453,16 +454,17 @@ export default function JobsCatalog() {
     if (job) openJobDetails(job)
   }
 
-  const handleCreateSuperintendent = (draft, builderName) => {
-    const created = {
+  const handleCreateSuperintendent = async (draft, builderName) => {
+    const builder = builders.find((item) => item.name === builderName)
+    if (!builder) throw new Error('Select an active builder before adding a superintendent.')
+
+    return createContact({
       ...emptyContact,
       ...draft,
-      id: Date.now(),
       type: 'JOBSITE_SUPERINTENDENT',
-      builder: builderCodeByName[builderName] ?? '',
-    }
-    setContacts((current) => [created, ...current])
-    return created
+      builderId: builder.id,
+      isActive: true,
+    })
   }
 
   const handleSave = (form) => {
@@ -816,7 +818,9 @@ export default function JobsCatalog() {
           job={dialogJob}
           jobs={jobs}
           onClose={closeDialog}
-          onCreateSuperintendent={handleCreateSuperintendent}
+          onCreateSuperintendent={canManageBuilderContacts
+            ? handleCreateSuperintendent
+            : undefined}
           onSave={handleSave}
         />
       )}

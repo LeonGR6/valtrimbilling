@@ -1,0 +1,299 @@
+.customer-service-calendar.calendar-page {
+  min-height: 0;
+  background: transparent;
+  color: var(--calendar-text);
+}
+
+.calendar-type-filter--service {
+  --activity-color: #8b5cf6;
+  --activity-strong: #7c3aed;
+  --activity-soft: color-mix(in srgb, #8b5cf6 12%, transparent);
+  margin-left: 8px !important;
+}
+
+.service-calendar-filterbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 16px 20px;
+  border: 1px solid var(--calendar-border);
+  border-bottom: 0;
+  border-radius: 12px 12px 0 0;
+  background: var(--calendar-panel);
+}
+
+.service-calendar-work-types {
+  display: flex;
+  align-items: center;
+  padding: 0 6px;
+  min-height: 40px;
+  border: 1px solid var(--calendar-border);
+  border-radius: 8px;
+}
+
+.service-calendar-work-types .MuiFormControlLabel-root {
+  margin-right: 8px;
+}
+
+.service-calendar-work-types .MuiFormControlLabel-label,
+.service-calendar-production-toggle .MuiFormControlLabel-label {
+  font-size: 0.82rem;
+  font-weight: 650;
+}
+
+.service-calendar-production-toggle {
+  margin-left: auto;
+}
+
+.service-calendar-workspace.calendar-workspace {
+  min-height: 690px;
+  border-radius: 0 0 12px 12px;
+}
+
+.service-calendar-note {
+  color: var(--calendar-muted);
+}
+
+.service-calendar-canvas.calendar-canvas {
+  min-height: 600px;
+}
+
+.service-calendar-canvas .fc .fc-timegrid-slot {
+  height: 44px;
+}
+
+.service-calendar-canvas .fc .fc-timegrid-slot-label {
+  color: var(--calendar-muted);
+  font-size: 0.72rem;
+}
+
+.service-calendar-canvas .fc .fc-timegrid-axis,
+.service-calendar-canvas .fc .fc-timegrid-slot,
+.service-calendar-canvas .fc .fc-timegrid-col {
+  border-color: var(--calendar-border);
+}
+
+.service-calendar-canvas .fc .fc-timegrid-now-indicator-line {
+  border-color: #8b5cf6;
+}
+
+.service-calendar-canvas .fc .fc-timegrid-now-indicator-arrow {
+  border-right-color: #8b5cf6;
+}
+
+.service-calendar-canvas .fc .fc-timegrid-event-harness {
+  margin: 1px 3px;
+}
+
+.service-calendar-canvas .fc .fc-timegrid-event {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.service-calendar-canvas .fc .fc-timegrid-event .fc-event-main {
+  padding: 0;
+}
+
+.service-work-event {
+  --service-accent: #8b5cf6;
+  height: 100%;
+  min-height: 54px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--service-accent) 58%, transparent);
+  border-left: 4px solid var(--service-accent);
+  border-radius: 7px;
+  padding: 7px 8px;
+  background: color-mix(in srgb, var(--service-accent) 22%, var(--calendar-panel));
+  color: var(--calendar-text);
+  font-size: 0.7rem;
+  line-height: 1.2;
+}
+
+.service-work-event__topline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  text-transform: none;
+}
+
+.service-work-event__topline strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.service-work-event__topline span {
+  color: var(--calendar-muted);
+  font-size: 0.61rem;
+  text-transform: capitalize;
+}
+
+.service-work-event__property,
+.service-work-event__time,
+.service-work-event__history {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.service-work-event__property {
+  font-weight: 650;
+}
+
+.service-work-event__history {
+  margin-top: auto;
+  color: var(--calendar-muted);
+  font-size: 0.64rem;
+}
+
+.service-list-event {
+  --service-accent: #8b5cf6;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  gap: 18px;
+  border-left: 4px solid var(--service-accent);
+  border-radius: 7px;
+  padding: 10px 12px;
+  background: color-mix(in srgb, var(--service-accent) 13%, transparent);
+  color: var(--calendar-text);
+}
+
+.service-list-event__identity {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.service-list-event__badge {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 34px;
+  border-radius: 8px;
+  background: var(--service-accent);
+  color: #fff;
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.service-list-event__copy {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 2px;
+}
+
+.service-list-event__copy span,
+.service-list-event__history {
+  color: var(--calendar-muted);
+  font-size: 0.72rem;
+}
+
+.service-list-event__history {
+  flex: 0 0 auto;
+}
+
+.service-tone--confirmed {
+  --service-accent: #22c55e;
+}
+
+.service-tone--overdue {
+  --service-accent: #ef4444;
+}
+
+.service-tone--completed {
+  --service-accent: #10b981;
+}
+
+.service-tone--cancelled {
+  --service-accent: #64748b;
+}
+
+.fc-service--scheduled,
+.fc-service--confirmed,
+.fc-service--overdue,
+.fc-service--completed,
+.fc-service--cancelled {
+  border: 0 !important;
+  background: transparent !important;
+}
+
+.fc-event.is-selected .service-work-event,
+.fc-event.is-selected .service-list-event {
+  outline: 2px solid var(--service-accent);
+  outline-offset: 1px;
+}
+
+.service-detail-panel {
+  min-height: 100%;
+  background: var(--mui-palette-background-paper);
+}
+
+.service-detail-panel__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 24px;
+  border-bottom: 1px solid var(--mui-palette-divider);
+}
+
+.service-detail-panel__last-visit {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid color-mix(in srgb, #22c55e 30%, var(--mui-palette-divider));
+  border-radius: 10px;
+  background: color-mix(in srgb, #22c55e 9%, transparent);
+}
+
+@media (max-width: 900px) {
+  .service-calendar-production-toggle {
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .service-calendar-filterbar .MuiFormControl-root {
+    flex: 1 1 180px;
+  }
+}
+
+@media (max-width: 600px) {
+  .service-calendar-filterbar {
+    padding: 14px;
+  }
+
+  .service-calendar-work-types {
+    width: 100%;
+  }
+
+  .service-calendar-workspace.calendar-workspace {
+    min-height: 620px;
+  }
+
+  .service-calendar-canvas.calendar-canvas {
+    min-height: 540px;
+  }
+
+  .service-work-event__history,
+  .service-work-event__topline span {
+    display: none;
+  }
+
+  .service-list-event {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}

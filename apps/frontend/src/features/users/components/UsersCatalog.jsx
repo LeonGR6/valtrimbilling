@@ -166,7 +166,7 @@ function UserStatusChip({ status }) {
   )
 }
 
-function UserDialog({ communities, saving, user, users, onClose, onSave }) {
+function UserDialog({ communities, currentUserId, saving, user, users, onClose, onSave }) {
   const {
     control,
     register,
@@ -183,6 +183,7 @@ function UserDialog({ communities, saving, user, users, onClose, onSave }) {
   // communities, and the project picker only when they actually are.
   const selectedRole = useWatch({ control, name: 'role' })
   const allProjects = useWatch({ control, name: 'allProjects' })
+  const editingSelf = Boolean(user && user.id === currentUserId)
   const showScopeSelector = isScopedRole(selectedRole)
   const showProjectPicker = showScopeSelector && !allProjects
 
@@ -257,6 +258,7 @@ function UserDialog({ communities, saving, user, users, onClose, onSave }) {
                   value={field.value}
                   onChange={field.onChange}
                   onBlur={field.onBlur}
+                  disabled={editingSelf}
                 >
                   {userRoleOptions.map((option) => (
                     <MenuItem key={option.value} value={option.value}>
@@ -265,7 +267,10 @@ function UserDialog({ communities, saving, user, users, onClose, onSave }) {
                   ))}
                 </Select>
                 <FormHelperText>
-                  {errors.role?.message ?? userRoleDescriptions[field.value]}
+                  {errors.role?.message
+                    ?? (editingSelf
+                      ? 'Another administrator must change your role.'
+                      : userRoleDescriptions[field.value])}
                 </FormHelperText>
               </FormControl>
             )}
@@ -344,14 +349,17 @@ function UserDialog({ communities, saving, user, users, onClose, onSave }) {
                       field.onChange(event.target.value === 'active')
                     }
                     onBlur={field.onBlur}
+                    disabled={editingSelf}
                   >
                     <MenuItem value="active">Active</MenuItem>
                     <MenuItem value="inactive">Inactive</MenuItem>
                   </Select>
                   <FormHelperText>
-                    {field.value
-                      ? 'The user can sign in.'
-                      : 'The user keeps their history but cannot sign in.'}
+                    {editingSelf
+                      ? 'You cannot deactivate your own account.'
+                      : field.value
+                        ? 'The user can sign in.'
+                        : 'The user keeps their history but cannot sign in.'}
                   </FormHelperText>
                 </FormControl>
               )}
@@ -503,6 +511,7 @@ export default function UsersCatalog() {
   }
 
   const openStatusDialog = () => {
+    if (selectedUser?.id === profile?.id) return
     setStatusTarget(selectedUser)
     handleMenuClose()
   }
@@ -804,6 +813,9 @@ export default function UsersCatalog() {
                             <Typography variant="body2" fontWeight={600} noWrap>
                               {user.name}
                             </Typography>
+                            {user.id === profile.id && (
+                              <Chip label="You" size="small" variant="outlined" />
+                            )}
                           </Stack>
                           <Typography
                             variant="caption"
@@ -926,21 +938,24 @@ export default function UsersCatalog() {
             Resend invitation
           </MenuItem>
         )}
-        <MenuItem
-          onClick={openStatusDialog}
-          sx={{ color: selectedUser?.isActive ? 'error.main' : 'success.main' }}
-        >
-          {selectedUser?.isActive
-            ? <PersonOffRoundedIcon fontSize="small" sx={{ mr: 1.25 }} />
-            : <CheckCircleOutlineRoundedIcon fontSize="small" sx={{ mr: 1.25 }} />}
-          {selectedUser?.isActive ? 'Deactivate' : 'Reactivate'}
-        </MenuItem>
+        {selectedUser?.id !== profile.id && (
+          <MenuItem
+            onClick={openStatusDialog}
+            sx={{ color: selectedUser?.isActive ? 'error.main' : 'success.main' }}
+          >
+            {selectedUser?.isActive
+              ? <PersonOffRoundedIcon fontSize="small" sx={{ mr: 1.25 }} />
+              : <CheckCircleOutlineRoundedIcon fontSize="small" sx={{ mr: 1.25 }} />}
+            {selectedUser?.isActive ? 'Deactivate' : 'Reactivate'}
+          </MenuItem>
+        )}
       </Menu>
 
       {dialogState && (
         <UserDialog
           key={dialogState.user?.id ?? 'new'}
           communities={communities}
+          currentUserId={profile.id}
           saving={saving}
           user={dialogState.user}
           users={users}

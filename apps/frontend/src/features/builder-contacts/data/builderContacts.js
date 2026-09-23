@@ -23,8 +23,8 @@ export const contactTypeDescriptions = Object.fromEntries(
   contactTypeOptions.map(({ value, description }) => [value, description]),
 )
 
-// Placeholder builder list. Replace with the builders table once the backend
-// exists — this becomes a foreign key.
+// Legacy fixture options are still consumed by the not-yet-persisted Customer
+// Service screens. Builder Contacts itself now loads builders from Supabase.
 export const builderOptions = [
   { value: 'KB_HOME', label: 'KB Home' },
   { value: 'TRUMARK', label: 'Trumark Homes' },
@@ -39,72 +39,10 @@ export const builderLabels = Object.fromEntries(
 export const emptyContact = {
   name: '',
   type: 'JOBSITE_SUPERINTENDENT',
-  builder: '',
+  builderId: '',
   email: '',
   phone: '',
   officePhone: '',
   notes: '',
+  isActive: true,
 }
-
-export const initialContacts = [
-  {
-    id: 1,
-    name: 'Daniel Torres',
-    type: 'JOBSITE_SUPERINTENDENT',
-    builder: 'KB_HOME',
-    email: 'daniel.torres@kbhome.com',
-    phone: '+19515550184',
-    officePhone: '+19515550100',
-    notes: '',
-  },
-  {
-    id: 2,
-    name: 'Andrea Collins',
-    type: 'JOBSITE_SUPERINTENDENT',
-    builder: 'CITY_VENTURES',
-    email: 'a.collins@cityventures.com',
-    phone: '+14155550132',
-    officePhone: '',
-    notes: 'Covers Cedar Grove and the north communities.',
-  },
-  {
-    id: 3,
-    name: 'Marcus Webb',
-    type: 'AP_CONTACT',
-    builder: 'KB_HOME',
-    email: 'ap.riverside@kbhome.com',
-    phone: '',
-    officePhone: '+19515550177',
-    notes: 'Billing goes through Textura, not email.',
-  },
-  {
-    id: 4,
-    name: 'Yuki Tanaka',
-    type: 'AP_CONTACT',
-    builder: 'TRUMARK',
-    email: 'accounts.payable@trumarkhomes.com',
-    phone: '',
-    officePhone: '+19255550190',
-    notes: '',
-  },
-  {
-    id: 5,
-    name: 'Olusegun Adeyemi',
-    type: 'JOBSITE_SUPERINTENDENT',
-    builder: 'BROOKFIELD',
-    email: 'o.adeyemi@brookfieldrp.com',
-    phone: '+17145550146',
-    officePhone: '',
-    notes: '',
-  },
-  {
-    id: 6,
-    name: 'Rebecca Lindqvist',
-    type: 'AP_CONTACT',
-    builder: 'CITY_VENTURES',
-    email: 'r.lindqvist@cityventures.com',
-    phone: '+14155550158',
-    officePhone: '+14155550100',
-    notes: 'Prefers the payment schedule as Excel.',
-  },
-]

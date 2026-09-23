@@ -12,6 +12,7 @@ import {
   BuilderContactsPage,
   CustomerServicePage,
   UsersPage,
+  ActivityHistoryPage,
 } from './lazyPages.jsx'
 
 // Single source of truth for the app's navigable routes.
@@ -33,6 +34,13 @@ export const navigationRoutes = [
   { path: '/invoice', label: 'Invoice', icon: 'invoice', element: <InvoicePage /> },
   { path: '/financials', label: 'Financials', icon: 'financials', element: <FinancialsPage /> },
   {
+    path: '/history',
+    label: 'Activity History',
+    icon: 'activity-history',
+    element: <ActivityHistoryPage />,
+    allowedRoles: ['ADMIN'],
+  },
+  {
     path: '/users',
     label: 'Users',
     icon: 'users',
@@ -40,7 +48,13 @@ export const navigationRoutes = [
     allowedRoles: ['ADMIN'],
   },
   { path: '/builder-contacts', label: 'Builder Contacts', icon: 'builder-contacts', element: <BuilderContactsPage /> },
-  { path: '/customer-service', label: 'Customer Service', icon: 'customer-service', element: <CustomerServicePage /> },
+  {
+    path: '/customer-service',
+    label: 'Customer Service',
+    icon: 'customer-service',
+    element: <CustomerServicePage />,
+    allowedRoles: ['ADMIN', 'SCHEDULING'],
+  },
 
 ]
 

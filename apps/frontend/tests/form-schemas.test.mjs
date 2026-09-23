@@ -23,7 +23,7 @@ import {
   normalizePhaseCode,
 } from '../src/features/sequence-sheets/utils/phaseBuildingCodes.js'
 import { parseLotRange } from '../src/features/sequence-sheets/utils/lotRange.js'
-import { initialContacts } from '../src/features/builder-contacts/data/builderContacts.js'
+import { contactTypeOptions } from '../src/features/builder-contacts/data/builderContacts.js'
 import { createBuilderContactSchema } from '../src/features/builder-contacts/schemas/builderContactSchema.js'
 import { initialPeople } from '../src/features/people/data/people.js'
 import { personSchema } from '../src/features/people/schemas/personSchema.js'
@@ -454,7 +454,7 @@ test('builder contact schema stores selected phone country without guessing', ()
   const result = createBuilderContactSchema([], null).parse({
     name: 'Daniel Torres',
     type: 'JOBSITE_SUPERINTENDENT',
-    builder: 'TRUMARK',
+    builderId: 2,
     email: 'daniel@example.com',
     phone: '55 1234 5678',
     phoneCountry: 'MX',
@@ -465,6 +465,7 @@ test('builder contact schema stores selected phone country without guessing', ()
 
   assert.equal(result.phone, '+525512345678')
   assert.equal(result.officePhone, '')
+  assert.equal(result.builderId, 2)
 })
 
 test('person schema requires and normalizes a territory for Valtrim supervisors', () => {
@@ -504,16 +505,15 @@ test('person schema requires an email and at least one person type', () => {
   assert.ok(result.error.flatten().fieldErrors.types)
 })
 
-test('saved job assignment catalogs keep Valtrim supervisors separate from builder contacts', () => {
+test('job assignment catalogs keep Valtrim supervisors separate from builder contacts', () => {
   assert.equal(new Set(initialPeople.map((person) => person.id)).size, initialPeople.length)
   assert.ok(
     initialPeople.every(
       (person) => person.types.length === 1 && person.types[0] === 'SUPERVISOR',
     ),
   )
-  assert.ok(
-    initialContacts.every((contact) =>
-      ['JOBSITE_SUPERINTENDENT', 'AP_CONTACT'].includes(contact.type),
-    ),
+  assert.deepEqual(
+    contactTypeOptions.map((contactType) => contactType.value),
+    ['JOBSITE_SUPERINTENDENT', 'AP_CONTACT'],
   )
 })

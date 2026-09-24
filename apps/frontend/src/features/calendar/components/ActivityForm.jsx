@@ -88,6 +88,7 @@ export default function ActivityForm({
   onChange,
   onClose,
   onSave,
+  saving = false,
 }) {
   const selectedJob = jobs.find((job) => job.id === Number(draft.jobId)) ?? null
   const builderDateConfiguration = getBuilderDateConfiguration(findJobBuilder(selectedJob, builders))
@@ -546,9 +547,11 @@ export default function ActivityForm({
       </Box>
 
       <Box className="activity-drawer__footer">
-        <Button variant="outlined" color="inherit" onClick={onClose}>Cancel</Button>
-        <Button type="submit" variant="contained" disableElevation>
-          {isEditing
+        <Button variant="outlined" color="inherit" onClick={onClose} disabled={saving}>Cancel</Button>
+        <Button type="submit" variant="contained" disabled={saving} disableElevation>
+          {saving
+            ? 'Saving...'
+            : isEditing
             ? `Save ${activeType?.shortLabel ?? 'event'}`
             : 'Create 3 events'}
         </Button>

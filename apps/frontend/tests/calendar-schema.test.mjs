@@ -21,6 +21,7 @@ const validActivity = {
   lotStart: '66',
   lotEnd: '70',
   lotNumbers: ['66', '67', '68', '69', '70'],
+  lotIds: [501, 502, 503, 504, 505],
   foreman: 'Lauren Mitchell',
   superintendent: 'Daniel Torres',
   notes: '',
@@ -68,6 +69,7 @@ test('non-contiguous lots are grouped without filling gaps', () => {
     lotStart: '1',
     lotEnd: '12',
     lotNumbers,
+    lotIds: [601, 602, 603, 604, 610, 611, 612],
   })
   const events = createProductionCalendarEvents(values, 'production-discrete-lots', 124)
 

@@ -28,9 +28,41 @@ test('Builder Draw Schedule accepts 3 draws totaling 100 percent', () => {
 test('Builder Draw Schedule can separate hardware at 100 percent', () => {
   const result = createBuilderDrawScheduleSchema([], null).parse(validSetup({
     separateHardwarePrice: true,
+    hardwareBillingDrawIndex: 2,
   }))
 
   assert.equal(result.separateHardwarePrice, true)
+  assert.equal(result.hardwareBillingDrawIndex, 2)
+})
+
+test('separate hardware requires a configured billing draw', () => {
+  const missing = createBuilderDrawScheduleSchema([], null).safeParse(validSetup({
+    separateHardwarePrice: true,
+    hardwareBillingDrawIndex: null,
+  }))
+  const outsideSchedule = createBuilderDrawScheduleSchema([], null).safeParse(validSetup({
+    separateHardwarePrice: true,
+    hardwareBillingDrawIndex: 3,
+  }))
+
+  assert.equal(missing.success, false)
+  assert.deepEqual(missing.error.flatten().fieldErrors.hardwareBillingDrawIndex, [
+    'Select the draw that bills hardware.',
+  ])
+  assert.equal(outsideSchedule.success, false)
+  assert.deepEqual(
+    outsideSchedule.error.flatten().fieldErrors.hardwareBillingDrawIndex,
+    ['Select one of the configured draws.'],
+  )
+})
+
+test('hardware billing draw is cleared when hardware is not separated', () => {
+  const result = createBuilderDrawScheduleSchema([], null).parse(validSetup({
+    separateHardwarePrice: false,
+    hardwareBillingDrawIndex: 1,
+  }))
+
+  assert.equal(result.hardwareBillingDrawIndex, null)
 })
 
 test('Builder Draw Schedule stores the draw used to bill selected options', () => {

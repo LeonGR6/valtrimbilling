@@ -2,7 +2,6 @@ import { useState } from 'react'
 import { Controller } from 'react-hook-form'
 import {
   Autocomplete,
-  Alert,
   Box,
   Button,
   IconButton,
@@ -32,14 +31,17 @@ export default function PersonPickerField({
 }) {
   const [draft, setDraft] = useState(null)
   const [saving, setSaving] = useState(false)
-  const [saveError, setSaveError] = useState('')
+  const [createError, setCreateError] = useState('')
 
-  const openDraft = (typed = '') => setDraft({
-    name: typed,
-    email: '',
-    phone: '',
-    phoneCountry: 'US',
-  })
+  const openDraft = (typed = '') => {
+    setCreateError('')
+    setDraft({
+      name: typed,
+      email: '',
+      phone: '',
+      phoneCountry: 'US',
+    })
+  }
   const draftEmailIsValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(
     draft?.email.trim() ?? '',
   )
@@ -55,7 +57,7 @@ export default function PersonPickerField({
       Object.entries(draft).filter(([key]) => key !== 'phoneCountry'),
     )
     setSaving(true)
-    setSaveError('')
+    setCreateError('')
     try {
       const created = await onCreate({
         ...contactDraft,
@@ -64,7 +66,7 @@ export default function PersonPickerField({
       field.onChange(created.id)
       setDraft(null)
     } catch (error) {
-      setSaveError(error.message || 'The person could not be created.')
+      setCreateError(error.message || 'The person could not be created.')
     } finally {
       setSaving(false)
     }
@@ -165,7 +167,6 @@ export default function PersonPickerField({
                 </Stack>
 
                 <Stack spacing={1.5}>
-                  {saveError && <Alert severity="error">{saveError}</Alert>}
                   <TextField
                     label="Name"
                     value={draft.name}
@@ -208,13 +209,22 @@ export default function PersonPickerField({
                 </Stack>
 
                 <Stack direction="row" spacing={1} sx={{ justifyContent: 'flex-end', mt: 1.5 }}>
+                  {createError && (
+                    <Typography
+                      variant="caption"
+                      color="error.main"
+                      sx={{ flex: 1, alignSelf: 'center' }}
+                    >
+                      {createError}
+                    </Typography>
+                  )}
                   <Button
                     size="small"
                     color="inherit"
                     disabled={saving}
                     onClick={() => {
                       setDraft(null)
-                      setSaveError('')
+                      setCreateError('')
                     }}
                   >
                     Cancel
@@ -223,7 +233,9 @@ export default function PersonPickerField({
                     size="small"
                     variant="contained"
                     disableElevation
-                    disabled={saving || !draft.name.trim() || !draftEmailIsValid || !draftPhoneIsValid}
+                    disabled={
+                      saving || !draft.name.trim() || !draftEmailIsValid || !draftPhoneIsValid
+                    }
                     onClick={() => save(field)}
                   >
                     {saving ? 'Saving...' : 'Save and assign'}

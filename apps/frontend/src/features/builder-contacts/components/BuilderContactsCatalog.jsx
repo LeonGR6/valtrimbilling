@@ -13,6 +13,7 @@ import {
   DialogContent,
   DialogTitle,
   FormControl,
+  FormControlLabel,
   FormHelperText,
   IconButton,
   InputAdornment,
@@ -22,6 +23,7 @@ import {
   Select,
   Snackbar,
   Stack,
+  Switch,
   Table,
   TableBody,
   TableCell,
@@ -102,7 +104,7 @@ function ContactDialog({ contact, contacts, builders, submitting, onClose, onSav
   return (
     <Dialog
       open
-      onClose={onClose}
+      onClose={submitting ? undefined : onClose}
       fullWidth
       maxWidth="sm"
       component="form"
@@ -146,7 +148,7 @@ function ContactDialog({ contact, contacts, builders, submitting, onClose, onSav
                 >
                   {builders.map((builder) => (
                     <MenuItem key={builder.id} value={builder.id}>
-                      {builder.name}
+                      {builder.name} ({builder.code})
                     </MenuItem>
                   ))}
                 </Select>
@@ -224,6 +226,46 @@ function ContactDialog({ contact, contacts, builders, submitting, onClose, onSav
             multiline
             minRows={2}
           />
+
+          {contact && (
+            <Box
+              sx={{
+                border: 1,
+                borderColor: 'divider',
+                borderRadius: 2,
+                px: 2,
+                py: 1,
+              }}
+            >
+              <FormControlLabel
+                sx={{ m: 0, width: '100%', justifyContent: 'space-between' }}
+                labelPlacement="start"
+                control={(
+                  <Controller
+                    name="isActive"
+                    control={control}
+                    render={({ field }) => (
+                      <Switch
+                        checked={field.value}
+                        onChange={(_, checked) => field.onChange(checked)}
+                        slotProps={{ input: { ref: field.ref } }}
+                      />
+                    )}
+                  />
+                )}
+                label={(
+                  <Box>
+                    <Typography variant="body2" fontWeight={600}>
+                      Active contact
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      Inactive contacts remain visible in the catalog.
+                    </Typography>
+                  </Box>
+                )}
+              />
+            </Box>
+          )}
         </Stack>
       </DialogContent>
 
@@ -242,8 +284,8 @@ function ContactDialog({ contact, contacts, builders, submitting, onClose, onSav
 export default function BuilderContactsCatalog() {
   const {
     contacts,
-    loading,
-    error,
+    loading: contactsLoading,
+    error: contactsError,
     canManageBuilderContacts,
     refreshContacts,
     createContact,
@@ -251,7 +293,12 @@ export default function BuilderContactsCatalog() {
     deactivateContact,
     reactivateContact,
   } = useBuilderContacts()
-  const { builders } = useBuilders()
+  const {
+    builders,
+    loading: buildersLoading,
+    error: buildersError,
+    refreshBuilders,
+  } = useBuilders()
   const [search, setSearch] = useState('')
   const [typeFilter, setTypeFilter] = useState('all')
   const [builderFilter, setBuilderFilter] = useState('all')
@@ -264,6 +311,10 @@ export default function BuilderContactsCatalog() {
   const [statusTarget, setStatusTarget] = useState(null)
   const [submitting, setSubmitting] = useState(false)
   const [notice, setNotice] = useState(null)
+  const buildersById = useMemo(
+    () => new Map(builders.map((builder) => [builder.id, builder])),
+    [builders],
+  )
 
   const availableBuilders = useMemo(() => builders.filter((builder) => (
     builder.isActive || contacts.some((contact) => contact.builderId === builder.id)
@@ -282,6 +333,8 @@ export default function BuilderContactsCatalog() {
           contact.officePhone,
           contact.builderCode,
           contact.builderName,
+          buildersById.get(contact.builderId)?.name,
+          buildersById.get(contact.builderId)?.code,
         ]
           .filter(Boolean)
           .join(' ')
@@ -296,7 +349,7 @@ export default function BuilderContactsCatalog() {
 
       return matchesSearch && matchesType && matchesBuilder && matchesStatus
     })
-  }, [builderFilter, contacts, search, statusFilter, typeFilter])
+  }, [builderFilter, buildersById, contacts, search, statusFilter, typeFilter])
 
   const visibleContacts = filteredContacts.slice(
     page * rowsPerPage,
@@ -364,6 +417,12 @@ export default function BuilderContactsCatalog() {
     }
   }
 
+  const dialogBuilders = builders.filter(
+    (builder) => builder.isActive || builder.id === dialogState?.contact?.builderId,
+  )
+  const loading = contactsLoading || buildersLoading
+  const loadError = contactsError || buildersError
+
   return (
     <Box sx={{ minHeight: '100%', bgcolor: 'background.default' }}>
       <Box
@@ -391,6 +450,7 @@ export default function BuilderContactsCatalog() {
         {canManageBuilderContacts && (
           <ResponsiveCreateButton
             label="New contact"
+            disabled={buildersLoading || builders.length === 0}
             onClick={() => setDialogState({ mode: 'create' })}
           />
         )}
@@ -448,7 +508,7 @@ export default function BuilderContactsCatalog() {
               >
                 <MenuItem value="all">All builders</MenuItem>
                 {availableBuilders.map((builder) => (
-                  <MenuItem key={builder.id} value={builder.id}>
+                  <MenuItem key={builder.id} value={String(builder.id)}>
                     {builder.name}
                   </MenuItem>
                 ))}
@@ -491,17 +551,24 @@ export default function BuilderContactsCatalog() {
             </FormControl>
           </Stack>
 
-          {error && (
+          {loadError && (
             <Alert
               severity="error"
               action={(
-                <Button color="inherit" size="small" onClick={() => refreshContacts().catch(() => {})}>
+                <Button
+                  color="inherit"
+                  size="small"
+                  onClick={() => {
+                    refreshContacts().catch(() => {})
+                    refreshBuilders().catch(() => {})
+                  }}
+                >
                   Retry
                 </Button>
               )}
               sx={{ borderRadius: 0 }}
             >
-              {error}
+              {loadError}
             </Alert>
           )}
 
@@ -582,7 +649,9 @@ export default function BuilderContactsCatalog() {
                     </TableCell>
                     <TableCell>
                       <Typography variant="body2" color="text.secondary" noWrap>
-                        {contact.builderName}
+                        {contact.builderName
+                          || buildersById.get(contact.builderId)?.name
+                          || 'Unknown builder'}
                       </Typography>
                     </TableCell>
                     <TableCell>
@@ -605,9 +674,9 @@ export default function BuilderContactsCatalog() {
                     <TableCell>
                       <Chip
                         label={contact.isActive ? 'Active' : 'Inactive'}
-                        color={contact.isActive ? 'success' : 'default'}
                         size="small"
-                        variant="outlined"
+                        color={contact.isActive ? 'success' : 'default'}
+                        variant={contact.isActive ? 'filled' : 'outlined'}
                       />
                     </TableCell>
                     {canManageBuilderContacts && (
@@ -631,9 +700,13 @@ export default function BuilderContactsCatalog() {
                       sx={{ py: 8, textAlign: 'center' }}
                     >
                       <SearchRoundedIcon color="action" sx={{ fontSize: 40, mb: 1 }} />
-                      <Typography fontWeight={600}>No contacts found</Typography>
+                      <Typography fontWeight={600}>
+                        {loading ? 'Loading contacts...' : 'No contacts found'}
+                      </Typography>
                       <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-                        Try changing your search, builder, type or status filter.
+                        {loading
+                          ? 'Loading Builder Contacts from Supabase.'
+                          : 'Try changing your search, builder, type or status filter.'}
                       </Typography>
                     </TableCell>
                   </TableRow>
@@ -657,45 +730,46 @@ export default function BuilderContactsCatalog() {
         </Box>
       </Box>
 
-      <Menu
-        anchorEl={menuAnchor}
-        open={Boolean(menuAnchor)}
-        onClose={handleMenuClose}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-        transformOrigin={{ vertical: 'top', horizontal: 'right' }}
-      >
-        <MenuItem onClick={openEditDialog}>
-          <EditOutlinedIcon fontSize="small" sx={{ mr: 1.25 }} />
-          Edit
-        </MenuItem>
-        <MenuItem
-          onClick={openStatusDialog}
-          sx={{ color: selectedContact?.isActive ? 'error.main' : 'success.main' }}
+      {canManageBuilderContacts && (
+        <Menu
+          anchorEl={menuAnchor}
+          open={Boolean(menuAnchor)}
+          onClose={handleMenuClose}
+          anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+          transformOrigin={{ vertical: 'top', horizontal: 'right' }}
         >
-          {selectedContact?.isActive
-            ? <BlockRoundedIcon fontSize="small" sx={{ mr: 1.25 }} />
-            : <CheckCircleOutlineRoundedIcon fontSize="small" sx={{ mr: 1.25 }} />}
-          {selectedContact?.isActive ? 'Deactivate' : 'Reactivate'}
-        </MenuItem>
-      </Menu>
+          <MenuItem onClick={openEditDialog}>
+            <EditOutlinedIcon fontSize="small" sx={{ mr: 1.25 }} />
+            Edit
+          </MenuItem>
+          <MenuItem
+            onClick={openStatusDialog}
+            sx={{ color: selectedContact?.isActive ? 'error.main' : 'success.main' }}
+          >
+            {selectedContact?.isActive
+              ? <BlockRoundedIcon fontSize="small" sx={{ mr: 1.25 }} />
+              : <CheckCircleOutlineRoundedIcon fontSize="small" sx={{ mr: 1.25 }} />}
+            {selectedContact?.isActive ? 'Deactivate' : 'Reactivate'}
+          </MenuItem>
+        </Menu>
+      )}
 
       {dialogState && (
         <ContactDialog
           key={dialogState.contact?.id ?? 'new'}
           contact={dialogState.contact}
           contacts={contacts}
-          builders={builders.filter((builder) => (
-            builder.isActive || builder.id === dialogState.contact?.builderId
-          ))}
+          builders={dialogBuilders}
           submitting={submitting}
           onClose={() => setDialogState(null)}
           onSave={handleSave}
+          submitting={submitting}
         />
       )}
 
       <Dialog
         open={Boolean(statusTarget)}
-        onClose={() => !submitting && setStatusTarget(null)}
+        onClose={submitting ? undefined : () => setStatusTarget(null)}
         fullWidth
         maxWidth="xs"
       >

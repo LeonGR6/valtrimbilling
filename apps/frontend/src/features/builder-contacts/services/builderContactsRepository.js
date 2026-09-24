@@ -50,9 +50,11 @@ export async function listBuilderContacts() {
 
 export async function createBuilderContact(contact) {
   const client = await requireSupabase()
+  const mutation = toBuilderContactMutation(contact)
+  delete mutation.is_active
   const { data, error } = await client
     .from('builder_contacts')
-    .insert(toBuilderContactMutation(contact))
+    .insert(mutation)
     .select(BUILDER_CONTACT_COLUMNS)
     .single()
 

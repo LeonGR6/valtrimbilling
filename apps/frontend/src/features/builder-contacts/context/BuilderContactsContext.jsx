@@ -89,6 +89,12 @@ export function BuilderContactsProvider({ children }) {
     return replaceContact(contactId, updated)
   }, [replaceContact])
 
+  // Keep both naming conventions while the merged screens converge on one API.
+  const refreshBuilderContacts = refreshContacts
+  const createBuilderContact = createContact
+  const updateBuilderContact = updateContact
+  const deactivateBuilderContact = deactivateContact
+
   const value = useMemo(() => ({
     contacts,
     loading,
@@ -99,13 +105,21 @@ export function BuilderContactsProvider({ children }) {
     updateContact,
     deactivateContact,
     reactivateContact,
+    refreshBuilderContacts,
+    createBuilderContact,
+    updateBuilderContact,
+    deactivateBuilderContact,
   }), [
     canManageBuilderContacts,
     contacts,
-    createContact,
-    deactivateContact,
+    createBuilderContact,
+    deactivateBuilderContact,
     error,
     loading,
+    refreshBuilderContacts,
+    updateBuilderContact,
+    createContact,
+    deactivateContact,
     reactivateContact,
     refreshContacts,
     updateContact,

@@ -40,7 +40,7 @@ export const planOptionSchema = z.object({
     .string()
     .trim()
     .min(1, 'Enter the P.O. / OPT # (option code).')
-    .max(50, 'Use 50 characters or fewer.')
+    .max(40, 'Use 40 characters or fewer.')
     .transform((value) => value.toUpperCase()),
   description: z
     .string()

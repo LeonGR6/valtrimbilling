@@ -35,7 +35,7 @@ import ConstructionRoundedIcon from '@mui/icons-material/ConstructionRounded'
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined'
 import ResponsiveCreateButton from '../../../components/common/ResponsiveCreateButton'
-import { initialBuilders } from '../../builders/data/builders.js'
+import { useBuilders } from '../../builders/context/useBuilders.js'
 import {
   defaultDraws,
   defaultBillingSettings,
@@ -154,6 +154,7 @@ function BuilderDrawScheduleDialog({
   builders,
   onClose,
   onSave,
+  submitting,
 }) {
   const schema = useMemo(
     () => createBuilderDrawScheduleSchema(schedules, schedule?.id),
@@ -170,6 +171,7 @@ function BuilderDrawScheduleDialog({
     defaultValues: schedule
       ? {
           ...schedule,
+          hardwareBillingDrawIndex: schedule.hardwareBillingDrawIndex ?? null,
           optionsBillingDrawIndex: schedule.optionsBillingDrawIndex ?? null,
           draws: schedule.draws.map((draw) => ({ ...draw })),
           cutoffDays: [...schedule.cutoffDays],
@@ -198,6 +200,10 @@ function BuilderDrawScheduleDialog({
     control,
     name: 'optionsBillingDrawIndex',
   })
+  const hardwareBillingDrawIndex = useWatch({
+    control,
+    name: 'hardwareBillingDrawIndex',
+  })
   const frequency = useWatch({ control, name: 'frequency' })
   const retentionEnabled = useWatch({ control, name: 'retentionEnabled' })
   const ocipWrapEnabled = useWatch({ control, name: 'ocipWrapEnabled' })
@@ -210,7 +216,10 @@ function BuilderDrawScheduleDialog({
       const percentage = Number(draw.percentage)
       return percentage > 0 && percentage <= 100
     })
-  const canSave = Boolean(selectedBuilderId) && totalIsValid && percentagesAreValid
+  const canSave = Boolean(selectedBuilderId)
+    && totalIsValid
+    && percentagesAreValid
+    && (!separateHardwarePrice || hardwareBillingDrawIndex !== null)
   const availableBuilders = builders.filter(
     (builder) =>
       builder.id === schedule?.builderId ||
@@ -223,21 +232,26 @@ function BuilderDrawScheduleDialog({
   const drawsError = errors.draws?.message ?? errors.draws?.root?.message
 
   const handleRemoveDraw = (drawIndex) => {
-    const configuredDrawIndex = optionsBillingDrawIndex == null
-      ? null
-      : Number(optionsBillingDrawIndex)
+    const adjustConfiguredDraw = (fieldName, configuredValue) => {
+      const configuredDrawIndex = configuredValue == null
+        ? null
+        : Number(configuredValue)
 
-    if (configuredDrawIndex === drawIndex) {
-      setValue('optionsBillingDrawIndex', null, {
-        shouldDirty: true,
-        shouldValidate: true,
-      })
-    } else if (configuredDrawIndex > drawIndex) {
-      setValue('optionsBillingDrawIndex', configuredDrawIndex - 1, {
-        shouldDirty: true,
-        shouldValidate: true,
-      })
+      if (configuredDrawIndex === drawIndex) {
+        setValue(fieldName, null, {
+          shouldDirty: true,
+          shouldValidate: true,
+        })
+      } else if (configuredDrawIndex > drawIndex) {
+        setValue(fieldName, configuredDrawIndex - 1, {
+          shouldDirty: true,
+          shouldValidate: true,
+        })
+      }
     }
+
+    adjustConfiguredDraw('optionsBillingDrawIndex', optionsBillingDrawIndex)
+    adjustConfiguredDraw('hardwareBillingDrawIndex', hardwareBillingDrawIndex)
 
     remove(drawIndex)
   }
@@ -245,7 +259,7 @@ function BuilderDrawScheduleDialog({
   return (
     <Dialog
       open
-      onClose={onClose}
+      onClose={submitting ? undefined : onClose}
       fullWidth
       maxWidth="md"
       component="form"
@@ -415,11 +429,19 @@ function BuilderDrawScheduleDialog({
                 variant={separateHardwarePrice ? 'contained' : 'outlined'}
                 color={separateHardwarePrice ? 'primary' : 'inherit'}
                 startIcon={<ConstructionRoundedIcon />}
-                onClick={() => setValue(
-                  'separateHardwarePrice',
-                  !separateHardwarePrice,
-                  { shouldDirty: true, shouldValidate: true },
-                )}
+                onClick={() => {
+                  const nextValue = !separateHardwarePrice
+                  setValue('separateHardwarePrice', nextValue, {
+                    shouldDirty: true,
+                    shouldValidate: true,
+                  })
+                  if (!nextValue) {
+                    setValue('hardwareBillingDrawIndex', null, {
+                      shouldDirty: true,
+                      shouldValidate: true,
+                    })
+                  }
+                }}
                 disableElevation
               >
                 Separate Hardware Price
@@ -427,10 +449,43 @@ function BuilderDrawScheduleDialog({
             </Stack>
 
             {separateHardwarePrice && (
-              <Alert severity="info" sx={{ mt: 1.25 }}>
-                Draws will allocate 100% of the plan price excluding hardware.
-                Hardware will be billed separately at 100%.
-              </Alert>
+              <Stack spacing={1.25} sx={{ mt: 1.25 }}>
+                <Alert severity="info">
+                  Draws allocate 100% of the plan price excluding hardware.
+                  Hardware is billed separately at 100% on the selected draw.
+                </Alert>
+                <Controller
+                  name="hardwareBillingDrawIndex"
+                  control={control}
+                  render={({ field }) => (
+                    <TextField
+                      select
+                      label="Hardware billing draw"
+                      value={field.value ?? ''}
+                      onChange={(event) => field.onChange(
+                        event.target.value === '' ? null : Number(event.target.value),
+                      )}
+                      onBlur={field.onBlur}
+                      inputRef={field.ref}
+                      error={Boolean(errors.hardwareBillingDrawIndex)}
+                      helperText={
+                        errors.hardwareBillingDrawIndex?.message
+                        ?? 'The full hardware price is added when this draw is billed.'
+                      }
+                      fullWidth
+                      required
+                    >
+                      <MenuItem value="">Select a draw</MenuItem>
+                      {watchedDraws.map((draw, index) => (
+                        <MenuItem key={`hardware-draw-${index + 1}`} value={index}>
+                          Draw {index + 1}
+                          {draw.name?.trim() ? ` · ${draw.name.trim()}` : ''}
+                        </MenuItem>
+                      ))}
+                    </TextField>
+                  )}
+                />
+              </Stack>
             )}
 
             <Controller
@@ -831,18 +886,29 @@ function BuilderDrawScheduleDialog({
       </DialogContent>
 
       <DialogActions sx={{ px: 3, pb: 2.5, pt: 1.5 }}>
-        <Button color="inherit" onClick={onClose}>
+        <Button color="inherit" onClick={onClose} disabled={submitting}>
           Cancel
         </Button>
-        <Button type="submit" variant="contained" disableElevation disabled={!canSave}>
-          {schedule ? 'Save changes' : 'Create setup'}
+        <Button
+          type="submit"
+          variant="contained"
+          disableElevation
+          disabled={!canSave || submitting}
+        >
+          {submitting ? 'Saving...' : schedule ? 'Save changes' : 'Create setup'}
         </Button>
       </DialogActions>
     </Dialog>
   )
 }
 
-function BuilderDrawScheduleCard({ schedule, builder, onEdit, onDelete }) {
+function BuilderDrawScheduleCard({
+  schedule,
+  builder,
+  canManage,
+  onEdit,
+  onDeactivate,
+}) {
   const total = getDrawTotal(schedule.draws)
 
   return (
@@ -925,6 +991,11 @@ function BuilderDrawScheduleCard({ schedule, builder, onEdit, onDelete }) {
               && Number(schedule.optionsBillingDrawIndex) === index && (
               <Chip size="small" color="primary" label="Options billed" />
             )}
+            {schedule.separateHardwarePrice
+              && schedule.hardwareBillingDrawIndex != null
+              && Number(schedule.hardwareBillingDrawIndex) === index && (
+              <Chip size="small" color="secondary" label="Hardware billed" />
+            )}
             <Typography variant="body2" color="primary.main" fontWeight={800}>
               {formatPercentage(Number(draw.percentage))}%
             </Typography>
@@ -940,7 +1011,7 @@ function BuilderDrawScheduleCard({ schedule, builder, onEdit, onDelete }) {
             size="small"
             color="primary"
             icon={<ConstructionRoundedIcon />}
-            label="Hardware separated · 100%"
+            label={`Hardware separated · Draw ${Number(schedule.hardwareBillingDrawIndex) + 1}`}
             sx={{ alignSelf: 'flex-start', fontWeight: 750 }}
           />
         )}
@@ -983,52 +1054,71 @@ function BuilderDrawScheduleCard({ schedule, builder, onEdit, onDelete }) {
         </Typography>
       </Stack>
 
-      <CardActions
-        sx={{
-          px: 2,
-          py: 1.25,
-          borderTop: 1,
-          borderColor: 'divider',
-          justifyContent: 'flex-end',
-        }}
-      >
-        <Button
-          size="small"
-          startIcon={<EditOutlinedIcon />}
-          onClick={() => onEdit(schedule)}
+      {canManage && (
+        <CardActions
+          sx={{
+            px: 2,
+            py: 1.25,
+            borderTop: 1,
+            borderColor: 'divider',
+            justifyContent: 'flex-end',
+          }}
         >
-          Edit
-        </Button>
-        <Button
-          size="small"
-          color="error"
-          startIcon={<DeleteOutlineRoundedIcon />}
-          onClick={() => onDelete(schedule)}
-        >
-          Delete
-        </Button>
-      </CardActions>
+          <Button
+            size="small"
+            startIcon={<EditOutlinedIcon />}
+            onClick={() => onEdit(schedule)}
+          >
+            Edit
+          </Button>
+          <Button
+            size="small"
+            color="error"
+            startIcon={<DeleteOutlineRoundedIcon />}
+            onClick={() => onDeactivate(schedule)}
+          >
+            Deactivate
+          </Button>
+        </CardActions>
+      )}
     </Card>
   )
 }
 
-function DeleteScheduleDialog({ schedule, builder, onClose, onDelete }) {
+function DeactivateScheduleDialog({
+  schedule,
+  builder,
+  onClose,
+  onDeactivate,
+  submitting,
+}) {
   return (
-    <Dialog open={Boolean(schedule)} onClose={onClose} fullWidth maxWidth="xs">
-      <DialogTitle>Delete builder setup?</DialogTitle>
+    <Dialog
+      open={Boolean(schedule)}
+      onClose={submitting ? undefined : onClose}
+      fullWidth
+      maxWidth="xs"
+    >
+      <DialogTitle>Deactivate builder setup?</DialogTitle>
       <DialogContent>
         <Alert severity="warning">
           {builder
-            ? `${builder.name}'s draw allocation and complete billing configuration will be permanently removed.`
-            : 'This draw and billing configuration will be permanently removed.'}
+            ? `${builder.name}'s current setup will stop being available for new Jobs. Its version and financial history will be preserved.`
+            : 'The current setup will be deactivated without deleting its financial history.'}
         </Alert>
       </DialogContent>
       <DialogActions sx={{ px: 3, pb: 2.5 }}>
-        <Button color="inherit" onClick={onClose}>
+        <Button color="inherit" onClick={onClose} disabled={submitting}>
           Cancel
         </Button>
-        <Button color="error" variant="contained" onClick={onDelete} disableElevation>
-          Delete setup
+        <Button
+          color="error"
+          variant="contained"
+          onClick={onDeactivate}
+          disabled={submitting}
+          disableElevation
+        >
+          {submitting ? 'Deactivating...' : 'Deactivate setup'}
         </Button>
       </DialogActions>
     </Dialog>
@@ -1038,44 +1128,66 @@ function DeleteScheduleDialog({ schedule, builder, onClose, onDelete }) {
 export default function BuilderDrawSchedules() {
   const {
     builderDrawSchedules: schedules,
-    setBuilderDrawSchedules: setSchedules,
+    loading: schedulesLoading,
+    error: schedulesError,
+    canManageBuilderBillingSetups,
+    refreshBuilderBillingSetups,
+    saveBuilderBillingSetup,
+    deactivateBuilderBillingSetup,
   } = useBuilderDrawSchedules()
+  const {
+    builders,
+    loading: buildersLoading,
+    error: buildersError,
+    refreshBuilders,
+  } = useBuilders()
   const [dialogState, setDialogState] = useState(null)
-  const [deleteTarget, setDeleteTarget] = useState(null)
+  const [deactivateTarget, setDeactivateTarget] = useState(null)
   const [notice, setNotice] = useState(null)
+  const [submitting, setSubmitting] = useState(false)
   const buildersById = useMemo(
-    () => new Map(initialBuilders.map((builder) => [builder.id, builder])),
-    [],
+    () => new Map(builders.map((builder) => [builder.id, builder])),
+    [builders],
   )
 
-  const handleSave = (form) => {
-    if (dialogState?.mode === 'edit') {
-      setSchedules((current) =>
-        current.map((schedule) =>
-          schedule.id === dialogState.schedule.id
-            ? { ...schedule, ...form }
-            : schedule,
-        ),
-      )
-      setNotice({ severity: 'success', message: 'Builder setup updated.' })
-    } else {
-      setSchedules((current) => [
-        ...current,
-        { ...form, id: Date.now() },
-      ])
-      setNotice({ severity: 'success', message: 'Builder setup created.' })
+  const handleSave = async (form) => {
+    setSubmitting(true)
+    try {
+      await saveBuilderBillingSetup(form)
+      setNotice({
+        severity: 'success',
+        message: dialogState?.mode === 'edit'
+          ? 'Builder setup updated with a new active version.'
+          : 'Builder setup created and activated.',
+      })
+      setDialogState(null)
+    } catch (saveError) {
+      setNotice({ severity: 'error', message: saveError.message })
+    } finally {
+      setSubmitting(false)
     }
-
-    setDialogState(null)
   }
 
-  const handleDelete = () => {
-    setSchedules((current) =>
-      current.filter((schedule) => schedule.id !== deleteTarget.id),
-    )
-    setDeleteTarget(null)
-    setNotice({ severity: 'success', message: 'Builder setup deleted.' })
+  const handleDeactivate = async () => {
+    if (!deactivateTarget) return
+
+    setSubmitting(true)
+    try {
+      await deactivateBuilderBillingSetup(deactivateTarget.builderId)
+      setDeactivateTarget(null)
+      setNotice({
+        severity: 'success',
+        message: 'Builder setup deactivated. Its history was preserved.',
+      })
+    } catch (deactivateError) {
+      setNotice({ severity: 'error', message: deactivateError.message })
+    } finally {
+      setSubmitting(false)
+    }
   }
+
+  const loading = schedulesLoading || buildersLoading
+  const loadError = schedulesError || buildersError
 
   return (
     <Box sx={{ minHeight: '100%', bgcolor: 'background.default' }}>
@@ -1102,15 +1214,39 @@ export default function BuilderDrawSchedules() {
               payment deductions and required submission documents.
             </Typography>
           </Box>
-          <ResponsiveCreateButton
-            label="New builder setup"
-            mobileLabel="New setup"
-            onClick={() => setDialogState({ mode: 'create' })}
-          />
+          {canManageBuilderBillingSetups && (
+            <ResponsiveCreateButton
+              label="New builder setup"
+              mobileLabel="New setup"
+              disabled={loading || builders.length === 0}
+              onClick={() => setDialogState({ mode: 'create' })}
+            />
+          )}
         </Stack>
       </Box>
 
       <Box sx={{ p: { xs: 2.5, md: 4 } }}>
+        {loadError && (
+          <Alert
+            severity="error"
+            action={(
+              <Button
+                color="inherit"
+                size="small"
+                onClick={() => {
+                  refreshBuilderBillingSetups().catch(() => {})
+                  refreshBuilders().catch(() => {})
+                }}
+              >
+                Retry
+              </Button>
+            )}
+            sx={{ mb: 2 }}
+          >
+            {loadError}
+          </Alert>
+        )}
+
         <Stack
           direction={{ xs: 'column', sm: 'row' }}
           spacing={1.5}
@@ -1153,10 +1289,11 @@ export default function BuilderDrawSchedules() {
                   key={schedule.id}
                   schedule={schedule}
                   builder={builder}
+                  canManage={canManageBuilderBillingSetups}
                   onEdit={(target) =>
                     setDialogState({ mode: 'edit', schedule: target })
                   }
-                  onDelete={setDeleteTarget}
+                  onDeactivate={setDeactivateTarget}
                 />
               )
             })}
@@ -1165,19 +1302,24 @@ export default function BuilderDrawSchedules() {
           <Card variant="outlined" sx={{ p: 6, textAlign: 'center' }}>
             <BusinessRoundedIcon color="action" sx={{ fontSize: 44 }} />
             <Typography fontWeight={750} sx={{ mt: 1 }}>
-              No builder setups yet
+              {loading ? 'Loading builder setups...' : 'No builder setups yet'}
             </Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, mb: 2 }}>
-              Create the first setup with draw and billing configuration.
+              {loading
+                ? 'Loading billing configuration from Supabase.'
+                : 'Create the first setup with draw and billing configuration.'}
             </Typography>
-            <Button
-              variant="contained"
-              startIcon={<AddRoundedIcon />}
-              onClick={() => setDialogState({ mode: 'create' })}
-              disableElevation
-            >
-              New builder setup
-            </Button>
+            {!loading && canManageBuilderBillingSetups && (
+              <Button
+                variant="contained"
+                startIcon={<AddRoundedIcon />}
+                disabled={builders.length === 0}
+                onClick={() => setDialogState({ mode: 'create' })}
+                disableElevation
+              >
+                New builder setup
+              </Button>
+            )}
           </Card>
         )}
       </Box>
@@ -1186,17 +1328,21 @@ export default function BuilderDrawSchedules() {
         <BuilderDrawScheduleDialog
           schedule={dialogState.schedule}
           schedules={schedules}
-          builders={initialBuilders}
-          onClose={() => setDialogState(null)}
+          builders={builders}
+          onClose={submitting ? undefined : () => setDialogState(null)}
           onSave={handleSave}
+          submitting={submitting}
         />
       )}
 
-      <DeleteScheduleDialog
-        schedule={deleteTarget}
-        builder={deleteTarget ? buildersById.get(deleteTarget.builderId) : null}
-        onClose={() => setDeleteTarget(null)}
-        onDelete={handleDelete}
+      <DeactivateScheduleDialog
+        schedule={deactivateTarget}
+        builder={deactivateTarget
+          ? buildersById.get(deactivateTarget.builderId)
+          : null}
+        onClose={() => setDeactivateTarget(null)}
+        onDeactivate={handleDeactivate}
+        submitting={submitting}
       />
 
       <Snackbar

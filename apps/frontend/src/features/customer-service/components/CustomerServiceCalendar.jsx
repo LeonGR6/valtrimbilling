@@ -25,11 +25,9 @@ import { useColorScheme } from '@mui/material/styles'
 import ArrowBackIosNewRoundedIcon from '@mui/icons-material/ArrowBackIosNewRounded'
 import ArrowForwardIosRoundedIcon from '@mui/icons-material/ArrowForwardIosRounded'
 import EventAvailableRoundedIcon from '@mui/icons-material/EventAvailableRounded'
-import {
-  getActivityTone,
-  initialCalendarEvents,
-} from '../../calendar/data/calendarEvents.js'
+import { getActivityTone } from '../../calendar/data/calendarEvents.js'
 import CalendarEventCard from '../../calendar/components/CalendarEventCard.jsx'
+import { useProductionActivities } from '../../calendar/context/useProductionActivities.js'
 import { technicianOptions } from '../data/customerService.js'
 import {
   getServiceEventTone,
@@ -48,40 +46,10 @@ const initialCalendarTitle = new Intl.DateTimeFormat('en-US', {
   year: 'numeric',
 }).format(new Date())
 
-function startOfCurrentWeek() {
-  const date = new Date()
-  const day = date.getDay()
-  date.setDate(date.getDate() + (day === 0 ? -6 : 1 - day))
-  date.setHours(12, 0, 0, 0)
-  return date
-}
-
-function toDateString(date) {
-  const year = date.getFullYear()
-  const month = String(date.getMonth() + 1).padStart(2, '0')
-  const day = String(date.getDate()).padStart(2, '0')
-  return `${year}-${month}-${day}`
-}
-
-function createProductionOverlayEvents() {
-  const monday = startOfCurrentWeek()
-  const typeOffsets = { EXT: 0, SHUTTER: 1, DM: 2, HW: 3 }
-
-  return initialCalendarEvents.map((event, index) => {
-    const date = new Date(monday)
-    const groupOffset = index >= 4 ? 1 : 0
-    date.setDate(date.getDate() + (typeOffsets[event.extendedProps.activityType] ?? 0) + groupOffset)
-    return {
-      ...event,
-      id: `customer-service-overlay-${event.id}`,
-      start: toDateString(date),
-    }
-  })
-}
-
 export default function CustomerServiceCalendar({ onNotice }) {
   const calendarRef = useRef(null)
   const { serviceEvents } = useCustomerServiceCalendar()
+  const { events: productionOverlayEvents } = useProductionActivities()
   const { mode, systemMode } = useColorScheme()
   const resolvedColorMode = mode === 'system' ? systemMode : mode
   const colorMode = resolvedColorMode === 'dark' ? 'dark' : 'light'
@@ -92,8 +60,6 @@ export default function CustomerServiceCalendar({ onNotice }) {
   const [visibleWorkTypes, setVisibleWorkTypes] = useState(['HW', 'WS'])
   const [showProduction, setShowProduction] = useState(false)
   const [selectedId, setSelectedId] = useState(null)
-  const productionOverlayEvents = useMemo(() => createProductionOverlayEvents(), [])
-
   const filteredServiceEvents = useMemo(() => serviceEvents.filter((event) => {
     const props = event.extendedProps
     const technicianMatches = technicianFilter === 'all'

@@ -50,6 +50,7 @@ export const invoiceLineFormatLabels = Object.fromEntries(
 
 export const defaultBillingSettings = {
   separateHardwarePrice: false,
+  hardwareBillingDrawIndex: null,
   optionsBillingDrawIndex: null,
   frequency: 'MONTHLY',
   cutoffDay: 20,
@@ -97,6 +98,7 @@ export const initialBuilderDrawSchedules = [
     requiresRelease: true,
     invoiceLineFormat: 'LOT',
     portalName: 'BuilderPortal',
+    hardwareBillingDrawIndex: 2,
     optionsBillingDrawIndex: 2,
   },
   {

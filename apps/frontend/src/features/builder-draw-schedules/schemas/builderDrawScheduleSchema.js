@@ -40,7 +40,7 @@ const dayOfMonthSchema = z.coerce
   .min(1, 'Use a day between 1 and 31.')
   .max(31, 'Use a day between 1 and 31.')
 
-const optionsBillingDrawIndexSchema = z.preprocess(
+const optionalDrawIndexSchema = z.preprocess(
   (value) => (value === '' || value === null || value === undefined
     ? null
     : Number(value)),
@@ -66,7 +66,8 @@ export function createBuilderDrawScheduleSchema(schedules, currentScheduleId) {
         .min(MIN_DRAW_COUNT, `Configure at least ${MIN_DRAW_COUNT} draws.`)
         .max(MAX_DRAW_COUNT, `Configure no more than ${MAX_DRAW_COUNT} draws.`),
       separateHardwarePrice: z.boolean().default(false),
-      optionsBillingDrawIndex: optionsBillingDrawIndexSchema,
+      hardwareBillingDrawIndex: optionalDrawIndexSchema,
+      optionsBillingDrawIndex: optionalDrawIndexSchema,
       frequency: z.enum(['MONTHLY', 'SEMIMONTHLY', 'WEEKLY']),
       cutoffDay: dayOfMonthSchema,
       submissionDay: dayOfMonthSchema,
@@ -135,6 +136,28 @@ export function createBuilderDrawScheduleSchema(schedules, currentScheduleId) {
         })
       }
 
+      if (
+        data.separateHardwarePrice
+        && data.hardwareBillingDrawIndex === null
+      ) {
+        context.addIssue({
+          code: 'custom',
+          path: ['hardwareBillingDrawIndex'],
+          message: 'Select the draw that bills hardware.',
+        })
+      }
+
+      if (
+        data.hardwareBillingDrawIndex !== null
+        && data.hardwareBillingDrawIndex >= data.draws.length
+      ) {
+        context.addIssue({
+          code: 'custom',
+          path: ['hardwareBillingDrawIndex'],
+          message: 'Select one of the configured draws.',
+        })
+      }
+
       if (data.frequency === 'SEMIMONTHLY' && data.cutoffDays.length !== 2) {
         context.addIssue({
           code: 'custom',
@@ -185,6 +208,9 @@ export function createBuilderDrawScheduleSchema(schedules, currentScheduleId) {
     })
     .transform((data) => ({
       ...data,
+      hardwareBillingDrawIndex: data.separateHardwarePrice
+        ? data.hardwareBillingDrawIndex
+        : null,
       retentionPercentage: data.retentionEnabled ? data.retentionPercentage : 0,
       ocipWrapPercentage: data.ocipWrapEnabled ? data.ocipWrapPercentage : 0,
     }))

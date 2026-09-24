@@ -41,9 +41,10 @@ import {
   createJobPlanSchema,
   planOptionSchema,
 } from '../schemas/jobSequenceSheetSchema.js'
+import { useJobs } from '../context/useJobs.js'
 import JobModuleNavigation from './JobModuleNavigation.jsx'
 
-function PlanDialog({ plans, plan, onClose, onSave }) {
+function PlanDialog({ plans, plan, onClose, onSave, submitting }) {
   const schema = useMemo(
     () => createJobPlanSchema(plans, plan?.id),
     [plan?.id, plans],
@@ -64,7 +65,7 @@ function PlanDialog({ plans, plan, onClose, onSave }) {
   return (
     <Dialog
       open
-      onClose={onClose}
+      onClose={submitting ? undefined : onClose}
       fullWidth
       maxWidth="sm"
       component="form"
@@ -100,16 +101,16 @@ function PlanDialog({ plans, plan, onClose, onSave }) {
         </Stack>
       </DialogContent>
       <DialogActions sx={{ px: 3, pb: 2.5 }}>
-        <Button color="inherit" onClick={onClose}>Cancel</Button>
-        <Button type="submit" variant="contained" disableElevation>
-          {plan ? 'Save changes' : 'Add plan'}
+        <Button color="inherit" onClick={onClose} disabled={submitting}>Cancel</Button>
+        <Button type="submit" variant="contained" disableElevation disabled={submitting}>
+          {submitting ? 'Saving...' : plan ? 'Save changes' : 'Add plan'}
         </Button>
       </DialogActions>
     </Dialog>
   )
 }
 
-function OptionDialog({ plan, option, onClose, onSave }) {
+function OptionDialog({ plan, option, onClose, onSave, submitting }) {
   const {
     register,
     handleSubmit,
@@ -126,7 +127,7 @@ function OptionDialog({ plan, option, onClose, onSave }) {
   return (
     <Dialog
       open
-      onClose={onClose}
+      onClose={submitting ? undefined : onClose}
       fullWidth
       maxWidth="sm"
       component="form"
@@ -149,7 +150,7 @@ function OptionDialog({ plan, option, onClose, onSave }) {
             error={Boolean(errors.code)}
             helperText={errors.code?.message ?? `Example: ${plan.code}-OPT`}
             fullWidth
-            slotProps={{ htmlInput: { maxLength: 50 } }}
+            slotProps={{ htmlInput: { maxLength: 40 } }}
           />
           <TextField
             label="Option description"
@@ -164,9 +165,9 @@ function OptionDialog({ plan, option, onClose, onSave }) {
         </Stack>
       </DialogContent>
       <DialogActions sx={{ px: 3, pb: 2.5 }}>
-        <Button color="inherit" onClick={onClose}>Cancel</Button>
-        <Button type="submit" variant="contained" disableElevation>
-          {option ? 'Save changes' : 'Add option'}
+        <Button color="inherit" onClick={onClose} disabled={submitting}>Cancel</Button>
+        <Button type="submit" variant="contained" disableElevation disabled={submitting}>
+          {submitting ? 'Saving...' : option ? 'Save changes' : 'Add option'}
         </Button>
       </DialogActions>
     </Dialog>
@@ -219,6 +220,7 @@ function JobField({ label, value }) {
 function PlanCard({
   plan,
   position,
+  canManage,
   onAddOption,
   onEditPlan,
   onDeletePlan,
@@ -261,7 +263,7 @@ function PlanCard({
             </Box>
             <Box sx={{ minWidth: 0 }}>
               <Typography variant="overline" color="text.secondary" fontWeight={700}>
-                Plan code {plan.code}
+                Plan code: {plan.code}
               </Typography>
               <Typography variant="h6" fontWeight={800} sx={{ overflowWrap: 'anywhere' }}>
                 {plan.name || `Plan ${plan.code}`}
@@ -269,36 +271,38 @@ function PlanCard({
             </Box>
           </Stack>
 
-          <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: 'wrap' }}>
-            <Button
-              size="small"
-              variant="contained"
-              startIcon={<AddRoundedIcon />}
-              onClick={onAddOption}
-              disableElevation
-            >
-              Add option
-            </Button>
-            <Button
-              size="small"
-              variant="outlined"
-              color="inherit"
-              startIcon={<EditOutlinedIcon />}
-              onClick={onEditPlan}
-            >
-              Edit plan
-            </Button>
-            <Tooltip title="Delete plan">
-              <IconButton
+          {canManage && (
+            <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: 'wrap' }}>
+              <Button
                 size="small"
-                color="error"
-                aria-label={`Delete Plan ${plan.code}`}
-                onClick={onDeletePlan}
+                variant="contained"
+                startIcon={<AddRoundedIcon />}
+                onClick={onAddOption}
+                disableElevation
               >
-                <DeleteOutlineRoundedIcon fontSize="small" />
-              </IconButton>
-            </Tooltip>
-          </Stack>
+                Add option
+              </Button>
+              <Button
+                size="small"
+                variant="outlined"
+                color="inherit"
+                startIcon={<EditOutlinedIcon />}
+                onClick={onEditPlan}
+              >
+                Edit plan
+              </Button>
+              <Tooltip title="Delete plan">
+                <IconButton
+                  size="small"
+                  color="error"
+                  aria-label={`Delete Plan ${plan.code}`}
+                  onClick={onDeletePlan}
+                >
+                  <DeleteOutlineRoundedIcon fontSize="small" />
+                </IconButton>
+              </Tooltip>
+            </Stack>
+          )}
         </Stack>
       </Box>
 
@@ -401,30 +405,32 @@ function PlanCard({
                     {option.description}
                   </Typography>
                 </Box>
-                <Stack
-                  direction="row"
-                  spacing={0.5}
-                  sx={{ justifyContent: { xs: 'flex-start', md: 'flex-end' } }}
-                >
-                  <Button
-                    size="small"
-                    color="inherit"
-                    startIcon={<EditOutlinedIcon />}
-                    onClick={() => onEditOption(option)}
+                {canManage && (
+                  <Stack
+                    direction="row"
+                    spacing={0.5}
+                    sx={{ justifyContent: { xs: 'flex-start', md: 'flex-end' } }}
                   >
-                    Edit
-                  </Button>
-                  <Tooltip title="Delete option">
-                    <IconButton
+                    <Button
                       size="small"
-                      color="error"
-                      aria-label={`Delete option ${option.code} for Plan ${plan.code}`}
-                      onClick={() => onDeleteOption(option)}
+                      color="inherit"
+                      startIcon={<EditOutlinedIcon />}
+                      onClick={() => onEditOption(option)}
                     >
-                      <DeleteOutlineRoundedIcon fontSize="small" />
-                    </IconButton>
-                  </Tooltip>
-                </Stack>
+                      Edit
+                    </Button>
+                    <Tooltip title="Delete option">
+                      <IconButton
+                        size="small"
+                        color="error"
+                        aria-label={`Delete option ${option.code} for Plan ${plan.code}`}
+                        onClick={() => onDeleteOption(option)}
+                      >
+                        <DeleteOutlineRoundedIcon fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
+                  </Stack>
+                )}
               </Box>
             ))}
           </Box>
@@ -448,9 +454,11 @@ function PlanCard({
             <Typography variant="caption" color="text.secondary" component="div" sx={{ mb: 1.5 }}>
               Add the first option to complete this plan.
             </Typography>
-            <Button size="small" variant="outlined" startIcon={<AddRoundedIcon />} onClick={onAddOption}>
-              Add first option
-            </Button>
+            {canManage && (
+              <Button size="small" variant="outlined" startIcon={<AddRoundedIcon />} onClick={onAddOption}>
+                Add first option
+              </Button>
+            )}
           </Box>
         )}
       </Box>
@@ -458,11 +466,22 @@ function PlanCard({
   )
 }
 
-export default function JobDetails({ builderId, job, onBack, onChange }) {
+export default function JobDetails({ builderId, job, onBack }) {
+  const {
+    canManageJobs,
+    createJobPlan,
+    updateJobPlan,
+    deactivateJobPlan,
+    createPlanOption,
+    updatePlanOption,
+    deactivatePlanOption,
+  } = useJobs()
   const [planDialog, setPlanDialog] = useState(null)
   const [optionDialog, setOptionDialog] = useState(null)
   const [deleteTarget, setDeleteTarget] = useState(null)
+  const [submitting, setSubmitting] = useState(false)
   const [notice, setNotice] = useState(null)
+  const canManagePlans = canManageJobs && job.isActive
   const sequenceSheet = job.sequenceSheet ?? {
     name: 'Options Sequence Sheet',
     plans: [],
@@ -478,58 +497,46 @@ export default function JobDetails({ builderId, job, onBack, onChange }) {
   ).size
   const deletionBlocked = deleteDependencies.length > 0
 
-  const updatePlans = (nextPlans) => {
-    onChange({
-      ...job,
-      sequenceSheet: {
-        ...sequenceSheet,
-        plans: nextPlans,
-      },
-    })
-  }
-
-  const handlePlanSave = (form) => {
-    if (planDialog?.plan) {
-      updatePlans(
-        plans.map((plan) =>
-          plan.id === planDialog.plan.id ? { ...plan, ...form } : plan,
-        ),
-      )
-      setNotice({ severity: 'success', message: 'Plan updated.' })
-    } else {
-      updatePlans([...plans, { ...form, id: Date.now(), options: [] }])
-      setNotice({ severity: 'success', message: 'Plan added.' })
+  const handlePlanSave = async (form) => {
+    setSubmitting(true)
+    try {
+      if (planDialog?.plan) {
+        await updateJobPlan(job.id, planDialog.plan.id, form)
+        setNotice({ severity: 'success', message: 'Plan updated.' })
+      } else {
+        await createJobPlan(job.id, form)
+        setNotice({ severity: 'success', message: 'Plan added.' })
+      }
+      setPlanDialog(null)
+    } catch (saveError) {
+      setNotice({ severity: 'error', message: saveError.message })
+    } finally {
+      setSubmitting(false)
     }
-    setPlanDialog(null)
   }
 
-  const handleOptionSave = (form) => {
+  const handleOptionSave = async (form) => {
     const { plan, option } = optionDialog
-    updatePlans(
-      plans.map((item) => {
-        if (item.id !== plan.id) return item
-
-        const options = item.options ?? []
-        return {
-          ...item,
-          options: option
-            ? options.map((itemOption) =>
-                itemOption.id === option.id
-                  ? { ...itemOption, ...form }
-                  : itemOption,
-              )
-            : [...options, { ...form, id: Date.now() }],
-        }
-      }),
-    )
-    setNotice({
-      severity: 'success',
-      message: option ? 'Option updated.' : 'Option added.',
-    })
-    setOptionDialog(null)
+    setSubmitting(true)
+    try {
+      if (option) {
+        await updatePlanOption(job.id, plan.id, option.id, form)
+      } else {
+        await createPlanOption(job.id, plan.id, form)
+      }
+      setNotice({
+        severity: 'success',
+        message: option ? 'Option updated.' : 'Option added.',
+      })
+      setOptionDialog(null)
+    } catch (saveError) {
+      setNotice({ severity: 'error', message: saveError.message })
+    } finally {
+      setSubmitting(false)
+    }
   }
 
-  const handleDelete = () => {
+  const handleDelete = async () => {
     if (!deleteTarget || deletionBlocked) {
       setNotice({
         severity: 'error',
@@ -538,25 +545,25 @@ export default function JobDetails({ builderId, job, onBack, onChange }) {
       return
     }
 
-    if (deleteTarget.type === 'plan') {
-      updatePlans(plans.filter((plan) => plan.id !== deleteTarget.plan.id))
-      setNotice({ severity: 'success', message: 'Plan deleted.' })
-    } else {
-      updatePlans(
-        plans.map((plan) =>
-          plan.id === deleteTarget.plan.id
-            ? {
-                ...plan,
-                options: (plan.options ?? []).filter(
-                  (option) => option.id !== deleteTarget.option.id,
-                ),
-              }
-            : plan,
-        ),
-      )
-      setNotice({ severity: 'success', message: 'Option deleted.' })
+    setSubmitting(true)
+    try {
+      if (deleteTarget.type === 'plan') {
+        await deactivateJobPlan(job.id, deleteTarget.plan.id)
+        setNotice({ severity: 'success', message: 'Plan deleted.' })
+      } else {
+        await deactivatePlanOption(
+          job.id,
+          deleteTarget.plan.id,
+          deleteTarget.option.id,
+        )
+        setNotice({ severity: 'success', message: 'Option deleted.' })
+      }
+      setDeleteTarget(null)
+    } catch (deleteError) {
+      setNotice({ severity: 'error', message: deleteError.message })
+    } finally {
+      setSubmitting(false)
     }
-    setDeleteTarget(null)
   }
 
   return (
@@ -587,21 +594,28 @@ export default function JobDetails({ builderId, job, onBack, onChange }) {
               <Typography variant="h5" fontWeight={700} color="text.primary">
                 Job {job.code} · Plans &amp; options
               </Typography>
-              <Chip label="Active" size="small" color="success" variant="outlined" />
+              <Chip
+                label={job.isActive ? 'Active' : 'Inactive'}
+                size="small"
+                color={job.isActive ? 'success' : 'default'}
+                variant="outlined"
+              />
             </Stack>
             <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
               {job.builder} · {job.community}
             </Typography>
           </Box>
         </Stack>
-        <Button
-          variant="contained"
-          startIcon={<AddRoundedIcon />}
-          onClick={() => setPlanDialog({ plan: null })}
-          disableElevation
-        >
-          New plan
-        </Button>
+        {canManagePlans && (
+          <Button
+            variant="contained"
+            startIcon={<AddRoundedIcon />}
+            onClick={() => setPlanDialog({ plan: null })}
+            disableElevation
+          >
+            New plan
+          </Button>
+        )}
       </Box>
 
       <JobModuleNavigation
@@ -611,6 +625,14 @@ export default function JobDetails({ builderId, job, onBack, onChange }) {
       />
 
       <Box sx={{ p: { xs: 2.5, md: 4 } }}>
+        {!canManagePlans && (
+          <Alert severity="info" sx={{ mb: 2.5 }}>
+            {job.isActive
+              ? 'You can review Plans and Options, but your role cannot change them.'
+              : 'This Job is inactive. Its Plans, Options and prices are read-only.'}
+          </Alert>
+        )}
+
         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} sx={{ mb: 3 }}>
           <DetailMetric
             icon={<ApartmentRoundedIcon />}
@@ -697,6 +719,7 @@ export default function JobDetails({ builderId, job, onBack, onChange }) {
                   key={plan.id}
                   plan={plan}
                   position={index + 1}
+                  canManage={canManagePlans}
                   onAddOption={() => setOptionDialog({ plan, option: null })}
                   onEditPlan={() => setPlanDialog({ plan })}
                   onDeletePlan={() => setDeleteTarget({ type: 'plan', plan })}
@@ -706,14 +729,16 @@ export default function JobDetails({ builderId, job, onBack, onChange }) {
                   }
                 />
               ))}
-              <Button
-                variant="outlined"
-                startIcon={<AddRoundedIcon />}
-                onClick={() => setPlanDialog({ plan: null })}
-                sx={{ alignSelf: { xs: 'stretch', sm: 'flex-start' } }}
-              >
-                Add another plan
-              </Button>
+              {canManagePlans && (
+                <Button
+                  variant="outlined"
+                  startIcon={<AddRoundedIcon />}
+                  onClick={() => setPlanDialog({ plan: null })}
+                  sx={{ alignSelf: { xs: 'stretch', sm: 'flex-start' } }}
+                >
+                  Add another plan
+                </Button>
+              )}
             </Stack>
           ) : (
             <Box sx={{ py: 8, px: 3, textAlign: 'center' }}>
@@ -722,13 +747,15 @@ export default function JobDetails({ builderId, job, onBack, onChange }) {
               <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, mb: 2 }}>
                 Add the first plan, then organize its options underneath it.
               </Typography>
-              <Button
-                variant="outlined"
-                startIcon={<AddRoundedIcon />}
-                onClick={() => setPlanDialog({ plan: null })}
-              >
-                Add plan
-              </Button>
+              {canManagePlans && (
+                <Button
+                  variant="outlined"
+                  startIcon={<AddRoundedIcon />}
+                  onClick={() => setPlanDialog({ plan: null })}
+                >
+                  Add plan
+                </Button>
+              )}
             </Box>
           )}
         </Box>
@@ -741,6 +768,7 @@ export default function JobDetails({ builderId, job, onBack, onChange }) {
           plan={planDialog.plan}
           onClose={() => setPlanDialog(null)}
           onSave={handlePlanSave}
+          submitting={submitting}
         />
       )}
 
@@ -751,12 +779,13 @@ export default function JobDetails({ builderId, job, onBack, onChange }) {
           option={optionDialog.option}
           onClose={() => setOptionDialog(null)}
           onSave={handleOptionSave}
+          submitting={submitting}
         />
       )}
 
       <Dialog
         open={Boolean(deleteTarget)}
-        onClose={() => setDeleteTarget(null)}
+        onClose={submitting ? undefined : () => setDeleteTarget(null)}
         fullWidth
         maxWidth="xs"
       >
@@ -808,7 +837,11 @@ export default function JobDetails({ builderId, job, onBack, onChange }) {
           )}
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2.5 }}>
-          <Button color="inherit" onClick={() => setDeleteTarget(null)}>
+          <Button
+            color="inherit"
+            onClick={() => setDeleteTarget(null)}
+            disabled={submitting}
+          >
             {deletionBlocked ? 'Close' : 'Cancel'}
           </Button>
           <Button
@@ -816,9 +849,9 @@ export default function JobDetails({ builderId, job, onBack, onChange }) {
             variant="contained"
             onClick={handleDelete}
             disableElevation
-            disabled={deletionBlocked}
+            disabled={deletionBlocked || submitting}
           >
-            Delete
+            {submitting ? 'Deleting...' : 'Delete'}
           </Button>
         </DialogActions>
       </Dialog>

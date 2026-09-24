@@ -57,6 +57,31 @@ export function getDateOwnerLabel(value, short = false) {
   return short ? option.shortLabel : option.label
 }
 
+export function getFollowUpStatusMeta(followUp) {
+  if (!followUp?.status) return null
+  const rescheduledByJobsite = followUp.status === 'RESCHEDULED'
+    && String(followUp.note ?? '').includes('Jobsite Superintendent')
+  const values = {
+    SCHEDULED: { label: 'Awaiting response', color: 'info', tone: 'scheduled' },
+    CONFIRMED: { label: 'Confirmed', color: 'success', tone: 'confirmed' },
+    RESCHEDULED: {
+      label: rescheduledByJobsite ? 'Rescheduled by Jobsite' : 'Rescheduled',
+      color: 'warning',
+      tone: 'rescheduled',
+    },
+    RESCHEDULE_REQUESTED: { label: 'Date review pending', color: 'warning', tone: 'rescheduled' },
+    NO_RESPONSE: { label: 'No response', color: 'error', tone: 'no-response' },
+    ON_HOLD: { label: 'On hold', color: 'warning', tone: 'on-hold' },
+    COMPLETED: { label: 'Completed', color: 'success', tone: 'confirmed' },
+    CANCELLED: { label: 'Cancelled', color: 'default', tone: 'cancelled' },
+  }
+  return values[followUp.status] ?? {
+    label: String(followUp.status).replaceAll('_', ' ').toLowerCase(),
+    color: 'default',
+    tone: 'cancelled',
+  }
+}
+
 export function getActivityTone(activityType, orderMaterial = false) {
   if (activityType === 'EXT' && orderMaterial) return 'ext-order'
   return activityTypeMap[activityType]?.tone ?? 'ext'
@@ -97,6 +122,8 @@ export function getLotsLabel(lotStart, lotEnd, lotNumbers = []) {
 
 export function createEmptyProductionDraft(date = new Date().toISOString().split('T')[0]) {
   return {
+    activityId: null,
+    followUpStates: {},
     calendarType: 'PRODUCTION',
     jobId: '',
     phaseId: '',
@@ -108,6 +135,7 @@ export function createEmptyProductionDraft(date = new Date().toISOString().split
     lotStart: 1,
     lotEnd: 1,
     lotNumbers: [],
+    lotIds: [],
     foreman: '',
     superintendent: '',
     notes: '',
@@ -115,32 +143,38 @@ export function createEmptyProductionDraft(date = new Date().toISOString().split
     extDateOwner: '',
     extDateNote: '',
     extDateHistory: [],
+    extScheduleId: null,
     extOrderMaterial: false,
     extInstallOnly: false,
     extInstallDate: '',
     extInstallDateOwner: '',
     extInstallDateNote: '',
     extInstallDateHistory: [],
+    extInstallScheduleId: null,
     dmShutters: false,
     shutterDate: '',
     shutterDateOwner: '',
     shutterDateNote: '',
     shutterDateHistory: [],
+    shutterScheduleId: null,
     dmDate: date,
     dmDateOwner: '',
     dmDateNote: '',
     dmDateHistory: [],
+    dmScheduleId: null,
     dmInstallOnly: false,
     dmInstallDate: '',
     dmInstallDateOwner: '',
     dmInstallDateNote: '',
     dmInstallDateHistory: [],
+    dmInstallScheduleId: null,
     dmSplitPhase: false,
     dmSplitParts: [],
     hwDate: date,
     hwDateOwner: '',
     hwDateNote: '',
     hwDateHistory: [],
+    hwScheduleId: null,
     hwSplitPhase: false,
     hwSplitParts: [],
     hwLockUp: false,
@@ -148,6 +182,7 @@ export function createEmptyProductionDraft(date = new Date().toISOString().split
     hwLockUpDateOwner: '',
     hwLockUpDateNote: '',
     hwLockUpDateHistory: [],
+    hwLockUpScheduleId: null,
   }
 }
 
@@ -156,6 +191,7 @@ export const emptyCalendarDraft = createEmptyProductionDraft()
 function buildProductionSchedule(values) {
   return {
     EXT: {
+      id: values.extScheduleId,
       date: values.extDate,
       dateOwner: values.extDateOwner,
       note: values.extDateNote,
@@ -166,10 +202,12 @@ function buildProductionSchedule(values) {
       installDateOwner: values.extInstallDateOwner,
       installDateNote: values.extInstallDateNote,
       installDateHistory: values.extInstallDateHistory,
+      installScheduleId: values.extInstallScheduleId,
       splitPhase: false,
       splitParts: [],
     },
     SHUTTER: {
+      id: values.shutterScheduleId,
       enabled: values.dmShutters,
       date: values.shutterDate,
       dateOwner: values.shutterDateOwner,
@@ -182,6 +220,7 @@ function buildProductionSchedule(values) {
       splitParts: [],
     },
     DM: {
+      id: values.dmScheduleId,
       date: values.dmDate,
       dateOwner: values.dmDateOwner,
       note: values.dmDateNote,
@@ -192,11 +231,13 @@ function buildProductionSchedule(values) {
       installDateOwner: values.dmInstallDateOwner,
       installDateNote: values.dmInstallDateNote,
       installDateHistory: values.dmInstallDateHistory,
+      installScheduleId: values.dmInstallScheduleId,
       splitPhase: values.dmSplitPhase,
       splitParts: values.dmSplitParts,
       shutters: values.dmShutters,
     },
     HW: {
+      id: values.hwScheduleId,
       date: values.hwDate,
       dateOwner: values.hwDateOwner,
       note: values.hwDateNote,
@@ -211,6 +252,7 @@ function buildProductionSchedule(values) {
       lockUpDateOwner: values.hwLockUpDateOwner,
       lockUpDateNote: values.hwLockUpDateNote,
       lockUpDateHistory: values.hwLockUpDateHistory,
+      lockUpScheduleId: values.hwLockUpScheduleId,
     },
   }
 }
@@ -380,6 +422,7 @@ export function createProductionCalendarEvents(values, groupId, stamp = Date.now
   const productionSchedule = buildProductionSchedule(values)
   const commonProps = {
     calendarType: 'PRODUCTION',
+    activityId: values.activityId ?? null,
     groupId,
     jobId: values.jobId,
     phaseId: values.phaseId,
@@ -391,11 +434,13 @@ export function createProductionCalendarEvents(values, groupId, stamp = Date.now
     lotStart: values.lotStart,
     lotEnd: values.lotEnd,
     lotNumbers: values.lotNumbers,
+    lotIds: values.lotIds ?? [],
     phaseLotNumbers: values.lotNumbers,
     foreman: values.foreman,
     superintendent: values.superintendent,
     notes: values.notes,
     productionSchedule,
+    followUpStates: values.followUpStates ?? {},
   }
 
   return activityTypeOptions.flatMap((type) => {
@@ -413,12 +458,15 @@ export function createProductionCalendarEvents(values, groupId, stamp = Date.now
         history: stage.history,
       }]
     const stageEvents = schedules.map((schedule, index) => {
+      const scheduleId = schedule.scheduleId ?? schedule.id ?? stage.id ?? null
       const scheduleLotNumbers = values.lotNumbers.filter((lot) => (
         Number(lot) >= Number(schedule.lotStart) && Number(lot) <= Number(schedule.lotEnd)
       ))
 
       return {
-        id: `${groupId}-${type.value.toLowerCase()}-${stamp}-${index}`,
+        id: scheduleId
+          ? `production-schedule-${scheduleId}`
+          : `${groupId}-${type.value.toLowerCase()}-${stamp}-${index}`,
         groupId,
         title: `${type.label} • ${getLotsLabel(schedule.lotStart, schedule.lotEnd, scheduleLotNumbers)}`,
         start: schedule.date,
@@ -426,6 +474,8 @@ export function createProductionCalendarEvents(values, groupId, stamp = Date.now
         extendedProps: {
           ...commonProps,
           activityType: type.value,
+          scheduleId,
+          followUp: values.followUpStates?.[String(scheduleId)] ?? null,
           dateOwner: schedule.dateOwner ?? stage.dateOwner,
           dateNote: schedule.note ?? stage.note ?? '',
           dateHistory: schedule.history ?? stage.history ?? [],
@@ -446,7 +496,9 @@ export function createProductionCalendarEvents(values, groupId, stamp = Date.now
 
     if (stage.installOnly) {
       stageEvents.push({
-        id: `${groupId}-${type.value.toLowerCase()}-install-${stamp}`,
+        id: stage.installScheduleId
+          ? `production-schedule-${stage.installScheduleId}`
+          : `${groupId}-${type.value.toLowerCase()}-install-${stamp}`,
         groupId,
         title: `${type.label} INSTALL ONLY • ${getLotsLabel(values.lotStart, values.lotEnd, values.lotNumbers)}`,
         start: stage.installDate,
@@ -454,6 +506,8 @@ export function createProductionCalendarEvents(values, groupId, stamp = Date.now
         extendedProps: {
           ...commonProps,
           activityType: type.value,
+          scheduleId: stage.installScheduleId ?? null,
+          followUp: values.followUpStates?.[String(stage.installScheduleId)] ?? null,
           dateOwner: stage.installDateOwner,
           dateNote: stage.installDateNote ?? '',
           dateHistory: stage.installDateHistory ?? [],
@@ -473,7 +527,9 @@ export function createProductionCalendarEvents(values, groupId, stamp = Date.now
 
     if (type.value === 'HW' && stage.lockUp) {
       stageEvents.push({
-        id: `${groupId}-${type.value.toLowerCase()}-lock-up-${stamp}`,
+        id: stage.lockUpScheduleId
+          ? `production-schedule-${stage.lockUpScheduleId}`
+          : `${groupId}-${type.value.toLowerCase()}-lock-up-${stamp}`,
         groupId,
         title: `${type.label} LOCK UP • ${getLotsLabel(values.lotStart, values.lotEnd, values.lotNumbers)}`,
         start: stage.lockUpDate,
@@ -481,6 +537,8 @@ export function createProductionCalendarEvents(values, groupId, stamp = Date.now
         extendedProps: {
           ...commonProps,
           activityType: type.value,
+          scheduleId: stage.lockUpScheduleId ?? null,
+          followUp: values.followUpStates?.[String(stage.lockUpScheduleId)] ?? null,
           dateOwner: stage.lockUpDateOwner,
           dateNote: stage.lockUpDateNote ?? '',
           dateHistory: stage.lockUpDateHistory ?? [],
@@ -511,6 +569,8 @@ export function createDraftFromProductionEvent(event) {
 
   return {
     ...createEmptyProductionDraft(schedule.EXT.date),
+    activityId: props.activityId ?? null,
+    followUpStates: props.followUpStates ?? {},
     jobId: props.jobId,
     phaseId: props.phaseId,
     jobCode: props.jobCode,
@@ -521,6 +581,7 @@ export function createDraftFromProductionEvent(event) {
     lotStart: phaseLotNumbers[0] ?? props.lotStart,
     lotEnd: phaseLotNumbers.at(-1) ?? props.lotEnd,
     lotNumbers: phaseLotNumbers,
+    lotIds: props.lotIds ?? [],
     foreman: props.foreman ?? '',
     superintendent: props.superintendent ?? '',
     notes: props.notes ?? '',
@@ -528,26 +589,31 @@ export function createDraftFromProductionEvent(event) {
     extDateOwner: schedule.EXT.dateOwner ?? '',
     extDateNote: schedule.EXT.note ?? '',
     extDateHistory: (schedule.EXT.history ?? []).map((entry) => ({ ...entry })),
+    extScheduleId: schedule.EXT.id ?? null,
     extOrderMaterial: Boolean(schedule.EXT.orderMaterial),
     extInstallOnly: Boolean(schedule.EXT.installOnly),
     extInstallDate: schedule.EXT.installDate ?? '',
     extInstallDateOwner: schedule.EXT.installDateOwner ?? '',
     extInstallDateNote: schedule.EXT.installDateNote ?? '',
     extInstallDateHistory: (schedule.EXT.installDateHistory ?? []).map((entry) => ({ ...entry })),
+    extInstallScheduleId: schedule.EXT.installScheduleId ?? null,
     dmShutters: Boolean(schedule.DM.shutters ?? shutterSchedule.enabled),
     shutterDate: shutterSchedule.date ?? '',
     shutterDateOwner: shutterSchedule.dateOwner ?? '',
     shutterDateNote: shutterSchedule.note ?? '',
     shutterDateHistory: (shutterSchedule.history ?? []).map((entry) => ({ ...entry })),
+    shutterScheduleId: shutterSchedule.id ?? null,
     dmDate: schedule.DM.date,
     dmDateOwner: schedule.DM.dateOwner ?? '',
     dmDateNote: schedule.DM.note ?? '',
     dmDateHistory: (schedule.DM.history ?? []).map((entry) => ({ ...entry })),
+    dmScheduleId: schedule.DM.id ?? null,
     dmInstallOnly: Boolean(schedule.DM.installOnly),
     dmInstallDate: schedule.DM.installDate ?? '',
     dmInstallDateOwner: schedule.DM.installDateOwner ?? '',
     dmInstallDateNote: schedule.DM.installDateNote ?? '',
     dmInstallDateHistory: (schedule.DM.installDateHistory ?? []).map((entry) => ({ ...entry })),
+    dmInstallScheduleId: schedule.DM.installScheduleId ?? null,
     dmSplitPhase: Boolean(schedule.DM.splitPhase),
     dmSplitParts: (schedule.DM.splitParts ?? []).map((part) => ({
       ...part,
@@ -557,6 +623,7 @@ export function createDraftFromProductionEvent(event) {
     hwDateOwner: schedule.HW.dateOwner ?? '',
     hwDateNote: schedule.HW.note ?? '',
     hwDateHistory: (schedule.HW.history ?? []).map((entry) => ({ ...entry })),
+    hwScheduleId: schedule.HW.id ?? null,
     hwSplitPhase: Boolean(schedule.HW.splitPhase),
     hwSplitParts: (schedule.HW.splitParts ?? []).map((part) => ({
       ...part,
@@ -567,60 +634,6 @@ export function createDraftFromProductionEvent(event) {
     hwLockUpDateOwner: schedule.HW.lockUpDateOwner ?? '',
     hwLockUpDateNote: schedule.HW.lockUpDateNote ?? '',
     hwLockUpDateHistory: (schedule.HW.lockUpDateHistory ?? []).map((entry) => ({ ...entry })),
+    hwLockUpScheduleId: schedule.HW.lockUpScheduleId ?? null,
   }
 }
-
-const demoActivityOne = {
-  ...createEmptyProductionDraft('2026-08-10'),
-  jobId: 1,
-  phaseId: 2102,
-  jobCode: '1307',
-  builder: 'Trumark Homes',
-  community: 'Andara',
-  phase: 'Phase 2',
-  building: 'Building 15',
-  lotStart: 66,
-  lotEnd: 70,
-  lotNumbers: ['66', '67', '68', '69', '70'],
-  foreman: 'Lauren Mitchell',
-  superintendent: 'Daniel Torres',
-  notes: 'Production schedule for the full phase.',
-  extDate: '2026-08-10',
-  extDateOwner: 'SUPERVISOR',
-  extOrderMaterial: true,
-  dmShutters: true,
-  shutterDate: '2026-08-04',
-  shutterDateOwner: 'TENTATIVE',
-  dmDate: '2026-08-11',
-  dmDateOwner: 'JOBSITE_SUPERINTENDENT',
-  hwDate: '2026-08-12',
-  hwDateOwner: 'TENTATIVE',
-}
-
-const demoActivityTwo = {
-  ...createEmptyProductionDraft('2026-08-17'),
-  jobId: 1,
-  phaseId: 2101,
-  jobCode: '1307',
-  builder: 'Trumark Homes',
-  community: 'Andara',
-  phase: 'Phase 3',
-  building: 'Building 5',
-  lotStart: 18,
-  lotEnd: 22,
-  lotNumbers: ['18', '19', '20', '21', '22'],
-  foreman: 'Lauren Mitchell',
-  superintendent: 'Daniel Torres',
-  notes: 'Second production sequence for Job 1307.',
-  extDate: '2026-08-17',
-  extDateOwner: 'TENTATIVE',
-  dmDate: '2026-08-18',
-  dmDateOwner: 'SUPERVISOR',
-  hwDate: '2026-08-19',
-  hwDateOwner: 'JOBSITE_SUPERINTENDENT',
-}
-
-export const initialCalendarEvents = [
-  ...createProductionCalendarEvents(demoActivityOne, 'production-1307-2102', 101),
-  ...createProductionCalendarEvents(demoActivityTwo, 'production-1307-2101', 102),
-]

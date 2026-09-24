@@ -45,6 +45,7 @@ export function getPhasePatch(job, phase, people = [], builderContacts = []) {
     lotStart: Number(lotNumbers[0]) || 1,
     lotEnd: Number(lotNumbers.at(-1)) || 1,
     lotNumbers,
+    lotIds: lots.map((lot) => Number(lot.id)),
     foreman: supervisor?.name ?? '',
     superintendent: superintendent?.name ?? '',
     dmSplitPhase: false,

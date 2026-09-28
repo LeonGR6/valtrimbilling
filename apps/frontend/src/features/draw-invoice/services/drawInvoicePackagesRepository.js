@@ -68,17 +68,27 @@ const DRAW_COLUMNS = [
 
 const OPTION_COLUMNS = [
   'package_id',
+  'billing_lot_id',
   'lot_id',
   'option_id',
   'draw_id',
   'option_code',
   'option_name',
   'option_price',
+  'phase_id',
+  'phase_code',
+  'building',
+  'lot_number',
+  'plan_code',
 ].join(', ')
 
 const SETUP_COLUMNS = [
   'id',
   'options_billing_draw_number',
+  'frequency',
+  'cutoff_day',
+  'cutoff_days',
+  'cutoff_weekday',
 ].join(', ')
 
 const CORRECTION_COLUMNS = [
@@ -108,6 +118,9 @@ function throwRepositoryError(error) {
   }
 
   if (error.code === '23505') {
+    if (error.message?.includes('Option')) {
+      throw new Error(error.message, { cause: error })
+    }
     throw new Error(error.message || 'One or more Lot / Draw cells belong to another Package.', {
       cause: error,
     })

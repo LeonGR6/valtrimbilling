@@ -2,12 +2,44 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(37);
+select plan(43);
 
 select has_table(
   'valtrim',
   'billing_setup_versions',
   'Billing setup versions table is available'
+);
+select hasnt_column(
+  'valtrim',
+  'billing_setup_versions',
+  'submission_day',
+  'Builder setup versions no longer store a submission day'
+);
+select hasnt_column(
+  'valtrim',
+  'billing_setup_versions',
+  'submission_offset_days',
+  'Builder setup versions no longer store a submission offset'
+);
+select hasnt_column(
+  'valtrim',
+  'billing_setup_versions',
+  'work_accepted_through',
+  'Work accepted through is fixed to the cutoff date'
+);
+select hasnt_column(
+  'valtrim',
+  'billing_setup_versions',
+  'invoice_date_rule',
+  'Invoice date is fixed to the cutoff date'
+);
+select ok(
+  to_regtype('valtrim.work_accepted_through') is null,
+  'The retired work accepted through enum is removed'
+);
+select ok(
+  to_regtype('valtrim.invoice_date_rule') is null,
+  'The retired invoice date rule enum is removed'
 );
 select has_table('valtrim', 'billing_draws', 'Billing draws table is available');
 select has_table(
@@ -198,12 +230,8 @@ select valtrim.save_billing_setup_version(
     "optionsBillingDrawNumber": 2,
     "frequency": "MONTHLY",
     "cutoffDay": 20,
-    "submissionDay": 25,
     "cutoffDays": [],
     "cutoffWeekday": null,
-    "submissionOffsetDays": null,
-    "workAcceptedThrough": "CUTOFF",
-    "invoiceDateRule": "SUBMISSION",
     "paymentTermsDays": 30,
     "retentionEnabled": true,
     "retentionPercentage": 5,
@@ -277,12 +305,8 @@ set second_version_id = (
       "optionsBillingDrawNumber": 1,
       "frequency": "WEEKLY",
       "cutoffDay": null,
-      "submissionDay": null,
       "cutoffDays": [],
       "cutoffWeekday": 5,
-      "submissionOffsetDays": 2,
-      "workAcceptedThrough": "SUBMISSION",
-      "invoiceDateRule": "CUTOFF",
       "paymentTermsDays": 45,
       "retentionEnabled": true,
       "retentionPercentage": 5,

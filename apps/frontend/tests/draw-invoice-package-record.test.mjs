@@ -3,6 +3,7 @@ import test from 'node:test'
 import {
   DRAW_PACKAGE_STATUSES,
   canCorrectDrawPackage,
+  resolveBillingCutoffDate,
   toCancelDrawPackageRpc,
   toCreateDrawPackageRpc,
   toDrawInvoicePackage,
@@ -10,6 +11,10 @@ import {
   toPackageStatusRpc,
   toTransferDrawPackageRpc,
 } from '../src/features/draw-invoice/services/drawInvoicePackageRecord.js'
+import {
+  formatBillingPeriod,
+  formatLongDate,
+} from '../src/features/draw-invoice/utils/drawInvoiceFormatters.js'
 
 const packageRow = {
   id: 91,
@@ -77,7 +82,13 @@ test('maps persisted package, invoice and calculated snapshots to the UI model',
         option_price: '125',
       },
     ],
-    { options_billing_draw_number: 2 },
+    {
+      options_billing_draw_number: 2,
+      frequency: 'MONTHLY',
+      cutoff_day: 20,
+      cutoff_days: [],
+      cutoff_weekday: null,
+    },
   )
 
   assert.equal(record.id, 91)
@@ -87,6 +98,7 @@ test('maps persisted package, invoice and calculated snapshots to the UI model',
   assert.deepEqual(record.drawIndexes, [1])
   assert.deepEqual(record.selections, [{ phaseId: 21, lotId: 41, drawIndex: 1 }])
   assert.equal(record.optionsBillingDrawIndex, 1)
+  assert.equal(record.billingCutoffDate, '2026-09-20')
   assert.equal(record.persistedInvoice.grossAmount, 1125.5)
   assert.equal(record.persistedInvoice.netAmount, 1046.71)
   assert.deepEqual(record.persistedOptionLines[0], {
@@ -101,8 +113,65 @@ test('maps persisted package, invoice and calculated snapshots to the UI model',
     optionCode: 'OPT-1',
     description: 'Door upgrade',
     price: 125,
+    billingDrawIndex: 1,
     issue: null,
   })
+})
+
+test('resolves the cutoff date from the Package billing setup snapshot', () => {
+  const monthly = {
+    frequency: 'MONTHLY',
+    cutoff_day: 20,
+    cutoff_days: [],
+    cutoff_weekday: null,
+  }
+  const semimonthly = {
+    frequency: 'SEMIMONTHLY',
+    cutoff_day: null,
+    cutoff_days: [10, 25],
+    cutoff_weekday: null,
+  }
+  const weekly = {
+    frequency: 'WEEKLY',
+    cutoff_day: null,
+    cutoff_days: [],
+    cutoff_weekday: 5,
+  }
+
+  assert.equal(resolveBillingCutoffDate('2026-09-11', monthly), '2026-09-20')
+  assert.equal(resolveBillingCutoffDate('2026-09-20', monthly), '2026-09-20')
+  assert.equal(resolveBillingCutoffDate('2026-09-21', monthly), '2026-10-20')
+  assert.equal(
+    resolveBillingCutoffDate('2026-09-11', semimonthly),
+    '2026-09-25',
+  )
+  assert.equal(
+    resolveBillingCutoffDate('2026-09-26', semimonthly),
+    '2026-10-10',
+  )
+  assert.equal(resolveBillingCutoffDate('2026-09-11', weekly), '2026-09-11')
+  assert.equal(resolveBillingCutoffDate('2026-09-12', weekly), '2026-09-18')
+})
+
+test('monthly cutoff dates clamp to the last day of a short month', () => {
+  assert.equal(resolveBillingCutoffDate('2026-09-20', {
+    frequency: 'MONTHLY',
+    cutoff_day: 31,
+  }), '2026-09-30')
+})
+
+test('Billing Period displays the resolved cutoff date', () => {
+  assert.equal(formatBillingPeriod({
+    billingCutoffDate: '2026-09-20',
+    billingPeriodStart: '2026-09-01',
+    billingPeriodEnd: '2026-09-30',
+  }), 'Sep 20, 2026')
+  assert.equal(formatBillingPeriod({ billingCutoffDate: null }), 'Not set')
+})
+
+test('Package creation timestamps use the requested long date format', () => {
+  assert.equal(formatLongDate('2026-10-20T23:45:00Z'), 'Oct 20, 2026')
+  assert.equal(formatLongDate(null), '—')
 })
 
 test('builds Package creation RPC values from UI draw indexes', () => {
@@ -120,6 +189,126 @@ test('builds Package creation RPC values from UI draw indexes', () => {
       { lot_id: 42, draw_number: 3 },
       { lot_id: 41, draw_number: 2 },
     ],
+  })
+})
+
+test('adds explicit Option ids only to the configured billing Draw cells', () => {
+  assert.deepEqual(toCreateDrawPackageRpc({
+    jobId: '11',
+    selections: [
+      { lotId: '41', drawIndex: 0 },
+      { lotId: 41, drawIndex: 1 },
+      { lotId: 42, drawIndex: 1 },
+    ],
+    optionSelections: [
+      { lotId: 40, optionId: 70 },
+      { lotId: 41, optionId: 63 },
+      { lotId: 41, optionId: 61 },
+      { lotId: 41, optionId: 61 },
+    ],
+    optionsBillingDrawIndex: 1,
+  }), {
+    p_job_id: 11,
+    p_selections: [
+      { lot_id: 41, draw_number: 1 },
+      {
+        lot_id: 41,
+        draw_number: 2,
+        package_options: [
+          { lot_id: 40, option_id: 70 },
+          { lot_id: 41, option_id: 61 },
+          { lot_id: 41, option_id: 63 },
+        ],
+      },
+      { lot_id: 42, draw_number: 2 },
+    ],
+  })
+})
+
+test('an Options billing Draw anchor explicitly supports charging no Options', () => {
+  assert.deepEqual(toCreateDrawPackageRpc({
+    jobId: 11,
+    selections: [
+      { lotId: 41, drawIndex: 1 },
+      { lotId: 42, drawIndex: 1 },
+    ],
+    optionSelections: [],
+    optionsBillingDrawIndex: 1,
+  }), {
+    p_job_id: 11,
+    p_selections: [
+      { lot_id: 41, draw_number: 2, package_options: [] },
+      { lot_id: 42, draw_number: 2 },
+    ],
+  })
+})
+
+test('a later Draw can be the Package Option charge anchor', () => {
+  assert.deepEqual(toCreateDrawPackageRpc({
+    jobId: 11,
+    selections: [
+      { lotId: 41, drawIndex: 0 },
+      { lotId: 42, drawIndex: 2 },
+    ],
+    optionSelections: [{ lotId: 40, optionId: 70 }],
+    optionsBillingDrawIndex: 1,
+  }), {
+    p_job_id: 11,
+    p_selections: [
+      { lot_id: 41, draw_number: 1 },
+      {
+        lot_id: 42,
+        draw_number: 3,
+        package_options: [{ lot_id: 40, option_id: 70 }],
+      },
+    ],
+  })
+})
+
+test('maps a deferred Option from its own immutable Lot snapshot', () => {
+  const record = toDrawInvoicePackage(
+    packageRow,
+    { id: 101, status: 'DRAFT', paid_amount: '0' },
+    [{
+      phase_id: 21,
+      phase_code: '1',
+      building: 'P1',
+      lot_id: 42,
+      draw_id: 52,
+      lot_number: '20',
+      plan_code: 'B',
+      draw_number: 3,
+    }],
+    [{
+      lot_id: 41,
+      billing_lot_id: 42,
+      option_id: 61,
+      draw_id: 52,
+      option_code: 'OPT-1',
+      option_name: 'Door upgrade',
+      option_price: '125',
+      phase_id: 20,
+      phase_code: 'A',
+      building: 'Building 9',
+      lot_number: '19',
+      plan_code: '2A',
+    }],
+  )
+
+  assert.deepEqual(record.persistedOptionLines[0], {
+    id: '41:61',
+    phaseId: 20,
+    phaseCode: 'A',
+    building: 'Building 9',
+    lotId: 41,
+    lotNumber: '19',
+    planCode: '2A',
+    optionId: 61,
+    optionCode: 'OPT-1',
+    description: 'Door upgrade',
+    price: 125,
+    billingDrawIndex: 2,
+    issue: null,
   })
 })
 

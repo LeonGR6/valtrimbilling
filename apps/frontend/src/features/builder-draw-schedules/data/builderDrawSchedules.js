@@ -26,17 +26,6 @@ export const weekdayOptions = [
   { value: 6, label: 'Saturday' },
 ]
 
-export const workAcceptedOptions = [
-  { value: 'CUTOFF', label: 'Cutoff date' },
-  { value: 'SUBMISSION', label: 'Submission date' },
-]
-
-export const invoiceDateOptions = [
-  { value: 'SUBMISSION', label: 'Submission date' },
-  { value: 'CUTOFF', label: 'Cutoff date' },
-  { value: 'MONTH_END', label: 'End of month' },
-]
-
 export const invoiceLineFormatOptions = [
   { value: 'LOT_SCOPE', label: 'One line per lot and scope' },
   { value: 'LOT', label: 'One line per lot' },
@@ -54,12 +43,8 @@ export const defaultBillingSettings = {
   optionsBillingDrawIndex: null,
   frequency: 'MONTHLY',
   cutoffDay: 20,
-  submissionDay: 25,
   cutoffDays: [10, 25],
   cutoffWeekday: 0,
-  submissionOffsetDays: 2,
-  workAcceptedThrough: 'CUTOFF',
-  invoiceDateRule: 'SUBMISSION',
   paymentTermsDays: 30,
   retentionEnabled: false,
   retentionPercentage: 0,
@@ -88,7 +73,6 @@ export const initialBuilderDrawSchedules = [
     ...defaultBillingSettings,
     frequency: 'WEEKLY',
     cutoffWeekday: 0,
-    submissionOffsetDays: 2,
     paymentTermsDays: 21,
     retentionEnabled: true,
     retentionPercentage: 5,
@@ -112,7 +96,6 @@ export const initialBuilderDrawSchedules = [
     ...defaultBillingSettings,
     frequency: 'MONTHLY',
     cutoffDay: 20,
-    submissionDay: 25,
     paymentTermsDays: 30,
     retentionEnabled: true,
     retentionPercentage: 10,
@@ -134,8 +117,6 @@ export const initialBuilderDrawSchedules = [
     ...defaultBillingSettings,
     frequency: 'SEMIMONTHLY',
     cutoffDays: [10, 25],
-    submissionOffsetDays: 3,
-    invoiceDateRule: 'CUTOFF',
     paymentTermsDays: 45,
     retentionEnabled: true,
     retentionPercentage: 5,

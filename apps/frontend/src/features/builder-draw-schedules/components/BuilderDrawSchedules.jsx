@@ -41,13 +41,11 @@ import {
   defaultBillingSettings,
   frequencyLabels,
   frequencyOptions,
-  invoiceDateOptions,
   invoiceLineFormatLabels,
   invoiceLineFormatOptions,
   MAX_DRAW_COUNT,
   MIN_DRAW_COUNT,
   weekdayOptions,
-  workAcceptedOptions,
 } from '../data/builderDrawSchedules.js'
 import { createBuilderDrawScheduleSchema } from '../schemas/builderDrawScheduleSchema.js'
 import {
@@ -102,10 +100,8 @@ function SchedulePreview({ control }) {
       {
         ...values,
         cutoffDay: Number(values.cutoffDay) || 1,
-        submissionDay: Number(values.submissionDay) || 1,
         cutoffWeekday: Number(values.cutoffWeekday) || 0,
         cutoffDays: (values.cutoffDays ?? []).map(Number).filter(Boolean),
-        submissionOffsetDays: Number(values.submissionOffsetDays) || 0,
         paymentTermsDays: Number(values.paymentTermsDays) || 0,
       },
       3,
@@ -133,9 +129,6 @@ function SchedulePreview({ control }) {
               Cutoff {formatPeriodDate(period.cutoffDate)}
             </Typography>
             <Typography variant="caption" color="text.secondary">
-              Due {formatPeriodDate(period.submissionDate)}
-            </Typography>
-            <Typography variant="caption" color="text.secondary">
               Invoice {formatPeriodDate(period.invoiceDate)}
             </Typography>
             <Typography variant="caption" color="text.secondary">
@@ -156,6 +149,7 @@ function BuilderDrawScheduleDialog({
   onSave,
   submitting,
 }) {
+  const [anyDate, setAnyDate] = useState(false)
   const schema = useMemo(
     () => createBuilderDrawScheduleSchema(schedules, schedule?.id),
     [schedule?.id, schedules],
@@ -594,24 +588,30 @@ function BuilderDrawScheduleDialog({
           />
 
           {frequency === 'MONTHLY' && (
-            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
+            <Stack
+              direction={{ xs: 'column', sm: 'row' }}
+              spacing={2}
+              sx={{ alignItems: { xs: 'stretch', sm: 'center' } }}
+            >
               <TextField
-                label="Cutoff day"
+                label="Cutoff date"
                 type="number"
                 {...register('cutoffDay')}
+                disabled={anyDate}
                 error={Boolean(errors.cutoffDay)}
                 helperText={errors.cutoffDay?.message ?? 'Day of the month'}
                 fullWidth
                 slotProps={{ htmlInput: { min: 1, max: 31, step: 1 } }}
               />
-              <TextField
-                label="Submission due day"
-                type="number"
-                {...register('submissionDay')}
-                error={Boolean(errors.submissionDay)}
-                helperText={errors.submissionDay?.message ?? 'Day of the month'}
-                fullWidth
-                slotProps={{ htmlInput: { min: 1, max: 31, step: 1 } }}
+              <FormControlLabel
+                label="Any date"
+                sx={{ minWidth: { sm: 180 } }}
+                control={(
+                  <Checkbox
+                    checked={anyDate}
+                    onChange={(_, checked) => setAnyDate(checked)}
+                  />
+                )}
               />
             </Stack>
           )}
@@ -619,7 +619,7 @@ function BuilderDrawScheduleDialog({
           {frequency === 'SEMIMONTHLY' && (
             <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
               <TextField
-                label="First cutoff day"
+                label="First cutoff date"
                 type="number"
                 {...register('cutoffDays.0')}
                 error={Boolean(errors.cutoffDays)}
@@ -628,7 +628,7 @@ function BuilderDrawScheduleDialog({
                 slotProps={{ htmlInput: { min: 1, max: 31, step: 1 } }}
               />
               <TextField
-                label="Second cutoff day"
+                label="Second cutoff date"
                 type="number"
                 {...register('cutoffDays.1')}
                 error={Boolean(errors.cutoffDays)}
@@ -666,45 +666,17 @@ function BuilderDrawScheduleDialog({
           )}
 
           <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
-            <Controller
-              name="workAcceptedThrough"
-              control={control}
-              render={({ field }) => (
-                <FormControl fullWidth>
-                  <InputLabel id="setup-accepted-label">Work accepted through</InputLabel>
-                  <Select
-                    {...field}
-                    labelId="setup-accepted-label"
-                    label="Work accepted through"
-                  >
-                    {workAcceptedOptions.map((option) => (
-                      <MenuItem key={option.value} value={option.value}>
-                        {option.label}
-                      </MenuItem>
-                    ))}
-                  </Select>
-                </FormControl>
-              )}
+            <TextField
+              label="Work accepted through"
+              value="Cutoff date"
+              disabled
+              fullWidth
             />
-            <Controller
-              name="invoiceDateRule"
-              control={control}
-              render={({ field }) => (
-                <FormControl fullWidth>
-                  <InputLabel id="setup-invoice-date-label">Invoice date</InputLabel>
-                  <Select
-                    {...field}
-                    labelId="setup-invoice-date-label"
-                    label="Invoice date"
-                  >
-                    {invoiceDateOptions.map((option) => (
-                      <MenuItem key={option.value} value={option.value}>
-                        {option.label}
-                      </MenuItem>
-                    ))}
-                  </Select>
-                </FormControl>
-              )}
+            <TextField
+              label="Invoice date"
+              value="Cutoff date"
+              disabled
+              fullWidth
             />
           </Stack>
 

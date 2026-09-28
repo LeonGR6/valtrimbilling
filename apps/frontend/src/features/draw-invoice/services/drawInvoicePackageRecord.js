@@ -23,6 +23,95 @@ function uniqueSortedNumbers(values) {
     .sort((left, right) => left - right)
 }
 
+function parseDateKey(value) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(value ?? ''))
+  if (!match) return null
+
+  const [, yearText, monthText, dayText] = match
+  const year = Number(yearText)
+  const month = Number(monthText) - 1
+  const day = Number(dayText)
+  const date = new Date(year, month, day)
+
+  if (
+    date.getFullYear() !== year
+    || date.getMonth() !== month
+    || date.getDate() !== day
+  ) return null
+
+  return date
+}
+
+function dateOnMonthDay(year, month, day) {
+  const lastDay = new Date(year, month + 1, 0).getDate()
+  return new Date(year, month, Math.min(day, lastDay))
+}
+
+function toDateKey(date) {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+export function resolveBillingCutoffDate(packageDate, setupVersion) {
+  const date = parseDateKey(packageDate)
+  if (!date || !setupVersion) return null
+
+  if (setupVersion.frequency === 'MONTHLY') {
+    const cutoffDay = Number(setupVersion.cutoff_day)
+    if (!Number.isInteger(cutoffDay) || cutoffDay < 1 || cutoffDay > 31) return null
+
+    let cutoffDate = dateOnMonthDay(
+      date.getFullYear(),
+      date.getMonth(),
+      cutoffDay,
+    )
+    if (cutoffDate < date) {
+      cutoffDate = dateOnMonthDay(
+        date.getFullYear(),
+        date.getMonth() + 1,
+        cutoffDay,
+      )
+    }
+    return toDateKey(cutoffDate)
+  }
+
+  if (setupVersion.frequency === 'SEMIMONTHLY') {
+    const cutoffDays = [...new Set((setupVersion.cutoff_days ?? [])
+      .map(Number)
+      .filter((day) => Number.isInteger(day) && day >= 1 && day <= 31))]
+      .sort((left, right) => left - right)
+
+    for (let monthOffset = 0; monthOffset <= 1; monthOffset += 1) {
+      const candidates = cutoffDays
+        .map((day) => dateOnMonthDay(
+          date.getFullYear(),
+          date.getMonth() + monthOffset,
+          day,
+        ))
+        .sort((left, right) => left - right)
+      const cutoffDate = candidates.find((candidate) => candidate >= date)
+      if (cutoffDate) return toDateKey(cutoffDate)
+    }
+    return null
+  }
+
+  if (setupVersion.frequency === 'WEEKLY') {
+    const cutoffWeekday = Number(setupVersion.cutoff_weekday)
+    if (!Number.isInteger(cutoffWeekday) || cutoffWeekday < 0 || cutoffWeekday > 6) {
+      return null
+    }
+
+    const cutoffDate = new Date(date)
+    const daysUntilCutoff = (cutoffWeekday - date.getDay() + 7) % 7
+    cutoffDate.setDate(cutoffDate.getDate() + daysUntilCutoff)
+    return toDateKey(cutoffDate)
+  }
+
+  return null
+}
+
 export function toDrawInvoicePackage(
   packageRow,
   invoiceRow,
@@ -61,6 +150,10 @@ export function toDrawInvoicePackage(
     phaseIds,
     setupVersionId: packageRow.setup_version_id,
     packageDate: packageRow.package_date,
+    billingCutoffDate: resolveBillingCutoffDate(
+      packageRow.package_date,
+      setupVersion,
+    ),
     billingPeriodStart: packageRow.billing_period_start,
     billingPeriodEnd: packageRow.billing_period_end,
     paymentTermsDays: packageRow.payment_terms_days,
@@ -127,31 +220,89 @@ export function toDrawInvoicePackage(
     })),
     persistedOptionLines: optionRows.map((row) => {
       const drawRow = drawRowsByLotAndDraw.get(`${row.lot_id}:${row.draw_id}`)
+      const billingDrawRow = drawRowsByLotAndDraw.get(
+        `${row.billing_lot_id ?? row.lot_id}:${row.draw_id}`,
+      )
+      const hasOriginSnapshot = row.phase_id != null
       return {
         id: `${row.lot_id}:${row.option_id}`,
-        phaseId: drawRow?.phase_id ?? null,
-        phaseCode: drawRow?.phase_code ?? null,
-        building: drawRow?.building ?? null,
+        phaseId: row.phase_id ?? drawRow?.phase_id ?? null,
+        phaseCode: row.phase_code ?? drawRow?.phase_code ?? null,
+        building: hasOriginSnapshot ? row.building : (drawRow?.building ?? null),
         lotId: row.lot_id,
-        lotNumber: drawRow?.lot_number ?? '',
-        planCode: drawRow?.plan_code ?? null,
+        lotNumber: row.lot_number ?? drawRow?.lot_number ?? '',
+        planCode: row.plan_code ?? drawRow?.plan_code ?? null,
         optionId: row.option_id,
         optionCode: row.option_code,
         description: row.option_name,
         price: toNumber(row.option_price),
+        billingDrawIndex: billingDrawRow == null
+          ? null
+          : Number(billingDrawRow.draw_number) - 1,
         issue: null,
       }
     }),
   }
 }
 
-export function toCreateDrawPackageRpc({ jobId, selections }) {
+export function toCreateDrawPackageRpc({
+  jobId,
+  selections,
+  optionSelections,
+  optionsBillingDrawIndex,
+}) {
+  const parsedOptionsBillingDrawIndex = Number(optionsBillingDrawIndex)
+  const hasExplicitOptionSelection = Array.isArray(optionSelections)
+    && optionsBillingDrawIndex !== null
+    && optionsBillingDrawIndex !== ''
+    && Number.isInteger(parsedOptionsBillingDrawIndex)
+  const packageOptions = new Map()
+
+  if (hasExplicitOptionSelection) {
+    for (const { lotId, optionId } of optionSelections) {
+      const normalized = {
+        lot_id: Number(lotId),
+        option_id: Number(optionId),
+      }
+      packageOptions.set(
+        `${normalized.lot_id}:${normalized.option_id}`,
+        normalized,
+      )
+    }
+  }
+
+  const anchorIndex = hasExplicitOptionSelection
+    ? selections
+        .map(({ drawIndex }, index) => ({
+          drawIndex: Number(drawIndex),
+          index,
+        }))
+        .filter(({ drawIndex }) => drawIndex >= parsedOptionsBillingDrawIndex)
+        .sort((left, right) => (
+          left.drawIndex - right.drawIndex || left.index - right.index
+        ))[0]?.index ?? -1
+    : -1
+  const sortedPackageOptions = [...packageOptions.values()].sort(
+    (left, right) => left.lot_id - right.lot_id || left.option_id - right.option_id,
+  )
+
   return {
     p_job_id: Number(jobId),
-    p_selections: selections.map(({ lotId, drawIndex }) => ({
-      lot_id: Number(lotId),
-      draw_number: Number(drawIndex) + 1,
-    })),
+    p_selections: selections.map(({ lotId, drawIndex }, index) => {
+      const selection = {
+        lot_id: Number(lotId),
+        draw_number: Number(drawIndex) + 1,
+      }
+
+      if (
+        hasExplicitOptionSelection
+        && index === anchorIndex
+      ) {
+        selection.package_options = sortedPackageOptions
+      }
+
+      return selection
+    }),
   }
 }
 

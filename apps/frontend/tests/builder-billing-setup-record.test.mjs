@@ -16,12 +16,8 @@ test('billing setup records map database columns and one-based draws to the form
     options_billing_draw_number: 2,
     frequency: 'SEMIMONTHLY',
     cutoff_day: null,
-    submission_day: null,
     cutoff_days: [10, 25],
     cutoff_weekday: null,
-    submission_offset_days: 3,
-    work_accepted_through: 'CUTOFF',
-    invoice_date_rule: 'SUBMISSION',
     payment_terms_days: 30,
     retention_enabled: true,
     retention_percentage: '5.25',
@@ -74,12 +70,8 @@ test('form values map to normalized RPC payloads and one-based draw numbers', ()
     optionsBillingDrawIndex: 0,
     frequency: 'WEEKLY',
     cutoffDay: 20,
-    submissionDay: 25,
     cutoffDays: [10, 25],
     cutoffWeekday: 5,
-    submissionOffsetDays: 2,
-    workAcceptedThrough: 'SUBMISSION',
-    invoiceDateRule: 'CUTOFF',
     paymentTermsDays: 45,
     retentionEnabled: true,
     retentionPercentage: 5,
@@ -98,9 +90,12 @@ test('form values map to normalized RPC payloads and one-based draw numbers', ()
   assert.equal(payload.p_config.hardwareBillingDrawNumber, 2)
   assert.equal(payload.p_config.optionsBillingDrawNumber, 1)
   assert.equal(payload.p_config.cutoffDay, null)
-  assert.equal(payload.p_config.submissionDay, null)
   assert.deepEqual(payload.p_config.cutoffDays, [])
   assert.equal(payload.p_config.cutoffWeekday, 5)
+  assert.equal('submissionDay' in payload.p_config, false)
+  assert.equal('submissionOffsetDays' in payload.p_config, false)
+  assert.equal('workAcceptedThrough' in payload.p_config, false)
+  assert.equal('invoiceDateRule' in payload.p_config, false)
   assert.equal(payload.p_config.wrapEnabled, true)
   assert.equal(payload.p_config.wrapPercentage, 2)
   assert.equal(payload.p_config.portalName, 'Builder Portal')

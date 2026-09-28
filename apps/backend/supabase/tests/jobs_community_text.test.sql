@@ -240,7 +240,6 @@ insert into valtrim.billing_setup_versions (
   status,
   frequency,
   cutoff_day,
-  submission_day,
   activated_at
 )
 select
@@ -250,7 +249,6 @@ select
   'ACTIVE',
   'MONTHLY',
   15,
-  20,
   now()
 from valtrim.builders builder
 join valtrim.billing_setups setup on setup.builder_id = builder.id

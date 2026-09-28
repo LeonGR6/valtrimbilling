@@ -8,6 +8,66 @@ export function drawSelectionKey(jobId, phaseId, lotId, drawIndex) {
   return `${jobId}:${phaseId}:${lotId}:${drawIndex}`
 }
 
+export function optionSelectionKey(phaseId, lotId, optionId) {
+  return `${phaseId}:${lotId}:${optionId}`
+}
+
+function optionBillingIdentity(lotId, optionId) {
+  return `${lotId}:${optionId}`
+}
+
+function isAtOrAfterOptionsBillingDraw(drawIndex, optionsBillingDrawIndex) {
+  return optionsBillingDrawIndex !== null
+    && Number(drawIndex) >= optionsBillingDrawIndex
+}
+
+export function buildOptionChargeContext(
+  packages = [],
+  jobId,
+  fallbackOptionsBillingDrawIndex = null,
+) {
+  const eligibleOptionLotIds = new Set()
+  const billedOptionEntries = []
+
+  for (const record of packages) {
+    if (String(record.jobId) !== String(jobId) || record.status === 'CANCELLED') {
+      continue
+    }
+
+    const recordBillingDrawIndex = getOptionsBillingDrawIndex(
+      record,
+      { optionsBillingDrawIndex: fallbackOptionsBillingDrawIndex },
+    )
+    if (recordBillingDrawIndex !== null) {
+      for (const selection of record.selections ?? []) {
+        if (isAtOrAfterOptionsBillingDraw(
+          selection.drawIndex,
+          recordBillingDrawIndex,
+        )) {
+          eligibleOptionLotIds.add(String(selection.lotId))
+        }
+      }
+    }
+
+    for (const option of record.persistedOptionLines ?? []) {
+      billedOptionEntries.push({
+        identity: optionBillingIdentity(option.lotId, option.optionId),
+        lotId: option.lotId,
+        optionId: option.optionId,
+        packageId: record.id,
+        packageNumber: record.packageNumber,
+        price: option.price,
+        billingDrawIndex: option.billingDrawIndex,
+      })
+    }
+  }
+
+  return {
+    eligibleOptionLotIds: [...eligibleOptionLotIds],
+    billedOptionEntries,
+  }
+}
+
 export function makePackageSelections(lotIds = [], drawIndexes = []) {
   return lotIds.flatMap((lotId) =>
     drawIndexes.map((drawIndex) => ({ lotId, drawIndex })),
@@ -109,7 +169,7 @@ function getOptionsBillingDrawIndex(record, schedule) {
 function getSelectedOptionRows(selectedRows) {
   return selectedRows.flatMap((row) =>
     (row.selectedOptions ?? []).map((option) => ({
-      id: `${row.phaseId}:${row.id}:${option.id}`,
+      id: optionSelectionKey(row.phaseId, row.id, option.id),
       phaseId: row.phaseId,
       phaseCode: row.phaseCode,
       building: row.building,
@@ -226,17 +286,67 @@ export function summarizeDrawPackage(record, job, phaseOrPhases, schedule) {
   const optionBillingLotKeys = new Set(
     selections
       .filter(
-        ({ drawIndex }) => Number(drawIndex) === optionsBillingDrawIndex,
+        ({ drawIndex }) => isAtOrAfterOptionsBillingDraw(
+          drawIndex,
+          optionsBillingDrawIndex,
+        ),
       )
       .map((selection) => {
         const scope = scopeForSelection(selection)
         return `${scope?.phaseId ?? selection.phaseId}:${selection.lotId}`
       }),
   )
-  const currentSelectedOptionRows = getSelectedOptionRows(
-    selectedRows.filter((row) => (
-      optionBillingLotKeys.has(`${row.phaseId}:${row.id}`)
-    )),
+  const optionChargeDrawIndexes = selections
+    .map(({ drawIndex }) => Number(drawIndex))
+    .filter((drawIndex) => isAtOrAfterOptionsBillingDraw(
+      drawIndex,
+      optionsBillingDrawIndex,
+    ))
+  const optionChargeDrawIndex = optionChargeDrawIndexes.length === 0
+    ? null
+    : Math.min(...optionChargeDrawIndexes)
+  const eligibleOptionLotIds = new Set(
+    (record?.eligibleOptionLotIds ?? []).map(String),
+  )
+  for (const selection of selections) {
+    if (isAtOrAfterOptionsBillingDraw(
+      selection.drawIndex,
+      optionsBillingDrawIndex,
+    )) {
+      eligibleOptionLotIds.add(String(selection.lotId))
+    }
+  }
+  const billedOptionsByIdentity = new Map(
+    (record?.billedOptionEntries ?? []).map((option) => [
+      option.identity ?? optionBillingIdentity(option.lotId, option.optionId),
+      option,
+    ]),
+  )
+  const availableDraftOptionRows = getSelectedOptionRows(
+    phaseScopes.flatMap((scope) => scope.worksheet.rows
+      .filter((row) => eligibleOptionLotIds.has(String(row.id)))
+      .map((row) => ({
+        ...row,
+        phaseId: scope.phaseId,
+        phaseCode: scope.phase.name ?? scope.phase.code ?? null,
+        building: scope.phase.building ?? null,
+      }))),
+  ).map((option) => {
+    const billed = billedOptionsByIdentity.get(
+      optionBillingIdentity(option.lotId, option.optionId),
+    )
+    return billed == null ? option : {
+      ...option,
+      isBilled: true,
+      billedPackageId: billed.packageId,
+      billedPackageNumber: billed.packageNumber,
+      billedPrice: billed.price,
+      billingDrawIndex: billed.billingDrawIndex,
+    }
+  })
+  const excludedOptionKeys = new Set(record?.excludedOptionKeys ?? [])
+  const selectedDraftOptionRows = availableDraftOptionRows.filter(
+    (option) => !option.isBilled && !excludedOptionKeys.has(option.id),
   )
   const optionsAreDue = optionsBillingDrawIndex !== null
     && optionBillingLotKeys.size > 0
@@ -246,7 +356,7 @@ export function summarizeDrawPackage(record, job, phaseOrPhases, schedule) {
     const persistedOptionLines = record.persistedOptionLines ?? []
     const selectedOptionRows = optionsAreDue
       ? persistedOptionLines
-      : currentSelectedOptionRows
+      : availableDraftOptionRows
     const optionRows = optionsAreDue ? persistedOptionLines : []
     const optionsTotal = optionRows.reduce(
       (total, option) => addCurrencyAmounts(total, option.price),
@@ -271,9 +381,13 @@ export function summarizeDrawPackage(record, job, phaseOrPhases, schedule) {
       phaseCount: phaseSummaries.length,
       scopeCount: persistedLines.length,
       currentDraw: record.persistedInvoice.grossAmount,
+      availableOptionRows: persistedOptionLines,
       selectedOptionRows,
       optionRows,
+      billedOptionCount: 0,
       optionsBillingDrawIndex,
+      optionChargeDrawIndex: persistedOptionLines[0]?.billingDrawIndex
+        ?? optionChargeDrawIndex,
       optionsAreDue,
       optionsTotal,
       unpricedOptionCount: 0,
@@ -284,7 +398,7 @@ export function summarizeDrawPackage(record, job, phaseOrPhases, schedule) {
     }
   }
 
-  const selectedOptionRows = currentSelectedOptionRows
+  const selectedOptionRows = selectedDraftOptionRows
   const optionRows = optionsAreDue ? selectedOptionRows : []
   const unpricedOptionCount = optionRows.filter(
     (option) => option.issue === 'PRICE_MISSING',
@@ -345,9 +459,14 @@ export function summarizeDrawPackage(record, job, phaseOrPhases, schedule) {
     phaseCount: phaseSummaries.length,
     scopeCount: selections.length,
     currentDraw,
+    availableOptionRows: availableDraftOptionRows,
     selectedOptionRows,
     optionRows,
+    billedOptionCount: availableDraftOptionRows.filter(
+      (option) => option.isBilled,
+    ).length,
     optionsBillingDrawIndex,
+    optionChargeDrawIndex,
     optionsAreDue,
     optionsTotal,
     unpricedOptionCount,

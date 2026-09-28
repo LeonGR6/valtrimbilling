@@ -70,16 +70,8 @@ export function createBuilderDrawScheduleSchema(schedules, currentScheduleId) {
       optionsBillingDrawIndex: optionalDrawIndexSchema,
       frequency: z.enum(['MONTHLY', 'SEMIMONTHLY', 'WEEKLY']),
       cutoffDay: dayOfMonthSchema,
-      submissionDay: dayOfMonthSchema,
       cutoffDays: z.array(z.coerce.number().int().min(1).max(31)),
       cutoffWeekday: z.coerce.number().int().min(0).max(6),
-      submissionOffsetDays: z.coerce
-        .number()
-        .int('Use a whole number.')
-        .min(0, 'Use 0 or more days.')
-        .max(30, 'Use 30 days or fewer.'),
-      workAcceptedThrough: z.enum(['CUTOFF', 'SUBMISSION']),
-      invoiceDateRule: z.enum(['SUBMISSION', 'CUTOFF', 'MONTH_END']),
       paymentTermsDays: z.coerce
         .number()
         .int('Use a whole number.')

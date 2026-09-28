@@ -57,12 +57,8 @@ export function toBuilderDrawSchedule(version, draws = [], documents = []) {
     ),
     frequency: version.frequency,
     cutoffDay: version.cutoff_day ?? 1,
-    submissionDay: version.submission_day ?? 1,
     cutoffDays: (version.cutoff_days ?? []).map(Number),
     cutoffWeekday: version.cutoff_weekday ?? 0,
-    submissionOffsetDays: version.submission_offset_days ?? 0,
-    workAcceptedThrough: version.work_accepted_through,
-    invoiceDateRule: version.invoice_date_rule,
     paymentTermsDays: version.payment_terms_days,
     retentionEnabled: version.retention_enabled,
     retentionPercentage: toNumber(version.retention_percentage),
@@ -96,20 +92,12 @@ export function toBuilderBillingSetupRpc(schedule) {
         : Number(optionsDrawIndex) + 1,
       frequency,
       cutoffDay: frequency === 'MONTHLY' ? Number(schedule.cutoffDay) : null,
-      submissionDay: frequency === 'MONTHLY'
-        ? Number(schedule.submissionDay)
-        : null,
       cutoffDays: frequency === 'SEMIMONTHLY'
         ? schedule.cutoffDays.map(Number)
         : [],
       cutoffWeekday: frequency === 'WEEKLY'
         ? Number(schedule.cutoffWeekday)
         : null,
-      submissionOffsetDays: frequency === 'MONTHLY'
-        ? null
-        : Number(schedule.submissionOffsetDays),
-      workAcceptedThrough: schedule.workAcceptedThrough,
-      invoiceDateRule: schedule.invoiceDateRule,
       paymentTermsDays: Number(schedule.paymentTermsDays),
       retentionEnabled: Boolean(schedule.retentionEnabled),
       retentionPercentage: schedule.retentionEnabled

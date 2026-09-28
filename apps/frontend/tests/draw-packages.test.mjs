@@ -2,10 +2,12 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { initialBuilderDrawSchedules } from '../src/features/builder-draw-schedules/data/builderDrawSchedules.js'
 import {
+  buildOptionChargeContext,
   buildUsedDrawSelections,
   drawSelectionKey,
   formatLotRange,
   makePackageSelections,
+  optionSelectionKey,
   summarizeDrawPackage,
 } from '../src/features/draw-invoice/utils/drawPackages.js'
 import { testJobs } from './fixtures/jobs.mjs'
@@ -196,7 +198,37 @@ test('options are added once when the package includes the builder billing draw'
   assert.equal(secondSummary.invoiceAmount, 540)
 })
 
-test('options apply only to Lots selected on the configured billing Draw', () => {
+test('pending options can be charged on any Draw after the configured Draw', () => {
+  const job = {
+    sequenceSheet: {
+      plans: [{
+        id: 1,
+        code: 'A',
+        price: 1000,
+        options: [{ id: 10, code: 'OPT-10', description: 'Door upgrade', price: 100 }],
+      }],
+    },
+  }
+  const phase = {
+    id: 3,
+    lots: [{ id: 1, lotNumber: '19', planId: 1, optionIds: [10] }],
+  }
+  const schedule = {
+    draws: [{ percentage: 30 }, { percentage: 30 }, { percentage: 40 }],
+    optionsBillingDrawIndex: 1,
+  }
+  const summary = summarizeDrawPackage({
+    selections: [{ phaseId: 3, lotId: 1, drawIndex: 2 }],
+  }, job, phase, schedule)
+
+  assert.equal(summary.optionsAreDue, true)
+  assert.equal(summary.optionChargeDrawIndex, 2)
+  assert.equal(summary.selectedOptionRows.length, 1)
+  assert.equal(summary.optionsTotal, 100)
+  assert.equal(summary.grossAmount, 500)
+})
+
+test('options apply only to Lots selected at or after the configured billing Draw', () => {
   const job = {
     sequenceSheet: {
       plans: [{
@@ -214,7 +246,7 @@ test('options apply only to Lots selected on the configured billing Draw', () =>
     ],
   }
   const schedule = {
-    draws: [{ percentage: 50 }, { percentage: 50 }],
+    draws: [{ percentage: 30 }, { percentage: 30 }, { percentage: 40 }],
     optionsBillingDrawIndex: 1,
   }
   const summary = summarizeDrawPackage({
@@ -231,6 +263,175 @@ test('options apply only to Lots selected on the configured billing Draw', () =>
   assert.equal(summary.selectedOptionRows.length, 1)
   assert.equal(summary.selectedOptionRows[0].lotId, 1)
   assert.equal(summary.optionsTotal, 100)
+})
+
+test('pending Options remain available after their Lot billing Draw was used', () => {
+  const job = {
+    id: 8,
+    sequenceSheet: {
+      plans: [{
+        id: 1,
+        code: 'A',
+        price: 1000,
+        options: [{ id: 10, code: 'OPT-10', description: 'Door upgrade', price: 100 }],
+      }],
+    },
+  }
+  const phase = {
+    id: 3,
+    lots: [
+      { id: 1, lotNumber: '19', planId: 1, optionIds: [10] },
+      { id: 2, lotNumber: '20', planId: 1, optionIds: [10] },
+    ],
+  }
+  const schedule = {
+    draws: [{ percentage: 30 }, { percentage: 30 }, { percentage: 40 }],
+    optionsBillingDrawIndex: 1,
+  }
+  const context = buildOptionChargeContext([{
+    id: 90,
+    packageNumber: 'DP-00000090',
+    jobId: 8,
+    status: 'DRAFT',
+    optionsBillingDrawIndex: 1,
+    selections: [{ phaseId: 3, lotId: 1, drawIndex: 1 }],
+    persistedOptionLines: [],
+  }], 8, 1)
+  const summary = summarizeDrawPackage({
+    selections: [{ phaseId: 3, lotId: 2, drawIndex: 2 }],
+    ...context,
+  }, job, phase, schedule)
+
+  assert.deepEqual(
+    summary.availableOptionRows.map((option) => option.lotId),
+    [1, 2],
+  )
+  assert.deepEqual(
+    summary.selectedOptionRows.map((option) => option.lotId),
+    [1, 2],
+  )
+  assert.equal(summary.optionsTotal, 200)
+  assert.equal(summary.optionChargeDrawIndex, 2)
+})
+
+test('previously billed Options are visible but excluded from a new Package', () => {
+  const job = {
+    id: 8,
+    sequenceSheet: {
+      plans: [{
+        id: 1,
+        code: 'A',
+        price: 1000,
+        options: [{ id: 10, code: 'OPT-10', description: 'Door upgrade', price: 125 }],
+      }],
+    },
+  }
+  const phase = {
+    id: 3,
+    lots: [
+      { id: 1, lotNumber: '19', planId: 1, optionIds: [10] },
+      { id: 2, lotNumber: '20', planId: 1, optionIds: [10] },
+    ],
+  }
+  const schedule = {
+    draws: [{ percentage: 30 }, { percentage: 30 }, { percentage: 40 }],
+    optionsBillingDrawIndex: 1,
+  }
+  const context = buildOptionChargeContext([{
+    id: 90,
+    packageNumber: 'DP-00000090',
+    jobId: 8,
+    status: 'DRAFT',
+    optionsBillingDrawIndex: 1,
+    selections: [{ phaseId: 3, lotId: 1, drawIndex: 1 }],
+    persistedOptionLines: [{ lotId: 1, optionId: 10, price: 100 }],
+  }], 8, 1)
+  const summary = summarizeDrawPackage({
+    selections: [{ phaseId: 3, lotId: 2, drawIndex: 2 }],
+    ...context,
+  }, job, phase, schedule)
+
+  assert.equal(summary.availableOptionRows.length, 2)
+  assert.equal(summary.availableOptionRows[0].isBilled, true)
+  assert.equal(summary.availableOptionRows[0].billedPackageNumber, 'DP-00000090')
+  assert.equal(summary.availableOptionRows[0].billedPrice, 100)
+  assert.deepEqual(
+    summary.selectedOptionRows.map((option) => option.lotId),
+    [2],
+  )
+  assert.equal(summary.billedOptionCount, 1)
+  assert.equal(summary.optionsTotal, 125)
+})
+
+test('Package creation can exclude individual Options from the billing Draw', () => {
+  const job = {
+    sequenceSheet: {
+      plans: [{
+        id: 1,
+        code: 'A',
+        price: 1000,
+        options: [
+          { id: 10, code: 'OPT-10', description: 'Door upgrade', price: 100 },
+          { id: 11, code: 'OPT-11', description: 'Window upgrade', price: 75 },
+        ],
+      }],
+    },
+  }
+  const phase = {
+    id: 3,
+    lots: [{ id: 1, lotNumber: '19', planId: 1, optionIds: [10, 11] }],
+  }
+  const schedule = {
+    draws: [{ percentage: 50 }, { percentage: 50 }],
+    optionsBillingDrawIndex: 1,
+  }
+  const summary = summarizeDrawPackage({
+    selections: [{ phaseId: 3, lotId: 1, drawIndex: 1 }],
+    excludedOptionKeys: [optionSelectionKey(3, 1, 11)],
+  }, job, phase, schedule)
+
+  assert.equal(summary.availableOptionRows.length, 2)
+  assert.deepEqual(
+    summary.selectedOptionRows.map((option) => option.optionId),
+    [10],
+  )
+  assert.equal(summary.optionsTotal, 100)
+  assert.equal(summary.grossAmount, 600)
+})
+
+test('an excluded unpriced Option does not block Package creation', () => {
+  const job = {
+    sequenceSheet: {
+      plans: [{
+        id: 1,
+        code: 'A',
+        price: 1000,
+        options: [{
+          id: 10,
+          code: 'OPT-10',
+          description: 'Door upgrade',
+          price: null,
+        }],
+      }],
+    },
+  }
+  const phase = {
+    id: 3,
+    lots: [{ id: 1, lotNumber: '19', planId: 1, optionIds: [10] }],
+  }
+  const schedule = {
+    draws: [{ percentage: 50 }, { percentage: 50 }],
+    optionsBillingDrawIndex: 1,
+  }
+  const summary = summarizeDrawPackage({
+    selections: [{ phaseId: 3, lotId: 1, drawIndex: 1 }],
+    excludedOptionKeys: [optionSelectionKey(3, 1, 10)],
+  }, job, phase, schedule)
+
+  assert.equal(summary.availableOptionRows.length, 1)
+  assert.equal(summary.selectedOptionRows.length, 0)
+  assert.equal(summary.unpricedOptionCount, 0)
+  assert.equal(summary.optionsTotal, 0)
 })
 
 test('an unpriced option is reported when its billing draw is selected', () => {

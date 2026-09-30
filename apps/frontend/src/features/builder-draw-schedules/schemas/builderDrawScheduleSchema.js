@@ -62,6 +62,13 @@ export function createBuilderDrawScheduleSchema(schedules, currentScheduleId) {
             .max(80, 'Use 80 characters or fewer.')
             .default(''),
           percentage: drawPercentageSchema,
+          eventType: z.preprocess(
+            (value) => value ?? '',
+            z.string().trim().refine(
+              (value) => ['EXT', 'DM', 'HW'].includes(value),
+              'Select EXT, DM or HW.',
+            ),
+          ),
         }))
         .min(MIN_DRAW_COUNT, `Configure at least ${MIN_DRAW_COUNT} draws.`)
         .max(MAX_DRAW_COUNT, `Configure no more than ${MAX_DRAW_COUNT} draws.`),

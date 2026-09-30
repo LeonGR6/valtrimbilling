@@ -210,6 +210,7 @@ export function PackageOptionsTable({ summary }) {
   const availableFromDrawLabel = summary.optionsBillingDrawIndex == null
     ? 'Not configured'
     : `Draw #${summary.optionsBillingDrawIndex + 1}`
+  const chargedOptionRows = summary.chargedOptionRows ?? summary.selectedOptionRows
 
   return (
     <Card variant="outlined" sx={{ overflow: 'hidden' }}>
@@ -222,7 +223,7 @@ export function PackageOptionsTable({ summary }) {
           <Box>
             <Typography fontWeight={800}>Options</Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mt: 0.25 }}>
-              Selected lot options are invoiced according to the builder setup.
+              Options charged for this Job through the current package.
             </Typography>
           </Box>
           <Chip
@@ -238,13 +239,13 @@ export function PackageOptionsTable({ summary }) {
         <Alert severity="info" sx={{ m: 2 }}>
           This builder does not have an options billing draw configured.
         </Alert>
-      ) : summary.selectedOptionRows.length === 0 ? (
+      ) : chargedOptionRows.length === 0 ? (
         <Alert severity="info" sx={{ m: 2 }}>
-          The lots in this package do not contain selected options.
+          No options had been charged for this Job when this package was created.
         </Alert>
       ) : (
         <TableContainer>
-          <Table size="small" aria-label="Options selected for this package">
+          <Table size="small" aria-label="Options charged through this package">
             <TableHead>
               <TableRow>
                 <TableCell>Phase</TableCell>
@@ -258,8 +259,7 @@ export function PackageOptionsTable({ summary }) {
               </TableRow>
             </TableHead>
             <TableBody>
-              {summary.selectedOptionRows.map((option) => {
-                const included = summary.optionsAreDue
+              {chargedOptionRows.map((option) => {
                 const priceMissing = option.issue === 'PRICE_MISSING'
 
                 return (
@@ -276,9 +276,9 @@ export function PackageOptionsTable({ summary }) {
                     <TableCell><Typography fontWeight={750}>{option.optionCode}</Typography></TableCell>
                     <TableCell>{option.description}</TableCell>
                     <TableCell>
-                      {option.billingDrawIndex == null
-                        ? '—'
-                        : `Draw #${option.billingDrawIndex + 1}`}
+                      <Typography fontWeight={750}>
+                        {option.chargedPackageNumber ?? '—'}
+                      </Typography>
                     </TableCell>
                     <TableCell align="right">
                       <Typography color={priceMissing ? 'error' : 'text.primary'} fontWeight={750}>
@@ -288,30 +288,30 @@ export function PackageOptionsTable({ summary }) {
                     <TableCell>
                       <Chip
                         size="small"
-                        color={included && !priceMissing ? 'success' : priceMissing ? 'error' : 'default'}
-                        variant={included && !priceMissing ? 'filled' : 'outlined'}
-                        label={included
-                          ? priceMissing ? 'Needs price' : 'Included in invoice'
-                          : `Pending from ${availableFromDrawLabel}`}
+                        color={priceMissing ? 'error' : 'success'}
+                        variant={option.chargedInCurrentPackage ? 'filled' : 'outlined'}
+                        label={priceMissing
+                          ? 'Needs price'
+                          : option.chargedInCurrentPackage
+                            ? 'Included in this package'
+                            : 'Charged previously'}
                       />
                     </TableCell>
                   </TableRow>
                 )
               })}
             </TableBody>
-            {summary.optionsAreDue && (
-              <TableFooter>
-                <TableRow>
-                  <TableCell colSpan={6}>
-                    <Typography fontWeight={850}>Options total</Typography>
-                  </TableCell>
-                  <TableCell align="right">
-                    <Typography fontWeight={900}>{formatCurrency(summary.optionsTotal)}</Typography>
-                  </TableCell>
-                  <TableCell />
-                </TableRow>
-              </TableFooter>
-            )}
+            <TableFooter>
+              <TableRow>
+                <TableCell colSpan={6}>
+                  <Typography fontWeight={850}>Options total in this package</Typography>
+                </TableCell>
+                <TableCell align="right">
+                  <Typography fontWeight={900}>{formatCurrency(summary.optionsTotal)}</Typography>
+                </TableCell>
+                <TableCell />
+              </TableRow>
+            </TableFooter>
           </Table>
         </TableContainer>
       )}

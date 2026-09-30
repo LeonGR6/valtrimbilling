@@ -28,10 +28,10 @@ test('billing setup records map database columns and one-based draws to the form
     notes: null,
   }
   const draws = [
-    { setup_version_id: 91, draw_number: 2, name: null, percentage: '75.00' },
-    { setup_version_id: 22, draw_number: 1, name: 'Other', percentage: '50.00' },
-    { setup_version_id: 91, draw_number: 1, name: 'Start', percentage: '10.00' },
-    { setup_version_id: 91, draw_number: 3, name: 'Final', percentage: '15.00' },
+    { setup_version_id: 91, draw_number: 2, name: null, percentage: '75.00', event_type: 'DM' },
+    { setup_version_id: 22, draw_number: 1, name: 'Other', percentage: '50.00', event_type: 'EXT' },
+    { setup_version_id: 91, draw_number: 1, name: 'Start', percentage: '10.00', event_type: 'EXT' },
+    { setup_version_id: 91, draw_number: 3, name: 'Final', percentage: '15.00', event_type: 'HW' },
   ]
   const documents = [
     { setup_version_id: 91, document_type: 'INVOICE', is_required: true },
@@ -45,9 +45,9 @@ test('billing setup records map database columns and one-based draws to the form
   assert.equal(schedule.builderId, 7)
   assert.equal(schedule.versionNumber, 3)
   assert.deepEqual(schedule.draws, [
-    { name: 'Start', percentage: 10 },
-    { name: '', percentage: 75 },
-    { name: 'Final', percentage: 15 },
+    { name: 'Start', percentage: 10, eventType: 'EXT' },
+    { name: '', percentage: 75, eventType: 'DM' },
+    { name: 'Final', percentage: 15, eventType: 'HW' },
   ])
   assert.equal(schedule.hardwareBillingDrawIndex, 2)
   assert.equal(schedule.optionsBillingDrawIndex, 1)
@@ -62,8 +62,8 @@ test('form values map to normalized RPC payloads and one-based draw numbers', ()
   const payload = toBuilderBillingSetupRpc({
     builderId: 7,
     draws: [
-      { name: ' Start ', percentage: '25' },
-      { name: '', percentage: 75 },
+      { name: ' Start ', percentage: '25', eventType: 'HW' },
+      { name: '', percentage: 75, eventType: 'HW' },
     ],
     separateHardwarePrice: true,
     hardwareBillingDrawIndex: 1,
@@ -100,8 +100,8 @@ test('form values map to normalized RPC payloads and one-based draw numbers', ()
   assert.equal(payload.p_config.wrapPercentage, 2)
   assert.equal(payload.p_config.portalName, 'Builder Portal')
   assert.deepEqual(payload.p_draws, [
-    { drawNumber: 1, name: 'Start', percentage: 25 },
-    { drawNumber: 2, name: null, percentage: 75 },
+    { drawNumber: 1, name: 'Start', percentage: 25, eventType: 'HW' },
+    { drawNumber: 2, name: null, percentage: 75, eventType: 'HW' },
   ])
   assert.deepEqual(
     payload.p_required_documents.map(({ type }) => type),

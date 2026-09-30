@@ -104,7 +104,7 @@ const navigationSections = [
       { label: 'Proposals', icon: DescriptionIcon },
       { label: 'Plan Pricing - Pricing Options', path: '/pricing', icon: SellIcon },
       {
-        label: 'Builder Draw Schedules',
+        label: 'Builder Setup',
         path: '/builder-draw-schedules',
         icon: DonutSmallRoundedIcon,
       },

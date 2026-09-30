@@ -52,11 +52,13 @@ import FolderRoundedIcon from '@mui/icons-material/FolderRounded'
 import FormatListNumberedRoundedIcon from '@mui/icons-material/FormatListNumberedRounded'
 import HomeWorkRoundedIcon from '@mui/icons-material/HomeWorkRounded'
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined'
+import EmailRoundedIcon from '@mui/icons-material/EmailRounded'
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded'
 import TableChartRoundedIcon from '@mui/icons-material/TableChartRounded'
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
 import JobModuleNavigation from '../../jobs/components/JobModuleNavigation.jsx'
+import { useBuilderContacts } from '../../builder-contacts/context/useBuilderContacts.js'
 import { useJobs } from '../../jobs/context/useJobs.js'
 import {
   getJobAssignedLotCount,
@@ -74,6 +76,7 @@ import {
   formatPhase,
 } from '../utils/phaseBuildingCodes.js'
 import { parseLotRange } from '../utils/lotRange.js'
+import SequenceSheetEmailDialog from './SequenceSheetEmailDialog.jsx'
 
 const emptyLot = {
   lotNumber: '',
@@ -125,7 +128,7 @@ function getPlan(job, planId) {
   )
 }
 
-function PhaseCard({ canManage, phase, onDelete, onEdit, onOpen }) {
+function PhaseCard({ canManage, phase, onDelete, onEdit, onEmail, onOpen }) {
   const phaseLabel = formatPhase(phase.name)
   const buildingLabel = formatBuilding(phase.building)
   const selectedOptionCount = (phase.lots ?? []).reduce(
@@ -191,6 +194,14 @@ function PhaseCard({ canManage, phase, onDelete, onEdit, onOpen }) {
           >
             <Button
               size="small"
+              color="primary"
+              startIcon={<EmailRoundedIcon />}
+              onClick={onEmail}
+            >
+              Email Sequence Sheet
+            </Button>
+            <Button
+              size="small"
               color="inherit"
               startIcon={<EditOutlinedIcon />}
               onClick={onEdit}
@@ -212,7 +223,7 @@ function PhaseCard({ canManage, phase, onDelete, onEdit, onOpen }) {
   )
 }
 
-function PhaseDetails({ builderId, canManage, job, phase, onBack, onDelete, onEdit }) {
+function PhaseDetails({ builderId, canManage, job, phase, onBack, onDelete, onEdit, onEmail }) {
   const phaseLabel = formatPhase(phase.name)
   const buildingLabel = formatBuilding(phase.building)
   const selectedOptionCount = (phase.lots ?? []).reduce(
@@ -266,6 +277,15 @@ function PhaseDetails({ builderId, canManage, job, phase, onBack, onDelete, onEd
             </Stack>
             {canManage && (
               <Stack direction="row" spacing={1}>
+                <Button
+                  size="small"
+                  variant="contained"
+                  startIcon={<EmailRoundedIcon />}
+                  onClick={onEmail}
+                  disableElevation
+                >
+                  Email Sequence Sheet
+                </Button>
                 <Button
                   size="small"
                   variant="outlined"
@@ -786,15 +806,15 @@ function PhaseDialog({ job, phase, onClose, onSave }) {
             >
               <Box sx={{ flex: 1 }}>
                 <Typography variant="subtitle2" fontWeight={750}>
-                  Add a lot range
+                  Add lot ranges
                 </Typography>
                 <Typography variant="caption" color="text.secondary">
-                  Generate consecutive lots, then assign a plan, Reverse and options to each one.
+                  Separate multiple ranges with commas, then assign a plan, Reverse and options to each lot.
                 </Typography>
               </Box>
               <TextField
-                label="Lot range"
-                placeholder="Example: 9-14"
+                label="Lot ranges"
+                placeholder="Example: 9-14, 20-25"
                 value={lotRange}
                 onChange={(event) => {
                   setLotRange(event.target.value)
@@ -807,9 +827,9 @@ function PhaseDialog({ job, phase, onClose, onSave }) {
                   }
                 }}
                 error={Boolean(lotRangeError)}
-                helperText={lotRangeError || 'Start and end lot numbers'}
-                sx={{ width: { xs: '100%', sm: 230 } }}
-                slotProps={{ htmlInput: { maxLength: 31 } }}
+                helperText={lotRangeError || 'Separate ranges with commas'}
+                sx={{ width: { xs: '100%', sm: 280 } }}
+                slotProps={{ htmlInput: { maxLength: 255 } }}
               />
               <Button
                 type="button"
@@ -819,7 +839,7 @@ function PhaseDialog({ job, phase, onClose, onSave }) {
                 disableElevation
                 sx={{ minHeight: 56, whiteSpace: 'nowrap' }}
               >
-                Add range
+                Add ranges
               </Button>
             </Stack>
           </Box>
@@ -953,6 +973,7 @@ export default function SequenceSheets() {
     saveSequenceSheetPhase,
     deactivateSequenceSheetPhase,
   } = useJobs()
+  const { contacts: builderContacts } = useBuilderContacts()
   const [searchParams] = useSearchParams()
   const [search, setSearch] = useState('')
   const [expandedJobId, setExpandedJobId] = useState(jobs[0]?.id ?? null)
@@ -960,6 +981,7 @@ export default function SequenceSheets() {
   const [dialogPhaseId, setDialogPhaseId] = useState(null)
   const [deleteTarget, setDeleteTarget] = useState(null)
   const [deleting, setDeleting] = useState(false)
+  const [emailTarget, setEmailTarget] = useState(null)
   const [notice, setNotice] = useState(null)
 
   const legacyJobId = searchParams.get('job')
@@ -1006,6 +1028,9 @@ export default function SequenceSheets() {
   const detailPhase = focusedJob?.sequenceSheet?.phases?.find(
     (phase) => String(phase.id) === detailPhaseId,
   )
+  const emailRecipient = builderContacts.find(
+    (contact) => String(contact.id) === String(emailTarget?.job.superintendentId),
+  )
 
   useEffect(() => {
     if (jobId || !legacyJobId) return
@@ -1047,16 +1072,29 @@ export default function SequenceSheets() {
     navigate(jobSequenceSheetPath(phaseBuilderId, job.id, phase.id))
   }
 
+  const openEmail = (job, phase) => {
+    if (!canManageJobs || !job.isActive) return
+    setEmailTarget({ job, phase })
+  }
+
   const savePhase = async (form) => {
     const isEditing = Boolean(dialogPhase)
+    const savedJob = dialogJob
 
     try {
-      await saveSequenceSheetPhase(dialogJobId, dialogPhase?.id ?? null, form)
+      const savedPhase = await saveSequenceSheetPhase(
+        dialogJobId,
+        dialogPhase?.id ?? null,
+        form,
+      )
       closePhaseDialog()
       setNotice({
         severity: 'success',
         message: `${formatPhase(form.phaseName)} ${isEditing ? 'updated' : 'created'} with ${form.lots.length} lot${form.lots.length === 1 ? '' : 's'}. Total Lots updated.`,
       })
+      if (!isEditing && savedJob) {
+        setEmailTarget({ job: savedJob, phase: savedPhase })
+      }
     } catch (saveError) {
       setNotice({ severity: 'error', message: saveError.message })
     }
@@ -1106,6 +1144,7 @@ export default function SequenceSheets() {
           }
           onEdit={() => openEdit(focusedJob, detailPhase)}
           onDelete={() => setDeleteTarget({ jobId: focusedJob.id, phase: detailPhase })}
+          onEmail={() => openEmail(focusedJob, detailPhase)}
         />
         {dialogJob && (
           <PhaseDialog
@@ -1122,6 +1161,21 @@ export default function SequenceSheets() {
           onClose={() => setDeleteTarget(null)}
           onDelete={deletePhase}
         />
+        {emailTarget && (
+          <SequenceSheetEmailDialog
+            key={`${emailTarget.phase.id}-${emailRecipient?.email ?? 'recipient'}`}
+            phase={emailTarget.phase}
+            defaultRecipientEmail={emailRecipient?.email ?? ''}
+            onClose={() => setEmailTarget(null)}
+            onSent={(result) => {
+              setEmailTarget(null)
+              setNotice({
+                severity: 'success',
+                message: `Sequence Sheet emailed to ${result.recipients.join(', ')}.`,
+              })
+            }}
+          />
+        )}
         <NoticeSnackbar notice={notice} onClose={() => setNotice(null)} />
       </>
     )
@@ -1339,6 +1393,7 @@ export default function SequenceSheets() {
                         key={phase.id}
                         phase={phase}
                         onEdit={() => openEdit(job, phase)}
+                        onEmail={() => openEmail(job, phase)}
                         onDelete={() => setDeleteTarget({ jobId: job.id, phase })}
                         onOpen={() => openPhaseDetails(job, phase)}
                       />
@@ -1407,6 +1462,21 @@ export default function SequenceSheets() {
         onClose={() => setDeleteTarget(null)}
         onDelete={deletePhase}
       />
+      {emailTarget && (
+        <SequenceSheetEmailDialog
+          key={`${emailTarget.phase.id}-${emailRecipient?.email ?? 'recipient'}`}
+          phase={emailTarget.phase}
+          defaultRecipientEmail={emailRecipient?.email ?? ''}
+          onClose={() => setEmailTarget(null)}
+          onSent={(result) => {
+            setEmailTarget(null)
+            setNotice({
+              severity: 'success',
+              message: `Sequence Sheet emailed to ${result.recipients.join(', ')}.`,
+            })
+          }}
+        />
+      )}
       <NoticeSnackbar notice={notice} onClose={() => setNotice(null)} />
     </Box>
   )

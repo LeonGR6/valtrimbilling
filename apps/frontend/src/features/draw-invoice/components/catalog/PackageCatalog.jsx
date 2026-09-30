@@ -256,10 +256,10 @@ export default function PackageCatalog({
               variant="contained"
               startIcon={<AddRoundedIcon />}
               onClick={onCreate}
-              disabled={!canManage}
+              disabled={!canManage}s
               disableElevation
             >
-              Create Draw
+              Create Package
             </Button>
           )}
         </Stack>

@@ -242,8 +242,8 @@ select valtrim.save_billing_setup_version(
     "notes": "Initial version"
   }'::jsonb,
   '[
-    {"drawNumber": 1, "name": "Start", "percentage": 25},
-    {"drawNumber": 2, "name": "Final", "percentage": 75}
+    {"drawNumber": 1, "name": "Start", "percentage": 25, "eventType": "EXT"},
+    {"drawNumber": 2, "name": "Final", "percentage": 75, "eventType": "DM"}
   ]'::jsonb,
   '[
     {"type": "PURCHASE_ORDER", "label": "Purchase order", "required": true, "displayOrder": 1}
@@ -317,8 +317,8 @@ set second_version_id = (
       "notes": "Replacement version"
     }'::jsonb,
     '[
-      {"drawNumber": 1, "name": "Trim", "percentage": 85},
-      {"drawNumber": 2, "name": "Hardware", "percentage": 15}
+      {"drawNumber": 1, "name": "Trim", "percentage": 85, "eventType": "HW"},
+      {"drawNumber": 2, "name": "Hardware", "percentage": 15, "eventType": "HW"}
     ]'::jsonb,
     '[
       {"type": "RELEASE", "label": "Release", "required": true, "displayOrder": 1},
@@ -375,7 +375,6 @@ select is(
   3::bigint,
   'Replacement version stores Invoice, Release and Backup requirements'
 );
-
 select ok(
   not has_table_privilege('authenticated', 'valtrim.plans', 'select'),
   'Unopened Plans remain closed after the Builder billing setup phase'

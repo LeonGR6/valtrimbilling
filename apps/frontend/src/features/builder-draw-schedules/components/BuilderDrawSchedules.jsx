@@ -39,6 +39,7 @@ import { useBuilders } from '../../builders/context/useBuilders.js'
 import {
   defaultDraws,
   defaultBillingSettings,
+  drawEventTypeOptions,
   frequencyLabels,
   frequencyOptions,
   invoiceLineFormatLabels,
@@ -210,9 +211,12 @@ function BuilderDrawScheduleDialog({
       const percentage = Number(draw.percentage)
       return percentage > 0 && percentage <= 100
     })
+  const eventTypesAreValid = watchedDraws.every((draw) =>
+    drawEventTypeOptions.some(({ value }) => value === draw.eventType))
   const canSave = Boolean(selectedBuilderId)
     && totalIsValid
     && percentagesAreValid
+    && eventTypesAreValid
     && (!separateHardwarePrice || hardwareBillingDrawIndex !== null)
   const availableBuilders = builders.filter(
     (builder) =>
@@ -323,7 +327,8 @@ function BuilderDrawScheduleDialog({
                   Draw allocation
                 </Typography>
                 <Typography variant="caption" color="text.secondary">
-                  Draw numbers follow their order. Add an optional name for each one.
+                  Draw numbers follow their order. Add a name and select the event
+                  that enables each one.
                 </Typography>
               </Box>
               <Chip
@@ -389,6 +394,27 @@ function BuilderDrawScheduleDialog({
                         },
                       }}
                     />
+                    <Controller
+                      name={`draws.${index}.eventType`}
+                      control={control}
+                      render={({ field: eventTypeField }) => (
+                        <TextField
+                          {...eventTypeField}
+                          select
+                          label="Event type"
+                          error={Boolean(errors.draws?.[index]?.eventType)}
+                          helperText={errors.draws?.[index]?.eventType?.message ?? ' '}
+                          sx={{ width: { xs: '100%', sm: 150 }, flexShrink: 0 }}
+                        >
+                          <MenuItem value="">Select event</MenuItem>
+                          {drawEventTypeOptions.map((eventType) => (
+                            <MenuItem key={eventType.value} value={eventType.value}>
+                              {eventType.label}
+                            </MenuItem>
+                          ))}
+                        </TextField>
+                      )}
+                    />
                   </Stack>
                   {fields.length > MIN_DRAW_COUNT && (
                     <IconButton
@@ -414,7 +440,7 @@ function BuilderDrawScheduleDialog({
                 variant="outlined"
                 startIcon={<AddRoundedIcon />}
                 disabled={fields.length >= MAX_DRAW_COUNT}
-                onClick={() => append({ name: '', percentage: 0 })}
+                onClick={() => append({ name: '', percentage: 0, eventType: '' })}
               >
                 Add draw
               </Button>
@@ -959,6 +985,7 @@ function BuilderDrawScheduleCard({
               Draw {index + 1}
               {draw.name?.trim() ? ` (${draw.name.trim()})` : ''}
             </Typography>
+            <Chip size="small" variant="outlined" label={draw.eventType} />
             {schedule.optionsBillingDrawIndex != null
               && Number(schedule.optionsBillingDrawIndex) === index && (
               <Chip size="small" color="primary" label="Options billed" />
@@ -1179,7 +1206,7 @@ export default function BuilderDrawSchedules() {
         >
           <Box>
             <Typography variant="h5" fontWeight={750} color="text.primary">
-              Builder Draw Schedules
+              Builder Setups
             </Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, maxWidth: 720 }}>
               One complete setup per builder: draw allocation, cutoff rules,

@@ -4,7 +4,7 @@ import { defaultBillingSettings } from '../src/features/builder-draw-schedules/d
 import { createBuilderDrawScheduleSchema } from '../src/features/builder-draw-schedules/schemas/builderDrawScheduleSchema.js'
 
 function validSetup(overrides = {}) {
-  return {
+  const setup = {
     ...defaultBillingSettings,
     cutoffDays: [...defaultBillingSettings.cutoffDays],
     builderId: 2,
@@ -15,6 +15,14 @@ function validSetup(overrides = {}) {
     ],
     ...overrides,
   }
+
+  return {
+    ...setup,
+    draws: setup.draws.map((draw, index) => ({
+      ...draw,
+      eventType: draw.eventType ?? ['EXT', 'DM', 'HW'][Math.min(index, 2)],
+    })),
+  }
 }
 
 test('Builder Draw Schedule accepts 3 draws totaling 100 percent', () => {
@@ -22,7 +30,43 @@ test('Builder Draw Schedule accepts 3 draws totaling 100 percent', () => {
 
   assert.equal(result.builderId, 2)
   assert.equal(result.draws.length, 3)
+  assert.deepEqual(result.draws.map((draw) => draw.eventType), ['EXT', 'DM', 'HW'])
   assert.equal(result.separateHardwarePrice, false)
+})
+
+test('Builder Draw Schedule requires EXT, DM or HW for every Draw', () => {
+  const missing = createBuilderDrawScheduleSchema([], null).safeParse({
+    ...validSetup(),
+    draws: [
+      { percentage: 25, eventType: 'EXT' },
+      { percentage: 75, eventType: '' },
+    ],
+  })
+  const unsupported = createBuilderDrawScheduleSchema([], null).safeParse({
+    ...validSetup(),
+    draws: [
+      { percentage: 25, eventType: 'SHUTTER' },
+      { percentage: 75, eventType: 'DM' },
+    ],
+  })
+
+  assert.equal(missing.success, false)
+  assert.equal(unsupported.success, false)
+})
+
+test('Builder Draw Schedule allows the same event on multiple Draws', () => {
+  const result = createBuilderDrawScheduleSchema([], null).parse(validSetup({
+    draws: [
+      { percentage: 25, eventType: 'EXT' },
+      { percentage: 25, eventType: 'DM' },
+      { percentage: 25, eventType: 'HW' },
+      { percentage: 25, eventType: 'HW' },
+    ],
+  }))
+
+  assert.deepEqual(result.draws.map((draw) => draw.eventType), [
+    'EXT', 'DM', 'HW', 'HW',
+  ])
 })
 
 test('Builder Draw Schedule can separate hardware at 100 percent', () => {

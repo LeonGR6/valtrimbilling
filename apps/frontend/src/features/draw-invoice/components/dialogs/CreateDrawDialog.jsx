@@ -251,10 +251,10 @@ export default function CreateDrawDialog({
     <Dialog open onClose={onClose} fullWidth maxWidth="lg">
       <DialogTitle sx={{ pb: 1 }}>
         <Typography variant="h6" component="div" fontWeight={800}>
-          Create Draw
+          Create Draw Package
         </Typography>
         <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-          A Draw creates one persisted package, its immutable calculated lines,
+          A Draw Package creates one persisted package, its immutable calculated lines,
           and an invoice total snapshot.
         </Typography>
       </DialogTitle>

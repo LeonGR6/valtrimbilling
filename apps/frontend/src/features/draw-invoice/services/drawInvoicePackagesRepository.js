@@ -16,11 +16,7 @@ const PACKAGE_COLUMNS = [
   'phase_id',
   'setup_version_id',
   'package_date',
-  'billing_period_start',
-  'billing_period_end',
-  'payment_terms_days',
   'invoice_line_format',
-  'portal_name',
   'workflow_status',
   'status',
   'voided_at',
@@ -66,6 +62,12 @@ const DRAW_COLUMNS = [
   'net_amount',
 ].join(', ')
 
+const BILLING_DRAW_COLUMNS = [
+  'id',
+  'setup_version_id',
+  'event_type',
+].join(', ')
+
 const OPTION_COLUMNS = [
   'package_id',
   'billing_lot_id',
@@ -89,6 +91,8 @@ const SETUP_COLUMNS = [
   'cutoff_day',
   'cutoff_days',
   'cutoff_weekday',
+  'payment_terms_days',
+  'portal_name',
 ].join(', ')
 
 const CORRECTION_COLUMNS = [
@@ -108,11 +112,14 @@ const CORRECTION_COLUMNS = [
 const PAGE_SIZE = 1000
 const FILTER_BATCH_SIZE = 200
 
-function throwRepositoryError(error) {
+function throwRepositoryError(error, operation = 'write') {
   if (!error) return
 
   if (error.code === '42501') {
-    throw new Error('You do not have permission to change Draw & Invoice Packages.', {
+    const message = operation === 'read'
+      ? 'You do not have permission to view Draw & Invoice Packages.'
+      : 'You do not have permission to change Draw & Invoice Packages.'
+    throw new Error(message, {
       cause: error,
     })
   }
@@ -166,7 +173,7 @@ async function listAllRows(queryFactory) {
       start,
       start + PAGE_SIZE - 1,
     )
-    throwRepositoryError(error)
+    throwRepositoryError(error, 'read')
 
     const page = data ?? []
     rows.push(...page)
@@ -212,7 +219,14 @@ export async function listDrawInvoicePackages() {
   const setupVersionIds = [...new Set(
     packages.map(({ setup_version_id: setupVersionId }) => setupVersionId),
   )]
-  const [invoices, draws, options, corrections, setupVersions] = await Promise.all([
+  const [
+    invoices,
+    draws,
+    options,
+    corrections,
+    setupVersions,
+    billingDraws,
+  ] = await Promise.all([
     listRowsInBatches(
       client,
       packageIds,
@@ -247,6 +261,12 @@ export async function listDrawInvoicePackages() {
       .in('id', batch)
       .order('id', { ascending: true }))
     )).then((rows) => rows.flat()),
+    Promise.all(inBatches(setupVersionIds).map((batch) => listAllRows(() => client
+      .from('billing_draws')
+      .select(BILLING_DRAW_COLUMNS)
+      .in('setup_version_id', batch)
+      .order('id', { ascending: true }))
+    )).then((rows) => rows.flat()),
   ])
 
   const invoicesByPackage = new Map(
@@ -266,11 +286,17 @@ export async function listDrawInvoicePackages() {
   const setupVersionsById = new Map(
     setupVersions.map((version) => [version.id, version]),
   )
+  const billingDrawsById = new Map(
+    billingDraws.map((draw) => [draw.id, draw]),
+  )
 
   return packages.map((packageRow) => toDrawInvoicePackage(
     packageRow,
     invoicesByPackage.get(packageRow.id),
-    drawsByPackage.get(packageRow.id) ?? [],
+    (drawsByPackage.get(packageRow.id) ?? []).map((draw) => ({
+      ...draw,
+      event_type: billingDrawsById.get(draw.draw_id)?.event_type ?? null,
+    })),
     optionsByPackage.get(packageRow.id) ?? [],
     setupVersionsById.get(packageRow.setup_version_id),
     [

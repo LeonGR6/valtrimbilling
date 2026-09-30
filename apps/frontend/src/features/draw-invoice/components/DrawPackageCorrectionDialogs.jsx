@@ -48,8 +48,6 @@ export function EditDrawPackageDialog({
     phase?.id ?? availablePhases[0]?.id ?? '',
   )
   const [selections, setSelections] = useState(record.selections)
-  const [periodStart, setPeriodStart] = useState(record.billingPeriodStart ?? '')
-  const [periodEnd, setPeriodEnd] = useState(record.billingPeriodEnd ?? '')
   const [notes, setNotes] = useState(record.notes ?? '')
   const [reason, setReason] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -70,13 +68,10 @@ export function EditDrawPackageDialog({
   const addedCount = selections.filter(
     (selection) => !originalKeys.has(cellKey(selection)),
   ).length
-  const metadataChanged = periodStart !== (record.billingPeriodStart ?? '')
-    || periodEnd !== (record.billingPeriodEnd ?? '')
-    || notes.trim() !== (record.notes ?? '')
+  const metadataChanged = notes.trim() !== (record.notes ?? '')
   const changed = removedCount > 0 || addedCount > 0 || metadataChanged
-  const validPeriod = !periodStart || !periodEnd || periodEnd >= periodStart
   const canSave = !submitting && selections.length > 0 && changed
-    && validateReason(reason) && validPeriod && notes.trim().length <= 500
+    && validateReason(reason) && notes.trim().length <= 500
 
   const toggle = (lotId, drawIndex) => {
     const key = `${activePhase.id}:${lotId}:${drawIndex}`
@@ -94,8 +89,6 @@ export function EditDrawPackageDialog({
       await onSave({
         packageId: record.id,
         selections,
-        billingPeriodStart: periodStart,
-        billingPeriodEnd: periodEnd,
         notes,
         reason,
       })
@@ -189,26 +182,6 @@ export function EditDrawPackageDialog({
           <Typography variant="body2">
             {selections.length} cells after edit · {addedCount} added · {removedCount} removed
           </Typography>
-          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
-            <TextField
-              type="date"
-              label="Billing period start"
-              value={periodStart}
-              onChange={(event) => setPeriodStart(event.target.value)}
-              slotProps={{ inputLabel: { shrink: true } }}
-              fullWidth
-            />
-            <TextField
-              type="date"
-              label="Billing period end"
-              value={periodEnd}
-              onChange={(event) => setPeriodEnd(event.target.value)}
-              error={!validPeriod}
-              helperText={!validPeriod ? 'End cannot precede start.' : ''}
-              slotProps={{ inputLabel: { shrink: true } }}
-              fullWidth
-            />
-          </Stack>
           <TextField
             label="Package notes"
             value={notes}

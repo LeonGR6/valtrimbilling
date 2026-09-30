@@ -107,14 +107,14 @@ select ok(coalesce((
   select prosrc like '%perform 1 from valtrim.jobs%for update%'
     and prosrc not like '%v_source.phase_id <> v_target.phase_id%'
   from pg_proc
-  where oid = 'private.correct_draw_invoice_package(text,bigint,bigint,jsonb,text,date,date,text)'::regprocedure
+  where oid = 'private.correct_draw_invoice_package(text,bigint,bigint,jsonb,text,text)'::regprocedure
 ), false), 'Corrections lock the Job and transfers no longer require one shared Phase');
 
 select ok(coalesce((
   select prosrc like '%count(distinct line.phase_id) = 1%'
     and prosrc like '%set phase_id = null%'
   from pg_proc
-  where oid = 'private.correct_draw_invoice_package(text,bigint,bigint,jsonb,text,date,date,text)'::regprocedure
+  where oid = 'private.correct_draw_invoice_package(text,bigint,bigint,jsonb,text,text)'::regprocedure
 ), false), 'Corrections refresh the single-Phase shortcut after edits, transfers and cancellation');
 
 select ok(not has_table_privilege('authenticated', 'valtrim.package_draws', 'insert')

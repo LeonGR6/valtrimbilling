@@ -24,11 +24,7 @@ const packageRow = {
   phase_id: 21,
   setup_version_id: 31,
   package_date: '2026-09-11',
-  billing_period_start: null,
-  billing_period_end: null,
-  payment_terms_days: 30,
   invoice_line_format: 'LOT_SCOPE',
-  portal_name: null,
   workflow_status: 'READY_TO_SUBMIT',
   notes: null,
   created_at: '2026-09-11T12:00:00Z',
@@ -63,6 +59,7 @@ test('maps persisted package, invoice and calculated snapshots to the UI model',
         plan_code: 'A',
         draw_number: 2,
         draw_name: 'Trim',
+        event_type: 'DM',
         base_draw_amount: '1000.50',
         hardware_amount: '0',
         options_amount: '125',
@@ -88,6 +85,8 @@ test('maps persisted package, invoice and calculated snapshots to the UI model',
       cutoff_day: 20,
       cutoff_days: [],
       cutoff_weekday: null,
+      payment_terms_days: 30,
+      portal_name: 'Textura',
     },
   )
 
@@ -99,8 +98,11 @@ test('maps persisted package, invoice and calculated snapshots to the UI model',
   assert.deepEqual(record.selections, [{ phaseId: 21, lotId: 41, drawIndex: 1 }])
   assert.equal(record.optionsBillingDrawIndex, 1)
   assert.equal(record.billingCutoffDate, '2026-09-20')
+  assert.equal(record.paymentTermsDays, 30)
+  assert.equal(record.portalName, 'Textura')
   assert.equal(record.persistedInvoice.grossAmount, 1125.5)
   assert.equal(record.persistedInvoice.netAmount, 1046.71)
+  assert.equal(record.persistedDrawLines[0].eventType, 'DM')
   assert.deepEqual(record.persistedOptionLines[0], {
     id: '41:61',
     phaseId: 21,
@@ -163,8 +165,6 @@ test('monthly cutoff dates clamp to the last day of a short month', () => {
 test('Billing Period displays the resolved cutoff date', () => {
   assert.equal(formatBillingPeriod({
     billingCutoffDate: '2026-09-20',
-    billingPeriodStart: '2026-09-01',
-    billingPeriodEnd: '2026-09-30',
   }), 'Sep 20, 2026')
   assert.equal(formatBillingPeriod({ billingCutoffDate: null }), 'Not set')
 })
@@ -320,12 +320,12 @@ test('derives a multi-Phase Package scope from its immutable draw lines', () => 
       {
         phase_id: 21, phase_code: '1', building: 'P1',
         lot_id: 41, draw_id: 51, lot_number: '97', plan_code: 'A',
-        draw_number: 3,
+        draw_number: 3, event_type: 'HW',
       },
       {
         phase_id: 22, phase_code: '2', building: 'P2',
         lot_id: 42, draw_id: 52, lot_number: '20', plan_code: 'B',
-        draw_number: 2,
+        draw_number: 2, event_type: 'DM',
       },
     ],
   )
@@ -403,13 +403,11 @@ test('builds edit, transfer and cancel RPC payloads with exact Lot / Draw cells'
   ]
   assert.deepEqual(toEditDrawPackageRpc({
     packageId: '91', selections, reason: ' Fix scope ',
-    billingPeriodStart: '2026-09-01', billingPeriodEnd: '', notes: ' Draft ',
+    notes: ' Draft ',
   }), {
     p_package_id: 91,
     p_selections: cells,
     p_reason: 'Fix scope',
-    p_period_start: '2026-09-01',
-    p_period_end: null,
     p_notes: 'Draft',
   })
   assert.deepEqual(toTransferDrawPackageRpc({

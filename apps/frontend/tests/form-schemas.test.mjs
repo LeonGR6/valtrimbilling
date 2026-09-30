@@ -350,12 +350,20 @@ test('lot ranges generate every consecutive lot inclusively', () => {
     success: true,
     lotNumbers: ['9', '10', '11', '12', '13', '14'],
   })
+
+  assert.deepEqual(parseLotRange('9-14, 20-25'), {
+    success: true,
+    lotNumbers: ['9', '10', '11', '12', '13', '14', '20', '21', '22', '23', '24', '25'],
+  })
 })
 
 test('lot ranges reject invalid, reversed and oversized ranges', () => {
   assert.equal(parseLotRange('9 to 14').success, false)
   assert.equal(parseLotRange('14-9').success, false)
   assert.equal(parseLotRange('1-501').success, false)
+  assert.equal(parseLotRange('9-14,').success, false)
+  assert.equal(parseLotRange('9-14, 14-20').success, false)
+  assert.equal(parseLotRange('1-300, 400-600').success, false)
 })
 
 test('phase by lot schema rejects duplicate phase names and lot numbers', () => {

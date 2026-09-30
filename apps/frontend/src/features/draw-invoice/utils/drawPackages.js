@@ -21,6 +21,41 @@ function isAtOrAfterOptionsBillingDraw(drawIndex, optionsBillingDrawIndex) {
     && Number(drawIndex) >= optionsBillingDrawIndex
 }
 
+const DRAW_EVENT_TYPES = new Set(['EXT', 'DM', 'HW'])
+
+export function formatPackageScopeEventTypes(eventTypes = []) {
+  const supportedEventTypes = [...new Set(
+    eventTypes.filter((eventType) => DRAW_EVENT_TYPES.has(eventType)),
+  )]
+
+  return supportedEventTypes.length > 0
+    ? supportedEventTypes.join(' / ')
+    : '—'
+}
+
+function getPackageScopeEventTypes(record, selections, schedule) {
+  const eventTypeByDrawIndex = new Map()
+
+  for (const line of record?.persistedDrawLines ?? []) {
+    if (DRAW_EVENT_TYPES.has(line.eventType)) {
+      eventTypeByDrawIndex.set(Number(line.drawIndex), line.eventType)
+    }
+  }
+
+  for (const selection of selections) {
+    const drawIndex = Number(selection.drawIndex)
+    const eventType = selection.eventType
+      ?? schedule?.draws?.[drawIndex]?.eventType
+    if (!eventTypeByDrawIndex.has(drawIndex) && DRAW_EVENT_TYPES.has(eventType)) {
+      eventTypeByDrawIndex.set(drawIndex, eventType)
+    }
+  }
+
+  return [...new Set([...eventTypeByDrawIndex.entries()]
+    .sort(([leftIndex], [rightIndex]) => leftIndex - rightIndex)
+    .map(([, eventType]) => eventType))]
+}
+
 export function buildOptionChargeContext(
   packages = [],
   jobId,
@@ -66,6 +101,54 @@ export function buildOptionChargeContext(
     eligibleOptionLotIds: [...eligibleOptionLotIds],
     billedOptionEntries,
   }
+}
+
+function comparePackagesChronologically(left, right) {
+  const leftCreatedAt = Date.parse(left.createdAt ?? '')
+  const rightCreatedAt = Date.parse(right.createdAt ?? '')
+
+  if (
+    Number.isFinite(leftCreatedAt)
+    && Number.isFinite(rightCreatedAt)
+    && leftCreatedAt !== rightCreatedAt
+  ) {
+    return leftCreatedAt - rightCreatedAt
+  }
+
+  const leftId = Number(left.id)
+  const rightId = Number(right.id)
+  if (Number.isFinite(leftId) && Number.isFinite(rightId) && leftId !== rightId) {
+    return leftId - rightId
+  }
+
+  return String(left.packageNumber ?? '').localeCompare(
+    String(right.packageNumber ?? ''),
+    'en',
+    { numeric: true, sensitivity: 'base' },
+  )
+}
+
+export function buildPackageOptionHistory(packages = [], currentPackage) {
+  if (currentPackage == null) return []
+
+  const orderedPackages = packages
+    .filter((record) => String(record.jobId) === String(currentPackage.jobId))
+    .sort(comparePackagesChronologically)
+  const currentIndex = orderedPackages.findIndex(
+    (record) => String(record.id) === String(currentPackage.id),
+  )
+
+  if (currentIndex < 0) return []
+
+  return orderedPackages
+    .slice(0, currentIndex + 1)
+    .filter((record) => record.status !== 'CANCELLED')
+    .flatMap((record) => (record.persistedOptionLines ?? []).map((option) => ({
+      ...option,
+      chargedPackageId: record.id,
+      chargedPackageNumber: record.packageNumber,
+      chargedInCurrentPackage: String(record.id) === String(currentPackage.id),
+    })))
 }
 
 export function makePackageSelections(lotIds = [], drawIndexes = []) {
@@ -268,6 +351,7 @@ export function summarizeDrawPackage(record, job, phaseOrPhases, schedule) {
   const rowForSelection = (selection) => scopeForSelection(selection)
     ?.rowsById.get(String(selection.lotId))
   const selections = record?.selections ?? []
+  const scopeEventTypes = getPackageScopeEventTypes(record, selections, schedule)
   const selectedRows = [...new Map(selections.map((selection) => {
     const scope = scopeForSelection(selection)
     const row = rowForSelection(selection)
@@ -354,6 +438,13 @@ export function summarizeDrawPackage(record, job, phaseOrPhases, schedule) {
   if (record?.persistedInvoice) {
     const persistedLines = record.persistedDrawLines ?? []
     const persistedOptionLines = record.persistedOptionLines ?? []
+    const chargedOptionRows = record.chargedOptionRows
+      ?? persistedOptionLines.map((option) => ({
+        ...option,
+        chargedPackageId: record.id,
+        chargedPackageNumber: record.packageNumber,
+        chargedInCurrentPackage: true,
+      }))
     const selectedOptionRows = optionsAreDue
       ? persistedOptionLines
       : availableDraftOptionRows
@@ -380,9 +471,11 @@ export function summarizeDrawPackage(record, job, phaseOrPhases, schedule) {
       phaseSummaries,
       phaseCount: phaseSummaries.length,
       scopeCount: persistedLines.length,
+      scopeEventTypes,
       currentDraw: record.persistedInvoice.grossAmount,
       availableOptionRows: persistedOptionLines,
       selectedOptionRows,
+      chargedOptionRows,
       optionRows,
       billedOptionCount: 0,
       optionsBillingDrawIndex,
@@ -458,6 +551,7 @@ export function summarizeDrawPackage(record, job, phaseOrPhases, schedule) {
     phaseSummaries,
     phaseCount: phaseSummaries.length,
     scopeCount: selections.length,
+    scopeEventTypes,
     currentDraw,
     availableOptionRows: availableDraftOptionRows,
     selectedOptionRows,

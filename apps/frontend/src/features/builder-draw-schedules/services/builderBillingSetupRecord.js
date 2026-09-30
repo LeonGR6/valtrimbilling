@@ -47,6 +47,7 @@ export function toBuilderDrawSchedule(version, draws = [], documents = []) {
       .map((draw) => ({
         name: draw.name ?? '',
         percentage: toNumber(draw.percentage),
+        eventType: draw.event_type,
       })),
     separateHardwarePrice: version.separate_hardware_price,
     hardwareBillingDrawIndex: optionalDrawIndex(
@@ -115,6 +116,7 @@ export function toBuilderBillingSetupRpc(schedule) {
       drawNumber: index + 1,
       name: draw.name.trim() || null,
       percentage: Number(draw.percentage),
+      eventType: draw.eventType,
     })),
     p_required_documents: requiredDocumentDefinitions
       .filter(({ field }) => schedule[field])

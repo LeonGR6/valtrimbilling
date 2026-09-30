@@ -27,6 +27,7 @@ import {
 } from '../../../sequence-sheets/utils/phaseBuildingCodes.js'
 import { canCorrectDrawPackage } from '../../services/drawInvoicePackageRecord.js'
 import { describeJobDocumentProgress } from '../../services/jobDocumentRecord.js'
+import { formatPackageScopeEventTypes } from '../../utils/drawPackages.js'
 import {
   formatBillingPeriod,
   formatCurrency,
@@ -253,7 +254,9 @@ export default function PackageTable({
                   <TableCell>{formatBillingPeriod(record)}</TableCell>
                   <TableCell>
                     <Typography fontWeight={750}>{summary.lotRange}</Typography>
-                    <Typography variant="caption" color="text.secondary">{summary.scopeCount} scopes</Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      {formatPackageScopeEventTypes(summary.scopeEventTypes)}
+                    </Typography>
                   </TableCell>
                   <TableCell><Typography fontWeight={750} sx={{ fontWeight: 'bold' }}>
                     {formatCurrency(summary.currentDraw)}

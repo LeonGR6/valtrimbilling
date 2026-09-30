@@ -32,6 +32,7 @@ const DRAW_COLUMNS = [
   'draw_number',
   'name',
   'percentage',
+  'event_type',
 ].join(', ')
 
 const DOCUMENT_COLUMNS = [

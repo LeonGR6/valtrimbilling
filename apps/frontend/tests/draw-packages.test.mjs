@@ -3,9 +3,11 @@ import test from 'node:test'
 import { initialBuilderDrawSchedules } from '../src/features/builder-draw-schedules/data/builderDrawSchedules.js'
 import {
   buildOptionChargeContext,
+  buildPackageOptionHistory,
   buildUsedDrawSelections,
   drawSelectionKey,
   formatLotRange,
+  formatPackageScopeEventTypes,
   makePackageSelections,
   optionSelectionKey,
   summarizeDrawPackage,
@@ -94,6 +96,7 @@ test('a Package can combine Draw selections from multiple Phases of one Job', ()
   assert.equal(summary.phaseCount, 2)
   assert.equal(summary.lotCount, 4)
   assert.equal(summary.scopeCount, 4)
+  assert.deepEqual(summary.scopeEventTypes, ['DM', 'HW'])
   assert.deepEqual(summary.phaseSummaries.map((scope) => ({
     phaseId: scope.phaseId,
     draw: scope.draws[0].drawIndex,
@@ -109,6 +112,14 @@ test('lot ranges remain compact without hiding unselected lots', () => {
   assert.equal(formatLotRange(['66', '67', '68', '69', '70']), '66–70')
   assert.equal(formatLotRange(['A2', 'A1']), 'A1, A2')
   assert.equal(formatLotRange([]), '—')
+})
+
+test('Package scopes list unique billing events separated by slashes', () => {
+  assert.equal(
+    formatPackageScopeEventTypes(['EXT', 'DM', 'HW', 'HW']),
+    'EXT / DM / HW',
+  )
+  assert.equal(formatPackageScopeEventTypes([]), '—')
 })
 
 test('used lot and draw combinations point back to their package', () => {
@@ -363,6 +374,82 @@ test('previously billed Options are visible but excluded from a new Package', ()
   assert.equal(summary.optionsTotal, 125)
 })
 
+test('Package Option history includes earlier charges through the current Package', () => {
+  const packages = [
+    {
+      id: 27,
+      packageNumber: 'DP-00000027',
+      jobId: 8,
+      createdAt: '2026-09-29T15:00:00Z',
+      status: 'DRAFT',
+      persistedOptionLines: [{ id: '1:12', lotId: 1, optionId: 12 }],
+    },
+    {
+      id: 26,
+      packageNumber: 'DP-00000026',
+      jobId: 8,
+      createdAt: '2026-09-28T15:00:00Z',
+      status: 'DRAFT',
+      persistedOptionLines: [
+        { id: '1:10', lotId: 1, optionId: 10 },
+        { id: '1:11', lotId: 1, optionId: 11 },
+      ],
+    },
+    {
+      id: 28,
+      packageNumber: 'DP-00000028',
+      jobId: 8,
+      createdAt: '2026-09-30T15:00:00Z',
+      status: 'DRAFT',
+      persistedOptionLines: [{ id: '1:13', lotId: 1, optionId: 13 }],
+    },
+    {
+      id: 25,
+      packageNumber: 'DP-00000025',
+      jobId: 9,
+      createdAt: '2026-09-27T15:00:00Z',
+      status: 'DRAFT',
+      persistedOptionLines: [{ id: '1:14', lotId: 1, optionId: 14 }],
+    },
+  ]
+
+  const history = buildPackageOptionHistory(packages, packages[0])
+
+  assert.deepEqual(history.map((option) => ({
+    optionId: option.optionId,
+    chargedWith: option.chargedPackageNumber,
+    isCurrent: option.chargedInCurrentPackage,
+  })), [
+    { optionId: 10, chargedWith: 'DP-00000026', isCurrent: false },
+    { optionId: 11, chargedWith: 'DP-00000026', isCurrent: false },
+    { optionId: 12, chargedWith: 'DP-00000027', isCurrent: true },
+  ])
+})
+
+test('cancelled Packages do not contribute Options to package history', () => {
+  const currentPackage = {
+    id: 27,
+    packageNumber: 'DP-00000027',
+    jobId: 8,
+    createdAt: '2026-09-29T15:00:00Z',
+    status: 'DRAFT',
+    persistedOptionLines: [{ id: '1:12', lotId: 1, optionId: 12 }],
+  }
+  const history = buildPackageOptionHistory([
+    {
+      id: 26,
+      packageNumber: 'DP-00000026',
+      jobId: 8,
+      createdAt: '2026-09-28T15:00:00Z',
+      status: 'CANCELLED',
+      persistedOptionLines: [{ id: '1:10', lotId: 1, optionId: 10 }],
+    },
+    currentPackage,
+  ], currentPackage)
+
+  assert.deepEqual(history.map((option) => option.optionId), [12])
+})
+
 test('Package creation can exclude individual Options from the billing Draw', () => {
   const job = {
     sequenceSheet: {
@@ -475,7 +562,12 @@ test('persisted package totals use immutable database snapshots', () => {
       wrapAmount: 22.51,
       netAmount: 1046.71,
     },
-    persistedDrawLines: [{ lotId: 1, lotNumber: '19' }],
+    persistedDrawLines: [{
+      lotId: 1,
+      lotNumber: '19',
+      drawIndex: 1,
+      eventType: 'HW',
+    }],
     persistedOptionLines: [{
       id: '1:10',
       lotId: 1,
@@ -492,7 +584,12 @@ test('persisted package totals use immutable database snapshots', () => {
     record,
     { sequenceSheet: { plans: [] } },
     { lots: [] },
-    { draws: [{ percentage: 50 }, { percentage: 50 }] },
+    {
+      draws: [
+        { percentage: 50, eventType: 'EXT' },
+        { percentage: 50, eventType: 'DM' },
+      ],
+    },
   )
 
   assert.equal(summary.currentDraw, 1125.5)
@@ -501,4 +598,5 @@ test('persisted package totals use immutable database snapshots', () => {
   assert.equal(summary.invoiceAmount, 1046.71)
   assert.equal(summary.optionsTotal, 125)
   assert.equal(summary.lotRange, '19')
+  assert.deepEqual(summary.scopeEventTypes, ['HW'])
 })

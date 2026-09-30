@@ -23,6 +23,10 @@ function uniqueSortedNumbers(values) {
     .sort((left, right) => left - right)
 }
 
+function getDrawEventType(drawRow) {
+  return drawRow.event_type ?? null
+}
+
 function parseDateKey(value) {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(value ?? ''))
   if (!match) return null
@@ -154,11 +158,9 @@ export function toDrawInvoicePackage(
       packageRow.package_date,
       setupVersion,
     ),
-    billingPeriodStart: packageRow.billing_period_start,
-    billingPeriodEnd: packageRow.billing_period_end,
-    paymentTermsDays: packageRow.payment_terms_days,
+    paymentTermsDays: setupVersion?.payment_terms_days ?? null,
     invoiceLineFormat: packageRow.invoice_line_format,
-    portalName: packageRow.portal_name ?? '',
+    portalName: setupVersion?.portal_name ?? '',
     quickbooksStatus: packageRow.quickbooks_status ?? 'NOT_CREATED',
     quickbooksReference: packageRow.quickbooks_reference ?? null,
     submissionStatus: packageRow.submission_status ?? 'NOT_SUBMITTED',
@@ -210,6 +212,7 @@ export function toDrawInvoicePackage(
       planCode: row.plan_code,
       drawIndex: Number(row.draw_number) - 1,
       drawName: row.draw_name ?? '',
+      eventType: getDrawEventType(row),
       baseDrawAmount: toNumber(row.base_draw_amount),
       hardwareAmount: toNumber(row.hardware_amount),
       optionsAmount: toNumber(row.options_amount),
@@ -344,16 +347,12 @@ export function toEditDrawPackageRpc({
   packageId,
   selections,
   reason,
-  billingPeriodStart,
-  billingPeriodEnd,
   notes,
 }) {
   return {
     p_package_id: Number(packageId),
     p_selections: toSelectionRecords(selections),
     p_reason: String(reason ?? '').trim(),
-    p_period_start: billingPeriodStart || null,
-    p_period_end: billingPeriodEnd || null,
     p_notes: String(notes ?? '').trim() || null,
   }
 }

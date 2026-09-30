@@ -39,7 +39,10 @@ import { useDrawInvoicePackages } from '../../context/useDrawInvoicePackages.js'
 import {
   canCorrectDrawPackage,
 } from '../../services/drawInvoicePackageRecord.js'
-import { summarizeDrawPackage } from '../../utils/drawPackages.js'
+import {
+  buildPackageOptionHistory,
+  summarizeDrawPackage,
+} from '../../utils/drawPackages.js'
 import { buildDrawWorksheet } from '../../utils/drawWorksheet.js'
 import {
   formatCurrency,
@@ -165,9 +168,13 @@ export default function DrawPackageDetail() {
   const focusedPackagePhases = phases.filter(
     (phase) => focusedPackagePhaseIds.has(String(phase.id)),
   )
+  const chargedOptionRows = buildPackageOptionHistory(
+    drawInvoicePackages,
+    focusedPackage,
+  )
   const packageSummary = focusedPackage
     ? summarizeDrawPackage(
-        focusedPackage,
+        { ...focusedPackage, chargedOptionRows },
         focusedJob,
         focusedPackagePhases,
         schedule,
@@ -283,13 +290,19 @@ export default function DrawPackageDetail() {
               disabled={!canManageDrawInvoicePackages || saving}
               disableElevation
             >
-              Create Draw
+              Create Package
             </Button>
           </Stack>
         </Stack>
       </Box>
 
-      <JobModuleNavigation active="draw-invoice" builderId={focusedBuilderId} jobId={focusedJob.id} />
+      {packageId == null && (
+        <JobModuleNavigation
+          active="draw-invoice"
+          builderId={focusedBuilderId}
+          jobId={focusedJob.id}
+        />
+      )}
 
       <Box sx={{ p: { xs: 2.5, md: 4 } }}>
         {error && (
@@ -384,7 +397,7 @@ export default function DrawPackageDetail() {
               </Stack>
             ) : (
               <Alert severity="info">
-                This is the worksheet overview. Use Create Draw to select lots and
+                This is the worksheet overview. Use Create Draw Package to select lots and
                 one or more available draws for a new package.
               </Alert>
             )}
@@ -394,7 +407,7 @@ export default function DrawPackageDetail() {
                 severity="warning"
                 action={<Button component={RouterLink} to="/builder-draw-schedules" color="inherit">Configure schedule</Button>}
               >
-                {focusedJob.builder} does not have a Builder Draw Schedule.
+                {focusedJob.builder} does not have a Builder Setup.
               </Alert>
             )}
             {(worksheet.missingPlanCount > 0 || worksheet.unpricedLotCount > 0) && (

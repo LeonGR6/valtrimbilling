@@ -35,7 +35,7 @@ select ok(coalesce((select tgtype::integer & 8 <> 0
   'Deleting a Draw cell recalculates draft Invoice totals');
 
 select ok(has_function_privilege('authenticated',
-  'valtrim.edit_draw_invoice_package(bigint,jsonb,text,date,date,text)', 'execute'),
+  'valtrim.edit_draw_invoice_package(bigint,jsonb,text,text)', 'execute'),
   'The role-checked edit RPC is callable');
 
 select ok(has_function_privilege('authenticated',
@@ -47,7 +47,7 @@ select ok(has_function_privilege('authenticated',
   'The role-checked cancel RPC is callable');
 
 select ok(not has_function_privilege('anon',
-  'valtrim.edit_draw_invoice_package(bigint,jsonb,text,date,date,text)', 'execute')
+  'valtrim.edit_draw_invoice_package(bigint,jsonb,text,text)', 'execute')
   and not has_function_privilege('anon',
     'valtrim.transfer_draw_package_cells(bigint,bigint,jsonb,text)', 'execute')
   and not has_function_privilege('anon',
@@ -55,7 +55,7 @@ select ok(not has_function_privilege('anon',
   'Anonymous users cannot correct Packages');
 
 select ok(not (select prosecdef from pg_proc where oid =
-  'valtrim.edit_draw_invoice_package(bigint,jsonb,text,date,date,text)'::regprocedure)
+  'valtrim.edit_draw_invoice_package(bigint,jsonb,text,text)'::regprocedure)
   and not (select prosecdef from pg_proc where oid =
     'valtrim.transfer_draw_package_cells(bigint,bigint,jsonb,text)'::regprocedure)
   and not (select prosecdef from pg_proc where oid =
@@ -63,27 +63,27 @@ select ok(not (select prosecdef from pg_proc where oid =
   'Public RPC wrappers use the caller privileges');
 
 select ok((select prosecdef from pg_proc where oid =
-  'private.correct_draw_invoice_package(text,bigint,bigint,jsonb,text,date,date,text)'::regprocedure),
+  'private.correct_draw_invoice_package(text,bigint,bigint,jsonb,text,text)'::regprocedure),
   'The private role-checked correction implementation owns the transaction');
 
 select ok(coalesce((select proconfig @> array['search_path=""']
   from pg_proc where oid =
-  'private.correct_draw_invoice_package(text,bigint,bigint,jsonb,text,date,date,text)'::regprocedure), false),
+  'private.correct_draw_invoice_package(text,bigint,bigint,jsonb,text,text)'::regprocedure), false),
   'The private implementation has an empty search path');
 
 select ok(coalesce((select prosrc like '%perform 1 from valtrim.phases%for update%'
   from pg_proc where oid =
-  'private.correct_draw_invoice_package(text,bigint,bigint,jsonb,text,date,date,text)'::regprocedure), false),
+  'private.correct_draw_invoice_package(text,bigint,bigint,jsonb,text,text)'::regprocedure), false),
   'Corrections lock the Phase before Packages');
 
 select ok(coalesce((select prosrc like '%where occupied.package_id <> p_package_id%'
   from pg_proc where oid =
-  'private.correct_draw_invoice_package(text,bigint,bigint,jsonb,text,date,date,text)'::regprocedure), false),
+  'private.correct_draw_invoice_package(text,bigint,bigint,jsonb,text,text)'::regprocedure), false),
   'An edit rejects cells occupied by another Package');
 
 select ok(coalesce((select prosrc like '%v_source_remaining = 0%'
   from pg_proc where oid =
-  'private.correct_draw_invoice_package(text,bigint,bigint,jsonb,text,date,date,text)'::regprocedure), false),
+  'private.correct_draw_invoice_package(text,bigint,bigint,jsonb,text,text)'::regprocedure), false),
   'A transfer automatically cancels an emptied source');
 
 select ok(not has_column_privilege('authenticated',

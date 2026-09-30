@@ -1,9 +1,15 @@
 export const MIN_DRAW_COUNT = 2
 export const MAX_DRAW_COUNT = 5
 
+export const drawEventTypeOptions = [
+  { value: 'EXT', label: 'EXT' },
+  { value: 'DM', label: 'DM' },
+  { value: 'HW', label: 'HW' },
+]
+
 export const defaultDraws = [
-  { name: '', percentage: 0 },
-  { name: '', percentage: 0 },
+  { name: '', percentage: 0, eventType: '' },
+  { name: '', percentage: 0, eventType: '' },
 ]
 
 export const frequencyOptions = [
@@ -66,9 +72,9 @@ export const initialBuilderDrawSchedules = [
     id: 1,
     builderId: 2,
     draws: [
-      { name: 'Trim Complete', percentage: 10 },
-      { name: '', percentage: 75 },
-      { name: '', percentage: 15 },
+      { name: 'Trim Complete', percentage: 10, eventType: 'EXT' },
+      { name: '', percentage: 75, eventType: 'DM' },
+      { name: '', percentage: 15, eventType: 'HW' },
     ],
     ...defaultBillingSettings,
     frequency: 'WEEKLY',
@@ -89,9 +95,9 @@ export const initialBuilderDrawSchedules = [
     id: 2,
     builderId: 4,
     draws: [
-      { name: '', percentage: 25 },
-      { name: '', percentage: 50 },
-      { name: '', percentage: 25 },
+      { name: '', percentage: 25, eventType: 'EXT' },
+      { name: '', percentage: 50, eventType: 'DM' },
+      { name: '', percentage: 25, eventType: 'HW' },
     ],
     ...defaultBillingSettings,
     frequency: 'MONTHLY',
@@ -111,8 +117,8 @@ export const initialBuilderDrawSchedules = [
     id: 3,
     builderId: 1,
     draws: [
-      { name: '', percentage: 85 },
-      { name: '', percentage: 15 },
+      { name: '', percentage: 85, eventType: 'EXT' },
+      { name: '', percentage: 15, eventType: 'DM' },
     ],
     ...defaultBillingSettings,
     frequency: 'SEMIMONTHLY',

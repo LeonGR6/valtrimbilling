@@ -78,7 +78,6 @@ const navigationSections = [
       { label: 'Calendar', path: '/calendar', icon: CalendarMonthRoundedIcon },
       { label: 'Jobs', path: '/jobs', icon: FolderRoundedIcon },
       { label: 'Sequence Sheets', path: '/sequence-sheets', icon: TableChartRoundedIcon },
-      { label: 'Field Completion', icon: CheckCircleIcon },
     ],
   },
   {
@@ -90,12 +89,9 @@ const navigationSections = [
   {
     label: 'BILLING',
     items: [
-      { label: 'Ready to Invoice', icon: RequestQuoteIcon },
       { label: 'Draw & Invoice Packages', path: '/draw-invoice', icon: BallotIcon },
-      { label: 'Invoices & A/R', icon: DescriptionIcon },
-      { label: 'Releases', icon: DescriptionIcon },
       { label: 'Release - Builder Portal', icon: DescriptionIcon },
-      { label: 'Extra / Change Orders', icon:  SyncAltIcon },
+      // { label: 'Extra / Change Orders', icon:  SyncAltIcon },
     ],
   },
   {

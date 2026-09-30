@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Box, CircularProgress, Stack, Typography } from '@mui/material'
 import { useBuilderDrawSchedules } from '../../../builder-draw-schedules/context/useBuilderDrawSchedules.js'
+import { useProductionActivities } from '../../../calendar/context/useProductionActivities.js'
 import { useJobs } from '../../../jobs/context/useJobs.js'
 import {
   getJobBuilderId,
@@ -19,7 +20,18 @@ export default function DrawInvoiceCatalog() {
     error: jobsError,
     refreshJobs,
   } = useJobs()
-  const { builderDrawSchedules } = useBuilderDrawSchedules()
+  const {
+    builderDrawSchedules,
+    jobBillingSetupVersions,
+    loading: billingSetupsLoading,
+    error: billingSetupsError,
+    refreshBuilderBillingSetups,
+  } = useBuilderDrawSchedules()
+  const {
+    activities: productionActivities,
+    loading: productionActivitiesLoading,
+    error: productionActivitiesError,
+  } = useProductionActivities()
   const {
     drawInvoicePackages,
     loading: packagesLoading,
@@ -51,11 +63,12 @@ export default function DrawInvoiceCatalog() {
     Promise.all([
       refreshJobs(),
       refreshDrawInvoicePackages(),
+      refreshBuilderBillingSetups(),
     ]).catch(() => {})
   }
 
-  const loading = jobsLoading || packagesLoading
-  const error = jobsError || packagesError
+  const loading = jobsLoading || packagesLoading || billingSetupsLoading
+  const error = jobsError || packagesError || billingSetupsError
 
   if (loading && (jobs.length === 0 || drawInvoicePackages.length === 0)) {
     return (
@@ -75,6 +88,7 @@ export default function DrawInvoiceCatalog() {
         schedules={builderDrawSchedules}
         packages={drawInvoicePackages}
         canManage={canManageDrawInvoicePackages}
+        createDisabled={billingSetupsLoading || jobBillingSetupVersions.length === 0}
         error={error}
         onRetry={handleRetry}
         onCreate={() => setCreateDialogOpen(true)}
@@ -96,7 +110,11 @@ export default function DrawInvoiceCatalog() {
         <CreateDrawDialog
           jobs={jobs}
           schedules={builderDrawSchedules}
+          jobBillingSetupVersions={jobBillingSetupVersions}
           packages={drawInvoicePackages}
+          productionActivities={productionActivities}
+          productionActivitiesLoading={productionActivitiesLoading}
+          productionActivitiesError={productionActivitiesError}
           onClose={() => setCreateDialogOpen(false)}
           onCreate={handleCreate}
         />

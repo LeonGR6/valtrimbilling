@@ -110,6 +110,25 @@ function SchedulePreview({ control }) {
     [values],
   )
 
+  if (values.anyDate) {
+    return (
+      <Box sx={{ bgcolor: 'primary.light', borderRadius: 2, p: 2 }}>
+        <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+          <CalendarMonthRoundedIcon fontSize="small" sx={{ color: 'primary.main' }} />
+          <Box>
+            <Typography variant="body2" fontWeight={700} color="primary.main">
+              Any date suggestions
+            </Typography>
+            <Typography variant="caption" color="text.secondary">
+              Create Package will preselect the highest-value rolling 14-day
+              window of open Calendar work through today.
+            </Typography>
+          </Box>
+        </Stack>
+      </Box>
+    )
+  }
+
   return (
     <Box sx={{ bgcolor: 'primary.light', borderRadius: 2, p: 2 }}>
       <Stack direction="row" spacing={1} sx={{ alignItems: 'center', mb: 1.5 }}>
@@ -150,7 +169,6 @@ function BuilderDrawScheduleDialog({
   onSave,
   submitting,
 }) {
-  const [anyDate, setAnyDate] = useState(false)
   const schema = useMemo(
     () => createBuilderDrawScheduleSchema(schedules, schedule?.id),
     [schedule?.id, schedules],
@@ -200,6 +218,8 @@ function BuilderDrawScheduleDialog({
     name: 'hardwareBillingDrawIndex',
   })
   const frequency = useWatch({ control, name: 'frequency' })
+  const anyDate = useWatch({ control, name: 'anyDate' })
+  const cutoffDay = useWatch({ control, name: 'cutoffDay' })
   const retentionEnabled = useWatch({ control, name: 'retentionEnabled' })
   const ocipWrapEnabled = useWatch({ control, name: 'ocipWrapEnabled' })
   const total = getDrawTotal(watchedDraws)
@@ -602,6 +622,15 @@ function BuilderDrawScheduleDialog({
                   {...field}
                   labelId="setup-frequency-label"
                   label="Frequency"
+                  onChange={(event) => {
+                    field.onChange(event)
+                    if (event.target.value !== 'MONTHLY') {
+                      setValue('anyDate', false, {
+                        shouldDirty: true,
+                        shouldValidate: true,
+                      })
+                    }
+                  }}
                 >
                   {frequencyOptions.map((option) => (
                     <MenuItem key={option.value} value={option.value}>
@@ -634,8 +663,19 @@ function BuilderDrawScheduleDialog({
                 sx={{ minWidth: { sm: 180 } }}
                 control={(
                   <Checkbox
-                    checked={anyDate}
-                    onChange={(_, checked) => setAnyDate(checked)}
+                    checked={Boolean(anyDate)}
+                    onChange={(_, checked) => {
+                      setValue('anyDate', checked, {
+                        shouldDirty: true,
+                        shouldValidate: true,
+                      })
+                      if (!checked && !Number.isInteger(Number(cutoffDay))) {
+                        setValue('cutoffDay', 1, {
+                          shouldDirty: true,
+                          shouldValidate: true,
+                        })
+                      }
+                    }}
                   />
                 )}
               />

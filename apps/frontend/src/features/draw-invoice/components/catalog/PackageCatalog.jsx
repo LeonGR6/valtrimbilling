@@ -152,6 +152,7 @@ export default function PackageCatalog({
   schedules,
   packages,
   canManage,
+  createDisabled,
   error,
   onRetry,
   onOpen,
@@ -256,7 +257,7 @@ export default function PackageCatalog({
               variant="contained"
               startIcon={<AddRoundedIcon />}
               onClick={onCreate}
-              disabled={!canManage}s
+              disabled={!canManage || createDisabled}
               disableElevation
             >
               Create Package

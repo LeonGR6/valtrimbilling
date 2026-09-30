@@ -199,7 +199,9 @@ export function buildUsedDrawSelections(packages = [], excludedPackageId = null)
   const used = new Map()
 
   packages
-    .filter((record) => record.id !== excludedPackageId)
+    .filter((record) => (
+      record.id !== excludedPackageId && record.status !== 'CANCELLED'
+    ))
     .forEach((record) => {
       record.selections.forEach(({ phaseId, lotId, drawIndex }) => {
         used.set(
@@ -438,6 +440,24 @@ export function summarizeDrawPackage(record, job, phaseOrPhases, schedule) {
   if (record?.persistedInvoice) {
     const persistedLines = record.persistedDrawLines ?? []
     const persistedOptionLines = record.persistedOptionLines ?? []
+    const separateHardwarePrice = record.separateHardwarePrice
+      ?? Boolean(schedule?.separateHardwarePrice)
+    const hardwareBillingDrawIndex = record.hardwareBillingDrawIndex
+      ?? schedule?.hardwareBillingDrawIndex
+      ?? null
+    const hardwareRows = separateHardwarePrice
+      ? persistedLines.filter((line) => (
+          (
+            hardwareBillingDrawIndex != null
+            && Number(line.drawIndex) === Number(hardwareBillingDrawIndex)
+          )
+          || Number(line.hardwareAmount) > 0
+        ))
+      : []
+    const hardwareTotal = hardwareRows.reduce(
+      (total, line) => addCurrencyAmounts(total, line.hardwareAmount),
+      0,
+    )
     const chargedOptionRows = record.chargedOptionRows
       ?? persistedOptionLines.map((option) => ({
         ...option,
@@ -473,6 +493,11 @@ export function summarizeDrawPackage(record, job, phaseOrPhases, schedule) {
       scopeCount: persistedLines.length,
       scopeEventTypes,
       currentDraw: record.persistedInvoice.grossAmount,
+      separateHardwarePrice,
+      hardwareBillingDrawIndex,
+      hardwareIsDue: hardwareRows.length > 0,
+      hardwareRows,
+      hardwareTotal,
       availableOptionRows: persistedOptionLines,
       selectedOptionRows,
       chargedOptionRows,
@@ -500,7 +525,7 @@ export function summarizeDrawPackage(record, job, phaseOrPhases, schedule) {
     (total, option) => addCurrencyAmounts(total, option.price),
     0,
   )
-  const currentDraw = sumSelectionAmounts(
+  const baseCurrentDraw = sumSelectionAmounts(
     selections,
     rowForSelection,
     'drawAmounts',
@@ -520,6 +545,37 @@ export function summarizeDrawPackage(record, job, phaseOrPhases, schedule) {
     rowForSelection,
     'drawInvoiceAmounts',
   )
+  const hardwareTotal = schedule?.separateHardwarePrice
+    ? selections.reduce((total, selection) => {
+        if (Number(selection.drawIndex) !== Number(schedule.hardwareBillingDrawIndex)) {
+          return total
+        }
+        return addCurrencyAmounts(total, rowForSelection(selection)?.hardwarePrice)
+      }, 0)
+    : 0
+  const hardwareRows = schedule?.separateHardwarePrice
+    ? selections.flatMap((selection) => {
+        if (Number(selection.drawIndex) !== Number(schedule.hardwareBillingDrawIndex)) {
+          return []
+        }
+        const scope = scopeForSelection(selection)
+        const row = rowForSelection(selection)
+        if (!scope || !row) return []
+        return [{
+          phaseId: scope.phaseId,
+          phaseCode: scope.phase.name ?? scope.phase.code ?? null,
+          building: scope.phase.building ?? null,
+          lotId: row.id,
+          lotNumber: row.lotNumber,
+          planCode: row.planCode,
+          drawIndex: selection.drawIndex,
+          drawName: schedule.draws?.[selection.drawIndex]?.name ?? '',
+          hardwareAmount: row.hardwarePrice,
+        }]
+      })
+    : []
+  const hardwareFinancials = calculateInvoiceAmounts(hardwareTotal, schedule)
+  const currentDraw = addCurrencyAmounts(baseCurrentDraw, hardwareTotal)
   const optionFinancials = calculateInvoiceAmounts(optionsTotal, schedule)
   const selectedLines = selections.map((selection) => {
     const scope = scopeForSelection(selection)
@@ -553,6 +609,11 @@ export function summarizeDrawPackage(record, job, phaseOrPhases, schedule) {
     scopeCount: selections.length,
     scopeEventTypes,
     currentDraw,
+    separateHardwarePrice: Boolean(schedule?.separateHardwarePrice),
+    hardwareBillingDrawIndex: schedule?.hardwareBillingDrawIndex ?? null,
+    hardwareIsDue: hardwareRows.length > 0,
+    hardwareRows,
+    hardwareTotal,
     availableOptionRows: availableDraftOptionRows,
     selectedOptionRows,
     optionRows,
@@ -565,13 +626,19 @@ export function summarizeDrawPackage(record, job, phaseOrPhases, schedule) {
     optionsTotal,
     unpricedOptionCount,
     grossAmount: addCurrencyAmounts(currentDraw, optionsTotal),
-    retention: addCurrencyAmounts(baseRetention, optionFinancials.retention),
+    retention: addCurrencyAmounts(
+      baseRetention,
+      hardwareFinancials.retention,
+      optionFinancials.retention,
+    ),
     wrapInsurance: addCurrencyAmounts(
       baseWrapInsurance,
+      hardwareFinancials.wrapInsurance,
       optionFinancials.wrapInsurance,
     ),
     invoiceAmount: addCurrencyAmounts(
       baseInvoiceAmount,
+      hardwareFinancials.invoiceAmount,
       optionFinancials.invoiceAmount,
     ),
   }

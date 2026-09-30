@@ -86,8 +86,11 @@ const OPTION_COLUMNS = [
 
 const SETUP_COLUMNS = [
   'id',
+  'separate_hardware_price',
+  'hardware_billing_draw_number',
   'options_billing_draw_number',
   'frequency',
+  'cutoff_any_date',
   'cutoff_day',
   'cutoff_days',
   'cutoff_weekday',

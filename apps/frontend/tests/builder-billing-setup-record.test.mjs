@@ -15,6 +15,7 @@ test('billing setup records map database columns and one-based draws to the form
     hardware_billing_draw_number: 3,
     options_billing_draw_number: 2,
     frequency: 'SEMIMONTHLY',
+    cutoff_any_date: false,
     cutoff_day: null,
     cutoff_days: [10, 25],
     cutoff_weekday: null,
@@ -51,6 +52,7 @@ test('billing setup records map database columns and one-based draws to the form
   ])
   assert.equal(schedule.hardwareBillingDrawIndex, 2)
   assert.equal(schedule.optionsBillingDrawIndex, 1)
+  assert.equal(schedule.anyDate, false)
   assert.equal(schedule.ocipWrapEnabled, true)
   assert.equal(schedule.ocipWrapPercentage, 2.5)
   assert.equal(schedule.requiresPo, true)
@@ -69,6 +71,7 @@ test('form values map to normalized RPC payloads and one-based draw numbers', ()
     hardwareBillingDrawIndex: 1,
     optionsBillingDrawIndex: 0,
     frequency: 'WEEKLY',
+    anyDate: false,
     cutoffDay: 20,
     cutoffDays: [10, 25],
     cutoffWeekday: 5,
@@ -92,6 +95,7 @@ test('form values map to normalized RPC payloads and one-based draw numbers', ()
   assert.equal(payload.p_config.cutoffDay, null)
   assert.deepEqual(payload.p_config.cutoffDays, [])
   assert.equal(payload.p_config.cutoffWeekday, 5)
+  assert.equal(payload.p_config.cutoffAnyDate, false)
   assert.equal('submissionDay' in payload.p_config, false)
   assert.equal('submissionOffsetDays' in payload.p_config, false)
   assert.equal('workAcceptedThrough' in payload.p_config, false)
@@ -107,4 +111,39 @@ test('form values map to normalized RPC payloads and one-based draw numbers', ()
     payload.p_required_documents.map(({ type }) => type),
     ['PURCHASE_ORDER', 'RELEASE'],
   )
+})
+
+test('monthly Any date is persisted without a fixed cutoff day', () => {
+  const payload = toBuilderBillingSetupRpc({
+    builderId: 7,
+    draws: [
+      { name: '', percentage: 50, eventType: 'EXT' },
+      { name: '', percentage: 50, eventType: 'DM' },
+    ],
+    separateHardwarePrice: false,
+    hardwareBillingDrawIndex: null,
+    optionsBillingDrawIndex: null,
+    frequency: 'MONTHLY',
+    anyDate: true,
+    cutoffDay: 20,
+    cutoffDays: [10, 25],
+    cutoffWeekday: 5,
+    paymentTermsDays: 30,
+    retentionEnabled: false,
+    retentionPercentage: 0,
+    ocipWrapEnabled: false,
+    ocipWrapPercentage: 0,
+    requiresPo: false,
+    requiresPaymentSchedule: false,
+    requiresRelease: false,
+    requiresBackup: false,
+    invoiceLineFormat: 'LOT_SCOPE',
+    portalName: '',
+    notes: '',
+  })
+
+  assert.equal(payload.p_config.cutoffAnyDate, true)
+  assert.equal(payload.p_config.cutoffDay, null)
+  assert.deepEqual(payload.p_config.cutoffDays, [])
+  assert.equal(payload.p_config.cutoffWeekday, null)
 })

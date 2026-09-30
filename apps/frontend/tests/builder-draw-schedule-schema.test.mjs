@@ -280,3 +280,27 @@ test('twice-monthly billing requires two different cutoff days', () => {
     'The two cutoff days must be different.',
   ])
 })
+
+test('monthly Any date does not require a fixed cutoff day', () => {
+  const result = createBuilderDrawScheduleSchema([], null).parse(validSetup({
+    frequency: 'MONTHLY',
+    anyDate: true,
+    cutoffDay: null,
+  }))
+
+  assert.equal(result.anyDate, true)
+  assert.equal(result.cutoffDay, null)
+})
+
+test('monthly fixed cutoff still requires a cutoff day', () => {
+  const result = createBuilderDrawScheduleSchema([], null).safeParse(validSetup({
+    frequency: 'MONTHLY',
+    anyDate: false,
+    cutoffDay: null,
+  }))
+
+  assert.equal(result.success, false)
+  assert.deepEqual(result.error.flatten().fieldErrors.cutoffDay, [
+    'Enter the monthly cutoff date.',
+  ])
+})

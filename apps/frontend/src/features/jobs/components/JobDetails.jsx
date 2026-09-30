@@ -466,7 +466,13 @@ function PlanCard({
   )
 }
 
-export default function JobDetails({ builderId, job, onBack }) {
+export default function JobDetails({
+  builderId,
+  job,
+  supervisorName,
+  jobsiteSuperintendentName,
+  onBack,
+}) {
   const {
     canManageJobs,
     createJobPlan,
@@ -668,8 +674,11 @@ export default function JobDetails({ builderId, job, onBack }) {
             >
               <JobField label="Builder" value={job.builder} />
               <JobField label="Community / Project" value={job.community} />
-              <JobField label="Supervisor" value={job.supervisor} />
-              <JobField label="Jobsite Superintendent" value={job.jobsiteSuperintendent} />
+              <JobField label="Supervisor" value={supervisorName} />
+              <JobField
+                label="Jobsite Superintendent"
+                value={jobsiteSuperintendentName}
+              />
             </Stack>
           </CardContent>
         </Card>

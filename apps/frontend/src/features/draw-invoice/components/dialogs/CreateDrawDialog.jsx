@@ -33,15 +33,26 @@ import {
 import { buildDrawWorksheet } from '../../utils/drawWorksheet.js'
 import {
   formatCurrency,
+  formatLongDate,
   readinessLabel,
 } from '../../utils/drawInvoiceFormatters.js'
+import {
+  buildCalendarDrawSuggestion,
+  calendarSelectionKey,
+  localDateKey,
+} from '../../utils/calendarDrawSuggestions.js'
 import DrawSelectionGrid from './DrawSelectionGrid.jsx'
+import CreatePackageHardwareTable from './CreatePackageHardwareTable.jsx'
 import SelectableOptionsTable from './SelectableOptionsTable.jsx'
 
 export default function CreateDrawDialog({
-  jobs,
-  schedules,
-  packages,
+  jobs = [],
+  schedules = [],
+  jobBillingSetupVersions = [],
+  packages = [],
+  productionActivities = [],
+  productionActivitiesLoading,
+  productionActivitiesError,
   initialJobId,
   initialPhaseId,
   onClose,
@@ -63,24 +74,47 @@ export default function CreateDrawDialog({
   const [selectedPhaseId, setSelectedPhaseId] = useState(
     firstPhase == null ? '' : String(firstPhase.id),
   )
-  const [selectedSelections, setSelectedSelections] = useState([])
+  const [selectionOverrides, setSelectedSelections] = useState(null)
   const [excludedOptionKeys, setExcludedOptionKeys] = useState([])
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState(null)
+  const [asOfDate] = useState(() => localDateKey())
 
   const job = jobs.find((candidate) => String(candidate.id) === selectedJobId)
   const phases = job?.sequenceSheet?.phases ?? []
   const phase = phases.find(
     (candidate) => String(candidate.id) === selectedPhaseId,
   )
-  const schedule = schedules.find(
-    (candidate) =>
-      String(candidate.builderId) === String(getJobBuilderId(job)),
+  const schedule = jobBillingSetupVersions.find(
+    (candidate) => String(candidate.id) === String(job?.billingSetupVersionId),
+  ) ?? schedules.find(
+    (candidate) => String(candidate.builderId) === String(getJobBuilderId(job)),
   )
   const worksheet = buildDrawWorksheet(job, phase, schedule)
   const usedSelections = useMemo(
     () => buildUsedDrawSelections(packages),
     [packages],
+  )
+  const calendarSuggestion = buildCalendarDrawSuggestion({
+    activities: productionActivities,
+    job,
+    schedule,
+    packages,
+    asOfDate,
+  })
+  const selectedSelections = selectionOverrides
+    ?? calendarSuggestion.suggestedSelections
+  const calendarReadySelectionKeys = new Set(
+    calendarSuggestion.eligibleSelections.map(
+      ({ phaseId, lotId, drawIndex }) =>
+        calendarSelectionKey(phaseId, lotId, drawIndex),
+    ),
+  )
+  const suggestedSelectionKeys = new Set(
+    calendarSuggestion.suggestedSelections.map(
+      ({ phaseId, lotId, drawIndex }) =>
+        calendarSelectionKey(phaseId, lotId, drawIndex),
+    ),
   )
   const selectedSelectionKeys = new Set(
     selectedSelections.map(
@@ -118,7 +152,7 @@ export default function CreateDrawDialog({
         ? ''
         : String(nextJob.sequenceSheet.phases[0].id),
     )
-    setSelectedSelections([])
+    setSelectedSelections(null)
     setExcludedOptionKeys([])
   }
 
@@ -298,6 +332,65 @@ export default function CreateDrawDialog({
             </Alert>
           )}
 
+          {productionActivitiesLoading && (
+            <Alert severity="info">
+              Loading Calendar work to prepare the Package suggestion…
+            </Alert>
+          )}
+
+          {!productionActivitiesLoading && productionActivitiesError && (
+            <Alert severity="warning">
+              Calendar suggestions are unavailable: {productionActivitiesError}
+              {' '}You can still select Lot / Draw cells manually.
+            </Alert>
+          )}
+
+          {!productionActivitiesLoading
+            && !productionActivitiesError
+            && calendarSuggestion.eligibleSelections.length === 0 && (
+              <Alert severity="info">
+                {calendarSuggestion.mode === 'ANY_DATE'
+                  ? 'There are no open Calendar Lot / Draw cells scheduled through today.'
+                  : `There are no open Calendar Lot / Draw cells scheduled on or before ${formatLongDate(calendarSuggestion.cutoffDate)}.`}
+                {' '}You can still select cells manually.
+              </Alert>
+          )}
+
+          {!productionActivitiesLoading
+            && !productionActivitiesError
+            && calendarSuggestion.eligibleSelections.length > 0 && (
+              <Alert severity="success">
+                {calendarSuggestion.mode === 'ANY_DATE' ? (
+                  <>
+                    <strong>Any date suggestion:</strong>{' '}
+                    {formatLongDate(calendarSuggestion.windowStart)}–{formatLongDate(calendarSuggestion.windowEnd)}
+                    {' '}is the highest-value rolling 14-day window.{' '}
+                    <strong>{calendarSuggestion.suggestedSelections.length}</strong>{' '}
+                    Lot / Draw cells are preselected for an estimated{' '}
+                    <strong>{formatCurrency(calendarSuggestion.estimatedInvoiceAmount)}</strong>
+                    {' '}invoice.
+                    {calendarSuggestion.eligibleSelections.length
+                      > calendarSuggestion.suggestedSelections.length && (
+                        <>
+                          {' '}{calendarSuggestion.eligibleSelections.length
+                            - calendarSuggestion.suggestedSelections.length}{' '}
+                          other Calendar-ready cells remain available.
+                        </>
+                      )}
+                  </>
+                ) : (
+                  <>
+                    <strong>Calendar suggestion · cutoff{' '}
+                      {formatLongDate(calendarSuggestion.cutoffDate)}:</strong>{' '}
+                    {calendarSuggestion.suggestedSelections.length} open Lot / Draw cells
+                    {' '}for {calendarSuggestion.eventTypes.join(' / ')} are preselected.{' '}
+                    Estimated invoice:{' '}
+                    <strong>{formatCurrency(calendarSuggestion.estimatedInvoiceAmount)}</strong>.
+                  </>
+                )}
+              </Alert>
+          )}
+
           <DrawSelectionGrid
             job={job}
             phase={phase}
@@ -306,10 +399,14 @@ export default function CreateDrawDialog({
             selectedSelections={selectedSelections}
             selectionIsUsed={selectionIsUsed}
             selectionIsSelected={selectionIsSelected}
+            calendarReadySelectionKeys={calendarReadySelectionKeys}
+            suggestedSelectionKeys={suggestedSelectionKeys}
             toggleSelection={toggleSelection}
             toggleLotSelections={toggleLotSelections}
             toggleDrawSelections={toggleDrawSelections}
           />
+
+          <CreatePackageHardwareTable summary={summary} />
 
           {summary.optionsAreDue && (
             <SelectableOptionsTable summary={summary} onToggle={toggleOption} />

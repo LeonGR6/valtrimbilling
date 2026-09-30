@@ -34,11 +34,16 @@ const optionalPercentageSchema = z
     'Use at most two decimals.',
   )
 
-const dayOfMonthSchema = z.coerce
-  .number()
-  .int('Use a whole number.')
-  .min(1, 'Use a day between 1 and 31.')
-  .max(31, 'Use a day between 1 and 31.')
+const optionalDayOfMonthSchema = z.preprocess(
+  (value) => (value === '' || value === null || value === undefined
+    ? null
+    : Number(value)),
+  z.number()
+    .int('Use a whole number.')
+    .min(1, 'Use a day between 1 and 31.')
+    .max(31, 'Use a day between 1 and 31.')
+    .nullable(),
+)
 
 const optionalDrawIndexSchema = z.preprocess(
   (value) => (value === '' || value === null || value === undefined
@@ -76,7 +81,8 @@ export function createBuilderDrawScheduleSchema(schedules, currentScheduleId) {
       hardwareBillingDrawIndex: optionalDrawIndexSchema,
       optionsBillingDrawIndex: optionalDrawIndexSchema,
       frequency: z.enum(['MONTHLY', 'SEMIMONTHLY', 'WEEKLY']),
-      cutoffDay: dayOfMonthSchema,
+      anyDate: z.boolean().default(false),
+      cutoffDay: optionalDayOfMonthSchema,
       cutoffDays: z.array(z.coerce.number().int().min(1).max(31)),
       cutoffWeekday: z.coerce.number().int().min(0).max(6),
       paymentTermsDays: z.coerce
@@ -157,6 +163,18 @@ export function createBuilderDrawScheduleSchema(schedules, currentScheduleId) {
         })
       }
 
+      if (
+        data.frequency === 'MONTHLY'
+        && !data.anyDate
+        && data.cutoffDay === null
+      ) {
+        context.addIssue({
+          code: 'custom',
+          path: ['cutoffDay'],
+          message: 'Enter the monthly cutoff date.',
+        })
+      }
+
       if (data.frequency === 'SEMIMONTHLY' && data.cutoffDays.length !== 2) {
         context.addIssue({
           code: 'custom',
@@ -207,6 +225,10 @@ export function createBuilderDrawScheduleSchema(schedules, currentScheduleId) {
     })
     .transform((data) => ({
       ...data,
+      anyDate: data.frequency === 'MONTHLY' && data.anyDate,
+      cutoffDay: data.frequency === 'MONTHLY' && !data.anyDate
+        ? data.cutoffDay
+        : null,
       hardwareBillingDrawIndex: data.separateHardwarePrice
         ? data.hardwareBillingDrawIndex
         : null,

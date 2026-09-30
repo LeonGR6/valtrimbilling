@@ -34,6 +34,7 @@ import ReceiptLongRoundedIcon from '@mui/icons-material/ReceiptLongRounded'
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
 import ConstructionRoundedIcon from '@mui/icons-material/ConstructionRounded'
 import { useBuilderDrawSchedules } from '../../builder-draw-schedules/context/useBuilderDrawSchedules.js'
+import { useBuilderContacts } from '../../builder-contacts/context/useBuilderContacts.js'
 import JobModuleNavigation from '../../jobs/components/JobModuleNavigation.jsx'
 import {
   getJobOptionCount,
@@ -41,12 +42,14 @@ import {
   getJobUnitCount,
 } from '../../jobs/data/jobs.js'
 import { useJobs } from '../../jobs/context/useJobs.js'
+import { resolveJobAssignmentNames } from '../../jobs/utils/jobAssignments.js'
 import {
   getJobBuilderId,
   jobBelongsToBuilder,
   jobPlanPricingPath,
   jobPlansOptionsPath,
 } from '../../jobs/utils/jobRoutes.js'
+import { usePeople } from '../../people/context/usePeople.js'
 import {
   createHardwarePriceSchema,
   priceSchema,
@@ -696,6 +699,8 @@ export default function PlanPricing() {
     savePlanOptionPrice,
   } = useJobs()
   const { builderDrawSchedules } = useBuilderDrawSchedules()
+  const { people } = usePeople()
+  const { contacts: builderContacts } = useBuilderContacts()
   const [search, setSearch] = useState('')
   const [priceTarget, setPriceTarget] = useState(null)
   const [submitting, setSubmitting] = useState(false)
@@ -707,6 +712,7 @@ export default function PlanPricing() {
           jobBelongsToBuilder(item, builderId),
       )
     : null
+  const jobAssignments = resolveJobAssignmentNames(job, people, builderContacts)
   const resolvedBuilderId = builderId ?? getJobBuilderId(job)
   const builderSetup = builderDrawSchedules.find(
     (setup) => String(setup.builderId) === String(resolvedBuilderId),
@@ -928,8 +934,11 @@ export default function PlanPricing() {
             >
               <JobField label="Builder" value={job.builder} />
               <JobField label="Community / Project" value={job.community} />
-              <JobField label="Supervisor" value={job.supervisor} />
-              <JobField label="Jobsite Superintendent" value={job.jobsiteSuperintendent} />
+              <JobField label="Supervisor" value={jobAssignments.supervisor} />
+              <JobField
+                label="Jobsite Superintendent"
+                value={jobAssignments.jobsiteSuperintendent}
+              />
             </Stack>
           </CardContent>
         </Card>

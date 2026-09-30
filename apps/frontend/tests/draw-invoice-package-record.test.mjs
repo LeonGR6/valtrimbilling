@@ -80,6 +80,8 @@ test('maps persisted package, invoice and calculated snapshots to the UI model',
       },
     ],
     {
+      separate_hardware_price: true,
+      hardware_billing_draw_number: 2,
       options_billing_draw_number: 2,
       frequency: 'MONTHLY',
       cutoff_day: 20,
@@ -96,6 +98,8 @@ test('maps persisted package, invoice and calculated snapshots to the UI model',
   assert.deepEqual(record.phaseIds, [21])
   assert.deepEqual(record.drawIndexes, [1])
   assert.deepEqual(record.selections, [{ phaseId: 21, lotId: 41, drawIndex: 1 }])
+  assert.equal(record.separateHardwarePrice, true)
+  assert.equal(record.hardwareBillingDrawIndex, 1)
   assert.equal(record.optionsBillingDrawIndex, 1)
   assert.equal(record.billingCutoffDate, '2026-09-20')
   assert.equal(record.paymentTermsDays, 30)
@@ -167,6 +171,10 @@ test('Billing Period displays the resolved cutoff date', () => {
     billingCutoffDate: '2026-09-20',
   }), 'Sep 20, 2026')
   assert.equal(formatBillingPeriod({ billingCutoffDate: null }), 'Not set')
+  assert.equal(formatBillingPeriod({
+    billingCutoffDate: null,
+    billingCutoffAnyDate: true,
+  }), 'Any date')
 })
 
 test('Package creation timestamps use the requested long date format', () => {

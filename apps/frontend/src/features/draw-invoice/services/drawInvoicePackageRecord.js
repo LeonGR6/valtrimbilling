@@ -60,7 +60,7 @@ function toDateKey(date) {
 
 export function resolveBillingCutoffDate(packageDate, setupVersion) {
   const date = parseDateKey(packageDate)
-  if (!date || !setupVersion) return null
+  if (!date || !setupVersion || setupVersion.cutoff_any_date) return null
 
   if (setupVersion.frequency === 'MONTHLY') {
     const cutoffDay = Number(setupVersion.cutoff_day)
@@ -140,6 +140,7 @@ export function toDrawInvoicePackage(
     sortedDrawRows.map((row) => [`${row.lot_id}:${row.draw_id}`, row]),
   )
   const optionsBillingDrawNumber = setupVersion?.options_billing_draw_number
+  const hardwareBillingDrawNumber = setupVersion?.hardware_billing_draw_number
   const phaseIds = uniqueSortedNumbers(
     sortedDrawRows.map((row) => row.phase_id),
   )
@@ -158,6 +159,7 @@ export function toDrawInvoicePackage(
       packageRow.package_date,
       setupVersion,
     ),
+    billingCutoffAnyDate: Boolean(setupVersion?.cutoff_any_date),
     paymentTermsDays: setupVersion?.payment_terms_days ?? null,
     invoiceLineFormat: packageRow.invoice_line_format,
     portalName: setupVersion?.portal_name ?? '',
@@ -185,6 +187,10 @@ export function toDrawInvoicePackage(
       lotId: row.lot_id,
       drawIndex: Number(row.draw_number) - 1,
     })),
+    separateHardwarePrice: Boolean(setupVersion?.separate_hardware_price),
+    hardwareBillingDrawIndex: hardwareBillingDrawNumber == null
+      ? null
+      : Number(hardwareBillingDrawNumber) - 1,
     optionsBillingDrawIndex: optionsBillingDrawNumber == null
       ? null
       : Number(optionsBillingDrawNumber) - 1,

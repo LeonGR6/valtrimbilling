@@ -61,6 +61,7 @@ import {
   getJobBuilderId,
   jobPlansOptionsPath,
 } from '../utils/jobRoutes.js'
+import { resolveJobAssignmentNames } from '../utils/jobAssignments.js'
 
 const personName = (index, id) => index.get(id)?.name ?? 'Unassigned'
 
@@ -377,6 +378,11 @@ export default function JobsCatalog() {
   const detailJob = builderJobs.find(
     (job) => String(job.id) === jobId,
   )
+  const detailJobAssignments = resolveJobAssignmentNames(
+    detailJob,
+    people,
+    contacts,
+  )
   const builderOptions = builders
     .filter(
       (builder) =>
@@ -547,6 +553,8 @@ export default function JobsCatalog() {
       <JobDetails
         job={detailJob}
         builderId={selectedBuilder.id}
+        supervisorName={detailJobAssignments.supervisor}
+        jobsiteSuperintendentName={detailJobAssignments.jobsiteSuperintendent}
         onBack={() => navigate(builderJobsPath(selectedBuilder.id))}
       />
     )

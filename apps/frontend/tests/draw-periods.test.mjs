@@ -103,6 +103,13 @@ test('an unknown frequency produces no periods instead of throwing', () => {
   assert.deepEqual(computeDrawPeriods(null, 3, from), [])
 })
 
+test('Any date replaces fixed periods with the rolling Calendar window rule', () => {
+  const setup = { ...monthly, anyDate: true, cutoffDay: null }
+
+  assert.deepEqual(computeDrawPeriods(setup, 3, from), [])
+  assert.match(describeSchedule(setup), /rolling 14-day Calendar window/)
+})
+
 test('describeSchedule summarizes each frequency in one line', () => {
   assert.match(describeSchedule(monthly), /day 20/)
   assert.match(

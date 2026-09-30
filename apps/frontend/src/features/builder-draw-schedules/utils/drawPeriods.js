@@ -93,7 +93,7 @@ function weeklyPeriods(setup, count, from) {
 }
 
 export function computeDrawPeriods(setup, count = 3, from = new Date()) {
-  if (!setup) return []
+  if (!setup || setup.anyDate) return []
 
   switch (setup.frequency) {
     case 'SEMIMONTHLY':
@@ -115,6 +115,9 @@ export function formatPeriodDate(date) {
 export function describeSchedule(setup) {
   switch (setup.frequency) {
     case 'MONTHLY':
+      if (setup.anyDate) {
+        return 'Any date · highest-value rolling 14-day Calendar window'
+      }
       return `Cutoff date: day ${setup.cutoffDay}`
     case 'SEMIMONTHLY':
       return `Cutoff dates: days ${(setup.cutoffDays ?? []).join(' and ')}`

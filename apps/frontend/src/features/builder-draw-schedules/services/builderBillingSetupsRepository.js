@@ -13,6 +13,7 @@ const VERSION_COLUMNS = [
   'hardware_billing_draw_number',
   'options_billing_draw_number',
   'frequency',
+  'cutoff_any_date',
   'cutoff_day',
   'cutoff_days',
   'cutoff_weekday',
@@ -73,16 +74,7 @@ function throwRepositoryError(error) {
   })
 }
 
-export async function listBuilderBillingSetups() {
-  const client = await requireSupabase()
-  const { data: versions, error: versionsError } = await client
-    .from('billing_setup_versions')
-    .select(VERSION_COLUMNS)
-    .eq('status', 'ACTIVE')
-    .order('builder_id', { ascending: true })
-
-  throwRepositoryError(versionsError)
-
+async function hydrateBillingSetupVersions(client, versions) {
   if (!versions?.length) return []
 
   const versionIds = versions.map(({ id }) => id)
@@ -109,6 +101,37 @@ export async function listBuilderBillingSetups() {
     drawResult.data ?? [],
     documentResult.data ?? [],
   ))
+}
+
+export async function listBuilderBillingSetups() {
+  const client = await requireSupabase()
+  const { data: versions, error: versionsError } = await client
+    .from('billing_setup_versions')
+    .select(VERSION_COLUMNS)
+    .eq('status', 'ACTIVE')
+    .order('builder_id', { ascending: true })
+
+  throwRepositoryError(versionsError)
+  return hydrateBillingSetupVersions(client, versions)
+}
+
+export async function listJobBillingSetupVersions(versionIds = []) {
+  const normalizedIds = [...new Set(
+    versionIds.map(Number).filter((value) => Number.isInteger(value) && value > 0),
+  )]
+  if (normalizedIds.length === 0) return []
+
+  const client = await requireSupabase()
+  const { data: versions, error: versionsError } = await client
+    .from('billing_setup_versions')
+    .select(VERSION_COLUMNS)
+    .in('id', normalizedIds)
+    .in('status', ['ACTIVE', 'SUPERSEDED'])
+    .order('builder_id', { ascending: true })
+    .order('version_number', { ascending: false })
+
+  throwRepositoryError(versionsError)
+  return hydrateBillingSetupVersions(client, versions)
 }
 
 export async function saveBuilderBillingSetup(schedule) {

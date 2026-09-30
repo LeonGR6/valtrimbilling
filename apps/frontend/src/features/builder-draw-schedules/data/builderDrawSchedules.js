@@ -48,6 +48,7 @@ export const defaultBillingSettings = {
   hardwareBillingDrawIndex: null,
   optionsBillingDrawIndex: null,
   frequency: 'MONTHLY',
+  anyDate: false,
   cutoffDay: 20,
   cutoffDays: [10, 25],
   cutoffWeekday: 0,

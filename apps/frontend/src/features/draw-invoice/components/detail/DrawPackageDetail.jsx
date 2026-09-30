@@ -22,6 +22,7 @@ import LayersRoundedIcon from '@mui/icons-material/LayersRounded'
 import MoveToInboxRoundedIcon from '@mui/icons-material/MoveToInboxRounded'
 import ReceiptLongRoundedIcon from '@mui/icons-material/ReceiptLongRounded'
 import { useBuilderDrawSchedules } from '../../../builder-draw-schedules/context/useBuilderDrawSchedules.js'
+import { useProductionActivities } from '../../../calendar/context/useProductionActivities.js'
 import JobModuleNavigation from '../../../jobs/components/JobModuleNavigation.jsx'
 import { useJobs } from '../../../jobs/context/useJobs.js'
 import {
@@ -63,6 +64,7 @@ import {
 } from '../shared/PackageUi.jsx'
 import {
   DrawWorksheetTable,
+  PackageHardwareTable,
   PackageOptionsTable,
 } from './PackageTables.jsx'
 
@@ -75,7 +77,18 @@ export default function DrawPackageDetail() {
     error: jobsError,
     refreshJobs,
   } = useJobs()
-  const { builderDrawSchedules } = useBuilderDrawSchedules()
+  const {
+    builderDrawSchedules,
+    jobBillingSetupVersions,
+    loading: billingSetupsLoading,
+    error: billingSetupsError,
+    refreshBuilderBillingSetups,
+  } = useBuilderDrawSchedules()
+  const {
+    activities: productionActivities,
+    loading: productionActivitiesLoading,
+    error: productionActivitiesError,
+  } = useProductionActivities()
   const {
     drawInvoicePackages,
     loading: packagesLoading,
@@ -110,11 +123,12 @@ export default function DrawPackageDetail() {
     Promise.all([
       refreshJobs(),
       refreshDrawInvoicePackages(),
+      refreshBuilderBillingSetups(),
     ]).catch(() => {})
   }
 
-  const loading = jobsLoading || packagesLoading
-  const error = jobsError || packagesError
+  const loading = jobsLoading || packagesLoading || billingSetupsLoading
+  const error = jobsError || packagesError || billingSetupsError
 
   if (loading && (jobs.length === 0 || drawInvoicePackages.length === 0)) {
     return (
@@ -149,6 +163,9 @@ export default function DrawPackageDetail() {
   const selectedPhase =
     phases.find((phase) => String(phase.id) === String(phaseId)) ?? phases[0]
   const focusedBuilderId = getJobBuilderId(focusedJob)
+  const jobBillingSetupIsAvailable = jobBillingSetupVersions.some(
+    (version) => String(version.id) === String(focusedJob.billingSetupVersionId),
+  )
   const schedule = builderDrawSchedules.find(
     (item) => String(item.builderId) === String(focusedBuilderId),
   )
@@ -287,7 +304,12 @@ export default function DrawPackageDetail() {
               variant="contained"
               startIcon={<AddRoundedIcon />}
               onClick={() => setCreateDialogOpen(true)}
-              disabled={!canManageDrawInvoicePackages || saving}
+              disabled={
+                !canManageDrawInvoicePackages
+                || saving
+                || billingSetupsLoading
+                || !jobBillingSetupIsAvailable
+              }
               disableElevation
             >
               Create Package
@@ -427,6 +449,7 @@ export default function DrawPackageDetail() {
               currentPackageId={focusedPackage?.id}
             />
 
+            {focusedPackage && <PackageHardwareTable summary={packageSummary} />}
             {focusedPackage && <PackageOptionsTable summary={packageSummary} />}
             {focusedPackage?.corrections?.length > 0 && (
               <Card variant="outlined">
@@ -461,7 +484,11 @@ export default function DrawPackageDetail() {
         <CreateDrawDialog
           jobs={jobs}
           schedules={builderDrawSchedules}
+          jobBillingSetupVersions={jobBillingSetupVersions}
           packages={drawInvoicePackages}
+          productionActivities={productionActivities}
+          productionActivitiesLoading={productionActivitiesLoading}
+          productionActivitiesError={productionActivitiesError}
           initialJobId={focusedJob.id}
           initialPhaseId={selectedPhase?.id}
           onClose={() => setCreateDialogOpen(false)}

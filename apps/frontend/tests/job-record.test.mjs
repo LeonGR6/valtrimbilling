@@ -4,6 +4,7 @@ import {
   toJob,
   toJobMutation,
 } from '../src/features/jobs/services/jobRecord.js'
+import { resolveJobAssignmentNames } from '../src/features/jobs/utils/jobAssignments.js'
 
 test('Job rows map the persisted catalog and initialize unopened child modules', () => {
   assert.deepEqual(toJob({
@@ -58,5 +59,28 @@ test('Job mutations expose only the five fields owned by the current form', () =
     community: 'Andara',
     supervisor_id: 31,
     superintendent_id: 44,
+  })
+})
+
+test('Job assignment ids resolve their persisted Supervisor and Superintendent names', () => {
+  const names = resolveJobAssignmentNames(
+    { supervisorId: 31, superintendentId: '44' },
+    [
+      { id: 31, name: '  Alex Supervisor  ', types: ['SUPERVISOR'], isActive: false },
+      { id: 32, name: 'Wrong role', types: ['TECHNICIAN'], isActive: true },
+    ],
+    [
+      {
+        id: 44,
+        name: 'Jordan Superintendent',
+        type: 'JOBSITE_SUPERINTENDENT',
+        isActive: false,
+      },
+    ],
+  )
+
+  assert.deepEqual(names, {
+    supervisor: 'Alex Supervisor',
+    jobsiteSuperintendent: 'Jordan Superintendent',
   })
 })

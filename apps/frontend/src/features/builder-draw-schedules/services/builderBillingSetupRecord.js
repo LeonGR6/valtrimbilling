@@ -57,7 +57,8 @@ export function toBuilderDrawSchedule(version, draws = [], documents = []) {
       version.options_billing_draw_number,
     ),
     frequency: version.frequency,
-    cutoffDay: version.cutoff_day ?? 1,
+    anyDate: Boolean(version.cutoff_any_date),
+    cutoffDay: version.cutoff_day,
     cutoffDays: (version.cutoff_days ?? []).map(Number),
     cutoffWeekday: version.cutoff_weekday ?? 0,
     paymentTermsDays: version.payment_terms_days,
@@ -92,7 +93,10 @@ export function toBuilderBillingSetupRpc(schedule) {
         ? null
         : Number(optionsDrawIndex) + 1,
       frequency,
-      cutoffDay: frequency === 'MONTHLY' ? Number(schedule.cutoffDay) : null,
+      cutoffAnyDate: frequency === 'MONTHLY' && Boolean(schedule.anyDate),
+      cutoffDay: frequency === 'MONTHLY' && !schedule.anyDate
+        ? Number(schedule.cutoffDay)
+        : null,
       cutoffDays: frequency === 'SEMIMONTHLY'
         ? schedule.cutoffDays.map(Number)
         : [],

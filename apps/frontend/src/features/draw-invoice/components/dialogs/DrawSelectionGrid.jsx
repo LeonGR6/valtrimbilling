@@ -15,6 +15,7 @@ import {
 } from '@mui/material'
 import LockRoundedIcon from '@mui/icons-material/LockRounded'
 import { drawSelectionKey } from '../../utils/drawPackages.js'
+import { calendarSelectionKey } from '../../utils/calendarDrawSuggestions.js'
 import {
   formatCurrency,
   formatPercentage,
@@ -28,6 +29,8 @@ export default function DrawSelectionGrid({
   selectedSelections,
   selectionIsUsed,
   selectionIsSelected,
+  calendarReadySelectionKeys,
+  suggestedSelectionKeys,
   toggleSelection,
   toggleLotSelections,
   toggleDrawSelections,
@@ -51,12 +54,30 @@ export default function DrawSelectionGrid({
             selections from earlier Phases remain included.
           </Typography>
         </Box>
-        <Chip
-          size="small"
-          color={selectedSelections.length > 0 ? 'primary' : 'default'}
-          variant={selectedSelections.length > 0 ? 'filled' : 'outlined'}
-          label={`${selectedSelections.length} ${selectedSelections.length === 1 ? 'cell' : 'cells'} selected`}
-        />
+        <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: 'wrap' }}>
+          {suggestedSelectionKeys.size > 0 && (
+            <Chip
+              size="small"
+              color="success"
+              variant="outlined"
+              label={`${suggestedSelectionKeys.size} Calendar suggested`}
+            />
+          )}
+          {calendarReadySelectionKeys.size > suggestedSelectionKeys.size && (
+            <Chip
+              size="small"
+              color="info"
+              variant="outlined"
+              label={`${calendarReadySelectionKeys.size - suggestedSelectionKeys.size} also ready`}
+            />
+          )}
+          <Chip
+            size="small"
+            color={selectedSelections.length > 0 ? 'primary' : 'default'}
+            variant={selectedSelections.length > 0 ? 'filled' : 'outlined'}
+            label={`${selectedSelections.length} ${selectedSelections.length === 1 ? 'cell' : 'cells'} selected`}
+          />
+        </Stack>
       </Stack>
       <Card variant="outlined" sx={{ overflow: 'hidden' }}>
         <TableContainer sx={{ maxHeight: 460 }}>
@@ -204,20 +225,38 @@ export default function DrawSelectionGrid({
                       )
                       const owner = usedSelections.get(key)
                       const selected = selectionIsSelected(row.id, drawIndex)
+                      const calendarKey = calendarSelectionKey(
+                        phase?.id,
+                        row.id,
+                        drawIndex,
+                      )
+                      const calendarSuggested = suggestedSelectionKeys.has(calendarKey)
+                      const calendarReady = calendarReadySelectionKeys.has(calendarKey)
 
                       return (
                         <TableCell
                           key={key}
                           align="center"
+                          title={calendarSuggested
+                            ? 'Suggested from Calendar'
+                            : calendarReady
+                              ? 'Calendar work is ready; available for manual selection'
+                              : undefined}
                           onClick={() => !owner && toggleSelection(row.id, drawIndex)}
                           sx={{
                             borderLeft: 1,
-                            borderColor: selected ? 'primary.main' : 'divider',
+                            borderColor: selected
+                              ? calendarSuggested ? 'success.main' : 'primary.main'
+                              : 'divider',
                             bgcolor: owner
                               ? 'warning.light'
-                              : selected
-                                ? 'primary.light'
-                                : undefined,
+                              : calendarSuggested
+                                ? 'success.light'
+                                : calendarReady
+                                  ? 'info.light'
+                                  : selected
+                                    ? 'primary.light'
+                                    : undefined,
                             cursor: owner ? 'default' : 'pointer',
                           }}
                         >

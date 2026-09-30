@@ -40,6 +40,7 @@ export function formatLongDate(value) {
 }
 
 export function formatBillingPeriod(record) {
+  if (record.billingCutoffAnyDate) return 'Any date'
   if (!record.billingCutoffDate) return 'Not set'
   return formatLongDate(record.billingCutoffDate)
 }

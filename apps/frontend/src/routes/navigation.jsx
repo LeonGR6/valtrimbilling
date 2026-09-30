@@ -24,7 +24,7 @@ export const navigationRoutes = [
   { path: '/draw-invoice', label: 'Draw & Invoice', icon: 'draw-invoice', element: <DrawAndInvoicePage /> },
   {
     path: '/builder-draw-schedules',
-    label: 'Builder Draw Schedules',
+    label: 'Builder Setup',
     icon: 'builder-draw-schedules',
     element: <BuilderDrawSchedulesPage />,
   },

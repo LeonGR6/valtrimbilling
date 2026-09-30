@@ -34,13 +34,18 @@ const optionalPercentageSchema = z
     'Use at most two decimals.',
   )
 
-const dayOfMonthSchema = z.coerce
-  .number()
-  .int('Use a whole number.')
-  .min(1, 'Use a day between 1 and 31.')
-  .max(31, 'Use a day between 1 and 31.')
+const optionalDayOfMonthSchema = z.preprocess(
+  (value) => (value === '' || value === null || value === undefined
+    ? null
+    : Number(value)),
+  z.number()
+    .int('Use a whole number.')
+    .min(1, 'Use a day between 1 and 31.')
+    .max(31, 'Use a day between 1 and 31.')
+    .nullable(),
+)
 
-const optionsBillingDrawIndexSchema = z.preprocess(
+const optionalDrawIndexSchema = z.preprocess(
   (value) => (value === '' || value === null || value === undefined
     ? null
     : Number(value)),
@@ -62,23 +67,24 @@ export function createBuilderDrawScheduleSchema(schedules, currentScheduleId) {
             .max(80, 'Use 80 characters or fewer.')
             .default(''),
           percentage: drawPercentageSchema,
+          eventType: z.preprocess(
+            (value) => value ?? '',
+            z.string().trim().refine(
+              (value) => ['EXT', 'DM', 'HW'].includes(value),
+              'Select EXT, DM or HW.',
+            ),
+          ),
         }))
         .min(MIN_DRAW_COUNT, `Configure at least ${MIN_DRAW_COUNT} draws.`)
         .max(MAX_DRAW_COUNT, `Configure no more than ${MAX_DRAW_COUNT} draws.`),
       separateHardwarePrice: z.boolean().default(false),
-      optionsBillingDrawIndex: optionsBillingDrawIndexSchema,
+      hardwareBillingDrawIndex: optionalDrawIndexSchema,
+      optionsBillingDrawIndex: optionalDrawIndexSchema,
       frequency: z.enum(['MONTHLY', 'SEMIMONTHLY', 'WEEKLY']),
-      cutoffDay: dayOfMonthSchema,
-      submissionDay: dayOfMonthSchema,
+      anyDate: z.boolean().default(false),
+      cutoffDay: optionalDayOfMonthSchema,
       cutoffDays: z.array(z.coerce.number().int().min(1).max(31)),
       cutoffWeekday: z.coerce.number().int().min(0).max(6),
-      submissionOffsetDays: z.coerce
-        .number()
-        .int('Use a whole number.')
-        .min(0, 'Use 0 or more days.')
-        .max(30, 'Use 30 days or fewer.'),
-      workAcceptedThrough: z.enum(['CUTOFF', 'SUBMISSION']),
-      invoiceDateRule: z.enum(['SUBMISSION', 'CUTOFF', 'MONTH_END']),
       paymentTermsDays: z.coerce
         .number()
         .int('Use a whole number.')
@@ -135,6 +141,40 @@ export function createBuilderDrawScheduleSchema(schedules, currentScheduleId) {
         })
       }
 
+      if (
+        data.separateHardwarePrice
+        && data.hardwareBillingDrawIndex === null
+      ) {
+        context.addIssue({
+          code: 'custom',
+          path: ['hardwareBillingDrawIndex'],
+          message: 'Select the draw that bills hardware.',
+        })
+      }
+
+      if (
+        data.hardwareBillingDrawIndex !== null
+        && data.hardwareBillingDrawIndex >= data.draws.length
+      ) {
+        context.addIssue({
+          code: 'custom',
+          path: ['hardwareBillingDrawIndex'],
+          message: 'Select one of the configured draws.',
+        })
+      }
+
+      if (
+        data.frequency === 'MONTHLY'
+        && !data.anyDate
+        && data.cutoffDay === null
+      ) {
+        context.addIssue({
+          code: 'custom',
+          path: ['cutoffDay'],
+          message: 'Enter the monthly cutoff date.',
+        })
+      }
+
       if (data.frequency === 'SEMIMONTHLY' && data.cutoffDays.length !== 2) {
         context.addIssue({
           code: 'custom',
@@ -185,6 +225,13 @@ export function createBuilderDrawScheduleSchema(schedules, currentScheduleId) {
     })
     .transform((data) => ({
       ...data,
+      anyDate: data.frequency === 'MONTHLY' && data.anyDate,
+      cutoffDay: data.frequency === 'MONTHLY' && !data.anyDate
+        ? data.cutoffDay
+        : null,
+      hardwareBillingDrawIndex: data.separateHardwarePrice
+        ? data.hardwareBillingDrawIndex
+        : null,
       retentionPercentage: data.retentionEnabled ? data.retentionPercentage : 0,
       ocipWrapPercentage: data.ocipWrapEnabled ? data.ocipWrapPercentage : 0,
     }))

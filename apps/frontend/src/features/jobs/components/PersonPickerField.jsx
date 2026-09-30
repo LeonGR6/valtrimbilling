@@ -30,13 +30,18 @@ export default function PersonPickerField({
   extraFields = [],
 }) {
   const [draft, setDraft] = useState(null)
+  const [saving, setSaving] = useState(false)
+  const [createError, setCreateError] = useState('')
 
-  const openDraft = (typed = '') => setDraft({
-    name: typed,
-    email: '',
-    phone: '',
-    phoneCountry: 'US',
-  })
+  const openDraft = (typed = '') => {
+    setCreateError('')
+    setDraft({
+      name: typed,
+      email: '',
+      phone: '',
+      phoneCountry: 'US',
+    })
+  }
   const draftEmailIsValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(
     draft?.email.trim() ?? '',
   )
@@ -46,17 +51,25 @@ export default function PersonPickerField({
   )
   const draftPhoneIsValid = !draft?.phone.trim() || Boolean(normalizedDraftPhone)
 
-  const save = (field) => {
+  const save = async (field) => {
     if (!onCreate || !draft) return
     const contactDraft = Object.fromEntries(
       Object.entries(draft).filter(([key]) => key !== 'phoneCountry'),
     )
-    const created = onCreate({
-      ...contactDraft,
-      phone: normalizedDraftPhone ?? '',
-    })
-    field.onChange(created.id)
-    setDraft(null)
+    setSaving(true)
+    setCreateError('')
+    try {
+      const created = await onCreate({
+        ...contactDraft,
+        phone: normalizedDraftPhone ?? '',
+      })
+      field.onChange(created.id)
+      setDraft(null)
+    } catch (error) {
+      setCreateError(error.message)
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
@@ -196,17 +209,36 @@ export default function PersonPickerField({
                 </Stack>
 
                 <Stack direction="row" spacing={1} sx={{ justifyContent: 'flex-end', mt: 1.5 }}>
-                  <Button size="small" color="inherit" onClick={() => setDraft(null)}>
+                  {createError && (
+                    <Typography
+                      variant="caption"
+                      color="error.main"
+                      sx={{ flex: 1, alignSelf: 'center' }}
+                    >
+                      {createError}
+                    </Typography>
+                  )}
+                  <Button
+                    size="small"
+                    color="inherit"
+                    disabled={saving}
+                    onClick={() => {
+                      setDraft(null)
+                      setCreateError('')
+                    }}
+                  >
                     Cancel
                   </Button>
                   <Button
                     size="small"
                     variant="contained"
                     disableElevation
-                    disabled={!draft.name.trim() || !draftEmailIsValid || !draftPhoneIsValid}
+                    disabled={
+                      saving || !draft.name.trim() || !draftEmailIsValid || !draftPhoneIsValid
+                    }
                     onClick={() => save(field)}
                   >
-                    Save and assign
+                    {saving ? 'Saving...' : 'Save and assign'}
                   </Button>
                 </Stack>
               </Box>

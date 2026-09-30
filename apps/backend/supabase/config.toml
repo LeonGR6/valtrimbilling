@@ -403,6 +403,32 @@ verify_jwt = false
 [functions.users-admin]
 verify_jwt = true
 
+# A signed-in administrator initiates OAuth. Google then returns through the
+# callback without a Supabase JWT; its one-time, expiring state is the trust
+# boundary before the callback performs any privileged write.
+[functions.google-calendar-oauth-start]
+verify_jwt = true
+
+[functions.google-calendar-oauth-callback]
+verify_jwt = false
+
+# A signed-in administrator requests one-way synchronization. The function
+# validates that user before service-role access to Vault and event mappings.
+[functions.google-calendar-sync]
+verify_jwt = true
+
+# Browser requests are authorized inside the function, while scheduled runs use
+# a separate high-entropy FOLLOW_UP_CRON_SECRET. No request is trusted solely
+# because it reached this public endpoint.
+[functions.builder-follow-up-email]
+verify_jwt = false
+
+# Jobsite Superintendents do not have ValtrimBilling accounts. The function is
+# public at the gateway, then validates a signed one-time response token before
+# any service-role RPC. GET-style inspection is read-only; submission is POST.
+[functions.builder-follow-up-response]
+verify_jwt = false
+
 [analytics]
 enabled = true
 port = 54327

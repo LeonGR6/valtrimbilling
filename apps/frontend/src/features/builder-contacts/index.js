@@ -3,7 +3,5 @@ export { default } from './components/BuilderContactsCatalog.jsx'
 export {
   initialContacts,
   emptyContact,
-  builderOptions,
-  builderLabels,
   contactTypeOptions,
 } from './data/builderContacts.js'

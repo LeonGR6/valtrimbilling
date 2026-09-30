@@ -34,6 +34,7 @@ import FilterListRoundedIcon from '@mui/icons-material/FilterListRounded'
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
 import { FormPhoneInput } from '../../../components/common/InternationalPhoneInput.jsx'
 import ResponsiveCreateButton from '../../../components/common/ResponsiveCreateButton'
+import { useBuilders } from '../../builders/context/useBuilders.js'
 import {
   getNationalPhoneNumber,
   getPhoneCountry,
@@ -43,8 +44,6 @@ import ServiceRequestsTable from './ServiceRequestsTable.jsx'
 import ServiceSummaryCards from './ServiceSummaryCards.jsx'
 import {
   appointmentStateOptions,
-  builderLabelsById,
-  builderOptions,
   coordinatorLabelsById,
   defaultCoordinatorId,
   emptyRequest,
@@ -85,7 +84,7 @@ function getRequestFormValues(request, requests) {
   }
 }
 
-function RequestDialog({ request, requests, onClose, onSave }) {
+function RequestDialog({ request, requests, builderOptions, onClose, onSave }) {
   const {
     control,
     register,
@@ -425,6 +424,7 @@ function RequestDialog({ request, requests, onClose, onSave }) {
 }
 
 export default function CustomerServiceCatalog() {
+  const { builders } = useBuilders()
   const [requests, setRequests] = useState(initialRequests)
   const [search, setSearch] = useState('')
   const [builderFilter, setBuilderFilter] = useState('all')
@@ -444,6 +444,19 @@ export default function CustomerServiceCatalog() {
   const [dialogState, setDialogState] = useState(null)
   const [deleteTarget, setDeleteTarget] = useState(null)
   const [notice, setNotice] = useState(null)
+  const builderOptions = useMemo(
+    () => builders.map((builder) => ({
+      value: builder.code,
+      label: builder.name,
+    })),
+    [builders],
+  )
+  const builderLabelsById = useMemo(
+    () => Object.fromEntries(
+      builderOptions.map(({ value, label }) => [value, label]),
+    ),
+    [builderOptions],
+  )
 
   // Wide screens keep the panel beside the table, the way the mockup shows it.
   // Below that it would leave the table unreadable, so it slides over instead.
@@ -510,6 +523,7 @@ export default function CustomerServiceCatalog() {
     statusFilter,
     priorityFilter,
     appointmentFilter,
+    builderLabelsById,
     sortBy,
   ])
 
@@ -735,7 +749,7 @@ export default function CustomerServiceCatalog() {
                     setPage(0)
                   }}
                   renderValue={(value) =>
-                    `Builder: ${value === 'all' ? 'All' : builderLabelsById[value]}`
+                    `Builder: ${value === 'all' ? 'All' : builderLabelsById[value] ?? value}`
                   }
                   inputProps={{ 'aria-label': 'Filter by builder' }}
                 >
@@ -784,6 +798,7 @@ export default function CustomerServiceCatalog() {
 
             <ServiceRequestsTable
               requests={visibleRequests}
+              builderLabelsById={builderLabelsById}
               totalCount={filteredRequests.length}
               page={page}
               rowsPerPage={ROWS_PER_PAGE}
@@ -803,6 +818,7 @@ export default function CustomerServiceCatalog() {
             <Box sx={{ width: 420, flexShrink: 0 }}>
               <RequestDetailPanel
                 request={panelRequest}
+                builderLabelsById={builderLabelsById}
                 onClose={() => setPanelOpen(false)}
                 onEdit={(request) => setDialogState({ mode: 'edit', request })}
               />
@@ -820,6 +836,7 @@ export default function CustomerServiceCatalog() {
         {panelRequest && (
           <RequestDetailPanel
             request={panelRequest}
+            builderLabelsById={builderLabelsById}
             onClose={() => setPanelOpen(false)}
             onEdit={(request) => setDialogState({ mode: 'edit', request })}
           />
@@ -927,6 +944,7 @@ export default function CustomerServiceCatalog() {
           key={dialogState.request?.id ?? 'new'}
           request={dialogState.request}
           requests={requests}
+          builderOptions={builderOptions}
           onClose={() => setDialogState(null)}
           onSave={handleSave}
         />

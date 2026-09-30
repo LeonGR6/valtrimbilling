@@ -1,9 +1,15 @@
 export const MIN_DRAW_COUNT = 2
 export const MAX_DRAW_COUNT = 5
 
+export const drawEventTypeOptions = [
+  { value: 'EXT', label: 'EXT' },
+  { value: 'DM', label: 'DM' },
+  { value: 'HW', label: 'HW' },
+]
+
 export const defaultDraws = [
-  { name: '', percentage: 0 },
-  { name: '', percentage: 0 },
+  { name: '', percentage: 0, eventType: '' },
+  { name: '', percentage: 0, eventType: '' },
 ]
 
 export const frequencyOptions = [
@@ -26,17 +32,6 @@ export const weekdayOptions = [
   { value: 6, label: 'Saturday' },
 ]
 
-export const workAcceptedOptions = [
-  { value: 'CUTOFF', label: 'Cutoff date' },
-  { value: 'SUBMISSION', label: 'Submission date' },
-]
-
-export const invoiceDateOptions = [
-  { value: 'SUBMISSION', label: 'Submission date' },
-  { value: 'CUTOFF', label: 'Cutoff date' },
-  { value: 'MONTH_END', label: 'End of month' },
-]
-
 export const invoiceLineFormatOptions = [
   { value: 'LOT_SCOPE', label: 'One line per lot and scope' },
   { value: 'LOT', label: 'One line per lot' },
@@ -50,15 +45,13 @@ export const invoiceLineFormatLabels = Object.fromEntries(
 
 export const defaultBillingSettings = {
   separateHardwarePrice: false,
+  hardwareBillingDrawIndex: null,
   optionsBillingDrawIndex: null,
   frequency: 'MONTHLY',
+  anyDate: false,
   cutoffDay: 20,
-  submissionDay: 25,
   cutoffDays: [10, 25],
   cutoffWeekday: 0,
-  submissionOffsetDays: 2,
-  workAcceptedThrough: 'CUTOFF',
-  invoiceDateRule: 'SUBMISSION',
   paymentTermsDays: 30,
   retentionEnabled: false,
   retentionPercentage: 0,
@@ -80,14 +73,13 @@ export const initialBuilderDrawSchedules = [
     id: 1,
     builderId: 2,
     draws: [
-      { name: 'Trim Complete', percentage: 10 },
-      { name: '', percentage: 75 },
-      { name: '', percentage: 15 },
+      { name: 'Trim Complete', percentage: 10, eventType: 'EXT' },
+      { name: '', percentage: 75, eventType: 'DM' },
+      { name: '', percentage: 15, eventType: 'HW' },
     ],
     ...defaultBillingSettings,
     frequency: 'WEEKLY',
     cutoffWeekday: 0,
-    submissionOffsetDays: 2,
     paymentTermsDays: 21,
     retentionEnabled: true,
     retentionPercentage: 5,
@@ -97,20 +89,20 @@ export const initialBuilderDrawSchedules = [
     requiresRelease: true,
     invoiceLineFormat: 'LOT',
     portalName: 'BuilderPortal',
+    hardwareBillingDrawIndex: 2,
     optionsBillingDrawIndex: 2,
   },
   {
     id: 2,
     builderId: 4,
     draws: [
-      { name: '', percentage: 25 },
-      { name: '', percentage: 50 },
-      { name: '', percentage: 25 },
+      { name: '', percentage: 25, eventType: 'EXT' },
+      { name: '', percentage: 50, eventType: 'DM' },
+      { name: '', percentage: 25, eventType: 'HW' },
     ],
     ...defaultBillingSettings,
     frequency: 'MONTHLY',
     cutoffDay: 20,
-    submissionDay: 25,
     paymentTermsDays: 30,
     retentionEnabled: true,
     retentionPercentage: 10,
@@ -126,14 +118,12 @@ export const initialBuilderDrawSchedules = [
     id: 3,
     builderId: 1,
     draws: [
-      { name: '', percentage: 85 },
-      { name: '', percentage: 15 },
+      { name: '', percentage: 85, eventType: 'EXT' },
+      { name: '', percentage: 15, eventType: 'DM' },
     ],
     ...defaultBillingSettings,
     frequency: 'SEMIMONTHLY',
     cutoffDays: [10, 25],
-    submissionOffsetDays: 3,
-    invoiceDateRule: 'CUTOFF',
     paymentTermsDays: 45,
     retentionEnabled: true,
     retentionPercentage: 5,

@@ -15,7 +15,6 @@ import SmsOutlinedIcon from '@mui/icons-material/SmsOutlined'
 import Pill from './Pill.jsx'
 import {
   appointmentStateLabels,
-  builderLabelsById,
   coordinatorLabelsById,
   prioritiesByValue,
   requestTagsByValue,
@@ -73,7 +72,12 @@ function PanelCard({ title, action, children }) {
   )
 }
 
-export default function RequestDetailPanel({ request, onClose, onEdit }) {
+export default function RequestDetailPanel({
+  request,
+  builderLabelsById,
+  onClose,
+  onEdit,
+}) {
   const status = statusesByValue[request.status]
   const tag = requestTagsByValue[request.tag]
   const priority = prioritiesByValue[request.priority]

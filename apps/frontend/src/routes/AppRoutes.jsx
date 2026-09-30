@@ -1,16 +1,15 @@
 import { Suspense } from 'react'
 import {
   createBrowserRouter,
-  Navigate,
 } from 'react-router-dom'
 import RouteLoading from '../components/common/RouteLoading'
 import AppLayout from '../components/layout/AppLayout'
 import ErrorPage from '../pages/ErrorPage'
 import NotFound from '../pages/NotFound'
-import { DEFAULT_ROUTE } from '../config/appConfig.js'
 import { contextualRoutes, navigationRoutes } from './navigation.jsx'
 import {
   AcceptInvitePage,
+  BuilderFollowUpResponsePage,
   ForgotPasswordPage,
   LoginPage,
   ResetPasswordPage,
@@ -41,6 +40,10 @@ export const appRouter = createBrowserRouter([
     element: <Suspense fallback={<RouteLoading />}><AcceptInvitePage /></Suspense>,
   },
   {
+    path: '/follow-up/respond',
+    element: <Suspense fallback={<RouteLoading />}><BuilderFollowUpResponsePage /></Suspense>,
+  },
+  {
     path: '/',
     element: (
       <Suspense fallback={<RouteLoading />}>
@@ -51,9 +54,8 @@ export const appRouter = createBrowserRouter([
     ),
     errorElement: <ErrorPage />,
     children: [
-      { index: true, element: <Navigate to={DEFAULT_ROUTE} replace /> },
       ...navigationRoutes.map(({ path, element, allowedRoles }) => ({
-        path: path.slice(1),
+        ...(path === '/' ? { index: true } : { path: path.slice(1) }),
         element: withRoleAccess(element, allowedRoles),
       })),
       ...contextualRoutes.map(({ path, element }) => ({ path: path.slice(1), element })),

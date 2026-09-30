@@ -25,7 +25,10 @@ export function createBuilderContactSchema(contacts, currentContactId) {
         .max(100, 'Use 100 characters or fewer.')
         .regex(namePattern, 'Enter a valid name.'),
       type: contactTypeSchema,
-      builder: z.string().min(1, 'Select a builder.'),
+      builderId: z.preprocess(
+        (value) => Number(value),
+        z.number().int().positive('Select a builder.'),
+      ),
       email: z
         .string()
         .trim()
@@ -38,6 +41,7 @@ export function createBuilderContactSchema(contacts, currentContactId) {
       officePhone: optionalPhone,
       officePhoneCountry: phoneCountry,
       notes: z.string().trim().max(300, 'Use 300 characters or fewer.'),
+      isActive: z.boolean().default(true),
     })
     .superRefine((data, context) => {
       if (data.phone && !normalizePhoneNumber(data.phone, data.phoneCountry)) {

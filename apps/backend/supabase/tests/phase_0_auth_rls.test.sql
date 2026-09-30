@@ -58,7 +58,7 @@ select ok(
 );
 
 select ok(
-  not has_table_privilege('authenticated', 'valtrim.jobs', 'select'),
+  not has_table_privilege('authenticated', 'valtrim.plans', 'select'),
   'Unopened business tables remain closed until their feature migration'
 );
 

@@ -7,18 +7,42 @@ import {
   Typography,
 } from '@mui/material'
 import CalendarMonthRoundedIcon from '@mui/icons-material/CalendarMonthRounded'
+import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded'
 import ConstructionRoundedIcon from '@mui/icons-material/ConstructionRounded'
+import EventAvailableRoundedIcon from '@mui/icons-material/EventAvailableRounded'
+import ForwardToInboxRoundedIcon from '@mui/icons-material/ForwardToInboxRounded'
 import SyncAltRoundedIcon from '@mui/icons-material/SyncAltRounded'
+import SyncRoundedIcon from '@mui/icons-material/SyncRounded'
 import TuneRoundedIcon from '@mui/icons-material/TuneRounded'
 import ResponsiveCreateButton from '../../../components/common/ResponsiveCreateButton'
+import { googleCalendarLastSyncLabel } from '../services/googleCalendarRecord.js'
 
 export default function CalendarPageHeader({
   activeTab,
   calendarMode,
   onChangeTab,
   onChangeMode,
+  onConnectGoogleCalendar,
+  onSyncGoogleCalendar,
   onCreate,
+  canConnectGoogleCalendar = false,
+  canCreate = true,
+  googleCalendarConnected = false,
+  googleCalendarLastSyncAt = null,
+  googleCalendarLoading = false,
+  googleCalendarSyncing = false,
 }) {
+  const googleButtonLabel = googleCalendarLoading
+    ? 'Checking Google…'
+    : googleCalendarConnected
+      ? 'Google connected'
+      : 'Connect Google Calendar'
+  const googleButtonTitle = !canConnectGoogleCalendar
+    ? 'Only an administrator can connect Google Calendar.'
+    : googleCalendarConnected
+      ? 'The dedicated Google calendar is connected. Select to reconnect.'
+      : 'Connect a dedicated calendar owned by your Google account.'
+
   return (
     <>
       <Box className="calendar-page__header">
@@ -27,8 +51,10 @@ export default function CalendarPageHeader({
           <Typography color="text.secondary">
             {activeTab === 'BUILDER_SETTINGS'
               ? 'Configure the automatic EXT, Shutter, DM and HW date spacing for each builder.'
+              : activeTab === 'FOLLOW_UPS'
+                ? 'Prepare and track scheduling emails to each Jobsite Superintendent.'
               : calendarMode === 'PRODUCTION'
-                ? 'Schedule EXT, optional Shutter, DM and HW as one production activity.'
+                ? 'Schedule EXT, DM and HW as one production activity.'
                 : 'Track extra work and change orders separately.'}
           </Typography>
         </Box>
@@ -57,8 +83,54 @@ export default function CalendarPageHeader({
                 />
               </Tabs>
             </Box>
+            <Tooltip title={googleButtonTitle}>
+              <span>
+                <Button
+                  variant={googleCalendarConnected ? 'outlined' : 'contained'}
+                  color={googleCalendarConnected ? 'success' : 'primary'}
+                  startIcon={googleCalendarConnected
+                    ? <CheckCircleRoundedIcon />
+                    : <EventAvailableRoundedIcon />}
+                  onClick={onConnectGoogleCalendar}
+                  disabled={
+                    !canConnectGoogleCalendar
+                    || googleCalendarLoading
+                    || googleCalendarSyncing
+                  }
+                >
+                  {googleButtonLabel}
+                </Button>
+              </span>
+            </Tooltip>
+            {googleCalendarConnected && (
+              <Box className="google-calendar-sync-action">
+                <Tooltip title="Copy the current ValtrimBilling Production calendar to Google Calendar.">
+                  <span>
+                    <Button
+                      variant="contained"
+                      startIcon={<SyncRoundedIcon />}
+                      onClick={onSyncGoogleCalendar}
+                      disabled={!canConnectGoogleCalendar || googleCalendarSyncing}
+                    >
+                      {googleCalendarSyncing ? 'Syncing…' : 'Sync now'}
+                    </Button>
+                  </span>
+                </Tooltip>
+                <Typography
+                  className="google-calendar-sync-action__timestamp"
+                  variant="caption"
+                  color="text.secondary"
+                >
+                  {googleCalendarLastSyncLabel(googleCalendarLastSyncAt)}
+                </Typography>
+              </Box>
+            )}
             {calendarMode === 'PRODUCTION' ? (
-              <ResponsiveCreateButton label="New activity" onClick={onCreate} />
+              <Tooltip title={canCreate ? '' : 'Your role has read-only access to Production activities.'}>
+                <span>
+                  <ResponsiveCreateButton label="New activity" onClick={onCreate} disabled={!canCreate} />
+                </span>
+              </Tooltip>
             ) : (
               <Tooltip title="Extra / Change Orders is pending">
                 <span><Button variant="contained" disabled>New change order</Button></span>
@@ -87,6 +159,12 @@ export default function CalendarPageHeader({
             icon={<TuneRoundedIcon />}
             iconPosition="start"
             label="Builder date configuration"
+          />
+          <Tab
+            value="FOLLOW_UPS"
+            icon={<ForwardToInboxRoundedIcon />}
+            iconPosition="start"
+            label="Builder follow-ups"
           />
         </Tabs>
       </Box>

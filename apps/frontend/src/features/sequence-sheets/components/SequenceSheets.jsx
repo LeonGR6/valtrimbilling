@@ -19,6 +19,7 @@ import {
   CardContent,
   Checkbox,
   Chip,
+  CircularProgress,
   Dialog,
   DialogActions,
   DialogContent,
@@ -51,11 +52,13 @@ import FolderRoundedIcon from '@mui/icons-material/FolderRounded'
 import FormatListNumberedRoundedIcon from '@mui/icons-material/FormatListNumberedRounded'
 import HomeWorkRoundedIcon from '@mui/icons-material/HomeWorkRounded'
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined'
+import EmailRoundedIcon from '@mui/icons-material/EmailRounded'
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
+import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded'
 import TableChartRoundedIcon from '@mui/icons-material/TableChartRounded'
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
-import { initialBuilders } from '../../builders/data/builders.js'
 import JobModuleNavigation from '../../jobs/components/JobModuleNavigation.jsx'
+import { useBuilderContacts } from '../../builder-contacts/context/useBuilderContacts.js'
 import { useJobs } from '../../jobs/context/useJobs.js'
 import {
   getJobAssignedLotCount,
@@ -73,21 +76,13 @@ import {
   formatPhase,
 } from '../utils/phaseBuildingCodes.js'
 import { parseLotRange } from '../utils/lotRange.js'
+import SequenceSheetEmailDialog from './SequenceSheetEmailDialog.jsx'
 
 const emptyLot = {
   lotNumber: '',
   planId: '',
   reverse: false,
   optionIds: [],
-}
-
-function assignLotIds(lots) {
-  let nextLotId = Date.now()
-
-  return lots.map((lot) => ({
-    ...lot,
-    id: lot.id ?? nextLotId++,
-  }))
 }
 
 function SummaryCard({ icon, value, label }) {
@@ -133,7 +128,7 @@ function getPlan(job, planId) {
   )
 }
 
-function PhaseCard({ phase, onDelete, onEdit, onOpen }) {
+function PhaseCard({ canManage, phase, onDelete, onEdit, onEmail, onOpen }) {
   const phaseLabel = formatPhase(phase.name)
   const buildingLabel = formatBuilding(phase.building)
   const selectedOptionCount = (phase.lots ?? []).reduce(
@@ -189,34 +184,46 @@ function PhaseCard({ phase, onDelete, onEdit, onOpen }) {
           </Stack>
         </Stack>
       </ButtonBase>
-      <Divider />
-      <Stack
-        direction="row"
-        spacing={1}
-        sx={{ px: 1.5, py: 1, justifyContent: 'flex-end' }}
-      >
-        <Button
-          size="small"
-          color="inherit"
-          startIcon={<EditOutlinedIcon />}
-          onClick={onEdit}
-        >
-          Edit phase
-        </Button>
-        <Button
-          size="small"
-          color="error"
-          startIcon={<DeleteOutlineRoundedIcon />}
-          onClick={onDelete}
-        >
-          Delete phase
-        </Button>
-      </Stack>
+      {canManage && (
+        <>
+          <Divider />
+          <Stack
+            direction="row"
+            spacing={1}
+            sx={{ px: 1.5, py: 1, justifyContent: 'flex-end' }}
+          >
+            <Button
+              size="small"
+              color="primary"
+              startIcon={<EmailRoundedIcon />}
+              onClick={onEmail}
+            >
+              Email Sequence Sheet
+            </Button>
+            <Button
+              size="small"
+              color="inherit"
+              startIcon={<EditOutlinedIcon />}
+              onClick={onEdit}
+            >
+              Edit phase
+            </Button>
+            <Button
+              size="small"
+              color="error"
+              startIcon={<DeleteOutlineRoundedIcon />}
+              onClick={onDelete}
+            >
+              Delete phase
+            </Button>
+          </Stack>
+        </>
+      )}
     </Card>
   )
 }
 
-function PhaseDetails({ builderId, job, phase, onBack, onDelete, onEdit }) {
+function PhaseDetails({ builderId, canManage, job, phase, onBack, onDelete, onEdit, onEmail }) {
   const phaseLabel = formatPhase(phase.name)
   const buildingLabel = formatBuilding(phase.building)
   const selectedOptionCount = (phase.lots ?? []).reduce(
@@ -268,26 +275,37 @@ function PhaseDetails({ builderId, job, phase, onBack, onDelete, onEdit }) {
               <Chip label={`${phase.lots?.length ?? 0} lots`} />
               <Chip variant="outlined" label={`${selectedOptionCount} selected options`} />
             </Stack>
-            <Stack direction="row" spacing={1}>
-              <Button
-                size="small"
-                variant="outlined"
-                color="inherit"
-                startIcon={<EditOutlinedIcon />}
-                onClick={onEdit}
-              >
-                Edit phase
-              </Button>
-              <Button
-                size="small"
-                variant="outlined"
-                color="error"
-                startIcon={<DeleteOutlineRoundedIcon />}
-                onClick={onDelete}
-              >
-                Delete phase
-              </Button>
-            </Stack>
+            {canManage && (
+              <Stack direction="row" spacing={1}>
+                <Button
+                  size="small"
+                  variant="contained"
+                  startIcon={<EmailRoundedIcon />}
+                  onClick={onEmail}
+                  disableElevation
+                >
+                  Email Sequence Sheet
+                </Button>
+                <Button
+                  size="small"
+                  variant="outlined"
+                  color="inherit"
+                  startIcon={<EditOutlinedIcon />}
+                  onClick={onEdit}
+                >
+                  Edit phase
+                </Button>
+                <Button
+                  size="small"
+                  variant="outlined"
+                  color="error"
+                  startIcon={<DeleteOutlineRoundedIcon />}
+                  onClick={onDelete}
+                >
+                  Delete phase
+                </Button>
+              </Stack>
+            )}
           </Stack>
         </Stack>
       </Box>
@@ -592,7 +610,7 @@ function PhaseDialog({ job, phase, onClose, onSave }) {
     handleSubmit,
     getValues,
     setValue,
-    formState: { errors },
+    formState: { errors, isSubmitting },
   } = useForm({
     resolver: zodResolver(schema),
     defaultValues: phase
@@ -674,7 +692,7 @@ function PhaseDialog({ job, phase, onClose, onSave }) {
   return (
     <Dialog
       open
-      onClose={onClose}
+      onClose={isSubmitting ? undefined : onClose}
       fullWidth
       maxWidth="lg"
       component="form"
@@ -701,6 +719,7 @@ function PhaseDialog({ job, phase, onClose, onSave }) {
         </Typography>
         <IconButton
           onClick={onClose}
+          disabled={isSubmitting}
           aria-label={phase ? 'Close edit phase dialog' : 'Close create phase dialog'}
           sx={{ position: 'absolute', right: 16, top: 14 }}
         >
@@ -751,7 +770,7 @@ function PhaseDialog({ job, phase, onClose, onSave }) {
                     input: {
                       startAdornment: <InputAdornment position="start">Phase</InputAdornment>,
                     },
-                    htmlInput: { maxLength: 100 },
+                    htmlInput: { maxLength: 40 },
                   }}
                 />
                 <TextField
@@ -787,15 +806,15 @@ function PhaseDialog({ job, phase, onClose, onSave }) {
             >
               <Box sx={{ flex: 1 }}>
                 <Typography variant="subtitle2" fontWeight={750}>
-                  Add a lot range
+                  Add lot ranges
                 </Typography>
                 <Typography variant="caption" color="text.secondary">
-                  Generate consecutive lots, then assign a plan, Reverse and options to each one.
+                  Separate multiple ranges with commas, then assign a plan, Reverse and options to each lot.
                 </Typography>
               </Box>
               <TextField
-                label="Lot range"
-                placeholder="Example: 9-14"
+                label="Lot ranges"
+                placeholder="Example: 9-14, 20-25"
                 value={lotRange}
                 onChange={(event) => {
                   setLotRange(event.target.value)
@@ -808,9 +827,9 @@ function PhaseDialog({ job, phase, onClose, onSave }) {
                   }
                 }}
                 error={Boolean(lotRangeError)}
-                helperText={lotRangeError || 'Start and end lot numbers'}
-                sx={{ width: { xs: '100%', sm: 230 } }}
-                slotProps={{ htmlInput: { maxLength: 31 } }}
+                helperText={lotRangeError || 'Separate ranges with commas'}
+                sx={{ width: { xs: '100%', sm: 280 } }}
+                slotProps={{ htmlInput: { maxLength: 255 } }}
               />
               <Button
                 type="button"
@@ -820,7 +839,7 @@ function PhaseDialog({ job, phase, onClose, onSave }) {
                 disableElevation
                 sx={{ minHeight: 56, whiteSpace: 'nowrap' }}
               >
-                Add range
+                Add ranges
               </Button>
             </Stack>
           </Box>
@@ -863,18 +882,24 @@ function PhaseDialog({ job, phase, onClose, onSave }) {
           bgcolor: 'background.paper',
         }}
       >
-        <Button color="inherit" onClick={onClose}>
+        <Button color="inherit" onClick={onClose} disabled={isSubmitting}>
           Cancel
         </Button>
-        <Button type="submit" variant="contained" disableElevation disabled={!hasPlans}>
-          {phase ? 'Save changes' : 'Create phase'}
+        <Button
+          type="submit"
+          variant="contained"
+          disableElevation
+          disabled={!hasPlans || isSubmitting}
+          startIcon={isSubmitting ? <CircularProgress size={16} color="inherit" /> : undefined}
+        >
+          {isSubmitting ? 'Saving…' : phase ? 'Save changes' : 'Create phase'}
         </Button>
       </DialogActions>
     </Dialog>
   )
 }
 
-function PhaseDeleteDialog({ target, onClose, onDelete }) {
+function PhaseDeleteDialog({ busy, target, onClose, onDelete }) {
   const lotCount = target?.phase.lots?.length ?? 0
   const selectedOptionCount = (target?.phase.lots ?? []).reduce(
     (total, lot) => total + (lot.optionIds?.length ?? 0),
@@ -882,7 +907,12 @@ function PhaseDeleteDialog({ target, onClose, onDelete }) {
   )
 
   return (
-    <Dialog open={Boolean(target)} onClose={onClose} fullWidth maxWidth="xs">
+    <Dialog
+      open={Boolean(target)}
+      onClose={busy ? undefined : onClose}
+      fullWidth
+      maxWidth="xs"
+    >
       <DialogTitle>Delete {target ? formatPhase(target.phase.name) : 'phase'}?</DialogTitle>
       <DialogContent>
         <Stack spacing={2}>
@@ -898,9 +928,16 @@ function PhaseDeleteDialog({ target, onClose, onDelete }) {
         </Stack>
       </DialogContent>
       <DialogActions sx={{ px: 3, pb: 2.5 }}>
-        <Button color="inherit" onClick={onClose}>Cancel</Button>
-        <Button color="error" variant="contained" onClick={onDelete} disableElevation>
-          Delete phase
+        <Button color="inherit" onClick={onClose} disabled={busy}>Cancel</Button>
+        <Button
+          color="error"
+          variant="contained"
+          onClick={onDelete}
+          disableElevation
+          disabled={busy}
+          startIcon={busy ? <CircularProgress size={16} color="inherit" /> : undefined}
+        >
+          {busy ? 'Deleting…' : 'Delete phase'}
         </Button>
       </DialogActions>
     </Dialog>
@@ -927,13 +964,24 @@ function NoticeSnackbar({ notice, onClose }) {
 export default function SequenceSheets() {
   const navigate = useNavigate()
   const { builderId, jobId, phaseId } = useParams()
-  const { jobs, setJobs } = useJobs()
+  const {
+    jobs,
+    loading,
+    error,
+    canManageJobs,
+    refreshJobs,
+    saveSequenceSheetPhase,
+    deactivateSequenceSheetPhase,
+  } = useJobs()
+  const { contacts: builderContacts } = useBuilderContacts()
   const [searchParams] = useSearchParams()
   const [search, setSearch] = useState('')
   const [expandedJobId, setExpandedJobId] = useState(jobs[0]?.id ?? null)
   const [dialogJobId, setDialogJobId] = useState(null)
   const [dialogPhaseId, setDialogPhaseId] = useState(null)
   const [deleteTarget, setDeleteTarget] = useState(null)
+  const [deleting, setDeleting] = useState(false)
+  const [emailTarget, setEmailTarget] = useState(null)
   const [notice, setNotice] = useState(null)
 
   const legacyJobId = searchParams.get('job')
@@ -942,14 +990,15 @@ export default function SequenceSheets() {
   const focusedJob = jobs.find(
     (job) =>
       String(job.id) === focusedJobId &&
-      (!builderId || jobBelongsToBuilder(job, builderId, initialBuilders)),
+      (!builderId || jobBelongsToBuilder(job, builderId)),
   )
-  const focusedBuilderId = builderId ?? getJobBuilderId(focusedJob, initialBuilders)
+  const focusedBuilderId = builderId ?? getJobBuilderId(focusedJob)
   const scopedJobs = useMemo(
     () => (focusedJob ? [focusedJob] : jobId ? [] : jobs),
     [focusedJob, jobId, jobs],
   )
   const visibleExpandedJobId = focusedJob?.id ?? expandedJobId
+  const canManageFocusedJob = canManageJobs && Boolean(focusedJob?.isActive)
 
   const filteredJobs = useMemo(() => {
     const query = search.trim().toLowerCase()
@@ -979,12 +1028,15 @@ export default function SequenceSheets() {
   const detailPhase = focusedJob?.sequenceSheet?.phases?.find(
     (phase) => String(phase.id) === detailPhaseId,
   )
+  const emailRecipient = builderContacts.find(
+    (contact) => String(contact.id) === String(emailTarget?.job.superintendentId),
+  )
 
   useEffect(() => {
     if (jobId || !legacyJobId) return
 
     const legacyJob = jobs.find((job) => String(job.id) === legacyJobId)
-    const legacyBuilderId = getJobBuilderId(legacyJob, initialBuilders)
+    const legacyBuilderId = getJobBuilderId(legacyJob)
     if (!legacyJob || legacyBuilderId == null) return
 
     navigate(
@@ -995,12 +1047,14 @@ export default function SequenceSheets() {
 
   const openCreate = (event, job) => {
     event.stopPropagation()
+    if (!canManageJobs || !job.isActive) return
     setExpandedJobId(job.id)
     setDialogJobId(job.id)
     setDialogPhaseId(null)
   }
 
   const openEdit = (job, phase) => {
+    if (!canManageJobs || !job.isActive) return
     setExpandedJobId(job.id)
     setDialogJobId(job.id)
     setDialogPhaseId(phase.id)
@@ -1012,81 +1066,69 @@ export default function SequenceSheets() {
   }
 
   const openPhaseDetails = (job, phase) => {
-    const phaseBuilderId = getJobBuilderId(job, initialBuilders)
+    const phaseBuilderId = getJobBuilderId(job)
     if (phaseBuilderId == null) return
 
     navigate(jobSequenceSheetPath(phaseBuilderId, job.id, phase.id))
   }
 
-  const savePhase = (form) => {
-    const isEditing = Boolean(dialogPhase)
-    const phaseId = dialogPhase?.id ?? Date.now()
-    const savedPhase = {
-      ...dialogPhase,
-      id: phaseId,
-      name: form.phaseName,
-      building: form.building,
-      createdAt: dialogPhase?.createdAt ?? new Date().toISOString().slice(0, 10),
-      lots: assignLotIds(form.lots),
-    }
-
-    setJobs((current) =>
-      current.map((job) =>
-        job.id === dialogJobId
-          ? {
-              ...job,
-              sequenceSheet: {
-                ...job.sequenceSheet,
-                phases: isEditing
-                  ? (job.sequenceSheet?.phases ?? []).map((phase) =>
-                      phase.id === phaseId ? savedPhase : phase,
-                    )
-                  : [...(job.sequenceSheet?.phases ?? []), savedPhase],
-              },
-            }
-          : job,
-      ),
-    )
-    closePhaseDialog()
-    setNotice({
-      severity: 'success',
-      message: `${formatPhase(form.phaseName)} ${isEditing ? 'updated' : 'created'} with ${form.lots.length} lot${form.lots.length === 1 ? '' : 's'}. Total Lots updated.`,
-    })
+  const openEmail = (job, phase) => {
+    if (!canManageJobs || !job.isActive) return
+    setEmailTarget({ job, phase })
   }
 
-  const deletePhase = () => {
+  const savePhase = async (form) => {
+    const isEditing = Boolean(dialogPhase)
+    const savedJob = dialogJob
+
+    try {
+      const savedPhase = await saveSequenceSheetPhase(
+        dialogJobId,
+        dialogPhase?.id ?? null,
+        form,
+      )
+      closePhaseDialog()
+      setNotice({
+        severity: 'success',
+        message: `${formatPhase(form.phaseName)} ${isEditing ? 'updated' : 'created'} with ${form.lots.length} lot${form.lots.length === 1 ? '' : 's'}. Total Lots updated.`,
+      })
+      if (!isEditing && savedJob) {
+        setEmailTarget({ job: savedJob, phase: savedPhase })
+      }
+    } catch (saveError) {
+      setNotice({ severity: 'error', message: saveError.message })
+    }
+  }
+
+  const deletePhase = async () => {
     if (!deleteTarget) return
 
-    setJobs((current) =>
-      current.map((job) =>
-        job.id === deleteTarget.jobId
-          ? {
-              ...job,
-              sequenceSheet: {
-                ...job.sequenceSheet,
-                phases: (job.sequenceSheet?.phases ?? []).filter(
-                  (phase) => phase.id !== deleteTarget.phase.id,
-                ),
-              },
-            }
-          : job,
-      ),
-    )
-    if (
-      String(deleteTarget.jobId) === String(focusedJob?.id) &&
-      String(deleteTarget.phase.id) === detailPhaseId &&
-      focusedBuilderId != null
-    ) {
-      navigate(
-        jobSequenceSheetPath(focusedBuilderId, deleteTarget.jobId),
-        { replace: true },
+    setDeleting(true)
+    try {
+      await deactivateSequenceSheetPhase(
+        deleteTarget.jobId,
+        deleteTarget.phase.id,
       )
+      if (
+        String(deleteTarget.jobId) === String(focusedJob?.id) &&
+        String(deleteTarget.phase.id) === detailPhaseId &&
+        focusedBuilderId != null
+      ) {
+        navigate(
+          jobSequenceSheetPath(focusedBuilderId, deleteTarget.jobId),
+          { replace: true },
+        )
+      }
+      setNotice({
+        severity: 'success',
+        message: `${formatPhase(deleteTarget.phase.name)} deleted. Total Lots updated.`,
+      })
+      setDeleteTarget(null)
+    } catch (deleteError) {
+      setNotice({ severity: 'error', message: deleteError.message })
+    } finally {
+      setDeleting(false)
     }
-    setNotice({
-      severity: 'success',
-      message: `${formatPhase(deleteTarget.phase.name)} deleted. Total Lots updated.`,
-    })
-    setDeleteTarget(null)
   }
 
   if (focusedJob && detailPhase) {
@@ -1094,6 +1136,7 @@ export default function SequenceSheets() {
       <>
         <PhaseDetails
           builderId={focusedBuilderId}
+          canManage={canManageFocusedJob}
           job={focusedJob}
           phase={detailPhase}
           onBack={() =>
@@ -1101,6 +1144,7 @@ export default function SequenceSheets() {
           }
           onEdit={() => openEdit(focusedJob, detailPhase)}
           onDelete={() => setDeleteTarget({ jobId: focusedJob.id, phase: detailPhase })}
+          onEmail={() => openEmail(focusedJob, detailPhase)}
         />
         {dialogJob && (
           <PhaseDialog
@@ -1112,10 +1156,26 @@ export default function SequenceSheets() {
           />
         )}
         <PhaseDeleteDialog
+          busy={deleting}
           target={deleteTarget}
           onClose={() => setDeleteTarget(null)}
           onDelete={deletePhase}
         />
+        {emailTarget && (
+          <SequenceSheetEmailDialog
+            key={`${emailTarget.phase.id}-${emailRecipient?.email ?? 'recipient'}`}
+            phase={emailTarget.phase}
+            defaultRecipientEmail={emailRecipient?.email ?? ''}
+            onClose={() => setEmailTarget(null)}
+            onSent={(result) => {
+              setEmailTarget(null)
+              setNotice({
+                severity: 'success',
+                message: `Sequence Sheet emailed to ${result.recipients.join(', ')}.`,
+              })
+            }}
+          />
+        )}
         <NoticeSnackbar notice={notice} onClose={() => setNotice(null)} />
       </>
     )
@@ -1171,6 +1231,36 @@ export default function SequenceSheets() {
       )}
 
       <Box sx={{ p: { xs: 2.5, md: 4 } }}>
+        {error && (
+          <Alert
+            severity="error"
+            sx={{ mb: 2 }}
+            action={(
+              <Button
+                color="inherit"
+                size="small"
+                startIcon={<RefreshRoundedIcon />}
+                onClick={() => refreshJobs().catch(() => {})}
+              >
+                Retry
+              </Button>
+            )}
+          >
+            {error}
+          </Alert>
+        )}
+
+        {loading && jobs.length === 0 && (
+          <Box sx={{ py: 8, display: 'grid', placeItems: 'center' }}>
+            <Stack spacing={1.5} sx={{ alignItems: 'center' }}>
+              <CircularProgress size={30} />
+              <Typography variant="body2" color="text.secondary">
+                Loading Sequence Sheets…
+              </Typography>
+            </Stack>
+          </Box>
+        )}
+
         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} sx={{ mb: 3 }}>
           <SummaryCard icon={<FolderRoundedIcon />} value={scopedJobs.length} label="Jobs" />
           <SummaryCard icon={<TableChartRoundedIcon />} value={totalPhases} label="Phases" />
@@ -1279,27 +1369,31 @@ export default function SequenceSheets() {
                       </Stack>
                     </Stack>
                   </AccordionSummary>
-                  <Box sx={{ px: { xs: 2, md: 2.5 }, pb: { xs: 2, md: 0 } }}>
-                    <Button
-                      variant="contained"
-                      size="small"
-                      startIcon={<AddRoundedIcon />}
-                      onClick={(event) => openCreate(event, job)}
-                      disableElevation
-                      fullWidth
-                    >
-                      Create Phase
-                    </Button>
-                  </Box>
+                  {canManageJobs && job.isActive && (
+                    <Box sx={{ px: { xs: 2, md: 2.5 }, pb: { xs: 2, md: 0 } }}>
+                      <Button
+                        variant="contained"
+                        size="small"
+                        startIcon={<AddRoundedIcon />}
+                        onClick={(event) => openCreate(event, job)}
+                        disableElevation
+                        fullWidth
+                      >
+                        Create Phase
+                      </Button>
+                    </Box>
+                  )}
                 </Stack>
                 <Divider />
                 <AccordionDetails id={`job-${job.id}-phases`} sx={{ p: { xs: 2, md: 2.5 } }}>
                   {phases.length > 0 ? (
                     phases.map((phase) => (
                       <PhaseCard
+                        canManage={canManageJobs && job.isActive}
                         key={phase.id}
                         phase={phase}
                         onEdit={() => openEdit(job, phase)}
+                        onEmail={() => openEmail(job, phase)}
                         onDelete={() => setDeleteTarget({ jobId: job.id, phase })}
                         onOpen={() => openPhaseDetails(job, phase)}
                       />
@@ -1321,13 +1415,15 @@ export default function SequenceSheets() {
                       <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, mb: 2 }}>
                         Create the first phase and assign its lots to this Job&apos;s plans.
                       </Typography>
-                      <Button
-                        variant="outlined"
-                        startIcon={<AddRoundedIcon />}
-                        onClick={(event) => openCreate(event, job)}
-                      >
-                        Create Phase
-                      </Button>
+                      {canManageJobs && job.isActive && (
+                        <Button
+                          variant="outlined"
+                          startIcon={<AddRoundedIcon />}
+                          onClick={(event) => openCreate(event, job)}
+                        >
+                          Create Phase
+                        </Button>
+                      )}
                     </Box>
                   )}
                 </AccordionDetails>
@@ -1336,7 +1432,7 @@ export default function SequenceSheets() {
           })}
         </Stack>
 
-        {filteredJobs.length === 0 && (
+        {!loading && filteredJobs.length === 0 && (
           <Box sx={{ py: 8, textAlign: 'center' }}>
             <Typography fontWeight={700}>
               {jobId ? 'The selected Job is unavailable.' : 'No Jobs match your search.'}
@@ -1361,10 +1457,26 @@ export default function SequenceSheets() {
       )}
 
       <PhaseDeleteDialog
+        busy={deleting}
         target={deleteTarget}
         onClose={() => setDeleteTarget(null)}
         onDelete={deletePhase}
       />
+      {emailTarget && (
+        <SequenceSheetEmailDialog
+          key={`${emailTarget.phase.id}-${emailRecipient?.email ?? 'recipient'}`}
+          phase={emailTarget.phase}
+          defaultRecipientEmail={emailRecipient?.email ?? ''}
+          onClose={() => setEmailTarget(null)}
+          onSent={(result) => {
+            setEmailTarget(null)
+            setNotice({
+              severity: 'success',
+              message: `Sequence Sheet emailed to ${result.recipients.join(', ')}.`,
+            })
+          }}
+        />
+      )}
       <NoticeSnackbar notice={notice} onClose={() => setNotice(null)} />
     </Box>
   )

@@ -301,7 +301,6 @@ set second_version_id = (
     builder.id,
     '{
       "separateHardwarePrice": true,
-      "hardwareBillingDrawNumber": 2,
       "optionsBillingDrawNumber": 1,
       "frequency": "WEEKLY",
       "cutoffDay": null,
@@ -312,7 +311,7 @@ set second_version_id = (
       "retentionPercentage": 5,
       "wrapEnabled": true,
       "wrapPercentage": 2,
-      "invoiceLineFormat": "LOT",
+      "invoiceLineFormat": "BUILDING_SCOPE",
       "portalName": "Textura",
       "notes": "Replacement version"
     }'::jsonb,
@@ -358,12 +357,12 @@ select ok(
     from valtrim.billing_setup_versions version
     join phase_4_version_ids ids on ids.second_version_id = version.id
     where version.separate_hardware_price
-      and version.hardware_billing_draw_number = 2
+      and version.hardware_billing_draw_number is null
       and version.options_billing_draw_number = 1
       and version.wrap_enabled
       and version.wrap_percentage = 2
   ),
-  'Replacement version stores Hardware, Options and OCIP or WRAP configuration'
+  'Replacement version enables per-Package Hardware, Options and OCIP or WRAP configuration'
 );
 select is(
   (

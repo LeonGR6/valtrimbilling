@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { Fragment, useMemo, useState } from 'react'
 import {
   Link as RouterLink,
   useNavigate,
@@ -19,8 +19,15 @@ import {
   DialogTitle,
   Divider,
   InputAdornment,
+  Paper,
   Snackbar,
   Stack,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
   TextField,
   Typography,
 } from '@mui/material'
@@ -95,63 +102,106 @@ function PriceDialog({ target, onClose, onSave, submitting }) {
     mode: 'onTouched',
     reValidateMode: 'onChange',
   })
+  const itemLabel = isPlan ? 'Plan' : isHardware ? 'Hardware' : 'Option'
+  const itemCode = isPlan || isHardware ? target.plan.code : target.option.code
+  const priceLabel = isPlan
+    ? 'Plan price'
+    : isHardware
+      ? 'Hardware price'
+      : 'Option price'
 
   return (
     <Dialog
       open
       onClose={submitting ? undefined : onClose}
       fullWidth
-      maxWidth="xs"
+      maxWidth="md"
       component="form"
       onSubmit={handleSubmit(onSave)}
       noValidate
     >
-      <DialogTitle sx={{ pb: 1 }}>
-        <Typography variant="h6" component="div" fontWeight={700}>
-          {isPlan
-            ? `Edit Plan ${target.plan.code} price`
-            : isHardware
-              ? `Edit Plan ${target.plan.code} hardware price`
-              : 'Edit option price'}
-        </Typography>
-        <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-          {isPlan || isHardware
-            ? target.plan.name || `Plan ${target.plan.code}`
-            : `${target.option.code} · ${target.option.description}`}
-        </Typography>
+      <DialogTitle sx={{ pb: 1.5 }}>
+        <Stack
+          direction={{ xs: 'column', sm: 'row' }}
+          spacing={1}
+          sx={{ alignItems: { sm: 'center' }, justifyContent: 'space-between' }}
+        >
+          <Box>
+            <Typography variant="h6" component="div" fontWeight={750}>
+              Edit {priceLabel.toLowerCase()}
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+              {isPlan || isHardware
+                ? target.plan.name || `Plan ${target.plan.code}`
+                : target.option.description}
+            </Typography>
+          </Box>
+          <Chip size="small" variant="outlined" color="primary" label="Pricing worksheet" />
+        </Stack>
       </DialogTitle>
       <DialogContent sx={{ pt: '16px !important' }}>
-        <TextField
-          autoFocus
-          label={isPlan
-            ? 'Base plan price'
-            : isHardware
-              ? 'Hardware price included in plan'
-              : 'Option price'}
-          type="number"
-          {...register('amount')}
-          error={Boolean(errors.amount)}
-          helperText={
-            errors.amount?.message
-            ?? (isHardware && hasPrice(target.plan.price)
-              ? `USD · Maximum ${formatPrice(target.plan.price)}.`
-              : 'USD · Up to 2 decimal places.')
-          }
-          fullWidth
-          slotProps={{
-            input: {
-              startAdornment: <InputAdornment position="start">$</InputAdornment>,
-            },
-            htmlInput: {
-              min: 0,
-              max: isHardware && hasPrice(target.plan.price)
-                ? target.plan.price
-                : undefined,
-              step: 0.01,
-              inputMode: 'decimal',
-            },
-          }}
-        />
+        <TableContainer component={Paper} variant="outlined" sx={{ borderRadius: 2 }}>
+          <Table size="small" sx={{ minWidth: 650 }}>
+            <TableHead>
+              <TableRow sx={{ bgcolor: 'action.hover' }}>
+                <TableCell sx={{ width: 135, fontWeight: 750, color: 'text.secondary' }}>
+                  Item
+                </TableCell>
+                <TableCell sx={{ width: 190, fontWeight: 750, color: 'text.secondary' }}>
+                  Code
+                </TableCell>
+                <TableCell sx={{ fontWeight: 750, color: 'text.secondary' }}>
+                  {priceLabel} <Box component="span" sx={{ color: 'error.main' }}>*</Box>
+                </TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              <TableRow sx={{ verticalAlign: 'top' }}>
+                <TableCell sx={{ pt: 2.25 }}>
+                  <Typography variant="body2" fontWeight={750}>{itemLabel}</Typography>
+                </TableCell>
+                <TableCell sx={{ pt: 2.25 }}>
+                  <Typography
+                    component={isPlan || isHardware ? 'strong' : 'span'}
+                    variant="body1"
+                    sx={{
+                      fontWeight: isPlan || isHardware ? '900 !important' : 700,
+                      overflowWrap: 'anywhere',
+                    }}
+                  >
+                    {itemCode}
+                  </Typography>
+                </TableCell>
+                <TableCell>
+                  <TextField
+                    autoFocus
+                    placeholder="0.00"
+                    type="number"
+                    {...register('amount')}
+                    error={Boolean(errors.amount)}
+                    helperText={
+                      errors.amount?.message
+                      ?? 'USD · Up to 2 decimal places.'
+                    }
+                    fullWidth
+                    size="small"
+                    slotProps={{
+                      input: {
+                        startAdornment: <InputAdornment position="start">$</InputAdornment>,
+                      },
+                      htmlInput: {
+                        min: 0,
+                        step: 0.01,
+                        inputMode: 'decimal',
+                        'aria-label': priceLabel,
+                      },
+                    }}
+                  />
+                </TableCell>
+              </TableRow>
+            </TableBody>
+          </Table>
+        </TableContainer>
       </DialogContent>
       <DialogActions sx={{ px: 3, pb: 2.5 }}>
         <Button color="inherit" onClick={onClose} disabled={submitting}>Cancel</Button>
@@ -220,9 +270,6 @@ function PlanPriceCard({
 }) {
   const options = plan.options ?? []
   const hardwareIsPriced = hasPrice(plan.hardwarePrice)
-  const drawBasePrice = hasPrice(plan.price) && hardwareIsPriced
-    ? plan.price - plan.hardwarePrice
-    : null
 
   return (
     <Card component="article" variant="outlined" sx={{ overflow: 'hidden' }}>
@@ -274,7 +321,7 @@ function PlanPriceCard({
           >
             <Box sx={{ minWidth: 130 }}>
               <Typography variant="caption" color="text.secondary" component="div">
-                Base plan price
+                Plan price
               </Typography>
               <Typography
                 variant="h6"
@@ -297,7 +344,7 @@ function PlanPriceCard({
                   {formatPrice(plan.hardwarePrice)}
                 </Typography>
                 <Typography variant="caption" color="text.secondary">
-                  Draw base: {formatPrice(drawBasePrice)}
+                  Additional to Plan Price
                 </Typography>
               </Box>
             )}
@@ -337,7 +384,7 @@ function PlanPriceCard({
               Pricing options
             </Typography>
             <Typography variant="caption" color="text.secondary">
-              Price for every P.O. / OPT # configured under this plan.
+              Price for every OPT # configured under this plan.
             </Typography>
           </Box>
           <Chip
@@ -370,7 +417,7 @@ function PlanPriceCard({
               }}
             >
               <Typography variant="caption" color="text.secondary" fontWeight={750}>
-                P.O. / OPT #
+                OPT #
               </Typography>
               <Typography variant="caption" color="text.secondary" fontWeight={750}>
                 Description
@@ -407,7 +454,7 @@ function PlanPriceCard({
                     color="text.secondary"
                     sx={{ display: { xs: 'block', md: 'none' }, mb: 0.5 }}
                   >
-                    P.O. / OPT #
+                    OPT #
                   </Typography>
                   <Chip
                     size="small"
@@ -490,6 +537,258 @@ function PlanPriceCard({
         )}
       </Box>
     </Card>
+  )
+}
+
+function PlanPricingSheet({
+  builderId,
+  jobId,
+  plans,
+  canManage,
+  submitting,
+  separateHardwarePrice,
+  onEditPlan,
+  onEditHardware,
+  onEditOption,
+}) {
+  const columnCount = separateHardwarePrice ? 6 : 5
+
+  return (
+    <>
+      <Stack spacing={2} sx={{ display: { xs: 'flex', md: 'none' }, p: 2 }}>
+        {plans.map((plan, index) => (
+          <PlanPriceCard
+            key={plan.id}
+            builderId={builderId}
+            plan={plan}
+            position={index + 1}
+            jobId={jobId}
+            canManage={canManage}
+            submitting={submitting}
+            separateHardwarePrice={separateHardwarePrice}
+            onEditPlan={() => onEditPlan(plan)}
+            onEditHardware={() => onEditHardware(plan)}
+            onEditOption={(option) => onEditOption(plan, option)}
+          />
+        ))}
+      </Stack>
+
+      <TableContainer sx={{ display: { xs: 'none', md: 'block' }, overflowX: 'auto' }}>
+        <Table
+          size="small"
+          aria-label="Plan and option pricing worksheet"
+          sx={{ minWidth: separateHardwarePrice ? 1120 : 940 }}
+        >
+          <TableHead>
+            <TableRow
+              sx={{
+                bgcolor: 'action.hover',
+                '& th': {
+                  py: 1.25,
+                  color: 'text.secondary',
+                  fontSize: 12,
+                  fontWeight: 800,
+                  letterSpacing: '0.03em',
+                  textTransform: 'uppercase',
+                  whiteSpace: 'nowrap',
+                },
+              }}
+            >
+              <TableCell sx={{ width: 120 }}>Item</TableCell>
+              <TableCell sx={{ width: 180 }}>Code</TableCell>
+              <TableCell>Name / description</TableCell>
+              <TableCell sx={{ width: 160 }}>Price</TableCell>
+              {separateHardwarePrice && (
+                <TableCell sx={{ width: 190 }}>Hardware price</TableCell>
+              )}
+              <TableCell align="right" sx={{ width: separateHardwarePrice ? 300 : 180 }}>
+                Actions
+              </TableCell>
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            {plans.map((plan) => {
+              const planOptions = plan.options ?? []
+              const hardwareIsPriced = hasPrice(plan.hardwarePrice)
+
+              return (
+                <Fragment key={plan.id}>
+                  <TableRow sx={{ bgcolor: 'primary.light', '& td': { py: 1.25 } }}>
+                    <TableCell>
+                      <Typography variant="body2" fontWeight={800} color="primary.main">
+                        Plan
+                      </Typography>
+                    </TableCell>
+                    <TableCell>
+                      <Typography
+                        component="strong"
+                        variant="body1"
+                        sx={{
+                          display: 'inline-block',
+                          color: 'text.primary',
+                          fontWeight: '900 !important',
+                          letterSpacing: '0.01em',
+                          overflowWrap: 'anywhere',
+                        }}
+                      >
+                        {plan.code}
+                      </Typography>
+                    </TableCell>
+                    <TableCell>
+                      <Typography variant="body2" fontWeight={700} sx={{ overflowWrap: 'anywhere' }}>
+                        {plan.name || `Plan ${plan.code}`}
+                      </Typography>
+                    </TableCell>
+                    <TableCell>
+                      <Typography
+                        variant="body2"
+                        fontWeight={800}
+                        color={hasPrice(plan.price) ? 'text.primary' : 'text.secondary'}
+                      >
+                        {formatPrice(plan.price)}
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        Plan price
+                      </Typography>
+                    </TableCell>
+                    {separateHardwarePrice && (
+                      <TableCell>
+                        <Typography
+                          variant="body2"
+                          fontWeight={800}
+                          color={hardwareIsPriced ? 'text.primary' : 'warning.main'}
+                        >
+                          {formatPrice(plan.hardwarePrice)}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary" component="div">
+                          Additional to Plan Price
+                        </Typography>
+                      </TableCell>
+                    )}
+                    <TableCell align="right">
+                      <Stack
+                        direction="row"
+                        spacing={0.75}
+                        sx={{ justifyContent: 'flex-end', whiteSpace: 'nowrap' }}
+                      >
+                        <Button
+                          size="small"
+                          variant="contained"
+                          startIcon={<EditOutlinedIcon />}
+                          onClick={() => onEditPlan(plan)}
+                          disabled={!canManage || submitting}
+                          disableElevation
+                        >
+                          Plan price
+                        </Button>
+                        {separateHardwarePrice && (
+                          <Button
+                            size="small"
+                            variant="outlined"
+                            startIcon={<ConstructionRoundedIcon />}
+                            onClick={() => onEditHardware(plan)}
+                            disabled={!canManage || submitting || !hasPrice(plan.price)}
+                          >
+                            Hardware
+                          </Button>
+                        )}
+                      </Stack>
+                    </TableCell>
+                  </TableRow>
+
+                  {planOptions.length > 0 ? planOptions.map((option, optionIndex) => (
+                    <TableRow
+                      key={option.id}
+                      hover
+                      sx={{
+                        bgcolor: optionIndex % 2 === 0 ? 'background.paper' : 'action.hover',
+                        '& td': { py: 1.15 },
+                      }}
+                    >
+                      <TableCell>
+                        <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+                          <Box sx={{ width: 14, borderTop: 1, borderColor: 'divider' }} />
+                          <Typography variant="body2" color="text.secondary" fontWeight={650}>
+                            Option
+                          </Typography>
+                        </Stack>
+                      </TableCell>
+                      <TableCell>
+                        <Typography
+                          variant="body2"
+                          fontWeight={700}
+                          sx={{
+                            fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+                            overflowWrap: 'anywhere',
+                          }}
+                        >
+                          {option.code}
+                        </Typography>
+                      </TableCell>
+                      <TableCell>
+                        <Typography variant="body2" sx={{ overflowWrap: 'anywhere' }}>
+                          {option.description}
+                        </Typography>
+                      </TableCell>
+                      <TableCell>
+                        <Typography
+                          variant="body2"
+                          fontWeight={750}
+                          color={hasPrice(option.price) ? 'text.primary' : 'text.secondary'}
+                        >
+                          {formatPrice(option.price)}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          Option price
+                        </Typography>
+                      </TableCell>
+                      {separateHardwarePrice && (
+                        <TableCell>
+                          <Typography color="text.disabled">—</Typography>
+                        </TableCell>
+                      )}
+                      <TableCell align="right">
+                        <Button
+                          size="small"
+                          color="inherit"
+                          startIcon={<EditOutlinedIcon />}
+                          onClick={() => onEditOption(plan, option)}
+                          disabled={!canManage || submitting}
+                        >
+                          Edit price
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  )) : (
+                    <TableRow key={`${plan.id}-empty-options`}>
+                      <TableCell colSpan={columnCount} sx={{ py: 1.5, bgcolor: 'background.default' }}>
+                        <Stack
+                          direction="row"
+                          spacing={1}
+                          sx={{ alignItems: 'center', justifyContent: 'space-between' }}
+                        >
+                          <Typography variant="body2" color="text.secondary">
+                            No Options in this Plan yet.
+                          </Typography>
+                          <Button
+                            component={RouterLink}
+                            to={jobPlansOptionsPath(builderId, jobId)}
+                            size="small"
+                            variant="text"
+                          >
+                            Manage job options
+                          </Button>
+                        </Stack>
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </Fragment>
+              )
+            })}
+          </TableBody>
+        </Table>
+      </TableContainer>
+    </>
   )
 }
 
@@ -758,10 +1057,7 @@ export default function PlanPricing() {
       } else {
         const hardwarePrice = priceTarget.type === 'hardware'
           ? amount
-          : hasPrice(priceTarget.plan.hardwarePrice)
-              && priceTarget.plan.hardwarePrice <= amount
-            ? priceTarget.plan.hardwarePrice
-            : null
+          : priceTarget.plan.hardwarePrice ?? null
         await saveJobPlanPrice(
           job.id,
           priceTarget.plan.id,
@@ -982,25 +1278,19 @@ export default function PlanPricing() {
           </Box>
 
           {plans.length > 0 ? (
-            <Stack spacing={2} sx={{ p: { xs: 2, sm: 2.5 } }}>
-              {plans.map((plan, index) => (
-                <PlanPriceCard
-                  key={plan.id}
-                  builderId={resolvedBuilderId}
-                  plan={plan}
-                  position={index + 1}
-                  jobId={job.id}
-                  canManage={canManagePricing}
-                  submitting={submitting}
-                  separateHardwarePrice={separateHardwarePrice}
-                  onEditPlan={() => setPriceTarget({ type: 'plan', plan })}
-                  onEditHardware={() => setPriceTarget({ type: 'hardware', plan })}
-                  onEditOption={(option) =>
-                    setPriceTarget({ type: 'option', plan, option })
-                  }
-                />
-              ))}
-            </Stack>
+            <PlanPricingSheet
+              builderId={resolvedBuilderId}
+              jobId={job.id}
+              plans={plans}
+              canManage={canManagePricing}
+              submitting={submitting}
+              separateHardwarePrice={separateHardwarePrice}
+              onEditPlan={(plan) => setPriceTarget({ type: 'plan', plan })}
+              onEditHardware={(plan) => setPriceTarget({ type: 'hardware', plan })}
+              onEditOption={(plan, option) =>
+                setPriceTarget({ type: 'option', plan, option })
+              }
+            />
           ) : (
             <Box sx={{ py: 8, px: 3, textAlign: 'center' }}>
               <LayersRoundedIcon color="action" sx={{ fontSize: 42, mb: 1 }} />

@@ -8,6 +8,10 @@ export function drawSelectionKey(jobId, phaseId, lotId, drawIndex) {
   return `${jobId}:${phaseId}:${lotId}:${drawIndex}`
 }
 
+export function hardwareSelectionKey(phaseId, lotId, drawIndex) {
+  return `${phaseId}:${lotId}:${drawIndex}`
+}
+
 export function optionSelectionKey(phaseId, lotId, optionId) {
   return `${phaseId}:${lotId}:${optionId}`
 }
@@ -217,6 +221,32 @@ export function buildUsedDrawSelections(packages = [], excludedPackageId = null)
     })
 
   return used
+}
+
+export function buildBilledHardwareLots(packages = [], jobId) {
+  const billed = new Map()
+
+  for (const record of packages) {
+    if (String(record.jobId) !== String(jobId) || record.status === 'CANCELLED') {
+      continue
+    }
+
+    for (const line of record.persistedDrawLines ?? []) {
+      if (Number(line.hardwareAmount) <= 0 || billed.has(String(line.lotId))) {
+        continue
+      }
+
+      billed.set(String(line.lotId), {
+        lotId: line.lotId,
+        drawIndex: line.drawIndex,
+        packageId: record.id,
+        packageNumber: record.packageNumber,
+        hardwareAmount: Number(line.hardwareAmount),
+      })
+    }
+  }
+
+  return billed
 }
 
 function sumSelectionAmounts(selections, rowForSelection, field) {
@@ -440,20 +470,14 @@ export function summarizeDrawPackage(record, job, phaseOrPhases, schedule) {
   if (record?.persistedInvoice) {
     const persistedLines = record.persistedDrawLines ?? []
     const persistedOptionLines = record.persistedOptionLines ?? []
-    const separateHardwarePrice = record.separateHardwarePrice
-      ?? Boolean(schedule?.separateHardwarePrice)
-    const hardwareBillingDrawIndex = record.hardwareBillingDrawIndex
-      ?? schedule?.hardwareBillingDrawIndex
-      ?? null
-    const hardwareRows = separateHardwarePrice
-      ? persistedLines.filter((line) => (
-          (
-            hardwareBillingDrawIndex != null
-            && Number(line.drawIndex) === Number(hardwareBillingDrawIndex)
-          )
-          || Number(line.hardwareAmount) > 0
-        ))
-      : []
+    const persistedHardwareLines = persistedLines.filter(
+      (line) => Number(line.hardwareAmount) > 0,
+    )
+    const separateHardwarePrice = Boolean(
+      record.separateHardwarePrice
+      ?? schedule?.separateHardwarePrice,
+    ) || persistedHardwareLines.length > 0
+    const hardwareRows = persistedHardwareLines
     const hardwareTotal = hardwareRows.reduce(
       (total, line) => addCurrencyAmounts(total, line.hardwareAmount),
       0,
@@ -494,7 +518,6 @@ export function summarizeDrawPackage(record, job, phaseOrPhases, schedule) {
       scopeEventTypes,
       currentDraw: record.persistedInvoice.grossAmount,
       separateHardwarePrice,
-      hardwareBillingDrawIndex,
       hardwareIsDue: hardwareRows.length > 0,
       hardwareRows,
       hardwareTotal,
@@ -545,23 +568,27 @@ export function summarizeDrawPackage(record, job, phaseOrPhases, schedule) {
     rowForSelection,
     'drawInvoiceAmounts',
   )
-  const hardwareTotal = schedule?.separateHardwarePrice
-    ? selections.reduce((total, selection) => {
-        if (Number(selection.drawIndex) !== Number(schedule.hardwareBillingDrawIndex)) {
-          return total
-        }
-        return addCurrencyAmounts(total, rowForSelection(selection)?.hardwarePrice)
-      }, 0)
-    : 0
-  const hardwareRows = schedule?.separateHardwarePrice
+  const separateHardwarePrice = Boolean(schedule?.separateHardwarePrice)
+  const hardwareSelectionKeys = new Set(
+    record?.hardwareSelectionKeys
+      ?? selections
+        .filter((selection) => selection.chargeHardware)
+        .map(({ phaseId, lotId, drawIndex }) => (
+          hardwareSelectionKey(phaseId, lotId, drawIndex)
+        )),
+  )
+  const hardwareRows = separateHardwarePrice
     ? selections.flatMap((selection) => {
-        if (Number(selection.drawIndex) !== Number(schedule.hardwareBillingDrawIndex)) {
-          return []
-        }
         const scope = scopeForSelection(selection)
         const row = rowForSelection(selection)
         if (!scope || !row) return []
+        const selectionKey = hardwareSelectionKey(
+          scope.phaseId,
+          row.id,
+          selection.drawIndex,
+        )
         return [{
+          selectionKey,
           phaseId: scope.phaseId,
           phaseCode: scope.phase.name ?? scope.phase.code ?? null,
           building: scope.phase.building ?? null,
@@ -571,9 +598,16 @@ export function summarizeDrawPackage(record, job, phaseOrPhases, schedule) {
           drawIndex: selection.drawIndex,
           drawName: schedule.draws?.[selection.drawIndex]?.name ?? '',
           hardwareAmount: row.hardwarePrice,
+          chargeHardware: hardwareSelectionKeys.has(selectionKey),
         }]
       })
     : []
+  const hardwareTotal = hardwareRows
+    .filter((row) => row.chargeHardware)
+    .reduce(
+      (total, row) => addCurrencyAmounts(total, row.hardwareAmount),
+      0,
+    )
   const hardwareFinancials = calculateInvoiceAmounts(hardwareTotal, schedule)
   const currentDraw = addCurrencyAmounts(baseCurrentDraw, hardwareTotal)
   const optionFinancials = calculateInvoiceAmounts(optionsTotal, schedule)
@@ -609,9 +643,8 @@ export function summarizeDrawPackage(record, job, phaseOrPhases, schedule) {
     scopeCount: selections.length,
     scopeEventTypes,
     currentDraw,
-    separateHardwarePrice: Boolean(schedule?.separateHardwarePrice),
-    hardwareBillingDrawIndex: schedule?.hardwareBillingDrawIndex ?? null,
-    hardwareIsDue: hardwareRows.length > 0,
+    separateHardwarePrice,
+    hardwareIsDue: hardwareRows.some((row) => row.chargeHardware),
     hardwareRows,
     hardwareTotal,
     availableOptionRows: availableDraftOptionRows,

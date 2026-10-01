@@ -18,13 +18,26 @@ import { drawSelectionKey } from '../../utils/drawPackages.js'
 import { calendarSelectionKey } from '../../utils/calendarDrawSuggestions.js'
 import {
   formatCurrency,
+  formatLongDate,
   formatPercentage,
 } from '../../utils/drawInvoiceFormatters.js'
+
+function calendarHeadingLabel(heading) {
+  if (!heading?.eventType) return 'Event not set'
+  if (heading.eventDates.length === 0) return heading.eventType
+
+  const firstDate = formatLongDate(heading.eventDates[0])
+  const additionalDateCount = heading.eventDates.length - 1
+  return additionalDateCount > 0
+    ? `${heading.eventType} (${firstDate} +${additionalDateCount} more)`
+    : `${heading.eventType} (${firstDate})`
+}
 
 export default function DrawSelectionGrid({
   job,
   phase,
   worksheet,
+  drawCalendarHeadings = [],
   usedSelections,
   selectedSelections,
   selectionIsUsed,
@@ -86,7 +99,7 @@ export default function DrawSelectionGrid({
             stickyHeader
             aria-label="Lot and Draw cells available for this package"
             sx={{
-              minWidth: 300 + worksheet.draws.length * 155,
+              minWidth: 300 + worksheet.draws.length * 185,
               '& .MuiTableCell-root': { px: 1.2, py: 1 },
             }}
           >
@@ -103,19 +116,31 @@ export default function DrawSelectionGrid({
                   align="right"
                   sx={{ width: 115, fontWeight: 800 }}
                 >
-                  {worksheet.separateHardwarePrice ? 'Draw base / lot' : 'Price per lot'}
+                  Price per lot
                 </TableCell>
                 {worksheet.draws.map((draw, drawIndex) => (
                   <TableCell
                     key={`select-draw-heading-${drawIndex}`}
                     align="center"
                     sx={{
-                      minWidth: 155,
+                      minWidth: 185,
                       borderLeft: 1,
                       borderColor: 'divider',
                       bgcolor: 'primary.light',
                     }}
                   >
+                    <Typography
+                      variant="caption"
+                      color="primary.main"
+                      fontWeight={800}
+                      component="div"
+                      title={(drawCalendarHeadings[drawIndex]?.eventDates ?? [])
+                        .map(formatLongDate)
+                        .join(' · ')}
+                      sx={{ mb: 0.25, whiteSpace: 'normal' }}
+                    >
+                      {calendarHeadingLabel(drawCalendarHeadings[drawIndex])}
+                    </Typography>
                     <Typography color="primary.main" fontWeight={850}>
                       Draw #{drawIndex + 1}
                     </Typography>

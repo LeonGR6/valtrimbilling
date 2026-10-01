@@ -46,6 +46,8 @@ import {
   invoiceLineFormatOptions,
   MAX_DRAW_COUNT,
   MIN_DRAW_COUNT,
+  submissionMethodLabels,
+  submissionMethodOptions,
   weekdayOptions,
 } from '../data/builderDrawSchedules.js'
 import { createBuilderDrawScheduleSchema } from '../schemas/builderDrawScheduleSchema.js'
@@ -92,6 +94,13 @@ function requiredDocuments(setup) {
     setup.requiresRelease && 'Release',
     setup.requiresBackup && 'Backup',
   ].filter(Boolean)
+}
+
+function describeSubmission(setup) {
+  const method = submissionMethodLabels[setup.submissionMethod] ?? 'Portal'
+  const destination = setup.submissionDestination?.trim()
+
+  return destination ? `${method} · ${destination}` : `${method} · Not specified`
 }
 
 function SchedulePreview({ control }) {
@@ -184,7 +193,6 @@ function BuilderDrawScheduleDialog({
     defaultValues: schedule
       ? {
           ...schedule,
-          hardwareBillingDrawIndex: schedule.hardwareBillingDrawIndex ?? null,
           optionsBillingDrawIndex: schedule.optionsBillingDrawIndex ?? null,
           draws: schedule.draws.map((draw) => ({ ...draw })),
           cutoffDays: [...schedule.cutoffDays],
@@ -213,15 +221,12 @@ function BuilderDrawScheduleDialog({
     control,
     name: 'optionsBillingDrawIndex',
   })
-  const hardwareBillingDrawIndex = useWatch({
-    control,
-    name: 'hardwareBillingDrawIndex',
-  })
   const frequency = useWatch({ control, name: 'frequency' })
   const anyDate = useWatch({ control, name: 'anyDate' })
   const cutoffDay = useWatch({ control, name: 'cutoffDay' })
   const retentionEnabled = useWatch({ control, name: 'retentionEnabled' })
   const ocipWrapEnabled = useWatch({ control, name: 'ocipWrapEnabled' })
+  const submissionMethod = useWatch({ control, name: 'submissionMethod' })
   const total = getDrawTotal(watchedDraws)
   const totalIsValid = Math.abs(total - 100) <= 0.001
   const percentagesAreValid =
@@ -237,7 +242,6 @@ function BuilderDrawScheduleDialog({
     && totalIsValid
     && percentagesAreValid
     && eventTypesAreValid
-    && (!separateHardwarePrice || hardwareBillingDrawIndex !== null)
   const availableBuilders = builders.filter(
     (builder) =>
       builder.id === schedule?.builderId ||
@@ -269,7 +273,6 @@ function BuilderDrawScheduleDialog({
     }
 
     adjustConfiguredDraw('optionsBillingDrawIndex', optionsBillingDrawIndex)
-    adjustConfiguredDraw('hardwareBillingDrawIndex', hardwareBillingDrawIndex)
 
     remove(drawIndex)
   }
@@ -475,57 +478,34 @@ function BuilderDrawScheduleDialog({
                     shouldDirty: true,
                     shouldValidate: true,
                   })
-                  if (!nextValue) {
-                    setValue('hardwareBillingDrawIndex', null, {
-                      shouldDirty: true,
-                      shouldValidate: true,
-                    })
-                  }
                 }}
                 disableElevation
               >
                 Separate Hardware Price
               </Button>
+              <Controller
+                name="utilityBuilding"
+                control={control}
+                render={({ field }) => (
+                  <FormControlLabel
+                    label="Utility Building"
+                    control={(
+                      <Checkbox
+                        checked={Boolean(field.value)}
+                        onChange={(_, checked) => field.onChange(checked)}
+                      />
+                    )}
+                  />
+                )}
+              />
             </Stack>
 
             {separateHardwarePrice && (
-              <Stack spacing={1.25} sx={{ mt: 1.25 }}>
-                <Alert severity="info">
-                  Draws allocate 100% of the plan price excluding hardware.
-                  Hardware is billed separately at 100% on the selected draw.
-                </Alert>
-                <Controller
-                  name="hardwareBillingDrawIndex"
-                  control={control}
-                  render={({ field }) => (
-                    <TextField
-                      select
-                      label="Hardware billing draw"
-                      value={field.value ?? ''}
-                      onChange={(event) => field.onChange(
-                        event.target.value === '' ? null : Number(event.target.value),
-                      )}
-                      onBlur={field.onBlur}
-                      inputRef={field.ref}
-                      error={Boolean(errors.hardwareBillingDrawIndex)}
-                      helperText={
-                        errors.hardwareBillingDrawIndex?.message
-                        ?? 'The full hardware price is added when this draw is billed.'
-                      }
-                      fullWidth
-                      required
-                    >
-                      <MenuItem value="">Select a draw</MenuItem>
-                      {watchedDraws.map((draw, index) => (
-                        <MenuItem key={`hardware-draw-${index + 1}`} value={index}>
-                          Draw {index + 1}
-                          {draw.name?.trim() ? ` · ${draw.name.trim()}` : ''}
-                        </MenuItem>
-                      ))}
-                    </TextField>
-                  )}
-                />
-              </Stack>
+              <Alert severity="info" sx={{ mt: 1.25 }}>
+                Draws allocate 100% of the Plan Price. When a Draw Package is
+                created, the user chooses which Draw charges each Lot's full
+                Hardware Price.
+              </Alert>
             )}
 
             <Controller
@@ -565,7 +545,7 @@ function BuilderDrawScheduleDialog({
             sx={{
               p: 2,
               border: 1,
-              borderColor: totalIsValid ? 'success.main' : 'warning.main',
+              borderColor: totalIsValid ? 'success.main' : 'error.main',
               borderRadius: 2,
               bgcolor: 'background.default',
             }}
@@ -589,7 +569,7 @@ function BuilderDrawScheduleDialog({
               </Box>
               <Typography
                 variant="h6"
-                color={totalIsValid ? 'success.main' : 'warning.main'}
+                color={totalIsValid ? 'success.main' : 'error.main'}
                 fontWeight={800}
               >
                 {formatPercentage(total)}%
@@ -598,7 +578,7 @@ function BuilderDrawScheduleDialog({
             <LinearProgress
               variant="determinate"
               value={Math.min(Math.max(total, 0), 100)}
-              color={totalIsValid ? 'success' : 'warning'}
+              color={totalIsValid ? 'success' : 'error'}
               sx={{ height: 7, borderRadius: 999 }}
             />
             {drawsError && (
@@ -881,12 +861,25 @@ function BuilderDrawScheduleDialog({
           </Divider>
 
           <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
-            <TextField
-              label="Portal"
-              {...register('portalName')}
-              error={Boolean(errors.portalName)}
-              helperText={errors.portalName?.message ?? 'Optional'}
-              fullWidth
+            <Controller
+              name="submissionMethod"
+              control={control}
+              render={({ field }) => (
+                <TextField
+                  {...field}
+                  select
+                  label="Submission method"
+                  error={Boolean(errors.submissionMethod)}
+                  helperText={errors.submissionMethod?.message ?? 'How billing is submitted'}
+                  fullWidth
+                >
+                  {submissionMethodOptions.map((option) => (
+                    <MenuItem key={option.value} value={option.value}>
+                      {option.label}
+                    </MenuItem>
+                  ))}
+                </TextField>
+              )}
             />
             <Controller
               name="invoiceLineFormat"
@@ -909,6 +902,33 @@ function BuilderDrawScheduleDialog({
               )}
             />
           </Stack>
+
+          <TextField
+            key={submissionMethod}
+            label={submissionMethod === 'EMAIL'
+              ? 'Submission email'
+              : submissionMethod === 'MAIL'
+                ? 'Mailing address'
+                : 'Portal'}
+            type={submissionMethod === 'EMAIL' ? 'email' : 'text'}
+            placeholder={submissionMethod === 'EMAIL'
+              ? 'billing@example.com'
+              : submissionMethod === 'MAIL'
+                ? 'Street, city, state and ZIP code'
+                : 'Example: Textura'}
+            {...register('submissionDestination')}
+            error={Boolean(errors.submissionDestination)}
+            helperText={errors.submissionDestination?.message
+              ?? (submissionMethod === 'PORTAL'
+                ? 'Optional'
+                : submissionMethod === 'EMAIL'
+                  ? 'Email used to submit billing.'
+                  : 'Address used to mail billing.')}
+            required={submissionMethod !== 'PORTAL'}
+            multiline={submissionMethod === 'MAIL'}
+            minRows={submissionMethod === 'MAIL' ? 2 : undefined}
+            fullWidth
+          />
 
           <TextField
             label="Notes"
@@ -1030,11 +1050,6 @@ function BuilderDrawScheduleCard({
               && Number(schedule.optionsBillingDrawIndex) === index && (
               <Chip size="small" color="primary" label="Options billed" />
             )}
-            {schedule.separateHardwarePrice
-              && schedule.hardwareBillingDrawIndex != null
-              && Number(schedule.hardwareBillingDrawIndex) === index && (
-              <Chip size="small" color="secondary" label="Hardware billed" />
-            )}
             <Typography variant="body2" color="primary.main" fontWeight={800}>
               {formatPercentage(Number(draw.percentage))}%
             </Typography>
@@ -1045,12 +1060,19 @@ function BuilderDrawScheduleCard({
       <Divider />
 
       <Stack spacing={1.25} sx={{ flex: 1, p: 2 }}>
+        <Chip
+          size="small"
+          color={schedule.utilityBuilding ? 'success' : 'default'}
+          variant={schedule.utilityBuilding ? 'filled' : 'outlined'}
+          label={`Utility Building · ${schedule.utilityBuilding ? 'Active' : 'Inactive'}`}
+          sx={{ alignSelf: 'flex-start', fontWeight: 750 }}
+        />
         {schedule.separateHardwarePrice && (
           <Chip
             size="small"
             color="primary"
             icon={<ConstructionRoundedIcon />}
-            label={`Hardware separated · Draw ${Number(schedule.hardwareBillingDrawIndex) + 1}`}
+            label="Hardware separated"
             sx={{ alignSelf: 'flex-start', fontWeight: 750 }}
           />
         )}
@@ -1088,7 +1110,7 @@ function BuilderDrawScheduleCard({
         </Stack>
 
         <Typography variant="caption" color="text.secondary">
-          {schedule.portalName || 'No portal'} ·{' '}
+          {describeSubmission(schedule)} ·{' '}
           {invoiceLineFormatLabels[schedule.invoiceLineFormat]}
         </Typography>
       </Stack>

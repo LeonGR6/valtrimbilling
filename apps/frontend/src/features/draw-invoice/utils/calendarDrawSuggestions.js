@@ -92,6 +92,57 @@ export function calendarSelectionKey(phaseId, lotId, drawIndex) {
   return `${phaseId}:${lotId}:${drawIndex}`
 }
 
+export function buildDrawCalendarHeadings({
+  activities = [],
+  job,
+  phase,
+  schedule,
+}) {
+  const draws = schedule?.draws ?? []
+  const phaseLotIds = new Set(
+    (phase?.lots ?? []).map(({ id }) => String(id)),
+  )
+
+  return draws.map((draw) => {
+    const eventType = EVENT_TYPE_ORDER.includes(draw.eventType)
+      ? draw.eventType
+      : null
+    if (!job || !phase || !eventType || phaseLotIds.size === 0) {
+      return { eventType, eventDates: [] }
+    }
+
+    const eventDates = new Set()
+    for (const activity of activities) {
+      if (
+        activity.status !== 'ACTIVE'
+        || String(activity.jobId) !== String(job.id)
+        || String(activity.phaseId) !== String(phase.id)
+      ) continue
+
+      for (const stage of activity.stages ?? []) {
+        if (stage.isEnabled === false || stage.type !== eventType) continue
+
+        for (const productionSchedule of stage.schedules ?? []) {
+          if (
+            productionSchedule.isActive === false
+            || !parseDateKey(productionSchedule.date)
+            || !(productionSchedule.lotIds ?? []).some(
+              (lotId) => phaseLotIds.has(String(lotId)),
+            )
+          ) continue
+
+          eventDates.add(productionSchedule.date)
+        }
+      }
+    }
+
+    return {
+      eventType,
+      eventDates: [...eventDates].sort(),
+    }
+  })
+}
+
 export function buildCalendarDrawSuggestion({
   activities = [],
   job,

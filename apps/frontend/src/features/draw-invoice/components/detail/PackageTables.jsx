@@ -80,7 +80,7 @@ export function DrawWorksheetTable({
               <TableCell rowSpan={2} sx={{ width: 60, fontWeight: 800 }}>Lot</TableCell>
               <TableCell rowSpan={2} sx={{ width: 72, fontWeight: 800 }}>Plan</TableCell>
               <TableCell rowSpan={2} align="right" sx={{ width: 115, fontWeight: 800 }}>
-                {worksheet.separateHardwarePrice ? 'Draw base / lot' : 'Price per lot'}
+                Price per lot
               </TableCell>
               {worksheet.draws.map((draw, drawIndex) => (
                 <TableCell
@@ -324,10 +324,6 @@ export function PackageHardwareTable({ summary }) {
 
   if (!summary.separateHardwarePrice || !summary.hardwareIsDue) return null
 
-  const billingDrawLabel = summary.hardwareBillingDrawIndex == null
-    ? 'Configured draw'
-    : `Draw #${summary.hardwareBillingDrawIndex + 1}`
-
   return (
     <Card variant="outlined" sx={{ overflow: 'hidden' }}>
       <Box sx={{ px: { xs: 2, sm: 2.5 }, py: 2, bgcolor: 'action.hover' }}>
@@ -345,7 +341,7 @@ export function PackageHardwareTable({ summary }) {
           <Chip
             size="small"
             variant="outlined"
-            label={`Billing draw · ${billingDrawLabel}`}
+            label={`${hardwareRows.length} ${hardwareRows.length === 1 ? 'charge' : 'charges'}`}
           />
         </Stack>
       </Box>

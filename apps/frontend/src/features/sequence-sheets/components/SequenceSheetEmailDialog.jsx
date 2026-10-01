@@ -16,6 +16,7 @@ import {
 } from '@mui/material'
 import EmailRoundedIcon from '@mui/icons-material/EmailRounded'
 import {
+  DEFAULT_SEQUENCE_SHEET_RECIPIENT_TEXT,
   parseSequenceSheetRecipients,
   sequenceSheetEmailPreviewDocument,
 } from '../services/sequenceSheetEmailRecord.js'
@@ -32,12 +33,13 @@ function newRequestId() {
 }
 
 export default function SequenceSheetEmailDialog({
-  defaultRecipientEmail,
   phase,
   onClose,
   onSent,
 }) {
-  const [recipientText, setRecipientText] = useState(defaultRecipientEmail ?? '')
+  const [recipientText, setRecipientText] = useState(
+    DEFAULT_SEQUENCE_SHEET_RECIPIENT_TEXT,
+  )
   const [recipientError, setRecipientError] = useState('')
   const [preview, setPreview] = useState(null)
   const [loadingPreview, setLoadingPreview] = useState(true)
@@ -52,11 +54,6 @@ export default function SequenceSheetEmailDialog({
       .then((result) => {
         if (!ignore) {
           setPreview(result)
-          setRecipientText((current) => (
-            current.trim()
-              ? current
-              : result.snapshot?.defaultRecipientEmail ?? ''
-          ))
         }
       })
       .catch((previewError) => {

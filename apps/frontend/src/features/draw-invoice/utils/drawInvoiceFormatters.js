@@ -53,7 +53,5 @@ export function readinessLabel(worksheet) {
   if (worksheet.unpricedLotCount > 0) return 'Pricing incomplete'
   if (worksheet.missingHardwarePriceCount > 0)
     return 'Hardware pricing incomplete'
-  if (worksheet.invalidHardwarePriceCount > 0)
-    return 'Hardware pricing invalid'
   return 'Ready'
 }

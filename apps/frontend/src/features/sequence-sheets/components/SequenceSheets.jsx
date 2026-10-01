@@ -58,7 +58,6 @@ import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded'
 import TableChartRoundedIcon from '@mui/icons-material/TableChartRounded'
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
 import JobModuleNavigation from '../../jobs/components/JobModuleNavigation.jsx'
-import { useBuilderContacts } from '../../builder-contacts/context/useBuilderContacts.js'
 import { useJobs } from '../../jobs/context/useJobs.js'
 import {
   getJobAssignedLotCount,
@@ -973,7 +972,6 @@ export default function SequenceSheets() {
     saveSequenceSheetPhase,
     deactivateSequenceSheetPhase,
   } = useJobs()
-  const { contacts: builderContacts } = useBuilderContacts()
   const [searchParams] = useSearchParams()
   const [search, setSearch] = useState('')
   const [expandedJobId, setExpandedJobId] = useState(jobs[0]?.id ?? null)
@@ -1028,10 +1026,6 @@ export default function SequenceSheets() {
   const detailPhase = focusedJob?.sequenceSheet?.phases?.find(
     (phase) => String(phase.id) === detailPhaseId,
   )
-  const emailRecipient = builderContacts.find(
-    (contact) => String(contact.id) === String(emailTarget?.job.superintendentId),
-  )
-
   useEffect(() => {
     if (jobId || !legacyJobId) return
 
@@ -1163,9 +1157,8 @@ export default function SequenceSheets() {
         />
         {emailTarget && (
           <SequenceSheetEmailDialog
-            key={`${emailTarget.phase.id}-${emailRecipient?.email ?? 'recipient'}`}
+            key={`${emailTarget.phase.id}-email`}
             phase={emailTarget.phase}
-            defaultRecipientEmail={emailRecipient?.email ?? ''}
             onClose={() => setEmailTarget(null)}
             onSent={(result) => {
               setEmailTarget(null)
@@ -1464,9 +1457,8 @@ export default function SequenceSheets() {
       />
       {emailTarget && (
         <SequenceSheetEmailDialog
-          key={`${emailTarget.phase.id}-${emailRecipient?.email ?? 'recipient'}`}
+          key={`${emailTarget.phase.id}-email`}
           phase={emailTarget.phase}
-          defaultRecipientEmail={emailRecipient?.email ?? ''}
           onClose={() => setEmailTarget(null)}
           onSent={(result) => {
             setEmailTarget(null)

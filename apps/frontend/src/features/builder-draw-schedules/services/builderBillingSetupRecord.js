@@ -29,12 +29,24 @@ function toNumber(value) {
   return Number(value) || 0
 }
 
+function normalizeInvoiceLineFormat(value) {
+  return value === 'BUILDING_SCOPE' ? value : 'LOT_SCOPE'
+}
+
+function normalizeSubmissionMethod(value) {
+  return ['EMAIL', 'MAIL'].includes(value) ? value : 'PORTAL'
+}
+
 export function toBuilderDrawSchedule(version, draws = [], documents = []) {
   const documentTypes = new Set(
     documents
       .filter((document) => document.is_required)
       .map((document) => document.document_type),
   )
+  const submissionMethod = normalizeSubmissionMethod(version.submission_method)
+  const submissionDestination = version.submission_destination
+    ?? (submissionMethod === 'PORTAL' ? version.portal_name : null)
+    ?? ''
 
   return {
     id: version.id,
@@ -50,9 +62,7 @@ export function toBuilderDrawSchedule(version, draws = [], documents = []) {
         eventType: draw.event_type,
       })),
     separateHardwarePrice: version.separate_hardware_price,
-    hardwareBillingDrawIndex: optionalDrawIndex(
-      version.hardware_billing_draw_number,
-    ),
+    utilityBuilding: Boolean(version.utility_building),
     optionsBillingDrawIndex: optionalDrawIndex(
       version.options_billing_draw_number,
     ),
@@ -70,8 +80,9 @@ export function toBuilderDrawSchedule(version, draws = [], documents = []) {
     requiresPaymentSchedule: documentTypes.has('PAYMENT_SCHEDULE'),
     requiresRelease: documentTypes.has('RELEASE'),
     requiresBackup: documentTypes.has('BACKUP'),
-    invoiceLineFormat: version.invoice_line_format,
-    portalName: version.portal_name ?? '',
+    invoiceLineFormat: normalizeInvoiceLineFormat(version.invoice_line_format),
+    submissionMethod,
+    submissionDestination,
     notes: version.notes ?? '',
   }
 }
@@ -79,16 +90,14 @@ export function toBuilderDrawSchedule(version, draws = [], documents = []) {
 export function toBuilderBillingSetupRpc(schedule) {
   const frequency = schedule.frequency
   const optionsDrawIndex = schedule.optionsBillingDrawIndex
-  const hardwareDrawIndex = schedule.hardwareBillingDrawIndex
+  const submissionMethod = normalizeSubmissionMethod(schedule.submissionMethod)
+  const submissionDestination = schedule.submissionDestination.trim() || null
 
   return {
     p_builder_id: Number(schedule.builderId),
     p_config: {
       separateHardwarePrice: Boolean(schedule.separateHardwarePrice),
-      hardwareBillingDrawNumber: schedule.separateHardwarePrice
-        && hardwareDrawIndex != null
-        ? Number(hardwareDrawIndex) + 1
-        : null,
+      utilityBuilding: Boolean(schedule.utilityBuilding),
       optionsBillingDrawNumber: optionsDrawIndex == null
         ? null
         : Number(optionsDrawIndex) + 1,
@@ -113,7 +122,9 @@ export function toBuilderBillingSetupRpc(schedule) {
         ? Number(schedule.ocipWrapPercentage)
         : 0,
       invoiceLineFormat: schedule.invoiceLineFormat,
-      portalName: schedule.portalName.trim() || null,
+      submissionMethod,
+      submissionDestination,
+      portalName: submissionMethod === 'PORTAL' ? submissionDestination : null,
       notes: schedule.notes.trim() || null,
     },
     p_draws: schedule.draws.map((draw, index) => ({

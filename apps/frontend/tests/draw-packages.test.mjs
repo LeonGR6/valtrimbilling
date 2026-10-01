@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { initialBuilderDrawSchedules } from '../src/features/builder-draw-schedules/data/builderDrawSchedules.js'
 import {
+  buildBilledHardwareLots,
   buildOptionChargeContext,
   buildPackageOptionHistory,
   buildUsedDrawSelections,
@@ -601,14 +602,13 @@ test('persisted package totals use immutable database snapshots', () => {
   assert.deepEqual(summary.scopeEventTypes, ['HW'])
 })
 
-test('persisted package exposes separated hardware charged on its billing Draw', () => {
+test('persisted package exposes only the Draw cells that charged Hardware', () => {
   const record = {
     selections: [
       { phaseId: 3, lotId: 1, drawIndex: 0 },
       { phaseId: 3, lotId: 2, drawIndex: 1 },
     ],
     separateHardwarePrice: true,
-    hardwareBillingDrawIndex: 1,
     persistedInvoice: {
       grossAmount: 3100,
       retentionAmount: 0,
@@ -650,17 +650,51 @@ test('persisted package exposes separated hardware charged on its billing Draw',
   )
 
   assert.equal(summary.hardwareIsDue, true)
-  assert.equal(summary.hardwareBillingDrawIndex, 1)
   assert.equal(summary.hardwareTotal, 600)
   assert.deepEqual(summary.hardwareRows, [record.persistedDrawLines[1]])
 })
 
-test('persisted package hides separated hardware outside its billing Draw', () => {
+test('persisted hardware amounts remain visible when setup metadata is stale', () => {
+  const hardwareLine = {
+    phaseId: 3,
+    phaseCode: '5',
+    building: '9',
+    lotId: 2,
+    lotNumber: '11',
+    planCode: 'B',
+    drawIndex: 2,
+    drawName: 'Hardware',
+    hardwareAmount: 600,
+  }
+  const summary = summarizeDrawPackage(
+    {
+      selections: [{ phaseId: 3, lotId: 2, drawIndex: 2 }],
+      separateHardwarePrice: false,
+      persistedInvoice: {
+        grossAmount: 600,
+        retentionAmount: 0,
+        wrapAmount: 0,
+        netAmount: 600,
+      },
+      persistedDrawLines: [hardwareLine],
+      persistedOptionLines: [],
+    },
+    { sequenceSheet: { plans: [] } },
+    { id: 3, name: '5', building: '9', lots: [] },
+    { draws: [{ percentage: 40 }, { percentage: 60 }] },
+  )
+
+  assert.equal(summary.separateHardwarePrice, true)
+  assert.equal(summary.hardwareIsDue, true)
+  assert.equal(summary.hardwareTotal, 600)
+  assert.deepEqual(summary.hardwareRows, [hardwareLine])
+})
+
+test('persisted package hides Draw cells that did not charge Hardware', () => {
   const summary = summarizeDrawPackage(
     {
       selections: [{ phaseId: 3, lotId: 1, drawIndex: 0 }],
       separateHardwarePrice: true,
-      hardwareBillingDrawIndex: 1,
       persistedInvoice: {
         grossAmount: 850,
         retentionAmount: 0,
@@ -690,7 +724,7 @@ test('persisted package hides separated hardware outside its billing Draw', () =
   assert.deepEqual(summary.hardwareRows, [])
 })
 
-test('Package estimates include separated hardware on its configured Draw', () => {
+test('Package estimates include separated hardware only on checked Draw cells', () => {
   const job = {
     sequenceSheet: {
       plans: [{ id: 1, code: 'A', price: 3000, hardwarePrice: 1000 }],
@@ -702,19 +736,20 @@ test('Package estimates include separated hardware on its configured Draw', () =
   }
   const schedule = {
     separateHardwarePrice: true,
-    hardwareBillingDrawIndex: 1,
     draws: [{ percentage: 85 }, { percentage: 15 }],
   }
 
   const summary = summarizeDrawPackage({
     selections: [{ phaseId: 3, lotId: 1, drawIndex: 1 }],
+    hardwareSelectionKeys: ['3:1:1'],
   }, job, phase, schedule)
 
-  assert.equal(summary.currentDraw, 1300)
-  assert.equal(summary.invoiceAmount, 1300)
+  assert.equal(summary.currentDraw, 1450)
+  assert.equal(summary.invoiceAmount, 1450)
   assert.equal(summary.hardwareIsDue, true)
   assert.equal(summary.hardwareTotal, 1000)
   assert.deepEqual(summary.hardwareRows, [{
+    selectionKey: '3:1:1',
     phaseId: 3,
     phaseCode: null,
     building: null,
@@ -724,5 +759,60 @@ test('Package estimates include separated hardware on its configured Draw', () =
     drawIndex: 1,
     drawName: '',
     hardwareAmount: 1000,
+    chargeHardware: true,
   }])
+})
+
+test('Package estimates leave Hardware optional when no Draw is checked', () => {
+  const summary = summarizeDrawPackage({
+    selections: [{ phaseId: 3, lotId: 1, drawIndex: 1 }],
+    hardwareSelectionKeys: [],
+  }, {
+    sequenceSheet: {
+      plans: [{ id: 1, code: 'A', price: 3000, hardwarePrice: 1000 }],
+    },
+  }, {
+    id: 3,
+    lots: [{ id: 1, lotNumber: '1', planId: 1, optionIds: [] }],
+  }, {
+    separateHardwarePrice: true,
+    draws: [{ percentage: 85 }, { percentage: 15 }],
+  })
+
+  assert.equal(summary.currentDraw, 450)
+  assert.equal(summary.hardwareIsDue, false)
+  assert.equal(summary.hardwareTotal, 0)
+  assert.equal(summary.hardwareRows[0].chargeHardware, false)
+})
+
+test('Hardware charge history ignores cancelled Packages and identifies billed Lots', () => {
+  const billed = buildBilledHardwareLots([
+    {
+      id: 10,
+      packageNumber: 'DP-00000010',
+      jobId: 7,
+      status: 'DRAFT',
+      persistedDrawLines: [
+        { lotId: 101, drawIndex: 1, hardwareAmount: 600 },
+        { lotId: 102, drawIndex: 1, hardwareAmount: 0 },
+      ],
+    },
+    {
+      id: 11,
+      packageNumber: 'DP-00000011',
+      jobId: 7,
+      status: 'CANCELLED',
+      persistedDrawLines: [{ lotId: 103, drawIndex: 2, hardwareAmount: 500 }],
+    },
+  ], 7)
+
+  assert.deepEqual(billed.get('101'), {
+    lotId: 101,
+    drawIndex: 1,
+    packageId: 10,
+    packageNumber: 'DP-00000010',
+    hardwareAmount: 600,
+  })
+  assert.equal(billed.has('102'), false)
+  assert.equal(billed.has('103'), false)
 })

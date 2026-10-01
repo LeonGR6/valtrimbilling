@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { defaultBillingSettings } from '../src/features/builder-draw-schedules/data/builderDrawSchedules.js'
+import {
+  defaultBillingSettings,
+  invoiceLineFormatOptions,
+  submissionMethodOptions,
+} from '../src/features/builder-draw-schedules/data/builderDrawSchedules.js'
 import { createBuilderDrawScheduleSchema } from '../src/features/builder-draw-schedules/schemas/builderDrawScheduleSchema.js'
 
 function validSetup(overrides = {}) {
@@ -32,6 +36,87 @@ test('Builder Draw Schedule accepts 3 draws totaling 100 percent', () => {
   assert.equal(result.draws.length, 3)
   assert.deepEqual(result.draws.map((draw) => draw.eventType), ['EXT', 'DM', 'HW'])
   assert.equal(result.separateHardwarePrice, false)
+  assert.equal(result.utilityBuilding, false)
+})
+
+test('Builder Draw Schedule stores the Utility Building flag without other behavior', () => {
+  const result = createBuilderDrawScheduleSchema([], null).parse(validSetup({
+    utilityBuilding: true,
+  }))
+
+  assert.equal(result.utilityBuilding, true)
+})
+
+test('Builder Draw Schedule supports only the two invoice line formats', () => {
+  assert.deepEqual(invoiceLineFormatOptions, [
+    { value: 'LOT_SCOPE', label: 'One line per lot and scope' },
+    { value: 'BUILDING_SCOPE', label: 'One line per building and scope' },
+  ])
+
+  for (const invoiceLineFormat of ['LOT_SCOPE', 'BUILDING_SCOPE']) {
+    const result = createBuilderDrawScheduleSchema([], null).safeParse(
+      validSetup({ invoiceLineFormat }),
+    )
+
+    assert.equal(result.success, true)
+  }
+
+  for (const invoiceLineFormat of ['LOT', 'SCOPE', 'SINGLE']) {
+    const result = createBuilderDrawScheduleSchema([], null).safeParse(
+      validSetup({ invoiceLineFormat }),
+    )
+
+    assert.equal(result.success, false)
+  }
+})
+
+test('Builder Draw Schedule supports Portal, Email and Mail submission', () => {
+  assert.deepEqual(submissionMethodOptions, [
+    { value: 'PORTAL', label: 'Portal' },
+    { value: 'EMAIL', label: 'Email' },
+    { value: 'MAIL', label: 'Mail' },
+  ])
+
+  const portal = createBuilderDrawScheduleSchema([], null).parse(validSetup({
+    submissionMethod: 'PORTAL',
+    submissionDestination: ' Textura ',
+  }))
+  const email = createBuilderDrawScheduleSchema([], null).parse(validSetup({
+    submissionMethod: 'EMAIL',
+    submissionDestination: ' billing@example.com ',
+  }))
+  const mail = createBuilderDrawScheduleSchema([], null).parse(validSetup({
+    submissionMethod: 'MAIL',
+    submissionDestination: ' 100 Main St, Austin, TX 78701 ',
+  }))
+
+  assert.equal(portal.submissionDestination, 'Textura')
+  assert.equal(email.submissionDestination, 'billing@example.com')
+  assert.equal(mail.submissionDestination, '100 Main St, Austin, TX 78701')
+})
+
+test('Email and Mail submissions require a valid destination', () => {
+  const missingEmail = createBuilderDrawScheduleSchema([], null).safeParse(validSetup({
+    submissionMethod: 'EMAIL',
+    submissionDestination: '',
+  }))
+  const invalidEmail = createBuilderDrawScheduleSchema([], null).safeParse(validSetup({
+    submissionMethod: 'EMAIL',
+    submissionDestination: 'not-an-email',
+  }))
+  const missingAddress = createBuilderDrawScheduleSchema([], null).safeParse(validSetup({
+    submissionMethod: 'MAIL',
+    submissionDestination: '   ',
+  }))
+  const optionalPortal = createBuilderDrawScheduleSchema([], null).safeParse(validSetup({
+    submissionMethod: 'PORTAL',
+    submissionDestination: '',
+  }))
+
+  assert.equal(missingEmail.success, false)
+  assert.equal(invalidEmail.success, false)
+  assert.equal(missingAddress.success, false)
+  assert.equal(optionalPortal.success, true)
 })
 
 test('Builder Draw Schedule requires EXT, DM or HW for every Draw', () => {
@@ -69,44 +154,13 @@ test('Builder Draw Schedule allows the same event on multiple Draws', () => {
   ])
 })
 
-test('Builder Draw Schedule can separate hardware at 100 percent', () => {
+test('Builder Draw Schedule enables separate hardware without a fixed billing Draw', () => {
   const result = createBuilderDrawScheduleSchema([], null).parse(validSetup({
     separateHardwarePrice: true,
-    hardwareBillingDrawIndex: 2,
   }))
 
   assert.equal(result.separateHardwarePrice, true)
-  assert.equal(result.hardwareBillingDrawIndex, 2)
-})
-
-test('separate hardware requires a configured billing draw', () => {
-  const missing = createBuilderDrawScheduleSchema([], null).safeParse(validSetup({
-    separateHardwarePrice: true,
-    hardwareBillingDrawIndex: null,
-  }))
-  const outsideSchedule = createBuilderDrawScheduleSchema([], null).safeParse(validSetup({
-    separateHardwarePrice: true,
-    hardwareBillingDrawIndex: 3,
-  }))
-
-  assert.equal(missing.success, false)
-  assert.deepEqual(missing.error.flatten().fieldErrors.hardwareBillingDrawIndex, [
-    'Select the draw that bills hardware.',
-  ])
-  assert.equal(outsideSchedule.success, false)
-  assert.deepEqual(
-    outsideSchedule.error.flatten().fieldErrors.hardwareBillingDrawIndex,
-    ['Select one of the configured draws.'],
-  )
-})
-
-test('hardware billing draw is cleared when hardware is not separated', () => {
-  const result = createBuilderDrawScheduleSchema([], null).parse(validSetup({
-    separateHardwarePrice: false,
-    hardwareBillingDrawIndex: 1,
-  }))
-
-  assert.equal(result.hardwareBillingDrawIndex, null)
+  assert.equal('hardwareBillingDrawIndex' in result, false)
 })
 
 test('Builder Draw Schedule stores the draw used to bill selected options', () => {
@@ -221,7 +275,8 @@ test('Builder Draw Schedule stores billing deductions and submission requirement
     requiresPaymentSchedule: true,
     requiresRelease: true,
     requiresBackup: false,
-    portalName: ' Textura ',
+    submissionMethod: 'PORTAL',
+    submissionDestination: ' Textura ',
   }))
 
   assert.equal(result.retentionPercentage, 10.5)
@@ -229,7 +284,8 @@ test('Builder Draw Schedule stores billing deductions and submission requirement
   assert.equal(result.requiresPo, true)
   assert.equal(result.requiresPaymentSchedule, true)
   assert.equal(result.requiresRelease, true)
-  assert.equal(result.portalName, 'Textura')
+  assert.equal(result.submissionMethod, 'PORTAL')
+  assert.equal(result.submissionDestination, 'Textura')
 })
 
 test('disabled retention and OCIP options clear hidden percentages', () => {

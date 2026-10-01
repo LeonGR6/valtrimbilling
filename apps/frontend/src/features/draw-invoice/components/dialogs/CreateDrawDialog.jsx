@@ -25,9 +25,11 @@ import {
   formatPhase,
 } from '../../../sequence-sheets/utils/phaseBuildingCodes.js'
 import {
+  buildBilledHardwareLots,
   buildOptionChargeContext,
   buildUsedDrawSelections,
   drawSelectionKey,
+  hardwareSelectionKey,
   summarizeDrawPackage,
 } from '../../utils/drawPackages.js'
 import { buildDrawWorksheet } from '../../utils/drawWorksheet.js'
@@ -38,6 +40,7 @@ import {
 } from '../../utils/drawInvoiceFormatters.js'
 import {
   buildCalendarDrawSuggestion,
+  buildDrawCalendarHeadings,
   calendarSelectionKey,
   localDateKey,
 } from '../../utils/calendarDrawSuggestions.js'
@@ -75,6 +78,7 @@ export default function CreateDrawDialog({
     firstPhase == null ? '' : String(firstPhase.id),
   )
   const [selectionOverrides, setSelectedSelections] = useState(null)
+  const [hardwareSelectionKeys, setHardwareSelectionKeys] = useState([])
   const [excludedOptionKeys, setExcludedOptionKeys] = useState([])
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState(null)
@@ -95,12 +99,19 @@ export default function CreateDrawDialog({
     () => buildUsedDrawSelections(packages),
     [packages],
   )
+  const billedHardwareLots = buildBilledHardwareLots(packages, job?.id)
   const calendarSuggestion = buildCalendarDrawSuggestion({
     activities: productionActivities,
     job,
     schedule,
     packages,
     asOfDate,
+  })
+  const drawCalendarHeadings = buildDrawCalendarHeadings({
+    activities: productionActivities,
+    job,
+    phase,
+    schedule,
   })
   const selectedSelections = selectionOverrides
     ?? calendarSuggestion.suggestedSelections
@@ -143,6 +154,17 @@ export default function CreateDrawDialog({
     }
   }
 
+  const pruneHardwareSelections = (selections) => {
+    const availableKeys = new Set(selections.map(
+      ({ phaseId, lotId, drawIndex }) => (
+        hardwareSelectionKey(phaseId, lotId, drawIndex)
+      ),
+    ))
+    setHardwareSelectionKeys((current) => current.filter(
+      (key) => availableKeys.has(key),
+    ))
+  }
+
   const handleJobChange = (event) => {
     const nextJobId = event.target.value
     const nextJob = jobs.find((candidate) => String(candidate.id) === nextJobId)
@@ -153,11 +175,15 @@ export default function CreateDrawDialog({
         : String(nextJob.sequenceSheet.phases[0].id),
     )
     setSelectedSelections(null)
+    setHardwareSelectionKeys([])
     setExcludedOptionKeys([])
   }
 
   const handlePhaseChange = (event) => {
     setSelectedPhaseId(event.target.value)
+    setSelectedSelections(null)
+    setHardwareSelectionKeys([])
+    setExcludedOptionKeys([])
   }
 
   const toggleSelection = (lotId, drawIndex) => {
@@ -177,6 +203,7 @@ export default function CreateDrawDialog({
       : [...selectedSelections, { phaseId: phase.id, lotId, drawIndex }]
 
     clearExcludedOptionsWithoutBillingDraw(nextSelections)
+    pruneHardwareSelections(nextSelections)
     setSelectedSelections(nextSelections)
   }
 
@@ -212,7 +239,24 @@ export default function CreateDrawDialog({
         ]
 
     clearExcludedOptionsWithoutBillingDraw(nextSelections)
+    pruneHardwareSelections(nextSelections)
     setSelectedSelections(nextSelections)
+  }
+
+  const toggleHardwareSelection = (hardware) => {
+    if (billedHardwareLots.has(String(hardware.lotId))) return
+
+    setHardwareSelectionKeys((current) => {
+      if (current.includes(hardware.selectionKey)) {
+        return current.filter((key) => key !== hardware.selectionKey)
+      }
+
+      const lotPrefix = `${hardware.phaseId}:${hardware.lotId}:`
+      return [
+        ...current.filter((key) => !key.startsWith(lotPrefix)),
+        hardware.selectionKey,
+      ]
+    })
   }
 
   const toggleLotSelections = (lotId) => {
@@ -241,6 +285,7 @@ export default function CreateDrawDialog({
     drawIndexes: selectedDrawIndexes,
     optionsBillingDrawIndex: schedule?.optionsBillingDrawIndex ?? null,
     selections: selectedSelections,
+    hardwareSelectionKeys,
     excludedOptionKeys,
     ...optionChargeContext,
   }
@@ -269,6 +314,13 @@ export default function CreateDrawDialog({
       await onCreate({
         jobId: job.id,
         selections: selectedSelections,
+        hardwareSelections: summary.hardwareRows
+          .filter((row) => row.chargeHardware)
+          .map(({ phaseId, lotId, drawIndex }) => ({
+            phaseId,
+            lotId,
+            drawIndex,
+          })),
         optionSelections: summary.selectedOptionRows.map((option) => ({
           lotId: option.lotId,
           optionId: option.optionId,
@@ -395,6 +447,7 @@ export default function CreateDrawDialog({
             job={job}
             phase={phase}
             worksheet={worksheet}
+            drawCalendarHeadings={drawCalendarHeadings}
             usedSelections={usedSelections}
             selectedSelections={selectedSelections}
             selectionIsUsed={selectionIsUsed}
@@ -406,7 +459,11 @@ export default function CreateDrawDialog({
             toggleDrawSelections={toggleDrawSelections}
           />
 
-          <CreatePackageHardwareTable summary={summary} />
+          <CreatePackageHardwareTable
+            summary={summary}
+            billedHardwareLots={billedHardwareLots}
+            onToggle={toggleHardwareSelection}
+          />
 
           {summary.optionsAreDue && (
             <SelectableOptionsTable summary={summary} onToggle={toggleOption} />
@@ -479,6 +536,11 @@ export default function CreateDrawDialog({
                   {summary.optionsAreDue && (
                     <Typography variant="body2">
                       Options: <strong>{formatCurrency(summary.optionsTotal)}</strong>
+                    </Typography>
+                  )}
+                  {summary.hardwareIsDue && (
+                    <Typography variant="body2">
+                      Hardware: <strong>{formatCurrency(summary.hardwareTotal)}</strong>
                     </Typography>
                   )}
                   <Typography variant="body2">

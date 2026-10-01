@@ -1,5 +1,13 @@
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/u
 
+export const DEFAULT_SEQUENCE_SHEET_RECIPIENTS = [
+  'amarquez@valtriminc.com',
+  'dalvarez@valtriminc.com',
+]
+
+export const DEFAULT_SEQUENCE_SHEET_RECIPIENT_TEXT =
+  DEFAULT_SEQUENCE_SHEET_RECIPIENTS.join(', ')
+
 export function parseSequenceSheetRecipients(value) {
   const recipients = [...new Set(
     String(value ?? '')

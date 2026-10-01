@@ -79,7 +79,11 @@ export function EditDrawPackageDialog({
       (selection) => cellKey(selection) === key,
     )
       ? current.filter((selection) => cellKey(selection) !== key)
-      : [...current, { phaseId: activePhase.id, lotId, drawIndex }])
+      : [
+          ...current,
+          record.selections.find((selection) => cellKey(selection) === key)
+            ?? { phaseId: activePhase.id, lotId, drawIndex },
+        ])
   }
 
   const save = async () => {
@@ -292,6 +296,7 @@ export function TransferDrawPackageCellsDialog({
                     phaseId: line.phaseId,
                     lotId: line.lotId,
                     drawIndex: line.drawIndex,
+                    chargeHardware: Number(line.hardwareAmount) > 0,
                   }
                   return (
                     <Stack

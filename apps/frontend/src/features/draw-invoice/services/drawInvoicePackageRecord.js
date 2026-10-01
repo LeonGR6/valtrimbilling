@@ -140,11 +140,18 @@ export function toDrawInvoicePackage(
     sortedDrawRows.map((row) => [`${row.lot_id}:${row.draw_id}`, row]),
   )
   const optionsBillingDrawNumber = setupVersion?.options_billing_draw_number
-  const hardwareBillingDrawNumber = setupVersion?.hardware_billing_draw_number
   const phaseIds = uniqueSortedNumbers(
     sortedDrawRows.map((row) => row.phase_id),
   )
   const primaryPhaseId = packageRow.phase_id ?? phaseIds[0] ?? null
+  const submissionMethod = ['EMAIL', 'MAIL'].includes(
+    setupVersion?.submission_method,
+  )
+    ? setupVersion.submission_method
+    : 'PORTAL'
+  const submissionDestination = setupVersion?.submission_destination
+    ?? (submissionMethod === 'PORTAL' ? setupVersion?.portal_name : null)
+    ?? ''
 
   return {
     id: packageRow.id,
@@ -162,7 +169,9 @@ export function toDrawInvoicePackage(
     billingCutoffAnyDate: Boolean(setupVersion?.cutoff_any_date),
     paymentTermsDays: setupVersion?.payment_terms_days ?? null,
     invoiceLineFormat: packageRow.invoice_line_format,
-    portalName: setupVersion?.portal_name ?? '',
+    submissionMethod,
+    submissionDestination,
+    portalName: submissionMethod === 'PORTAL' ? submissionDestination : '',
     quickbooksStatus: packageRow.quickbooks_status ?? 'NOT_CREATED',
     quickbooksReference: packageRow.quickbooks_reference ?? null,
     submissionStatus: packageRow.submission_status ?? 'NOT_SUBMITTED',
@@ -186,11 +195,9 @@ export function toDrawInvoicePackage(
       phaseId: row.phase_id,
       lotId: row.lot_id,
       drawIndex: Number(row.draw_number) - 1,
+      chargeHardware: toNumber(row.hardware_amount) > 0,
     })),
     separateHardwarePrice: Boolean(setupVersion?.separate_hardware_price),
-    hardwareBillingDrawIndex: hardwareBillingDrawNumber == null
-      ? null
-      : Number(hardwareBillingDrawNumber) - 1,
     optionsBillingDrawIndex: optionsBillingDrawNumber == null
       ? null
       : Number(optionsBillingDrawNumber) - 1,
@@ -257,6 +264,7 @@ export function toDrawInvoicePackage(
 export function toCreateDrawPackageRpc({
   jobId,
   selections,
+  hardwareSelections = [],
   optionSelections,
   optionsBillingDrawIndex,
 }) {
@@ -294,13 +302,20 @@ export function toCreateDrawPackageRpc({
   const sortedPackageOptions = [...packageOptions.values()].sort(
     (left, right) => left.lot_id - right.lot_id || left.option_id - right.option_id,
   )
+  const hardwareKeys = new Set(hardwareSelections.map(
+    ({ phaseId, lotId, drawIndex }) => `${phaseId}:${lotId}:${drawIndex}`,
+  ))
 
   return {
     p_job_id: Number(jobId),
-    p_selections: selections.map(({ lotId, drawIndex }, index) => {
+    p_selections: selections.map(({ phaseId, lotId, drawIndex }, index) => {
       const selection = {
         lot_id: Number(lotId),
         draw_number: Number(drawIndex) + 1,
+      }
+
+      if (hardwareKeys.has(`${phaseId}:${lotId}:${drawIndex}`)) {
+        selection.charge_hardware = true
       }
 
       if (
@@ -330,9 +345,10 @@ function toSelectionRecords(selections) {
   if (!Array.isArray(selections) || selections.length === 0) {
     throw new Error('Select at least one Lot / Draw cell.')
   }
-  return selections.map(({ lotId, drawIndex }) => ({
+  return selections.map(({ lotId, drawIndex, chargeHardware }) => ({
     lot_id: Number(lotId),
     draw_number: Number(drawIndex) + 1,
+    charge_hardware: Boolean(chargeHardware),
   }))
 }
 

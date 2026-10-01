@@ -10,7 +10,7 @@ const VERSION_COLUMNS = [
   'version_number',
   'status',
   'separate_hardware_price',
-  'hardware_billing_draw_number',
+  'utility_building',
   'options_billing_draw_number',
   'frequency',
   'cutoff_any_date',
@@ -23,6 +23,8 @@ const VERSION_COLUMNS = [
   'wrap_enabled',
   'wrap_percentage',
   'invoice_line_format',
+  'submission_method',
+  'submission_destination',
   'portal_name',
   'notes',
 ].join(', ')
@@ -64,7 +66,7 @@ function throwRepositoryError(error) {
   }
 
   if (error.code === '23514') {
-    throw new Error('Review the billing frequency, draws and deduction values.', {
+    throw new Error('Review the billing frequency, draws, deductions and submission details.', {
       cause: error,
     })
   }

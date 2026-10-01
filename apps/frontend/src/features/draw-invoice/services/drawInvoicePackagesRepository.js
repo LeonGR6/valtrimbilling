@@ -87,7 +87,6 @@ const OPTION_COLUMNS = [
 const SETUP_COLUMNS = [
   'id',
   'separate_hardware_price',
-  'hardware_billing_draw_number',
   'options_billing_draw_number',
   'frequency',
   'cutoff_any_date',
@@ -95,6 +94,8 @@ const SETUP_COLUMNS = [
   'cutoff_days',
   'cutoff_weekday',
   'payment_terms_days',
+  'submission_method',
+  'submission_destination',
   'portal_name',
 ].join(', ')
 
@@ -128,7 +129,7 @@ function throwRepositoryError(error, operation = 'write') {
   }
 
   if (error.code === '23505') {
-    if (error.message?.includes('Option')) {
+    if (error.message?.includes('Option') || error.message?.includes('Hardware')) {
       throw new Error(error.message, { cause: error })
     }
     throw new Error(error.message || 'One or more Lot / Draw cells belong to another Package.', {

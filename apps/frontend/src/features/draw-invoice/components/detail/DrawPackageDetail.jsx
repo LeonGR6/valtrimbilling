@@ -163,18 +163,22 @@ export default function DrawPackageDetail() {
   const selectedPhase =
     phases.find((phase) => String(phase.id) === String(phaseId)) ?? phases[0]
   const focusedBuilderId = getJobBuilderId(focusedJob)
-  const jobBillingSetupIsAvailable = jobBillingSetupVersions.some(
-    (version) => String(version.id) === String(focusedJob.billingSetupVersionId),
-  )
-  const schedule = builderDrawSchedules.find(
-    (item) => String(item.builderId) === String(focusedBuilderId),
-  )
-  const worksheet = buildDrawWorksheet(focusedJob, selectedPhase, schedule)
   const focusedPackage = drawInvoicePackages.find(
     (record) =>
       String(record.id) === String(packageId) &&
       String(record.jobId) === String(focusedJob.id),
   )
+  const jobBillingSetupIsAvailable = jobBillingSetupVersions.some(
+    (version) => String(version.id) === String(focusedJob.billingSetupVersionId),
+  )
+  const scheduleVersionId = focusedPackage?.setupVersionId
+    ?? focusedJob.billingSetupVersionId
+  const schedule = jobBillingSetupVersions.find(
+    (version) => String(version.id) === String(scheduleVersionId),
+  ) ?? builderDrawSchedules.find(
+    (item) => String(item.builderId) === String(focusedBuilderId),
+  )
+  const worksheet = buildDrawWorksheet(focusedJob, selectedPhase, schedule)
   const focusedPackagePhaseIds = new Set(
     (focusedPackage?.phaseIds?.length
       ? focusedPackage.phaseIds

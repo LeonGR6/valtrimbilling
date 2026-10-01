@@ -154,33 +154,44 @@ function JobDialog({
                 slotProps={{ htmlInput: { maxLength: 30 } }}
               />
               <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
-                <FormControl fullWidth error={Boolean(errors.builder)}>
-                  <InputLabel id="job-builder-label">Builder / Client</InputLabel>
-                  <Controller
-                    name="builder"
-                    control={control}
-                    render={({ field }) => (
-                      <Select
-                        {...field}
-                        labelId="job-builder-label"
-                        label="Builder / Client"
-                      >
-                        {builderOptions.map((builder) => (
-                          <MenuItem key={builder} value={builder}>
-                            {builder}
-                          </MenuItem>
-                        ))}
-                      </Select>
-                    )}
+                {job ? (
+                  <FormControl fullWidth error={Boolean(errors.builder)}>
+                    <InputLabel id="job-builder-label">Builder / Client</InputLabel>
+                    <Controller
+                      name="builder"
+                      control={control}
+                      render={({ field }) => (
+                        <Select
+                          {...field}
+                          labelId="job-builder-label"
+                          label="Builder / Client"
+                        >
+                          {builderOptions.map((builder) => (
+                            <MenuItem key={builder} value={builder}>
+                              {builder}
+                            </MenuItem>
+                          ))}
+                        </Select>
+                      )}
+                    />
+                    <Typography
+                      variant="caption"
+                      color={errors.builder ? 'error' : 'text.secondary'}
+                      sx={{ mt: 0.5, ml: 1.75, minHeight: 18 }}
+                    >
+                      {errors.builder?.message ?? 'Select a builder from the catalog.'}
+                    </Typography>
+                  </FormControl>
+                ) : (
+                  <TextField
+                    label="Builder / Client"
+                    {...register('builder')}
+                    error={Boolean(errors.builder)}
+                    helperText={errors.builder?.message ?? 'Selected from the current builder.'}
+                    fullWidth
+                    slotProps={{ htmlInput: { readOnly: true } }}
                   />
-                  <Typography
-                    variant="caption"
-                    color={errors.builder ? 'error' : 'text.secondary'}
-                    sx={{ mt: 0.5, ml: 1.75, minHeight: 18 }}
-                  >
-                    {errors.builder?.message ?? 'Select a builder from the catalog.'}
-                  </Typography>
-                </FormControl>
+                )}
 
                 <TextField
                   label="Community"
@@ -497,9 +508,10 @@ export default function JobsCatalog() {
   }
 
   const handleSave = async (form) => {
-    const savedBuilderId = builders.find(
-      (builder) => builder.name === form.builder,
-    )?.id ?? editTarget?.builderId ?? selectedBuilder.id
+    const savedBuilderId = editTarget
+      ? builders.find((builder) => builder.name === form.builder)?.id
+        ?? editTarget.builderId
+      : selectedBuilder.id
 
     setSubmitting(true)
     try {
@@ -861,7 +873,7 @@ export default function JobsCatalog() {
 
       {dialogOpen && (
         <JobDialog
-          key={dialogJob?.id ?? 'new'}
+          key={dialogJob?.id ?? `new-${selectedBuilder.id}`}
           builderOptions={builderOptions}
           builderIdsByName={builderIdsByName}
           defaultBuilder={selectedBuilder.name}

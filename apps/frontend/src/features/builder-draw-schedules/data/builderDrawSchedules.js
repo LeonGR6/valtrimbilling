@@ -34,18 +34,26 @@ export const weekdayOptions = [
 
 export const invoiceLineFormatOptions = [
   { value: 'LOT_SCOPE', label: 'One line per lot and scope' },
-  { value: 'LOT', label: 'One line per lot' },
-  { value: 'SCOPE', label: 'One line per scope' },
-  { value: 'SINGLE', label: 'Single summary line' },
+  { value: 'BUILDING_SCOPE', label: 'One line per building and scope' },
 ]
 
 export const invoiceLineFormatLabels = Object.fromEntries(
   invoiceLineFormatOptions.map(({ value, label }) => [value, label]),
 )
 
+export const submissionMethodOptions = [
+  { value: 'PORTAL', label: 'Portal' },
+  { value: 'EMAIL', label: 'Email' },
+  { value: 'MAIL', label: 'Mail' },
+]
+
+export const submissionMethodLabels = Object.fromEntries(
+  submissionMethodOptions.map(({ value, label }) => [value, label]),
+)
+
 export const defaultBillingSettings = {
   separateHardwarePrice: false,
-  hardwareBillingDrawIndex: null,
+  utilityBuilding: false,
   optionsBillingDrawIndex: null,
   frequency: 'MONTHLY',
   anyDate: false,
@@ -62,7 +70,8 @@ export const defaultBillingSettings = {
   requiresRelease: false,
   requiresBackup: false,
   invoiceLineFormat: 'LOT_SCOPE',
-  portalName: '',
+  submissionMethod: 'PORTAL',
+  submissionDestination: '',
   notes: '',
 }
 
@@ -87,9 +96,9 @@ export const initialBuilderDrawSchedules = [
     ocipWrapPercentage: 2.5,
     requiresPo: true,
     requiresRelease: true,
-    invoiceLineFormat: 'LOT',
-    portalName: 'BuilderPortal',
-    hardwareBillingDrawIndex: 2,
+    invoiceLineFormat: 'LOT_SCOPE',
+    submissionMethod: 'PORTAL',
+    submissionDestination: 'BuilderPortal',
     optionsBillingDrawIndex: 2,
   },
   {
@@ -111,7 +120,8 @@ export const initialBuilderDrawSchedules = [
     requiresPo: true,
     requiresPaymentSchedule: true,
     requiresRelease: true,
-    portalName: 'Textura',
+    submissionMethod: 'PORTAL',
+    submissionDestination: 'Textura',
     notes: 'Lien releases must be notarized before submission.',
   },
   {

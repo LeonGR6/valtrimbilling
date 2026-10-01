@@ -88,7 +88,7 @@ test('a missing plan price blocks worksheet readiness without inventing amounts'
   assert.deepEqual(worksheet.rows[0].drawAmounts, [null, null])
 })
 
-test('separate hardware is removed before draws and billed at 100 percent', () => {
+test('separate hardware is additional while draws use the full Plan price', () => {
   const worksheet = buildDrawWorksheet(
     {
       sequenceSheet: {
@@ -104,9 +104,29 @@ test('separate hardware is removed before draws and billed at 100 percent', () =
 
   assert.equal(worksheet.isReady, true)
   assert.equal(worksheet.totalBasePrice, 3000)
-  assert.equal(worksheet.totalDrawBasePrice, 2000)
+  assert.equal(worksheet.totalDrawBasePrice, 3000)
   assert.equal(worksheet.totalHardwarePrice, 1000)
-  assert.deepEqual(worksheet.rows[0].drawAmounts, [1700, 300])
+  assert.deepEqual(worksheet.rows[0].drawAmounts, [2550, 450])
+})
+
+test('additional hardware can exceed the Plan price without blocking draws', () => {
+  const worksheet = buildDrawWorksheet(
+    {
+      sequenceSheet: {
+        plans: [{ id: 1, code: 'A', price: 1000, hardwarePrice: 1500 }],
+      },
+    },
+    { lots: [{ id: 1, lotNumber: '1', planId: 1 }] },
+    {
+      separateHardwarePrice: true,
+      draws: [{ percentage: 50 }, { percentage: 50 }],
+    },
+  )
+
+  assert.equal(worksheet.isReady, true)
+  assert.equal(worksheet.totalDrawBasePrice, 1000)
+  assert.equal(worksheet.totalHardwarePrice, 1500)
+  assert.deepEqual(worksheet.rows[0].drawAmounts, [500, 500])
 })
 
 test('hardware separation requires a hardware price for every assigned plan', () => {

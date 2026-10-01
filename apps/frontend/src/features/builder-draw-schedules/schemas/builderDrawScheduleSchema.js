@@ -52,6 +52,8 @@ const optionalDrawIndexSchema = z.preprocess(
   z.number().int().min(0).nullable(),
 )
 
+const emailAddressSchema = z.string().email()
+
 export function createBuilderDrawScheduleSchema(schedules, currentScheduleId) {
   return z
     .object({
@@ -78,7 +80,7 @@ export function createBuilderDrawScheduleSchema(schedules, currentScheduleId) {
         .min(MIN_DRAW_COUNT, `Configure at least ${MIN_DRAW_COUNT} draws.`)
         .max(MAX_DRAW_COUNT, `Configure no more than ${MAX_DRAW_COUNT} draws.`),
       separateHardwarePrice: z.boolean().default(false),
-      hardwareBillingDrawIndex: optionalDrawIndexSchema,
+      utilityBuilding: z.boolean().default(false),
       optionsBillingDrawIndex: optionalDrawIndexSchema,
       frequency: z.enum(['MONTHLY', 'SEMIMONTHLY', 'WEEKLY']),
       anyDate: z.boolean().default(false),
@@ -98,8 +100,12 @@ export function createBuilderDrawScheduleSchema(schedules, currentScheduleId) {
       requiresPaymentSchedule: z.boolean(),
       requiresRelease: z.boolean(),
       requiresBackup: z.boolean(),
-      invoiceLineFormat: z.enum(['LOT_SCOPE', 'LOT', 'SCOPE', 'SINGLE']),
-      portalName: z.string().trim().max(80, 'Use 80 characters or fewer.'),
+      invoiceLineFormat: z.enum(['LOT_SCOPE', 'BUILDING_SCOPE']),
+      submissionMethod: z.enum(['PORTAL', 'EMAIL', 'MAIL']),
+      submissionDestination: z
+        .string()
+        .trim()
+        .max(500, 'Use 500 characters or fewer.'),
       notes: z.string().trim().max(500, 'Use 500 characters or fewer.'),
     })
     .superRefine((data, context) => {
@@ -137,28 +143,6 @@ export function createBuilderDrawScheduleSchema(schedules, currentScheduleId) {
         context.addIssue({
           code: 'custom',
           path: ['optionsBillingDrawIndex'],
-          message: 'Select one of the configured draws.',
-        })
-      }
-
-      if (
-        data.separateHardwarePrice
-        && data.hardwareBillingDrawIndex === null
-      ) {
-        context.addIssue({
-          code: 'custom',
-          path: ['hardwareBillingDrawIndex'],
-          message: 'Select the draw that bills hardware.',
-        })
-      }
-
-      if (
-        data.hardwareBillingDrawIndex !== null
-        && data.hardwareBillingDrawIndex >= data.draws.length
-      ) {
-        context.addIssue({
-          code: 'custom',
-          path: ['hardwareBillingDrawIndex'],
           message: 'Select one of the configured draws.',
         })
       }
@@ -211,6 +195,47 @@ export function createBuilderDrawScheduleSchema(schedules, currentScheduleId) {
         })
       }
 
+      if (
+        data.submissionMethod === 'PORTAL'
+        && data.submissionDestination.length > 80
+      ) {
+        context.addIssue({
+          code: 'custom',
+          path: ['submissionDestination'],
+          message: 'Use 80 characters or fewer.',
+        })
+      }
+
+      if (data.submissionMethod === 'EMAIL') {
+        if (!data.submissionDestination) {
+          context.addIssue({
+            code: 'custom',
+            path: ['submissionDestination'],
+            message: 'Enter the submission email.',
+          })
+        } else if (
+          data.submissionDestination.length > 254
+          || !emailAddressSchema.safeParse(data.submissionDestination).success
+        ) {
+          context.addIssue({
+            code: 'custom',
+            path: ['submissionDestination'],
+            message: 'Enter a valid email address.',
+          })
+        }
+      }
+
+      if (
+        data.submissionMethod === 'MAIL'
+        && !data.submissionDestination
+      ) {
+        context.addIssue({
+          code: 'custom',
+          path: ['submissionDestination'],
+          message: 'Enter the mailing address.',
+        })
+      }
+
       const totalDeductions = (data.retentionEnabled
         ? data.retentionPercentage
         : 0) + (data.ocipWrapEnabled ? data.ocipWrapPercentage : 0)
@@ -228,9 +253,6 @@ export function createBuilderDrawScheduleSchema(schedules, currentScheduleId) {
       anyDate: data.frequency === 'MONTHLY' && data.anyDate,
       cutoffDay: data.frequency === 'MONTHLY' && !data.anyDate
         ? data.cutoffDay
-        : null,
-      hardwareBillingDrawIndex: data.separateHardwarePrice
-        ? data.hardwareBillingDrawIndex
         : null,
       retentionPercentage: data.retentionEnabled ? data.retentionPercentage : 0,
       ocipWrapPercentage: data.ocipWrapEnabled ? data.ocipWrapPercentage : 0,

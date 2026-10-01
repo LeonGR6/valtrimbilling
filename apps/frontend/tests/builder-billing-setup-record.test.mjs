@@ -12,6 +12,7 @@ test('billing setup records map database columns and one-based draws to the form
     version_number: 3,
     status: 'ACTIVE',
     separate_hardware_price: true,
+    utility_building: true,
     hardware_billing_draw_number: 3,
     options_billing_draw_number: 2,
     frequency: 'SEMIMONTHLY',
@@ -24,7 +25,9 @@ test('billing setup records map database columns and one-based draws to the form
     retention_percentage: '5.25',
     wrap_enabled: true,
     wrap_percentage: '2.50',
-    invoice_line_format: 'LOT_SCOPE',
+    invoice_line_format: 'LOT',
+    submission_method: 'PORTAL',
+    submission_destination: 'Textura',
     portal_name: 'Textura',
     notes: null,
   }
@@ -50,7 +53,8 @@ test('billing setup records map database columns and one-based draws to the form
     { name: '', percentage: 75, eventType: 'DM' },
     { name: 'Final', percentage: 15, eventType: 'HW' },
   ])
-  assert.equal(schedule.hardwareBillingDrawIndex, 2)
+  assert.equal('hardwareBillingDrawIndex' in schedule, false)
+  assert.equal(schedule.utilityBuilding, true)
   assert.equal(schedule.optionsBillingDrawIndex, 1)
   assert.equal(schedule.anyDate, false)
   assert.equal(schedule.ocipWrapEnabled, true)
@@ -58,6 +62,9 @@ test('billing setup records map database columns and one-based draws to the form
   assert.equal(schedule.requiresPo, true)
   assert.equal(schedule.requiresRelease, true)
   assert.equal(schedule.requiresBackup, false)
+  assert.equal(schedule.invoiceLineFormat, 'LOT_SCOPE')
+  assert.equal(schedule.submissionMethod, 'PORTAL')
+  assert.equal(schedule.submissionDestination, 'Textura')
 })
 
 test('form values map to normalized RPC payloads and one-based draw numbers', () => {
@@ -68,7 +75,7 @@ test('form values map to normalized RPC payloads and one-based draw numbers', ()
       { name: '', percentage: 75, eventType: 'HW' },
     ],
     separateHardwarePrice: true,
-    hardwareBillingDrawIndex: 1,
+    utilityBuilding: true,
     optionsBillingDrawIndex: 0,
     frequency: 'WEEKLY',
     anyDate: false,
@@ -84,13 +91,15 @@ test('form values map to normalized RPC payloads and one-based draw numbers', ()
     requiresPaymentSchedule: false,
     requiresRelease: true,
     requiresBackup: false,
-    invoiceLineFormat: 'LOT',
-    portalName: ' Builder Portal ',
+    invoiceLineFormat: 'BUILDING_SCOPE',
+    submissionMethod: 'EMAIL',
+    submissionDestination: ' billing@example.com ',
     notes: ' Instructions ',
   })
 
   assert.equal(payload.p_builder_id, 7)
-  assert.equal(payload.p_config.hardwareBillingDrawNumber, 2)
+  assert.equal('hardwareBillingDrawNumber' in payload.p_config, false)
+  assert.equal(payload.p_config.utilityBuilding, true)
   assert.equal(payload.p_config.optionsBillingDrawNumber, 1)
   assert.equal(payload.p_config.cutoffDay, null)
   assert.deepEqual(payload.p_config.cutoffDays, [])
@@ -102,7 +111,10 @@ test('form values map to normalized RPC payloads and one-based draw numbers', ()
   assert.equal('invoiceDateRule' in payload.p_config, false)
   assert.equal(payload.p_config.wrapEnabled, true)
   assert.equal(payload.p_config.wrapPercentage, 2)
-  assert.equal(payload.p_config.portalName, 'Builder Portal')
+  assert.equal(payload.p_config.invoiceLineFormat, 'BUILDING_SCOPE')
+  assert.equal(payload.p_config.submissionMethod, 'EMAIL')
+  assert.equal(payload.p_config.submissionDestination, 'billing@example.com')
+  assert.equal(payload.p_config.portalName, null)
   assert.deepEqual(payload.p_draws, [
     { drawNumber: 1, name: 'Start', percentage: 25, eventType: 'HW' },
     { drawNumber: 2, name: null, percentage: 75, eventType: 'HW' },
@@ -121,7 +133,7 @@ test('monthly Any date is persisted without a fixed cutoff day', () => {
       { name: '', percentage: 50, eventType: 'DM' },
     ],
     separateHardwarePrice: false,
-    hardwareBillingDrawIndex: null,
+    utilityBuilding: false,
     optionsBillingDrawIndex: null,
     frequency: 'MONTHLY',
     anyDate: true,
@@ -138,7 +150,8 @@ test('monthly Any date is persisted without a fixed cutoff day', () => {
     requiresRelease: false,
     requiresBackup: false,
     invoiceLineFormat: 'LOT_SCOPE',
-    portalName: '',
+    submissionMethod: 'PORTAL',
+    submissionDestination: '',
     notes: '',
   })
 
@@ -146,4 +159,35 @@ test('monthly Any date is persisted without a fixed cutoff day', () => {
   assert.equal(payload.p_config.cutoffDay, null)
   assert.deepEqual(payload.p_config.cutoffDays, [])
   assert.equal(payload.p_config.cutoffWeekday, null)
+})
+
+test('legacy portal records load as Portal submissions', () => {
+  const schedule = toBuilderDrawSchedule({
+    id: 92,
+    builder_id: 8,
+    version_number: 1,
+    status: 'ACTIVE',
+    separate_hardware_price: false,
+    utility_building: false,
+    hardware_billing_draw_number: null,
+    options_billing_draw_number: null,
+    frequency: 'MONTHLY',
+    cutoff_any_date: false,
+    cutoff_day: 20,
+    cutoff_days: [],
+    cutoff_weekday: null,
+    payment_terms_days: 30,
+    retention_enabled: false,
+    retention_percentage: '0',
+    wrap_enabled: false,
+    wrap_percentage: '0',
+    invoice_line_format: 'LOT_SCOPE',
+    submission_method: 'PORTAL',
+    submission_destination: null,
+    portal_name: 'Legacy Portal',
+    notes: null,
+  })
+
+  assert.equal(schedule.submissionMethod, 'PORTAL')
+  assert.equal(schedule.submissionDestination, 'Legacy Portal')
 })

@@ -88,6 +88,8 @@ test('maps persisted package, invoice and calculated snapshots to the UI model',
       cutoff_days: [],
       cutoff_weekday: null,
       payment_terms_days: 30,
+      submission_method: 'EMAIL',
+      submission_destination: 'billing@example.com',
       portal_name: 'Textura',
     },
   )
@@ -97,13 +99,19 @@ test('maps persisted package, invoice and calculated snapshots to the UI model',
   assert.deepEqual(record.lotIds, [41])
   assert.deepEqual(record.phaseIds, [21])
   assert.deepEqual(record.drawIndexes, [1])
-  assert.deepEqual(record.selections, [{ phaseId: 21, lotId: 41, drawIndex: 1 }])
+  assert.deepEqual(record.selections, [{
+    phaseId: 21,
+    lotId: 41,
+    drawIndex: 1,
+    chargeHardware: false,
+  }])
   assert.equal(record.separateHardwarePrice, true)
-  assert.equal(record.hardwareBillingDrawIndex, 1)
   assert.equal(record.optionsBillingDrawIndex, 1)
   assert.equal(record.billingCutoffDate, '2026-09-20')
   assert.equal(record.paymentTermsDays, 30)
-  assert.equal(record.portalName, 'Textura')
+  assert.equal(record.submissionMethod, 'EMAIL')
+  assert.equal(record.submissionDestination, 'billing@example.com')
+  assert.equal(record.portalName, '')
   assert.equal(record.persistedInvoice.grossAmount, 1125.5)
   assert.equal(record.persistedInvoice.netAmount, 1046.71)
   assert.equal(record.persistedDrawLines[0].eventType, 'DM')
@@ -196,6 +204,28 @@ test('builds Package creation RPC values from UI draw indexes', () => {
       { lot_id: 41, draw_number: 1 },
       { lot_id: 42, draw_number: 3 },
       { lot_id: 41, draw_number: 2 },
+    ],
+  })
+})
+
+test('adds Hardware only to the explicitly selected Lot and Draw cells', () => {
+  assert.deepEqual(toCreateDrawPackageRpc({
+    jobId: 11,
+    selections: [
+      { phaseId: 21, lotId: 41, drawIndex: 0 },
+      { phaseId: 21, lotId: 41, drawIndex: 1 },
+      { phaseId: 21, lotId: 42, drawIndex: 1 },
+    ],
+    hardwareSelections: [
+      { phaseId: 21, lotId: 41, drawIndex: 1 },
+      { phaseId: 21, lotId: 42, drawIndex: 1 },
+    ],
+  }), {
+    p_job_id: 11,
+    p_selections: [
+      { lot_id: 41, draw_number: 1 },
+      { lot_id: 41, draw_number: 2, charge_hardware: true },
+      { lot_id: 42, draw_number: 2, charge_hardware: true },
     ],
   })
 })
@@ -341,8 +371,8 @@ test('derives a multi-Phase Package scope from its immutable draw lines', () => 
   assert.equal(record.phaseId, 21)
   assert.deepEqual(record.phaseIds, [21, 22])
   assert.deepEqual(record.selections, [
-    { phaseId: 21, lotId: 41, drawIndex: 2 },
-    { phaseId: 22, lotId: 42, drawIndex: 1 },
+    { phaseId: 21, lotId: 41, drawIndex: 2, chargeHardware: false },
+    { phaseId: 22, lotId: 42, drawIndex: 1, chargeHardware: false },
   ])
 })
 
@@ -404,10 +434,13 @@ test('only unissued and unsynced drafts are correctable', () => {
 })
 
 test('builds edit, transfer and cancel RPC payloads with exact Lot / Draw cells', () => {
-  const selections = [{ lotId: '41', drawIndex: 0 }, { lotId: 42, drawIndex: 2 }]
+  const selections = [
+    { lotId: '41', drawIndex: 0, chargeHardware: true },
+    { lotId: 42, drawIndex: 2 },
+  ]
   const cells = [
-    { lot_id: 41, draw_number: 1 },
-    { lot_id: 42, draw_number: 3 },
+    { lot_id: 41, draw_number: 1, charge_hardware: true },
+    { lot_id: 42, draw_number: 3, charge_hardware: false },
   ]
   assert.deepEqual(toEditDrawPackageRpc({
     packageId: '91', selections, reason: ' Fix scope ',

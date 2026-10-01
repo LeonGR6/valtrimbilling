@@ -117,10 +117,8 @@ export function buildDrawWorksheet(job, phase, schedule) {
     const hardwarePrice = plan?.hardwarePrice
     const hardwarePriceIsAvailable = !separateHardwarePrice
       || hasHardwarePrice(hardwarePrice)
-    const hardwarePriceIsValid = hardwarePriceIsAvailable
-      && (!separateHardwarePrice || !priceIsAvailable || hardwarePrice <= basePrice)
-    const drawBasePrice = priceIsAvailable && hardwarePriceIsValid
-      ? basePrice - (separateHardwarePrice ? hardwarePrice : 0)
+    const drawBasePrice = priceIsAvailable && hardwarePriceIsAvailable
+      ? basePrice
       : null
 
     const drawAmounts = scheduleIsValid && hasPlanPrice(drawBasePrice)
@@ -153,9 +151,7 @@ export function buildDrawWorksheet(job, phase, schedule) {
           ? 'PRICE_MISSING'
           : !hardwarePriceIsAvailable
             ? 'HARDWARE_PRICE_MISSING'
-            : !hardwarePriceIsValid
-              ? 'HARDWARE_PRICE_INVALID'
-              : null,
+            : null,
     }
   })
 
@@ -163,9 +159,6 @@ export function buildDrawWorksheet(job, phase, schedule) {
   const unpricedLotCount = rows.filter((row) => row.issue === 'PRICE_MISSING').length
   const missingHardwarePriceCount = rows.filter(
     (row) => row.issue === 'HARDWARE_PRICE_MISSING',
-  ).length
-  const invalidHardwarePriceCount = rows.filter(
-    (row) => row.issue === 'HARDWARE_PRICE_INVALID',
   ).length
   const pricedRows = rows.filter((row) => hasPlanPrice(row.basePrice))
   const drawableRows = rows.filter((row) => hasPlanPrice(row.drawBasePrice))
@@ -238,7 +231,6 @@ export function buildDrawWorksheet(job, phase, schedule) {
     missingPlanCount,
     unpricedLotCount,
     missingHardwarePriceCount,
-    invalidHardwarePriceCount,
     separateHardwarePrice,
     hasSchedule: Boolean(schedule),
     scheduleIsValid,
@@ -248,7 +240,6 @@ export function buildDrawWorksheet(job, phase, schedule) {
       && rows.length > 0
       && missingPlanCount === 0
       && unpricedLotCount === 0
-      && missingHardwarePriceCount === 0
-      && invalidHardwarePriceCount === 0,
+      && missingHardwarePriceCount === 0,
   }
 }

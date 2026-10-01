@@ -1,9 +1,22 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
+  DEFAULT_SEQUENCE_SHEET_RECIPIENTS,
+  DEFAULT_SEQUENCE_SHEET_RECIPIENT_TEXT,
   parseSequenceSheetRecipients,
   sequenceSheetEmailPreviewDocument,
 } from '../src/features/sequence-sheets/services/sequenceSheetEmailRecord.js'
+
+test('Sequence Sheet emails default to the two internal recipients', () => {
+  assert.deepEqual(DEFAULT_SEQUENCE_SHEET_RECIPIENTS, [
+    'amarquez@valtriminc.com',
+    'dalvarez@valtriminc.com',
+  ])
+  assert.equal(
+    DEFAULT_SEQUENCE_SHEET_RECIPIENT_TEXT,
+    'amarquez@valtriminc.com, dalvarez@valtriminc.com',
+  )
+})
 
 test('Sequence Sheet recipients are normalized, deduplicated and comma-separated', () => {
   assert.deepEqual(

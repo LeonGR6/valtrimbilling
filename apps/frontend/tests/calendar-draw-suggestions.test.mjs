@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   buildCalendarDrawSuggestion,
+  buildDrawCalendarHeadings,
   calendarSelectionKey,
 } from '../src/features/draw-invoice/utils/calendarDrawSuggestions.js'
 
@@ -164,5 +165,41 @@ test('cancelled Packages do not close Calendar Lot and Draw cells', () => {
 
   assert.deepEqual(suggestion.suggestedSelections, [
     { phaseId: 21, lotId: 101, drawIndex: 0 },
+  ])
+})
+
+test('Draw headings expose their event type and matching Calendar dates', () => {
+  const job = jobWithLots([101, 102])
+  const phase = job.sequenceSheet.phases[0]
+  const schedule = {
+    draws: [
+      { percentage: 50, eventType: 'EXT' },
+      { percentage: 50, eventType: 'DM' },
+    ],
+  }
+  const activities = [
+    activity([
+      stage('EXT', [
+        productionSchedule(1, '2026-10-08', [102]),
+        productionSchedule(2, '2026-10-01', [101]),
+      ]),
+    ]),
+    {
+      ...activity([
+        stage('EXT', [productionSchedule(3, '2026-09-30', [101])]),
+      ]),
+      id: 92,
+      status: 'CANCELLED',
+    },
+  ]
+
+  assert.deepEqual(buildDrawCalendarHeadings({
+    activities,
+    job,
+    phase,
+    schedule,
+  }), [
+    { eventType: 'EXT', eventDates: ['2026-10-01', '2026-10-08'] },
+    { eventType: 'DM', eventDates: [] },
   ])
 })

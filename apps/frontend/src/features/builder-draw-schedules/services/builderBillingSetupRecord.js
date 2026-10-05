@@ -37,6 +37,10 @@ function normalizeSubmissionMethod(value) {
   return ['EMAIL', 'MAIL'].includes(value) ? value : 'PORTAL'
 }
 
+function normalizeUtilityBillingMode(value) {
+  return value === 'BY_EVENT' ? value : 'FULL'
+}
+
 export function toBuilderDrawSchedule(version, draws = [], documents = []) {
   const documentTypes = new Set(
     documents
@@ -63,6 +67,12 @@ export function toBuilderDrawSchedule(version, draws = [], documents = []) {
       })),
     separateHardwarePrice: version.separate_hardware_price,
     utilityBuilding: Boolean(version.utility_building),
+    utilityBillingMode: normalizeUtilityBillingMode(version.utility_billing_mode),
+    utilityEventPercentages: {
+      EXT: toNumber(version.utility_ext_percentage),
+      DM: toNumber(version.utility_dm_percentage),
+      HW: toNumber(version.utility_hw_percentage),
+    },
     optionsBillingDrawIndex: optionalDrawIndex(
       version.options_billing_draw_number,
     ),
@@ -98,6 +108,21 @@ export function toBuilderBillingSetupRpc(schedule) {
     p_config: {
       separateHardwarePrice: Boolean(schedule.separateHardwarePrice),
       utilityBuilding: Boolean(schedule.utilityBuilding),
+      utilityBillingMode: schedule.utilityBuilding
+        ? normalizeUtilityBillingMode(schedule.utilityBillingMode)
+        : 'FULL',
+      utilityExtPercentage: schedule.utilityBuilding
+        && schedule.utilityBillingMode === 'BY_EVENT'
+        ? Number(schedule.utilityEventPercentages?.EXT) || 0
+        : 0,
+      utilityDmPercentage: schedule.utilityBuilding
+        && schedule.utilityBillingMode === 'BY_EVENT'
+        ? Number(schedule.utilityEventPercentages?.DM) || 0
+        : 0,
+      utilityHwPercentage: schedule.utilityBuilding
+        && schedule.utilityBillingMode === 'BY_EVENT'
+        ? Number(schedule.utilityEventPercentages?.HW) || 0
+        : 0,
       optionsBillingDrawNumber: optionsDrawIndex == null
         ? null
         : Number(optionsDrawIndex) + 1,

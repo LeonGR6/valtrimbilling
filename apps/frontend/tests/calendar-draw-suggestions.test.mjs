@@ -203,3 +203,24 @@ test('Draw headings expose their event type and matching Calendar dates', () => 
     { eventType: 'DM', eventDates: [] },
   ])
 })
+
+test('Calendar suggestions ignore Utility Building rows inside a normal Phase', () => {
+  const job = jobWithLots([101])
+  job.sequenceSheet.phases[0].lots[0].isUtilityBuilding = true
+  const suggestion = buildCalendarDrawSuggestion({
+    activities: [activity([
+      stage('EXT', [productionSchedule(1, '2026-09-29', [101])]),
+    ])],
+    job,
+    schedule: {
+      frequency: 'WEEKLY',
+      cutoffWeekday: 3,
+      draws: [{ percentage: 100, eventType: 'EXT' }],
+    },
+    packages: [],
+    asOfDate: '2026-09-29',
+  })
+
+  assert.deepEqual(suggestion.suggestedSelections, [])
+  assert.equal(suggestion.estimatedInvoiceAmount, 0)
+})

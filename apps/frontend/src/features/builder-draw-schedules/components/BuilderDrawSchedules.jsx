@@ -22,6 +22,8 @@ import {
   InputLabel,
   LinearProgress,
   MenuItem,
+  Radio,
+  RadioGroup,
   Select,
   Snackbar,
   Stack,
@@ -40,6 +42,7 @@ import {
   defaultDraws,
   defaultBillingSettings,
   drawEventTypeOptions,
+  emptyUtilityEventPercentages,
   frequencyLabels,
   frequencyOptions,
   invoiceLineFormatLabels,
@@ -48,6 +51,7 @@ import {
   MIN_DRAW_COUNT,
   submissionMethodLabels,
   submissionMethodOptions,
+  utilityBillingModeOptions,
   weekdayOptions,
 } from '../data/builderDrawSchedules.js'
 import { createBuilderDrawScheduleSchema } from '../schemas/builderDrawScheduleSchema.js'
@@ -195,12 +199,17 @@ function BuilderDrawScheduleDialog({
           ...schedule,
           optionsBillingDrawIndex: schedule.optionsBillingDrawIndex ?? null,
           draws: schedule.draws.map((draw) => ({ ...draw })),
+          utilityEventPercentages: {
+            ...emptyUtilityEventPercentages,
+            ...schedule.utilityEventPercentages,
+          },
           cutoffDays: [...schedule.cutoffDays],
         }
       : {
           builderId: '',
           draws: defaultDraws.map((draw) => ({ ...draw })),
           ...defaultBillingSettings,
+          utilityEventPercentages: { ...emptyUtilityEventPercentages },
           cutoffDays: [...defaultBillingSettings.cutoffDays],
         },
     mode: 'onTouched',
@@ -217,6 +226,12 @@ function BuilderDrawScheduleDialog({
     control,
     name: 'separateHardwarePrice',
   })
+  const utilityBuilding = useWatch({ control, name: 'utilityBuilding' })
+  const utilityBillingMode = useWatch({ control, name: 'utilityBillingMode' })
+  const utilityEventPercentages = useWatch({
+    control,
+    name: 'utilityEventPercentages',
+  }) ?? emptyUtilityEventPercentages
   const optionsBillingDrawIndex = useWatch({
     control,
     name: 'optionsBillingDrawIndex',
@@ -238,10 +253,28 @@ function BuilderDrawScheduleDialog({
     })
   const eventTypesAreValid = watchedDraws.every((draw) =>
     drawEventTypeOptions.some(({ value }) => value === draw.eventType))
+  const configuredUtilityEvents = new Set(
+    watchedDraws.map((draw) => draw.eventType).filter(Boolean),
+  )
+  const utilityTotal = Object.values(utilityEventPercentages).reduce(
+    (sum, percentage) => sum + (Number(percentage) || 0),
+    0,
+  )
+  const utilityAllocationIsValid = !utilityBuilding
+    || utilityBillingMode === 'FULL'
+    || (
+      Math.abs(utilityTotal - 100) <= 0.001
+      && Object.entries(utilityEventPercentages).every(
+        ([eventType, percentage]) => (
+          (Number(percentage) || 0) === 0 || configuredUtilityEvents.has(eventType)
+        ),
+      )
+    )
   const canSave = Boolean(selectedBuilderId)
     && totalIsValid
     && percentagesAreValid
     && eventTypesAreValid
+    && utilityAllocationIsValid
   const availableBuilders = builders.filter(
     (builder) =>
       builder.id === schedule?.builderId ||
@@ -273,6 +306,17 @@ function BuilderDrawScheduleDialog({
     }
 
     adjustConfiguredDraw('optionsBillingDrawIndex', optionsBillingDrawIndex)
+
+    const removedEventType = watchedDraws[drawIndex]?.eventType
+    const eventStillExists = watchedDraws.some(
+      (draw, index) => index !== drawIndex && draw.eventType === removedEventType,
+    )
+    if (removedEventType && !eventStillExists) {
+      setValue(`utilityEventPercentages.${removedEventType}`, 0, {
+        shouldDirty: true,
+        shouldValidate: true,
+      })
+    }
 
     remove(drawIndex)
   }
@@ -492,7 +536,21 @@ function BuilderDrawScheduleDialog({
                     control={(
                       <Checkbox
                         checked={Boolean(field.value)}
-                        onChange={(_, checked) => field.onChange(checked)}
+                        onChange={(_, checked) => {
+                          field.onChange(checked)
+                          if (!checked) {
+                            setValue('utilityBillingMode', 'FULL', {
+                              shouldDirty: true,
+                              shouldValidate: true,
+                            })
+                            setValue('utilityEventPercentages', {
+                              ...emptyUtilityEventPercentages,
+                            }, {
+                              shouldDirty: true,
+                              shouldValidate: true,
+                            })
+                          }
+                        }}
                       />
                     )}
                   />
@@ -506,6 +564,128 @@ function BuilderDrawScheduleDialog({
                 created, the user chooses which Draw charges each Lot's full
                 Hardware Price.
               </Alert>
+            )}
+
+            {utilityBuilding && (
+              <Card variant="outlined" sx={{ mt: 1.5, p: 2 }}>
+                <Typography variant="subtitle2" fontWeight={800}>
+                  Utility billing
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  Charge each Utility Plan Price once, or distribute it across
+                  the configured Draw events.
+                </Typography>
+
+                <Controller
+                  name="utilityBillingMode"
+                  control={control}
+                  render={({ field }) => (
+                    <RadioGroup
+                      {...field}
+                      row
+                      sx={{ mt: 1 }}
+                      onChange={(event) => {
+                        field.onChange(event.target.value)
+                        if (event.target.value === 'FULL') {
+                          setValue('utilityEventPercentages', {
+                            ...emptyUtilityEventPercentages,
+                          }, {
+                            shouldDirty: true,
+                            shouldValidate: true,
+                          })
+                        }
+                      }}
+                    >
+                      {utilityBillingModeOptions.map((option) => (
+                        <FormControlLabel
+                          key={option.value}
+                          value={option.value}
+                          control={<Radio size="small" />}
+                          label={option.label}
+                        />
+                      ))}
+                    </RadioGroup>
+                  )}
+                />
+
+                {utilityBillingMode === 'FULL' ? (
+                  <Alert severity="info" sx={{ mt: 1 }}>
+                    Create Draw Package will show one Charge checkbox per Utility
+                    row. Checking it adds 100% of that row's Plan Price.
+                  </Alert>
+                ) : (
+                  <Box sx={{ mt: 1.5 }}>
+                    <Stack
+                      direction={{ xs: 'column', sm: 'row' }}
+                      spacing={1.25}
+                    >
+                      {drawEventTypeOptions
+                        .filter(({ value }) => configuredUtilityEvents.has(value))
+                        .map((eventType) => (
+                          <TextField
+                            key={eventType.value}
+                            label={`${eventType.label} Utility`}
+                            type="number"
+                            {...register(`utilityEventPercentages.${eventType.value}`)}
+                            error={Boolean(
+                              errors.utilityEventPercentages?.[eventType.value],
+                            )}
+                            helperText={
+                              errors.utilityEventPercentages?.[eventType.value]?.message
+                              ?? watchedDraws.flatMap((draw, index) => (
+                                draw.eventType === eventType.value
+                                  ? [`Draw ${index + 1}`]
+                                  : []
+                              )).join(', ')
+                            }
+                            fullWidth
+                            slotProps={{
+                              input: {
+                                endAdornment: (
+                                  <InputAdornment position="end">%</InputAdornment>
+                                ),
+                              },
+                              htmlInput: {
+                                min: 0,
+                                max: 100,
+                                step: 0.01,
+                                inputMode: 'decimal',
+                              },
+                            }}
+                          />
+                        ))}
+                    </Stack>
+                    <Stack
+                      direction="row"
+                      spacing={1}
+                      sx={{ mt: 1.25, justifyContent: 'space-between' }}
+                    >
+                      <Typography
+                        variant="caption"
+                        color={utilityAllocationIsValid ? 'success.main' : 'error.main'}
+                      >
+                        {errors.utilityEventPercentages?.message
+                          ?? (utilityAllocationIsValid
+                            ? 'Utility allocation ready'
+                            : 'Utility event percentages must total 100%.')}
+                      </Typography>
+                      <Typography
+                        variant="caption"
+                        fontWeight={850}
+                        color={utilityAllocationIsValid ? 'success.main' : 'error.main'}
+                      >
+                        {formatPercentage(utilityTotal)}%
+                      </Typography>
+                    </Stack>
+                    <LinearProgress
+                      variant="determinate"
+                      value={Math.min(Math.max(utilityTotal, 0), 100)}
+                      color={utilityAllocationIsValid ? 'success' : 'error'}
+                      sx={{ height: 6, borderRadius: 999, mt: 0.5 }}
+                    />
+                  </Box>
+                )}
+              </Card>
             )}
 
             <Controller
@@ -1064,7 +1244,19 @@ function BuilderDrawScheduleCard({
           size="small"
           color={schedule.utilityBuilding ? 'success' : 'default'}
           variant={schedule.utilityBuilding ? 'filled' : 'outlined'}
-          label={`Utility Building · ${schedule.utilityBuilding ? 'Active' : 'Inactive'}`}
+          label={schedule.utilityBuilding
+            ? schedule.utilityBillingMode === 'BY_EVENT'
+              ? `Utility · ${drawEventTypeOptions
+                  .filter(({ value }) => Number(
+                    schedule.utilityEventPercentages?.[value],
+                  ) > 0)
+                  .map(({ value }) => (
+                    `${value} ${formatPercentage(Number(
+                      schedule.utilityEventPercentages[value],
+                    ))}%`
+                  )).join(' / ')}`
+              : 'Utility · 100% selectable'
+            : 'Utility Building · Inactive'}
           sx={{ alignSelf: 'flex-start', fontWeight: 750 }}
         />
         {schedule.separateHardwarePrice && (

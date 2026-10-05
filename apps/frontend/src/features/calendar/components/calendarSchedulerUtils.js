@@ -27,7 +27,9 @@ function sortLotNumbers(lots) {
 }
 
 export function getPhasePatch(job, phase, people = [], builderContacts = []) {
-  const lots = sortLotNumbers(phase?.lots ?? [])
+  const lots = sortLotNumbers(
+    (phase?.lots ?? []).filter((lot) => !lot.isUtilityBuilding),
+  )
   const lotNumbers = lots.map((lot) => String(lot.lotNumber))
   const supervisor = people.find((person) => person.id === job?.supervisorId)
   const superintendent = builderContacts.find(

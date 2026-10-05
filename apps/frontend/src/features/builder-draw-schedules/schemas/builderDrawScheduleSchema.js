@@ -34,6 +34,19 @@ const optionalPercentageSchema = z
     'Use at most two decimals.',
   )
 
+const utilityEventPercentageSchema = z.preprocess(
+  (value) => (value === '' || value === null || value === undefined ? 0 : value),
+  z.coerce
+    .number({ invalid_type_error: 'Enter a valid percentage.' })
+    .finite('Enter a valid percentage.')
+    .min(0, 'Percentage cannot be negative.')
+    .max(100, 'Percentage cannot exceed 100%.')
+    .refine(
+      (value) => Math.abs(value * 100 - Math.round(value * 100)) < 0.000001,
+      'Use at most two decimals.',
+    ),
+)
+
 const optionalDayOfMonthSchema = z.preprocess(
   (value) => (value === '' || value === null || value === undefined
     ? null
@@ -81,6 +94,12 @@ export function createBuilderDrawScheduleSchema(schedules, currentScheduleId) {
         .max(MAX_DRAW_COUNT, `Configure no more than ${MAX_DRAW_COUNT} draws.`),
       separateHardwarePrice: z.boolean().default(false),
       utilityBuilding: z.boolean().default(false),
+      utilityBillingMode: z.enum(['FULL', 'BY_EVENT']).default('FULL'),
+      utilityEventPercentages: z.object({
+        EXT: utilityEventPercentageSchema,
+        DM: utilityEventPercentageSchema,
+        HW: utilityEventPercentageSchema,
+      }),
       optionsBillingDrawIndex: optionalDrawIndexSchema,
       frequency: z.enum(['MONTHLY', 'SEMIMONTHLY', 'WEEKLY']),
       anyDate: z.boolean().default(false),
@@ -145,6 +164,34 @@ export function createBuilderDrawScheduleSchema(schedules, currentScheduleId) {
           path: ['optionsBillingDrawIndex'],
           message: 'Select one of the configured draws.',
         })
+      }
+
+      if (data.utilityBuilding && data.utilityBillingMode === 'BY_EVENT') {
+        const configuredEvents = new Set(data.draws.map((draw) => draw.eventType))
+        const utilityTotal = Object.values(data.utilityEventPercentages).reduce(
+          (sum, percentage) => sum + percentage,
+          0,
+        )
+
+        if (Math.abs(utilityTotal - 100) > 0.001) {
+          context.addIssue({
+            code: 'custom',
+            path: ['utilityEventPercentages'],
+            message: 'Utility event percentages must total exactly 100%.',
+          })
+        }
+
+        for (const [eventType, percentage] of Object.entries(
+          data.utilityEventPercentages,
+        )) {
+          if (percentage > 0 && !configuredEvents.has(eventType)) {
+            context.addIssue({
+              code: 'custom',
+              path: ['utilityEventPercentages', eventType],
+              message: `Add a ${eventType} Draw or set its Utility percentage to 0%.`,
+            })
+          }
+        }
       }
 
       if (
@@ -250,6 +297,13 @@ export function createBuilderDrawScheduleSchema(schedules, currentScheduleId) {
     })
     .transform((data) => ({
       ...data,
+      utilityBillingMode: data.utilityBuilding
+        ? data.utilityBillingMode
+        : 'FULL',
+      utilityEventPercentages: data.utilityBuilding
+        && data.utilityBillingMode === 'BY_EVENT'
+        ? data.utilityEventPercentages
+        : { EXT: 0, DM: 0, HW: 0 },
       anyDate: data.frequency === 'MONTHLY' && data.anyDate,
       cutoffDay: data.frequency === 'MONTHLY' && !data.anyDate
         ? data.cutoffDay

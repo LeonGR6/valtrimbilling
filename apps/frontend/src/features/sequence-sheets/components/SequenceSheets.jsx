@@ -57,6 +57,7 @@ import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded'
 import TableChartRoundedIcon from '@mui/icons-material/TableChartRounded'
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
+import { useBuilderDrawSchedules } from '../../builder-draw-schedules/context/useBuilderDrawSchedules.js'
 import JobModuleNavigation from '../../jobs/components/JobModuleNavigation.jsx'
 import { useJobs } from '../../jobs/context/useJobs.js'
 import {
@@ -79,9 +80,24 @@ import SequenceSheetEmailDialog from './SequenceSheetEmailDialog.jsx'
 
 const emptyLot = {
   lotNumber: '',
+  utilityName: '',
   planId: '',
   reverse: false,
   optionIds: [],
+  isUtilityBuilding: false,
+}
+
+const emptyUtilityRow = {
+  ...emptyLot,
+  isUtilityBuilding: true,
+}
+
+function getPhaseRowCounts(phase) {
+  return (phase?.lots ?? []).reduce((counts, row) => {
+    if (row.isUtilityBuilding) counts.utility += 1
+    else counts.lots += 1
+    return counts
+  }, { lots: 0, utility: 0 })
 }
 
 function SummaryCard({ icon, value, label }) {
@@ -134,6 +150,7 @@ function PhaseCard({ canManage, phase, onDelete, onEdit, onEmail, onOpen }) {
     (total, lot) => total + (lot.optionIds?.length ?? 0),
     0,
   )
+  const rowCounts = getPhaseRowCounts(phase)
 
   return (
     <Card
@@ -177,7 +194,10 @@ function PhaseCard({ canManage, phase, onDelete, onEdit, onEmail, onOpen }) {
             sx={{ alignItems: 'center', flexWrap: 'wrap' }}
           >
             <Chip size="small" variant="outlined" label={formatBuilding(phase.building, 'short')} />
-            <Chip size="small" label={`${phase.lots?.length ?? 0} lots`} />
+            <Chip size="small" label={`${rowCounts.lots} lots`} />
+            {rowCounts.utility > 0 && (
+              <Chip size="small" color="primary" label={`${rowCounts.utility} Utility`} />
+            )}
             <Chip size="small" variant="outlined" label={`${selectedOptionCount} selected options`} />
             <ArrowForwardIosRoundedIcon fontSize="small" color="action" />
           </Stack>
@@ -229,6 +249,7 @@ function PhaseDetails({ builderId, canManage, job, phase, onBack, onDelete, onEd
     (total, lot) => total + (lot.optionIds?.length ?? 0),
     0,
   )
+  const rowCounts = getPhaseRowCounts(phase)
 
   return (
     <Box sx={{ minHeight: '100%', bgcolor: 'background.default' }}>
@@ -271,7 +292,10 @@ function PhaseDetails({ builderId, canManage, job, phase, onBack, onDelete, onEd
           <Stack spacing={1.25} sx={{ alignItems: { xs: 'flex-start', sm: 'flex-end' } }}>
             <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: 'wrap' }}>
               <Chip color="primary" variant="outlined" label={formatBuilding(phase.building, 'short')} />
-              <Chip label={`${phase.lots?.length ?? 0} lots`} />
+              <Chip label={`${rowCounts.lots} lots`} />
+              {rowCounts.utility > 0 && (
+                <Chip color="primary" label={`${rowCounts.utility} Utility rows`} />
+              )}
               <Chip variant="outlined" label={`${selectedOptionCount} selected options`} />
             </Stack>
             {canManage && (
@@ -318,17 +342,20 @@ function PhaseDetails({ builderId, canManage, job, phase, onBack, onDelete, onEd
       <Box sx={{ p: { xs: 2.5, md: 4 } }}>
         <Card variant="outlined" sx={{ overflow: 'hidden' }}>
           <Box sx={{ px: 2.5, py: 2, bgcolor: 'action.hover' }}>
-            <Typography fontWeight={750}>Phase lot assignments</Typography>
+            <Typography fontWeight={750}>Phase assignments</Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mt: 0.25 }}>
-              Plan, orientation and selected options for every lot in this phase.
+              Lots keep their orientation and options. Utility rows use only one Plan Price.
             </Typography>
           </Box>
           <Divider />
           <TableContainer>
-            <Table aria-label={`${phaseLabel} lot assignments`} sx={{ minWidth: 760 }}>
+            <Table
+              aria-label={`${phaseLabel} lot and Utility assignments`}
+              sx={{ minWidth: 760 }}
+            >
               <TableHead>
                 <TableRow>
-                  <TableCell>Lot</TableCell>
+                  <TableCell>Lot / Utility</TableCell>
                   <TableCell>Plan</TableCell>
                   <TableCell align="center">Reverse</TableCell>
                   <TableCell>Options for selected plan</TableCell>
@@ -344,21 +371,29 @@ function PhaseDetails({ builderId, canManage, job, phase, onBack, onDelete, onEd
                   return (
                     <TableRow key={lot.id} hover>
                       <TableCell sx={{ width: 100 }}>
-                        <Typography fontWeight={750}>{lot.lotNumber}</Typography>
+                        <Typography fontWeight={750}>
+                          {lot.isUtilityBuilding
+                            ? lot.utilityName
+                            : lot.lotNumber}
+                        </Typography>
                       </TableCell>
                       <TableCell sx={{ minWidth: 180 }}>
                         {plan ? `${plan.code}` : 'Plan unavailable'}
                       </TableCell>
                       <TableCell align="center" sx={{ width: 120 }}>
-                        <Chip
-                          size="small"
-                          color={lot.reverse ? 'primary' : 'default'}
-                          variant={lot.reverse ? 'filled' : 'outlined'}
-                          label={lot.reverse ? 'Yes' : 'No'}
-                        />
+                        {lot.isUtilityBuilding ? '—' : (
+                          <Chip
+                            size="small"
+                            color={lot.reverse ? 'primary' : 'default'}
+                            variant={lot.reverse ? 'filled' : 'outlined'}
+                            label={lot.reverse ? 'Yes' : 'No'}
+                          />
+                        )}
                       </TableCell>
                       <TableCell sx={{ minWidth: 320 }}>
-                        {options.length > 0 ? (
+                        {lot.isUtilityBuilding ? (
+                          <Typography variant="body2" color="text.secondary">Plan only</Typography>
+                        ) : options.length > 0 ? (
                           <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: 'wrap' }}>
                             {options.map((option) => (
                               <Chip
@@ -596,12 +631,104 @@ function LotEditor({ index, fieldId, job, control, register, errors, setValue, r
   )
 }
 
-function PhaseDialog({ job, phase, onClose, onSave }) {
+function UtilityRowEditor({ index, job, control, register, errors, remove, canRemove }) {
+  const utilityName = useWatch({ control, name: `lots.${index}.utilityName` })
+  const displayName = utilityName?.trim() || 'Utility Building'
+
+  return (
+    <Box
+      sx={{
+        border: 1,
+        borderColor: errors.lots?.[index] ? 'error.main' : 'divider',
+        borderRadius: 2,
+        overflow: 'hidden',
+        bgcolor: 'background.paper',
+      }}
+    >
+      <Stack
+        direction="row"
+        sx={{
+          px: 2,
+          py: 1.25,
+          bgcolor: 'action.hover',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+        }}
+      >
+        <Typography variant="subtitle2" fontWeight={750}>
+          {displayName}
+        </Typography>
+        <Tooltip title={canRemove ? 'Remove Utility row' : 'A Phase needs at least one row'}>
+          <span>
+            <IconButton
+              size="small"
+              color="error"
+              disabled={!canRemove}
+              onClick={() => remove(index)}
+              aria-label={`Remove ${displayName}`}
+            >
+              <DeleteOutlineRoundedIcon fontSize="small" />
+            </IconButton>
+          </span>
+        </Tooltip>
+      </Stack>
+      <Stack
+        direction={{ xs: 'column', md: 'row' }}
+        spacing={2}
+        sx={{ p: 2, alignItems: { md: 'flex-start' } }}
+      >
+        <TextField
+          fullWidth
+          label="Utility name"
+          placeholder="Example: B1"
+          {...register(`lots.${index}.utilityName`)}
+          error={Boolean(errors.lots?.[index]?.utilityName)}
+          helperText={errors.lots?.[index]?.utilityName?.message ?? 'This name appears on the Sequence Sheet and Draw Packages.'}
+          slotProps={{ htmlInput: { maxLength: 80 } }}
+        />
+        <Controller
+          name={`lots.${index}.planId`}
+          control={control}
+          render={({ field }) => (
+            <TextField
+              {...field}
+              select
+              fullWidth
+              label="Plan"
+              sx={{ minWidth: { md: 280 } }}
+              error={Boolean(errors.lots?.[index]?.planId)}
+              helperText={
+                errors.lots?.[index]?.planId?.message
+                ?? 'The full Plan Price will be charged on the selected Draw.'
+              }
+            >
+              <MenuItem value="">Select a plan</MenuItem>
+              {(job.sequenceSheet?.plans ?? []).map((plan) => (
+                <MenuItem key={plan.id} value={plan.id}>
+                  {plan.code} · {plan.name}
+                </MenuItem>
+              ))}
+            </TextField>
+          )}
+        />
+      </Stack>
+    </Box>
+  )
+}
+
+function PhaseDialog({
+  job,
+  phase,
+  utilityBuildingEnabled,
+  utilityBuildingRequired,
+  onClose,
+  onSave,
+}) {
   const [lotRange, setLotRange] = useState('')
   const [lotRangeError, setLotRangeError] = useState('')
   const schema = useMemo(
-    () => createPhaseByLotSchema(job, phase?.id),
-    [job, phase?.id],
+    () => createPhaseByLotSchema(job, phase?.id, utilityBuildingRequired),
+    [job, phase?.id, utilityBuildingRequired],
   )
   const {
     control,
@@ -619,12 +746,20 @@ function PhaseDialog({ job, phase, onClose, onSave }) {
           lots: (phase.lots ?? []).map((lot) => ({
             id: lot.id,
             lotNumber: lot.lotNumber,
+            utilityName: lot.utilityName ?? '',
             planId: lot.planId,
             reverse: lot.reverse ?? false,
             optionIds: [...(lot.optionIds ?? [])],
+            isUtilityBuilding: Boolean(lot.isUtilityBuilding),
           })),
         }
-      : { phaseName: '', building: '', lots: [{ ...emptyLot }] },
+      : {
+          phaseName: '',
+          building: '',
+          lots: utilityBuildingRequired
+            ? [{ ...emptyLot }, { ...emptyUtilityRow }]
+            : [{ ...emptyLot }],
+        },
     mode: 'onTouched',
     reValidateMode: 'onChange',
   })
@@ -637,14 +772,20 @@ function PhaseDialog({ job, phase, onClose, onSave }) {
 
   const addLotRange = () => {
     const currentLots = getValues('lots') ?? []
-    const hasOnlyInitialEmptyLot =
-      currentLots.length === 1 &&
-      !currentLots[0].lotNumber?.trim() &&
-      !currentLots[0].planId &&
-      !currentLots[0].reverse &&
-      (currentLots[0].optionIds?.length ?? 0) === 0
-    const remainingLotCapacity = hasOnlyInitialEmptyLot
-      ? 500
+    const ordinaryLots = currentLots.filter((lot) => !lot.isUtilityBuilding)
+    const initialEmptyLot = ordinaryLots.length === 1 ? ordinaryLots[0] : null
+    const hasReplaceableInitialLot = Boolean(
+      initialEmptyLot
+      && !initialEmptyLot.lotNumber?.trim()
+      && !initialEmptyLot.planId
+      && !initialEmptyLot.reverse
+      && (initialEmptyLot.optionIds?.length ?? 0) === 0,
+    )
+    const initialEmptyLotIndex = hasReplaceableInitialLot
+      ? currentLots.indexOf(initialEmptyLot)
+      : -1
+    const remainingLotCapacity = hasReplaceableInitialLot
+      ? Math.max(500 - currentLots.length + 1, 0)
       : Math.max(500 - currentLots.length, 0)
 
     if (remainingLotCapacity === 0) {
@@ -661,6 +802,7 @@ function PhaseDialog({ job, phase, onClose, onSave }) {
 
     const existingLotNumbers = new Set(
       currentLots
+        .filter((lot) => !lot.isUtilityBuilding)
         .map((lot) => lot.lotNumber?.trim().toUpperCase())
         .filter(Boolean),
     )
@@ -678,8 +820,9 @@ function PhaseDialog({ job, phase, onClose, onSave }) {
       lotNumber,
     }))
 
-    if (hasOnlyInitialEmptyLot) {
-      replace(generatedLots)
+    if (hasReplaceableInitialLot) {
+      replace(currentLots.flatMap((lot, index) =>
+        index === initialEmptyLotIndex ? generatedLots : [lot]))
     } else {
       append(generatedLots)
     }
@@ -713,8 +856,8 @@ function PhaseDialog({ job, phase, onClose, onSave }) {
         </Typography>
         <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
           {phase
-            ? `Update its Building and lot assignments for Job #${job.code}.`
-            : `Assign every lot to one of Job #${job.code}'s plans and select its applicable options.`}
+            ? `Update its Lot and Utility Building assignments for Job #${job.code}.`
+            : `Add Lots and, when enabled, Utility Building rows to Job #${job.code}.`}
         </Typography>
         <IconButton
           onClick={onClose}
@@ -795,6 +938,18 @@ function PhaseDialog({ job, phase, onClose, onSave }) {
                 >
                   Add lot
                 </Button>
+                {utilityBuildingEnabled && (
+                  <Button
+                    type="button"
+                    variant="outlined"
+                    color="primary"
+                    startIcon={<AddRoundedIcon />}
+                    onClick={() => append({ ...emptyUtilityRow })}
+                    sx={{ minHeight: 56, whiteSpace: 'nowrap' }}
+                  >
+                    Add Utility
+                  </Button>
+                )}
               </Stack>
             </Stack>
             <Divider sx={{ my: 2 }} />
@@ -841,6 +996,13 @@ function PhaseDialog({ job, phase, onClose, onSave }) {
                 Add ranges
               </Button>
             </Stack>
+            {utilityBuildingEnabled && (
+              <Alert severity="info" sx={{ mt: 2 }}>
+                {utilityBuildingRequired
+                  ? 'Utility Building is active for this Job. Every Phase must include at least one named Utility row with a Plan.'
+                  : 'Utility rows use only the full Plan Price. They do not count as Lots or appear in Lot ranges, and cannot include Reverse, Options or Hardware.'}
+              </Alert>
+            )}
           </Box>
 
           {!hasPlans && (
@@ -849,12 +1011,25 @@ function PhaseDialog({ job, phase, onClose, onSave }) {
             </Alert>
           )}
 
-          {errors.lots?.root?.message && (
-            <Alert severity="error">{errors.lots.root.message}</Alert>
+          {(errors.lots?.message || errors.lots?.root?.message) && (
+            <Alert severity="error">
+              {errors.lots.message ?? errors.lots.root.message}
+            </Alert>
           )}
 
           <Stack spacing={2}>
-            {fields.map((field, index) => (
+            {fields.map((field, index) => field.isUtilityBuilding ? (
+              <UtilityRowEditor
+                key={field.fieldKey}
+                index={index}
+                job={job}
+                control={control}
+                register={register}
+                errors={errors}
+                remove={remove}
+                canRemove={fields.length > 1}
+              />
+            ) : (
               <LotEditor
                 key={field.fieldKey}
                 fieldId={field.fieldKey}
@@ -899,7 +1074,7 @@ function PhaseDialog({ job, phase, onClose, onSave }) {
 }
 
 function PhaseDeleteDialog({ busy, target, onClose, onDelete }) {
-  const lotCount = target?.phase.lots?.length ?? 0
+  const rowCounts = getPhaseRowCounts(target?.phase)
   const selectedOptionCount = (target?.phase.lots ?? []).reduce(
     (total, lot) => total + (lot.optionIds?.length ?? 0),
     0,
@@ -916,13 +1091,18 @@ function PhaseDeleteDialog({ busy, target, onClose, onDelete }) {
       <DialogContent>
         <Stack spacing={2}>
           <Alert severity="warning">
-            This will permanently remove {lotCount} {lotCount === 1 ? 'lot assignment' : 'lot assignments'}
+            This will remove this Phase from the active Sequence Sheet, including {rowCounts.lots}{' '}
+            {rowCounts.lots === 1 ? 'lot assignment' : 'lot assignments'}
+            {rowCounts.utility > 0
+              ? ` and ${rowCounts.utility} Utility ${rowCounts.utility === 1 ? 'row' : 'rows'}`
+              : ''}
             {selectedOptionCount > 0
-              ? ` and ${selectedOptionCount} selected ${selectedOptionCount === 1 ? 'option' : 'options'}`
-              : ''}.
+              ? `, including ${selectedOptionCount} selected ${selectedOptionCount === 1 ? 'option' : 'options'}`
+              : ''}. Cancelled Calendar history will remain archived for audit.
           </Alert>
           <Typography variant="body2" color="text.secondary">
-            The Job Total Lots will be recalculated immediately after deletion.
+            The Job Total Lots will be recalculated from ordinary Lots only;
+            Utility rows never affect that count.
           </Typography>
         </Stack>
       </DialogContent>
@@ -972,6 +1152,7 @@ export default function SequenceSheets() {
     saveSequenceSheetPhase,
     deactivateSequenceSheetPhase,
   } = useJobs()
+  const { jobBillingSetupVersions } = useBuilderDrawSchedules()
   const [searchParams] = useSearchParams()
   const [search, setSearch] = useState('')
   const [expandedJobId, setExpandedJobId] = useState(jobs[0]?.id ?? null)
@@ -1021,6 +1202,9 @@ export default function SequenceSheets() {
   const dialogJob = jobs.find((job) => job.id === dialogJobId)
   const dialogPhase = dialogJob?.sequenceSheet?.phases?.find(
     (phase) => phase.id === dialogPhaseId,
+  )
+  const dialogSetup = jobBillingSetupVersions.find(
+    (version) => String(version.id) === String(dialogJob?.billingSetupVersionId),
   )
   const detailPhaseId = phaseId ?? legacyPhaseId
   const detailPhase = focusedJob?.sequenceSheet?.phases?.find(
@@ -1082,9 +1266,14 @@ export default function SequenceSheets() {
         form,
       )
       closePhaseDialog()
+      const rowCounts = form.lots.reduce((counts, row) => {
+        if (row.isUtilityBuilding) counts.utility += 1
+        else counts.lots += 1
+        return counts
+      }, { lots: 0, utility: 0 })
       setNotice({
         severity: 'success',
-        message: `${formatPhase(form.phaseName)} ${isEditing ? 'updated' : 'created'} with ${form.lots.length} lot${form.lots.length === 1 ? '' : 's'}. Total Lots updated.`,
+        message: `${formatPhase(form.phaseName)} ${isEditing ? 'updated' : 'created'} with ${rowCounts.lots} lot${rowCounts.lots === 1 ? '' : 's'}${rowCounts.utility > 0 ? ` and ${rowCounts.utility} Utility ${rowCounts.utility === 1 ? 'row' : 'rows'}` : ''}. Total Lots updated.`,
       })
       if (!isEditing && savedJob) {
         setEmailTarget({ job: savedJob, phase: savedPhase })
@@ -1145,6 +1334,11 @@ export default function SequenceSheets() {
             key={dialogPhase?.id ?? `new-phase-${dialogJob.id}`}
             job={dialogJob}
             phase={dialogPhase}
+            utilityBuildingEnabled={Boolean(
+              dialogSetup?.utilityBuilding
+              || dialogPhase?.lots?.some((row) => row.isUtilityBuilding)
+            )}
+            utilityBuildingRequired={Boolean(dialogSetup?.utilityBuilding)}
             onClose={closePhaseDialog}
             onSave={savePhase}
           />
@@ -1444,6 +1638,11 @@ export default function SequenceSheets() {
           key={dialogPhase?.id ?? `new-phase-${dialogJob.id}`}
           job={dialogJob}
           phase={dialogPhase}
+          utilityBuildingEnabled={Boolean(
+            dialogSetup?.utilityBuilding
+            || dialogPhase?.lots?.some((row) => row.isUtilityBuilding)
+          )}
+          utilityBuildingRequired={Boolean(dialogSetup?.utilityBuilding)}
           onClose={closePhaseDialog}
           onSave={savePhase}
         />

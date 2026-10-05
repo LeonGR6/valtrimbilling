@@ -66,6 +66,7 @@ import {
   DrawWorksheetTable,
   PackageHardwareTable,
   PackageOptionsTable,
+  PackageUtilityTable,
 } from './PackageTables.jsx'
 
 export default function DrawPackageDetail() {
@@ -382,7 +383,11 @@ export default function DrawPackageDetail() {
                   >
                     {phases.map((phase) => (
                       <MenuItem key={phase.id} value={phase.id}>
-                        {formatPhase(phase.name)} · {formatBuilding(phase.building)} · {phase.lots?.length ?? 0} lots
+                        {formatPhase(phase.name)} · {formatBuilding(phase.building)} ·{' '}
+                        {(phase.lots ?? []).filter((row) => !row.isUtilityBuilding).length} lots
+                        {(phase.lots ?? []).some((row) => row.isUtilityBuilding)
+                          ? ` · ${(phase.lots ?? []).filter((row) => row.isUtilityBuilding).length} Utility`
+                          : ''}
                       </MenuItem>
                     ))}
                   </TextField>
@@ -394,9 +399,13 @@ export default function DrawPackageDetail() {
               <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} useFlexGap sx={{ flexWrap: 'wrap' }}>
                 <MetricCard
                   icon={<ApartmentRoundedIcon />}
-                  label="Lots in package"
-                  value={packageSummary.lotCount}
-                  detail={`${packageSummary.scopeCount} lot/draw scopes`}
+                  label={packageSummary.utilityCount > 0 && packageSummary.lotCount === 0
+                    ? 'Utility rows'
+                    : 'Lots in package'}
+                  value={packageSummary.utilityCount > 0 && packageSummary.lotCount === 0
+                    ? packageSummary.utilityCount
+                    : packageSummary.lotCount}
+                  // detail={`${packageSummary.scopeCount} billing scopes`}
                 />
                 <MetricCard
                   icon={<LayersRoundedIcon />}
@@ -454,7 +463,10 @@ export default function DrawPackageDetail() {
             />
 
             {focusedPackage && <PackageHardwareTable summary={packageSummary} />}
-            {focusedPackage && <PackageOptionsTable summary={packageSummary} />}
+            {focusedPackage && <PackageUtilityTable summary={packageSummary} />}
+            {focusedPackage && packageSummary.lotCount > 0 && (
+              <PackageOptionsTable summary={packageSummary} />
+            )}
             {focusedPackage?.corrections?.length > 0 && (
               <Card variant="outlined">
                 <CardContent>

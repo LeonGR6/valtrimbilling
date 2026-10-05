@@ -1,4 +1,5 @@
 const PERCENTAGE_TOLERANCE = 0.001
+const UTILITY_EVENT_TYPES = ['EXT', 'DM', 'HW']
 
 export function hasPlanPrice(value) {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0
@@ -43,6 +44,44 @@ export function allocateDrawAmounts(basePrice, draws = []) {
     allocatedCents += amountCents
     return amountCents / 100
   })
+}
+
+export function getUtilityBillingMode(schedule) {
+  return schedule?.utilityBillingMode === 'BY_EVENT' ? 'BY_EVENT' : 'FULL'
+}
+
+export function getUtilityEventPercentage(schedule, eventType) {
+  if (getUtilityBillingMode(schedule) !== 'BY_EVENT') return 100
+  if (!UTILITY_EVENT_TYPES.includes(eventType)) return 0
+  return Number(schedule?.utilityEventPercentages?.[eventType]) || 0
+}
+
+export function allocateUtilityAmounts(basePrice, schedule) {
+  const draws = schedule?.draws ?? []
+  if (!hasPlanPrice(basePrice) || draws.length === 0) {
+    return draws.map(() => null)
+  }
+  if (getUtilityBillingMode(schedule) === 'FULL') {
+    return draws.map(() => basePrice)
+  }
+
+  const configuredEvents = UTILITY_EVENT_TYPES.filter(
+    (eventType) => getUtilityEventPercentage(schedule, eventType) > 0,
+  )
+  const totalCents = Math.round(basePrice * 100)
+  let allocatedCents = 0
+  const amountByEvent = new Map(configuredEvents.map((eventType, index) => {
+    const isLastEvent = index === configuredEvents.length - 1
+    const amountCents = isLastEvent
+      ? totalCents - allocatedCents
+      : Math.round(
+          totalCents * getUtilityEventPercentage(schedule, eventType) / 100,
+        )
+    allocatedCents += amountCents
+    return [eventType, amountCents / 100]
+  }))
+
+  return draws.map((draw) => amountByEvent.get(draw.eventType) ?? 0)
 }
 
 export function getRetentionMode(schedule) {
@@ -96,17 +135,26 @@ function compareLotNumbers(left, right) {
 
 export function buildDrawWorksheet(job, phase, schedule) {
   const plans = job?.sequenceSheet?.plans ?? []
-  const lots = [...(phase?.lots ?? [])].sort(compareLotNumbers)
+  const phaseRows = phase?.lots ?? []
+  const lots = [
+    ...phaseRows.filter((row) => !row.isUtilityBuilding).sort(compareLotNumbers),
+    ...phaseRows.filter((row) => row.isUtilityBuilding),
+  ]
   const draws = schedule?.draws ?? []
   const scheduleIsValid = isDrawScheduleValid(schedule)
   const separateHardwarePrice = Boolean(schedule?.separateHardwarePrice)
+  const utilityBillingMode = getUtilityBillingMode(schedule)
+  const hasUtilityRows = lots.some((lot) => lot.isUtilityBuilding)
+  const utilityCapabilityMissing = hasUtilityRows
+    && !schedule?.utilityBuilding
 
   const rows = lots.map((lot) => {
+    const isUtilityBuilding = Boolean(lot.isUtilityBuilding)
     const plan = plans.find((candidate) => String(candidate.id) === String(lot.planId))
     const selectedOptionIds = new Set(
       (lot.optionIds ?? []).map((optionId) => String(optionId)),
     )
-    const selectedOptions = (plan?.options ?? [])
+    const selectedOptions = (isUtilityBuilding ? [] : (plan?.options ?? []))
       .filter((option) => selectedOptionIds.has(String(option.id)))
       .map((option) => ({
         ...option,
@@ -115,14 +163,17 @@ export function buildDrawWorksheet(job, phase, schedule) {
     const basePrice = plan?.price
     const priceIsAvailable = hasPlanPrice(basePrice)
     const hardwarePrice = plan?.hardwarePrice
-    const hardwarePriceIsAvailable = !separateHardwarePrice
+    const hardwarePriceIsAvailable = isUtilityBuilding
+      || !separateHardwarePrice
       || hasHardwarePrice(hardwarePrice)
     const drawBasePrice = priceIsAvailable && hardwarePriceIsAvailable
       ? basePrice
       : null
 
     const drawAmounts = scheduleIsValid && hasPlanPrice(drawBasePrice)
-      ? allocateDrawAmounts(drawBasePrice, draws)
+      ? isUtilityBuilding
+        ? allocateUtilityAmounts(drawBasePrice, schedule)
+        : allocateDrawAmounts(drawBasePrice, draws)
       : draws.map(() => null)
     const drawFinancials = drawAmounts.map((amount) =>
       calculateInvoiceAmounts(amount, schedule))
@@ -131,12 +182,25 @@ export function buildDrawWorksheet(job, phase, schedule) {
       id: lot.id,
       lot,
       lotNumber: lot.lotNumber,
+      utilityLabel: isUtilityBuilding
+        ? lot.utilityName?.trim() || lot.lotNumber
+        : null,
+      isUtilityBuilding,
+      utilityBillingMode: isUtilityBuilding ? utilityBillingMode : null,
+      utilityPercentages: isUtilityBuilding
+        ? draws.map((draw) => (
+            utilityBillingMode === 'BY_EVENT'
+              ? getUtilityEventPercentage(schedule, draw.eventType)
+              : 100
+          ))
+        : draws.map(() => 0),
       plan,
       planCode: plan?.code ?? null,
       selectedOptions,
       basePrice: priceIsAvailable ? basePrice : null,
       drawBasePrice,
-      hardwarePrice: separateHardwarePrice && hardwarePriceIsAvailable
+      hardwarePrice: !isUtilityBuilding
+        && separateHardwarePrice && hardwarePriceIsAvailable
         ? hardwarePrice
         : null,
       drawAmounts,
@@ -231,12 +295,16 @@ export function buildDrawWorksheet(job, phase, schedule) {
     missingPlanCount,
     unpricedLotCount,
     missingHardwarePriceCount,
+    hasUtilityRows,
+    utilityCapabilityMissing,
     separateHardwarePrice,
+    utilityBillingMode,
     hasSchedule: Boolean(schedule),
     scheduleIsValid,
     isReady:
       Boolean(schedule)
       && scheduleIsValid
+      && !utilityCapabilityMissing
       && rows.length > 0
       && missingPlanCount === 0
       && unpricedLotCount === 0

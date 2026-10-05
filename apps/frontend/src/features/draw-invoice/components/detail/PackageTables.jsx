@@ -21,8 +21,10 @@ import {
   formatPhase,
 } from '../../../sequence-sheets/utils/phaseBuildingCodes.js'
 import {
+  buildBilledUtilityCharges,
   buildUsedDrawSelections,
   drawSelectionKey,
+  utilityChargeKey,
 } from '../../utils/drawPackages.js'
 import {
   formatCurrency,
@@ -42,6 +44,10 @@ export function DrawWorksheetTable({
     () => buildUsedDrawSelections(packages),
     [packages],
   )
+  const billedUtilityCharges = useMemo(
+    () => buildBilledUtilityCharges(packages, job.id),
+    [job.id, packages],
+  )
 
   return (
     <Card variant="outlined" sx={{ overflow: 'hidden' }}>
@@ -54,14 +60,14 @@ export function DrawWorksheetTable({
           <Box>
             <Typography fontWeight={800}>Draw worksheet</Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mt: 0.25 }}>
-              Yellow cells are already assigned to an invoice package and cannot
-              be selected again.
+              Yellow cells are already assigned. Utility follows this Job's
+              100% or event-based Builder Setup.
             </Typography>
           </Box>
           <Chip
             size="small"
             variant="outlined"
-            label={`${worksheet.rows.length} ${worksheet.rows.length === 1 ? 'lot' : 'lots'}`}
+            label={`${worksheet.rows.length} ${worksheet.rows.length === 1 ? 'row' : 'rows'}`}
           />
         </Stack>
       </Box>
@@ -77,10 +83,12 @@ export function DrawWorksheetTable({
         >
           <TableHead>
             <TableRow>
-              <TableCell rowSpan={2} sx={{ width: 60, fontWeight: 800 }}>Lot</TableCell>
+              <TableCell rowSpan={2} sx={{ width: 60, fontWeight: 800 }}>
+                Lot / Utility
+              </TableCell>
               <TableCell rowSpan={2} sx={{ width: 72, fontWeight: 800 }}>Plan</TableCell>
               <TableCell rowSpan={2} align="right" sx={{ width: 115, fontWeight: 800 }}>
-                Price per lot
+                Plan Price
               </TableCell>
               {worksheet.draws.map((draw, drawIndex) => (
                 <TableCell
@@ -94,7 +102,13 @@ export function DrawWorksheetTable({
                     {draw.name?.trim() ? ` · ${draw.name.trim()}` : ''}
                   </Typography>
                   <Typography variant="caption" color="primary.main" fontWeight={750}>
-                    {formatPercentage(draw.percentage)}%
+                    {formatPercentage(draw.percentage)}% · Utility{' '}
+                    {worksheet.utilityBillingMode === 'BY_EVENT'
+                      ? `${formatPercentage(
+                          worksheet.rows.find((row) => row.isUtilityBuilding)
+                            ?.utilityPercentages?.[drawIndex] ?? 0,
+                        )}%`
+                      : '100% selectable'}
                   </Typography>
                 </TableCell>
               ))}
@@ -118,7 +132,9 @@ export function DrawWorksheetTable({
             {worksheet.rows.map((row) => (
               <TableRow key={row.id} hover>
                 <TableCell>
-                  <Typography color="error.main" fontWeight={850}>{row.lotNumber}</Typography>
+                  <Typography color={row.isUtilityBuilding ? 'primary.main' : 'error.main'} fontWeight={850}>
+                    {row.utilityLabel ?? row.lotNumber}
+                  </Typography>
                 </TableCell>
                 <TableCell>
                   <Typography fontWeight={750}>{row.planCode ?? '—'}</Typography>
@@ -128,8 +144,17 @@ export function DrawWorksheetTable({
                 </TableCell>
                 {worksheet.draws.flatMap((_, drawIndex) => {
                   const key = drawSelectionKey(job.id, phase.id, row.id, drawIndex)
-                  const owner = usedSelections.get(key)
+                  const exactOwner = usedSelections.get(key)
+                  const utilityOwner = row.isUtilityBuilding
+                    ? billedUtilityCharges.get(utilityChargeKey(
+                        row.id,
+                        worksheet.utilityBillingMode,
+                        worksheet.draws[drawIndex]?.eventType,
+                      ))
+                    : null
+                  const owner = exactOwner ?? utilityOwner
                   const isCurrent = owner?.id === currentPackageId
+                    || owner?.packageId === currentPackageId
 
                   return [
                     <TableCell
@@ -163,9 +188,11 @@ export function DrawWorksheetTable({
                             </Typography>
                           </Stack>
                           <Typography variant="caption" component="div">
-                            {owner.invoiceNumber
+                            {exactOwner?.invoiceNumber
                               ? `${owner.invoiceNumber} · ${formatDate(owner.invoiceDate)}`
-                              : 'Invoice pending'}
+                              : utilityOwner && !exactOwner
+                                ? `Billed on Draw #${utilityOwner.drawIndex + 1}`
+                                : 'Invoice pending'}
                           </Typography>
                         </Box>
                       ) : (
@@ -200,6 +227,88 @@ export function DrawWorksheetTable({
               </TableRow>
             </TableFooter>
           )}
+        </Table>
+      </TableContainer>
+    </Card>
+  )
+}
+
+export function PackageUtilityTable({ summary }) {
+  const utilityRows = summary.utilityRows ?? []
+  if (utilityRows.length === 0) return null
+
+  return (
+    <Card variant="outlined" sx={{ overflow: 'hidden' }}>
+      <Box sx={{ px: { xs: 2, sm: 2.5 }, py: 2, bgcolor: 'action.hover' }}>
+        <Stack
+          direction={{ xs: 'column', sm: 'row' }}
+          spacing={1}
+          sx={{ justifyContent: 'space-between', alignItems: { sm: 'center' } }}
+        >
+          <Box>
+            <Typography fontWeight={800}>Utility Building</Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.25 }}>
+              Utility Plan Price charges included in this package.
+            </Typography>
+          </Box>
+          <Chip
+            size="small"
+            variant="outlined"
+            label={`Total · ${formatCurrency(summary.utilityTotal)}`}
+          />
+        </Stack>
+      </Box>
+      <Divider />
+      <TableContainer>
+        <Table size="small" aria-label="Utility Building charges in this package">
+          <TableHead>
+            <TableRow>
+              <TableCell>Phase</TableCell>
+              <TableCell>Utility</TableCell>
+              <TableCell>Plan</TableCell>
+              <TableCell>Billing draw</TableCell>
+              <TableCell align="right">Plan Price</TableCell>
+              <TableCell align="right">Allocation</TableCell>
+              <TableCell align="right">Charged</TableCell>
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            {utilityRows.map((row) => (
+              <TableRow key={`${row.phaseId}:${row.lotId}:${row.drawIndex}`} hover>
+                <TableCell>
+                  {formatPhase(row.phaseCode)} / {formatBuilding(row.building)}
+                </TableCell>
+                <TableCell><Typography fontWeight={850}>{row.utilityLabel}</Typography></TableCell>
+                <TableCell>{row.planCode ?? '—'}</TableCell>
+                <TableCell>
+                  <Typography fontWeight={750}>
+                    Draw #{row.drawIndex + 1}
+                    {row.drawName?.trim() ? ` · ${row.drawName.trim()}` : ''}
+                    {row.utilityEventType || row.eventType
+                      ? ` · ${row.utilityEventType ?? row.eventType}`
+                      : ''}
+                  </Typography>
+                </TableCell>
+                <TableCell align="right">
+                  {formatCurrency(row.basePrice ?? row.utilityAmount)}
+                </TableCell>
+                <TableCell align="right">
+                  {formatPercentage(row.utilityPercentage || 100)}%
+                </TableCell>
+                <TableCell align="right">
+                  <Typography fontWeight={850}>{formatCurrency(row.utilityAmount)}</Typography>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+          <TableFooter>
+            <TableRow>
+              <TableCell colSpan={6}><Typography fontWeight={850}>Utility total</Typography></TableCell>
+              <TableCell align="right">
+                <Typography fontWeight={900}>{formatCurrency(summary.utilityTotal)}</Typography>
+              </TableCell>
+            </TableRow>
+          </TableFooter>
         </Table>
       </TableContainer>
     </Card>

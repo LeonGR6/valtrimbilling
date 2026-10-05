@@ -19,7 +19,9 @@ const LOT_COLUMNS = [
   'phase_id',
   'plan_id',
   'lot_number',
+  'utility_name',
   'is_reverse',
+  'is_utility_building',
   'display_order',
 ].join(', ')
 

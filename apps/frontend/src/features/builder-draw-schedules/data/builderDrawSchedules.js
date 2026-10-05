@@ -7,6 +7,17 @@ export const drawEventTypeOptions = [
   { value: 'HW', label: 'HW' },
 ]
 
+export const utilityBillingModeOptions = [
+  { value: 'FULL', label: 'Charge 100% in one package' },
+  { value: 'BY_EVENT', label: 'Split by Draw events' },
+]
+
+export const emptyUtilityEventPercentages = {
+  EXT: 0,
+  DM: 0,
+  HW: 0,
+}
+
 export const defaultDraws = [
   { name: '', percentage: 0, eventType: '' },
   { name: '', percentage: 0, eventType: '' },
@@ -54,6 +65,8 @@ export const submissionMethodLabels = Object.fromEntries(
 export const defaultBillingSettings = {
   separateHardwarePrice: false,
   utilityBuilding: false,
+  utilityBillingMode: 'FULL',
+  utilityEventPercentages: { ...emptyUtilityEventPercentages },
   optionsBillingDrawIndex: null,
   frequency: 'MONTHLY',
   anyDate: false,

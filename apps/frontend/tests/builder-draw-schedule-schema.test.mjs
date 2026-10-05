@@ -39,12 +39,56 @@ test('Builder Draw Schedule accepts 3 draws totaling 100 percent', () => {
   assert.equal(result.utilityBuilding, false)
 })
 
-test('Builder Draw Schedule stores the Utility Building flag without other behavior', () => {
+test('Utility Building defaults to one selectable 100 percent charge', () => {
   const result = createBuilderDrawScheduleSchema([], null).parse(validSetup({
     utilityBuilding: true,
   }))
 
   assert.equal(result.utilityBuilding, true)
+  assert.equal(result.utilityBillingMode, 'FULL')
+  assert.deepEqual(result.utilityEventPercentages, { EXT: 0, DM: 0, HW: 0 })
+})
+
+test('Utility Building can split 100 percent across configured Draw events', () => {
+  const result = createBuilderDrawScheduleSchema([], null).parse(validSetup({
+    utilityBuilding: true,
+    utilityBillingMode: 'BY_EVENT',
+    utilityEventPercentages: { EXT: 25, DM: 50, HW: 25 },
+  }))
+
+  assert.equal(result.utilityBillingMode, 'BY_EVENT')
+  assert.deepEqual(result.utilityEventPercentages, { EXT: 25, DM: 50, HW: 25 })
+})
+
+test('Utility event split supports two events and rejects missing or incomplete allocation', () => {
+  const schema = createBuilderDrawScheduleSchema([], null)
+  const twoEvents = schema.safeParse(validSetup({
+    draws: [
+      { percentage: 50, eventType: 'EXT' },
+      { percentage: 50, eventType: 'DM' },
+    ],
+    utilityBuilding: true,
+    utilityBillingMode: 'BY_EVENT',
+    utilityEventPercentages: { EXT: 50, DM: 50, HW: 0 },
+  }))
+  const missingEvent = schema.safeParse(validSetup({
+    draws: [
+      { percentage: 50, eventType: 'EXT' },
+      { percentage: 50, eventType: 'DM' },
+    ],
+    utilityBuilding: true,
+    utilityBillingMode: 'BY_EVENT',
+    utilityEventPercentages: { EXT: 25, DM: 50, HW: 25 },
+  }))
+  const incomplete = schema.safeParse(validSetup({
+    utilityBuilding: true,
+    utilityBillingMode: 'BY_EVENT',
+    utilityEventPercentages: { EXT: 25, DM: 50, HW: 0 },
+  }))
+
+  assert.equal(twoEvents.success, true)
+  assert.equal(missingEvent.success, false)
+  assert.equal(incomplete.success, false)
 })
 
 test('Builder Draw Schedule supports only the two invoice line formats', () => {

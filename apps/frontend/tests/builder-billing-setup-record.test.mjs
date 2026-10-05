@@ -13,6 +13,10 @@ test('billing setup records map database columns and one-based draws to the form
     status: 'ACTIVE',
     separate_hardware_price: true,
     utility_building: true,
+    utility_billing_mode: 'BY_EVENT',
+    utility_ext_percentage: '25.00',
+    utility_dm_percentage: '50.00',
+    utility_hw_percentage: '25.00',
     hardware_billing_draw_number: 3,
     options_billing_draw_number: 2,
     frequency: 'SEMIMONTHLY',
@@ -55,6 +59,8 @@ test('billing setup records map database columns and one-based draws to the form
   ])
   assert.equal('hardwareBillingDrawIndex' in schedule, false)
   assert.equal(schedule.utilityBuilding, true)
+  assert.equal(schedule.utilityBillingMode, 'BY_EVENT')
+  assert.deepEqual(schedule.utilityEventPercentages, { EXT: 25, DM: 50, HW: 25 })
   assert.equal(schedule.optionsBillingDrawIndex, 1)
   assert.equal(schedule.anyDate, false)
   assert.equal(schedule.ocipWrapEnabled, true)
@@ -76,6 +82,8 @@ test('form values map to normalized RPC payloads and one-based draw numbers', ()
     ],
     separateHardwarePrice: true,
     utilityBuilding: true,
+    utilityBillingMode: 'BY_EVENT',
+    utilityEventPercentages: { EXT: 0, DM: 0, HW: 100 },
     optionsBillingDrawIndex: 0,
     frequency: 'WEEKLY',
     anyDate: false,
@@ -100,6 +108,10 @@ test('form values map to normalized RPC payloads and one-based draw numbers', ()
   assert.equal(payload.p_builder_id, 7)
   assert.equal('hardwareBillingDrawNumber' in payload.p_config, false)
   assert.equal(payload.p_config.utilityBuilding, true)
+  assert.equal(payload.p_config.utilityBillingMode, 'BY_EVENT')
+  assert.equal(payload.p_config.utilityExtPercentage, 0)
+  assert.equal(payload.p_config.utilityDmPercentage, 0)
+  assert.equal(payload.p_config.utilityHwPercentage, 100)
   assert.equal(payload.p_config.optionsBillingDrawNumber, 1)
   assert.equal(payload.p_config.cutoffDay, null)
   assert.deepEqual(payload.p_config.cutoffDays, [])

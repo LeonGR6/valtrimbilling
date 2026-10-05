@@ -27,6 +27,11 @@ function getDrawEventType(drawRow) {
   return drawRow.event_type ?? null
 }
 
+function utilityLabel(lotNumber) {
+  const match = /^UTILITY-(\d+)$/i.exec(String(lotNumber ?? ''))
+  return match ? `Utility ${match[1]}` : 'Utility Building'
+}
+
 function parseDateKey(value) {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(value ?? ''))
   if (!match) return null
@@ -198,6 +203,15 @@ export function toDrawInvoicePackage(
       chargeHardware: toNumber(row.hardware_amount) > 0,
     })),
     separateHardwarePrice: Boolean(setupVersion?.separate_hardware_price),
+    utilityBuilding: Boolean(setupVersion?.utility_building),
+    utilityBillingMode: setupVersion?.utility_billing_mode === 'BY_EVENT'
+      ? 'BY_EVENT'
+      : 'FULL',
+    utilityEventPercentages: {
+      EXT: toNumber(setupVersion?.utility_ext_percentage),
+      DM: toNumber(setupVersion?.utility_dm_percentage),
+      HW: toNumber(setupVersion?.utility_hw_percentage),
+    },
     optionsBillingDrawIndex: optionsBillingDrawNumber == null
       ? null
       : Number(optionsBillingDrawNumber) - 1,
@@ -222,13 +236,24 @@ export function toDrawInvoicePackage(
       lotId: row.lot_id,
       drawId: row.draw_id,
       lotNumber: row.lot_number,
+      utilityLabel: row.is_utility_building
+        ? row.utility_name?.trim() || utilityLabel(row.lot_number)
+        : null,
+      isUtilityBuilding: Boolean(row.is_utility_building),
       planCode: row.plan_code,
+      basePrice: toNumber(row.base_price),
       drawIndex: Number(row.draw_number) - 1,
       drawName: row.draw_name ?? '',
       eventType: getDrawEventType(row),
       baseDrawAmount: toNumber(row.base_draw_amount),
       hardwareAmount: toNumber(row.hardware_amount),
       optionsAmount: toNumber(row.options_amount),
+      utilityAmount: toNumber(row.utility_amount),
+      utilityBillingMode: row.utility_billing_mode === 'BY_EVENT'
+        ? 'BY_EVENT'
+        : 'FULL',
+      utilityEventType: row.utility_event_type ?? null,
+      utilityPercentage: toNumber(row.utility_percentage),
       grossAmount: toNumber(row.gross_amount),
       retentionAmount: toNumber(row.retention_amount),
       wrapAmount: toNumber(row.wrap_amount),

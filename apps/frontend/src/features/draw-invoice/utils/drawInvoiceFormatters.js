@@ -48,7 +48,8 @@ export function formatBillingPeriod(record) {
 export function readinessLabel(worksheet) {
   if (!worksheet.hasSchedule) return 'Schedule missing'
   if (!worksheet.scheduleIsValid) return 'Schedule needs review'
-  if (worksheet.rows.length === 0) return 'No lots'
+  if (worksheet.utilityCapabilityMissing) return 'Utility Building is inactive'
+  if (worksheet.rows.length === 0) return 'No Lots or Utility rows'
   if (worksheet.missingPlanCount > 0) return 'Plan missing'
   if (worksheet.unpricedLotCount > 0) return 'Pricing incomplete'
   if (worksheet.missingHardwarePriceCount > 0)

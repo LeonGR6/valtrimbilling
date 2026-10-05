@@ -29,15 +29,24 @@ const lotAssignmentSchema = z.object({
   lotNumber: z
     .string()
     .trim()
-    .min(1, 'Enter a lot number.')
     .max(30, 'Use 30 characters or fewer.')
     .transform((value) => value.toUpperCase()),
+  utilityName: z
+    .string()
+    .trim()
+    .max(80, 'Use 80 characters or fewer.')
+    .optional(),
   planId: z.coerce.number().int().positive('Select a plan.'),
   reverse: z.boolean(),
   optionIds: z.array(z.coerce.number().int().positive()),
+  isUtilityBuilding: z.boolean().default(false),
 })
 
-export function createPhaseByLotSchema(job, currentPhaseId) {
+export function createPhaseByLotSchema(
+  job,
+  currentPhaseId,
+  utilityBuildingRequired = false,
+) {
   const phases = job.sequenceSheet?.phases ?? []
   const plans = job.sequenceSheet?.plans ?? []
 
@@ -47,8 +56,8 @@ export function createPhaseByLotSchema(job, currentPhaseId) {
       building: buildingCodeSchema,
       lots: z
         .array(lotAssignmentSchema)
-        .min(1, 'Add at least one lot.')
-        .max(500, 'A phase can contain up to 500 lots.'),
+        .min(1, 'Add at least one row.')
+        .max(500, 'A phase can contain up to 500 rows.'),
     })
     .superRefine((data, context) => {
       if (
@@ -65,18 +74,56 @@ export function createPhaseByLotSchema(job, currentPhaseId) {
         })
       }
 
+      if (
+        utilityBuildingRequired
+        && !data.lots.some((lot) => lot.isUtilityBuilding)
+      ) {
+        context.addIssue({
+          code: 'custom',
+          path: ['lots'],
+          message: 'Add at least one Utility Building row to this phase.',
+        })
+      }
+
       const usedLots = new Set()
 
       data.lots.forEach((lot, index) => {
+        if (lot.isUtilityBuilding && !lot.utilityName?.length) {
+          context.addIssue({
+            code: 'custom',
+            path: ['lots', index, 'utilityName'],
+            message: 'Enter a Utility name.',
+          })
+        }
+
+        if (!lot.isUtilityBuilding && lot.lotNumber.length === 0) {
+          context.addIssue({
+            code: 'custom',
+            path: ['lots', index, 'lotNumber'],
+            message: 'Enter a lot number.',
+          })
+        }
+
+        if (
+          lot.isUtilityBuilding
+          && (lot.reverse || lot.optionIds.length > 0)
+        ) {
+          context.addIssue({
+            code: 'custom',
+            path: ['lots', index],
+            message: 'Utility Building rows cannot include Reverse or Options.',
+          })
+        }
+
         const normalizedLot = normalized(lot.lotNumber)
-        if (usedLots.has(normalizedLot)) {
+        if (!lot.isUtilityBuilding && usedLots.has(normalizedLot)) {
           context.addIssue({
             code: 'custom',
             path: ['lots', index, 'lotNumber'],
             message: 'Each lot can only appear once in the phase.',
           })
         }
-        usedLots.add(normalizedLot)
+        if (!lot.isUtilityBuilding) usedLots.add(normalizedLot)
 
         const selectedPlan = plans.find((plan) => plan.id === lot.planId)
         if (!selectedPlan) {

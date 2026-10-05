@@ -1,6 +1,8 @@
 import {
   buildDrawWorksheet,
   calculateInvoiceAmounts,
+  getUtilityBillingMode,
+  getUtilityEventPercentage,
   hasPlanPrice,
 } from './drawWorksheet.js'
 
@@ -10,6 +12,12 @@ export function drawSelectionKey(jobId, phaseId, lotId, drawIndex) {
 
 export function hardwareSelectionKey(phaseId, lotId, drawIndex) {
   return `${phaseId}:${lotId}:${drawIndex}`
+}
+
+export function utilityChargeKey(lotId, billingMode, eventType = null) {
+  return billingMode === 'BY_EVENT' && eventType
+    ? `${lotId}:${eventType}`
+    : `${lotId}:FULL`
 }
 
 export function optionSelectionKey(phaseId, lotId, optionId) {
@@ -249,6 +257,72 @@ export function buildBilledHardwareLots(packages = [], jobId) {
   return billed
 }
 
+export function buildBilledUtilityRows(
+  packages = [],
+  jobId,
+  excludedPackageId = null,
+) {
+  const billedCharges = buildBilledUtilityCharges(
+    packages,
+    jobId,
+    excludedPackageId,
+  )
+  const billed = new Map()
+
+  for (const charge of billedCharges.values()) {
+    if (!billed.has(String(charge.lotId))) {
+      billed.set(String(charge.lotId), {
+        lotId: charge.lotId,
+        drawIndex: charge.drawIndex,
+        packageId: charge.packageId,
+        packageNumber: charge.packageNumber,
+        utilityAmount: charge.utilityAmount,
+      })
+    }
+  }
+
+  return billed
+}
+
+export function buildBilledUtilityCharges(
+  packages = [],
+  jobId,
+  excludedPackageId = null,
+) {
+  const billed = new Map()
+
+  for (const record of packages) {
+    if (
+      String(record.jobId) !== String(jobId)
+      || String(record.id) === String(excludedPackageId)
+      || record.status === 'CANCELLED'
+    ) continue
+
+    for (const line of record.persistedDrawLines ?? []) {
+      if (!line.isUtilityBuilding) continue
+
+      const billingMode = line.utilityBillingMode === 'BY_EVENT'
+        ? 'BY_EVENT'
+        : 'FULL'
+      const eventType = line.utilityEventType ?? line.eventType ?? null
+      const key = utilityChargeKey(line.lotId, billingMode, eventType)
+      if (billed.has(key)) continue
+
+      billed.set(key, {
+        lotId: line.lotId,
+        drawIndex: line.drawIndex,
+        billingMode,
+        eventType,
+        packageId: record.id,
+        packageNumber: record.packageNumber,
+        utilityAmount: Number(line.utilityAmount),
+      })
+    }
+  }
+
+  return billed
+}
+
 function sumSelectionAmounts(selections, rowForSelection, field) {
   const totalCents = selections.reduce((total, selection) => {
     const amount = rowForSelection(selection)?.[field]?.[selection.drawIndex]
@@ -315,14 +389,26 @@ function buildPhaseSummaries(lines, phaseById) {
       phaseCode: line.phaseCode ?? phaseById.get(String(phaseId))?.name ?? null,
       building: line.building ?? phaseById.get(String(phaseId))?.building ?? null,
       lotNumbers: [],
+      utilityLabels: [],
+      hasUtilityRows: Boolean(line.isUtilityBuilding),
       draws: new Map(),
     }
-    group.lotNumbers.push(line.lotNumber)
+    if (line.isUtilityBuilding) {
+      group.hasUtilityRows = true
+      group.utilityLabels.push(line.utilityLabel ?? line.lotNumber)
+    } else {
+      group.lotNumbers.push(line.lotNumber)
+    }
     const draw = group.draws.get(line.drawIndex) ?? {
       drawIndex: line.drawIndex,
       lotNumbers: [],
+      utilityLabels: [],
     }
-    draw.lotNumbers.push(line.lotNumber)
+    if (line.isUtilityBuilding) {
+      draw.utilityLabels.push(line.utilityLabel ?? line.lotNumber)
+    } else {
+      draw.lotNumbers.push(line.lotNumber)
+    }
     group.draws.set(line.drawIndex, draw)
     grouped.set(String(phaseId), group)
   }
@@ -332,11 +418,14 @@ function buildPhaseSummaries(lines, phaseById) {
       phaseId: group.phaseId,
       phaseCode: group.phaseCode,
       building: group.building,
+      hasUtilityRows: group.hasUtilityRows,
+      utilityCount: new Set(group.utilityLabels).size,
       lotRange: formatLotRange(group.lotNumbers),
       draws: [...group.draws.values()]
         .sort((left, right) => left.drawIndex - right.drawIndex)
         .map((draw) => ({
           ...draw,
+          utilityCount: new Set(draw.utilityLabels).size,
           lotRange: formatLotRange(draw.lotNumbers),
         })),
     }))
@@ -382,6 +471,9 @@ export function summarizeDrawPackage(record, job, phaseOrPhases, schedule) {
   }
   const rowForSelection = (selection) => scopeForSelection(selection)
     ?.rowsById.get(String(selection.lotId))
+  const selectionIsUtility = (selection) => Boolean(
+    rowForSelection(selection)?.isUtilityBuilding,
+  )
   const selections = record?.selections ?? []
   const scopeEventTypes = getPackageScopeEventTypes(record, selections, schedule)
   const selectedRows = [...new Map(selections.map((selection) => {
@@ -402,8 +494,9 @@ export function summarizeDrawPackage(record, job, phaseOrPhases, schedule) {
   const optionBillingLotKeys = new Set(
     selections
       .filter(
-        ({ drawIndex }) => isAtOrAfterOptionsBillingDraw(
-          drawIndex,
+        (selection) => !selectionIsUtility(selection)
+          && isAtOrAfterOptionsBillingDraw(
+          selection.drawIndex,
           optionsBillingDrawIndex,
         ),
       )
@@ -413,6 +506,7 @@ export function summarizeDrawPackage(record, job, phaseOrPhases, schedule) {
       }),
   )
   const optionChargeDrawIndexes = selections
+    .filter((selection) => !selectionIsUtility(selection))
     .map(({ drawIndex }) => Number(drawIndex))
     .filter((drawIndex) => isAtOrAfterOptionsBillingDraw(
       drawIndex,
@@ -425,7 +519,7 @@ export function summarizeDrawPackage(record, job, phaseOrPhases, schedule) {
     (record?.eligibleOptionLotIds ?? []).map(String),
   )
   for (const selection of selections) {
-    if (isAtOrAfterOptionsBillingDraw(
+    if (!selectionIsUtility(selection) && isAtOrAfterOptionsBillingDraw(
       selection.drawIndex,
       optionsBillingDrawIndex,
     )) {
@@ -473,6 +567,12 @@ export function summarizeDrawPackage(record, job, phaseOrPhases, schedule) {
     const persistedHardwareLines = persistedLines.filter(
       (line) => Number(line.hardwareAmount) > 0,
     )
+    const persistedUtilityLines = persistedLines.filter(
+      (line) => line.isUtilityBuilding || Number(line.utilityAmount) > 0,
+    )
+    const persistedLotLines = persistedLines.filter(
+      (line) => !line.isUtilityBuilding,
+    )
     const separateHardwarePrice = Boolean(
       record.separateHardwarePrice
       ?? schedule?.separateHardwarePrice,
@@ -480,6 +580,11 @@ export function summarizeDrawPackage(record, job, phaseOrPhases, schedule) {
     const hardwareRows = persistedHardwareLines
     const hardwareTotal = hardwareRows.reduce(
       (total, line) => addCurrencyAmounts(total, line.hardwareAmount),
+      0,
+    )
+    const utilityRows = persistedUtilityLines
+    const utilityTotal = utilityRows.reduce(
+      (total, line) => addCurrencyAmounts(total, line.utilityAmount),
       0,
     )
     const chargedOptionRows = record.chargedOptionRows
@@ -497,7 +602,7 @@ export function summarizeDrawPackage(record, job, phaseOrPhases, schedule) {
       (total, option) => addCurrencyAmounts(total, option.price),
       0,
     )
-    const lotNumbers = persistedLines.map((line) => line.lotNumber)
+    const lotNumbers = persistedLotLines.map((line) => line.lotNumber)
     const phaseSummaries = buildPhaseSummaries(persistedLines, phaseById)
 
     return {
@@ -506,7 +611,7 @@ export function summarizeDrawPackage(record, job, phaseOrPhases, schedule) {
         phase, phaseId, worksheet,
       })),
       selectedRows,
-      lotCount: new Set(persistedLines.map((line) => String(line.lotId))).size,
+      lotCount: new Set(persistedLotLines.map((line) => String(line.lotId))).size,
       lotRange: phaseSummaries.length <= 1
         ? formatLotRange(lotNumbers)
         : phaseSummaries.map((scope) => (
@@ -517,6 +622,9 @@ export function summarizeDrawPackage(record, job, phaseOrPhases, schedule) {
       scopeCount: persistedLines.length,
       scopeEventTypes,
       currentDraw: record.persistedInvoice.grossAmount,
+      utilityRows,
+      utilityCount: new Set(utilityRows.map((line) => String(line.lotId))).size,
+      utilityTotal,
       separateHardwarePrice,
       hardwareIsDue: hardwareRows.length > 0,
       hardwareRows,
@@ -581,7 +689,7 @@ export function summarizeDrawPackage(record, job, phaseOrPhases, schedule) {
     ? selections.flatMap((selection) => {
         const scope = scopeForSelection(selection)
         const row = rowForSelection(selection)
-        if (!scope || !row) return []
+        if (!scope || !row || row.isUtilityBuilding) return []
         const selectionKey = hardwareSelectionKey(
           scope.phaseId,
           row.id,
@@ -611,6 +719,36 @@ export function summarizeDrawPackage(record, job, phaseOrPhases, schedule) {
   const hardwareFinancials = calculateInvoiceAmounts(hardwareTotal, schedule)
   const currentDraw = addCurrencyAmounts(baseCurrentDraw, hardwareTotal)
   const optionFinancials = calculateInvoiceAmounts(optionsTotal, schedule)
+  const utilityRows = selections.flatMap((selection) => {
+    const scope = scopeForSelection(selection)
+    const row = rowForSelection(selection)
+    if (!scope || !row?.isUtilityBuilding) return []
+    return [{
+      phaseId: scope.phaseId,
+      phaseCode: scope.phase.name ?? scope.phase.code ?? null,
+      building: scope.phase.building ?? null,
+      lotId: row.id,
+      lotNumber: row.lotNumber,
+      utilityLabel: row.utilityLabel,
+      planCode: row.planCode,
+      drawIndex: selection.drawIndex,
+      drawName: schedule.draws?.[selection.drawIndex]?.name ?? '',
+      eventType: schedule.draws?.[selection.drawIndex]?.eventType ?? null,
+      utilityBillingMode: getUtilityBillingMode(schedule),
+      utilityPercentage: getUtilityBillingMode(schedule) === 'BY_EVENT'
+        ? getUtilityEventPercentage(
+            schedule,
+            schedule.draws?.[selection.drawIndex]?.eventType,
+          )
+        : 100,
+      utilityAmount: row.drawAmounts[selection.drawIndex] ?? 0,
+      isUtilityBuilding: true,
+    }]
+  })
+  const utilityTotal = utilityRows.reduce(
+    (total, row) => addCurrencyAmounts(total, row.utilityAmount),
+    0,
+  )
   const selectedLines = selections.map((selection) => {
     const scope = scopeForSelection(selection)
     const row = rowForSelection(selection)
@@ -621,6 +759,8 @@ export function summarizeDrawPackage(record, job, phaseOrPhases, schedule) {
       building: scope.phase.building ?? null,
       lotId: row.id,
       lotNumber: row.lotNumber,
+      utilityLabel: row.utilityLabel,
+      isUtilityBuilding: row.isUtilityBuilding,
       drawIndex: selection.drawIndex,
     }
   }).filter(Boolean)
@@ -632,9 +772,13 @@ export function summarizeDrawPackage(record, job, phaseOrPhases, schedule) {
       phase, phaseId, worksheet,
     })),
     selectedRows,
-    lotCount: selectedRows.length,
+    lotCount: selectedRows.filter((row) => !row.isUtilityBuilding).length,
     lotRange: phaseSummaries.length <= 1
-      ? formatLotRange(selectedRows.map((row) => row.lotNumber))
+      ? formatLotRange(
+          selectedRows
+            .filter((row) => !row.isUtilityBuilding)
+            .map((row) => row.lotNumber),
+        )
       : phaseSummaries.map((scope) => (
           `${phaseDisplayName(phaseById.get(String(scope.phaseId)), scope.phaseCode)}: ${scope.lotRange}`
         )).join(' · '),
@@ -643,6 +787,9 @@ export function summarizeDrawPackage(record, job, phaseOrPhases, schedule) {
     scopeCount: selections.length,
     scopeEventTypes,
     currentDraw,
+    utilityRows,
+    utilityCount: new Set(utilityRows.map((row) => String(row.lotId))).size,
+    utilityTotal,
     separateHardwarePrice,
     hardwareIsDue: hardwareRows.some((row) => row.chargeHardware),
     hardwareRows,

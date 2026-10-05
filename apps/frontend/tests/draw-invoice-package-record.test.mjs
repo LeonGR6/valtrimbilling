@@ -132,6 +132,59 @@ test('maps persisted package, invoice and calculated snapshots to the UI model',
   })
 })
 
+test('maps immutable Utility Building draw snapshots', () => {
+  const record = toDrawInvoicePackage(
+    packageRow,
+    {
+      id: 102,
+      gross_amount: '12500',
+      retention_amount: '0',
+      wrap_amount: '0',
+      net_amount: '12500',
+      paid_amount: '0',
+      status: 'DRAFT',
+    },
+    [{
+      phase_id: 22,
+      phase_code: 'UTILITY',
+      building: 'CLUBHOUSE',
+      lot_id: 72,
+      draw_id: 53,
+      lot_number: 'UTILITY-1',
+      utility_name: 'Clubhouse',
+      plan_code: 'CLUB',
+      draw_number: 2,
+      draw_name: 'Hardware',
+      event_type: 'HW',
+      is_utility_building: true,
+      base_draw_amount: '0',
+      hardware_amount: '0',
+      options_amount: '0',
+      utility_amount: '12500',
+      gross_amount: '12500',
+      retention_amount: '0',
+      wrap_amount: '0',
+      net_amount: '12500',
+    }],
+    [],
+    {
+      utility_building: true,
+      separate_hardware_price: true,
+      options_billing_draw_number: 2,
+      frequency: 'MONTHLY',
+      cutoff_day: 20,
+    },
+  )
+
+  assert.equal(record.utilityBuilding, true)
+  assert.equal(record.persistedDrawLines[0].isUtilityBuilding, true)
+  assert.equal(record.persistedDrawLines[0].utilityLabel, 'Clubhouse')
+  assert.equal(record.persistedDrawLines[0].utilityAmount, 12500)
+  assert.equal(record.persistedDrawLines[0].baseDrawAmount, 0)
+  assert.equal(record.persistedDrawLines[0].hardwareAmount, 0)
+  assert.deepEqual(record.lotIds, [72])
+})
+
 test('resolves the cutoff date from the Package billing setup snapshot', () => {
   const monthly = {
     frequency: 'MONTHLY',

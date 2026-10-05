@@ -164,6 +164,23 @@ test('job total lots are calculated from all phase lots', () => {
   assert.equal(getJobUnitCount({}), 0)
 })
 
+test('Utility Building rows do not count as Job lots', () => {
+  assert.equal(getJobUnitCount({
+    sequenceSheet: {
+      phases: [
+        { lots: [{ id: 1 }, { id: 2 }] },
+        {
+          lots: [
+            { id: 101, isUtilityBuilding: true },
+            { id: 102, isUtilityBuilding: true },
+            { id: 103, isUtilityBuilding: true },
+          ],
+        },
+      ],
+    },
+  }), 2)
+})
+
 test('job total lots follow phase edits and deletions', () => {
   const job = testJobs.find((item) => item.code === '1307')
   const editedJob = {
@@ -295,6 +312,7 @@ test('phase by lot schema normalizes lots and accepts selected plan options', ()
         planId: 1102,
         reverse: true,
         optionIds: [110201, 110202],
+        isUtilityBuilding: false,
       },
     ],
   })
@@ -327,9 +345,116 @@ test('phase by lot schema supports editing the current phase and preserves lot i
         planId: 1102,
         reverse: true,
         optionIds: [110201],
+        isUtilityBuilding: false,
       },
     ],
   })
+})
+
+test('a Utility-enabled Job accepts a Phase with a named Utility Building row', () => {
+  const job = testJobs.find((item) => item.code === '1307')
+  const result = createPhaseByLotSchema(job, undefined, true).parse({
+    phaseName: ' Utility ',
+    building: ' Clubhouse ',
+    lots: [
+      {
+        lotNumber: '10',
+        planId: 1102,
+        reverse: false,
+        optionIds: [],
+        isUtilityBuilding: false,
+      },
+      {
+        lotNumber: '',
+        utilityName: ' Clubhouse ',
+        planId: 1101,
+        reverse: false,
+        optionIds: [],
+        isUtilityBuilding: true,
+      },
+    ],
+  })
+
+  assert.deepEqual(result, {
+    phaseName: 'UTILITY',
+    building: 'CLUBHOUSE',
+    lots: [
+      {
+        lotNumber: '10',
+        planId: 1102,
+        reverse: false,
+        optionIds: [],
+        isUtilityBuilding: false,
+      },
+      {
+        lotNumber: '',
+        utilityName: 'Clubhouse',
+        planId: 1101,
+        reverse: false,
+        optionIds: [],
+        isUtilityBuilding: true,
+      },
+    ],
+  })
+})
+
+test('a Utility-enabled Job rejects a Phase without a Utility Building row', () => {
+  const job = testJobs.find((item) => item.code === '1307')
+  const result = createPhaseByLotSchema(job, undefined, true).safeParse({
+    phaseName: 'Phase 14',
+    building: 'B7',
+    lots: [{
+      lotNumber: '5',
+      planId: 1101,
+      reverse: false,
+      optionIds: [],
+      isUtilityBuilding: false,
+    }],
+  })
+
+  assert.equal(result.success, false)
+  assert.ok(
+    result.error.issues.some(
+      (issue) => issue.message === 'Add at least one Utility Building row to this phase.',
+    ),
+  )
+})
+
+test('Utility Building rows reject Reverse and Options', () => {
+  const job = testJobs.find((item) => item.code === '1307')
+  const result = createPhaseByLotSchema(job).safeParse({
+    phaseName: 'Utility',
+    building: 'Clubhouse',
+    lots: [{
+      lotNumber: '',
+      utilityName: 'Clubhouse',
+      planId: 1102,
+      reverse: true,
+      optionIds: [110201],
+      isUtilityBuilding: true,
+    }],
+  })
+
+  assert.equal(result.success, false)
+})
+
+test('Utility Building rows require a user-defined name', () => {
+  const job = testJobs.find((item) => item.code === '1307')
+  const result = createPhaseByLotSchema(job).safeParse({
+    phaseName: 'Utility',
+    building: 'Clubhouse',
+    lots: [{
+      lotNumber: '',
+      utilityName: '   ',
+      planId: 1102,
+      reverse: false,
+      optionIds: [],
+      isUtilityBuilding: true,
+    }],
+  })
+
+  assert.equal(result.success, false)
+  assert.ok(result.error.flatten().fieldErrors.lots)
 })
 
 test('phase and building codes support long and abbreviated labels', () => {

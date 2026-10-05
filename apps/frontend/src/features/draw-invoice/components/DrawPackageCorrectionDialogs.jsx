@@ -21,10 +21,16 @@ import {
 } from '@mui/material'
 import { canCorrectDrawPackage } from '../services/drawInvoicePackageRecord.js'
 import {
+  buildBilledUtilityCharges,
   buildUsedDrawSelections,
   drawSelectionKey,
+  utilityChargeKey,
 } from '../utils/drawPackages.js'
-import { buildDrawWorksheet } from '../utils/drawWorksheet.js'
+import {
+  buildDrawWorksheet,
+  getUtilityBillingMode,
+  getUtilityEventPercentage,
+} from '../utils/drawWorksheet.js'
 
 function cellKey({ phaseId, lotId, drawIndex }) {
   return `${phaseId}:${lotId}:${drawIndex}`
@@ -56,9 +62,14 @@ export function EditDrawPackageDialog({
     (candidate) => String(candidate.id) === String(activePhaseId),
   )
   const worksheet = buildDrawWorksheet(job, activePhase, schedule)
+  const rowsById = new Map(worksheet.rows.map((row) => [String(row.id), row]))
   const occupied = useMemo(
     () => buildUsedDrawSelections(packages, record.id),
     [packages, record.id],
+  )
+  const billedUtilityCharges = useMemo(
+    () => buildBilledUtilityCharges(packages, record.jobId, record.id),
+    [packages, record.id, record.jobId],
   )
   const selectedKeys = new Set(selections.map(cellKey))
   const originalKeys = new Set(record.selections.map(cellKey))
@@ -75,15 +86,32 @@ export function EditDrawPackageDialog({
 
   const toggle = (lotId, drawIndex) => {
     const key = `${activePhase.id}:${lotId}:${drawIndex}`
-    setSelections((current) => current.some(
-      (selection) => cellKey(selection) === key,
-    )
-      ? current.filter((selection) => cellKey(selection) !== key)
-      : [
-          ...current,
-          record.selections.find((selection) => cellKey(selection) === key)
-            ?? { phaseId: activePhase.id, lotId, drawIndex },
-        ])
+    setSelections((current) => {
+      const isSelected = current.some(
+        (selection) => cellKey(selection) === key,
+      )
+      if (isSelected) {
+        return current.filter((selection) => cellKey(selection) !== key)
+      }
+
+      const utilityBillingMode = getUtilityBillingMode(schedule)
+      const selectedEventType = worksheet.draws[drawIndex]?.eventType
+      const withoutCurrentUtilityRow = rowsById.get(String(lotId))?.isUtilityBuilding
+        ? current.filter((selection) => {
+            const sameUtilityRow = String(selection.phaseId) === String(activePhase.id)
+              && String(selection.lotId) === String(lotId)
+            if (!sameUtilityRow) return true
+            if (utilityBillingMode === 'FULL') return false
+            return worksheet.draws[selection.drawIndex]?.eventType
+              !== selectedEventType
+          })
+        : current
+      return [
+        ...withoutCurrentUtilityRow,
+        record.selections.find((selection) => cellKey(selection) === key)
+          ?? { phaseId: activePhase.id, lotId, drawIndex },
+      ]
+    })
   }
 
   const save = async () => {
@@ -126,7 +154,10 @@ export function EditDrawPackageDialog({
             {availablePhases.map((candidate) => (
               <MenuItem key={candidate.id} value={candidate.id}>
                 Phase {candidate.name} · Building {candidate.building} ·{' '}
-                {candidate.lots?.length ?? 0} lots
+                {(candidate.lots ?? []).filter((row) => !row.isUtilityBuilding).length} lots
+                {(candidate.lots ?? []).some((row) => row.isUtilityBuilding)
+                  ? ` · ${(candidate.lots ?? []).filter((row) => row.isUtilityBuilding).length} Utility`
+                  : ''}
               </MenuItem>
             ))}
           </TextField>
@@ -134,7 +165,7 @@ export function EditDrawPackageDialog({
             <Table size="small" stickyHeader aria-label="Edit Package Lot and Draw cells">
               <TableHead>
                 <TableRow>
-                  <TableCell>Lot</TableCell>
+                  <TableCell>Lot / Utility</TableCell>
                   <TableCell>Plan</TableCell>
                   {worksheet.draws.map((_, drawIndex) => (
                     <TableCell key={drawIndex} align="center">
@@ -146,33 +177,53 @@ export function EditDrawPackageDialog({
               <TableBody>
                 {worksheet.rows.map((row) => (
                   <TableRow key={row.id}>
-                    <TableCell>{row.lotNumber}</TableCell>
+                    <TableCell>{row.utilityLabel ?? row.lotNumber}</TableCell>
                     <TableCell>{row.planCode ?? '—'}</TableCell>
                     {worksheet.draws.map((_, drawIndex) => {
                       const owner = occupied.get(drawSelectionKey(
                         record.jobId, activePhase.id, row.id, drawIndex,
                       ))
+                      const utilityOwner = row.isUtilityBuilding
+                        ? billedUtilityCharges.get(utilityChargeKey(
+                            row.id,
+                            getUtilityBillingMode(schedule),
+                            worksheet.draws[drawIndex]?.eventType,
+                          ))
+                        : null
                       const selected = selectedKeys.has(
                         `${activePhase.id}:${row.id}:${drawIndex}`,
                       )
+                      const utilityAllocationUnavailable = row.isUtilityBuilding
+                        && getUtilityBillingMode(schedule) === 'BY_EVENT'
+                        && getUtilityEventPercentage(
+                          schedule,
+                          worksheet.draws[drawIndex]?.eventType,
+                        ) <= 0
                       return (
                         <TableCell
                           key={drawIndex}
                           align="center"
-                          sx={{ bgcolor: owner ? 'warning.light' : undefined }}
+                          sx={{ bgcolor: owner || utilityOwner ? 'warning.light' : undefined }}
                         >
                           <Checkbox
                             size="small"
                             checked={selected}
-                            disabled={Boolean(owner) || submitting}
+                            disabled={Boolean(owner || utilityOwner)
+                              || utilityAllocationUnavailable
+                              || submitting}
                             onChange={() => toggle(row.id, drawIndex)}
                             inputProps={{
-                              'aria-label': `Lot ${row.lotNumber} Draw ${drawIndex + 1}`,
+                              'aria-label': `${row.utilityLabel ?? `Lot ${row.lotNumber}`} Draw ${drawIndex + 1}`,
                             }}
                           />
                           {owner && (
                             <Typography variant="caption" component="div">
                               {owner.packageNumber}
+                            </Typography>
+                          )}
+                          {!owner && utilityOwner && (
+                            <Typography variant="caption" component="div">
+                              {utilityOwner.packageNumber}
                             </Typography>
                           )}
                         </TableCell>
@@ -298,6 +349,9 @@ export function TransferDrawPackageCellsDialog({
                     drawIndex: line.drawIndex,
                     chargeHardware: Number(line.hardwareAmount) > 0,
                   }
+                  const rowLabel = line.isUtilityBuilding
+                    ? line.utilityLabel
+                    : `Lot ${line.lotNumber}`
                   return (
                     <Stack
                       key={cellKey(selection)}
@@ -310,12 +364,12 @@ export function TransferDrawPackageCellsDialog({
                         onChange={() => toggle(selection)}
                         disabled={submitting}
                         inputProps={{
-                          'aria-label': `Move Lot ${line.lotNumber} Draw ${line.drawIndex + 1}`,
+                          'aria-label': `Move ${rowLabel} Draw ${line.drawIndex + 1}`,
                         }}
                       />
                       <Typography variant="body2">
                         Phase {line.phaseCode} / Building {line.building} ·{' '}
-                        Lot {line.lotNumber} · Draw #{line.drawIndex + 1} · {line.planCode}
+                        {rowLabel} · Draw #{line.drawIndex + 1} · {line.planCode}
                       </Typography>
                     </Stack>
                   )

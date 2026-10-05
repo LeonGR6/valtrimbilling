@@ -27,7 +27,10 @@ export default function CreatePackageHardwareTable({
 }) {
   const hardwareRows = summary.hardwareRows ?? []
 
-  if (!summary.separateHardwarePrice) return null
+  if (
+    !summary.separateHardwarePrice
+    || (summary.utilityCount > 0 && summary.lotCount === 0)
+  ) return null
   const selectedCount = hardwareRows.filter((row) => row.chargeHardware).length
 
   return (

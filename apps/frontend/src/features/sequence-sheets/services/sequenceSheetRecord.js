@@ -6,9 +6,11 @@ export function toSequenceSheetLot(row, optionIds = []) {
   return {
     id: row.id,
     lotNumber: row.lot_number,
+    utilityName: row.utility_name ?? '',
     planId: row.plan_id,
     reverse: row.is_reverse,
     optionIds: [...optionIds],
+    isUtilityBuilding: Boolean(row.is_utility_building),
   }
 }
 
@@ -30,10 +32,15 @@ export function toSequenceSheetPhaseRpc(jobId, phaseId, phase) {
     p_building: phase.building.trim().toUpperCase(),
     p_lots: phase.lots.map((lot) => ({
       id: lot.id == null ? null : requiredId(lot.id),
-      lot_number: lot.lotNumber.trim().toUpperCase(),
+      lot_number: lot.isUtilityBuilding ? '' : lot.lotNumber.trim().toUpperCase(),
+      utility_name: lot.isUtilityBuilding ? (lot.utilityName ?? '').trim() : null,
       plan_id: requiredId(lot.planId),
-      is_reverse: Boolean(lot.reverse),
-      option_ids: (lot.optionIds ?? []).map(requiredId),
+      is_reverse: lot.isUtilityBuilding ? false : Boolean(lot.reverse),
+      option_ids: lot.isUtilityBuilding
+        ? []
+        : (lot.optionIds ?? []).map(requiredId),
+      is_utility_building: Boolean(lot.isUtilityBuilding),
     })),
+    p_is_utility_building: false,
   }
 }

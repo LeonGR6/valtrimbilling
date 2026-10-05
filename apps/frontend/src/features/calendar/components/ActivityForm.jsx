@@ -92,7 +92,9 @@ export default function ActivityForm({
 }) {
   const selectedJob = jobs.find((job) => job.id === Number(draft.jobId)) ?? null
   const builderDateConfiguration = getBuilderDateConfiguration(findJobBuilder(selectedJob, builders))
-  const phases = selectedJob?.sequenceSheet?.phases ?? []
+  const phases = (selectedJob?.sequenceSheet?.phases ?? []).filter(
+    (phase) => (phase.lots ?? []).some((lot) => !lot.isUtilityBuilding),
+  )
   const totalLots = draft.lotNumbers.length
   const activeType = activityTypeMap[activeActivityType] ?? null
 
@@ -169,7 +171,8 @@ export default function ActivityForm({
                 <MenuItem value="">Select a phase</MenuItem>
                 {phases.map((phase) => (
                   <MenuItem key={phase.id} value={phase.id}>
-                    {formatPhase(phase.name)} · {formatBuilding(phase.building)} · {phase.lots?.length ?? 0} lots
+                    {formatPhase(phase.name)} · {formatBuilding(phase.building)} ·{' '}
+                    {(phase.lots ?? []).filter((lot) => !lot.isUtilityBuilding).length} lots
                   </MenuItem>
                 ))}
               </TextField>

@@ -2,6 +2,8 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { initialBuilderDrawSchedules } from '../src/features/builder-draw-schedules/data/builderDrawSchedules.js'
 import {
+  buildBilledUtilityRows,
+  buildBilledUtilityCharges,
   buildBilledHardwareLots,
   buildOptionChargeContext,
   buildPackageOptionHistory,
@@ -12,6 +14,7 @@ import {
   makePackageSelections,
   optionSelectionKey,
   summarizeDrawPackage,
+  utilityChargeKey,
 } from '../src/features/draw-invoice/utils/drawPackages.js'
 import { testJobs } from './fixtures/jobs.mjs'
 
@@ -783,6 +786,243 @@ test('Package estimates leave Hardware optional when no Draw is checked', () => 
   assert.equal(summary.hardwareIsDue, false)
   assert.equal(summary.hardwareTotal, 0)
   assert.equal(summary.hardwareRows[0].chargeHardware, false)
+})
+
+test('Utility Building charges the full Plan price once on the selected Draw', () => {
+  const summary = summarizeDrawPackage({
+    selections: [{ phaseId: 3, lotId: 101, drawIndex: 1 }],
+    hardwareSelectionKeys: ['3:101:1'],
+  }, {
+    sequenceSheet: {
+      plans: [{
+        id: 1,
+        code: 'CLUB',
+        price: 12500,
+        hardwarePrice: 2500,
+        options: [{ id: 10, code: 'OPT', price: 500 }],
+      }],
+    },
+  }, {
+    id: 3,
+    name: 'UTILITY',
+    building: 'CLUBHOUSE',
+    lots: [{
+      id: 101,
+      lotNumber: 'UTILITY-1',
+      utilityName: 'Clubhouse',
+      planId: 1,
+      optionIds: [10],
+      isUtilityBuilding: true,
+    }],
+  }, {
+    utilityBuilding: true,
+    separateHardwarePrice: true,
+    optionsBillingDrawIndex: 1,
+    draws: [{ percentage: 85 }, { percentage: 15 }],
+  })
+
+  assert.equal(summary.currentDraw, 12500)
+  assert.equal(summary.grossAmount, 12500)
+  assert.equal(summary.invoiceAmount, 12500)
+  assert.equal(summary.lotCount, 0)
+  assert.equal(summary.lotRange, '—')
+  assert.equal(summary.utilityCount, 1)
+  assert.equal(summary.utilityTotal, 12500)
+  assert.equal(summary.utilityRows[0].utilityLabel, 'Clubhouse')
+  assert.equal(summary.hardwareTotal, 0)
+  assert.equal(summary.optionsTotal, 0)
+  assert.equal(summary.utilityRows[0].drawIndex, 1)
+})
+
+test('Utility Building charges only the configured event portion in a Package', () => {
+  const summary = summarizeDrawPackage({
+    selections: [{ phaseId: 3, lotId: 101, drawIndex: 0 }],
+  }, {
+    sequenceSheet: {
+      plans: [{ id: 1, code: 'CLUB', price: 12000, options: [] }],
+    },
+  }, {
+    id: 3,
+    name: '1',
+    building: 'A',
+    lots: [{
+      id: 101,
+      lotNumber: 'UTILITY-1',
+      utilityName: 'Clubhouse',
+      planId: 1,
+      optionIds: [],
+      isUtilityBuilding: true,
+    }],
+  }, {
+    utilityBuilding: true,
+    utilityBillingMode: 'BY_EVENT',
+    utilityEventPercentages: { EXT: 25, DM: 50, HW: 25 },
+    draws: [
+      { percentage: 25, eventType: 'EXT' },
+      { percentage: 50, eventType: 'DM' },
+      { percentage: 25, eventType: 'HW' },
+    ],
+  })
+
+  assert.equal(summary.utilityCount, 1)
+  assert.equal(summary.utilityTotal, 3000)
+  assert.equal(summary.currentDraw, 3000)
+  assert.equal(summary.utilityRows[0].eventType, 'EXT')
+  assert.equal(summary.utilityRows[0].utilityPercentage, 25)
+})
+
+test('a mixed Phase totals Lot draw, Options and Utility rows in one Package', () => {
+  const phase = {
+    id: 3,
+    name: '1',
+    building: 'A',
+    lots: [
+      { id: 1, lotNumber: '10', planId: 1, optionIds: [10] },
+      {
+        id: 101,
+        lotNumber: 'UTILITY-1',
+        utilityName: 'Pool House',
+        planId: 2,
+        optionIds: [],
+        isUtilityBuilding: true,
+      },
+    ],
+  }
+  const summary = summarizeDrawPackage({
+    selections: [
+      { phaseId: 3, lotId: 1, drawIndex: 1 },
+      { phaseId: 3, lotId: 101, drawIndex: 1 },
+    ],
+  }, {
+    sequenceSheet: {
+      plans: [
+        {
+          id: 1,
+          code: 'A',
+          price: 10000,
+          options: [{ id: 10, code: 'OPT', price: 500 }],
+        },
+        { id: 2, code: 'CLUB', price: 12500, options: [] },
+      ],
+    },
+  }, phase, {
+    utilityBuilding: true,
+    optionsBillingDrawIndex: 1,
+    draws: [{ percentage: 80 }, { percentage: 20 }],
+  })
+
+  assert.equal(summary.lotCount, 1)
+  assert.equal(summary.utilityCount, 1)
+  assert.equal(summary.currentDraw, 14500)
+  assert.equal(summary.optionsTotal, 500)
+  assert.equal(summary.grossAmount, 15000)
+  assert.equal(summary.invoiceAmount, 15000)
+  assert.equal(summary.phaseSummaries[0].draws[0].lotRange, '10')
+  assert.equal(summary.phaseSummaries[0].draws[0].utilityCount, 1)
+})
+
+test('persisted Utility Building totals use immutable snapshots', () => {
+  const utilityLine = {
+    phaseId: 3,
+    phaseCode: 'UTILITY',
+    building: 'CLUBHOUSE',
+    lotId: 101,
+    lotNumber: 'UTILITY-1',
+    utilityLabel: 'Clubhouse',
+    isUtilityBuilding: true,
+    planCode: 'CLUB',
+    drawIndex: 1,
+    drawName: 'Hardware',
+    baseDrawAmount: 0,
+    hardwareAmount: 0,
+    optionsAmount: 0,
+    utilityAmount: 12500,
+  }
+  const summary = summarizeDrawPackage({
+    id: 91,
+    packageNumber: 'DP-00000091',
+    selections: [{ phaseId: 3, lotId: 101, drawIndex: 1 }],
+    persistedInvoice: {
+      grossAmount: 12500,
+      retentionAmount: 0,
+      wrapAmount: 0,
+      netAmount: 12500,
+    },
+    persistedDrawLines: [utilityLine],
+    persistedOptionLines: [],
+  }, { sequenceSheet: { plans: [] } }, {
+    id: 3,
+    name: 'UTILITY',
+    building: 'CLUBHOUSE',
+    isUtilityBuilding: true,
+    lots: [],
+  }, { utilityBuilding: true, draws: [{ percentage: 85 }, { percentage: 15 }] })
+
+  assert.equal(summary.currentDraw, 12500)
+  assert.equal(summary.lotCount, 0)
+  assert.equal(summary.utilityCount, 1)
+  assert.equal(summary.utilityTotal, 12500)
+  assert.deepEqual(summary.utilityRows, [utilityLine])
+})
+
+test('Utility Building charge history ignores cancelled Packages', () => {
+  const billed = buildBilledUtilityRows([
+    {
+      id: 10,
+      packageNumber: 'DP-00000010',
+      jobId: 7,
+      status: 'DRAFT',
+      persistedDrawLines: [{
+        lotId: 101,
+        drawIndex: 1,
+        isUtilityBuilding: true,
+        utilityAmount: 12500,
+      }],
+    },
+    {
+      id: 11,
+      packageNumber: 'DP-00000011',
+      jobId: 7,
+      status: 'CANCELLED',
+      persistedDrawLines: [{
+        lotId: 102,
+        drawIndex: 0,
+        isUtilityBuilding: true,
+        utilityAmount: 8000,
+      }],
+    },
+  ], 7)
+
+  assert.deepEqual(billed.get('101'), {
+    lotId: 101,
+    drawIndex: 1,
+    packageId: 10,
+    packageNumber: 'DP-00000010',
+    utilityAmount: 12500,
+  })
+  assert.equal(billed.has('102'), false)
+})
+
+test('Utility Building split history tracks each event portion independently', () => {
+  const billed = buildBilledUtilityCharges([{
+    id: 10,
+    packageNumber: 'DP-00000010',
+    jobId: 7,
+    status: 'DRAFT',
+    persistedDrawLines: [{
+      lotId: 101,
+      drawIndex: 0,
+      eventType: 'EXT',
+      utilityBillingMode: 'BY_EVENT',
+      utilityEventType: 'EXT',
+      isUtilityBuilding: true,
+      utilityAmount: 3000,
+    }],
+  }], 7)
+
+  assert.equal(billed.has(utilityChargeKey(101, 'BY_EVENT', 'EXT')), true)
+  assert.equal(billed.has(utilityChargeKey(101, 'BY_EVENT', 'DM')), false)
+  assert.equal(billed.has(utilityChargeKey(101, 'FULL')), false)
 })
 
 test('Hardware charge history ignores cancelled Packages and identifies billed Lots', () => {

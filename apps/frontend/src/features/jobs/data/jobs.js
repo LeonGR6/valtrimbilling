@@ -41,7 +41,9 @@ export function getJobPhaseCount(job) {
 
 export function getJobAssignedLotCount(job) {
   return (job.sequenceSheet?.phases ?? []).reduce(
-    (total, phase) => total + (phase.lots?.length ?? 0),
+    (total, phase) => total + (phase.lots ?? []).filter(
+      (lot) => !lot.isUtilityBuilding,
+    ).length,
     0,
   )
 }

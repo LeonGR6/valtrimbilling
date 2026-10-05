@@ -233,9 +233,13 @@ export default function PackageTable({
                         color="text.secondary"
                         component="div"
                       >
-                        {formatPhase(scope.phaseCode)}: {scope.draws.map(
-                          (draw) => `Lots ${draw.lotRange} / Draw ${draw.drawIndex + 1}`,
-                        ).join(' · ')}
+                        {formatPhase(scope.phaseCode)}: {scope.draws.map((draw) => [
+                          draw.lotRange ? `Lots ${draw.lotRange}` : null,
+                          draw.utilityCount > 0
+                            ? `${draw.utilityCount} Utility ${draw.utilityCount === 1 ? 'row' : 'rows'}`
+                            : null,
+                          `Draw ${draw.drawIndex + 1}`,
+                        ].filter(Boolean).join(' / ')).join(' · ')}
                       </Typography>
                     ))}
                     <Typography
@@ -253,7 +257,14 @@ export default function PackageTable({
                   </TableCell>
                   <TableCell>{formatBillingPeriod(record)}</TableCell>
                   <TableCell>
-                    <Typography fontWeight={750}>{summary.lotRange}</Typography>
+                    <Typography fontWeight={750}>
+                      {summary.lotCount > 0 ? summary.lotRange : 'No Lots'}
+                    </Typography>
+                    {summary.utilityCount > 0 && (
+                      <Typography variant="caption" color="primary.main" component="div">
+                        {summary.utilityCount} Utility {summary.utilityCount === 1 ? 'row' : 'rows'}
+                      </Typography>
+                    )}
                     <Typography variant="caption" color="text.secondary">
                       {formatPackageScopeEventTypes(summary.scopeEventTypes)}
                     </Typography>
@@ -282,6 +293,11 @@ export default function PackageTable({
                     {summary.optionsTotal > 0 && (
                       <Typography variant="caption" color="text.secondary">
                         Includes {formatCurrency(summary.optionsTotal)} options
+                      </Typography>
+                    )}
+                    {summary.utilityTotal > 0 && (
+                      <Typography variant="caption" color="text.secondary" component="div">
+                        Includes {formatCurrency(summary.utilityTotal)} Utility
                       </Typography>
                     )}
                   </TableCell>

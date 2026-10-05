@@ -41,7 +41,7 @@ Deno.test("renders the Sequence Sheet as the four requested HTML columns", () =>
     rendered.subject,
     "Options Sequence Sheet · Job #1307 · Phase 2",
   );
-  assertMatch(rendered.html, />Lot</u);
+  assertMatch(rendered.html, />Lot \/ Utility</u);
   assertMatch(rendered.html, />Plan</u);
   assertMatch(rendered.html, />Reverse</u);
   assertMatch(rendered.html, />Options for selected plan</u);
@@ -51,6 +51,31 @@ Deno.test("renders the Sequence Sheet as the four requested HTML columns", () =>
   assertMatch(rendered.html, /No options selected/u);
   assertNotMatch(rendered.html, /<a\s/iu);
   assertNotMatch(rendered.html, /\.pdf/iu);
+});
+
+Deno.test("renders ordinary Lots and Utility Building rows in the same Phase", () => {
+  const rendered = renderSequenceSheetEmail({
+    ...snapshot,
+    lots: [
+      snapshot.lots[0],
+      {
+        lotNumber: "Clubhouse",
+        planCode: "CLUB",
+        reverse: false,
+        options: [],
+        isUtilityBuilding: true,
+      },
+    ],
+  });
+
+  assertMatch(rendered.html, />Lot \/ Utility</u);
+  assertMatch(rendered.html, />9</u);
+  assertMatch(rendered.html, /Clubhouse/u);
+  assertMatch(rendered.html, />Plan</u);
+  assertMatch(rendered.html, /CLUB/u);
+  assertMatch(rendered.html, /Plan only/u);
+  assertMatch(rendered.text, /Lot \/ Utility\tPlan/u);
+  assertMatch(rendered.text, /Clubhouse\tCLUB/u);
 });
 
 Deno.test("sends only the HTML table email without attachments", async () => {

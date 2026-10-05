@@ -158,7 +158,9 @@ export function buildCalendarDrawSuggestion({
   const phases = job.sequenceSheet?.phases ?? []
   const phaseLots = new Map(phases.map((phase) => [
     String(phase.id),
-    new Set((phase.lots ?? []).map((lot) => String(lot.id))),
+    new Set((phase.lots ?? [])
+      .filter((lot) => !lot.isUtilityBuilding)
+      .map((lot) => String(lot.id))),
   ]))
   const drawIndexesByEventType = new Map()
 

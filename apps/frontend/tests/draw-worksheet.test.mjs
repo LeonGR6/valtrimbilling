@@ -148,6 +148,126 @@ test('hardware separation requires a hardware price for every assigned plan', ()
   assert.deepEqual(worksheet.rows[0].drawAmounts, [null, null])
 })
 
+test('Utility Building offers the full Plan price on each selectable Draw without extras', () => {
+  const worksheet = buildDrawWorksheet(
+    {
+      sequenceSheet: {
+        plans: [{
+          id: 1,
+          code: 'CLUB',
+          price: 12500,
+          hardwarePrice: 2500,
+          options: [{ id: 10, code: 'OPT', price: 500 }],
+        }],
+      },
+    },
+    {
+      lots: [{
+        id: 101,
+        lotNumber: 'UTILITY-1',
+        utilityName: 'Clubhouse',
+        planId: 1,
+        optionIds: [10],
+        isUtilityBuilding: true,
+      }],
+    },
+    {
+      utilityBuilding: true,
+      separateHardwarePrice: true,
+      draws: [{ percentage: 85 }, { percentage: 15 }],
+    },
+  )
+
+  assert.equal(worksheet.isReady, true)
+  assert.equal(worksheet.rows[0].utilityLabel, 'Clubhouse')
+  assert.deepEqual(worksheet.rows[0].drawAmounts, [12500, 12500])
+  assert.deepEqual(worksheet.rows[0].selectedOptions, [])
+  assert.equal(worksheet.rows[0].hardwarePrice, null)
+  assert.equal(worksheet.totalHardwarePrice, 0)
+})
+
+test('Utility Building allocates its Plan price by configured Draw events', () => {
+  const worksheet = buildDrawWorksheet(
+    { sequenceSheet: { plans: [{ id: 1, code: 'CLUB', price: 10001 }] } },
+    {
+      lots: [{
+        id: 101,
+        lotNumber: 'UTILITY-1',
+        utilityName: 'Clubhouse',
+        planId: 1,
+        optionIds: [],
+        isUtilityBuilding: true,
+      }],
+    },
+    {
+      utilityBuilding: true,
+      utilityBillingMode: 'BY_EVENT',
+      utilityEventPercentages: { EXT: 25, DM: 50, HW: 25 },
+      draws: [
+        { percentage: 25, eventType: 'EXT' },
+        { percentage: 50, eventType: 'DM' },
+        { percentage: 25, eventType: 'HW' },
+      ],
+    },
+  )
+
+  assert.equal(worksheet.utilityBillingMode, 'BY_EVENT')
+  assert.deepEqual(worksheet.rows[0].utilityPercentages, [25, 50, 25])
+  assert.deepEqual(worksheet.rows[0].drawAmounts, [2500.25, 5000.5, 2500.25])
+  assert.equal(
+    worksheet.rows[0].drawAmounts.reduce((total, amount) => total + amount, 0),
+    10001,
+  )
+})
+
+test('Utility event rounding follows the database EXT, DM, HW order', () => {
+  const worksheet = buildDrawWorksheet(
+    { sequenceSheet: { plans: [{ id: 1, code: 'CLUB', price: 0.01 }] } },
+    {
+      lots: [{
+        id: 101,
+        lotNumber: 'UTILITY-1',
+        utilityName: 'Clubhouse',
+        planId: 1,
+        optionIds: [],
+        isUtilityBuilding: true,
+      }],
+    },
+    {
+      utilityBuilding: true,
+      utilityBillingMode: 'BY_EVENT',
+      utilityEventPercentages: { EXT: 33.33, DM: 33.33, HW: 33.34 },
+      draws: [
+        { percentage: 25, eventType: 'HW' },
+        { percentage: 25, eventType: 'EXT' },
+        { percentage: 50, eventType: 'DM' },
+      ],
+    },
+  )
+
+  assert.deepEqual(worksheet.rows[0].drawAmounts, [0.01, 0, 0])
+})
+
+test('Utility Building requires the immutable Builder Setup capability', () => {
+  const worksheet = buildDrawWorksheet(
+    { sequenceSheet: { plans: [{ id: 1, code: 'CLUB', price: 12500 }] } },
+    {
+      lots: [{
+        id: 101,
+        lotNumber: 'UTILITY-1',
+        utilityName: 'Pool House',
+        planId: 1,
+        optionIds: [],
+        isUtilityBuilding: true,
+      }],
+    },
+    { utilityBuilding: false, draws: [{ percentage: 100 }] },
+  )
+
+  assert.equal(worksheet.utilityCapabilityMissing, true)
+  assert.equal(worksheet.isReady, false)
+})
+
 test('worksheet resolves only selected options that belong to the assigned plan', () => {
   const worksheet = buildDrawWorksheet(
     {

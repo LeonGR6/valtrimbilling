@@ -26,13 +26,19 @@ import {
 } from '../../../sequence-sheets/utils/phaseBuildingCodes.js'
 import {
   buildBilledHardwareLots,
+  buildBilledUtilityCharges,
   buildOptionChargeContext,
   buildUsedDrawSelections,
   drawSelectionKey,
   hardwareSelectionKey,
   summarizeDrawPackage,
+  utilityChargeKey,
 } from '../../utils/drawPackages.js'
-import { buildDrawWorksheet } from '../../utils/drawWorksheet.js'
+import {
+  buildDrawWorksheet,
+  getUtilityBillingMode,
+  getUtilityEventPercentage,
+} from '../../utils/drawWorksheet.js'
 import {
   formatCurrency,
   formatLongDate,
@@ -46,6 +52,7 @@ import {
 } from '../../utils/calendarDrawSuggestions.js'
 import DrawSelectionGrid from './DrawSelectionGrid.jsx'
 import CreatePackageHardwareTable from './CreatePackageHardwareTable.jsx'
+import CreatePackageUtilityTable from './CreatePackageUtilityTable.jsx'
 import SelectableOptionsTable from './SelectableOptionsTable.jsx'
 
 export default function CreateDrawDialog({
@@ -79,6 +86,8 @@ export default function CreateDrawDialog({
   )
   const [selectionOverrides, setSelectedSelections] = useState(null)
   const [hardwareSelectionKeys, setHardwareSelectionKeys] = useState([])
+  const [fullUtilityRowIds, setFullUtilityRowIds] = useState([])
+  const [excludedUtilityChargeKeys, setExcludedUtilityChargeKeys] = useState([])
   const [excludedOptionKeys, setExcludedOptionKeys] = useState([])
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState(null)
@@ -95,11 +104,17 @@ export default function CreateDrawDialog({
     (candidate) => String(candidate.builderId) === String(getJobBuilderId(job)),
   )
   const worksheet = buildDrawWorksheet(job, phase, schedule)
+  const lotRows = worksheet.rows.filter((row) => !row.isUtilityBuilding)
+  const utilityRows = worksheet.rows.filter((row) => row.isUtilityBuilding)
+  const lotRowIds = new Set(lotRows.map((row) => String(row.id)))
+  const lotWorksheet = { ...worksheet, rows: lotRows }
+  const utilityWorksheet = { ...worksheet, rows: utilityRows }
   const usedSelections = useMemo(
     () => buildUsedDrawSelections(packages),
     [packages],
   )
   const billedHardwareLots = buildBilledHardwareLots(packages, job?.id)
+  const billedUtilityCharges = buildBilledUtilityCharges(packages, job?.id)
   const calendarSuggestion = buildCalendarDrawSuggestion({
     activities: productionActivities,
     job,
@@ -115,6 +130,9 @@ export default function CreateDrawDialog({
   })
   const selectedSelections = selectionOverrides
     ?? calendarSuggestion.suggestedSelections
+  const lotSelectedSelections = selectedSelections.filter(
+    (selection) => lotRowIds.has(String(selection.lotId)),
+  )
   const calendarReadySelectionKeys = new Set(
     calendarSuggestion.eligibleSelections.map(
       ({ phaseId, lotId, drawIndex }) =>
@@ -132,8 +150,60 @@ export default function CreateDrawDialog({
       ({ phaseId, lotId, drawIndex }) => `${phaseId}:${lotId}:${drawIndex}`,
     ),
   )
+  const utilityBillingMode = getUtilityBillingMode(schedule)
+  const selectedLotDrawIndexes = [...new Set(
+    lotSelectedSelections.map(({ drawIndex }) => Number(drawIndex)),
+  )].sort((left, right) => left - right)
+  const fullUtilityAnchorDrawIndex = selectedLotDrawIndexes[0] ?? null
+  const fullUtilitySelections = utilityBillingMode === 'FULL'
+    && fullUtilityAnchorDrawIndex !== null
+    ? utilityRows.flatMap((row) => (
+        fullUtilityRowIds.includes(String(row.id))
+        && !billedUtilityCharges.has(utilityChargeKey(row.id, 'FULL'))
+          ? [{
+              phaseId: phase.id,
+              lotId: row.id,
+              drawIndex: fullUtilityAnchorDrawIndex,
+            }]
+          : []
+      ))
+    : []
+  const suggestedSplitUtilitySelections = utilityBillingMode === 'BY_EVENT'
+    ? utilityRows.flatMap((row) => {
+        const selectionsByEvent = new Map()
+        for (const selection of lotSelectedSelections) {
+          const eventType = schedule?.draws?.[selection.drawIndex]?.eventType
+          if (
+            getUtilityEventPercentage(schedule, eventType) <= 0
+            || selectionsByEvent.has(eventType)
+            || billedUtilityCharges.has(
+              utilityChargeKey(row.id, 'BY_EVENT', eventType),
+            )
+          ) continue
+          selectionsByEvent.set(eventType, {
+            phaseId: phase.id,
+            lotId: row.id,
+            drawIndex: selection.drawIndex,
+          })
+        }
+        return [...selectionsByEvent.values()]
+      })
+    : []
+  const splitUtilitySelections = suggestedSplitUtilitySelections.filter(
+    ({ lotId, drawIndex }) => !excludedUtilityChargeKeys.includes(
+      utilityChargeKey(
+        lotId,
+        'BY_EVENT',
+        schedule?.draws?.[drawIndex]?.eventType,
+      ),
+    ),
+  )
+  const utilitySelections = utilityBillingMode === 'BY_EVENT'
+    ? splitUtilitySelections
+    : fullUtilitySelections
+  const packageSelections = [...selectedSelections, ...utilitySelections]
   const selectedDrawIndexes = [...new Set(
-    selectedSelections.map(({ drawIndex }) => drawIndex),
+    packageSelections.map(({ drawIndex }) => drawIndex),
   )].sort((left, right) => left - right)
 
   const selectionIsUsed = (lotId, drawIndex) =>
@@ -176,6 +246,8 @@ export default function CreateDrawDialog({
     )
     setSelectedSelections(null)
     setHardwareSelectionKeys([])
+    setFullUtilityRowIds([])
+    setExcludedUtilityChargeKeys([])
     setExcludedOptionKeys([])
   }
 
@@ -183,6 +255,8 @@ export default function CreateDrawDialog({
     setSelectedPhaseId(event.target.value)
     setSelectedSelections(null)
     setHardwareSelectionKeys([])
+    setFullUtilityRowIds([])
+    setExcludedUtilityChargeKeys([])
     setExcludedOptionKeys([])
   }
 
@@ -205,6 +279,23 @@ export default function CreateDrawDialog({
     clearExcludedOptionsWithoutBillingDraw(nextSelections)
     pruneHardwareSelections(nextSelections)
     setSelectedSelections(nextSelections)
+  }
+
+  const toggleFullUtilityCharge = (lotId) => {
+    const key = String(lotId)
+    if (billedUtilityCharges.has(utilityChargeKey(lotId, 'FULL'))) return
+    setFullUtilityRowIds((current) => current.includes(key)
+      ? current.filter((rowId) => rowId !== key)
+      : [...current, key])
+  }
+
+  const toggleSplitUtilityCharge = (lotId, drawIndex) => {
+    const eventType = schedule?.draws?.[drawIndex]?.eventType
+    const key = utilityChargeKey(lotId, 'BY_EVENT', eventType)
+    if (billedUtilityCharges.has(key)) return
+    setExcludedUtilityChargeKeys((current) => current.includes(key)
+      ? current.filter((chargeKey) => chargeKey !== key)
+      : [...current, key])
   }
 
   const toggleSelectionGroup = (available) => {
@@ -268,7 +359,7 @@ export default function CreateDrawDialog({
   }
 
   const toggleDrawSelections = (drawIndex) => {
-    const available = worksheet.rows
+    const available = lotRows
       .map((row) => ({ phaseId: phase.id, lotId: row.id, drawIndex }))
       .filter(({ lotId }) => !selectionIsUsed(lotId, drawIndex))
 
@@ -281,10 +372,10 @@ export default function CreateDrawDialog({
     schedule?.optionsBillingDrawIndex ?? null,
   )
   const draftRecord = {
-    lotIds: selectedSelections.map(({ lotId }) => lotId),
+    lotIds: packageSelections.map(({ lotId }) => lotId),
     drawIndexes: selectedDrawIndexes,
     optionsBillingDrawIndex: schedule?.optionsBillingDrawIndex ?? null,
-    selections: selectedSelections,
+    selections: packageSelections,
     hardwareSelectionKeys,
     excludedOptionKeys,
     ...optionChargeContext,
@@ -304,7 +395,7 @@ export default function CreateDrawDialog({
     .every((candidate) => buildDrawWorksheet(job, candidate, schedule).isReady)
   const canCreate =
     selectedPhasesAreReady &&
-    selectedSelections.length > 0 &&
+    packageSelections.length > 0 &&
     summary.unpricedOptionCount === 0
 
   const handleSubmit = async () => {
@@ -313,7 +404,7 @@ export default function CreateDrawDialog({
     try {
       await onCreate({
         jobId: job.id,
-        selections: selectedSelections,
+        selections: packageSelections,
         hardwareSelections: summary.hardwareRows
           .filter((row) => row.chargeHardware)
           .map(({ phaseId, lotId, drawIndex }) => ({
@@ -371,7 +462,10 @@ export default function CreateDrawDialog({
               {phases.map((candidate) => (
                 <MenuItem key={candidate.id} value={String(candidate.id)}>
                   {formatPhase(candidate.name)} · {formatBuilding(candidate.building)} ·{' '}
-                  {candidate.lots?.length ?? 0} lots
+                  {(candidate.lots ?? []).filter((row) => !row.isUtilityBuilding).length} lots
+                  {(candidate.lots ?? []).some((row) => row.isUtilityBuilding)
+                    ? ` · ${(candidate.lots ?? []).filter((row) => row.isUtilityBuilding).length} Utility`
+                    : ''}
                 </MenuItem>
               ))}
             </TextField>
@@ -384,20 +478,20 @@ export default function CreateDrawDialog({
             </Alert>
           )}
 
-          {productionActivitiesLoading && (
+          {lotRows.length > 0 && productionActivitiesLoading && (
             <Alert severity="info">
               Loading Calendar work to prepare the Package suggestion…
             </Alert>
           )}
 
-          {!productionActivitiesLoading && productionActivitiesError && (
+          {lotRows.length > 0 && !productionActivitiesLoading && productionActivitiesError && (
             <Alert severity="warning">
               Calendar suggestions are unavailable: {productionActivitiesError}
               {' '}You can still select Lot / Draw cells manually.
             </Alert>
           )}
 
-          {!productionActivitiesLoading
+          {lotRows.length > 0 && !productionActivitiesLoading
             && !productionActivitiesError
             && calendarSuggestion.eligibleSelections.length === 0 && (
               <Alert severity="info">
@@ -408,7 +502,7 @@ export default function CreateDrawDialog({
               </Alert>
           )}
 
-          {!productionActivitiesLoading
+          {lotRows.length > 0 && !productionActivitiesLoading
             && !productionActivitiesError
             && calendarSuggestion.eligibleSelections.length > 0 && (
               <Alert severity="success">
@@ -443,21 +537,38 @@ export default function CreateDrawDialog({
               </Alert>
           )}
 
-          <DrawSelectionGrid
-            job={job}
-            phase={phase}
-            worksheet={worksheet}
-            drawCalendarHeadings={drawCalendarHeadings}
-            usedSelections={usedSelections}
-            selectedSelections={selectedSelections}
-            selectionIsUsed={selectionIsUsed}
-            selectionIsSelected={selectionIsSelected}
-            calendarReadySelectionKeys={calendarReadySelectionKeys}
-            suggestedSelectionKeys={suggestedSelectionKeys}
-            toggleSelection={toggleSelection}
-            toggleLotSelections={toggleLotSelections}
-            toggleDrawSelections={toggleDrawSelections}
-          />
+          {lotRows.length > 0 && (
+            <DrawSelectionGrid
+              job={job}
+              phase={phase}
+              worksheet={lotWorksheet}
+              drawCalendarHeadings={drawCalendarHeadings}
+              usedSelections={usedSelections}
+              selectedSelections={lotSelectedSelections}
+              selectionIsUsed={selectionIsUsed}
+              selectionIsSelected={selectionIsSelected}
+              calendarReadySelectionKeys={calendarReadySelectionKeys}
+              suggestedSelectionKeys={suggestedSelectionKeys}
+              toggleSelection={toggleSelection}
+              toggleLotSelections={toggleLotSelections}
+              toggleDrawSelections={toggleDrawSelections}
+            />
+          )}
+
+          {utilityRows.length > 0 && (
+            <CreatePackageUtilityTable
+              phase={phase}
+              worksheet={utilityWorksheet}
+              drawCalendarHeadings={drawCalendarHeadings}
+              selectedUtilitySelections={utilitySelections}
+              selectedLotDrawIndexes={selectedLotDrawIndexes}
+              billedUtilityCharges={billedUtilityCharges}
+              fullUtilityRowIds={fullUtilityRowIds}
+              fullUtilityAnchorDrawIndex={fullUtilityAnchorDrawIndex}
+              onToggleFull={toggleFullUtilityCharge}
+              onToggleSplit={toggleSplitUtilityCharge}
+            />
+          )}
 
           <CreatePackageHardwareTable
             summary={summary}
@@ -514,7 +625,13 @@ export default function CreateDrawDialog({
                           color="text.secondary"
                           component="div"
                         >
-                          Lots {draw.lotRange} · Draw #{draw.drawIndex + 1}
+                          {[
+                            draw.lotRange ? `Lots ${draw.lotRange}` : null,
+                            draw.utilityCount > 0
+                              ? `${draw.utilityCount} Utility ${draw.utilityCount === 1 ? 'row' : 'rows'}`
+                              : null,
+                            `Draw #${draw.drawIndex + 1}`,
+                          ].filter(Boolean).join(' · ')}
                         </Typography>
                       ))}
                     </Box>
@@ -527,9 +644,18 @@ export default function CreateDrawDialog({
                   sx={{ mt: 1, flexWrap: 'wrap' }}
                 >
                   <Typography variant="body2">
-                    <strong>{summary.lotCount}</strong> lots ·{' '}
-                    <strong>{summary.scopeCount}</strong> lot/draw scopes
+                    {/* <strong>{summary.scopeCount}</strong> billing scopes */}
+                    {summary.lotCount > 0 && (
+                      <> <strong>{summary.lotCount}</strong> lots</>
+                    )}
                   </Typography>
+                  {summary.utilityCount > 0 && (
+                    <Typography variant="body2">
+                      Utility Building: <strong>{summary.utilityCount}</strong>{' '}
+                      {summary.utilityCount === 1 ? 'row' : 'rows'} ·{' '}
+                      <strong>{formatCurrency(summary.utilityTotal)}</strong>
+                    </Typography>
+                  )}
                   <Typography variant="body2">
                     Current Draw: <strong>{formatCurrency(summary.currentDraw)}</strong>
                   </Typography>

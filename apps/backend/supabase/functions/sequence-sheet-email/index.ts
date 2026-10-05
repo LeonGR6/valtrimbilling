@@ -121,7 +121,7 @@ async function loadSnapshot(
       .maybeSingle(),
     caller
       .from('lots')
-      .select('id, plan_id, lot_number, is_reverse, display_order')
+      .select('id, plan_id, lot_number, utility_name, is_reverse, is_utility_building, display_order')
       .eq('phase_id', phase.id)
       .order('display_order', { ascending: true })
       .order('id', { ascending: true }),
@@ -129,7 +129,7 @@ async function loadSnapshot(
   if (jobError) throw jobError
   if (lotsError) throw lotsError
   if (!job) throw new Error('The Job for this Phase is no longer available.')
-  if (!lots?.length) throw new Error('The selected Phase has no Lots to email.')
+  if (!lots?.length) throw new Error('The selected Phase has no rows to email.')
 
   const planIds = [...new Set(lots.map((lot) => lot.plan_id))]
   const lotIds = lots.map((lot) => lot.id)
@@ -173,9 +173,14 @@ async function loadSnapshot(
   }
 
   const emailLots: SequenceSheetEmailLot[] = lots.map((lot) => ({
-    lotNumber: String(lot.lot_number ?? ''),
+    lotNumber: String(
+      lot.is_utility_building
+        ? lot.utility_name ?? lot.lot_number ?? ''
+        : lot.lot_number ?? '',
+    ),
     planCode: plansById.get(String(lot.plan_id)) ?? 'Plan unavailable',
     reverse: Boolean(lot.is_reverse),
+    isUtilityBuilding: Boolean(lot.is_utility_building),
     options: (optionIdsByLot.get(String(lot.id)) ?? [])
       .map((optionId) => optionsById.get(optionId))
       .filter((option): option is SequenceSheetEmailOption => Boolean(option)),

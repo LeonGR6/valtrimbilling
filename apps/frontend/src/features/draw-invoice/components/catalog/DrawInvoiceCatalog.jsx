@@ -43,12 +43,12 @@ export default function DrawInvoiceCatalog() {
     transferDrawPackageCells,
     cancelDrawInvoicePackage,
   } = useDrawInvoicePackages()
-  const [createDialogOpen, setCreateDialogOpen] = useState(false)
+  const [createDialogContext, setCreateDialogContext] = useState(null)
 
   const handleCreate = async (input) => {
     const record = await createDrawInvoicePackage(input)
     const job = jobs.find((candidate) => String(candidate.id) === String(record.jobId))
-    setCreateDialogOpen(false)
+    setCreateDialogContext(null)
     navigate(
       jobDrawInvoicePath(
         getJobBuilderId(job),
@@ -86,12 +86,20 @@ export default function DrawInvoiceCatalog() {
       <PackageCatalog
         jobs={jobs}
         schedules={builderDrawSchedules}
+        jobBillingSetupVersions={jobBillingSetupVersions}
         packages={drawInvoicePackages}
+        productionActivities={productionActivities}
+        productionActivitiesLoading={productionActivitiesLoading}
+        productionActivitiesError={productionActivitiesError}
         canManage={canManageDrawInvoicePackages}
         createDisabled={billingSetupsLoading || jobBillingSetupVersions.length === 0}
         error={error}
         onRetry={handleRetry}
-        onCreate={() => setCreateDialogOpen(true)}
+        onCreate={() => setCreateDialogContext({})}
+        onReviewSuggestion={(suggestion) => setCreateDialogContext({
+          jobId: suggestion.job.id,
+          phaseId: suggestion.initialPhaseId,
+        })}
         onEdit={editDrawInvoicePackage}
         onTransfer={transferDrawPackageCells}
         onDelete={cancelDrawInvoicePackage}
@@ -106,7 +114,7 @@ export default function DrawInvoiceCatalog() {
           )
         }
       />
-      {createDialogOpen && (
+      {createDialogContext && (
         <CreateDrawDialog
           jobs={jobs}
           schedules={builderDrawSchedules}
@@ -115,7 +123,9 @@ export default function DrawInvoiceCatalog() {
           productionActivities={productionActivities}
           productionActivitiesLoading={productionActivitiesLoading}
           productionActivitiesError={productionActivitiesError}
-          onClose={() => setCreateDialogOpen(false)}
+          initialJobId={createDialogContext.jobId}
+          initialPhaseId={createDialogContext.phaseId}
+          onClose={() => setCreateDialogContext(null)}
           onCreate={handleCreate}
         />
       )}

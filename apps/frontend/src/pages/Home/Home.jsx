@@ -10,6 +10,7 @@ import PendingActionsRoundedIcon from '@mui/icons-material/PendingActionsRounded
 import PaymentsRoundedIcon from '@mui/icons-material/PaymentsRounded'
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded'
 import TaskAltRoundedIcon from '@mui/icons-material/TaskAltRounded'
+import { useBuilderDrawSchedules } from '../../features/builder-draw-schedules/context/useBuilderDrawSchedules.js'
 import { useProductionActivities } from '../../features/calendar/context/useProductionActivities.js'
 import { activityTypeOptions } from '../../features/calendar/data/calendarEvents.js'
 import { formatDate } from '../../features/calendar/components/calendarSchedulerUtils.js'
@@ -17,9 +18,14 @@ import { useDrawInvoicePackages } from '../../features/draw-invoice/context/useD
 import {
   DRAW_PACKAGE_STATUSES, DRAW_PACKAGE_STATUS_LABELS,
 } from '../../features/draw-invoice/services/drawInvoicePackageRecord.js'
+import {
+  buildPackageSuggestions,
+  selectUpcomingCutoffSuggestions,
+} from '../../features/draw-invoice/utils/packageSuggestions.js'
 import { useJobs } from '../../features/jobs/context/useJobs.js'
 import { jobDrawInvoicePath } from '../../features/jobs/utils/jobRoutes.js'
 import DashboardDonut from '../../features/dashboard/components/DashboardDonut.jsx'
+import UpcomingPackageSuggestions from '../../features/dashboard/components/UpcomingPackageSuggestions.jsx'
 import { buildDashboardMetrics } from '../../features/dashboard/utils/dashboardMetrics.js'
 
 const currencyFormatter = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' })
@@ -173,16 +179,44 @@ export default function HomePage() {
   const [days, setDays] = useState(7)
   const [now, setNow] = useState(() => new Date())
   const {
-    events, loading: productionLoading, error: productionError, refreshProductionActivities,
+    activities: productionActivities,
+    events,
+    loading: productionLoading,
+    error: productionError,
+    refreshProductionActivities,
   } = useProductionActivities()
   const {
     drawInvoicePackages, loading: packagesLoading, error: packagesError, refreshDrawInvoicePackages,
   } = useDrawInvoicePackages()
   const { jobs, loading: jobsLoading, error: jobsError, refreshJobs } = useJobs()
+  const {
+    builderDrawSchedules,
+    jobBillingSetupVersions,
+    loading: billingSetupsLoading,
+    error: billingSetupsError,
+    refreshBuilderBillingSetups,
+  } = useBuilderDrawSchedules()
 
   const metrics = useMemo(() => (
     buildDashboardMetrics(events, drawInvoicePackages, now, days)
   ), [events, drawInvoicePackages, now, days])
+  const upcomingPackageSuggestions = useMemo(() => selectUpcomingCutoffSuggestions(
+    buildPackageSuggestions({
+      jobs,
+      schedules: builderDrawSchedules,
+      jobBillingSetupVersions,
+      packages: drawInvoicePackages,
+      productionActivities,
+      asOfDate: metrics.startKey,
+    }),
+  ), [
+    builderDrawSchedules,
+    drawInvoicePackages,
+    jobBillingSetupVersions,
+    jobs,
+    metrics.startKey,
+    productionActivities,
+  ])
   const jobsById = useMemo(() => new Map(jobs.map((job) => [String(job.id), job])), [jobs])
   const eventChartItems = activityTypeOptions.map((type) => ({
     label: type.shortLabel, value: metrics.eventTypeCounts[type.value] ?? 0, color: eventColors[type.value],
@@ -193,11 +227,20 @@ export default function HomePage() {
     color: packageColors[status],
   }))
   const productionPending = productionLoading || jobsLoading
+  const suggestionsLoading = productionLoading
+    || jobsLoading
+    || packagesLoading
+    || billingSetupsLoading
+  const suggestionsError = productionError
+    || jobsError
+    || packagesError
+    || billingSetupsError
 
   const refresh = async () => {
     setNow(new Date())
     await Promise.allSettled([
       refreshJobs(), refreshProductionActivities(), refreshDrawInvoicePackages(),
+      refreshBuilderBillingSetups(),
     ])
   }
 
@@ -224,13 +267,14 @@ export default function HomePage() {
             ))}
           </ToggleButtonGroup>
           <Button size="small" variant="outlined" startIcon={<RefreshRoundedIcon />}
-            onClick={refresh} disabled={productionLoading || packagesLoading || jobsLoading}>
+            onClick={refresh}
+            disabled={productionLoading || packagesLoading || jobsLoading || billingSetupsLoading}>
             Refresh
           </Button>
         </Stack>
       </Stack>
 
-      {[jobsError, productionError, packagesError].filter(Boolean).map((error) => (
+      {[jobsError, productionError, packagesError, billingSetupsError].filter(Boolean).map((error) => (
         <Alert key={error} severity="error" sx={{ mb: 2 }}>{error}</Alert>
       ))}
 
@@ -251,6 +295,21 @@ export default function HomePage() {
         <MetricCard label="Pending collection" value={currencyFormatter.format(metrics.pendingBalance)}
           detail="Unpaid balance of issued invoices"
           icon={<PaymentsRoundedIcon />} tone="success" to="/draw-invoice" loading={packagesLoading} />
+      </Box>
+
+      <Box sx={{ mb: 2.5 }}>
+        <SectionCard
+          title="Package Suggestions"
+          subtitle="Fixed cutoffs due within 5 business days · first 3 Jobs"
+          linkLabel="View suggestions"
+          to="/draw-invoice#package-suggestions"
+        >
+          <UpcomingPackageSuggestions
+            suggestions={upcomingPackageSuggestions}
+            loading={suggestionsLoading}
+            error={suggestionsError}
+          />
+        </SectionCard>
       </Box>
 
       <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(2, minmax(0, 1fr))' }, gap: 2, mb: 2.5 }}>

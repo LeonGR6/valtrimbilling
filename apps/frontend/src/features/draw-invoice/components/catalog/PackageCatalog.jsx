@@ -32,8 +32,10 @@ import {
 } from '../DrawPackageCorrectionDialogs.jsx'
 import JobDocumentsCatalog from '../documents/JobDocumentsCatalog.jsx'
 import { DRAW_PACKAGE_STATUS_LABELS } from '../../services/drawInvoicePackageRecord.js'
+import { localDateKey } from '../../utils/calendarDrawSuggestions.js'
 import { summarizeDrawPackage } from '../../utils/drawPackages.js'
 import { formatCurrency } from '../../utils/drawInvoiceFormatters.js'
+import { buildPackageSuggestions } from '../../utils/packageSuggestions.js'
 import {
   PACKAGE_CATALOG_TABS,
   filterPackageCatalogContexts,
@@ -41,6 +43,7 @@ import {
   packageCatalogCommunityOptions,
   summarizePackageCatalogStatuses,
 } from '../../utils/packageCatalog.js'
+import PackageSuggestionsPanel from './PackageSuggestionsPanel.jsx'
 import PackageTable from './PackageTable.jsx'
 
 const packageSummaryCards = [
@@ -150,13 +153,18 @@ function MissingDocumentsSummaryCard({ count, loading, unavailable }) {
 export default function PackageCatalog({
   jobs,
   schedules,
+  jobBillingSetupVersions,
   packages,
+  productionActivities,
+  productionActivitiesLoading,
+  productionActivitiesError,
   canManage,
   createDisabled,
   error,
   onRetry,
   onOpen,
   onCreate,
+  onReviewSuggestion,
   onEdit,
   onTransfer,
   onDelete,
@@ -167,7 +175,26 @@ export default function PackageCatalog({
   const [builderFilter, setBuilderFilter] = useState('ALL')
   const [communityFilter, setCommunityFilter] = useState('ALL')
   const [catalogAction, setCatalogAction] = useState(null)
+  const [asOfDate] = useState(() => localDateKey())
   const jobDocuments = useJobDocuments(jobs)
+  const packageSuggestions = useMemo(
+    () => buildPackageSuggestions({
+      jobs,
+      schedules,
+      jobBillingSetupVersions,
+      packages,
+      productionActivities,
+      asOfDate,
+    }),
+    [
+      asOfDate,
+      jobBillingSetupVersions,
+      jobs,
+      packages,
+      productionActivities,
+      schedules,
+    ],
+  )
   const contexts = useMemo(
     () => packages.map((record) => getPackageContext(record, jobs, schedules)).filter(Boolean),
     [jobs, packages, schedules],
@@ -299,6 +326,13 @@ export default function PackageCatalog({
               {error}
             </Alert>
           )}
+          <PackageSuggestionsPanel
+            suggestions={packageSuggestions}
+            loading={productionActivitiesLoading}
+            error={productionActivitiesError}
+            disabled={!canManage || createDisabled}
+            onReview={onReviewSuggestion}
+          />
           <Box sx={{
             display: 'grid',
             gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))',

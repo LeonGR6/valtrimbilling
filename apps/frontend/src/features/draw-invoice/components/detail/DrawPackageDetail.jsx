@@ -417,12 +417,32 @@ export default function DrawPackageDetail() {
                   icon={<AttachMoneyRoundedIcon />}
                   label="Current Draw"
                   value={formatCurrency(packageSummary.currentDraw)}
-                  detail={`Retention ${formatCurrency(packageSummary.retention)} · WRAP ${formatCurrency(packageSummary.wrapInsurance)}`}
+                  detail={(
+                    <>
+                      Retention{' '}
+                      <Typography
+                        component="span"
+                        variant="inherit"
+                        sx={{ color: 'error.main', fontWeight: 750 }}
+                      >
+                        {formatCurrency(packageSummary.retention)}
+                      </Typography>
+                      {' · '}WRAP{' '}
+                      <Typography
+                        component="span"
+                        variant="inherit"
+                        sx={{ color: 'error.main', fontWeight: 750 }}
+                      >
+                        {formatCurrency(packageSummary.wrapInsurance)}
+                      </Typography>
+                    </>
+                  )}
                 />
                 <MetricCard
                   icon={<ReceiptLongRoundedIcon />}
                   label="Invoice Amount"
                   value={formatCurrency(packageSummary.invoiceAmount)}
+                  valueColor="success.main"
                   detail={packageSummary.optionsTotal > 0
                     ? `${formatCurrency(packageSummary.optionsTotal)} options included`
                     : focusedPackage.invoiceNumber

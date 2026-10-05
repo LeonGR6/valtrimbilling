@@ -77,7 +77,7 @@ export function PackageStatusControl({ status, disabled, onChange }) {
   )
 }
 
-export function MetricCard({ icon, label, value, detail }) {
+export function MetricCard({ icon, label, value, valueColor, detail }) {
   return (
     <Card variant="outlined" sx={{ minWidth: 190, flex: 1 }}>
       <CardContent sx={{ display: 'flex', gap: 1.5, p: '16px !important' }}>
@@ -96,7 +96,11 @@ export function MetricCard({ icon, label, value, detail }) {
           {icon}
         </Box>
         <Box sx={{ minWidth: 0 }}>
-          <Typography variant="h6" fontWeight={800} sx={{ lineHeight: 1.2 }}>
+          <Typography
+            variant="h6"
+            fontWeight={800}
+            sx={{ lineHeight: 1.2, color: valueColor }}
+          >
             {value}
           </Typography>
           <Typography variant="caption" color="text.secondary" component="div">

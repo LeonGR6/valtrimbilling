@@ -24,6 +24,7 @@ const VERSION_COLUMNS = [
   'payment_terms_days',
   'retention_enabled',
   'retention_percentage',
+  'retention_release_scope',
   'wrap_enabled',
   'wrap_percentage',
   'invoice_line_format',

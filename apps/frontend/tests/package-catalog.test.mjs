@@ -95,3 +95,19 @@ test('Delete is offered only for a correctable Draft, never cancelled or ready',
   assert.equal(canDeleteDraftPackage({ ...draft, status: 'CANCELLED' }), false)
   assert.equal(canDeleteDraftPackage({ ...draft, invoiceNumber: 'INV-1' }), false)
 })
+
+test('an unissued Retention Release Draft can be cancelled but not edited', () => {
+  const release = {
+    packageType: 'RETENTION_RELEASE',
+    status: 'DRAFT',
+    persistedInvoice: { status: 'DRAFT', paidAmount: 0 },
+    invoiceNumber: null,
+    invoiceDate: null,
+    quickbooksStatus: 'NOT_CREATED',
+    quickbooksReference: null,
+    submissionStatus: 'NOT_SUBMITTED',
+    submittedAt: null,
+  }
+
+  assert.equal(canDeleteDraftPackage(release), true)
+})

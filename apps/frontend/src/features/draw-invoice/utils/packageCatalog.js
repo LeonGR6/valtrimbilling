@@ -13,7 +13,18 @@ export const PACKAGE_CATALOG_TABS = [
 ]
 
 export function canDeleteDraftPackage(record) {
-  return record?.status === 'DRAFT' && canCorrectDrawPackage(record)
+  if (record?.status !== 'DRAFT') return false
+  if (record.packageType !== 'RETENTION_RELEASE') {
+    return canCorrectDrawPackage(record)
+  }
+  return record.persistedInvoice?.status === 'DRAFT'
+    && !record.invoiceNumber
+    && !record.invoiceDate
+    && record.persistedInvoice.paidAmount === 0
+    && record.quickbooksStatus === 'NOT_CREATED'
+    && !record.quickbooksReference
+    && record.submissionStatus === 'NOT_SUBMITTED'
+    && !record.submittedAt
 }
 
 export function filterPackageCatalogContexts(contexts, {
@@ -35,6 +46,10 @@ export function filterPackageCatalogContexts(contexts, {
     return [
       record.packageNumber,
       record.invoiceNumber,
+      record.packageType === 'RETENTION_RELEASE' ? 'retention release' : 'draw',
+      record.retentionRelease?.scopeType,
+      record.retentionRelease?.phaseCode,
+      record.retentionRelease?.building,
       job.code,
       job.builder,
       job.community,

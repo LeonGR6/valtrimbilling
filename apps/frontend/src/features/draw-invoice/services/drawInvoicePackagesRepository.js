@@ -2,6 +2,7 @@ import { requireSupabase } from '../../../services/api.js'
 import {
   toCancelDrawPackageRpc,
   toCreateDrawPackageRpc,
+  toCreateRetentionReleasePackageRpc,
   toDrawInvoicePackage,
   toEditDrawPackageRpc,
   toPackageStatusRpc,
@@ -11,6 +12,7 @@ import {
 const PACKAGE_COLUMNS = [
   'id',
   'package_number',
+  'package_type',
   'builder_id',
   'job_id',
   'phase_id',
@@ -106,6 +108,7 @@ const SETUP_COLUMNS = [
   'cutoff_days',
   'cutoff_weekday',
   'payment_terms_days',
+  'retention_release_scope',
   'submission_method',
   'submission_destination',
   'portal_name',
@@ -123,6 +126,27 @@ const CORRECTION_COLUMNS = [
   'reason',
   'changed_by',
   'changed_at',
+].join(', ')
+
+const RETENTION_RELEASE_COLUMNS = [
+  'package_id',
+  'job_id',
+  'scope_type',
+  'phase_id',
+  'phase_code',
+  'building',
+  'source_cutoff_date',
+  'available_date',
+  'retained_amount',
+].join(', ')
+
+const RETENTION_RELEASE_LINE_COLUMNS = [
+  'package_id',
+  'source_package_id',
+  'source_lot_id',
+  'source_draw_id',
+  'phase_id',
+  'retention_amount',
 ].join(', ')
 
 const PAGE_SIZE = 1000
@@ -242,6 +266,8 @@ export async function listDrawInvoicePackages() {
     corrections,
     setupVersions,
     billingDraws,
+    retentionReleases,
+    retentionReleaseLines,
   ] = await Promise.all([
     listRowsInBatches(
       client,
@@ -283,6 +309,20 @@ export async function listDrawInvoicePackages() {
       .in('setup_version_id', batch)
       .order('id', { ascending: true }))
     )).then((rows) => rows.flat()),
+    listRowsInBatches(
+      client,
+      packageIds,
+      'retention_releases',
+      RETENTION_RELEASE_COLUMNS,
+      [['package_id', true]],
+    ),
+    listRowsInBatches(
+      client,
+      packageIds,
+      'retention_release_lines',
+      RETENTION_RELEASE_LINE_COLUMNS,
+      [['package_id', true], ['source_package_id', true]],
+    ),
   ])
 
   const invoicesByPackage = new Map(
@@ -305,6 +345,10 @@ export async function listDrawInvoicePackages() {
   const billingDrawsById = new Map(
     billingDraws.map((draw) => [draw.id, draw]),
   )
+  const retentionReleasesByPackage = new Map(
+    retentionReleases.map((release) => [release.package_id, release]),
+  )
+  const retentionReleaseLinesByPackage = groupByPackage(retentionReleaseLines)
 
   return packages.map((packageRow) => toDrawInvoicePackage(
     packageRow,
@@ -319,6 +363,8 @@ export async function listDrawInvoicePackages() {
       ...(correctionsByPackage.get(packageRow.id) ?? []),
       ...(correctionsBySource.get(packageRow.id) ?? []),
     ].sort((left, right) => right.changed_at.localeCompare(left.changed_at)),
+    retentionReleasesByPackage.get(packageRow.id),
+    retentionReleaseLinesByPackage.get(packageRow.id) ?? [],
   ))
 }
 
@@ -337,6 +383,26 @@ export async function createDrawInvoicePackage(input) {
   )
   if (!created) {
     throw new Error('The created Draw & Invoice Package could not be reloaded.')
+  }
+
+  return { created, packages }
+}
+
+export async function createRetentionReleasePackage(input) {
+  const client = await requireSupabase()
+  const { data: packageId, error } = await client.rpc(
+    'create_retention_release_package',
+    toCreateRetentionReleasePackageRpc(input),
+  )
+
+  throwRepositoryError(error)
+
+  const packages = await listDrawInvoicePackages()
+  const created = packages.find(
+    (record) => String(record.id) === String(packageId),
+  )
+  if (!created) {
+    throw new Error('The created Retention Package could not be reloaded.')
   }
 
   return { created, packages }

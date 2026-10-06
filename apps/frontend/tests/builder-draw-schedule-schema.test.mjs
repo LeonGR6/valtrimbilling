@@ -324,6 +324,7 @@ test('Builder Draw Schedule stores billing deductions and submission requirement
   }))
 
   assert.equal(result.retentionPercentage, 10.5)
+  assert.equal(result.retentionReleaseScope, 'JOB')
   assert.equal(result.ocipWrapPercentage, 1.25)
   assert.equal(result.requiresPo, true)
   assert.equal(result.requiresPaymentSchedule, true)

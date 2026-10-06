@@ -84,6 +84,9 @@ export function toBuilderDrawSchedule(version, draws = [], documents = []) {
     paymentTermsDays: version.payment_terms_days,
     retentionEnabled: version.retention_enabled,
     retentionPercentage: toNumber(version.retention_percentage),
+    retentionReleaseScope: version.retention_release_scope === 'BUILDING'
+      ? 'BUILDING'
+      : 'JOB',
     ocipWrapEnabled: version.wrap_enabled,
     ocipWrapPercentage: toNumber(version.wrap_percentage),
     requiresPo: documentTypes.has('PURCHASE_ORDER'),
@@ -142,6 +145,9 @@ export function toBuilderBillingSetupRpc(schedule) {
       retentionPercentage: schedule.retentionEnabled
         ? Number(schedule.retentionPercentage)
         : 0,
+      retentionReleaseScope: schedule.retentionReleaseScope === 'BUILDING'
+        ? 'BUILDING'
+        : 'JOB',
       wrapEnabled: Boolean(schedule.ocipWrapEnabled),
       wrapPercentage: schedule.ocipWrapEnabled
         ? Number(schedule.ocipWrapPercentage)

@@ -49,6 +49,8 @@ import {
   invoiceLineFormatOptions,
   MAX_DRAW_COUNT,
   MIN_DRAW_COUNT,
+  retentionReleaseScopeLabels,
+  retentionReleaseScopeOptions,
   submissionMethodLabels,
   submissionMethodOptions,
   utilityBillingModeOptions,
@@ -943,23 +945,49 @@ function BuilderDrawScheduleDialog({
                 )}
               />
               {retentionEnabled && (
-                <TextField
-                  label="Retention percentage"
-                  type="number"
-                  {...register('retentionPercentage')}
-                  error={Boolean(errors.retentionPercentage)}
-                  helperText={
-                    errors.retentionPercentage?.message
-                    ?? 'Percentage deducted after draws total 100%.'
-                  }
-                  fullWidth
-                  required
-                  sx={{ mt: 1 }}
-                  slotProps={{
-                    input: { endAdornment: <InputAdornment position="end">%</InputAdornment> },
-                    htmlInput: { min: 1, max: 100, step: 0.01, inputMode: 'decimal' },
-                  }}
-                />
+                <Stack spacing={1.5} sx={{ mt: 1 }}>
+                  <TextField
+                    label="Retention percentage"
+                    type="number"
+                    {...register('retentionPercentage')}
+                    error={Boolean(errors.retentionPercentage)}
+                    helperText={
+                      errors.retentionPercentage?.message
+                      ?? 'Percentage deducted from every Package line.'
+                    }
+                    fullWidth
+                    required
+                    slotProps={{
+                      input: { endAdornment: <InputAdornment position="end">%</InputAdornment> },
+                      htmlInput: { min: 1, max: 100, step: 0.01, inputMode: 'decimal' },
+                    }}
+                  />
+                  <Controller
+                    name="retentionReleaseScope"
+                    control={control}
+                    render={({ field }) => (
+                      <FormControl fullWidth>
+                        <InputLabel id="retention-release-scope-label">
+                          Release retention
+                        </InputLabel>
+                        <Select
+                          {...field}
+                          labelId="retention-release-scope-label"
+                          label="Release retention"
+                        >
+                          {retentionReleaseScopeOptions.map((option) => (
+                            <MenuItem key={option.value} value={option.value}>
+                              {option.label}
+                            </MenuItem>
+                          ))}
+                        </Select>
+                      </FormControl>
+                    )}
+                  />
+                  <Typography variant="caption" color="text.secondary">
+                    Available one month after the cutoff that completes Hardware.
+                  </Typography>
+                </Stack>
               )}
             </Box>
 
@@ -1282,7 +1310,7 @@ function BuilderDrawScheduleCard({
         <Typography variant="body2" color="text.secondary">
           Net {schedule.paymentTermsDays}
           {schedule.retentionEnabled
-            ? ` · ${formatPercentage(schedule.retentionPercentage)}% retention`
+            ? ` · ${formatPercentage(schedule.retentionPercentage)}% retention · ${retentionReleaseScopeLabels[schedule.retentionReleaseScope] ?? 'Per Job'}`
             : ''}
           {schedule.ocipWrapEnabled
             ? ` · ${formatPercentage(schedule.ocipWrapPercentage)}% OCIP / WRAP`

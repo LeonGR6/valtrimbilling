@@ -3,6 +3,7 @@ import test from 'node:test'
 import {
   DRAW_PACKAGE_STATUSES,
   canCorrectDrawPackage,
+  toCreateRetentionReleasePackageRpc,
   resolveBillingCutoffDate,
   toCancelDrawPackageRpc,
   toCreateDrawPackageRpc,
@@ -11,10 +12,89 @@ import {
   toPackageStatusRpc,
   toTransferDrawPackageRpc,
 } from '../src/features/draw-invoice/services/drawInvoicePackageRecord.js'
+
 import {
   formatBillingPeriod,
   formatLongDate,
 } from '../src/features/draw-invoice/utils/drawInvoiceFormatters.js'
+
+test('Retention Release RPC keeps Job scope nullable and normalizes notes', () => {
+  assert.deepEqual(toCreateRetentionReleasePackageRpc({
+    jobId: '11',
+    phaseId: null,
+    notes: ' Final retention ',
+  }), {
+    p_job_id: 11,
+    p_phase_id: null,
+    p_notes: 'Final retention',
+  })
+})
+
+test('maps a positive Retention Release package and its immutable source lines', () => {
+  const record = toDrawInvoicePackage(
+    {
+      id: 99,
+      package_number: 'RP-00000099',
+      package_type: 'RETENTION_RELEASE',
+      builder_id: 2,
+      job_id: 11,
+      phase_id: null,
+      setup_version_id: 31,
+      package_date: '2026-10-20',
+      invoice_line_format: 'LOT_SCOPE',
+      workflow_status: 'DRAFT',
+      status: 'DRAFT',
+      created_at: '2026-10-20T12:00:00Z',
+      updated_at: '2026-10-20T12:00:00Z',
+      status_changed_at: '2026-10-20T12:00:00Z',
+    },
+    {
+      id: 109,
+      package_id: 99,
+      gross_amount: '440.00',
+      retention_amount: '0',
+      wrap_amount: '0',
+      net_amount: '440.00',
+      paid_amount: '0',
+      status: 'DRAFT',
+    },
+    [],
+    [],
+    null,
+    [],
+    {
+      package_id: 99,
+      scope_type: 'JOB',
+      phase_id: null,
+      phase_code: null,
+      building: null,
+      source_cutoff_date: '2026-09-20',
+      available_date: '2026-10-20',
+      retained_amount: '440.00',
+    },
+    [{
+      package_id: 99,
+      source_package_id: 10,
+      source_lot_id: 101,
+      source_draw_id: 501,
+      phase_id: 21,
+      retention_amount: '55.00',
+    }],
+  )
+
+  assert.equal(record.packageType, 'RETENTION_RELEASE')
+  assert.equal(record.retentionRelease.scopeType, 'JOB')
+  assert.equal(record.retentionRelease.retainedAmount, 440)
+  assert.deepEqual(record.retentionRelease.sourceLines[0], {
+    sourcePackageId: 10,
+    sourceLotId: 101,
+    sourceDrawId: 501,
+    phaseId: 21,
+    retentionAmount: 55,
+  })
+  assert.equal(record.persistedInvoice.netAmount, 440)
+  assert.deepEqual(record.persistedDrawLines, [])
+})
 
 const packageRow = {
   id: 91,

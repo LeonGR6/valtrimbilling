@@ -113,6 +113,7 @@ export function createBuilderDrawScheduleSchema(schedules, currentScheduleId) {
         .max(180, 'Use 180 days or fewer.'),
       retentionEnabled: z.boolean().default(false),
       retentionPercentage: optionalPercentageSchema,
+      retentionReleaseScope: z.enum(['BUILDING', 'JOB']).default('JOB'),
       ocipWrapEnabled: z.boolean(),
       ocipWrapPercentage: optionalPercentageSchema,
       requiresPo: z.boolean(),

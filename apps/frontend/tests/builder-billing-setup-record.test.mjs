@@ -27,6 +27,7 @@ test('billing setup records map database columns and one-based draws to the form
     payment_terms_days: 30,
     retention_enabled: true,
     retention_percentage: '5.25',
+    retention_release_scope: 'BUILDING',
     wrap_enabled: true,
     wrap_percentage: '2.50',
     invoice_line_format: 'LOT',
@@ -64,6 +65,7 @@ test('billing setup records map database columns and one-based draws to the form
   assert.equal(schedule.optionsBillingDrawIndex, 1)
   assert.equal(schedule.anyDate, false)
   assert.equal(schedule.ocipWrapEnabled, true)
+  assert.equal(schedule.retentionReleaseScope, 'BUILDING')
   assert.equal(schedule.ocipWrapPercentage, 2.5)
   assert.equal(schedule.requiresPo, true)
   assert.equal(schedule.requiresRelease, true)
@@ -93,6 +95,7 @@ test('form values map to normalized RPC payloads and one-based draw numbers', ()
     paymentTermsDays: 45,
     retentionEnabled: true,
     retentionPercentage: 5,
+    retentionReleaseScope: 'BUILDING',
     ocipWrapEnabled: true,
     ocipWrapPercentage: 2,
     requiresPo: true,
@@ -122,6 +125,7 @@ test('form values map to normalized RPC payloads and one-based draw numbers', ()
   assert.equal('workAcceptedThrough' in payload.p_config, false)
   assert.equal('invoiceDateRule' in payload.p_config, false)
   assert.equal(payload.p_config.wrapEnabled, true)
+  assert.equal(payload.p_config.retentionReleaseScope, 'BUILDING')
   assert.equal(payload.p_config.wrapPercentage, 2)
   assert.equal(payload.p_config.invoiceLineFormat, 'BUILDING_SCOPE')
   assert.equal(payload.p_config.submissionMethod, 'EMAIL')
@@ -202,4 +206,5 @@ test('legacy portal records load as Portal submissions', () => {
 
   assert.equal(schedule.submissionMethod, 'PORTAL')
   assert.equal(schedule.submissionDestination, 'Legacy Portal')
+  assert.equal(schedule.retentionReleaseScope, 'JOB')
 })

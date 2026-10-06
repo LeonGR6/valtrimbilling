@@ -15,6 +15,7 @@ import {
   TableHead,
   TableRow,
   Typography,
+  Chip,
 } from '@mui/material'
 import ArrowDropDownRoundedIcon from '@mui/icons-material/ArrowDropDownRounded'
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
@@ -222,11 +223,24 @@ export default function PackageTable({
                       {record.packageNumber}
                     </Button>
                     <Typography variant="body2" color="text.secondary">
-                      Job #{job.code} · {summary.phaseCount === 1
-                        ? `${formatPhase(phase.name)} / ${formatBuilding(phase.building)}`
-                        : `${summary.phaseCount} Phases`}
+                      Job #{job.code} · {record.packageType === 'RETENTION_RELEASE'
+                        ? record.retentionRelease?.scopeType === 'JOB'
+                          ? 'Per Job'
+                          : `${formatPhase(record.retentionRelease?.phaseCode)} / ${formatBuilding(record.retentionRelease?.building)}`
+                        : summary.phaseCount === 1
+                          ? `${formatPhase(phase.name)} / ${formatBuilding(phase.building)}`
+                          : `${summary.phaseCount} Phases`}
                     </Typography>
-                    {summary.phaseSummaries.map((scope) => (
+                    {record.packageType === 'RETENTION_RELEASE' && (
+                      <Chip
+                        size="small"
+                        color="success"
+                        variant="outlined"
+                        label="Retention Release"
+                        sx={{ mt: 0.75, fontWeight: 750 }}
+                      />
+                    )}
+                    {record.packageType !== 'RETENTION_RELEASE' && summary.phaseSummaries.map((scope) => (
                       <Typography
                         key={scope.phaseId}
                         variant="caption"
@@ -255,36 +269,54 @@ export default function PackageTable({
                     <Typography color="text.primary" sx={{ fontWeight: 'medium'}}>{job.builder}</Typography>
                     <Typography variant="body2" color="text.secondary">{job.community}</Typography>
                   </TableCell>
-                  <TableCell>{formatBillingPeriod(record)}</TableCell>
+                  <TableCell>
+                    {record.packageType === 'RETENTION_RELEASE'
+                      ? `Available ${formatLongDate(record.retentionRelease?.availableDate)}`
+                      : formatBillingPeriod(record)}
+                  </TableCell>
                   <TableCell>
                     <Typography fontWeight={750}>
-                      {summary.lotCount > 0 ? summary.lotRange : 'No Lots'}
+                      {record.packageType === 'RETENTION_RELEASE'
+                        ? `${record.retentionRelease?.sourceLines?.length ?? 0} source lines`
+                        : summary.lotCount > 0 ? summary.lotRange : 'No Lots'}
                     </Typography>
-                    {summary.utilityCount > 0 && (
+                    {record.packageType !== 'RETENTION_RELEASE' && summary.utilityCount > 0 && (
                       <Typography variant="caption" color="primary.main" component="div">
                         {summary.utilityCount} Utility {summary.utilityCount === 1 ? 'row' : 'rows'}
                       </Typography>
                     )}
                     <Typography variant="caption" color="text.secondary">
-                      {formatPackageScopeEventTypes(summary.scopeEventTypes)}
+                      {record.packageType === 'RETENTION_RELEASE'
+                        ? `Cutoff ${formatLongDate(record.retentionRelease?.sourceCutoffDate)}`
+                        : formatPackageScopeEventTypes(summary.scopeEventTypes)}
                     </Typography>
                   </TableCell>
                   <TableCell><Typography fontWeight={750} sx={{ fontWeight: 'bold' }}>
-                    {formatCurrency(summary.currentDraw)}
+                    {record.packageType === 'RETENTION_RELEASE'
+                      ? `+${formatCurrency(record.retentionRelease?.retainedAmount)}`
+                      : formatCurrency(summary.currentDraw)}
                   </Typography></TableCell>
                   <TableCell>
-                    <Typography variant="body2">
-                      Retention:{' '}
-                      <Typography component="span" variant="inherit" color="error">
-                        -{formatCurrency(summary.retention)}
+                    {record.packageType === 'RETENTION_RELEASE' ? (
+                      <Typography variant="body2" color="success.dark" fontWeight={800}>
+                        +{formatCurrency(record.retentionRelease?.retainedAmount)} retention
                       </Typography>
-                    </Typography>
-                    <Typography variant="body2">
-                      WRAP:{' '}
-                      <Typography component="span" variant="inherit" color="error">
-                        -{formatCurrency(summary.wrapInsurance)}
-                      </Typography>
-                    </Typography>
+                    ) : (
+                      <>
+                        <Typography variant="body2">
+                          Retention:{' '}
+                          <Typography component="span" variant="inherit" color="error">
+                            -{formatCurrency(summary.retention)}
+                          </Typography>
+                        </Typography>
+                        <Typography variant="body2">
+                          WRAP:{' '}
+                          <Typography component="span" variant="inherit" color="error">
+                            -{formatCurrency(summary.wrapInsurance)}
+                          </Typography>
+                        </Typography>
+                      </>
+                    )}
                   </TableCell>
                   <TableCell>
                     <Typography fontWeight={850} sx={{ fontWeight: 'bold' }}>

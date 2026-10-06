@@ -36,6 +36,7 @@ import { localDateKey } from '../../utils/calendarDrawSuggestions.js'
 import { summarizeDrawPackage } from '../../utils/drawPackages.js'
 import { formatCurrency } from '../../utils/drawInvoiceFormatters.js'
 import { buildPackageSuggestions } from '../../utils/packageSuggestions.js'
+import { buildRetentionSuggestions } from '../../utils/retentionSuggestions.js'
 import {
   PACKAGE_CATALOG_TABS,
   filterPackageCatalogContexts,
@@ -44,6 +45,7 @@ import {
   summarizePackageCatalogStatuses,
 } from '../../utils/packageCatalog.js'
 import PackageSuggestionsPanel from './PackageSuggestionsPanel.jsx'
+import RetentionSuggestionsPanel from './RetentionSuggestionsPanel.jsx'
 import PackageTable from './PackageTable.jsx'
 
 const packageSummaryCards = [
@@ -53,7 +55,7 @@ const packageSummaryCards = [
   { status: 'PAID_CLOSED', icon: <LockRoundedIcon />, color: 'success.main' },
 ]
 
-function getPackageContext(record, jobs, schedules) {
+function getPackageContext(record, jobs, schedules, jobBillingSetupVersions) {
   const job = jobs.find((candidate) => String(candidate.id) === String(record.jobId))
   const jobPhases = job?.sequenceSheet?.phases ?? []
   const phaseIds = new Set(
@@ -61,9 +63,13 @@ function getPackageContext(record, jobs, schedules) {
       .filter((value) => value != null)
       .map(String),
   )
-  const phases = jobPhases.filter((candidate) => phaseIds.has(String(candidate.id)))
-  const phase = phases[0]
-  const schedule = schedules.find(
+  const phases = record.retentionRelease?.scopeType === 'JOB'
+    ? jobPhases
+    : jobPhases.filter((candidate) => phaseIds.has(String(candidate.id)))
+  const phase = phases[0] ?? jobPhases[0]
+  const schedule = jobBillingSetupVersions.find(
+    (candidate) => String(candidate.id) === String(record.setupVersionId),
+  ) ?? schedules.find(
     (candidate) =>
       String(candidate.builderId) === String(getJobBuilderId(job)),
   )
@@ -165,6 +171,7 @@ export default function PackageCatalog({
   onOpen,
   onCreate,
   onReviewSuggestion,
+  onReviewRetention,
   onEdit,
   onTransfer,
   onDelete,
@@ -195,9 +202,24 @@ export default function PackageCatalog({
       schedules,
     ],
   )
+  const retentionSuggestions = useMemo(
+    () => buildRetentionSuggestions({
+      jobs,
+      schedules,
+      jobBillingSetupVersions,
+      packages,
+      asOfDate,
+    }),
+    [asOfDate, jobBillingSetupVersions, jobs, packages, schedules],
+  )
   const contexts = useMemo(
-    () => packages.map((record) => getPackageContext(record, jobs, schedules)).filter(Boolean),
-    [jobs, packages, schedules],
+    () => packages.map((record) => getPackageContext(
+      record,
+      jobs,
+      schedules,
+      jobBillingSetupVersions,
+    )).filter(Boolean),
+    [jobBillingSetupVersions, jobs, packages, schedules],
   )
   const activeContexts = useMemo(
     () => filterPackageCatalogContexts(contexts),
@@ -332,6 +354,11 @@ export default function PackageCatalog({
             error={productionActivitiesError}
             disabled={!canManage || createDisabled}
             onReview={onReviewSuggestion}
+          />
+          <RetentionSuggestionsPanel
+            suggestions={retentionSuggestions}
+            disabled={!canManage || createDisabled}
+            onReview={onReviewRetention}
           />
           <Box sx={{
             display: 'grid',

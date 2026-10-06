@@ -62,6 +62,15 @@ export const submissionMethodLabels = Object.fromEntries(
   submissionMethodOptions.map(({ value, label }) => [value, label]),
 )
 
+export const retentionReleaseScopeOptions = [
+  { value: 'JOB', label: 'Per Job' },
+  { value: 'BUILDING', label: 'Per Building' },
+]
+
+export const retentionReleaseScopeLabels = Object.fromEntries(
+  retentionReleaseScopeOptions.map(({ value, label }) => [value, label]),
+)
+
 export const defaultBillingSettings = {
   separateHardwarePrice: false,
   utilityBuilding: false,
@@ -76,6 +85,7 @@ export const defaultBillingSettings = {
   paymentTermsDays: 30,
   retentionEnabled: false,
   retentionPercentage: 0,
+  retentionReleaseScope: 'JOB',
   ocipWrapEnabled: false,
   ocipWrapPercentage: 0,
   requiresPo: false,

@@ -128,6 +128,8 @@ export function toDrawInvoicePackage(
   optionRows = [],
   setupVersion = null,
   corrections = [],
+  retentionReleaseRow = null,
+  retentionReleaseLineRows = [],
 ) {
   const sortedDrawRows = [...drawRows].sort(
     (left, right) => String(left.phase_code ?? '').localeCompare(
@@ -161,6 +163,9 @@ export function toDrawInvoicePackage(
   return {
     id: packageRow.id,
     packageNumber: packageRow.package_number,
+    packageType: packageRow.package_type === 'RETENTION_RELEASE'
+      ? 'RETENTION_RELEASE'
+      : 'DRAW',
     builderId: packageRow.builder_id,
     jobId: packageRow.job_id,
     phaseId: primaryPhaseId,
@@ -192,6 +197,24 @@ export function toDrawInvoicePackage(
     statusChangedBy: packageRow.status_changed_by,
     createdAt: packageRow.created_at,
     updatedAt: packageRow.updated_at,
+    retentionRelease: retentionReleaseRow
+      ? {
+          scopeType: retentionReleaseRow.scope_type,
+          phaseId: retentionReleaseRow.phase_id,
+          phaseCode: retentionReleaseRow.phase_code,
+          building: retentionReleaseRow.building,
+          sourceCutoffDate: retentionReleaseRow.source_cutoff_date,
+          availableDate: retentionReleaseRow.available_date,
+          retainedAmount: toNumber(retentionReleaseRow.retained_amount),
+          sourceLines: retentionReleaseLineRows.map((row) => ({
+            sourcePackageId: row.source_package_id,
+            sourceLotId: row.source_lot_id,
+            sourceDrawId: row.source_draw_id,
+            phaseId: row.phase_id,
+            retentionAmount: toNumber(row.retention_amount),
+          })),
+        }
+      : null,
     lotIds: uniqueSortedNumbers(sortedDrawRows.map((row) => row.lot_id)),
     drawIndexes: uniqueSortedNumbers(
       sortedDrawRows.map((row) => Number(row.draw_number) - 1),
@@ -366,6 +389,18 @@ export function toPackageStatusRpc(packageId, status) {
   }
 }
 
+export function toCreateRetentionReleasePackageRpc({
+  jobId,
+  phaseId = null,
+  notes = null,
+}) {
+  return {
+    p_job_id: Number(jobId),
+    p_phase_id: phaseId == null ? null : Number(phaseId),
+    p_notes: String(notes ?? '').trim() || null,
+  }
+}
+
 function toSelectionRecords(selections) {
   if (!Array.isArray(selections) || selections.length === 0) {
     throw new Error('Select at least one Lot / Draw cell.')
@@ -379,6 +414,7 @@ function toSelectionRecords(selections) {
 
 export function canCorrectDrawPackage(record) {
   return record != null
+    && record.packageType !== 'RETENTION_RELEASE'
     && ['DRAFT', 'READY_TO_SUBMIT'].includes(record.status)
     && record.persistedInvoice?.status === 'DRAFT'
     && !record.invoiceNumber

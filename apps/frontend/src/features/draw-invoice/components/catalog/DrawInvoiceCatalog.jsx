@@ -10,6 +10,7 @@ import {
 } from '../../../jobs/utils/jobRoutes.js'
 import { useDrawInvoicePackages } from '../../context/useDrawInvoicePackages.js'
 import CreateDrawDialog from '../dialogs/CreateDrawDialog.jsx'
+import CreateRetentionReleaseDialog from '../dialogs/CreateRetentionReleaseDialog.jsx'
 import PackageCatalog from './PackageCatalog.jsx'
 
 export default function DrawInvoiceCatalog() {
@@ -39,11 +40,13 @@ export default function DrawInvoiceCatalog() {
     canManageDrawInvoicePackages,
     refreshDrawInvoicePackages,
     createDrawInvoicePackage,
+    createRetentionReleasePackage,
     editDrawInvoicePackage,
     transferDrawPackageCells,
     cancelDrawInvoicePackage,
   } = useDrawInvoicePackages()
   const [createDialogContext, setCreateDialogContext] = useState(null)
+  const [retentionSuggestion, setRetentionSuggestion] = useState(null)
 
   const handleCreate = async (input) => {
     const record = await createDrawInvoicePackage(input)
@@ -57,6 +60,21 @@ export default function DrawInvoiceCatalog() {
         record.id,
       ),
     )
+  }
+
+  const handleCreateRetention = async (input) => {
+    const record = await createRetentionReleasePackage(input)
+    const job = jobs.find((candidate) => String(candidate.id) === String(record.jobId))
+    const phaseId = record.phaseId
+      ?? retentionSuggestion?.phaseId
+      ?? job?.sequenceSheet?.phases?.[0]?.id
+    setRetentionSuggestion(null)
+    navigate(jobDrawInvoicePath(
+      getJobBuilderId(job),
+      record.jobId,
+      phaseId,
+      record.id,
+    ))
   }
 
   const handleRetry = () => {
@@ -100,6 +118,7 @@ export default function DrawInvoiceCatalog() {
           jobId: suggestion.job.id,
           phaseId: suggestion.initialPhaseId,
         })}
+        onReviewRetention={setRetentionSuggestion}
         onEdit={editDrawInvoicePackage}
         onTransfer={transferDrawPackageCells}
         onDelete={cancelDrawInvoicePackage}
@@ -127,6 +146,13 @@ export default function DrawInvoiceCatalog() {
           initialPhaseId={createDialogContext.phaseId}
           onClose={() => setCreateDialogContext(null)}
           onCreate={handleCreate}
+        />
+      )}
+      {retentionSuggestion && (
+        <CreateRetentionReleaseDialog
+          suggestion={retentionSuggestion}
+          onClose={() => setRetentionSuggestion(null)}
+          onCreate={handleCreateRetention}
         />
       )}
     </>

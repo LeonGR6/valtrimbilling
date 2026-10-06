@@ -187,9 +187,10 @@ export default function DrawPackageDetail() {
       .filter((value) => value != null)
       .map(String),
   )
-  const focusedPackagePhases = phases.filter(
-    (phase) => focusedPackagePhaseIds.has(String(phase.id)),
-  )
+  const isRetentionRelease = focusedPackage?.packageType === 'RETENTION_RELEASE'
+  const focusedPackagePhases = focusedPackage?.retentionRelease?.scopeType === 'JOB'
+    ? phases
+    : phases.filter((phase) => focusedPackagePhaseIds.has(String(phase.id)))
   const chargedOptionRows = buildPackageOptionHistory(
     drawInvoicePackages,
     focusedPackage,
@@ -233,7 +234,7 @@ export default function DrawPackageDetail() {
           onClick={() => navigate('/draw-invoice')}
           sx={{ mb: 1.5 }}
         >
-          All draw packages
+          All packages
         </Button>
         <Stack
           direction={{ xs: 'column', md: 'row' }}
@@ -242,12 +243,14 @@ export default function DrawPackageDetail() {
         >
           <Box>
             <Typography variant="overline" color="primary.main" fontWeight={800}>
-              {focusedJob.builder} / {focusedJob.community}
+              {isRetentionRelease
+                ? 'Retention Release'
+                : `${focusedJob.builder} / ${focusedJob.community}`}
             </Typography>
             <Typography variant="h5" fontWeight={850}>
               {focusedPackage?.packageNumber ?? `Job #${focusedJob.code} Draw worksheet`}
             </Typography>
-            {selectedPhase && (
+            {selectedPhase && !isRetentionRelease && (
               <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
                 Job #{focusedJob.code} · {formatPhase(selectedPhase.name)} ·{' '}
                 {formatBuilding(selectedPhase.building)}
@@ -255,6 +258,16 @@ export default function DrawPackageDetail() {
                   ? ` · ${packageSummary.phaseCount} Phases in Package`
                   : ''}
                 {focusedPackage?.invoiceNumber
+                  ? ` · Invoice ${focusedPackage.invoiceNumber}`
+                  : ''}
+              </Typography>
+            )}
+            {isRetentionRelease && (
+              <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                Job #{focusedJob.code} · {focusedPackage.retentionRelease?.scopeType === 'JOB'
+                  ? 'Per Job'
+                  : `${formatPhase(focusedPackage.retentionRelease?.phaseCode)} · ${formatBuilding(focusedPackage.retentionRelease?.building)}`}
+                {focusedPackage.invoiceNumber
                   ? ` · Invoice ${focusedPackage.invoiceNumber}`
                   : ''}
               </Typography>
@@ -344,7 +357,9 @@ export default function DrawPackageDetail() {
         {focusedPackage?.status === 'CANCELLED' && (
           <Alert severity="info" sx={{ mb: 2.5 }}>
             This Package was cancelled on {formatDate(focusedPackage.cancelledAt?.slice(0, 10))}.
-            Its Lot / Draw cells were released; the Package number remains for history.
+            {isRetentionRelease
+              ? ' Its retained source amounts are available for a new release; the Package number remains for history.'
+              : ' Its Lot / Draw cells were released; the Package number remains for history.'}
             {focusedPackage.cancellationReason && ` Reason: ${focusedPackage.cancellationReason}`}
           </Alert>
         )}
@@ -361,7 +376,7 @@ export default function DrawPackageDetail() {
           </Alert>
         ) : (
           <Stack spacing={2.5}>
-            <Card variant="outlined">
+            {!isRetentionRelease && <Card variant="outlined">
               <CardContent sx={{ p: { xs: 2, sm: 2.5 } }}>
                 <Stack
                   direction={{ xs: 'column', md: 'row' }}
@@ -393,9 +408,49 @@ export default function DrawPackageDetail() {
                   </TextField>
                 </Stack>
               </CardContent>
-            </Card>
+            </Card>}
 
-            {packageSummary ? (
+            {isRetentionRelease ? (
+              <>
+                <Alert severity="success">
+                  This is a positive retention release. Retention and WRAP are not deducted again.
+                </Alert>
+                <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} useFlexGap sx={{ flexWrap: 'wrap' }}>
+                  <MetricCard
+                    icon={<ApartmentRoundedIcon />}
+                    label="Release scope"
+                    value={focusedPackage.retentionRelease?.scopeType === 'JOB'
+                      ? 'Per Job'
+                      : formatBuilding(focusedPackage.retentionRelease?.building)}
+                    detail={focusedPackage.retentionRelease?.scopeType === 'BUILDING'
+                      ? formatPhase(focusedPackage.retentionRelease?.phaseCode)
+                      : `Job #${focusedJob.code}`}
+                  />
+                  <MetricCard
+                    icon={<LayersRoundedIcon />}
+                    label="Source lines"
+                    value={focusedPackage.retentionRelease?.sourceLines?.length ?? 0}
+                    detail={`Cutoff ${formatDate(focusedPackage.retentionRelease?.sourceCutoffDate)}`}
+                  />
+                  <MetricCard
+                    icon={<AttachMoneyRoundedIcon />}
+                    label="Retention released"
+                    value={formatCurrency(focusedPackage.retentionRelease?.retainedAmount)}
+                    valueColor="success.main"
+                    detail={`Available ${formatDate(focusedPackage.retentionRelease?.availableDate)}`}
+                  />
+                  <MetricCard
+                    icon={<ReceiptLongRoundedIcon />}
+                    label="Invoice Amount"
+                    value={formatCurrency(packageSummary.invoiceAmount)}
+                    valueColor="success.main"
+                    detail={focusedPackage.invoiceNumber
+                      ? `Invoice ${focusedPackage.invoiceNumber}`
+                      : 'Invoice pending'}
+                  />
+                </Stack>
+              </>
+            ) : packageSummary ? (
               <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} useFlexGap sx={{ flexWrap: 'wrap' }}>
                 <MetricCard
                   icon={<ApartmentRoundedIcon />}
@@ -457,7 +512,7 @@ export default function DrawPackageDetail() {
               </Alert>
             )}
 
-            {!worksheet.hasSchedule && (
+            {!isRetentionRelease && !worksheet.hasSchedule && (
               <Alert
                 severity="warning"
                 action={<Button component={RouterLink} to="/builder-draw-schedules" color="inherit">Configure schedule</Button>}
@@ -465,7 +520,7 @@ export default function DrawPackageDetail() {
                 {focusedJob.builder} does not have a Builder Setup.
               </Alert>
             )}
-            {(worksheet.missingPlanCount > 0 || worksheet.unpricedLotCount > 0) && (
+            {!isRetentionRelease && (worksheet.missingPlanCount > 0 || worksheet.unpricedLotCount > 0) && (
               <Alert
                 severity="warning"
                 action={<Button component={RouterLink} to={jobPlanPricingPath(focusedBuilderId, focusedJob.id)} color="inherit">Open pricing</Button>}
@@ -474,17 +529,17 @@ export default function DrawPackageDetail() {
               </Alert>
             )}
 
-            <DrawWorksheetTable
+            {!isRetentionRelease && <DrawWorksheetTable
               job={focusedJob}
               phase={selectedPhase}
               worksheet={worksheet}
               packages={drawInvoicePackages}
               currentPackageId={focusedPackage?.id}
-            />
+            />}
 
-            {focusedPackage && <PackageHardwareTable summary={packageSummary} />}
-            {focusedPackage && <PackageUtilityTable summary={packageSummary} />}
-            {focusedPackage && packageSummary.lotCount > 0 && (
+            {focusedPackage && !isRetentionRelease && <PackageHardwareTable summary={packageSummary} />}
+            {focusedPackage && !isRetentionRelease && <PackageUtilityTable summary={packageSummary} />}
+            {focusedPackage && !isRetentionRelease && packageSummary.lotCount > 0 && (
               <PackageOptionsTable summary={packageSummary} />
             )}
             {focusedPackage?.corrections?.length > 0 && (

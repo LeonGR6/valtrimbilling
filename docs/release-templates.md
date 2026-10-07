@@ -78,8 +78,16 @@ How a PDF is read:
 - PDFs with a text layer (all the statutory forms so far) are read locally with
   pdf.js. The document is not sent to any other service.
 - Only a PDF with almost no text on page 1 (a scan) goes to Mistral OCR
-  (`mistral-ocr-latest`), first 3 pages. Its text is used in memory and never
-  stored. Without a key the function answers `503` for scans.
+  (`mistral-ocr-latest`, first 3 pages, with `include_blocks`). Its text is used
+  in memory and never stored. Without a key the function answers `503` for scans.
+- OCR returns a box per paragraph, not per word, so the positions are
+  estimated. Each OCR block becomes lines of text with a position (a lone
+  label is exact; the rows of a table block are split into equal bands, with
+  character widths measured from the page's single-line blocks). Those lines
+  go through the same label detector as a text layer, so a scan also gets a
+  suggested box to confirm. These suggestions are marked `ocr`, capped at 70%
+  confidence and shown as "Estimated from the scanned page". If OCR returns no
+  boxes for a page, only the label is suggested and the box is placed by hand.
 - When the title rules cannot decide the type, a Mistral model gets the title
   lines only, with digits masked, as a tie-breaker. It is best-effort.
 - Only a short public form title is kept as classification evidence. No

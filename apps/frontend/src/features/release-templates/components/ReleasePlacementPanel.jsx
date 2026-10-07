@@ -16,22 +16,12 @@ import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
 import {
   bestSuggestion,
   describeClassification,
+  describeSuggestion,
   MAX_FONT_SIZE,
   MIN_FONT_SIZE,
   RELEASE_TYPES,
   RELEASE_VARIABLES,
 } from '../services/releaseTemplateRecord.js'
-
-function suggestionHint(suggestion) {
-  if (!suggestion) return 'Not found in this form. Leave it unplaced if the form does not have it.'
-  if (suggestion.state === 'filled') {
-    return `Already filled in the document (page ${suggestion.page}). Place a box only if it must be replaced.`
-  }
-  if (!suggestion.rect) {
-    return `Label found on page ${suggestion.page}. Place the box by hand.`
-  }
-  return `Suggested from the form (${Math.round(suggestion.confidence * 100)}% sure). Adjust the box if needed.`
-}
 
 function ClassificationSummary({ template }) {
   const summary = describeClassification(template)
@@ -100,7 +90,7 @@ function FieldRow({
 
       {!placement && (
         <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
-          {suggestionHint(suggestion)}
+          {describeSuggestion(suggestion)}
         </Typography>
       )}
 

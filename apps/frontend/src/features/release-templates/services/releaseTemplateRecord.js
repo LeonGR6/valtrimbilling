@@ -297,6 +297,24 @@ export function describeClassification(template) {
   }
 }
 
+/** What the reviewer is told about the best suggestion of a variable. */
+export function describeSuggestion(suggestion) {
+  if (!suggestion) {
+    return 'Not found in this form. Leave it unplaced if the form does not have it.'
+  }
+  if (suggestion.state === 'filled') {
+    return `Already filled in the document (page ${suggestion.page}). Place a box only if it must be replaced.`
+  }
+  if (!suggestion.rect) {
+    return `Label found on page ${suggestion.page}. Place the box by hand.`
+  }
+
+  const sure = `${Math.round(suggestion.confidence * 100)}% sure`
+  return suggestion.source === 'ocr'
+    ? `Estimated from the scanned page (${sure}). Check that the box sits on the blank area.`
+    : `Suggested from the form (${sure}). Adjust the box if needed.`
+}
+
 /** Short status for the document card. */
 export function describeTemplateStatus(template) {
   if (!template) return null

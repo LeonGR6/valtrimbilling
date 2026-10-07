@@ -7,6 +7,7 @@ import {
   clampRect,
   createPlacement,
   describeClassification,
+  describeSuggestion,
   describeTemplateStatus,
   displayPageSize,
   initialPlacements,
@@ -255,6 +256,22 @@ test('release type labels cover the four types', () => {
   assert.equal(RELEASE_TYPES.length, 4)
   assert.equal(releaseTypeLabel('UnconditionalWaiverAndReleaseOnFinalPayment'), 'Unconditional Waiver and Release on Final Payment')
   assert.equal(releaseTypeLabel(null), 'Not classified')
+})
+
+test('the hint says where a suggestion came from and what to check', () => {
+  assert.match(describeSuggestion(null), /Not found in this form/)
+
+  const base = {
+    page: 1, confidence: 0.95, state: 'blank', source: 'acroform',
+    rect: { page: 1, x: 0.2, y: 0.3, w: 0.2, h: 0.02 },
+  }
+  assert.match(describeSuggestion(base), /Suggested from the form \(95% sure\)/)
+  assert.match(
+    describeSuggestion({ ...base, source: 'ocr', confidence: 0.7 }),
+    /Estimated from the scanned page \(70% sure\)\. Check/,
+  )
+  assert.match(describeSuggestion({ ...base, rect: null, source: 'ocr' }), /Place the box by hand/)
+  assert.match(describeSuggestion({ ...base, state: 'filled' }), /Already filled in the document \(page 1\)/)
 })
 
 // --- The client catalog must not drift from the database -------------------

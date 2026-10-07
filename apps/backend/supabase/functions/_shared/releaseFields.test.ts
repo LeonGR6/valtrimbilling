@@ -1,5 +1,9 @@
 import { assert, assertAlmostEquals, assertEquals } from "@std/assert";
-import { buildLines, detectReleaseFields } from "./releaseFields.ts";
+import {
+  buildLines,
+  detectLabelsInLines,
+  detectReleaseFields,
+} from "./releaseFields.ts";
 import type { PageContent, TextRun, Widget } from "./releaseTypes.ts";
 
 // Synthetic pages that copy the layouts of the real forms (US Letter, points,
@@ -249,4 +253,37 @@ Deno.test("suggestions are ranked by confidence", () => {
   const confidences = result.suggestions.map(({ confidence }) => confidence);
   assertEquals(confidences, [...confidences].sort((a, b) => b - a));
   assertEquals(result.suggestions[0].variable, "check_amount");
+});
+
+Deno.test("OCR lines give labels without rectangles and tell blank from filled", () => {
+  const suggestions = detectLabelsInLines([
+    ["CONDITIONAL WAIVER", "Through Date:", "Amount of Check: $ 1,250.00"],
+    ["Date of Signature:"],
+  ]);
+  const by = (variable: string) =>
+    suggestions.find((suggestion) => suggestion.variable === variable)!;
+
+  assertEquals(by("through_date").state, "blank");
+  assertEquals(by("through_date").page, 1);
+  assertEquals(by("check_amount").state, "filled");
+  assertEquals(by("signature_date").page, 2);
+  for (const suggestion of suggestions) {
+    assertEquals(suggestion.source, "ocr");
+    assertEquals(suggestion.rect, null);
+    assertEquals(suggestion.fieldName, null);
+  }
+});
+
+Deno.test("OCR keeps the payment sentence only when a blank line follows it", () => {
+  const withBlank = detectLabelsInLines([[
+    "The claimant has received the following progress payment:",
+    "$______________",
+  ]]);
+  assertEquals(withBlank.map(({ variable }) => variable), ["check_amount"]);
+
+  const withoutBlank = detectLabelsInLines([[
+    "The claimant has received the following progress payment:",
+    "Exceptions",
+  ]]);
+  assertEquals(withoutBlank, []);
 });

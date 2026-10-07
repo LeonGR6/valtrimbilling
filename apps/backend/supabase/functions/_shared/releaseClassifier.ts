@@ -11,6 +11,7 @@ import { RELEASE_TYPES, type ReleaseType } from "./releaseTypes.ts";
 export type ClassificationMethod =
   | "title_rules"
   | "wide_rules"
+  | "llm"
   | "filename"
   | "none";
 

@@ -429,6 +429,13 @@ verify_jwt = false
 [functions.builder-follow-up-response]
 verify_jwt = false
 
+# A signed-in Admin, Accounting or Project Management user asks to analyze a
+# RELEASE Job document. The function checks that role, reads the document with
+# the caller's permissions, then downloads the private PDF and writes the
+# analysis with the service role. It never trusts an unauthenticated request.
+[functions.release-template-analyze]
+verify_jwt = true
+
 [analytics]
 enabled = true
 port = 54327

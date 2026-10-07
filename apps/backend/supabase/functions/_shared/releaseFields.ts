@@ -305,3 +305,54 @@ export function detectReleaseFields(pages: PageContent[]): DetectedFields {
     hasWidgets: pages.some((page) => page.widgets.length > 0),
   };
 }
+
+// Label detection on plain OCR lines. OCR gives text without trustworthy
+// coordinates, so these suggestions carry no rectangle: the reviewer places
+// the box by hand.
+export function detectLabelsInLines(pagesLines: string[][]): FieldSuggestion[] {
+  const found: FieldSuggestion[] = [];
+
+  pagesLines.forEach((lines, pageIndex) => {
+    for (const variable of RELEASE_VARIABLES) {
+      for (const spec of INLINE_LABELS[variable]) {
+        for (const line of lines) {
+          const match = spec.pattern.exec(line);
+          if (!match) continue;
+          const remainder = line.slice(match[0].length).replace(/[$_\s.]/gu, "");
+          found.push({
+            variable,
+            page: pageIndex + 1,
+            label: match[0].trim(),
+            confidence: 0.6,
+            source: "ocr",
+            state: remainder === "" ? "blank" : "filled",
+            rect: null,
+            fieldName: null,
+            reason: `${spec.reason} read by OCR; place the box by hand`,
+          });
+        }
+      }
+
+      for (const spec of SENTENCE_LABELS[variable] ?? []) {
+        lines.forEach((line, index) => {
+          const match = spec.pattern.exec(line);
+          const next = lines[index + 1];
+          if (!match || !next || !BLANK_VALUE_LINE.test(next)) return;
+          found.push({
+            variable,
+            page: pageIndex + 1,
+            label: match[0].trim(),
+            confidence: 0.5,
+            source: "ocr",
+            state: "blank",
+            rect: null,
+            fieldName: null,
+            reason: `${spec.reason} read by OCR; place the box by hand`,
+          });
+        });
+      }
+    }
+  });
+
+  return found.sort((left, right) => right.confidence - left.confidence);
+}

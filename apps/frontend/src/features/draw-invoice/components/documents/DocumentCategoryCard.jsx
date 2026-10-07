@@ -15,6 +15,8 @@ import AddRoundedIcon from '@mui/icons-material/AddRounded'
 import OpenInNewRoundedIcon from '@mui/icons-material/OpenInNewRounded'
 import PictureAsPdfRoundedIcon from '@mui/icons-material/PictureAsPdfRounded'
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
+import FactCheckRoundedIcon from '@mui/icons-material/FactCheckRounded'
+import { describeTemplateStatus } from '../../../release-templates/services/releaseTemplateRecord.js'
 import { formatFileSize } from './jobDocumentTypes.js'
 
 function formatUploadDate(value) {
@@ -33,11 +35,15 @@ export default function DocumentCategoryCard({
   canManage,
   openingDocumentId,
   deletingDocumentId,
+  templatesByDocument = {},
+  analyzingDocumentId = null,
   onAdd,
   onDelete,
   onOpen,
+  onReviewTemplate,
 }) {
   const { Icon } = type
+  const supportsTemplates = type.documentType === 'RELEASE' && Boolean(onReviewTemplate)
   const missingRequiredDocument = required && documents.length === 0
 
   return (
@@ -105,7 +111,12 @@ export default function DocumentCategoryCard({
         <Divider sx={{ my: 1.75 }} />
 
         <Stack spacing={1} sx={{ flex: 1 }}>
-          {documents.map((document) => (
+          {documents.map((document) => {
+            const template = supportsTemplates ? templatesByDocument[document.id] : null
+            const templateStatus = describeTemplateStatus(template)
+            const analyzing = analyzingDocumentId === document.id
+
+            return (
             <Box
               key={document.id}
               sx={{
@@ -127,7 +138,41 @@ export default function DocumentCategoryCard({
                   {type.singularLabel} · {formatUploadDate(document.createdAt)} ·{' '}
                   {formatFileSize(document.sizeBytes)}
                 </Typography>
+                {templateStatus && (
+                  <Box sx={{ mt: 0.5 }}>
+                    <Chip
+                      size="small"
+                      color={templateStatus.color}
+                      label={analyzing ? 'Analyzing…' : templateStatus.label}
+                    />
+                  </Box>
+                )}
               </Box>
+              {supportsTemplates && (canManage || template) && (
+                <Tooltip
+                  title={template && template.status !== 'failed'
+                    ? 'Review template'
+                    : 'Use as template'}
+                >
+                  <span>
+                    <IconButton
+                      size="small"
+                      color="primary"
+                      aria-label={`Use ${document.name} as a Release template`}
+                      disabled={
+                        analyzing
+                        || deletingDocumentId === document.id
+                        || openingDocumentId === document.id
+                      }
+                      onClick={() => onReviewTemplate(document)}
+                    >
+                      {analyzing
+                        ? <CircularProgress size={18} />
+                        : <FactCheckRoundedIcon fontSize="small" />}
+                    </IconButton>
+                  </span>
+                </Tooltip>
+              )}
               <Tooltip title="Open PDF">
                 <span>
                   <IconButton
@@ -166,7 +211,8 @@ export default function DocumentCategoryCard({
                 </Tooltip>
               )}
             </Box>
-          ))}
+            )
+          })}
 
           {documents.length === 0 && (
             <Box

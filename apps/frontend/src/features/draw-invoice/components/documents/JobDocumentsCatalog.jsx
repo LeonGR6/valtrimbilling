@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { lazy, Suspense, useMemo, useState } from 'react'
 import {
   Accordion,
   AccordionDetails,
@@ -21,11 +21,17 @@ import ExpandMoreRoundedIcon from '@mui/icons-material/ExpandMoreRounded'
 import FolderOpenRoundedIcon from '@mui/icons-material/FolderOpenRounded'
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
 import WarningAmberRoundedIcon from '@mui/icons-material/WarningAmberRounded'
+import { useReleaseTemplates } from '../../../release-templates/hooks/useReleaseTemplates.js'
 import { summarizeJobDocumentRequirements } from '../../services/jobDocumentRecord.js'
 import DocumentCategoryCard from './DocumentCategoryCard.jsx'
 import DocumentDeleteDialog from './DocumentDeleteDialog.jsx'
 import DocumentUploadDialog from './DocumentUploadDialog.jsx'
 import { DOCUMENT_TYPES } from './jobDocumentTypes.js'
+
+// Loaded on demand: it brings the PDF viewer, which most visits never need.
+const ReleaseTemplateReviewDialog = lazy(
+  () => import('../../../release-templates/components/ReleaseTemplateReviewDialog.jsx'),
+)
 
 function jobRequirementStatus(requiredTypeKeys, documents) {
   const summary = summarizeJobDocumentRequirements(requiredTypeKeys, documents)
@@ -62,6 +68,7 @@ export default function JobDocumentsCatalog({ jobs, documentState }) {
   const [uploadTarget, setUploadTarget] = useState(null)
   const [deleteTarget, setDeleteTarget] = useState(null)
   const [deleteError, setDeleteError] = useState(null)
+  const [templateTarget, setTemplateTarget] = useState(null)
   const {
     documentsByJob,
     requiredTypeKeysByJob,
@@ -77,6 +84,15 @@ export default function JobDocumentsCatalog({ jobs, documentState }) {
     openJobDocument,
     removeJobDocument,
   } = documentState
+  const releaseDocumentIds = useMemo(
+    () => Object.values(documentsByJob)
+      .flat()
+      .filter((document) => document.documentType === 'RELEASE')
+      .map((document) => document.id)
+      .sort(),
+    [documentsByJob],
+  )
+  const releaseTemplates = useReleaseTemplates(releaseDocumentIds)
   const normalizedSearch = search.trim().toLowerCase()
   const visibleJobs = jobs.filter((job) => {
     if (!normalizedSearch) return true
@@ -336,6 +352,9 @@ export default function JobDocumentsCatalog({ jobs, documentState }) {
                         canManage={canManageJobDocuments && job.isActive !== false}
                         openingDocumentId={openingDocumentId}
                         deletingDocumentId={deletingDocumentId}
+                        templatesByDocument={releaseTemplates.templatesByDocumentId}
+                        analyzingDocumentId={releaseTemplates.analyzingDocumentId}
+                        onReviewTemplate={(document) => setTemplateTarget({ job, document })}
                         onAdd={() => setUploadTarget({ job, type })}
                         onDelete={(document) => {
                           setDeleteError(null)
@@ -343,6 +362,7 @@ export default function JobDocumentsCatalog({ jobs, documentState }) {
                             job,
                             type,
                             document,
+                            template: releaseTemplates.templatesByDocumentId[document.id] ?? null,
                             isOnlyRequiredDocument:
                               requiredTypeKeys.includes(type.key)
                               && documents.filter(
@@ -380,6 +400,19 @@ export default function JobDocumentsCatalog({ jobs, documentState }) {
           onClose={() => setUploadTarget(null)}
           onAdd={handleAddDocuments}
         />
+      )}
+
+      {templateTarget && (
+        <Suspense fallback={null}>
+          <ReleaseTemplateReviewDialog
+            key={templateTarget.document.id}
+            job={templateTarget.job}
+            document={templateTarget.document}
+            templateState={releaseTemplates}
+            canManage={canManageJobDocuments && templateTarget.job.isActive !== false}
+            onClose={() => setTemplateTarget(null)}
+          />
+        </Suspense>
       )}
 
       {deleteTarget && (

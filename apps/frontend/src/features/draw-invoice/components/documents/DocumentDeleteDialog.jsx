@@ -42,6 +42,13 @@ export default function DocumentDeleteDialog({
             </Alert>
           )}
 
+          {target.template?.status === 'confirmed' && (
+            <Alert severity="warning">
+              This PDF is the confirmed Release template of this Job. Deleting it
+              also deletes the template and its saved field boxes.
+            </Alert>
+          )}
+
           {error && <Alert severity="error">{error}</Alert>}
         </Stack>
       </DialogContent>

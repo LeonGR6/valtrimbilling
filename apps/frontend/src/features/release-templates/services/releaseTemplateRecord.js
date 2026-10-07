@@ -118,10 +118,6 @@ function round(value) {
   return Math.round(value * factor) / factor
 }
 
-function clamp01(value) {
-  return Math.min(1, Math.max(0, value))
-}
-
 /** Size of a page as it is displayed (a 90/270 rotation swaps the sides). */
 export function displayPageSize(pageSize) {
   const rotated = pageSize.rotation === 90 || pageSize.rotation === 270

@@ -1,6 +1,6 @@
 import { assert, assertEquals, assertRejects } from "@std/assert";
 import { analyzeReleasePdf } from "./releaseAnalysis.ts";
-import { OcrError } from "./releaseOcr.ts";
+import { linesOnlyPage, OcrError } from "./releaseOcr.ts";
 import { classifyReleaseType } from "./releaseClassifier.ts";
 import { buildLines, detectReleaseFields } from "./releaseFields.ts";
 import { readReleasePdf } from "./releasePdf.ts";
@@ -151,12 +151,12 @@ Deno.test({
 
     const analysis = await analyzeReleasePdf(bytes, "scan.pdf", {
       ocr: () =>
-        Promise.resolve([[
+        Promise.resolve([linesOnlyPage([
           "CONDITIONAL WAIVER AND RELEASE ON PROGRESS PAYMENT",
           "Through Date:",
           "Amount of Check: $",
           "Date of Signature:",
-        ]]),
+        ])]),
     });
     assertEquals(analysis.detectionMethod, "ocr");
     assertEquals(

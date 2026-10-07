@@ -11,6 +11,16 @@ function clamp01(value: number) {
   return Math.min(1, Math.max(0, value));
 }
 
+/** Size of a page as it is displayed: a 90/270 rotation swaps the sides. */
+export function displayPageSize(
+  size: { width: number; height: number; rotation: number },
+) {
+  const rotated = normalizeRotation(size.rotation) % 180 !== 0;
+  return rotated
+    ? { width: size.height, height: size.width }
+    : { width: size.width, height: size.height };
+}
+
 export function normalizeRotation(rotation: number) {
   const turns = Math.round(rotation / 90);
   return (((turns % 4) + 4) % 4) * 90;

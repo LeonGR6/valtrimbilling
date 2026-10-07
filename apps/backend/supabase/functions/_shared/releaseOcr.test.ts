@@ -55,9 +55,13 @@ Deno.test("OCR sends the PDF as a base64 data URL and only the first pages", asy
   assertEquals(body.model, OCR_MODEL);
   assertEquals(body.pages, [0, 1, 2]);
   assertEquals(body.include_image_base64, false);
+  assertEquals(body.include_blocks, true);
   assertEquals(body.document.type, "document_url");
   assert(body.document.document_url.startsWith("data:application/pdf;base64,JVBERi"));
-  assertEquals(pages, [["UNCONDITIONAL WAIVER", "Through Date:"], ["Second page"]]);
+  assertEquals(pages.map(({ lines }) => lines), [
+    ["UNCONDITIONAL WAIVER", "Through Date:"],
+    ["Second page"],
+  ]);
 });
 
 Deno.test("a one page PDF asks for page 0 only", async () => {
@@ -113,5 +117,54 @@ Deno.test("OCR markdown becomes plain lines", () => {
       "Amount of Check: $____",
       "Through Date:",
     ],
+  );
+});
+
+Deno.test("OCR keeps paragraph boxes with the page image size, in reading order", async () => {
+  const fetcher = (() =>
+    Promise.resolve(respond({
+      pages: [{
+        index: 0,
+        markdown: "ignored when blocks exist",
+        dimensions: { dpi: 200, width: 1700, height: 2200 },
+        blocks: [
+          { type: "title", top_left_x: 10, top_left_y: 20, bottom_right_x: 400, bottom_right_y: 60, content: "# TITLE" },
+          { type: "text", top_left_x: 10, top_left_y: 80, bottom_right_x: 200, bottom_right_y: 100, content: "Through Date:" },
+          { type: "image", top_left_x: 0, top_left_y: 0, bottom_right_x: 5, bottom_right_y: 5 },
+          { type: "text", top_left_x: 50, top_left_y: 50, bottom_right_x: 40, bottom_right_y: 60, content: "inverted box" },
+        ],
+      }],
+    }))) as unknown as typeof fetch;
+
+  const [page] = await ocrWithMistral(pdfBytes, 1, { apiKey, fetcher });
+  assertEquals(page.width, 1700);
+  assertEquals(page.height, 2200);
+  // The image block has no text and the inverted box is not a valid box.
+  assertEquals(page.lines, ["TITLE", "Through Date:"]);
+  assertEquals(page.blocks.length, 2);
+  assertEquals(page.blocks[1], { text: "Through Date:", left: 10, top: 80, right: 200, bottom: 100 });
+});
+
+Deno.test("OCR falls back to the page text when no boxes or size come back", async () => {
+  const fetcher = (() =>
+    Promise.resolve(respond({
+      pages: [{ index: 0, markdown: "# TITLE\n\nThrough Date:", blocks: [{ type: "text", top_left_x: 1, top_left_y: 1, bottom_right_x: 9, bottom_right_y: 9, content: "x" }] }],
+    }))) as unknown as typeof fetch;
+
+  const [page] = await ocrWithMistral(pdfBytes, 1, { apiKey, fetcher });
+  // Boxes without the page image size cannot be placed, so they are dropped.
+  assertEquals(page.blocks, []);
+  assertEquals(page.width, null);
+  assertEquals(page.lines, ["x"]);
+});
+
+Deno.test("OCR table markdown loses its separator rows", () => {
+  assertEquals(
+    cleanOcrMarkdown("| Name of Claimant: | |\n|---|---|\n| Through Date: | |\n---"),
+    ["Name of Claimant:", "Through Date:"],
+  );
+  assertEquals(
+    cleanOcrMarkdown("<table><tr><td>Owner:</td><td></td></tr></table>"),
+    ["Owner:"],
   );
 });

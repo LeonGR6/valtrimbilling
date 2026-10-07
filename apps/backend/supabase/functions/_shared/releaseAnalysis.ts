@@ -9,8 +9,10 @@ import {
   type FieldSuggestion,
 } from "./releaseFields.ts";
 import type { TiebreakAnswer, TiebreakInput } from "./releaseLlm.ts";
-import { OcrError } from "./releaseOcr.ts";
+import { OcrError, type OcrPage } from "./releaseOcr.ts";
+import { ocrPagesToContent } from "./releaseOcrLayout.ts";
 import { type PageSize, readReleasePdf } from "./releasePdf.ts";
+import { displayPageSize } from "./releaseGeometry.ts";
 import { RELEASE_TYPES } from "./releaseTypes.ts";
 
 // Pure orchestration of one Release analysis: read the PDF, classify its type
@@ -22,11 +24,13 @@ import { RELEASE_TYPES } from "./releaseTypes.ts";
 export const MIN_FIRST_PAGE_TEXT_CHARS = 80;
 // A model answer never counts as certain: the reviewer still confirms it.
 export const LLM_CONFIDENCE_CAP = 0.7;
+// Box positions estimated from OCR paragraphs are never as sure as a text layer.
+export const OCR_POSITION_CONFIDENCE_CAP = 0.7;
 
 export type DetectionMethod = "acroform" | "text_layer" | "ocr";
 
 export interface AnalysisDeps {
-  ocr?: (bytes: Uint8Array, pageCount: number) => Promise<string[][]>;
+  ocr?: (bytes: Uint8Array, pageCount: number) => Promise<OcrPage[]>;
   tiebreak?: (input: TiebreakInput) => Promise<TiebreakAnswer | null>;
 }
 
@@ -55,13 +59,13 @@ export async function analyzeReleasePdf(
   );
 
   let firstPageLines: string[];
-  let ocrPages: string[][] | null = null;
+  let ocrPages: OcrPage[] | null = null;
   if (firstPageChars >= MIN_FIRST_PAGE_TEXT_CHARS) {
     firstPageLines = buildLines(firstPage.runs).map(({ text }) => text);
   } else {
     if (!deps.ocr) throw new OcrError("not_configured");
     ocrPages = await deps.ocr(bytes, content.pageCount);
-    firstPageLines = ocrPages[0] ?? [];
+    firstPageLines = ocrPages[0]?.lines ?? [];
   }
 
   let classification = classifyReleaseType({ firstPageLines, fileName });
@@ -93,7 +97,32 @@ export async function analyzeReleasePdf(
       rotation: size.rotation,
     })),
     suggestions: ocrPages
-      ? detectLabelsInLines(ocrPages)
+      ? suggestionsFromOcr(ocrPages, content.pageSizes)
       : detectReleaseFields(content.pages).suggestions,
   };
+}
+
+// Pages with usable OCR boxes go through the same detector as a text layer and
+// get a box to confirm; pages without them keep the label only (the reviewer
+// then places the box by hand).
+function suggestionsFromOcr(ocrPages: OcrPage[], pageSizes: PageSize[]) {
+  const contents = ocrPagesToContent(ocrPages, pageSizes.map(displayPageSize));
+
+  const positioned = contents.flatMap((content) =>
+    content
+      ? detectReleaseFields([content]).suggestions.map((suggestion) => ({
+        ...suggestion,
+        source: "ocr" as const,
+        confidence: Math.min(suggestion.confidence, OCR_POSITION_CONFIDENCE_CAP),
+        reason: `${suggestion.reason} (position estimated from OCR)`,
+      }))
+      : []
+  );
+  const labelsOnly = detectLabelsInLines(
+    ocrPages.map((page, index) => contents[index] ? [] : page.lines),
+  );
+
+  return [...positioned, ...labelsOnly].sort((left, right) =>
+    right.confidence - left.confidence
+  );
 }

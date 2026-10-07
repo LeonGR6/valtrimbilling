@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { Suspense, useEffect, useRef, useState } from 'react'
 import {
   Alert,
   Box,
@@ -17,8 +17,25 @@ import CloseRoundedIcon from '@mui/icons-material/CloseRounded'
 import {
   describeTemplateStatus,
 } from '../services/releaseTemplateRecord.js'
+import { loadTemplateAndPdf } from '../services/releaseTemplateLoader.js'
 import { downloadReleasePdf } from '../services/releaseTemplateRepository.js'
 import ReleaseTemplateEditor from './ReleaseTemplateEditor.jsx'
+
+function Waiting({ title, children }) {
+  return (
+    <DialogContent dividers sx={{ display: 'grid', placeItems: 'center' }}>
+      <Stack spacing={1.5} sx={{ alignItems: 'center', textAlign: 'center' }}>
+        <CircularProgress />
+        <Typography fontWeight={750}>{title}</Typography>
+        {children && (
+          <Typography variant="body2" color="text.secondary" sx={{ maxWidth: 360 }}>
+            {children}
+          </Typography>
+        )}
+      </Stack>
+    </DialogContent>
+  )
+}
 
 /**
  * Opens a RELEASE document as a template. When it has not been analyzed (or the
@@ -39,30 +56,35 @@ export default function ReleaseTemplateReviewDialog({
   // The template as it was when the dialog opened; later updates arrive through
   // `loaded`, so the opening effect does not depend on changing state.
   const initialTemplate = useRef(templateState.templatesByDocumentId[document.id] ?? null)
+  // One request per attempt. React may run the effect more than once for the
+  // same attempt (StrictMode in development, or when hidden content is shown
+  // again); every run shares this request instead of analyzing again, which
+  // would also be rejected as "already being analyzed".
+  const request = useRef({ attempt: null, promise: null })
   const { analyze } = templateState
 
   useEffect(() => {
-    let cancelled = false
-
-    async function load() {
-      try {
-        let template = initialTemplate.current
-        const reusable = template && ['needs_review', 'confirmed', 'superseded'].includes(template.status)
-        if (!reusable) {
-          template = await analyze(document, {})
-        }
-        if (!cancelled) setStep('loading-pdf')
-
-        const file = await downloadReleasePdf(document)
-        if (!cancelled) setLoaded({ template, file })
-      } catch (error) {
-        if (!cancelled) setLoadError(error.message)
+    let active = true
+    if (request.current.attempt !== attempt) {
+      request.current = {
+        attempt,
+        promise: loadTemplateAndPdf({
+          document,
+          template: initialTemplate.current,
+          analyze,
+          download: downloadReleasePdf,
+          onStep: setStep,
+        }),
       }
     }
 
-    load()
+    request.current.promise.then(
+      // Keep a newer result (for example after "Analyze again") if one exists.
+      (result) => { if (active) setLoaded((current) => current ?? result) },
+      (error) => { if (active) setLoadError(error.message) },
+    )
     return () => {
-      cancelled = true
+      active = false
     }
   }, [analyze, attempt, document])
 
@@ -120,19 +142,11 @@ export default function ReleaseTemplateReviewDialog({
       </DialogTitle>
 
       {!loaded && !loadError && (
-        <DialogContent dividers sx={{ display: 'grid', placeItems: 'center' }}>
-          <Stack spacing={1.5} sx={{ alignItems: 'center', textAlign: 'center' }}>
-            <CircularProgress />
-            <Typography fontWeight={750}>
-              {step === 'analyzing' ? 'Analyzing the PDF…' : 'Opening the PDF…'}
-            </Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ maxWidth: 360 }}>
-              {step === 'analyzing'
-                ? 'Detecting the Release type and where the values go. This takes a few seconds.'
-                : 'Loading the pages so you can place the boxes.'}
-            </Typography>
-          </Stack>
-        </DialogContent>
+        <Waiting title={step === 'analyzing' ? 'Analyzing the PDF…' : 'Opening the PDF…'}>
+          {step === 'analyzing'
+            ? 'Detecting the Release type and where the values go. This takes a few seconds.'
+            : 'Loading the pages so you can place the boxes.'}
+        </Waiting>
       )}
 
       {loadError && (
@@ -150,15 +164,19 @@ export default function ReleaseTemplateReviewDialog({
       )}
 
       {loaded && (
-        <ReleaseTemplateEditor
-          key={loaded.template.updatedAt}
-          template={loaded.template}
-          file={loaded.file}
-          canManage={canManage}
-          onConfirm={handleConfirm}
-          onReanalyze={handleReanalyze}
-          onClose={onClose}
-        />
+        // Anything that still suspends below shows a spinner here instead of
+        // hiding the whole dialog.
+        <Suspense fallback={<Waiting title="Opening the PDF…" />}>
+          <ReleaseTemplateEditor
+            key={loaded.template.updatedAt}
+            template={loaded.template}
+            file={loaded.file}
+            canManage={canManage}
+            onConfirm={handleConfirm}
+            onReanalyze={handleReanalyze}
+            onClose={onClose}
+          />
+        </Suspense>
       )}
     </Dialog>
   )

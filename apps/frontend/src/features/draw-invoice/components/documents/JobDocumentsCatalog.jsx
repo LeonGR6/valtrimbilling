@@ -4,6 +4,7 @@ import {
   AccordionDetails,
   AccordionSummary,
   Alert,
+  Backdrop,
   Box,
   Button,
   Card,
@@ -403,7 +404,13 @@ export default function JobDocumentsCatalog({ jobs, documentState }) {
       )}
 
       {templateTarget && (
-        <Suspense fallback={null}>
+        <Suspense
+          fallback={(
+            <Backdrop open sx={{ zIndex: 'modal' }}>
+              <CircularProgress color="inherit" />
+            </Backdrop>
+          )}
+        >
           <ReleaseTemplateReviewDialog
             key={templateTarget.document.id}
             job={templateTarget.job}

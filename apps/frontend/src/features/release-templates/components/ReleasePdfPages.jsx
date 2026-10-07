@@ -157,8 +157,12 @@ export default function ReleasePdfPages({
           The PDF could not be displayed. Close this window and try again.
         </Alert>
       )}
+      {/* react-pdf suspends by default. Loading is handled here with its own
+          loading and error states, so nothing above this component is hidden
+          while a PDF or a page is being read. */}
       <Document
         file={file}
+        suspense={false}
         loading={<PdfLoading>Loading the PDF…</PdfLoading>}
         error={null}
         onLoadError={() => setLoadError(true)}
@@ -189,6 +193,7 @@ export default function ReleasePdfPages({
                 }}
               >
                 <Page
+                  suspense={false}
                   pageNumber={pageSize.page}
                   width={pageWidth}
                   renderAnnotationLayer={false}

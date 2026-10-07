@@ -12,6 +12,7 @@
     "functions:new": "supabase functions new",
     "functions:deploy": "supabase functions deploy --use-api",
     "functions:check": "deno check --node-modules-dir=auto --config supabase/functions/deno.json --lock supabase/functions/deno.lock \"supabase/functions/**/*.ts\"",
+    "functions:test": "deno test --node-modules-dir=auto --config supabase/functions/deno.json --lock supabase/functions/deno.lock --allow-read supabase/functions",
     "types:gen": "supabase gen types typescript --linked --schema valtrim > supabase/functions/_shared/database.types.ts",
     "secrets:set": "supabase secrets set"
   },

@@ -23,7 +23,7 @@ function page(runs: TextRun[], widgets: Widget[] = []): PageContent {
 
 function find(
   result: ReturnType<typeof detectReleaseFields>,
-  variable: "through_date" | "check_amount",
+  variable: "through_date" | "check_amount" | "signature_date",
 ) {
   return result.suggestions.filter((suggestion) =>
     suggestion.variable === variable
@@ -74,7 +74,8 @@ Deno.test("a fillable form matches labels to the field beside them", () => {
   const amount = find(result, "check_amount");
   assertEquals(amount.length, 1);
   assertEquals(amount[0].fieldName, "amount");
-  assertEquals(result.missing, []);
+  // This synthetic page has no "Date of Signature" label.
+  assertEquals(result.missing, ["signature_date"]);
   assertEquals(result.hasWidgets, true);
 });
 
@@ -105,7 +106,10 @@ Deno.test("a field that is only named 'amount' is not suggested without its labe
       widget("date", [161, 204, 352, 220]),
     ]),
   ]);
-  assertEquals(result.suggestions, []);
+  // Only the signature date exists in this form; the other two are absent.
+  assertEquals(result.suggestions.map(({ variable }) => variable), [
+    "signature_date",
+  ]);
   assertEquals(result.missing, ["through_date", "check_amount"]);
 });
 
@@ -202,7 +206,37 @@ Deno.test("sentences that mention the Through Date are not labels", () => {
 Deno.test("a page without text yields no suggestions and lists both variables as missing", () => {
   const result = detectReleaseFields([page([])]);
   assertEquals(result.suggestions, []);
-  assertEquals(result.missing, ["through_date", "check_amount"]);
+  assertEquals(result.missing, [
+    "through_date",
+    "check_amount",
+    "signature_date",
+  ]);
+});
+
+Deno.test("the signature date is found next to its form field", () => {
+  const result = detectReleaseFields([
+    page([run("Date of Signature:", 72, 161, 81)], [
+      widget("date", [155, 157, 349, 172]),
+    ]),
+  ]);
+  const [signature] = find(result, "signature_date");
+  assertEquals(signature.fieldName, "date");
+  assertEquals(signature.state, "blank");
+  assertEquals(signature.page, 1);
+  assertEquals(signature.label, "Date of Signature:");
+});
+
+Deno.test("the signature date works on a flat document and ignores other 'date' lines", () => {
+  const result = detectReleaseFields([
+    page([
+      run("Date(s) of waiver and release:________________________________", 108, 220, 355),
+      run("Date of Signature:", 72, 94, 81),
+    ]),
+  ]);
+  const signatures = find(result, "signature_date");
+  assertEquals(signatures.length, 1);
+  assertEquals(signatures[0].source, "text_layer");
+  assertEquals(signatures[0].state, "blank");
 });
 
 Deno.test("suggestions are ranked by confidence", () => {

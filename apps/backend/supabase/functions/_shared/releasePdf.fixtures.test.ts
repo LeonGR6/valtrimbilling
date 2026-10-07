@@ -36,7 +36,7 @@ async function analyze(name: string) {
 
 function fieldNames(
   fields: ReturnType<typeof detectReleaseFields>,
-  variable: "through_date" | "check_amount",
+  variable: "through_date" | "check_amount" | "signature_date",
 ) {
   return fields.suggestions
     .filter((suggestion) => suggestion.variable === variable)
@@ -49,24 +49,28 @@ const cases = [
     type: "ConditionalWaiverAndReleaseOnProgressPayment",
     through: ["through date"],
     amount: ["amount"],
+    signature: ["date"],
   },
   {
     file: "conditional-final.pdf",
     type: "ConditionalWaiverAndReleaseOnFinalPayment",
     through: [],
     amount: ["amount"],
+    signature: ["date"],
   },
   {
     file: "unconditional-progress.pdf",
     type: "UnconditionalWaiverAndReleaseOnProgressPayment",
     through: ["through date"],
     amount: ["amount"],
+    signature: ["date"],
   },
   {
     file: "unconditional-final.pdf",
     type: "UnconditionalWaiverAndReleaseOnFinalPayment",
     through: [],
     amount: [],
+    signature: ["date"],
   },
 ];
 
@@ -85,6 +89,7 @@ for (const expected of cases) {
       assertEquals(classification.needsTiebreak, false);
       assertEquals(fieldNames(fields, "through_date"), expected.through);
       assertEquals(fieldNames(fields, "check_amount"), expected.amount);
+      assertEquals(fieldNames(fields, "signature_date"), expected.signature);
       for (const suggestion of fields.suggestions) {
         assertEquals(suggestion.state, "blank");
         assert(suggestion.rect !== null);
@@ -109,7 +114,9 @@ Deno.test({
       "ConditionalWaiverAndReleaseOnProgressPayment",
     );
     assertEquals(fields.hasWidgets, false);
-    for (const variable of ["through_date", "check_amount"] as const) {
+    for (
+      const variable of ["through_date", "check_amount", "signature_date"] as const
+    ) {
       const [suggestion, ...rest] = fields.suggestions.filter((candidate) =>
         candidate.variable === variable
       );

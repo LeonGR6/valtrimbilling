@@ -11,7 +11,11 @@ export const RELEASE_TYPES = [
 export type ReleaseType = (typeof RELEASE_TYPES)[number];
 
 // Must match private.release_template_variables() in the database.
-export const RELEASE_VARIABLES = ["through_date", "check_amount"] as const;
+export const RELEASE_VARIABLES = [
+  "through_date",
+  "check_amount",
+  "signature_date",
+] as const;
 
 export type ReleaseVariable = (typeof RELEASE_VARIABLES)[number];
 

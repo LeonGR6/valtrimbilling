@@ -21,6 +21,8 @@ export type FieldState = "blank" | "filled";
 
 export interface FieldSuggestion {
   variable: ReleaseVariable;
+  // 1-based page where the label was found.
+  page: number;
   // Label as printed in the document (short, public form wording).
   label: string;
   confidence: number;
@@ -60,6 +62,12 @@ const INLINE_LABELS: Record<ReleaseVariable, LabelSpec[]> = {
   ],
   check_amount: [
     { pattern: /^amount\s+of\s+check\s*:/iu, reason: "Amount of Check label" },
+  ],
+  signature_date: [
+    {
+      pattern: /^date\s+of\s+signature\s*:/iu,
+      reason: "Date of Signature label",
+    },
   ],
 };
 
@@ -157,6 +165,7 @@ function suggestionFromWidget(
   const filled = widget.value.trim() !== "";
   return {
     variable,
+    page: page.page,
     label,
     confidence: filled ? Math.min(confidence, 0.6) : confidence,
     source: "acroform",
@@ -198,6 +207,7 @@ function inlineSuggestions(
       if (remainder !== "") {
         found.push({
           variable,
+          page: page.page,
           label,
           confidence: 0.6,
           source: "text_layer",
@@ -213,6 +223,7 @@ function inlineSuggestions(
       const xEnd = Math.min(x + DEFAULT_VALUE_WIDTH, page.width - RIGHT_MARGIN);
       found.push({
         variable,
+        page: page.page,
         label,
         confidence: 0.85,
         source: "text_layer",
@@ -258,6 +269,7 @@ function sentenceSuggestions(
       ) {
         found.push({
           variable,
+          page: page.page,
           label,
           confidence: 0.7,
           source: "text_layer",

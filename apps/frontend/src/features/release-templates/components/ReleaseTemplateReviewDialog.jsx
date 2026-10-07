@@ -47,6 +47,7 @@ export default function ReleaseTemplateReviewDialog({
   document,
   templateState,
   canManage,
+  position = null,
   onClose,
 }) {
   const [loaded, setLoaded] = useState(null)
@@ -132,6 +133,7 @@ export default function ReleaseTemplateReviewDialog({
             noWrap
             sx={{ display: 'block' }}
           >
+            {position ? `Release ${position.index} of ${position.total} · ` : ''}
             Job #{jobCode} · {document.name}
           </Typography>
         </Box>

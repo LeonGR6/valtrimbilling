@@ -69,7 +69,15 @@ export default function JobDocumentsCatalog({ jobs, documentState }) {
   const [uploadTarget, setUploadTarget] = useState(null)
   const [deleteTarget, setDeleteTarget] = useState(null)
   const [deleteError, setDeleteError] = useState(null)
-  const [templateTarget, setTemplateTarget] = useState(null)
+  // Release documents waiting to be reviewed as templates. The first one is
+  // open; `total` lets the dialog say "Release 1 of 3".
+  const [templateQueue, setTemplateQueue] = useState({ items: [], total: 0 })
+  const templateTarget = templateQueue.items[0] ?? null
+  const openTemplateReview = (items) => setTemplateQueue({ items, total: items.length })
+  const closeTemplateReview = () => setTemplateQueue((queue) => ({
+    ...queue,
+    items: queue.items.slice(1),
+  }))
   const {
     documentsByJob,
     requiredTypeKeysByJob,
@@ -123,12 +131,14 @@ export default function JobDocumentsCatalog({ jobs, documentState }) {
   const handleAddDocuments = async (files) => {
     if (!uploadTarget) return
 
+    const { job, type } = uploadTarget
     try {
-      await uploadJobDocuments({
-        job: uploadTarget.job,
-        type: uploadTarget.type,
-        files,
-      })
+      const uploaded = await uploadJobDocuments({ job, type, files })
+      // A Release is uploaded to be used as a template: go straight to the
+      // review instead of waiting for a click on "Use as template".
+      if (type.documentType === 'RELEASE' && uploaded?.length > 0) {
+        openTemplateReview(uploaded.map((document) => ({ job, document })))
+      }
     } catch {
       // The hook exposes the actionable error and refreshes any successful files.
     } finally {
@@ -355,7 +365,7 @@ export default function JobDocumentsCatalog({ jobs, documentState }) {
                         deletingDocumentId={deletingDocumentId}
                         templatesByDocument={releaseTemplates.templatesByDocumentId}
                         analyzingDocumentId={releaseTemplates.analyzingDocumentId}
-                        onReviewTemplate={(document) => setTemplateTarget({ job, document })}
+                        onReviewTemplate={(document) => openTemplateReview([{ job, document }])}
                         onAdd={() => setUploadTarget({ job, type })}
                         onDelete={(document) => {
                           setDeleteError(null)
@@ -417,7 +427,10 @@ export default function JobDocumentsCatalog({ jobs, documentState }) {
             document={templateTarget.document}
             templateState={releaseTemplates}
             canManage={canManageJobDocuments && templateTarget.job.isActive !== false}
-            onClose={() => setTemplateTarget(null)}
+            position={templateQueue.total > 1
+              ? { index: templateQueue.total - templateQueue.items.length + 1, total: templateQueue.total }
+              : null}
+            onClose={closeTemplateReview}
           />
         </Suspense>
       )}

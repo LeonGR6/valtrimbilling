@@ -37,6 +37,14 @@ export function buildJobDocumentStoragePath(jobId, documentType, documentId) {
   return `${Number(jobId)}/${folder}/${documentId}.pdf`
 }
 
+/** The documents of one Job with the given ids, in the order of `ids`. */
+export function findJobDocuments(documentsByJob, jobId, ids) {
+  const documents = documentsByJob[String(jobId)] ?? []
+  return ids
+    .map((id) => documents.find((document) => document.id === id))
+    .filter(Boolean)
+}
+
 export function buildJobDocumentLibrary(jobs, documentRows, requirementRows) {
   const documentsByJob = Object.fromEntries(
     jobs.map((job) => [String(job.id), []]),

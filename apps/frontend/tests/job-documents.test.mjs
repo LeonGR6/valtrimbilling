@@ -5,6 +5,7 @@ import {
   buildJobDocumentStoragePath,
   countPackagesMissingRequiredDocuments,
   describeJobDocumentProgress,
+  findJobDocuments,
   summarizeJobDocumentRequirements,
   toJobDocument,
 } from '../src/features/draw-invoice/services/jobDocumentRecord.js'
@@ -196,4 +197,25 @@ test('Storage paths isolate each Job and document category', () => {
     () => buildJobDocumentStoragePath(1307, 'INVOICE', 'document-id'),
     /supported Job document type/,
   )
+})
+
+test('documents that were just uploaded are found by id, in upload order', () => {
+  const documentsByJob = {
+    1307: [{ id: 'a' }, { id: 'b' }, { id: 'c' }],
+    1308: [{ id: 'd' }],
+  }
+
+  assert.deepEqual(
+    findJobDocuments(documentsByJob, 1307, ['c', 'a']),
+    [{ id: 'c' }, { id: 'a' }],
+  )
+  assert.deepEqual(findJobDocuments(documentsByJob, '1307', ['b']), [{ id: 'b' }])
+})
+
+test('an upload id that is not in the refreshed library is skipped, not an error', () => {
+  const documentsByJob = { 1307: [{ id: 'a' }] }
+
+  assert.deepEqual(findJobDocuments(documentsByJob, 1307, ['a', 'missing']), [{ id: 'a' }])
+  assert.deepEqual(findJobDocuments(documentsByJob, 9999, ['a']), [])
+  assert.deepEqual(findJobDocuments(documentsByJob, 1307, []), [])
 })

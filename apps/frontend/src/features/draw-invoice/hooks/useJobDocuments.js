@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useAuth } from '../../auth/context/useAuth.js'
+import { findJobDocuments } from '../services/jobDocumentRecord.js'
 import {
   createJobDocumentSignedUrl,
   deleteJobDocument,
@@ -68,17 +69,20 @@ export function useJobDocuments(jobs) {
   const uploadJobDocuments = useCallback(async ({ job, type, files }) => {
     setUploading(true)
     try {
+      const uploadedIds = []
       for (const file of files) {
-        await uploadJobDocument({
+        uploadedIds.push(await uploadJobDocument({
           jobId: job.id,
           documentType: type.documentType,
           file,
-        })
+        }))
       }
 
       const nextLibrary = await listJobDocumentLibrary(jobs)
       setLibrary(nextLibrary)
       setError(null)
+      // The documents that were just added, so the screen can open them.
+      return findJobDocuments(nextLibrary.documentsByJob, job.id, uploadedIds)
     } catch (uploadError) {
       try {
         const nextLibrary = await listJobDocumentLibrary(jobs)

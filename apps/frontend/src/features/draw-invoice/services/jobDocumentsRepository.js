@@ -137,7 +137,7 @@ export async function uploadJobDocument({ jobId, documentType, file }) {
 
   throwDocumentError(uploadError, `Could not upload ${file.name}.`)
 
-  const { error: registrationError } = await client.rpc('register_job_document', {
+  const { data: registeredId, error: registrationError } = await client.rpc('register_job_document', {
     p_job_id: Number(jobId),
     p_document_type: documentType,
     p_storage_path: storagePath,
@@ -149,6 +149,10 @@ export async function uploadJobDocument({ jobId, documentType, file }) {
     await client.storage.from(JOB_DOCUMENT_BUCKET).remove([storagePath])
     throwDocumentError(registrationError, `Could not register ${file.name}.`)
   }
+
+  // The id of the registered document (not the Storage file name), so a caller
+  // can open it right away.
+  return registeredId
 }
 
 export async function createJobDocumentSignedUrl(document) {

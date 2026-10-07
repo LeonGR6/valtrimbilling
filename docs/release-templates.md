@@ -86,11 +86,18 @@ How a PDF is read:
 ## Secrets and deploy
 
 OCR and the tie-breaker need `MISTRAL_API_KEY`. Create the key in the Mistral
-console, enable zero data retention in the account's privacy settings, then:
+console, then:
 
 ```text
 npm run secrets:set --workspace=@valtrimbilling/backend MISTRAL_API_KEY=...
 ```
+
+Privacy decision (2026-10-07): sending scanned Releases to Mistral is approved.
+Zero data retention is not enabled because it is not available on the
+pay-as-you-go plan, so a scanned PDF sent for OCR is handled under Mistral's
+standard retention. PDFs with a text layer, which is how the statutory forms
+are normally produced, are read inside the project and never sent. Revisit this
+if the account moves to a plan that offers zero retention.
 
 Deploy only this function (the `fn:deploy` script deploys all of them):
 
@@ -102,11 +109,36 @@ npx supabase functions deploy release-template-analyze --use-api
 Deployment bundles with full import specifiers (`npm:`, `jsr:`); the bare names
 in `deno.json` are only used by local tests.
 
+## Frontend
+
+In the Job document center, each document in the **Releases** card has a
+"Use as template" button (and a status chip: needs review, confirmed, failed).
+It opens a full-screen review:
+
+1. If the PDF has not been analyzed, or the last analysis failed, it is analyzed
+   first.
+2. The PDF is downloaded with the signed-in session and shown with react-pdf.
+   Suggested boxes are already placed; drag and resize them over the blank area.
+   The text inside a box shows how the value will look.
+3. The reviewer confirms or corrects the Release type, picks a format and font
+   size per value, and confirms. Roles other than Admin, Accounting and Project
+   Management see the template read-only.
+
+Deleting a confirmed template's PDF warns that the template goes with it.
+
+Code lives in `apps/frontend/src/features/release-templates`:
+`services/releaseTemplateRecord.js` (catalog, coordinates, mapping),
+`schemas/releaseMappingSchema.js` (Zod twin of the database validator),
+`services/releaseTemplateRepository.js`, `hooks/useReleaseTemplates.js` and
+`components/`. The review dialog is loaded on demand so the PDF viewer is not
+part of the main bundle.
+
 ## Tests
 
 ```text
 npm run fn:test    # Deno: classifier, fields, geometry, OCR/LLM clients, analysis
 npm run fn:check   # type-check every function
+npm test           # frontend: record, schema and database parity
 npm run db:test    # pgTAP (needs Docker: phase_44 and phase_45)
 ```
 

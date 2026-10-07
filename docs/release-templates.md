@@ -6,9 +6,11 @@ mapping a person confirms. Filling the PDF is a later phase.
 
 ## Flow
 
-1. A user uploads a PDF as a `RELEASE` Job document (existing module).
-2. The user asks to use it as a template. The frontend calls
-   `release-template-analyze` with `{ job_document_id }`.
+1. A user uploads a PDF as a `RELEASE` Job document (existing module). As soon
+   as the upload is registered, the review opens for it by itself; there is no
+   separate "Use as template" step. (Uploading several Releases at once opens
+   them one after another.)
+2. The frontend calls `release-template-analyze` with `{ job_document_id }`.
 3. The function stores a `needs_review` row in `valtrim.release_templates` with
    the detected type, page sizes and field suggestions.
 4. The reviewer corrects the type, places a box per variable and confirms with
@@ -111,9 +113,11 @@ in `deno.json` are only used by local tests.
 
 ## Frontend
 
-In the Job document center, each document in the **Releases** card has a
-"Use as template" button (and a status chip: needs review, confirmed, failed).
-It opens a full-screen review:
+In the Job document center, uploading a Release opens the review straight
+away. Each document in the **Releases** card also keeps a "Use as template"
+button (and a status chip: needs review, confirmed, failed) to reopen it later,
+for example to finish a review that was cancelled or to adjust a confirmed one.
+The review is full-screen:
 
 1. If the PDF has not been analyzed, or the last analysis failed, it is analyzed
    first.

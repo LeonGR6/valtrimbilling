@@ -1,4 +1,4 @@
-import { encodeBase64 } from "@std/encoding/base64";
+import { encodeBase64 } from "jsr:@std/encoding@1/base64";
 
 // Mistral OCR client for scanned Releases (PDFs without a text layer).
 //

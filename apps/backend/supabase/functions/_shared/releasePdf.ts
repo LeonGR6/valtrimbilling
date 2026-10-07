@@ -1,4 +1,4 @@
-import { getDocumentProxy } from "unpdf";
+import { getDocumentProxy } from "npm:unpdf@^1.8.1";
 import { normalizeRotation } from "./releaseGeometry.ts";
 import type { PageContent, TextRun, Widget } from "./releaseTypes.ts";
 

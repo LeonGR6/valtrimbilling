@@ -1,4 +1,6 @@
-import { assert, assertEquals } from "@std/assert";
+import { assert, assertEquals, assertRejects } from "@std/assert";
+import { analyzeReleasePdf } from "./releaseAnalysis.ts";
+import { OcrError } from "./releaseOcr.ts";
 import { classifyReleaseType } from "./releaseClassifier.ts";
 import { buildLines, detectReleaseFields } from "./releaseFields.ts";
 import { readReleasePdf } from "./releasePdf.ts";
@@ -125,5 +127,46 @@ Deno.test({
       assertEquals(suggestion.source, "text_layer");
       assert(suggestion.rect !== null);
     }
+  },
+});
+
+// An image-only PDF (no text layer) must go through OCR. The OCR call is faked:
+// this proves the routing, not Mistral itself.
+Deno.test({
+  name: "fixture scanned-conditional-progress.pdf: a scan is sent to OCR",
+  ignore: !available("scanned-conditional-progress.pdf"),
+  permissions: { read: true },
+  async fn() {
+    const bytes = await Deno.readFile(
+      new URL("scanned-conditional-progress.pdf", FIXTURES),
+    );
+    const content = await readReleasePdf(bytes);
+    assertEquals(content.textLength, 0);
+
+    const error = await assertRejects(
+      () => analyzeReleasePdf(bytes, "scan.pdf"),
+      OcrError,
+    ) as OcrError;
+    assertEquals(error.failure, "not_configured");
+
+    const analysis = await analyzeReleasePdf(bytes, "scan.pdf", {
+      ocr: () =>
+        Promise.resolve([[
+          "CONDITIONAL WAIVER AND RELEASE ON PROGRESS PAYMENT",
+          "Through Date:",
+          "Amount of Check: $",
+          "Date of Signature:",
+        ]]),
+    });
+    assertEquals(analysis.detectionMethod, "ocr");
+    assertEquals(
+      analysis.classification.releaseType,
+      "ConditionalWaiverAndReleaseOnProgressPayment",
+    );
+    assertEquals(
+      analysis.suggestions.map(({ variable }) => variable).sort(),
+      ["check_amount", "signature_date", "through_date"],
+    );
+    assert(analysis.suggestions.every(({ rect }) => rect === null));
   },
 });

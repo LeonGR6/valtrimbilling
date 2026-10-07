@@ -1,5 +1,8 @@
 import { useMemo, useState } from 'react'
 import {
+  Accordion,
+  AccordionDetails,
+  AccordionSummary,
   Alert,
   Box,
   Button,
@@ -7,12 +10,14 @@ import {
   CardContent,
   Chip,
   CircularProgress,
+  Divider,
   InputAdornment,
   Stack,
   TextField,
   Typography,
 } from '@mui/material'
 import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded'
+import ExpandMoreRoundedIcon from '@mui/icons-material/ExpandMoreRounded'
 import FolderOpenRoundedIcon from '@mui/icons-material/FolderOpenRounded'
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
 import WarningAmberRoundedIcon from '@mui/icons-material/WarningAmberRounded'
@@ -53,6 +58,7 @@ function jobRequirementStatus(requiredTypeKeys, documents) {
 
 export default function JobDocumentsCatalog({ jobs, documentState }) {
   const [search, setSearch] = useState('')
+  const [expandedJobId, setExpandedJobId] = useState(jobs[0]?.id ?? null)
   const [uploadTarget, setUploadTarget] = useState(null)
   const [deleteTarget, setDeleteTarget] = useState(null)
   const [deleteError, setDeleteError] = useState(null)
@@ -152,7 +158,7 @@ export default function JobDocumentsCatalog({ jobs, documentState }) {
               <Box>
                 <Typography variant="h6" fontWeight={850}>Job document center</Typography>
                 <Typography variant="body2" color="text.secondary">
-                  Required documents follow each Job&apos;s Builder billing setup.
+                  Expand a Job to review its files. Requirements follow its Builder billing setup.
                 </Typography>
               </Box>
             </Stack>
@@ -225,65 +231,94 @@ export default function JobDocumentsCatalog({ jobs, documentState }) {
             const status = requirementStatuses[jobKey]
             const StatusIcon = status.Icon
             const jobCode = job.code ?? job.id
+            const isExpanded = expandedJobId === job.id
 
             return (
-              <Card
+              <Accordion
                 key={job.id}
-                variant="outlined"
+                expanded={isExpanded}
+                onChange={(_, expanded) => setExpandedJobId(expanded ? job.id : null)}
+                disableGutters
+                elevation={0}
                 sx={{
-                  borderColor: status.summary.isComplete ? 'divider' : 'warning.main',
+                  border: 1,
+                  borderColor: isExpanded
+                    ? 'primary.main'
+                    : status.summary.isComplete ? 'divider' : 'warning.main',
+                  borderRadius: '10px !important',
+                  overflow: 'hidden',
+                  bgcolor: 'background.paper',
+                  '&::before': { display: 'none' },
                 }}
               >
-                <Stack
-                  direction={{ xs: 'column', sm: 'row' }}
-                  spacing={1.5}
+                <AccordionSummary
+                  expandIcon={<ExpandMoreRoundedIcon />}
+                  aria-controls={`job-${job.id}-documents`}
+                  id={`job-${job.id}-documents-header`}
                   sx={{
-                    px: { xs: 2, sm: 2.5 },
-                    py: 2,
-                    alignItems: { sm: 'center' },
-                    justifyContent: 'space-between',
-                    borderBottom: 1,
-                    borderColor: 'divider',
+                    minHeight: 84,
+                    '& .MuiAccordionSummary-content': { my: 1.5, minWidth: 0 },
                   }}
                 >
-                  <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center', minWidth: 0 }}>
-                    <Box
-                      sx={{
-                        width: 40,
-                        height: 40,
-                        flexShrink: 0,
-                        borderRadius: 1.5,
-                        display: 'grid',
-                        placeItems: 'center',
-                        bgcolor: 'action.hover',
-                        color: 'primary.main',
-                      }}
+                  <Stack
+                    direction={{ xs: 'column', sm: 'row' }}
+                    spacing={1.5}
+                    sx={{
+                      width: '100%',
+                      pr: 1,
+                      minWidth: 0,
+                      alignItems: { xs: 'flex-start', sm: 'center' },
+                      justifyContent: 'space-between',
+                    }}
+                  >
+                    <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center', minWidth: 0 }}>
+                      <Box
+                        sx={{
+                          width: 44,
+                          height: 44,
+                          flexShrink: 0,
+                          borderRadius: 1.5,
+                          display: 'grid',
+                          placeItems: 'center',
+                          bgcolor: 'primary.light',
+                          color: 'primary.main',
+                        }}
+                      >
+                        <FolderOpenRoundedIcon />
+                      </Box>
+                      <Box sx={{ minWidth: 0 }}>
+                        <Typography fontWeight={850}>Job #{jobCode}</Typography>
+                        <Typography variant="body2" color="text.secondary" noWrap>
+                          {job.builder} · {job.community}
+                        </Typography>
+                      </Box>
+                    </Stack>
+                    <Stack
+                      direction="row"
+                      spacing={1}
+                      useFlexGap
+                      sx={{ alignItems: 'center', flexWrap: 'wrap' }}
                     >
-                      <FolderOpenRoundedIcon fontSize="small" />
-                    </Box>
-                    <Box sx={{ minWidth: 0 }}>
-                      <Typography fontWeight={850}>Job #{jobCode}</Typography>
-                      <Typography variant="body2" color="text.secondary" noWrap>
-                        {job.builder} · {job.community}
-                      </Typography>
-                    </Box>
+                      <Chip
+                        size="small"
+                        variant="outlined"
+                        label={`${documents.length} ${documents.length === 1 ? 'document' : 'documents'}`}
+                      />
+                      <Chip
+                        size="small"
+                        color={status.color}
+                        icon={<StatusIcon />}
+                        label={status.label}
+                      />
+                    </Stack>
                   </Stack>
-                  <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: 'wrap' }}>
-                    <Chip
-                      size="small"
-                      variant="outlined"
-                      label={`${documents.length} ${documents.length === 1 ? 'document' : 'documents'}`}
-                    />
-                    <Chip
-                      size="small"
-                      color={status.color}
-                      icon={<StatusIcon />}
-                      label={status.label}
-                    />
-                  </Stack>
-                </Stack>
+                </AccordionSummary>
 
-                <CardContent sx={{ p: { xs: 2, sm: 2.5 } }}>
+                <Divider />
+                <AccordionDetails
+                  id={`job-${job.id}-documents`}
+                  sx={{ p: { xs: 2, sm: 2.5 } }}
+                >
                   <Box
                     sx={{
                       display: 'grid',
@@ -319,8 +354,8 @@ export default function JobDocumentsCatalog({ jobs, documentState }) {
                       />
                     ))}
                   </Box>
-                </CardContent>
-              </Card>
+                </AccordionDetails>
+              </Accordion>
             )
           })}
 

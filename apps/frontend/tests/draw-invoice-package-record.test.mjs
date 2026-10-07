@@ -80,6 +80,16 @@ test('maps a positive Retention Release package and its immutable source lines',
       phase_id: 21,
       retention_amount: '55.00',
     }],
+    [],
+    [{
+      package_id: 99,
+      source_hardware_line_id: 801,
+      source_package_id: 10,
+      source_lot_id: 101,
+      hardware_event_type: 'HW',
+      phase_id: 21,
+      retention_amount: '22.00',
+    }],
   )
 
   assert.equal(record.packageType, 'RETENTION_RELEASE')
@@ -91,6 +101,14 @@ test('maps a positive Retention Release package and its immutable source lines',
     sourceDrawId: 501,
     phaseId: 21,
     retentionAmount: 55,
+  })
+  assert.deepEqual(record.retentionRelease.sourceHardwareLines[0], {
+    sourceHardwareLineId: 801,
+    sourcePackageId: 10,
+    sourceLotId: 101,
+    hardwareEventType: 'HW',
+    phaseId: 21,
+    retentionAmount: 22,
   })
   assert.equal(record.persistedInvoice.netAmount, 440)
   assert.deepEqual(record.persistedDrawLines, [])
@@ -142,6 +160,9 @@ test('maps persisted package, invoice and calculated snapshots to the UI model',
         event_type: 'DM',
         base_draw_amount: '1000.50',
         hardware_amount: '0',
+        hardware_billing_mode: 'BY_EVENT',
+        hardware_event_type: null,
+        hardware_percentage: '0',
         options_amount: '125',
         gross_amount: '1125.50',
         retention_amount: '56.28',
@@ -161,6 +182,10 @@ test('maps persisted package, invoice and calculated snapshots to the UI model',
     ],
     {
       separate_hardware_price: true,
+      hardware_billing_mode: 'BY_EVENT',
+      hardware_ext_percentage: '20',
+      hardware_dm_percentage: '30',
+      hardware_hw_percentage: '50',
       hardware_billing_draw_number: 2,
       options_billing_draw_number: 2,
       frequency: 'MONTHLY',
@@ -186,6 +211,8 @@ test('maps persisted package, invoice and calculated snapshots to the UI model',
     chargeHardware: false,
   }])
   assert.equal(record.separateHardwarePrice, true)
+  assert.equal(record.hardwareBillingMode, 'BY_EVENT')
+  assert.deepEqual(record.hardwareEventPercentages, { EXT: 20, DM: 30, HW: 50 })
   assert.equal(record.optionsBillingDrawIndex, 1)
   assert.equal(record.billingCutoffDate, '2026-09-20')
   assert.equal(record.paymentTermsDays, 30)
@@ -195,6 +222,9 @@ test('maps persisted package, invoice and calculated snapshots to the UI model',
   assert.equal(record.persistedInvoice.grossAmount, 1125.5)
   assert.equal(record.persistedInvoice.netAmount, 1046.71)
   assert.equal(record.persistedDrawLines[0].eventType, 'DM')
+  assert.equal(record.persistedDrawLines[0].hardwareBillingMode, 'BY_EVENT')
+  assert.equal(record.persistedDrawLines[0].hardwareEventType, null)
+  assert.equal(record.persistedDrawLines[0].hardwarePercentage, 0)
   assert.deepEqual(record.persistedOptionLines[0], {
     id: '41:61',
     phaseId: 21,
@@ -361,6 +391,92 @@ test('adds Hardware only to the explicitly selected Lot and Draw cells', () => {
       { lot_id: 42, draw_number: 2, charge_hardware: true },
     ],
   })
+})
+
+test('sends Calendar-triggered Separate Hardware independently from Draw cells', () => {
+  assert.deepEqual(toCreateDrawPackageRpc({
+    jobId: 11,
+    selections: [],
+    hardwareSelections: [
+      { phaseId: 21, lotId: 42, eventType: 'HW' },
+      { phaseId: 21, lotId: 41, eventType: 'EXT' },
+      { phaseId: 21, lotId: 41, eventType: 'EXT' },
+    ],
+  }), {
+    p_job_id: 11,
+    p_selections: [],
+    p_hardware_selections: [
+      { lot_id: 41, event_type: 'EXT' },
+      { lot_id: 42, event_type: 'HW' },
+    ],
+  })
+})
+
+test('maps immutable Separate Hardware snapshots without an HW Draw', () => {
+  const record = toDrawInvoicePackage(
+    { ...packageRow, phase_id: 21 },
+    {
+      id: 101,
+      status: 'DRAFT',
+      gross_amount: '600',
+      retention_amount: '30',
+      wrap_amount: '0',
+      net_amount: '570',
+      paid_amount: '0',
+    },
+    [], [], {
+      separate_hardware_price: true,
+      hardware_billing_mode: 'BY_EVENT',
+      hardware_ext_percentage: 0,
+      hardware_dm_percentage: 0,
+      hardware_hw_percentage: 100,
+    }, [], null, [], [{
+      id: 801,
+      package_id: 91,
+      phase_id: 21,
+      phase_code: '1',
+      building: 'A',
+      lot_id: 41,
+      lot_number: '101',
+      plan_code: 'A',
+      hardware_price: '600',
+      hardware_event_type: 'HW',
+      hardware_percentage: '100',
+      hardware_amount: '600',
+      gross_amount: '600',
+      retention_amount: '30',
+      wrap_amount: '0',
+      net_amount: '570',
+    }],
+  )
+
+  assert.deepEqual(record.phaseIds, [21])
+  assert.deepEqual(record.lotIds, [41])
+  assert.deepEqual(record.selections, [])
+  assert.deepEqual(record.persistedHardwareLines[0], {
+    id: 801,
+    packageId: 91,
+    phaseId: 21,
+    phaseCode: '1',
+    building: 'A',
+    lotId: 41,
+    lotNumber: '101',
+    planCode: 'A',
+    hardwarePrice: 600,
+    hardwareBillingMode: 'BY_EVENT',
+    hardwareEventType: 'HW',
+    eventType: 'HW',
+    hardwarePercentage: 100,
+    hardwareAmount: 600,
+    grossAmount: 600,
+    retentionAmount: 30,
+    wrapAmount: 0,
+    netAmount: 570,
+    drawIndex: null,
+    drawName: '',
+    isUtilityBuilding: false,
+  })
+  assert.equal(canCorrectDrawPackage(record), false)
 })
 
 test('adds explicit Option ids only to the configured billing Draw cells', () => {

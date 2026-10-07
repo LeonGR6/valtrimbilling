@@ -130,6 +130,8 @@ export function toDrawInvoicePackage(
   corrections = [],
   retentionReleaseRow = null,
   retentionReleaseLineRows = [],
+  hardwareRows = [],
+  retentionReleaseHardwareLineRows = [],
 ) {
   const sortedDrawRows = [...drawRows].sort(
     (left, right) => String(left.phase_code ?? '').localeCompare(
@@ -147,9 +149,24 @@ export function toDrawInvoicePackage(
     sortedDrawRows.map((row) => [`${row.lot_id}:${row.draw_id}`, row]),
   )
   const optionsBillingDrawNumber = setupVersion?.options_billing_draw_number
-  const phaseIds = uniqueSortedNumbers(
-    sortedDrawRows.map((row) => row.phase_id),
+  const sortedHardwareRows = [...hardwareRows].sort(
+    (left, right) => String(left.phase_code ?? '').localeCompare(
+      String(right.phase_code ?? ''),
+      'en',
+      { numeric: true, sensitivity: 'base' },
+    )
+      || String(left.lot_number).localeCompare(String(right.lot_number), 'en', {
+        numeric: true,
+        sensitivity: 'base',
+      })
+      || String(left.hardware_event_type ?? '').localeCompare(
+        String(right.hardware_event_type ?? ''),
+      ),
   )
+  const phaseIds = uniqueSortedNumbers([
+    ...sortedDrawRows.map((row) => row.phase_id),
+    ...sortedHardwareRows.map((row) => row.phase_id),
+  ])
   const primaryPhaseId = packageRow.phase_id ?? phaseIds[0] ?? null
   const submissionMethod = ['EMAIL', 'MAIL'].includes(
     setupVersion?.submission_method,
@@ -213,9 +230,20 @@ export function toDrawInvoicePackage(
             phaseId: row.phase_id,
             retentionAmount: toNumber(row.retention_amount),
           })),
+          sourceHardwareLines: retentionReleaseHardwareLineRows.map((row) => ({
+            sourceHardwareLineId: row.source_hardware_line_id,
+            sourcePackageId: row.source_package_id,
+            sourceLotId: row.source_lot_id,
+            hardwareEventType: row.hardware_event_type,
+            phaseId: row.phase_id,
+            retentionAmount: toNumber(row.retention_amount),
+          })),
         }
       : null,
-    lotIds: uniqueSortedNumbers(sortedDrawRows.map((row) => row.lot_id)),
+    lotIds: uniqueSortedNumbers([
+      ...sortedDrawRows.map((row) => row.lot_id),
+      ...sortedHardwareRows.map((row) => row.lot_id),
+    ]),
     drawIndexes: uniqueSortedNumbers(
       sortedDrawRows.map((row) => Number(row.draw_number) - 1),
     ),
@@ -223,9 +251,18 @@ export function toDrawInvoicePackage(
       phaseId: row.phase_id,
       lotId: row.lot_id,
       drawIndex: Number(row.draw_number) - 1,
-      chargeHardware: toNumber(row.hardware_amount) > 0,
+      chargeHardware: toNumber(row.hardware_percentage) > 0
+        || toNumber(row.hardware_amount) > 0,
     })),
     separateHardwarePrice: Boolean(setupVersion?.separate_hardware_price),
+    hardwareBillingMode: setupVersion?.hardware_billing_mode === 'BY_EVENT'
+      ? 'BY_EVENT'
+      : 'FULL',
+    hardwareEventPercentages: {
+      EXT: toNumber(setupVersion?.hardware_ext_percentage),
+      DM: toNumber(setupVersion?.hardware_dm_percentage),
+      HW: toNumber(setupVersion?.hardware_hw_percentage),
+    },
     utilityBuilding: Boolean(setupVersion?.utility_building),
     utilityBillingMode: setupVersion?.utility_billing_mode === 'BY_EVENT'
       ? 'BY_EVENT'
@@ -270,6 +307,11 @@ export function toDrawInvoicePackage(
       eventType: getDrawEventType(row),
       baseDrawAmount: toNumber(row.base_draw_amount),
       hardwareAmount: toNumber(row.hardware_amount),
+      hardwareBillingMode: row.hardware_billing_mode === 'BY_EVENT'
+        ? 'BY_EVENT'
+        : 'FULL',
+      hardwareEventType: row.hardware_event_type ?? null,
+      hardwarePercentage: toNumber(row.hardware_percentage),
       optionsAmount: toNumber(row.options_amount),
       utilityAmount: toNumber(row.utility_amount),
       utilityBillingMode: row.utility_billing_mode === 'BY_EVENT'
@@ -281,6 +323,29 @@ export function toDrawInvoicePackage(
       retentionAmount: toNumber(row.retention_amount),
       wrapAmount: toNumber(row.wrap_amount),
       netAmount: toNumber(row.net_amount),
+    })),
+    persistedHardwareLines: sortedHardwareRows.map((row) => ({
+      id: row.id,
+      packageId: row.package_id,
+      phaseId: row.phase_id,
+      phaseCode: row.phase_code,
+      building: row.building,
+      lotId: row.lot_id,
+      lotNumber: row.lot_number,
+      planCode: row.plan_code,
+      hardwarePrice: toNumber(row.hardware_price),
+      hardwareBillingMode: 'BY_EVENT',
+      hardwareEventType: row.hardware_event_type,
+      eventType: row.hardware_event_type,
+      hardwarePercentage: toNumber(row.hardware_percentage),
+      hardwareAmount: toNumber(row.hardware_amount),
+      grossAmount: toNumber(row.gross_amount),
+      retentionAmount: toNumber(row.retention_amount),
+      wrapAmount: toNumber(row.wrap_amount),
+      netAmount: toNumber(row.net_amount),
+      drawIndex: null,
+      drawName: '',
+      isUtilityBuilding: false,
     })),
     persistedOptionLines: optionRows.map((row) => {
       const drawRow = drawRowsByLotAndDraw.get(`${row.lot_id}:${row.draw_id}`)
@@ -350,8 +415,20 @@ export function toCreateDrawPackageRpc({
   const sortedPackageOptions = [...packageOptions.values()].sort(
     (left, right) => left.lot_id - right.lot_id || left.option_id - right.option_id,
   )
-  const hardwareKeys = new Set(hardwareSelections.map(
-    ({ phaseId, lotId, drawIndex }) => `${phaseId}:${lotId}:${drawIndex}`,
+  const legacyHardwareKeys = new Set(hardwareSelections
+    .filter(({ eventType }) => eventType == null)
+    .map(({ phaseId, lotId, drawIndex }) => `${phaseId}:${lotId}:${drawIndex}`))
+  const eventHardwareSelections = [...new Map(hardwareSelections
+    .filter(({ eventType }) => eventType != null)
+    .map(({ lotId, eventType }) => {
+      const normalized = {
+        lot_id: Number(lotId),
+        event_type: String(eventType),
+      }
+      return [`${normalized.lot_id}:${normalized.event_type}`, normalized]
+    })).values()].sort((left, right) => (
+    left.lot_id - right.lot_id
+      || left.event_type.localeCompare(right.event_type)
   ))
 
   return {
@@ -362,7 +439,7 @@ export function toCreateDrawPackageRpc({
         draw_number: Number(drawIndex) + 1,
       }
 
-      if (hardwareKeys.has(`${phaseId}:${lotId}:${drawIndex}`)) {
+      if (legacyHardwareKeys.has(`${phaseId}:${lotId}:${drawIndex}`)) {
         selection.charge_hardware = true
       }
 
@@ -375,6 +452,9 @@ export function toCreateDrawPackageRpc({
 
       return selection
     }),
+    ...(eventHardwareSelections.length > 0
+      ? { p_hardware_selections: eventHardwareSelections }
+      : {}),
   }
 }
 
@@ -412,7 +492,7 @@ function toSelectionRecords(selections) {
   }))
 }
 
-export function canCorrectDrawPackage(record) {
+export function canManageDraftDrawPackage(record) {
   return record != null
     && record.packageType !== 'RETENTION_RELEASE'
     && ['DRAFT', 'READY_TO_SUBMIT'].includes(record.status)
@@ -424,6 +504,11 @@ export function canCorrectDrawPackage(record) {
     && !record.quickbooksReference
     && record.submissionStatus === 'NOT_SUBMITTED'
     && !record.submittedAt
+}
+
+export function canCorrectDrawPackage(record) {
+  return canManageDraftDrawPackage(record)
+    && (record.persistedHardwareLines?.length ?? 0) === 0
 }
 
 export function toEditDrawPackageRpc({

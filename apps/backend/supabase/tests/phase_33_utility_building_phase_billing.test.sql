@@ -109,7 +109,7 @@ select ok(
 
 select ok(coalesce((
   select procedure.prosrc like '%version.utility_building%'
-    and procedure.prosrc like '%Utility Building rows cannot include Reverse or Options%'
+    and procedure.prosrc like '%Utility Building rows cannot include Options%'
     and procedure.prosrc like '%An existing row cannot change between Lot and Utility Building%'
     and procedure.prosrc like '%UTILITY-%'
   from pg_proc procedure

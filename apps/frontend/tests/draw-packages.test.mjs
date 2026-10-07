@@ -4,11 +4,13 @@ import { initialBuilderDrawSchedules } from '../src/features/builder-draw-schedu
 import {
   buildBilledUtilityRows,
   buildBilledUtilityCharges,
+  buildBilledHardwareCharges,
   buildBilledHardwareLots,
   buildOptionChargeContext,
   buildPackageOptionHistory,
   buildUsedDrawSelections,
   drawSelectionKey,
+  hardwareChargeKey,
   formatLotRange,
   formatPackageScopeEventTypes,
   makePackageSelections,
@@ -761,6 +763,10 @@ test('Package estimates include separated hardware only on checked Draw cells', 
     planCode: 'A',
     drawIndex: 1,
     drawName: '',
+    eventType: null,
+    hardwareBillingMode: 'FULL',
+    hardwareEventType: null,
+    hardwarePercentage: 100,
     hardwareAmount: 1000,
     chargeHardware: true,
   }])
@@ -1049,10 +1055,134 @@ test('Hardware charge history ignores cancelled Packages and identifies billed L
   assert.deepEqual(billed.get('101'), {
     lotId: 101,
     drawIndex: 1,
+    billingMode: 'FULL',
+    eventType: null,
     packageId: 10,
     packageNumber: 'DP-00000010',
     hardwareAmount: 600,
   })
   assert.equal(billed.has('102'), false)
   assert.equal(billed.has('103'), false)
+})
+
+test('Hardware charge history tracks each Event Type portion independently', () => {
+  const billed = buildBilledHardwareCharges([{
+    id: 10,
+    packageNumber: 'DP-00000010',
+    jobId: 7,
+    status: 'READY_TO_SUBMIT',
+    persistedDrawLines: [
+      {
+        lotId: 101,
+        drawIndex: 0,
+        eventType: 'EXT',
+        hardwareBillingMode: 'BY_EVENT',
+        hardwareEventType: 'EXT',
+        hardwarePercentage: 20,
+        hardwareAmount: 200,
+      },
+      {
+        lotId: 101,
+        drawIndex: 1,
+        eventType: 'DM',
+        hardwareBillingMode: 'BY_EVENT',
+        hardwareEventType: 'DM',
+        hardwarePercentage: 30,
+        hardwareAmount: 300,
+      },
+    ],
+  }], 7)
+
+  assert.equal(billed.has(hardwareChargeKey(101, 'BY_EVENT', 'EXT')), true)
+  assert.equal(billed.has(hardwareChargeKey(101, 'BY_EVENT', 'DM')), true)
+  assert.equal(billed.has(hardwareChargeKey(101, 'BY_EVENT', 'HW')), false)
+})
+
+test('Package estimates suggest Separate Hardware portions by selected Event Type', () => {
+  const schedule = {
+    separateHardwarePrice: true,
+    hardwareBillingMode: 'BY_EVENT',
+    hardwareEventPercentages: { EXT: 20, DM: 30, HW: 50 },
+    draws: [
+      { percentage: 25, eventType: 'EXT' },
+      { percentage: 50, eventType: 'DM' },
+      { percentage: 25, eventType: 'HW' },
+    ],
+  }
+  const summary = summarizeDrawPackage({
+    selections: [
+      { phaseId: 3, lotId: 1, drawIndex: 0 },
+      { phaseId: 3, lotId: 1, drawIndex: 2 },
+    ],
+    hardwareSelections: [
+      { phaseId: 3, lotId: 1, eventType: 'EXT' },
+      { phaseId: 3, lotId: 1, eventType: 'HW' },
+    ],
+  }, {
+    sequenceSheet: {
+      plans: [{ id: 1, code: 'A', price: 3000, hardwarePrice: 1000 }],
+    },
+  }, {
+    id: 3,
+    lots: [{ id: 1, lotNumber: '1', planId: 1, optionIds: [] }],
+  }, schedule)
+
+  assert.deepEqual(summary.hardwareRows.map((row) => ({
+    eventType: row.hardwareEventType,
+    percentage: row.hardwarePercentage,
+    amount: row.hardwareAmount,
+    selected: row.chargeHardware,
+  })), [
+    { eventType: 'EXT', percentage: 20, amount: 200, selected: true },
+    { eventType: 'HW', percentage: 50, amount: 500, selected: true },
+  ])
+  assert.equal(summary.hardwareTotal, 700)
+})
+
+test('Package estimates expose unselected Separate Hardware portions for manual billing', () => {
+  const summary = summarizeDrawPackage({
+    selections: [],
+    hardwareSelections: [
+      {
+        phaseId: 3,
+        lotId: 1,
+        eventType: 'HW',
+        chargeHardware: false,
+        isCalendarSuggested: false,
+      },
+      {
+        phaseId: 3,
+        lotId: 2,
+        eventType: 'HW',
+        chargeHardware: true,
+        isCalendarSuggested: true,
+      },
+    ],
+  }, {
+    sequenceSheet: {
+      plans: [{ id: 1, code: 'A', price: 3000, hardwarePrice: 600 }],
+    },
+  }, {
+    id: 3,
+    lots: [
+      { id: 1, lotNumber: '1', planId: 1, optionIds: [] },
+      { id: 2, lotNumber: '2', planId: 1, optionIds: [] },
+    ],
+  }, {
+    separateHardwarePrice: true,
+    hardwareBillingMode: 'BY_EVENT',
+    hardwareEventPercentages: { EXT: 0, DM: 0, HW: 100 },
+    draws: [{ percentage: 100, eventType: 'EXT' }],
+  })
+
+  assert.deepEqual(summary.hardwareRows.map((row) => ({
+    lotId: row.lotId,
+    selected: row.chargeHardware,
+    suggested: row.isCalendarSuggested,
+  })), [
+    { lotId: 1, selected: false, suggested: false },
+    { lotId: 2, selected: true, suggested: true },
+  ])
+  assert.equal(summary.lotCount, 1)
+  assert.equal(summary.hardwareTotal, 600)
 })

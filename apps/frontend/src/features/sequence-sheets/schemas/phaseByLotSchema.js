@@ -104,14 +104,11 @@ export function createPhaseByLotSchema(
           })
         }
 
-        if (
-          lot.isUtilityBuilding
-          && (lot.reverse || lot.optionIds.length > 0)
-        ) {
+        if (lot.isUtilityBuilding && lot.optionIds.length > 0) {
           context.addIssue({
             code: 'custom',
             path: ['lots', index],
-            message: 'Utility Building rows cannot include Reverse or Options.',
+            message: 'Utility Building rows cannot include Options.',
           })
         }
 

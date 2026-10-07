@@ -59,12 +59,34 @@ const DRAW_COLUMNS = [
   'draw_name',
   'base_draw_amount',
   'hardware_amount',
+  'hardware_billing_mode',
+  'hardware_event_type',
+  'hardware_percentage',
   'options_amount',
   'is_utility_building',
   'utility_amount',
   'utility_billing_mode',
   'utility_event_type',
   'utility_percentage',
+  'gross_amount',
+  'retention_amount',
+  'wrap_amount',
+  'net_amount',
+].join(', ')
+
+const HARDWARE_COLUMNS = [
+  'id',
+  'package_id',
+  'phase_id',
+  'phase_code',
+  'building',
+  'lot_id',
+  'lot_number',
+  'plan_code',
+  'hardware_price',
+  'hardware_event_type',
+  'hardware_percentage',
+  'hardware_amount',
   'gross_amount',
   'retention_amount',
   'wrap_amount',
@@ -96,6 +118,10 @@ const OPTION_COLUMNS = [
 const SETUP_COLUMNS = [
   'id',
   'separate_hardware_price',
+  'hardware_billing_mode',
+  'hardware_ext_percentage',
+  'hardware_dm_percentage',
+  'hardware_hw_percentage',
   'utility_building',
   'utility_billing_mode',
   'utility_ext_percentage',
@@ -145,6 +171,16 @@ const RETENTION_RELEASE_LINE_COLUMNS = [
   'source_package_id',
   'source_lot_id',
   'source_draw_id',
+  'phase_id',
+  'retention_amount',
+].join(', ')
+
+const RETENTION_RELEASE_HARDWARE_LINE_COLUMNS = [
+  'package_id',
+  'source_hardware_line_id',
+  'source_package_id',
+  'source_lot_id',
+  'hardware_event_type',
   'phase_id',
   'retention_amount',
 ].join(', ')
@@ -262,12 +298,14 @@ export async function listDrawInvoicePackages() {
   const [
     invoices,
     draws,
+    hardwareLines,
     options,
     corrections,
     setupVersions,
     billingDraws,
     retentionReleases,
     retentionReleaseLines,
+    retentionReleaseHardwareLines,
   ] = await Promise.all([
     listRowsInBatches(
       client,
@@ -282,6 +320,13 @@ export async function listDrawInvoicePackages() {
       'package_draws',
       DRAW_COLUMNS,
       [['package_id', true], ['phase_code', true], ['draw_number', true], ['lot_number', true]],
+    ),
+    listRowsInBatches(
+      client,
+      packageIds,
+      'package_hardware_lines',
+      HARDWARE_COLUMNS,
+      [['package_id', true], ['phase_code', true], ['lot_number', true], ['hardware_event_type', true]],
     ),
     listRowsInBatches(
       client,
@@ -323,12 +368,20 @@ export async function listDrawInvoicePackages() {
       RETENTION_RELEASE_LINE_COLUMNS,
       [['package_id', true], ['source_package_id', true]],
     ),
+    listRowsInBatches(
+      client,
+      packageIds,
+      'retention_release_hardware_lines',
+      RETENTION_RELEASE_HARDWARE_LINE_COLUMNS,
+      [['package_id', true], ['source_package_id', true]],
+    ),
   ])
 
   const invoicesByPackage = new Map(
     invoices.map((invoice) => [invoice.package_id, invoice]),
   )
   const drawsByPackage = groupByPackage(draws)
+  const hardwareLinesByPackage = groupByPackage(hardwareLines)
   const optionsByPackage = groupByPackage(options)
   const correctionsByPackage = groupByPackage(corrections)
   const correctionsBySource = corrections.reduce((grouped, correction) => {
@@ -349,6 +402,9 @@ export async function listDrawInvoicePackages() {
     retentionReleases.map((release) => [release.package_id, release]),
   )
   const retentionReleaseLinesByPackage = groupByPackage(retentionReleaseLines)
+  const retentionReleaseHardwareLinesByPackage = groupByPackage(
+    retentionReleaseHardwareLines,
+  )
 
   return packages.map((packageRow) => toDrawInvoicePackage(
     packageRow,
@@ -365,13 +421,15 @@ export async function listDrawInvoicePackages() {
     ].sort((left, right) => right.changed_at.localeCompare(left.changed_at)),
     retentionReleasesByPackage.get(packageRow.id),
     retentionReleaseLinesByPackage.get(packageRow.id) ?? [],
+    hardwareLinesByPackage.get(packageRow.id) ?? [],
+    retentionReleaseHardwareLinesByPackage.get(packageRow.id) ?? [],
   ))
 }
 
 export async function createDrawInvoicePackage(input) {
   const client = await requireSupabase()
   const { data: packageId, error } = await client.rpc(
-    'create_draw_invoice_package',
+    'create_draw_invoice_package_with_hardware_events',
     toCreateDrawPackageRpc(input),
   )
 

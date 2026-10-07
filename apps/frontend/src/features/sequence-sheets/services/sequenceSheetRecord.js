@@ -35,7 +35,7 @@ export function toSequenceSheetPhaseRpc(jobId, phaseId, phase) {
       lot_number: lot.isUtilityBuilding ? '' : lot.lotNumber.trim().toUpperCase(),
       utility_name: lot.isUtilityBuilding ? (lot.utilityName ?? '').trim() : null,
       plan_id: requiredId(lot.planId),
-      is_reverse: lot.isUtilityBuilding ? false : Boolean(lot.reverse),
+      is_reverse: Boolean(lot.reverse),
       option_ids: lot.isUtilityBuilding
         ? []
         : (lot.optionIds ?? []).map(requiredId),

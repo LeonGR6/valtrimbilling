@@ -106,7 +106,10 @@ export function buildPackageSuggestions({
       packages,
       asOfDate,
     })
-    if (calendarSuggestion.suggestedSelections.length === 0) return []
+    if (
+      calendarSuggestion.suggestedSelections.length === 0
+      && calendarSuggestion.suggestedHardwareSelections.length === 0
+    ) return []
 
     const businessDaysRemaining = calendarSuggestion.mode === 'CUTOFF'
       ? countBusinessDaysThroughCutoff(
@@ -123,7 +126,10 @@ export function buildPackageSuggestions({
     ) return []
 
     const selectedPhaseIds = new Set(
-      calendarSuggestion.suggestedSelections.map(({ phaseId }) => String(phaseId)),
+      [
+        ...calendarSuggestion.suggestedSelections,
+        ...calendarSuggestion.suggestedHardwareSelections,
+      ].map(({ phaseId }) => String(phaseId)),
     )
     const phases = (job.sequenceSheet?.phases ?? []).filter(
       (phase) => selectedPhaseIds.has(String(phase.id)),
@@ -137,6 +143,7 @@ export function buildPackageSuggestions({
     )
     const summary = summarizeDrawPackage({
       selections: calendarSuggestion.suggestedSelections,
+      hardwareSelections: calendarSuggestion.suggestedHardwareSelections,
       optionsBillingDrawIndex: schedule.optionsBillingDrawIndex ?? null,
       ...optionContext,
     }, job, phases, schedule)
@@ -150,14 +157,19 @@ export function buildPackageSuggestions({
       job,
       schedule,
       phases,
-      initialPhaseId: calendarSuggestion.suggestedSelections[0]?.phaseId ?? phases[0].id,
+      initialPhaseId: calendarSuggestion.suggestedSelections[0]?.phaseId
+        ?? calendarSuggestion.suggestedHardwareSelections[0]?.phaseId
+        ?? phases[0].id,
       mode: calendarSuggestion.mode,
       cutoffDate: calendarSuggestion.cutoffDate,
       windowStart: calendarSuggestion.windowStart,
       windowEnd: calendarSuggestion.windowEnd,
       businessDaysRemaining,
       isCutoffToday: calendarSuggestion.cutoffDate === asOfDate,
-      selectionCount: calendarSuggestion.suggestedSelections.length,
+      selectionCount: calendarSuggestion.suggestedSelections.length
+        + calendarSuggestion.suggestedHardwareSelections.length,
+      drawSelectionCount: calendarSuggestion.suggestedSelections.length,
+      hardwareSelectionCount: calendarSuggestion.suggestedHardwareSelections.length,
       eventTypes: calendarSuggestion.eventTypes,
       estimatedInvoiceAmount: calendarSuggestion.estimatedInvoiceAmount,
       needsWorksheetReview,

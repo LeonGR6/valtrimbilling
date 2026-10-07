@@ -96,7 +96,7 @@ test('builds the atomic Sequence Sheet RPC payload with normalized values', () =
   )
 })
 
-test('maps and saves a Utility Building row inside a normal Phase without extras', () => {
+test('maps and saves a Utility Building row with Reverse but without Options', () => {
   const phase = toSequenceSheetPhase(
     {
       id: 22,
@@ -109,7 +109,7 @@ test('maps and saves a Utility Building row inside a normal Phase without extras
       lot_number: 'UTILITY-1',
       utility_name: 'Clubhouse',
       plan_id: 31,
-      is_reverse: false,
+      is_reverse: true,
       is_utility_building: true,
     })],
   )
@@ -138,7 +138,7 @@ test('maps and saves a Utility Building row inside a normal Phase without extras
       lot_number: '',
       utility_name: 'Pool House',
       plan_id: 31,
-      is_reverse: false,
+      is_reverse: true,
       option_ids: [],
       is_utility_building: true,
     }],

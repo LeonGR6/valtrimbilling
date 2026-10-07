@@ -4,6 +4,8 @@ import { initialBuilderDrawSchedules } from '../src/features/builder-draw-schedu
 import { testJobs } from './fixtures/jobs.mjs'
 import {
   allocateDrawAmounts,
+  allocateHardwareAmounts,
+  allocateHardwareEventAmounts,
   buildDrawWorksheet,
   calculateInvoiceAmounts,
   getDrawPercentageTotal,
@@ -127,6 +129,74 @@ test('additional hardware can exceed the Plan price without blocking draws', () 
   assert.equal(worksheet.totalDrawBasePrice, 1000)
   assert.equal(worksheet.totalHardwarePrice, 1500)
   assert.deepEqual(worksheet.rows[0].drawAmounts, [500, 500])
+})
+
+test('Separate Hardware allocation follows EXT, DM, HW rounding order', () => {
+  const schedule = {
+    separateHardwarePrice: true,
+    hardwareBillingMode: 'BY_EVENT',
+    hardwareEventPercentages: { EXT: 33.33, DM: 33.33, HW: 33.34 },
+    draws: [
+      { percentage: 25, eventType: 'EXT' },
+      { percentage: 50, eventType: 'DM' },
+      { percentage: 25, eventType: 'HW' },
+    ],
+  }
+
+  assert.deepEqual(allocateHardwareAmounts(100, schedule), [33.33, 33.33, 33.34])
+})
+
+test('Separate Hardware can assign 100 percent to one Event Type', () => {
+  const worksheet = buildDrawWorksheet(
+    {
+      sequenceSheet: {
+        plans: [{ id: 1, code: 'A', price: 3000, hardwarePrice: 1000 }],
+      },
+    },
+    { lots: [{ id: 1, lotNumber: '1', planId: 1 }] },
+    {
+      separateHardwarePrice: true,
+      hardwareBillingMode: 'BY_EVENT',
+      hardwareEventPercentages: { EXT: 0, DM: 0, HW: 100 },
+      draws: [
+        { percentage: 25, eventType: 'EXT' },
+        { percentage: 50, eventType: 'DM' },
+        { percentage: 25, eventType: 'HW' },
+      ],
+    },
+  )
+
+  assert.deepEqual(worksheet.rows[0].hardwarePercentages, [0, 0, 100])
+  assert.deepEqual(worksheet.rows[0].hardwareAmounts, [0, 0, 1000])
+})
+
+test('Separate Hardware keeps its HW allocation when no HW Draw exists', () => {
+  const schedule = {
+    separateHardwarePrice: true,
+    hardwareBillingMode: 'BY_EVENT',
+    hardwareEventPercentages: { EXT: 0, DM: 0, HW: 100 },
+    draws: [
+      { percentage: 40, eventType: 'EXT' },
+      { percentage: 60, eventType: 'DM' },
+    ],
+  }
+  const worksheet = buildDrawWorksheet(
+    {
+      sequenceSheet: {
+        plans: [{ id: 1, code: 'A', price: 3000, hardwarePrice: 1000 }],
+      },
+    },
+    { lots: [{ id: 1, lotNumber: '1', planId: 1 }] },
+    schedule,
+  )
+
+  assert.deepEqual(allocateHardwareEventAmounts(1000, schedule), {
+    EXT: 0,
+    DM: 0,
+    HW: 1000,
+  })
+  assert.deepEqual(worksheet.rows[0].hardwareAmounts, [0, 0])
+  assert.equal(worksheet.rows[0].hardwareEventAmounts.HW, 1000)
 })
 
 test('hardware separation requires a hardware price for every assigned plan', () => {

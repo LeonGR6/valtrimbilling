@@ -42,6 +42,7 @@ import {
   defaultDraws,
   defaultBillingSettings,
   drawEventTypeOptions,
+  emptyHardwareEventPercentages,
   emptyUtilityEventPercentages,
   frequencyLabels,
   frequencyOptions,
@@ -199,8 +200,13 @@ function BuilderDrawScheduleDialog({
     defaultValues: schedule
       ? {
           ...schedule,
+          hardwareBillingMode: schedule.separateHardwarePrice ? 'BY_EVENT' : 'FULL',
           optionsBillingDrawIndex: schedule.optionsBillingDrawIndex ?? null,
           draws: schedule.draws.map((draw) => ({ ...draw })),
+          hardwareEventPercentages: {
+            ...emptyHardwareEventPercentages,
+            ...schedule.hardwareEventPercentages,
+          },
           utilityEventPercentages: {
             ...emptyUtilityEventPercentages,
             ...schedule.utilityEventPercentages,
@@ -211,6 +217,7 @@ function BuilderDrawScheduleDialog({
           builderId: '',
           draws: defaultDraws.map((draw) => ({ ...draw })),
           ...defaultBillingSettings,
+          hardwareEventPercentages: { ...emptyHardwareEventPercentages },
           utilityEventPercentages: { ...emptyUtilityEventPercentages },
           cutoffDays: [...defaultBillingSettings.cutoffDays],
         },
@@ -228,6 +235,10 @@ function BuilderDrawScheduleDialog({
     control,
     name: 'separateHardwarePrice',
   })
+  const hardwareEventPercentages = useWatch({
+    control,
+    name: 'hardwareEventPercentages',
+  }) ?? emptyHardwareEventPercentages
   const utilityBuilding = useWatch({ control, name: 'utilityBuilding' })
   const utilityBillingMode = useWatch({ control, name: 'utilityBillingMode' })
   const utilityEventPercentages = useWatch({
@@ -258,6 +269,12 @@ function BuilderDrawScheduleDialog({
   const configuredUtilityEvents = new Set(
     watchedDraws.map((draw) => draw.eventType).filter(Boolean),
   )
+  const hardwareTotal = Object.values(hardwareEventPercentages).reduce(
+    (sum, percentage) => sum + (Number(percentage) || 0),
+    0,
+  )
+  const hardwareAllocationIsValid = !separateHardwarePrice
+    || Math.abs(hardwareTotal - 100) <= 0.001
   const utilityTotal = Object.values(utilityEventPercentages).reduce(
     (sum, percentage) => sum + (Number(percentage) || 0),
     0,
@@ -276,6 +293,7 @@ function BuilderDrawScheduleDialog({
     && totalIsValid
     && percentagesAreValid
     && eventTypesAreValid
+    && hardwareAllocationIsValid
     && utilityAllocationIsValid
   const availableBuilders = builders.filter(
     (builder) =>
@@ -397,7 +415,7 @@ function BuilderDrawScheduleDialog({
                 </Typography>
                 <Typography variant="caption" color="text.secondary">
                   Draw numbers follow their order. Add a name and select the event
-                  that enables each one.
+                  that enables each one, then choose which Draw charges Options.
                 </Typography>
               </Box>
               <Chip
@@ -413,7 +431,24 @@ function BuilderDrawScheduleDialog({
                   key={field.fieldKey}
                   direction="row"
                   spacing={1.25}
-                  sx={{ alignItems: 'flex-start' }}
+                  sx={{
+                    alignItems: 'flex-start',
+                    p: 1,
+                    border: 1,
+                    borderColor: optionsBillingDrawIndex != null
+                      && Number(optionsBillingDrawIndex) === index
+                      ? 'primary.main'
+                      : 'transparent',
+                    borderRadius: 2,
+                    bgcolor: optionsBillingDrawIndex != null
+                      && Number(optionsBillingDrawIndex) === index
+                      ? 'primary.light'
+                      : 'transparent',
+                    transition: (theme) => theme.transitions.create([
+                      'background-color',
+                      'border-color',
+                    ]),
+                  }}
                 >
                   <Avatar
                     sx={{
@@ -484,6 +519,46 @@ function BuilderDrawScheduleDialog({
                         </TextField>
                       )}
                     />
+                    <FormControlLabel
+                      label={(
+                        <Stack
+                          direction="row"
+                          spacing={0.75}
+                          sx={{ alignItems: 'center' }}
+                        >
+                          <Typography variant="body2">Charge Options</Typography>
+                          {optionsBillingDrawIndex != null
+                            && Number(optionsBillingDrawIndex) === index && (
+                              <Chip
+                                size="small"
+                                color="primary"
+                                label="Selected"
+                                sx={{ height: 22 }}
+                              />
+                          )}
+                        </Stack>
+                      )}
+                      control={(
+                        <Radio
+                          name="optionsBillingDrawIndex"
+                          checked={optionsBillingDrawIndex != null
+                            && Number(optionsBillingDrawIndex) === index}
+                          onChange={() => setValue('optionsBillingDrawIndex', index, {
+                            shouldDirty: true,
+                            shouldValidate: true,
+                          })}
+                          inputProps={{
+                            'aria-label': `Charge Options in Draw ${index + 1}`,
+                          }}
+                        />
+                      )}
+                      sx={{
+                        m: 0,
+                        minHeight: 56,
+                        width: { xs: '100%', sm: 190 },
+                        flexShrink: 0,
+                      }}
+                    />
                   </Stack>
                   {fields.length > MIN_DRAW_COUNT && (
                     <IconButton
@@ -499,6 +574,29 @@ function BuilderDrawScheduleDialog({
               ))}
             </Stack>
 
+            <Box sx={{ mt: 0.5 }}>
+              <FormControlLabel
+                label="Do not bill Options"
+                control={(
+                  <Radio
+                    name="optionsBillingDrawIndex"
+                    checked={optionsBillingDrawIndex == null}
+                    onChange={() => setValue('optionsBillingDrawIndex', null, {
+                      shouldDirty: true,
+                      shouldValidate: true,
+                    })}
+                    inputProps={{ 'aria-label': 'Do not bill Options in a Draw' }}
+                  />
+                )}
+                sx={{ m: 0 }}
+              />
+              {errors.optionsBillingDrawIndex && (
+                <Typography variant="caption" color="error" sx={{ display: 'block' }}>
+                  {errors.optionsBillingDrawIndex.message}
+                </Typography>
+              )}
+            </Box>
+
             <Stack
               direction={{ xs: 'column', sm: 'row' }}
               spacing={1}
@@ -513,22 +611,33 @@ function BuilderDrawScheduleDialog({
               >
                 Add draw
               </Button>
-              <Button
-                type="button"
-                variant={separateHardwarePrice ? 'contained' : 'outlined'}
-                color={separateHardwarePrice ? 'primary' : 'inherit'}
-                startIcon={<ConstructionRoundedIcon />}
-                onClick={() => {
-                  const nextValue = !separateHardwarePrice
-                  setValue('separateHardwarePrice', nextValue, {
-                    shouldDirty: true,
-                    shouldValidate: true,
-                  })
-                }}
-                disableElevation
-              >
-                Separate Hardware Price
-              </Button>
+              <Controller
+                name="separateHardwarePrice"
+                control={control}
+                render={({ field }) => (
+                  <FormControlLabel
+                    label="Separate Hardware Price"
+                    control={(
+                      <Checkbox
+                        checked={Boolean(field.value)}
+                        onChange={(_, checked) => {
+                          field.onChange(checked)
+                          setValue('hardwareBillingMode', checked ? 'BY_EVENT' : 'FULL', {
+                            shouldDirty: true,
+                            shouldValidate: true,
+                          })
+                          setValue('hardwareEventPercentages', checked
+                            ? { EXT: 0, DM: 0, HW: 100 }
+                            : { ...emptyHardwareEventPercentages }, {
+                            shouldDirty: true,
+                            shouldValidate: true,
+                          })
+                        }}
+                      />
+                    )}
+                  />
+                )}
+              />
               <Controller
                 name="utilityBuilding"
                 control={control}
@@ -560,12 +669,129 @@ function BuilderDrawScheduleDialog({
               />
             </Stack>
 
+            <Box
+              sx={{
+                p: 2,
+                mt: 1.5,
+                border: 1,
+                borderColor: totalIsValid ? 'success.main' : 'error.main',
+                borderRadius: 2,
+                bgcolor: 'background.default',
+              }}
+            >
+              <Stack
+                direction="row"
+                spacing={2}
+                sx={{ alignItems: 'center', justifyContent: 'space-between', mb: 1 }}
+              >
+                <Box>
+                  <Typography variant="subtitle2" fontWeight={750}>
+                    Total allocation
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    {totalIsValid
+                      ? 'Ready to save'
+                      : total < 100
+                        ? `${formatPercentage(100 - total)}% remaining`
+                        : `${formatPercentage(total - 100)}% over the limit`}
+                  </Typography>
+                </Box>
+                <Typography
+                  variant="h6"
+                  color={totalIsValid ? 'success.main' : 'error.main'}
+                  fontWeight={800}
+                >
+                  {formatPercentage(total)}%
+                </Typography>
+              </Stack>
+              <LinearProgress
+                variant="determinate"
+                value={Math.min(Math.max(total, 0), 100)}
+                color={totalIsValid ? 'success' : 'error'}
+                sx={{ height: 7, borderRadius: 999 }}
+              />
+              {drawsError && (
+                <Typography variant="caption" color="error" sx={{ display: 'block', mt: 1 }}>
+                  {drawsError}
+                </Typography>
+              )}
+            </Box>
+
             {separateHardwarePrice && (
-              <Alert severity="info" sx={{ mt: 1.25 }}>
-                Draws allocate 100% of the Plan Price. When a Draw Package is
-                created, the user chooses which Draw charges each Lot's full
-                Hardware Price.
-              </Alert>
+              <Card variant="outlined" sx={{ mt: 1.5, p: 2 }}>
+                <Typography variant="subtitle2" fontWeight={800}>
+                  Separate Hardware billing
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  Allocate 100% of each Lot's Hardware Price across Calendar events.
+                  These events do not need to exist as Draws. HW starts at 100%.
+                </Typography>
+
+                <Box sx={{ mt: 1.5 }}>
+                  <Stack
+                    direction={{ xs: 'column', sm: 'row' }}
+                    spacing={1.25}
+                  >
+                    {drawEventTypeOptions.map((eventType) => (
+                        <TextField
+                          key={eventType.value}
+                          label={`${eventType.label} Hardware`}
+                          type="number"
+                          {...register(`hardwareEventPercentages.${eventType.value}`)}
+                          error={Boolean(
+                            errors.hardwareEventPercentages?.[eventType.value],
+                          )}
+                          helperText={
+                            errors.hardwareEventPercentages?.[eventType.value]?.message
+                            ?? `${eventType.label} Calendar event`
+                          }
+                          fullWidth
+                          slotProps={{
+                            input: {
+                              endAdornment: (
+                                <InputAdornment position="end">%</InputAdornment>
+                              ),
+                            },
+                            htmlInput: {
+                              min: 0,
+                              max: 100,
+                              step: 0.01,
+                              inputMode: 'decimal',
+                            },
+                          }}
+                        />
+                      ))}
+                  </Stack>
+                  <Stack
+                    direction="row"
+                    spacing={1}
+                    sx={{ mt: 1.25, justifyContent: 'space-between' }}
+                  >
+                    <Typography
+                      variant="caption"
+                      color={hardwareAllocationIsValid ? 'success.main' : 'error.main'}
+                    >
+                      {errors.hardwareEventPercentages?.message
+                        ?? (hardwareAllocationIsValid
+                          ? 'Hardware allocation ready'
+                          : 'Hardware event percentages must total 100%.')}
+                    </Typography>
+                    <Typography
+                      variant="caption"
+                      fontWeight={850}
+                      color={hardwareAllocationIsValid ? 'success.main' : 'error.main'}
+                    >
+                      {formatPercentage(hardwareTotal)}%
+                    </Typography>
+                  </Stack>
+                  <LinearProgress
+                    variant="determinate"
+                    value={Math.min(Math.max(hardwareTotal, 0), 100)}
+                    color={hardwareAllocationIsValid ? 'success' : 'error'}
+                    sx={{ height: 6, borderRadius: 999, mt: 0.5 }}
+                  />
+                </Box>
+              </Card>
             )}
 
             {utilityBuilding && (
@@ -690,84 +916,6 @@ function BuilderDrawScheduleDialog({
               </Card>
             )}
 
-            <Controller
-              name="optionsBillingDrawIndex"
-              control={control}
-              render={({ field }) => (
-                <TextField
-                  select
-                  label="Options billing draw"
-                  value={field.value ?? ''}
-                  onChange={(event) => field.onChange(
-                    event.target.value === '' ? null : Number(event.target.value),
-                  )}
-                  onBlur={field.onBlur}
-                  inputRef={field.ref}
-                  error={Boolean(errors.optionsBillingDrawIndex)}
-                  helperText={
-                    errors.optionsBillingDrawIndex?.message
-                    ?? 'Selected lot options are added when this draw is included in a package.'
-                  }
-                  fullWidth
-                  sx={{ mt: 1.5 }}
-                >
-                  <MenuItem value="">Do not bill options in a draw</MenuItem>
-                  {watchedDraws.map((draw, index) => (
-                    <MenuItem key={`options-draw-${index + 1}`} value={index}>
-                      Draw {index + 1}
-                      {draw.name?.trim() ? ` · ${draw.name.trim()}` : ''}
-                    </MenuItem>
-                  ))}
-                </TextField>
-              )}
-            />
-          </Box>
-
-          <Box  
-            sx={{
-              p: 2,
-              border: 1,
-              borderColor: totalIsValid ? 'success.main' : 'error.main',
-              borderRadius: 2,
-              bgcolor: 'background.default',
-            }}
-          >
-            <Stack
-              direction="row"
-              spacing={2}
-              sx={{ alignItems: 'center', justifyContent: 'space-between', mb: 1 }}
-            >
-              <Box>
-                <Typography variant="subtitle2" fontWeight={750}>
-                  Total allocation
-                </Typography>
-                <Typography variant="caption" color="text.secondary">
-                  {totalIsValid
-                    ? 'Ready to save'
-                    : total < 100
-                      ? `${formatPercentage(100 - total)}% remaining`
-                      : `${formatPercentage(total - 100)}% over the limit`}
-                </Typography>
-              </Box>
-              <Typography
-                variant="h6"
-                color={totalIsValid ? 'success.main' : 'error.main'}
-                fontWeight={800}
-              >
-                {formatPercentage(total)}%
-              </Typography>
-            </Stack>
-            <LinearProgress
-              variant="determinate"
-              value={Math.min(Math.max(total, 0), 100)}
-              color={totalIsValid ? 'success' : 'error'}
-              sx={{ height: 7, borderRadius: 999 }}
-            />
-            {drawsError && (
-              <Typography variant="caption" color="error" sx={{ display: 'block', mt: 1 }}>
-                {drawsError}
-              </Typography>
-            )}
           </Box>
 
           <Divider textAlign="left">

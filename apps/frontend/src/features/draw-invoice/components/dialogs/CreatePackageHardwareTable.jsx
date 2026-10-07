@@ -19,17 +19,17 @@ import {
   formatPhase,
 } from '../../../sequence-sheets/utils/phaseBuildingCodes.js'
 import { formatCurrency } from '../../utils/drawInvoiceFormatters.js'
+import { hardwareChargeKey } from '../../utils/drawPackages.js'
 
 export default function CreatePackageHardwareTable({
   summary,
-  billedHardwareLots,
+  billedHardwareCharges,
   onToggle,
 }) {
   const hardwareRows = summary.hardwareRows ?? []
 
   if (
     !summary.separateHardwarePrice
-    || (summary.utilityCount > 0 && summary.lotCount === 0)
   ) return null
   const selectedCount = hardwareRows.filter((row) => row.chargeHardware).length
 
@@ -44,7 +44,8 @@ export default function CreatePackageHardwareTable({
           <Box>
             <Typography fontWeight={800}>Hardware</Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mt: 0.25 }}>
-              Check the Draw that should charge the full Hardware Price for each Lot.
+              Every available Lot is listed. Upcoming Calendar portions are
+              preselected; any other portion can be selected manually.
             </Typography>
           </Box>
           <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
@@ -66,8 +67,7 @@ export default function CreatePackageHardwareTable({
       {hardwareRows.length === 0 && (
         <Box sx={{ px: { xs: 2, sm: 2.5 }, py: 2 }}>
           <Typography variant="body2" color="text.secondary">
-            Select at least one Lot / Draw cell above to choose where Hardware
-            will be charged.
+            There are no configured Separate Hardware allocations for these Lots.
           </Typography>
         </Box>
       )}
@@ -80,14 +80,19 @@ export default function CreatePackageHardwareTable({
                 <TableCell>Phase</TableCell>
                 <TableCell>Lot</TableCell>
                 <TableCell>Plan</TableCell>
-                <TableCell>Draw</TableCell>
+                <TableCell>Billing trigger</TableCell>
+                <TableCell>Allocation</TableCell>
                 <TableCell align="right">Price</TableCell>
                 <TableCell>Status</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
               {hardwareRows.map((hardware) => {
-                const billed = billedHardwareLots.get(String(hardware.lotId))
+                const billed = billedHardwareCharges.get(hardwareChargeKey(
+                  hardware.lotId,
+                  hardware.hardwareBillingMode,
+                  hardware.hardwareEventType,
+                ))
                 return (
                   <TableRow key={hardware.selectionKey} hover>
                     <TableCell padding="checkbox">
@@ -97,7 +102,7 @@ export default function CreatePackageHardwareTable({
                         disabled={Boolean(billed)}
                         onChange={() => onToggle(hardware)}
                         inputProps={{
-                          'aria-label': `Charge Hardware for Lot ${hardware.lotNumber} with Draw ${hardware.drawIndex + 1}`,
+                          'aria-label': `Charge Hardware for Lot ${hardware.lotNumber} from ${hardware.hardwareEventType ?? `Draw ${hardware.drawIndex + 1}`}`,
                         }}
                       />
                     </TableCell>
@@ -112,9 +117,19 @@ export default function CreatePackageHardwareTable({
                     <TableCell>{hardware.planCode ?? '—'}</TableCell>
                     <TableCell>
                       <Typography fontWeight={750}>
-                        Draw #{hardware.drawIndex + 1}
-                        {hardware.drawName?.trim() ? ` · ${hardware.drawName.trim()}` : ''}
+                        {hardware.hardwareBillingMode === 'BY_EVENT'
+                          ? hardware.isCalendarSuggested
+                            ? `${hardware.hardwareEventType} Calendar event · Suggested`
+                            : `${hardware.hardwareEventType} · Manual selection`
+                          : `Draw #${hardware.drawIndex + 1}${hardware.drawName?.trim()
+                            ? ` · ${hardware.drawName.trim()}`
+                            : ''}`}
                       </Typography>
+                    </TableCell>
+                    <TableCell>
+                      {hardware.hardwareBillingMode === 'BY_EVENT'
+                        ? `${hardware.hardwareEventType} · ${hardware.hardwarePercentage}%`
+                        : '100% full'}
                     </TableCell>
                     <TableCell align="right">
                       <Typography fontWeight={750}>
@@ -140,7 +155,7 @@ export default function CreatePackageHardwareTable({
             </TableBody>
             <TableFooter>
               <TableRow>
-                <TableCell colSpan={5}>
+                <TableCell colSpan={6}>
                   <Typography fontWeight={850}>Hardware total</Typography>
                 </TableCell>
                 <TableCell align="right">

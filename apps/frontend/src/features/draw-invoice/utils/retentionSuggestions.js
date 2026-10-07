@@ -90,16 +90,39 @@ function sourceLineKey(packageId, lotId, drawId) {
   return `${packageId}:${lotId}:${drawId}`
 }
 
+function sourceHardwareLineKey(hardwareLineId) {
+  return String(hardwareLineId)
+}
+
 function isDrawPackage(record) {
   return (record.packageType ?? 'DRAW') === 'DRAW'
     && record.status !== 'CANCELLED'
 }
 
-function isHardwareLine(line, schedule) {
+function hardwareCompletionPart(line, schedule) {
   if (line.isUtilityBuilding) return false
-  return schedule.separateHardwarePrice
-    ? Number(line.hardwareAmount) > 0
-    : line.eventType === 'HW'
+  if (!schedule.separateHardwarePrice) {
+    return line.eventType === 'HW' ? 'FULL' : null
+  }
+  if (
+    (Number(line.hardwarePercentage) || 0) <= 0
+    && (Number(line.hardwareAmount) || 0) <= 0
+  ) return null
+  return schedule.hardwareBillingMode === 'BY_EVENT'
+    ? line.hardwareEventType ?? line.eventType ?? null
+    : 'FULL'
+}
+
+function requiredHardwareParts(schedule) {
+  if (
+    schedule.separateHardwarePrice
+    && schedule.hardwareBillingMode === 'BY_EVENT'
+  ) {
+    return ['EXT', 'DM', 'HW'].filter(
+      (eventType) => Number(schedule.hardwareEventPercentages?.[eventType]) > 0,
+    )
+  }
+  return ['FULL']
 }
 
 function compareSuggestions(left, right) {
@@ -129,6 +152,7 @@ export function buildRetentionSuggestions({
   if (!parseDateKey(asOfDate)) return []
 
   const activeReleaseLines = new Set()
+  const activeReleaseHardwareLines = new Set()
   for (const record of packages) {
     if (record.packageType !== 'RETENTION_RELEASE' || record.status === 'CANCELLED') {
       continue
@@ -138,6 +162,11 @@ export function buildRetentionSuggestions({
         line.sourcePackageId,
         line.sourceLotId,
         line.sourceDrawId,
+      ))
+    }
+    for (const line of record.retentionRelease?.sourceHardwareLines ?? []) {
+      activeReleaseHardwareLines.add(sourceHardwareLineKey(
+        line.sourceHardwareLineId,
       ))
     }
   }
@@ -168,15 +197,23 @@ export function buildRetentionSuggestions({
       const expectedLotIds = new Set(ordinaryLots.map(({ id }) => String(id)))
       if (expectedLotIds.size === 0) return []
 
-      const lines = jobPackages.flatMap((record) => (
-        (record.persistedDrawLines ?? [])
+      const lines = jobPackages.flatMap((record) => ([
+        ...(record.persistedDrawLines ?? [])
           .filter((line) => phaseIds.has(String(line.phaseId)))
-          .map((line) => ({ record, line }))
-      ))
-      const outstanding = lines.filter(({ record, line }) => (
-        Number(line.retentionAmount) > 0
-        && !activeReleaseLines.has(sourceLineKey(record.id, line.lotId, line.drawId))
-      ))
+          .map((line) => ({ record, line, sourceType: 'DRAW' })),
+        ...(record.persistedHardwareLines ?? [])
+          .filter((line) => phaseIds.has(String(line.phaseId)))
+          .map((line) => ({ record, line, sourceType: 'HARDWARE' })),
+      ]))
+      const outstanding = lines.filter(({ record, line, sourceType }) => {
+        if (Number(line.retentionAmount) <= 0) return false
+        if (sourceType === 'HARDWARE') {
+          return !activeReleaseHardwareLines.has(sourceHardwareLineKey(line.id))
+        }
+        return !activeReleaseLines.has(
+          sourceLineKey(record.id, line.lotId, line.drawId),
+        )
+      })
       const projectedRetention = outstanding.reduce(
         (total, { line }) => total + Number(line.retentionAmount),
         0,
@@ -190,19 +227,32 @@ export function buildRetentionSuggestions({
 
       if (projectedRetention <= 0 && releasableRetention <= 0) return []
 
-      const projectedHardware = new Set()
-      const qualifiedHardware = new Set()
+      const requiredParts = requiredHardwareParts(schedule)
+      const projectedPartsByLot = new Map()
+      const qualifiedPartsByLot = new Map()
       const qualifiedHardwarePackages = new Map()
       for (const { record, line } of lines) {
-        if (!expectedLotIds.has(String(line.lotId)) || !isHardwareLine(line, schedule)) {
+        const lotId = String(line.lotId)
+        const part = hardwareCompletionPart(line, schedule)
+        if (!expectedLotIds.has(lotId) || !part) {
           continue
         }
-        projectedHardware.add(String(line.lotId))
+        const projectedParts = projectedPartsByLot.get(lotId) ?? new Set()
+        projectedParts.add(part)
+        projectedPartsByLot.set(lotId, projectedParts)
         if (QUALIFYING_STATUSES.has(record.status)) {
-          qualifiedHardware.add(String(line.lotId))
+          const qualifiedParts = qualifiedPartsByLot.get(lotId) ?? new Set()
+          qualifiedParts.add(part)
+          qualifiedPartsByLot.set(lotId, qualifiedParts)
           qualifiedHardwarePackages.set(String(record.id), record)
         }
       }
+      const projectedHardware = new Set([...expectedLotIds].filter((lotId) => (
+        requiredParts.every((part) => projectedPartsByLot.get(lotId)?.has(part))
+      )))
+      const qualifiedHardware = new Set([...expectedLotIds].filter((lotId) => (
+        requiredParts.every((part) => qualifiedPartsByLot.get(lotId)?.has(part))
+      )))
 
       const remainingHardwareLots = Math.max(
         0,

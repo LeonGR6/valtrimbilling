@@ -133,6 +133,43 @@ test('Package Suggestions expose actionable Job and Phase work inside five busin
   assert.equal(suggestions[0].isReady, true)
 })
 
+test('Package Suggestions expose HW Calendar work when the Builder has no HW Draw', () => {
+  const job = buildJob()
+  job.sequenceSheet.plans[0].hardwarePrice = 600
+  const suggestions = buildPackageSuggestions({
+    jobs: [job],
+    jobBillingSetupVersions: [buildSchedule({
+      separateHardwarePrice: true,
+      hardwareBillingMode: 'BY_EVENT',
+      hardwareEventPercentages: { EXT: 0, DM: 0, HW: 100 },
+      draws: [{ name: 'Draw 1', percentage: 100, eventType: 'EXT' }],
+    })],
+    packages: [],
+    productionActivities: [buildActivity({
+      stages: [{
+        id: 92,
+        type: 'HW',
+        isEnabled: true,
+        schedules: [{
+          id: 93,
+          date: '2026-10-05',
+          lotIds: [101],
+          isActive: true,
+        }],
+      }],
+    })],
+    asOfDate: '2026-10-05',
+  })
+
+  assert.equal(suggestions.length, 1)
+  assert.equal(suggestions[0].drawSelectionCount, 0)
+  assert.equal(suggestions[0].hardwareSelectionCount, 1)
+  assert.equal(suggestions[0].selectionCount, 1)
+  assert.deepEqual(suggestions[0].eventTypes, ['HW'])
+  assert.equal(suggestions[0].estimatedInvoiceAmount, 600)
+  assert.equal(suggestions[0].isReady, true)
+})
+
 test('Package Suggestions omit fixed cutoffs outside the five-business-day window', () => {
   const suggestions = buildPackageSuggestions({
     jobs: [buildJob()],

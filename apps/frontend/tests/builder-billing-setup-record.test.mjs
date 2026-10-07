@@ -12,6 +12,10 @@ test('billing setup records map database columns and one-based draws to the form
     version_number: 3,
     status: 'ACTIVE',
     separate_hardware_price: true,
+    hardware_billing_mode: 'BY_EVENT',
+    hardware_ext_percentage: '20.00',
+    hardware_dm_percentage: '30.00',
+    hardware_hw_percentage: '50.00',
     utility_building: true,
     utility_billing_mode: 'BY_EVENT',
     utility_ext_percentage: '25.00',
@@ -59,6 +63,8 @@ test('billing setup records map database columns and one-based draws to the form
     { name: 'Final', percentage: 15, eventType: 'HW' },
   ])
   assert.equal('hardwareBillingDrawIndex' in schedule, false)
+  assert.equal(schedule.hardwareBillingMode, 'BY_EVENT')
+  assert.deepEqual(schedule.hardwareEventPercentages, { EXT: 20, DM: 30, HW: 50 })
   assert.equal(schedule.utilityBuilding, true)
   assert.equal(schedule.utilityBillingMode, 'BY_EVENT')
   assert.deepEqual(schedule.utilityEventPercentages, { EXT: 25, DM: 50, HW: 25 })
@@ -83,6 +89,8 @@ test('form values map to normalized RPC payloads and one-based draw numbers', ()
       { name: '', percentage: 75, eventType: 'HW' },
     ],
     separateHardwarePrice: true,
+    hardwareBillingMode: 'BY_EVENT',
+    hardwareEventPercentages: { EXT: 0, DM: 0, HW: 100 },
     utilityBuilding: true,
     utilityBillingMode: 'BY_EVENT',
     utilityEventPercentages: { EXT: 0, DM: 0, HW: 100 },
@@ -110,6 +118,10 @@ test('form values map to normalized RPC payloads and one-based draw numbers', ()
 
   assert.equal(payload.p_builder_id, 7)
   assert.equal('hardwareBillingDrawNumber' in payload.p_config, false)
+  assert.equal(payload.p_config.hardwareBillingMode, 'BY_EVENT')
+  assert.equal(payload.p_config.hardwareExtPercentage, 0)
+  assert.equal(payload.p_config.hardwareDmPercentage, 0)
+  assert.equal(payload.p_config.hardwareHwPercentage, 100)
   assert.equal(payload.p_config.utilityBuilding, true)
   assert.equal(payload.p_config.utilityBillingMode, 'BY_EVENT')
   assert.equal(payload.p_config.utilityExtPercentage, 0)

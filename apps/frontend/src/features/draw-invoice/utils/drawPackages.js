@@ -1,6 +1,8 @@
 import {
   buildDrawWorksheet,
   calculateInvoiceAmounts,
+  getHardwareBillingMode,
+  getHardwareEventPercentage,
   getUtilityBillingMode,
   getUtilityEventPercentage,
   hasPlanPrice,
@@ -12,6 +14,16 @@ export function drawSelectionKey(jobId, phaseId, lotId, drawIndex) {
 
 export function hardwareSelectionKey(phaseId, lotId, drawIndex) {
   return `${phaseId}:${lotId}:${drawIndex}`
+}
+
+export function hardwareEventSelectionKey(phaseId, lotId, eventType) {
+  return `${phaseId}:${lotId}:${eventType}`
+}
+
+export function hardwareChargeKey(lotId, billingMode, eventType = null) {
+  return billingMode === 'BY_EVENT' && eventType
+    ? `${lotId}:${eventType}`
+    : `${lotId}:FULL`
 }
 
 export function utilityChargeKey(lotId, billingMode, eventType = null) {
@@ -34,6 +46,7 @@ function isAtOrAfterOptionsBillingDraw(drawIndex, optionsBillingDrawIndex) {
 }
 
 const DRAW_EVENT_TYPES = new Set(['EXT', 'DM', 'HW'])
+const EVENT_TYPE_ORDER_INDEX = { EXT: 100, DM: 101, HW: 102 }
 
 export function formatPackageScopeEventTypes(eventTypes = []) {
   const supportedEventTypes = [...new Set(
@@ -54,12 +67,33 @@ function getPackageScopeEventTypes(record, selections, schedule) {
     }
   }
 
+  for (const line of record?.persistedHardwareLines ?? []) {
+    if (DRAW_EVENT_TYPES.has(line.hardwareEventType)) {
+      eventTypeByDrawIndex.set(
+        EVENT_TYPE_ORDER_INDEX[line.hardwareEventType],
+        line.hardwareEventType,
+      )
+    }
+  }
+
   for (const selection of selections) {
     const drawIndex = Number(selection.drawIndex)
     const eventType = selection.eventType
       ?? schedule?.draws?.[drawIndex]?.eventType
     if (!eventTypeByDrawIndex.has(drawIndex) && DRAW_EVENT_TYPES.has(eventType)) {
       eventTypeByDrawIndex.set(drawIndex, eventType)
+    }
+  }
+
+  for (const selection of record?.hardwareSelections ?? []) {
+    if (
+      selection.chargeHardware !== false
+      && DRAW_EVENT_TYPES.has(selection.eventType)
+    ) {
+      eventTypeByDrawIndex.set(
+        EVENT_TYPE_ORDER_INDEX[selection.eventType],
+        selection.eventType,
+      )
     }
   }
 
@@ -231,22 +265,58 @@ export function buildUsedDrawSelections(packages = [], excludedPackageId = null)
   return used
 }
 
-export function buildBilledHardwareLots(packages = [], jobId) {
+export function buildBilledHardwareCharges(
+  packages = [],
+  jobId,
+  excludedPackageId = null,
+) {
   const billed = new Map()
 
   for (const record of packages) {
-    if (String(record.jobId) !== String(jobId) || record.status === 'CANCELLED') {
-      continue
-    }
+    if (
+      String(record.jobId) !== String(jobId)
+      || String(record.id) === String(excludedPackageId)
+      || record.status === 'CANCELLED'
+    ) continue
 
     for (const line of record.persistedDrawLines ?? []) {
-      if (Number(line.hardwareAmount) <= 0 || billed.has(String(line.lotId))) {
-        continue
-      }
+      if (
+        line.isUtilityBuilding
+        || ((Number(line.hardwarePercentage) || 0) <= 0
+          && (Number(line.hardwareAmount) || 0) <= 0)
+      ) continue
 
-      billed.set(String(line.lotId), {
+      const billingMode = line.hardwareBillingMode === 'BY_EVENT'
+        ? 'BY_EVENT'
+        : 'FULL'
+      const eventType = line.hardwareEventType ?? line.eventType ?? null
+      const key = hardwareChargeKey(line.lotId, billingMode, eventType)
+      if (billed.has(key)) continue
+
+      billed.set(key, {
         lotId: line.lotId,
         drawIndex: line.drawIndex,
+        billingMode,
+        eventType,
+        packageId: record.id,
+        packageNumber: record.packageNumber,
+        hardwareAmount: Number(line.hardwareAmount),
+      })
+    }
+
+    for (const line of record.persistedHardwareLines ?? []) {
+      const key = hardwareChargeKey(
+        line.lotId,
+        'BY_EVENT',
+        line.hardwareEventType,
+      )
+      if (billed.has(key)) continue
+
+      billed.set(key, {
+        lotId: line.lotId,
+        drawIndex: null,
+        billingMode: 'BY_EVENT',
+        eventType: line.hardwareEventType,
         packageId: record.id,
         packageNumber: record.packageNumber,
         hardwareAmount: Number(line.hardwareAmount),
@@ -254,6 +324,16 @@ export function buildBilledHardwareLots(packages = [], jobId) {
     }
   }
 
+  return billed
+}
+
+export function buildBilledHardwareLots(packages = [], jobId) {
+  const billed = new Map()
+  for (const charge of buildBilledHardwareCharges(packages, jobId).values()) {
+    if (!billed.has(String(charge.lotId))) {
+      billed.set(String(charge.lotId), charge)
+    }
+  }
   return billed
 }
 
@@ -399,17 +479,19 @@ function buildPhaseSummaries(lines, phaseById) {
     } else {
       group.lotNumbers.push(line.lotNumber)
     }
-    const draw = group.draws.get(line.drawIndex) ?? {
-      drawIndex: line.drawIndex,
-      lotNumbers: [],
-      utilityLabels: [],
+    if (line.drawIndex != null) {
+      const draw = group.draws.get(line.drawIndex) ?? {
+        drawIndex: line.drawIndex,
+        lotNumbers: [],
+        utilityLabels: [],
+      }
+      if (line.isUtilityBuilding) {
+        draw.utilityLabels.push(line.utilityLabel ?? line.lotNumber)
+      } else {
+        draw.lotNumbers.push(line.lotNumber)
+      }
+      group.draws.set(line.drawIndex, draw)
     }
-    if (line.isUtilityBuilding) {
-      draw.utilityLabels.push(line.utilityLabel ?? line.lotNumber)
-    } else {
-      draw.lotNumbers.push(line.lotNumber)
-    }
-    group.draws.set(line.drawIndex, draw)
     grouped.set(String(phaseId), group)
   }
 
@@ -475,8 +557,12 @@ export function summarizeDrawPackage(record, job, phaseOrPhases, schedule) {
     rowForSelection(selection)?.isUtilityBuilding,
   )
   const selections = record?.selections ?? []
+  const hardwareSelections = record?.hardwareSelections ?? []
   const scopeEventTypes = getPackageScopeEventTypes(record, selections, schedule)
-  const selectedRows = [...new Map(selections.map((selection) => {
+  const selectedRows = [...new Map([
+    ...selections,
+    ...hardwareSelections.filter((selection) => selection.chargeHardware !== false),
+  ].map((selection) => {
     const scope = scopeForSelection(selection)
     const row = rowForSelection(selection)
     if (!scope || !row) return [null, null]
@@ -564,15 +650,23 @@ export function summarizeDrawPackage(record, job, phaseOrPhases, schedule) {
   if (record?.persistedInvoice) {
     const persistedLines = record.persistedDrawLines ?? []
     const persistedOptionLines = record.persistedOptionLines ?? []
-    const persistedHardwareLines = persistedLines.filter(
-      (line) => Number(line.hardwareAmount) > 0,
-    )
+    const persistedHardwareLines = [
+      ...(record.persistedHardwareLines ?? []),
+      ...persistedLines.filter((line) => (
+        Number(line.hardwarePercentage) > 0 || Number(line.hardwareAmount) > 0
+      )),
+    ]
     const persistedUtilityLines = persistedLines.filter(
       (line) => line.isUtilityBuilding || Number(line.utilityAmount) > 0,
     )
-    const persistedLotLines = persistedLines.filter(
-      (line) => !line.isUtilityBuilding,
-    )
+    const persistedLotLines = [
+      ...persistedLines.filter((line) => !line.isUtilityBuilding),
+      ...(record.persistedHardwareLines ?? []).map((line) => ({
+        ...line,
+        drawIndex: null,
+        isUtilityBuilding: false,
+      })),
+    ]
     const separateHardwarePrice = Boolean(
       record.separateHardwarePrice
       ?? schedule?.separateHardwarePrice,
@@ -603,7 +697,14 @@ export function summarizeDrawPackage(record, job, phaseOrPhases, schedule) {
       0,
     )
     const lotNumbers = persistedLotLines.map((line) => line.lotNumber)
-    const phaseSummaries = buildPhaseSummaries(persistedLines, phaseById)
+    const phaseSummaries = buildPhaseSummaries([
+      ...persistedLines,
+      ...(record.persistedHardwareLines ?? []).map((line) => ({
+        ...line,
+        drawIndex: null,
+        isUtilityBuilding: false,
+      })),
+    ], phaseById)
 
     return {
       worksheet: phaseScopes[0]?.worksheet ?? buildDrawWorksheet(job, null, schedule),
@@ -619,7 +720,7 @@ export function summarizeDrawPackage(record, job, phaseOrPhases, schedule) {
           )).join(' · '),
       phaseSummaries,
       phaseCount: phaseSummaries.length,
-      scopeCount: persistedLines.length,
+      scopeCount: persistedLines.length + (record.persistedHardwareLines?.length ?? 0),
       scopeEventTypes,
       currentDraw: record.persistedInvoice.grossAmount,
       utilityRows,
@@ -677,6 +778,7 @@ export function summarizeDrawPackage(record, job, phaseOrPhases, schedule) {
     'drawInvoiceAmounts',
   )
   const separateHardwarePrice = Boolean(schedule?.separateHardwarePrice)
+  const hardwareBillingMode = getHardwareBillingMode(schedule)
   const hardwareSelectionKeys = new Set(
     record?.hardwareSelectionKeys
       ?? selections
@@ -685,8 +787,39 @@ export function summarizeDrawPackage(record, job, phaseOrPhases, schedule) {
           hardwareSelectionKey(phaseId, lotId, drawIndex)
         )),
   )
-  const hardwareRows = separateHardwarePrice
-    ? selections.flatMap((selection) => {
+  const hardwareCandidates = !separateHardwarePrice
+    ? []
+    : hardwareBillingMode === 'BY_EVENT'
+      ? hardwareSelections.flatMap((selection) => {
+          const scope = scopeForSelection(selection)
+          const row = rowForSelection(selection)
+          const eventType = selection.eventType
+          if (!scope || !row || row.isUtilityBuilding) return []
+          const selectionKey = hardwareEventSelectionKey(
+            scope.phaseId,
+            row.id,
+            eventType,
+          )
+          return [{
+            selectionKey,
+            phaseId: scope.phaseId,
+            phaseCode: scope.phase.name ?? scope.phase.code ?? null,
+            building: scope.phase.building ?? null,
+            lotId: row.id,
+            lotNumber: row.lotNumber,
+            planCode: row.planCode,
+            drawIndex: null,
+            drawName: '',
+            eventType,
+            hardwareBillingMode,
+            hardwareEventType: eventType,
+            hardwarePercentage: getHardwareEventPercentage(schedule, eventType),
+            hardwareAmount: row.hardwareEventAmounts?.[eventType] ?? 0,
+            chargeHardware: selection.chargeHardware !== false,
+            isCalendarSuggested: Boolean(selection.isCalendarSuggested),
+          }]
+        })
+      : selections.flatMap((selection) => {
         const scope = scopeForSelection(selection)
         const row = rowForSelection(selection)
         if (!scope || !row || row.isUtilityBuilding) return []
@@ -705,11 +838,24 @@ export function summarizeDrawPackage(record, job, phaseOrPhases, schedule) {
           planCode: row.planCode,
           drawIndex: selection.drawIndex,
           drawName: schedule.draws?.[selection.drawIndex]?.name ?? '',
+          eventType: schedule.draws?.[selection.drawIndex]?.eventType ?? null,
+          hardwareBillingMode,
+          hardwareEventType: null,
+          hardwarePercentage: 100,
           hardwareAmount: row.hardwarePrice,
           chargeHardware: hardwareSelectionKeys.has(selectionKey),
         }]
       })
-    : []
+  const hardwareRows = hardwareCandidates.filter((candidate, index) => (
+    hardwareBillingMode !== 'BY_EVENT'
+    || (
+      candidate.hardwarePercentage > 0
+      && hardwareCandidates.findIndex((row) => (
+        String(row.lotId) === String(candidate.lotId)
+        && row.hardwareEventType === candidate.hardwareEventType
+      )) === index
+    )
+  ))
   const hardwareTotal = hardwareRows
     .filter((row) => row.chargeHardware)
     .reduce(
@@ -764,7 +910,17 @@ export function summarizeDrawPackage(record, job, phaseOrPhases, schedule) {
       drawIndex: selection.drawIndex,
     }
   }).filter(Boolean)
-  const phaseSummaries = buildPhaseSummaries(selectedLines, phaseById)
+  const selectedHardwareLines = hardwareRows
+    .filter((row) => row.chargeHardware)
+    .map((row) => ({
+      ...row,
+      drawIndex: null,
+      isUtilityBuilding: false,
+    }))
+  const phaseSummaries = buildPhaseSummaries(
+    [...selectedLines, ...selectedHardwareLines],
+    phaseById,
+  )
 
   return {
     worksheet: phaseScopes[0]?.worksheet ?? buildDrawWorksheet(job, null, schedule),
@@ -784,7 +940,7 @@ export function summarizeDrawPackage(record, job, phaseOrPhases, schedule) {
         )).join(' · '),
     phaseSummaries,
     phaseCount: phaseSummaries.length,
-    scopeCount: selections.length,
+    scopeCount: selections.length + selectedHardwareLines.length,
     scopeEventTypes,
     currentDraw,
     utilityRows,

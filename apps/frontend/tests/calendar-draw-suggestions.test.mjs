@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
+  buildAvailableSeparateHardwareSelections,
   buildCalendarDrawSuggestion,
   buildDrawCalendarHeadings,
   calendarSelectionKey,
@@ -223,4 +224,63 @@ test('Calendar suggestions ignore Utility Building rows inside a normal Phase', 
 
   assert.deepEqual(suggestion.suggestedSelections, [])
   assert.equal(suggestion.estimatedInvoiceAmount, 0)
+})
+
+test('an HW Calendar event suggests Separate Hardware without an HW Draw', () => {
+  const job = jobWithLots([101])
+  job.sequenceSheet.plans[0].hardwarePrice = 600
+  const suggestion = buildCalendarDrawSuggestion({
+    activities: [activity([
+      stage('HW', [productionSchedule(1, '2026-09-29', [101])]),
+    ])],
+    job,
+    schedule: {
+      frequency: 'MONTHLY',
+      anyDate: false,
+      cutoffDay: 30,
+      draws: [
+        { percentage: 50, eventType: 'EXT' },
+        { percentage: 50, eventType: 'DM' },
+      ],
+      separateHardwarePrice: true,
+      hardwareBillingMode: 'BY_EVENT',
+      hardwareEventPercentages: { EXT: 0, DM: 0, HW: 100 },
+    },
+    packages: [],
+    asOfDate: '2026-09-29',
+  })
+
+  assert.deepEqual(suggestion.suggestedSelections, [])
+  assert.deepEqual(suggestion.suggestedHardwareSelections, [{
+    phaseId: 21,
+    lotId: 101,
+    eventType: 'HW',
+  }])
+  assert.deepEqual(suggestion.eventTypes, ['HW'])
+  assert.equal(suggestion.estimatedInvoiceAmount, 600)
+})
+
+test('Separate Hardware keeps every configured Lot available without Calendar work', () => {
+  const job = jobWithLots([101, 102])
+  job.sequenceSheet.phases[0].lots.push({
+    id: 103,
+    lotNumber: 'Utility A',
+    planId: 1,
+    optionIds: [],
+    isUtilityBuilding: true,
+  })
+
+  assert.deepEqual(buildAvailableSeparateHardwareSelections({
+    job,
+    schedule: {
+      separateHardwarePrice: true,
+      hardwareBillingMode: 'BY_EVENT',
+      hardwareEventPercentages: { EXT: 20, DM: 0, HW: 80 },
+    },
+  }), [
+    { phaseId: 21, lotId: 101, eventType: 'EXT' },
+    { phaseId: 21, lotId: 101, eventType: 'HW' },
+    { phaseId: 21, lotId: 102, eventType: 'EXT' },
+    { phaseId: 21, lotId: 102, eventType: 'HW' },
+  ])
 })

@@ -34,7 +34,7 @@ const optionalPercentageSchema = z
     'Use at most two decimals.',
   )
 
-const utilityEventPercentageSchema = z.preprocess(
+const eventPercentageSchema = z.preprocess(
   (value) => (value === '' || value === null || value === undefined ? 0 : value),
   z.coerce
     .number({ invalid_type_error: 'Enter a valid percentage.' })
@@ -93,12 +93,18 @@ export function createBuilderDrawScheduleSchema(schedules, currentScheduleId) {
         .min(MIN_DRAW_COUNT, `Configure at least ${MIN_DRAW_COUNT} draws.`)
         .max(MAX_DRAW_COUNT, `Configure no more than ${MAX_DRAW_COUNT} draws.`),
       separateHardwarePrice: z.boolean().default(false),
+      hardwareBillingMode: z.enum(['FULL', 'BY_EVENT']).default('FULL'),
+      hardwareEventPercentages: z.object({
+        EXT: eventPercentageSchema,
+        DM: eventPercentageSchema,
+        HW: eventPercentageSchema,
+      }),
       utilityBuilding: z.boolean().default(false),
       utilityBillingMode: z.enum(['FULL', 'BY_EVENT']).default('FULL'),
       utilityEventPercentages: z.object({
-        EXT: utilityEventPercentageSchema,
-        DM: utilityEventPercentageSchema,
-        HW: utilityEventPercentageSchema,
+        EXT: eventPercentageSchema,
+        DM: eventPercentageSchema,
+        HW: eventPercentageSchema,
       }),
       optionsBillingDrawIndex: optionalDrawIndexSchema,
       frequency: z.enum(['MONTHLY', 'SEMIMONTHLY', 'WEEKLY']),
@@ -165,6 +171,24 @@ export function createBuilderDrawScheduleSchema(schedules, currentScheduleId) {
           path: ['optionsBillingDrawIndex'],
           message: 'Select one of the configured draws.',
         })
+      }
+
+      if (data.separateHardwarePrice) {
+        const hardwareTotal = Object.values(data.hardwareEventPercentages).reduce(
+          (sum, percentage) => sum + percentage,
+          0,
+        )
+
+        if (
+          data.hardwareBillingMode !== 'BY_EVENT'
+          || Math.abs(hardwareTotal - 100) > 0.001
+        ) {
+          context.addIssue({
+            code: 'custom',
+            path: ['hardwareEventPercentages'],
+            message: 'Hardware event percentages must total exactly 100%.',
+          })
+        }
       }
 
       if (data.utilityBuilding && data.utilityBillingMode === 'BY_EVENT') {
@@ -298,6 +322,10 @@ export function createBuilderDrawScheduleSchema(schedules, currentScheduleId) {
     })
     .transform((data) => ({
       ...data,
+      hardwareBillingMode: data.separateHardwarePrice ? 'BY_EVENT' : 'FULL',
+      hardwareEventPercentages: data.separateHardwarePrice
+        ? data.hardwareEventPercentages
+        : { EXT: 0, DM: 0, HW: 0 },
       utilityBillingMode: data.utilityBuilding
         ? data.utilityBillingMode
         : 'FULL',

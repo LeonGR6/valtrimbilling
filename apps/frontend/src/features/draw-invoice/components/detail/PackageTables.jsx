@@ -266,7 +266,7 @@ export function PackageUtilityTable({ summary }) {
               <TableCell>Phase</TableCell>
               <TableCell>Utility</TableCell>
               <TableCell>Plan</TableCell>
-              <TableCell>Billing draw</TableCell>
+              <TableCell>Billing trigger</TableCell>
               <TableCell align="right">Plan Price</TableCell>
               <TableCell align="right">Allocation</TableCell>
               <TableCell align="right">Charged</TableCell>
@@ -463,6 +463,7 @@ export function PackageHardwareTable({ summary }) {
               <TableCell>Lot</TableCell>
               <TableCell>Plan</TableCell>
               <TableCell>Billing draw</TableCell>
+              <TableCell>Allocation</TableCell>
               <TableCell align="right">Price</TableCell>
               <TableCell>Status</TableCell>
             </TableRow>
@@ -470,7 +471,8 @@ export function PackageHardwareTable({ summary }) {
           <TableBody>
             {hardwareRows.map((hardware) => (
               <TableRow
-                key={`${hardware.phaseId}:${hardware.lotId}:${hardware.drawIndex}`}
+                key={hardware.id
+                  ?? `${hardware.phaseId}:${hardware.lotId}:${hardware.hardwareEventType ?? hardware.drawIndex}`}
                 hover
               >
                 <TableCell>
@@ -484,9 +486,17 @@ export function PackageHardwareTable({ summary }) {
                 <TableCell>{hardware.planCode ?? '—'}</TableCell>
                 <TableCell>
                   <Typography fontWeight={750}>
-                    Draw #{hardware.drawIndex + 1}
-                    {hardware.drawName?.trim() ? ` · ${hardware.drawName.trim()}` : ''}
+                    {hardware.hardwareBillingMode === 'BY_EVENT'
+                      ? `${hardware.hardwareEventType} Calendar event`
+                      : `Draw #${hardware.drawIndex + 1}${hardware.drawName?.trim()
+                        ? ` · ${hardware.drawName.trim()}`
+                        : ''}`}
                   </Typography>
+                </TableCell>
+                <TableCell>
+                  {hardware.hardwareBillingMode === 'BY_EVENT'
+                    ? `${hardware.hardwareEventType} · ${hardware.hardwarePercentage}%`
+                    : '100% full'}
                 </TableCell>
                 <TableCell align="right">
                   <Typography fontWeight={750}>
@@ -501,7 +511,7 @@ export function PackageHardwareTable({ summary }) {
           </TableBody>
           <TableFooter>
             <TableRow>
-              <TableCell colSpan={4}>
+              <TableCell colSpan={5}>
                 <Typography fontWeight={850}>Hardware total in this package</Typography>
               </TableCell>
               <TableCell align="right">

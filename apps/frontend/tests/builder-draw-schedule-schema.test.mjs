@@ -198,13 +198,38 @@ test('Builder Draw Schedule allows the same event on multiple Draws', () => {
   ])
 })
 
-test('Builder Draw Schedule enables separate hardware without a fixed billing Draw', () => {
+test('Builder Draw Schedule allocates Separate Hardware across Draw events', () => {
   const result = createBuilderDrawScheduleSchema([], null).parse(validSetup({
     separateHardwarePrice: true,
+    hardwareBillingMode: 'BY_EVENT',
+    hardwareEventPercentages: { EXT: 20, DM: 30, HW: 50 },
   }))
 
   assert.equal(result.separateHardwarePrice, true)
+  assert.equal(result.hardwareBillingMode, 'BY_EVENT')
+  assert.deepEqual(result.hardwareEventPercentages, { EXT: 20, DM: 30, HW: 50 })
   assert.equal('hardwareBillingDrawIndex' in result, false)
+})
+
+test('Separate Hardware requires 100 percent but does not require matching Draw events', () => {
+  const schema = createBuilderDrawScheduleSchema([], null)
+  const incomplete = schema.safeParse(validSetup({
+    separateHardwarePrice: true,
+    hardwareBillingMode: 'BY_EVENT',
+    hardwareEventPercentages: { EXT: 20, DM: 30, HW: 40 },
+  }))
+  const missingEvent = schema.safeParse(validSetup({
+    draws: [
+      { percentage: 50, eventType: 'EXT' },
+      { percentage: 50, eventType: 'DM' },
+    ],
+    separateHardwarePrice: true,
+    hardwareBillingMode: 'BY_EVENT',
+    hardwareEventPercentages: { EXT: 50, DM: 25, HW: 25 },
+  }))
+
+  assert.equal(incomplete.success, false)
+  assert.equal(missingEvent.success, true)
 })
 
 test('Builder Draw Schedule stores the draw used to bill selected options', () => {

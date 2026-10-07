@@ -344,7 +344,7 @@ function PhaseDetails({ builderId, canManage, job, phase, onBack, onDelete, onEd
           <Box sx={{ px: 2.5, py: 2, bgcolor: 'action.hover' }}>
             <Typography fontWeight={750}>Phase assignments</Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mt: 0.25 }}>
-              Lots keep their orientation and options. Utility rows use only one Plan Price.
+              Lots and Utility rows keep their orientation. Utility rows use only one Plan Price.
             </Typography>
           </Box>
           <Divider />
@@ -381,14 +381,12 @@ function PhaseDetails({ builderId, canManage, job, phase, onBack, onDelete, onEd
                         {plan ? `${plan.code}` : 'Plan unavailable'}
                       </TableCell>
                       <TableCell align="center" sx={{ width: 120 }}>
-                        {lot.isUtilityBuilding ? '—' : (
-                          <Chip
-                            size="small"
-                            color={lot.reverse ? 'primary' : 'default'}
-                            variant={lot.reverse ? 'filled' : 'outlined'}
-                            label={lot.reverse ? 'Yes' : 'No'}
-                          />
-                        )}
+                        <Chip
+                          size="small"
+                          color={lot.reverse ? 'primary' : 'default'}
+                          variant={lot.reverse ? 'filled' : 'outlined'}
+                          label={lot.reverse ? 'Yes' : 'No'}
+                        />
                       </TableCell>
                       <TableCell sx={{ minWidth: 320 }}>
                         {lot.isUtilityBuilding ? (
@@ -711,6 +709,22 @@ function UtilityRowEditor({ index, job, control, register, errors, remove, canRe
             </TextField>
           )}
         />
+        <Controller
+          name={`lots.${index}.reverse`}
+          control={control}
+          render={({ field }) => (
+            <FormControlLabel
+              sx={{ mt: { md: 1 }, minWidth: 118 }}
+              control={
+                <Checkbox
+                  checked={field.value}
+                  onChange={(_, checked) => field.onChange(checked)}
+                />
+              }
+              label="Reverse"
+            />
+          )}
+        />
       </Stack>
     </Box>
   )
@@ -999,8 +1013,8 @@ function PhaseDialog({
             {utilityBuildingEnabled && (
               <Alert severity="info" sx={{ mt: 2 }}>
                 {utilityBuildingRequired
-                  ? 'Utility Building is active for this Job. Every Phase must include at least one named Utility row with a Plan.'
-                  : 'Utility rows use only the full Plan Price. They do not count as Lots or appear in Lot ranges, and cannot include Reverse, Options or Hardware.'}
+                  ? 'Utility Building is active for this Job. Every Phase must include at least one named Utility row with a Plan; Reverse is optional.'
+                  : 'Utility rows use only the full Plan Price and may be marked Reverse. They do not count as Lots or appear in Lot ranges, and cannot include Options or Hardware.'}
               </Alert>
             )}
           </Box>

@@ -21,13 +21,17 @@ import {
 } from '@mui/material'
 import { canCorrectDrawPackage } from '../services/drawInvoicePackageRecord.js'
 import {
+  buildBilledHardwareCharges,
   buildBilledUtilityCharges,
   buildUsedDrawSelections,
   drawSelectionKey,
+  hardwareChargeKey,
   utilityChargeKey,
 } from '../utils/drawPackages.js'
 import {
   buildDrawWorksheet,
+  getHardwareBillingMode,
+  getHardwareEventPercentage,
   getUtilityBillingMode,
   getUtilityEventPercentage,
 } from '../utils/drawWorksheet.js'
@@ -71,6 +75,10 @@ export function EditDrawPackageDialog({
     () => buildBilledUtilityCharges(packages, record.jobId, record.id),
     [packages, record.id, record.jobId],
   )
+  const billedHardwareCharges = useMemo(
+    () => buildBilledHardwareCharges(packages, record.jobId, record.id),
+    [packages, record.id, record.jobId],
+  )
   const selectedKeys = new Set(selections.map(cellKey))
   const originalKeys = new Set(record.selections.map(cellKey))
   const removedCount = record.selections.filter(
@@ -106,10 +114,31 @@ export function EditDrawPackageDialog({
               !== selectedEventType
           })
         : current
+      const hardwareBillingMode = getHardwareBillingMode(schedule)
+      const hardwareEventType = worksheet.draws[drawIndex]?.eventType
+      const hardwareKey = hardwareChargeKey(
+        lotId,
+        hardwareBillingMode,
+        hardwareEventType,
+      )
+      const hardwareAlreadySelected = current.some((selection) => (
+        String(selection.lotId) === String(lotId)
+        && selection.chargeHardware
+        && hardwareChargeKey(
+          lotId,
+          hardwareBillingMode,
+          worksheet.draws[selection.drawIndex]?.eventType,
+        ) === hardwareKey
+      ))
+      const chargeHardware = !rowsById.get(String(lotId))?.isUtilityBuilding
+        && hardwareBillingMode === 'BY_EVENT'
+        && getHardwareEventPercentage(schedule, hardwareEventType) > 0
+        && !billedHardwareCharges.has(hardwareKey)
+        && !hardwareAlreadySelected
       return [
         ...withoutCurrentUtilityRow,
         record.selections.find((selection) => cellKey(selection) === key)
-          ?? { phaseId: activePhase.id, lotId, drawIndex },
+          ?? { phaseId: activePhase.id, lotId, drawIndex, chargeHardware },
       ]
     })
   }
@@ -347,7 +376,8 @@ export function TransferDrawPackageCellsDialog({
                     phaseId: line.phaseId,
                     lotId: line.lotId,
                     drawIndex: line.drawIndex,
-                    chargeHardware: Number(line.hardwareAmount) > 0,
+                    chargeHardware: Number(line.hardwarePercentage) > 0
+                      || Number(line.hardwareAmount) > 0,
                   }
                   const rowLabel = line.isUtilityBuilding
                     ? line.utilityLabel

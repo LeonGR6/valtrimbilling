@@ -18,6 +18,12 @@ export const emptyUtilityEventPercentages = {
   HW: 0,
 }
 
+export const emptyHardwareEventPercentages = {
+  EXT: 0,
+  DM: 0,
+  HW: 0,
+}
+
 export const defaultDraws = [
   { name: '', percentage: 0, eventType: '' },
   { name: '', percentage: 0, eventType: '' },
@@ -73,6 +79,8 @@ export const retentionReleaseScopeLabels = Object.fromEntries(
 
 export const defaultBillingSettings = {
   separateHardwarePrice: false,
+  hardwareBillingMode: 'FULL',
+  hardwareEventPercentages: { ...emptyHardwareEventPercentages },
   utilityBuilding: false,
   utilityBillingMode: 'FULL',
   utilityEventPercentages: { ...emptyUtilityEventPercentages },

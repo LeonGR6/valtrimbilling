@@ -41,6 +41,10 @@ function normalizeUtilityBillingMode(value) {
   return value === 'BY_EVENT' ? value : 'FULL'
 }
 
+function normalizeHardwareBillingMode(value) {
+  return value === 'BY_EVENT' ? value : 'FULL'
+}
+
 export function toBuilderDrawSchedule(version, draws = [], documents = []) {
   const documentTypes = new Set(
     documents
@@ -66,6 +70,14 @@ export function toBuilderDrawSchedule(version, draws = [], documents = []) {
         eventType: draw.event_type,
       })),
     separateHardwarePrice: version.separate_hardware_price,
+    hardwareBillingMode: normalizeHardwareBillingMode(
+      version.hardware_billing_mode,
+    ),
+    hardwareEventPercentages: {
+      EXT: toNumber(version.hardware_ext_percentage),
+      DM: toNumber(version.hardware_dm_percentage),
+      HW: toNumber(version.hardware_hw_percentage),
+    },
     utilityBuilding: Boolean(version.utility_building),
     utilityBillingMode: normalizeUtilityBillingMode(version.utility_billing_mode),
     utilityEventPercentages: {
@@ -110,6 +122,18 @@ export function toBuilderBillingSetupRpc(schedule) {
     p_builder_id: Number(schedule.builderId),
     p_config: {
       separateHardwarePrice: Boolean(schedule.separateHardwarePrice),
+      hardwareBillingMode: schedule.separateHardwarePrice
+        ? 'BY_EVENT'
+        : 'FULL',
+      hardwareExtPercentage: schedule.separateHardwarePrice
+        ? Number(schedule.hardwareEventPercentages?.EXT) || 0
+        : 0,
+      hardwareDmPercentage: schedule.separateHardwarePrice
+        ? Number(schedule.hardwareEventPercentages?.DM) || 0
+        : 0,
+      hardwareHwPercentage: schedule.separateHardwarePrice
+        ? Number(schedule.hardwareEventPercentages?.HW) || 0
+        : 0,
       utilityBuilding: Boolean(schedule.utilityBuilding),
       utilityBillingMode: schedule.utilityBuilding
         ? normalizeUtilityBillingMode(schedule.utilityBillingMode)

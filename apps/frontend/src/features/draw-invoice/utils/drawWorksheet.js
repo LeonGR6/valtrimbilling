@@ -1,5 +1,5 @@
 const PERCENTAGE_TOLERANCE = 0.001
-const UTILITY_EVENT_TYPES = ['EXT', 'DM', 'HW']
+const BILLING_EVENT_TYPES = ['EXT', 'DM', 'HW']
 
 export function hasPlanPrice(value) {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0
@@ -52,21 +52,27 @@ export function getUtilityBillingMode(schedule) {
 
 export function getUtilityEventPercentage(schedule, eventType) {
   if (getUtilityBillingMode(schedule) !== 'BY_EVENT') return 100
-  if (!UTILITY_EVENT_TYPES.includes(eventType)) return 0
+  if (!BILLING_EVENT_TYPES.includes(eventType)) return 0
   return Number(schedule?.utilityEventPercentages?.[eventType]) || 0
 }
 
-export function allocateUtilityAmounts(basePrice, schedule) {
-  const draws = schedule?.draws ?? []
-  if (!hasPlanPrice(basePrice) || draws.length === 0) {
-    return draws.map(() => null)
-  }
-  if (getUtilityBillingMode(schedule) === 'FULL') {
-    return draws.map(() => basePrice)
-  }
+export function getHardwareBillingMode(schedule) {
+  return schedule?.separateHardwarePrice
+    && schedule?.hardwareBillingMode === 'BY_EVENT'
+    ? 'BY_EVENT'
+    : 'FULL'
+}
 
-  const configuredEvents = UTILITY_EVENT_TYPES.filter(
-    (eventType) => getUtilityEventPercentage(schedule, eventType) > 0,
+export function getHardwareEventPercentage(schedule, eventType) {
+  if (getHardwareBillingMode(schedule) !== 'BY_EVENT') return 100
+  if (!BILLING_EVENT_TYPES.includes(eventType)) return 0
+  return Number(schedule?.hardwareEventPercentages?.[eventType]) || 0
+}
+
+function allocateConfiguredEventAmounts(basePrice, schedule, getEventPercentage) {
+  if (!hasPlanPrice(basePrice)) return null
+  const configuredEvents = BILLING_EVENT_TYPES.filter(
+    (eventType) => getEventPercentage(schedule, eventType) > 0,
   )
   const totalCents = Math.round(basePrice * 100)
   let allocatedCents = 0
@@ -75,13 +81,50 @@ export function allocateUtilityAmounts(basePrice, schedule) {
     const amountCents = isLastEvent
       ? totalCents - allocatedCents
       : Math.round(
-          totalCents * getUtilityEventPercentage(schedule, eventType) / 100,
+          totalCents * getEventPercentage(schedule, eventType) / 100,
         )
     allocatedCents += amountCents
     return [eventType, amountCents / 100]
   }))
 
-  return draws.map((draw) => amountByEvent.get(draw.eventType) ?? 0)
+  return Object.fromEntries(BILLING_EVENT_TYPES.map((eventType) => [
+    eventType,
+    amountByEvent.get(eventType) ?? 0,
+  ]))
+}
+
+function allocateEventAmounts(basePrice, schedule, getEventPercentage) {
+  const draws = schedule?.draws ?? []
+  if (!hasPlanPrice(basePrice) || draws.length === 0) {
+    return draws.map(() => null)
+  }
+  if (getEventPercentage(schedule, null) === 100) {
+    return draws.map(() => basePrice)
+  }
+
+  const amountByEvent = allocateConfiguredEventAmounts(
+    basePrice,
+    schedule,
+    getEventPercentage,
+  )
+
+  return draws.map((draw) => amountByEvent?.[draw.eventType] ?? 0)
+}
+
+export function allocateUtilityAmounts(basePrice, schedule) {
+  return allocateEventAmounts(basePrice, schedule, getUtilityEventPercentage)
+}
+
+export function allocateHardwareAmounts(hardwarePrice, schedule) {
+  return allocateEventAmounts(hardwarePrice, schedule, getHardwareEventPercentage)
+}
+
+export function allocateHardwareEventAmounts(hardwarePrice, schedule) {
+  return allocateConfiguredEventAmounts(
+    hardwarePrice,
+    schedule,
+    getHardwareEventPercentage,
+  ) ?? { EXT: 0, DM: 0, HW: 0 }
 }
 
 export function getRetentionMode(schedule) {
@@ -143,6 +186,7 @@ export function buildDrawWorksheet(job, phase, schedule) {
   const draws = schedule?.draws ?? []
   const scheduleIsValid = isDrawScheduleValid(schedule)
   const separateHardwarePrice = Boolean(schedule?.separateHardwarePrice)
+  const hardwareBillingMode = getHardwareBillingMode(schedule)
   const utilityBillingMode = getUtilityBillingMode(schedule)
   const hasUtilityRows = lots.some((lot) => lot.isUtilityBuilding)
   const utilityCapabilityMissing = hasUtilityRows
@@ -177,6 +221,19 @@ export function buildDrawWorksheet(job, phase, schedule) {
       : draws.map(() => null)
     const drawFinancials = drawAmounts.map((amount) =>
       calculateInvoiceAmounts(amount, schedule))
+    const hardwareEventAmounts = !isUtilityBuilding
+      && separateHardwarePrice
+      && hardwarePriceIsAvailable
+      && hardwareBillingMode === 'BY_EVENT'
+      ? allocateHardwareEventAmounts(hardwarePrice, schedule)
+      : { EXT: 0, DM: 0, HW: 0 }
+    const hardwareAmounts = !isUtilityBuilding
+      && separateHardwarePrice
+      && hardwarePriceIsAvailable
+      ? hardwareBillingMode === 'BY_EVENT'
+        ? draws.map((draw) => hardwareEventAmounts[draw.eventType] ?? 0)
+        : draws.map(() => hardwarePrice)
+      : draws.map(() => 0)
 
     return {
       id: lot.id,
@@ -203,6 +260,26 @@ export function buildDrawWorksheet(job, phase, schedule) {
         && separateHardwarePrice && hardwarePriceIsAvailable
         ? hardwarePrice
         : null,
+      hardwareBillingMode: !isUtilityBuilding && separateHardwarePrice
+        ? hardwareBillingMode
+        : null,
+      hardwarePercentages: !isUtilityBuilding && separateHardwarePrice
+        ? draws.map((draw) => (
+            hardwareBillingMode === 'BY_EVENT'
+              ? getHardwareEventPercentage(schedule, draw.eventType)
+              : 100
+          ))
+        : draws.map(() => 0),
+      hardwareEventPercentages: !isUtilityBuilding && separateHardwarePrice
+        ? Object.fromEntries(BILLING_EVENT_TYPES.map((eventType) => [
+            eventType,
+            hardwareBillingMode === 'BY_EVENT'
+              ? getHardwareEventPercentage(schedule, eventType)
+              : 0,
+          ]))
+        : { EXT: 0, DM: 0, HW: 0 },
+      hardwareEventAmounts,
+      hardwareAmounts,
       drawAmounts,
       drawRetentionAmounts: drawFinancials.map(({ retention }) => retention),
       drawWrapInsuranceAmounts: drawFinancials.map(
@@ -298,6 +375,7 @@ export function buildDrawWorksheet(job, phase, schedule) {
     hasUtilityRows,
     utilityCapabilityMissing,
     separateHardwarePrice,
+    hardwareBillingMode,
     utilityBillingMode,
     hasSchedule: Boolean(schedule),
     scheduleIsValid,

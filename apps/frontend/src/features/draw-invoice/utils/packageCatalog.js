@@ -1,7 +1,7 @@
 import {
   DRAW_PACKAGE_STATUSES,
   DRAW_PACKAGE_STATUS_LABELS,
-  canCorrectDrawPackage,
+  canManageDraftDrawPackage,
 } from '../services/drawInvoicePackageRecord.js'
 
 export const PACKAGE_CATALOG_TABS = [
@@ -15,7 +15,7 @@ export const PACKAGE_CATALOG_TABS = [
 export function canDeleteDraftPackage(record) {
   if (record?.status !== 'DRAFT') return false
   if (record.packageType !== 'RETENTION_RELEASE') {
-    return canCorrectDrawPackage(record)
+    return canManageDraftDrawPackage(record)
   }
   return record.persistedInvoice?.status === 'DRAFT'
     && !record.invoiceNumber

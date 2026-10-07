@@ -1,10 +1,16 @@
 import { resolveBillingCutoffDate } from '../services/drawInvoicePackageRecord.js'
 import {
+  buildBilledHardwareCharges,
   buildOptionChargeContext,
   buildUsedDrawSelections,
   drawSelectionKey,
+  hardwareChargeKey,
   summarizeDrawPackage,
 } from './drawPackages.js'
+import {
+  getHardwareBillingMode,
+  getHardwareEventPercentage,
+} from './drawWorksheet.js'
 
 const DAY_MS = 24 * 60 * 60 * 1000
 const EVENT_TYPE_ORDER = ['EXT', 'DM', 'HW']
@@ -40,6 +46,19 @@ function compareSelections(left, right) {
     || left.drawIndex - right.drawIndex
 }
 
+function compareHardwareSelections(left, right) {
+  return String(left.phaseId).localeCompare(String(right.phaseId), 'en', {
+    numeric: true,
+    sensitivity: 'base',
+  })
+    || String(left.lotId).localeCompare(String(right.lotId), 'en', {
+      numeric: true,
+      sensitivity: 'base',
+    })
+    || EVENT_TYPE_ORDER.indexOf(left.eventType)
+      - EVENT_TYPE_ORDER.indexOf(right.eventType)
+}
+
 function toCutoffSetup(schedule) {
   return {
     frequency: schedule?.frequency,
@@ -50,8 +69,15 @@ function toCutoffSetup(schedule) {
   }
 }
 
-function estimateInvoiceAmount(selections, job, phases, schedule, packages) {
-  if (selections.length === 0) return 0
+function estimateInvoiceAmount(
+  selections,
+  hardwareSelections,
+  job,
+  phases,
+  schedule,
+  packages,
+) {
+  if (selections.length === 0 && hardwareSelections.length === 0) return 0
 
   const optionContext = buildOptionChargeContext(
     packages,
@@ -60,6 +86,7 @@ function estimateInvoiceAmount(selections, job, phases, schedule, packages) {
   )
   const summary = summarizeDrawPackage({
     selections,
+    hardwareSelections,
     optionsBillingDrawIndex: schedule?.optionsBillingDrawIndex ?? null,
     ...optionContext,
   }, job, phases, schedule)
@@ -76,6 +103,9 @@ function emptySuggestion(mode, cutoffDate = null) {
     eligibleCandidates: [],
     eligibleSelections: [],
     suggestedSelections: [],
+    eligibleHardwareCandidates: [],
+    eligibleHardwareSelections: [],
+    suggestedHardwareSelections: [],
     estimatedInvoiceAmount: 0,
     eventTypes: [],
   }
@@ -90,6 +120,30 @@ export function localDateKey(date = new Date()) {
 
 export function calendarSelectionKey(phaseId, lotId, drawIndex) {
   return `${phaseId}:${lotId}:${drawIndex}`
+}
+
+export function hardwareCalendarSelectionKey(phaseId, lotId, eventType) {
+  return `${phaseId}:${lotId}:${eventType}`
+}
+
+export function buildAvailableSeparateHardwareSelections({ job, schedule }) {
+  if (!job || getHardwareBillingMode(schedule) !== 'BY_EVENT') return []
+
+  const configuredEventTypes = EVENT_TYPE_ORDER.filter(
+    (eventType) => getHardwareEventPercentage(schedule, eventType) > 0,
+  )
+
+  return (job.sequenceSheet?.phases ?? []).flatMap((phase) => (
+    (phase.lots ?? []).flatMap((lot) => (
+      lot.isUtilityBuilding
+        ? []
+        : configuredEventTypes.map((eventType) => ({
+            phaseId: phase.id,
+            lotId: lot.id,
+            eventType,
+          }))
+    ))
+  ))
 }
 
 export function buildDrawCalendarHeadings({
@@ -172,7 +226,10 @@ export function buildCalendarDrawSuggestion({
   }
 
   const usedSelections = buildUsedDrawSelections(packages)
+  const billedHardwareCharges = buildBilledHardwareCharges(packages, job.id)
+  const hardwareBillingMode = getHardwareBillingMode(schedule)
   const candidatesByKey = new Map()
+  const hardwareCandidatesByKey = new Map()
 
   for (const activity of activities) {
     if (
@@ -183,9 +240,11 @@ export function buildCalendarDrawSuggestion({
 
     const lotIdsInPhase = phaseLots.get(String(activity.phaseId))
     for (const stage of activity.stages ?? []) {
-      if (stage.isEnabled === false) continue
+      if (stage.isEnabled === false || !EVENT_TYPE_ORDER.includes(stage.type)) continue
       const drawIndexes = drawIndexesByEventType.get(stage.type) ?? []
-      if (drawIndexes.length === 0) continue
+      const hardwarePercentage = hardwareBillingMode === 'BY_EVENT'
+        ? getHardwareEventPercentage(schedule, stage.type)
+        : 0
 
       for (const productionSchedule of stage.schedules ?? []) {
         if (productionSchedule.isActive === false || !parseDateKey(productionSchedule.date)) {
@@ -220,6 +279,32 @@ export function buildCalendarDrawSuggestion({
               candidatesByKey.set(key, candidate)
             }
           }
+
+          if (
+            hardwarePercentage > 0
+            && !billedHardwareCharges.has(
+              hardwareChargeKey(lotId, 'BY_EVENT', stage.type),
+            )
+          ) {
+            const key = hardwareCalendarSelectionKey(
+              activity.phaseId,
+              lotId,
+              stage.type,
+            )
+            const candidate = {
+              key,
+              phaseId: activity.phaseId,
+              lotId,
+              eventType: stage.type,
+              eventDate: productionSchedule.date,
+              activityId: activity.id,
+              scheduleId: productionSchedule.id,
+            }
+            const existing = hardwareCandidatesByKey.get(key)
+            if (!existing || candidate.eventDate < existing.eventDate) {
+              hardwareCandidatesByKey.set(key, candidate)
+            }
+          }
         }
       }
     }
@@ -238,8 +323,16 @@ export function buildCalendarDrawSuggestion({
   const eligibleSelections = eligibleCandidates
     .map(({ phaseId, lotId, drawIndex }) => ({ phaseId, lotId, drawIndex }))
     .sort(compareSelections)
+  const eligibleHardwareCandidates = [...hardwareCandidatesByKey.values()]
+    .filter((candidate) => candidate.eventDate <= latestEligibleDate)
+    .sort((left, right) => left.eventDate.localeCompare(right.eventDate)
+      || compareHardwareSelections(left, right))
+  const eligibleHardwareSelections = eligibleHardwareCandidates
+    .map(({ phaseId, lotId, eventType }) => ({ phaseId, lotId, eventType }))
+    .sort(compareHardwareSelections)
   const eventTypes = EVENT_TYPE_ORDER.filter((eventType) =>
-    eligibleCandidates.some((candidate) => candidate.eventType === eventType))
+    eligibleCandidates.some((candidate) => candidate.eventType === eventType)
+    || eligibleHardwareCandidates.some((candidate) => candidate.eventType === eventType))
 
   if (mode === 'CUTOFF') {
     return {
@@ -249,9 +342,13 @@ export function buildCalendarDrawSuggestion({
       windowEnd: null,
       eligibleCandidates,
       eligibleSelections,
+      eligibleHardwareCandidates,
+      eligibleHardwareSelections,
       suggestedSelections: eligibleSelections,
+      suggestedHardwareSelections: eligibleHardwareSelections,
       estimatedInvoiceAmount: estimateInvoiceAmount(
         eligibleSelections,
+        eligibleHardwareSelections,
         job,
         phases,
         schedule,
@@ -263,7 +360,8 @@ export function buildCalendarDrawSuggestion({
 
   let bestWindow = null
   const windowEnds = [...new Set(
-    eligibleCandidates.map(({ eventDate }) => eventDate),
+    [...eligibleCandidates, ...eligibleHardwareCandidates]
+      .map(({ eventDate }) => eventDate),
   )].sort()
 
   for (const windowEnd of windowEnds) {
@@ -274,8 +372,13 @@ export function buildCalendarDrawSuggestion({
     const selections = windowCandidates
       .map(({ phaseId, lotId, drawIndex }) => ({ phaseId, lotId, drawIndex }))
       .sort(compareSelections)
+    const hardwareSelections = eligibleHardwareCandidates
+      .filter(({ eventDate }) => eventDate >= windowStart && eventDate <= windowEnd)
+      .map(({ phaseId, lotId, eventType }) => ({ phaseId, lotId, eventType }))
+      .sort(compareHardwareSelections)
     const estimatedInvoiceAmount = estimateInvoiceAmount(
       selections,
+      hardwareSelections,
       job,
       phases,
       schedule,
@@ -291,11 +394,13 @@ export function buildCalendarDrawSuggestion({
       || amountCents > bestAmountCents
       || (
         amountCents === bestAmountCents
-        && selections.length > bestWindow.selections.length
+        && selections.length + hardwareSelections.length
+          > bestWindow.selections.length + bestWindow.hardwareSelections.length
       )
       || (
         amountCents === bestAmountCents
-        && selections.length === bestWindow.selections.length
+        && selections.length + hardwareSelections.length
+          === bestWindow.selections.length + bestWindow.hardwareSelections.length
         && windowStart < bestWindow.windowStart
       )
     ) {
@@ -303,6 +408,7 @@ export function buildCalendarDrawSuggestion({
         windowStart,
         windowEnd,
         selections,
+        hardwareSelections,
         estimatedInvoiceAmount,
       }
     }
@@ -315,7 +421,10 @@ export function buildCalendarDrawSuggestion({
     windowEnd: bestWindow?.windowEnd ?? null,
     eligibleCandidates,
     eligibleSelections,
+    eligibleHardwareCandidates,
+    eligibleHardwareSelections,
     suggestedSelections: bestWindow?.selections ?? [],
+    suggestedHardwareSelections: bestWindow?.hardwareSelections ?? [],
     estimatedInvoiceAmount: bestWindow?.estimatedInvoiceAmount ?? 0,
     eventTypes,
   }

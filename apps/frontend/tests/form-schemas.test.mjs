@@ -368,7 +368,7 @@ test('a Utility-enabled Job accepts a Phase with a named Utility Building row', 
         lotNumber: '',
         utilityName: ' Clubhouse ',
         planId: 1101,
-        reverse: false,
+        reverse: true,
         optionIds: [],
         isUtilityBuilding: true,
       },
@@ -390,7 +390,7 @@ test('a Utility-enabled Job accepts a Phase with a named Utility Building row', 
         lotNumber: '',
         utilityName: 'Clubhouse',
         planId: 1101,
-        reverse: false,
+        reverse: true,
         optionIds: [],
         isUtilityBuilding: true,
       },
@@ -420,7 +420,7 @@ test('a Utility-enabled Job rejects a Phase without a Utility Building row', () 
   )
 })
 
-test('Utility Building rows reject Reverse and Options', () => {
+test('Utility Building rows allow Reverse but still reject Options', () => {
   const job = testJobs.find((item) => item.code === '1307')
   const result = createPhaseByLotSchema(job).safeParse({
     phaseName: 'Utility',

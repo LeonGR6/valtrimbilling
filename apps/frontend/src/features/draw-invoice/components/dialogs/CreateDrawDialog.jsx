@@ -25,17 +25,19 @@ import {
   formatPhase,
 } from '../../../sequence-sheets/utils/phaseBuildingCodes.js'
 import {
-  buildBilledHardwareLots,
+  buildBilledHardwareCharges,
   buildBilledUtilityCharges,
   buildOptionChargeContext,
   buildUsedDrawSelections,
   drawSelectionKey,
+  hardwareChargeKey,
   hardwareSelectionKey,
   summarizeDrawPackage,
   utilityChargeKey,
 } from '../../utils/drawPackages.js'
 import {
   buildDrawWorksheet,
+  getHardwareBillingMode,
   getUtilityBillingMode,
   getUtilityEventPercentage,
 } from '../../utils/drawWorksheet.js'
@@ -45,6 +47,7 @@ import {
   readinessLabel,
 } from '../../utils/drawInvoiceFormatters.js'
 import {
+  buildAvailableSeparateHardwareSelections,
   buildCalendarDrawSuggestion,
   buildDrawCalendarHeadings,
   calendarSelectionKey,
@@ -86,6 +89,7 @@ export default function CreateDrawDialog({
   )
   const [selectionOverrides, setSelectedSelections] = useState(null)
   const [hardwareSelectionKeys, setHardwareSelectionKeys] = useState([])
+  const [splitHardwareSelectionKeys, setSplitHardwareSelectionKeys] = useState(null)
   const [fullUtilityRowIds, setFullUtilityRowIds] = useState([])
   const [excludedUtilityChargeKeys, setExcludedUtilityChargeKeys] = useState([])
   const [excludedOptionKeys, setExcludedOptionKeys] = useState([])
@@ -113,7 +117,7 @@ export default function CreateDrawDialog({
     () => buildUsedDrawSelections(packages),
     [packages],
   )
-  const billedHardwareLots = buildBilledHardwareLots(packages, job?.id)
+  const billedHardwareCharges = buildBilledHardwareCharges(packages, job?.id)
   const billedUtilityCharges = buildBilledUtilityCharges(packages, job?.id)
   const calendarSuggestion = buildCalendarDrawSuggestion({
     activities: productionActivities,
@@ -151,6 +155,7 @@ export default function CreateDrawDialog({
     ),
   )
   const utilityBillingMode = getUtilityBillingMode(schedule)
+  const hardwareBillingMode = getHardwareBillingMode(schedule)
   const selectedLotDrawIndexes = [...new Set(
     lotSelectedSelections.map(({ drawIndex }) => Number(drawIndex)),
   )].sort((left, right) => left - right)
@@ -201,6 +206,39 @@ export default function CreateDrawDialog({
   const utilitySelections = utilityBillingMode === 'BY_EVENT'
     ? splitUtilitySelections
     : fullUtilitySelections
+  const suggestedSplitHardwareSelections = hardwareBillingMode === 'BY_EVENT'
+    ? calendarSuggestion.suggestedHardwareSelections.filter(
+        ({ lotId, eventType }) => !billedHardwareCharges.has(
+          hardwareChargeKey(lotId, 'BY_EVENT', eventType),
+        ),
+      )
+    : []
+  const suggestedSplitHardwareChargeKeys = new Set(
+    suggestedSplitHardwareSelections.map(({ lotId, eventType }) => (
+      hardwareChargeKey(lotId, 'BY_EVENT', eventType)
+    )),
+  )
+  const selectedSplitHardwareChargeKeys = new Set(
+    splitHardwareSelectionKeys ?? suggestedSplitHardwareChargeKeys,
+  )
+  const splitHardwareSelections = hardwareBillingMode === 'BY_EVENT'
+    ? buildAvailableSeparateHardwareSelections({ job, schedule }).map((selection) => {
+        const chargeKey = hardwareChargeKey(
+          selection.lotId,
+          'BY_EVENT',
+          selection.eventType,
+        )
+        return {
+          ...selection,
+          isCalendarSuggested: suggestedSplitHardwareChargeKeys.has(chargeKey),
+          chargeHardware: selectedSplitHardwareChargeKeys.has(chargeKey)
+            && !billedHardwareCharges.has(chargeKey),
+        }
+      })
+    : []
+  const effectiveHardwareSelectionKeys = hardwareBillingMode === 'BY_EVENT'
+    ? []
+    : hardwareSelectionKeys
   const packageSelections = [...selectedSelections, ...utilitySelections]
   const selectedDrawIndexes = [...new Set(
     packageSelections.map(({ drawIndex }) => drawIndex),
@@ -246,6 +284,7 @@ export default function CreateDrawDialog({
     )
     setSelectedSelections(null)
     setHardwareSelectionKeys([])
+    setSplitHardwareSelectionKeys(null)
     setFullUtilityRowIds([])
     setExcludedUtilityChargeKeys([])
     setExcludedOptionKeys([])
@@ -255,6 +294,7 @@ export default function CreateDrawDialog({
     setSelectedPhaseId(event.target.value)
     setSelectedSelections(null)
     setHardwareSelectionKeys([])
+    setSplitHardwareSelectionKeys(null)
     setFullUtilityRowIds([])
     setExcludedUtilityChargeKeys([])
     setExcludedOptionKeys([])
@@ -335,7 +375,25 @@ export default function CreateDrawDialog({
   }
 
   const toggleHardwareSelection = (hardware) => {
-    if (billedHardwareLots.has(String(hardware.lotId))) return
+    const chargeKey = hardwareChargeKey(
+      hardware.lotId,
+      hardwareBillingMode,
+      hardware.hardwareEventType ?? hardware.eventType,
+    )
+    if (billedHardwareCharges.has(chargeKey)) return
+
+    if (hardwareBillingMode === 'BY_EVENT') {
+      setSplitHardwareSelectionKeys((current) => {
+        const next = new Set(current ?? suggestedSplitHardwareChargeKeys)
+        if (next.has(chargeKey)) {
+          next.delete(chargeKey)
+        } else {
+          next.add(chargeKey)
+        }
+        return [...next]
+      })
+      return
+    }
 
     setHardwareSelectionKeys((current) => {
       if (current.includes(hardware.selectionKey)) {
@@ -376,7 +434,8 @@ export default function CreateDrawDialog({
     drawIndexes: selectedDrawIndexes,
     optionsBillingDrawIndex: schedule?.optionsBillingDrawIndex ?? null,
     selections: packageSelections,
-    hardwareSelectionKeys,
+    hardwareSelections: splitHardwareSelections,
+    hardwareSelectionKeys: effectiveHardwareSelectionKeys,
     excludedOptionKeys,
     ...optionChargeContext,
   }
@@ -388,14 +447,18 @@ export default function CreateDrawDialog({
       : [...current, option.id])
   }
   const selectedPhaseIds = new Set(
-    selectedSelections.map(({ phaseId }) => String(phaseId)),
+    [
+      ...selectedSelections,
+      ...splitHardwareSelections.filter((selection) => selection.chargeHardware),
+    ]
+      .map(({ phaseId }) => String(phaseId)),
   )
   const selectedPhasesAreReady = phases
     .filter((candidate) => selectedPhaseIds.has(String(candidate.id)))
     .every((candidate) => buildDrawWorksheet(job, candidate, schedule).isReady)
   const canCreate =
     selectedPhasesAreReady &&
-    packageSelections.length > 0 &&
+    (packageSelections.length > 0 || summary.hardwareIsDue) &&
     summary.unpricedOptionCount === 0
 
   const handleSubmit = async () => {
@@ -407,10 +470,11 @@ export default function CreateDrawDialog({
         selections: packageSelections,
         hardwareSelections: summary.hardwareRows
           .filter((row) => row.chargeHardware)
-          .map(({ phaseId, lotId, drawIndex }) => ({
+          .map(({ phaseId, lotId, drawIndex, hardwareEventType }) => ({
             phaseId,
             lotId,
             drawIndex,
+            eventType: hardwareEventType,
           })),
         optionSelections: summary.selectedOptionRows.map((option) => ({
           lotId: option.lotId,
@@ -493,33 +557,40 @@ export default function CreateDrawDialog({
 
           {lotRows.length > 0 && !productionActivitiesLoading
             && !productionActivitiesError
-            && calendarSuggestion.eligibleSelections.length === 0 && (
+            && calendarSuggestion.eligibleSelections.length === 0
+            && calendarSuggestion.eligibleHardwareSelections.length === 0 && (
               <Alert severity="info">
                 {calendarSuggestion.mode === 'ANY_DATE'
-                  ? 'There are no open Calendar Lot / Draw cells scheduled through today.'
-                  : `There are no open Calendar Lot / Draw cells scheduled on or before ${formatLongDate(calendarSuggestion.cutoffDate)}.`}
+                  ? 'There are no open Calendar Draw or Separate Hardware charges scheduled through today.'
+                  : `There are no open Calendar Draw or Separate Hardware charges scheduled on or before ${formatLongDate(calendarSuggestion.cutoffDate)}.`}
                 {' '}You can still select cells manually.
               </Alert>
           )}
 
           {lotRows.length > 0 && !productionActivitiesLoading
             && !productionActivitiesError
-            && calendarSuggestion.eligibleSelections.length > 0 && (
+            && (calendarSuggestion.eligibleSelections.length > 0
+              || calendarSuggestion.eligibleHardwareSelections.length > 0) && (
               <Alert severity="success">
                 {calendarSuggestion.mode === 'ANY_DATE' ? (
                   <>
                     <strong>Any date suggestion:</strong>{' '}
                     {formatLongDate(calendarSuggestion.windowStart)}–{formatLongDate(calendarSuggestion.windowEnd)}
                     {' '}is the highest-value rolling 14-day window.{' '}
-                    <strong>{calendarSuggestion.suggestedSelections.length}</strong>{' '}
-                    Lot / Draw cells are preselected for an estimated{' '}
+                    <strong>{calendarSuggestion.suggestedSelections.length
+                      + calendarSuggestion.suggestedHardwareSelections.length}</strong>{' '}
+                    billing items are preselected for an estimated{' '}
                     <strong>{formatCurrency(calendarSuggestion.estimatedInvoiceAmount)}</strong>
                     {' '}invoice.
                     {calendarSuggestion.eligibleSelections.length
-                      > calendarSuggestion.suggestedSelections.length && (
+                      + calendarSuggestion.eligibleHardwareSelections.length
+                      > calendarSuggestion.suggestedSelections.length
+                        + calendarSuggestion.suggestedHardwareSelections.length && (
                         <>
                           {' '}{calendarSuggestion.eligibleSelections.length
-                            - calendarSuggestion.suggestedSelections.length}{' '}
+                            + calendarSuggestion.eligibleHardwareSelections.length
+                            - calendarSuggestion.suggestedSelections.length
+                            - calendarSuggestion.suggestedHardwareSelections.length}{' '}
                           other Calendar-ready cells remain available.
                         </>
                       )}
@@ -529,6 +600,8 @@ export default function CreateDrawDialog({
                     <strong>Calendar suggestion · cutoff{' '}
                       {formatLongDate(calendarSuggestion.cutoffDate)}:</strong>{' '}
                     {calendarSuggestion.suggestedSelections.length} open Lot / Draw cells
+                    {' '}and {calendarSuggestion.suggestedHardwareSelections.length}{' '}
+                    Separate Hardware charges
                     {' '}for {calendarSuggestion.eventTypes.join(' / ')} are preselected.{' '}
                     Estimated invoice:{' '}
                     <strong>{formatCurrency(calendarSuggestion.estimatedInvoiceAmount)}</strong>.
@@ -572,7 +645,7 @@ export default function CreateDrawDialog({
 
           <CreatePackageHardwareTable
             summary={summary}
-            billedHardwareLots={billedHardwareLots}
+            billedHardwareCharges={billedHardwareCharges}
             onToggle={toggleHardwareSelection}
           />
 

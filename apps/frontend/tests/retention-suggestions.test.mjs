@@ -77,6 +77,9 @@ function line({
   eventType = 'HW',
   retentionAmount,
   hardwareAmount = 0,
+  hardwareBillingMode = 'FULL',
+  hardwareEventType = null,
+  hardwarePercentage = 0,
   isUtilityBuilding = false,
 }) {
   return {
@@ -86,6 +89,9 @@ function line({
     eventType,
     retentionAmount,
     hardwareAmount,
+    hardwareBillingMode,
+    hardwareEventType,
+    hardwarePercentage,
     isUtilityBuilding,
   }
 }
@@ -217,6 +223,132 @@ test('Per Job waits for every Building and excludes amounts allocated to an acti
   assert.equal(active.remainingHardwareLots, 0)
   assert.equal(active.releasableRetention, 55)
   assert.equal(cancelled.releasableRetention, 95)
+})
+
+test('Separate Hardware waits until every configured Event Type portion is billed', () => {
+  const setup = schedule({
+    separateHardwarePrice: true,
+    hardwareBillingMode: 'BY_EVENT',
+    hardwareEventPercentages: { EXT: 25, DM: 25, HW: 50 },
+  })
+  const packages = [drawPackage({
+    id: 1,
+    status: 'READY_TO_SUBMIT',
+    packageDate: '2026-09-15',
+    lines: [
+      line({
+        lotId: 101,
+        drawId: 1,
+        eventType: 'EXT',
+        retentionAmount: 10,
+        hardwareAmount: 250,
+        hardwareBillingMode: 'BY_EVENT',
+        hardwareEventType: 'EXT',
+        hardwarePercentage: 25,
+      }),
+      line({
+        lotId: 101,
+        drawId: 2,
+        eventType: 'DM',
+        retentionAmount: 10,
+        hardwareAmount: 250,
+        hardwareBillingMode: 'BY_EVENT',
+        hardwareEventType: 'DM',
+        hardwarePercentage: 25,
+      }),
+      line({
+        lotId: 102,
+        drawId: 3,
+        eventType: 'EXT',
+        retentionAmount: 10,
+        hardwareAmount: 250,
+        hardwareBillingMode: 'BY_EVENT',
+        hardwareEventType: 'EXT',
+        hardwarePercentage: 25,
+      }),
+    ],
+  })]
+
+  const suggestion = buildRetentionSuggestions({
+    jobs: [job()],
+    jobBillingSetupVersions: [setup],
+    packages,
+    asOfDate: '2026-10-20',
+  }).find(({ phaseId }) => phaseId === 21)
+
+  assert.equal(suggestion.completedHardwareLots, 0)
+  assert.equal(suggestion.remainingHardwareLots, 2)
+})
+
+test('independent Calendar Hardware lines complete retention and are released once', () => {
+  const setup = schedule({
+    separateHardwarePrice: true,
+    hardwareBillingMode: 'BY_EVENT',
+    hardwareEventPercentages: { EXT: 0, DM: 0, HW: 100 },
+  })
+  const packages = [
+    {
+      ...drawPackage({
+        id: 1,
+        status: 'READY_TO_SUBMIT',
+        packageDate: '2026-09-15',
+        lines: [line({ lotId: 101, drawId: 1, eventType: 'EXT', retentionAmount: 40 })],
+      }),
+      persistedHardwareLines: [{
+        id: 801,
+        phaseId: 21,
+        lotId: 101,
+        hardwareEventType: 'HW',
+        hardwarePercentage: 100,
+        hardwareAmount: 600,
+        retentionAmount: 30,
+      }],
+    },
+    {
+      ...drawPackage({
+        id: 2,
+        status: 'PAID_CLOSED',
+        packageDate: '2026-09-16',
+        lines: [line({ lotId: 102, drawId: 2, eventType: 'DM', retentionAmount: 25 })],
+      }),
+      persistedHardwareLines: [{
+        id: 802,
+        phaseId: 21,
+        lotId: 102,
+        hardwareEventType: 'HW',
+        hardwarePercentage: 100,
+        hardwareAmount: 500,
+        retentionAmount: 25,
+      }],
+    },
+  ]
+
+  const ready = buildRetentionSuggestions({
+    jobs: [job()],
+    jobBillingSetupVersions: [setup],
+    packages,
+    asOfDate: '2026-10-20',
+  }).find(({ phaseId }) => phaseId === 21)
+  const released = buildRetentionSuggestions({
+    jobs: [job()],
+    jobBillingSetupVersions: [setup],
+    packages: [...packages, {
+      id: 90,
+      packageType: 'RETENTION_RELEASE',
+      jobId: 11,
+      status: 'DRAFT',
+      retentionRelease: {
+        sourceLines: [],
+        sourceHardwareLines: [{ sourceHardwareLineId: 801 }],
+      },
+    }],
+    asOfDate: '2026-10-20',
+  }).find(({ phaseId }) => phaseId === 21)
+
+  assert.equal(ready.status, 'READY')
+  assert.equal(ready.completedHardwareLots, 2)
+  assert.equal(ready.releasableRetention, 120)
+  assert.equal(released.releasableRetention, 90)
 })
 
 test('cutoff and release dates clamp short months', () => {

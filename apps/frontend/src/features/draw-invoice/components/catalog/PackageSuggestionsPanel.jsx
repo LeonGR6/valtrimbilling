@@ -81,9 +81,15 @@ function SuggestionRow({ suggestion, disabled, onReview }) {
 
         <Box sx={{ flex: 1, minWidth: 0 }}>
           <Typography variant="body2" fontWeight={800}>
-            {suggestion.selectionCount} suggested Lot / Draw{' '}
-            {suggestion.selectionCount === 1 ? 'cell' : 'cells'}
+            {suggestion.selectionCount} suggested billing{' '}
+            {suggestion.selectionCount === 1 ? 'item' : 'items'}
           </Typography>
+          {suggestion.hardwareSelectionCount > 0 && (
+            <Typography variant="caption" color="text.secondary" component="div">
+              {suggestion.drawSelectionCount} Draw cells ·{' '}
+              {suggestion.hardwareSelectionCount} Separate Hardware
+            </Typography>
+          )}
           <Typography variant="body2" color="text.secondary">
             {suggestion.eventTypes.length > 0
               ? suggestion.eventTypes.join(' / ')

@@ -32,6 +32,7 @@ test('billing setup records map database columns and one-based draws to the form
     retention_enabled: true,
     retention_percentage: '5.25',
     retention_release_scope: 'BUILDING',
+    final_release_scope: 'PHASE',
     wrap_enabled: true,
     wrap_percentage: '2.50',
     invoice_line_format: 'LOT',
@@ -75,6 +76,7 @@ test('billing setup records map database columns and one-based draws to the form
   assert.equal(schedule.ocipWrapPercentage, 2.5)
   assert.equal(schedule.requiresPo, true)
   assert.equal(schedule.requiresRelease, true)
+  assert.equal(schedule.finalReleaseScope, 'PHASE')
   assert.equal(schedule.requiresBackup, false)
   assert.equal(schedule.invoiceLineFormat, 'LOT_SCOPE')
   assert.equal(schedule.submissionMethod, 'PORTAL')
@@ -109,6 +111,7 @@ test('form values map to normalized RPC payloads and one-based draw numbers', ()
     requiresPo: true,
     requiresPaymentSchedule: false,
     requiresRelease: true,
+    finalReleaseScope: 'BUILDING',
     requiresBackup: false,
     invoiceLineFormat: 'BUILDING_SCOPE',
     submissionMethod: 'EMAIL',
@@ -117,6 +120,7 @@ test('form values map to normalized RPC payloads and one-based draw numbers', ()
   })
 
   assert.equal(payload.p_builder_id, 7)
+  assert.equal(payload.p_config.finalReleaseScope, 'BUILDING')
   assert.equal('hardwareBillingDrawNumber' in payload.p_config, false)
   assert.equal(payload.p_config.hardwareBillingMode, 'BY_EVENT')
   assert.equal(payload.p_config.hardwareExtPercentage, 0)
@@ -219,4 +223,34 @@ test('legacy portal records load as Portal submissions', () => {
   assert.equal(schedule.submissionMethod, 'PORTAL')
   assert.equal(schedule.submissionDestination, 'Legacy Portal')
   assert.equal(schedule.retentionReleaseScope, 'JOB')
+})
+
+test('The Conditional Final scope is only kept while a Release is required', () => {
+  const base = {
+    id: 5,
+    builder_id: 7,
+    version_number: 1,
+    status: 'CURRENT',
+    final_release_scope: 'PROJECT',
+    frequency: 'MONTHLY',
+    cutoff_day: 20,
+    payment_terms_days: 30,
+    invoice_line_format: 'LOT',
+    submission_method: 'PORTAL',
+  }
+  const withRelease = toBuilderDrawSchedule(
+    base,
+    [{ setup_version_id: 5, draw_number: 1, percentage: '100.00', event_type: 'EXT' }],
+    [{ setup_version_id: 5, document_type: 'RELEASE', is_required: true }],
+  )
+  const withoutRelease = toBuilderDrawSchedule(
+    base,
+    [{ setup_version_id: 5, draw_number: 1, percentage: '100.00', event_type: 'EXT' }],
+    [],
+  )
+  assert.equal(withRelease.finalReleaseScope, 'PROJECT')
+  assert.equal(withoutRelease.finalReleaseScope, '')
+
+  const payload = toBuilderBillingSetupRpc({ ...withoutRelease, finalReleaseScope: 'PROJECT' })
+  assert.equal(payload.p_config.finalReleaseScope, null)
 })

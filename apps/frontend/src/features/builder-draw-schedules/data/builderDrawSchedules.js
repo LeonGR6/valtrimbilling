@@ -77,6 +77,18 @@ export const retentionReleaseScopeLabels = Object.fromEntries(
   retentionReleaseScopeOptions.map(({ value, label }) => [value, label]),
 )
 
+// Where the Conditional Final Release applies: the last Package that leaves
+// nothing to bill in the Phase, the Building or the whole Project.
+export const finalReleaseScopeOptions = [
+  { value: 'PHASE', label: 'Per Phase' },
+  { value: 'BUILDING', label: 'Per Building' },
+  { value: 'PROJECT', label: 'Per Project' },
+]
+
+export const finalReleaseScopeLabels = Object.fromEntries(
+  finalReleaseScopeOptions.map(({ value, label }) => [value, label]),
+)
+
 export const defaultBillingSettings = {
   separateHardwarePrice: false,
   hardwareBillingMode: 'FULL',
@@ -99,6 +111,7 @@ export const defaultBillingSettings = {
   requiresPo: false,
   requiresPaymentSchedule: false,
   requiresRelease: false,
+  finalReleaseScope: '',
   requiresBackup: false,
   invoiceLineFormat: 'LOT_SCOPE',
   submissionMethod: 'PORTAL',
@@ -127,6 +140,7 @@ export const initialBuilderDrawSchedules = [
     ocipWrapPercentage: 2.5,
     requiresPo: true,
     requiresRelease: true,
+    finalReleaseScope: 'PROJECT',
     invoiceLineFormat: 'LOT_SCOPE',
     submissionMethod: 'PORTAL',
     submissionDestination: 'BuilderPortal',
@@ -151,6 +165,7 @@ export const initialBuilderDrawSchedules = [
     requiresPo: true,
     requiresPaymentSchedule: true,
     requiresRelease: true,
+    finalReleaseScope: 'PROJECT',
     submissionMethod: 'PORTAL',
     submissionDestination: 'Textura',
     notes: 'Lien releases must be notarized before submission.',
@@ -172,6 +187,7 @@ export const initialBuilderDrawSchedules = [
     ocipWrapPercentage: 2,
     requiresPaymentSchedule: true,
     requiresRelease: true,
+    finalReleaseScope: 'PROJECT',
     requiresBackup: true,
     notes: 'Uses their own release form, sent by the PM each month.',
   },

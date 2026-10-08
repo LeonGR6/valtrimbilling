@@ -17,6 +17,7 @@ import {
   Divider,
   FormControl,
   FormControlLabel,
+  FormHelperText,
   IconButton,
   InputAdornment,
   InputLabel,
@@ -44,6 +45,8 @@ import {
   drawEventTypeOptions,
   emptyHardwareEventPercentages,
   emptyUtilityEventPercentages,
+  finalReleaseScopeLabels,
+  finalReleaseScopeOptions,
   frequencyLabels,
   frequencyOptions,
   invoiceLineFormatLabels,
@@ -98,7 +101,10 @@ function requiredDocuments(setup) {
   return [
     setup.requiresPo && 'PO',
     setup.requiresPaymentSchedule && 'Payment schedule',
-    setup.requiresRelease && 'Release',
+    setup.requiresRelease
+      && (setup.finalReleaseScope
+        ? `Release · Final ${finalReleaseScopeLabels[setup.finalReleaseScope].toLowerCase()}`
+        : 'Release'),
     setup.requiresBackup && 'Backup',
   ].filter(Boolean)
 }
@@ -254,6 +260,7 @@ function BuilderDrawScheduleDialog({
   const cutoffDay = useWatch({ control, name: 'cutoffDay' })
   const retentionEnabled = useWatch({ control, name: 'retentionEnabled' })
   const ocipWrapEnabled = useWatch({ control, name: 'ocipWrapEnabled' })
+  const requiresRelease = useWatch({ control, name: 'requiresRelease' })
   const submissionMethod = useWatch({ control, name: 'submissionMethod' })
   const total = getDrawTotal(watchedDraws)
   const totalIsValid = Math.abs(total - 100) <= 0.001
@@ -1203,7 +1210,16 @@ function BuilderDrawScheduleDialog({
                     control={(
                       <Checkbox
                         checked={Boolean(field.value)}
-                        onChange={(_, checked) => field.onChange(checked)}
+                        onChange={(_, checked) => {
+                          field.onChange(checked)
+                          // The Conditional Final choice only exists with a Release.
+                          if (name === 'requiresRelease' && !checked) {
+                            setValue('finalReleaseScope', '', {
+                              shouldDirty: true,
+                              shouldValidate: true,
+                            })
+                          }
+                        }}
                       />
                     )}
                   />
@@ -1211,6 +1227,39 @@ function BuilderDrawScheduleDialog({
               />
             ))}
           </Box>
+
+          {requiresRelease && (
+            <Controller
+              name="finalReleaseScope"
+              control={control}
+              render={({ field }) => (
+                <FormControl
+                  fullWidth
+                  required
+                  error={Boolean(errors.finalReleaseScope)}
+                >
+                  <InputLabel id="final-release-scope-label">
+                    Conditional Final Release
+                  </InputLabel>
+                  <Select
+                    {...field}
+                    labelId="final-release-scope-label"
+                    label="Conditional Final Release"
+                  >
+                    {finalReleaseScopeOptions.map((option) => (
+                      <MenuItem key={option.value} value={option.value}>
+                        {option.label}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                  <FormHelperText>
+                    {errors.finalReleaseScope?.message
+                      ?? 'The last Package of each Phase, Building or Project uses the Conditional Final Release; the others use Conditional Progress.'}
+                  </FormHelperText>
+                </FormControl>
+              )}
+            />
+          )}
 
           <Divider textAlign="left">
             <Typography sx={sectionSx}>Submission</Typography>

@@ -343,6 +343,7 @@ test('Builder Draw Schedule stores billing deductions and submission requirement
     requiresPo: true,
     requiresPaymentSchedule: true,
     requiresRelease: true,
+    finalReleaseScope: 'PHASE',
     requiresBackup: false,
     submissionMethod: 'PORTAL',
     submissionDestination: ' Textura ',
@@ -429,4 +430,22 @@ test('monthly fixed cutoff still requires a cutoff day', () => {
   assert.deepEqual(result.error.flatten().fieldErrors.cutoffDay, [
     'Enter the monthly cutoff date.',
   ])
+})
+
+test('A required Release needs the Conditional Final scope', () => {
+  const schema = createBuilderDrawScheduleSchema([], null)
+
+  const missing = schema.safeParse(validSetup({ requiresRelease: true }))
+  assert.equal(missing.success, false)
+  assert.deepEqual(missing.error.issues[0].path, ['finalReleaseScope'])
+
+  for (const scope of ['PHASE', 'BUILDING', 'PROJECT']) {
+    const result = schema.parse(validSetup({
+      requiresRelease: true,
+      finalReleaseScope: scope,
+    }))
+    assert.equal(result.finalReleaseScope, scope)
+  }
+
+  assert.equal(schema.safeParse(validSetup()).success, true)
 })

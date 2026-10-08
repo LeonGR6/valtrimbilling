@@ -125,6 +125,7 @@ export function createBuilderDrawScheduleSchema(schedules, currentScheduleId) {
       requiresPo: z.boolean(),
       requiresPaymentSchedule: z.boolean(),
       requiresRelease: z.boolean(),
+      finalReleaseScope: z.enum(['', 'PHASE', 'BUILDING', 'PROJECT']).default(''),
       requiresBackup: z.boolean(),
       invoiceLineFormat: z.enum(['LOT_SCOPE', 'BUILDING_SCOPE']),
       submissionMethod: z.enum(['PORTAL', 'EMAIL', 'MAIL']),
@@ -146,6 +147,14 @@ export function createBuilderDrawScheduleSchema(schedules, currentScheduleId) {
           code: 'custom',
           path: ['builderId'],
           message: 'This builder already has a billing and draw setup.',
+        })
+      }
+
+      if (data.requiresRelease && !data.finalReleaseScope) {
+        context.addIssue({
+          code: 'custom',
+          path: ['finalReleaseScope'],
+          message: 'Select where the Conditional Final Release applies.',
         })
       }
 

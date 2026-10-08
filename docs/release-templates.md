@@ -152,6 +152,35 @@ Code lives in `apps/frontend/src/features/release-templates`:
 `components/`. The review dialog is loaded on demand so the PDF viewer is not
 part of the main bundle.
 
+## Generating a Release for a Package
+
+In the Package detail, **Generate Release** (Admin, Accounting and Project
+Management) fills the Job's confirmed template with the Package's values, saves
+the result as a Package document and downloads it.
+
+- **Which template:** the Job's confirmed templates are offered by Release type;
+  with only one, it is used. A Job with none shows how to create one.
+- **Values (editable before generating):**
+  - Through Date: the Package's cut-off date. It is the first cut-off of the
+    Builder's setup on or after the Package date. A setup that bills on any
+    date has no cut-off, so the Package date is used (the dialog says so).
+  - Amount of Check: the invoice `net_amount` (gross minus retention and wrap).
+  - Date of Signature: the same date as Through Date.
+  - Other mapped variables (the two Exceptions blanks) stay blank for now, and
+    the signature is never filled.
+- **Saving:** the PDF goes to the private `package-documents` bucket
+  (`<package id>/release/<uuid>.pdf`) and is registered by
+  `register_package_release` in `stored_files` and `package_documents`
+  (type `RELEASE`, status `COMPLETE`, label = the Release type). A Package keeps
+  one Release per type: generating again replaces the file and removes the old
+  object. Only the RPC writes; browsers can read.
+- **Reading the values:** `get_package_release_values(package_id)` returns the
+  cut-off (and where it came from) and the invoice amounts, so the cut-off rule
+  stays in the database (`private.resolve_billing_cutoff_date`).
+
+The dialog also lists the Releases already saved for the Package, each with a
+download button.
+
 ## Filling a PDF
 
 `services/releasePdfFiller.js` writes values into a Release PDF at the boxes of a

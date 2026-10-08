@@ -166,14 +166,26 @@ the result as a Package document and downloads it.
     date has no cut-off, so the Package date is used (the dialog says so).
   - Amount of Check: the invoice `net_amount` (gross minus retention and wrap).
   - Date of Signature: the same date as Through Date.
-  - Other mapped variables (the two Exceptions blanks) stay blank for now, and
-    the signature is never filled.
+  - Date(s) of Waiver and Release and Amount(s) of Unpaid Progress Payment(s)
+    (the Exceptions lines of the Conditional Progress form): one date and one
+    amount for each unpaid earlier Package of the same Job, oldest first, the
+    date being that Package's own cut-off date and the amount its invoice net
+    amount. With none, both lines stay blank. The dialog lists these Packages
+    and a person can uncheck any of them.
+  - The signature is never filled.
 - **Saving:** the PDF goes to the private `package-documents` bucket
   (`<package id>/release/<uuid>.pdf`) and is registered by
   `register_package_release` in `stored_files` and `package_documents`
   (type `RELEASE`, status `COMPLETE`, label = the Release type). A Package keeps
   one Release per type: generating again replaces the file and removes the old
   object. Only the RPC writes; browsers can read.
+- **Unpaid earlier Packages:** the same Job, `package_type = 'DRAW'`, earlier by
+  Package date (then id), not voided and not paid (`status` not `VOIDED` or
+  `PAID`, `workflow_status` not `PAID_CLOSED`). That includes Packages still in
+  Draft or Ready to submit; the stage is shown next to each one so it can be
+  unchecked. Retention Release Packages are not progress payments and are
+  excluded. A pending Package without an invoice amount adds its date but no
+  amount.
 - **Reading the values:** `get_package_release_values(package_id)` returns the
   cut-off (and where it came from) and the invoice amounts, so the cut-off rule
   stays in the database (`private.resolve_billing_cutoff_date`).
@@ -195,7 +207,10 @@ unusable value leaves its blank empty and is reported in `skipped`.
 - Box geometry is the exact inverse of the analysis conversion: it handles page
   rotation and an offset crop box, and the text is drawn upright as displayed.
 - Text shrinks (down to 60% of the chosen size) to fit its box; "cover" paints
-  a white rectangle first.
+  a white rectangle first. A list of several values (the Exceptions lines) is
+  printed separated by commas; if it still does not fit, it may run into the
+  free space to the right of its box, never past 36 pt from the page edge and
+  never below 50% of the chosen size.
 - Amounts default to the number alone (`1,250.00`) because the forms print the
   dollar sign themselves; `$1,250.00` is the other format.
 

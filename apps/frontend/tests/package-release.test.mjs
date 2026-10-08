@@ -5,10 +5,11 @@ import {
   buildPackageFillValues,
   buildPackageReleaseFileName,
   describeFillPlan,
+  chooseRelease,
+  CONDITIONAL_FINAL_TYPE,
+  CONDITIONAL_PROGRESS_TYPE,
   describePendingPackage,
-  pickDefaultTemplate,
   sha256Hex,
-  sortTemplatesByType,
   toPackageReleaseValues,
 } from '../src/features/release-templates/services/packageRelease.js'
 import { formatReleaseValue, formatReleaseValues } from '../src/features/release-templates/services/releaseValueFormat.js'
@@ -26,6 +27,16 @@ const row = {
   retention_amount: 91.25,
   wrap_amount: 36.5,
   net_amount: 1697.25,
+  package_type: 'DRAW',
+  final_release: {
+    applicable: true,
+    reason: null,
+    scope: 'PHASE',
+    is_final: false,
+    scopes: [
+      { key: '1', label: 'Phase 1', total: 12, covered_before: 6, covered_after: 8, remaining_after: 4, closes: false },
+    ],
+  },
   pending_packages: [
     {
       package_id: 8,
@@ -55,6 +66,7 @@ test('the values row maps to the model the screen uses', () => {
     packageId: 46,
     jobId: 22,
     packageNumber: 'DP-00000046',
+    packageType: 'DRAW',
     packageDate: '2026-10-05',
     cutoffDate: '2026-10-10',
     cutoffSource: 'builder_setup',
@@ -85,6 +97,15 @@ test('the values row maps to the model the screen uses', () => {
         workflowStatus: 'READY_TO_SUBMIT',
       },
     ],
+    finalRelease: {
+      applicable: true,
+      reason: null,
+      scope: 'PHASE',
+      isFinal: false,
+      scopes: [
+        { key: '1', label: 'Phase 1', total: 12, remainingAfter: 4, closes: false },
+      ],
+    },
   })
 })
 
@@ -171,17 +192,95 @@ test('a form without a Through Date or an amount says so', () => {
   assert.deepEqual(describeFillPlan(null).filled, [])
 })
 
-test('templates are offered in the order of the four Release types', () => {
-  const templates = [
-    { id: 'c', releaseType: 'UnconditionalWaiverAndReleaseOnFinalPayment' },
-    { id: 'a', releaseType: 'ConditionalWaiverAndReleaseOnFinalPayment' },
-    { id: 'b', releaseType: 'UnconditionalWaiverAndReleaseOnProgressPayment' },
-  ]
-  assert.deepEqual(sortTemplatesByType(templates).map(({ id }) => id), ['a', 'b', 'c'])
-  assert.equal(pickDefaultTemplate(templates).id, 'a')
-  assert.equal(pickDefaultTemplate([]), null)
-  // The input is not reordered.
-  assert.equal(templates[0].id, 'c')
+const progressTemplate = { id: 'p', releaseType: CONDITIONAL_PROGRESS_TYPE }
+const finalTemplate = { id: 'f', releaseType: CONDITIONAL_FINAL_TYPE }
+
+function valuesWith(finalRelease, packageType = 'DRAW') {
+  return toPackageReleaseValues({ ...row, package_type: packageType, final_release: finalRelease })
+}
+
+const lastOfPhase = {
+  applicable: true,
+  reason: null,
+  scope: 'PHASE',
+  is_final: true,
+  scopes: [
+    { key: '5', label: 'Phase 5', total: 9, covered_before: 0, covered_after: 9, remaining_after: 0, closes: true },
+  ],
+}
+
+test('the Release values keep the package type and the final-release answer', () => {
+  const values = toPackageReleaseValues(row)
+  assert.equal(values.packageType, 'DRAW')
+  assert.equal(values.finalRelease.applicable, true)
+  assert.equal(values.finalRelease.isFinal, false)
+  assert.equal(values.finalRelease.scopes[0].remainingAfter, 4)
+
+  // A function that predates the option answers nothing.
+  const old = toPackageReleaseValues({ ...row, package_type: undefined, final_release: undefined })
+  assert.equal(old.packageType, 'DRAW')
+  assert.equal(old.finalRelease.applicable, false)
+  assert.deepEqual(old.finalRelease.scopes, [])
+})
+
+test('a Package that is not the last one uses the Conditional Progress Release', () => {
+  const choice = chooseRelease(toPackageReleaseValues(row), [progressTemplate, finalTemplate])
+  assert.equal(choice.state, 'ready')
+  assert.equal(choice.releaseType, CONDITIONAL_PROGRESS_TYPE)
+  assert.equal(choice.template, progressTemplate)
+  assert.equal(choice.isFinal, false)
+})
+
+test('the last Package of its scope uses the Conditional Final Release', () => {
+  const choice = chooseRelease(valuesWith(lastOfPhase), [progressTemplate, finalTemplate])
+  assert.equal(choice.state, 'ready')
+  assert.equal(choice.releaseType, CONDITIONAL_FINAL_TYPE)
+  assert.equal(choice.template, finalTemplate)
+  assert.deepEqual(choice.closing, ['Phase 5'])
+})
+
+test('the last Package is not generated with the Progress form when the Final one is missing', () => {
+  const choice = chooseRelease(valuesWith(lastOfPhase), [progressTemplate])
+  assert.equal(choice.state, 'missing_template')
+  assert.equal(choice.isFinal, true)
+  assert.equal(choice.template, null)
+  assert.deepEqual(choice.closing, ['Phase 5'])
+})
+
+test('a Package without a Progress template cannot be generated either', () => {
+  const choice = chooseRelease(toPackageReleaseValues(row), [finalTemplate])
+  assert.equal(choice.state, 'missing_template')
+  assert.equal(choice.isFinal, false)
+  assert.equal(choice.releaseType, CONDITIONAL_PROGRESS_TYPE)
+})
+
+test('a setup without a Final scope keeps using the Progress form', () => {
+  const choice = chooseRelease(
+    valuesWith({ applicable: false, reason: 'NOT_CONFIGURED', scope: null, is_final: false, scopes: [] }),
+    [progressTemplate, finalTemplate],
+  )
+  assert.equal(choice.state, 'ready')
+  assert.equal(choice.isFinal, false)
+  assert.equal(choice.scopeConfigured, false)
+})
+
+test('a Retention Release Package is not generated', () => {
+  const choice = chooseRelease(
+    valuesWith(
+      { applicable: false, reason: 'RETENTION_RELEASE', scope: null, is_final: false, scopes: [] },
+      'RETENTION_RELEASE',
+    ),
+    [progressTemplate, finalTemplate],
+  )
+  assert.equal(choice.state, 'retention')
+  assert.equal(choice.template, null)
+})
+
+test('the Final form is filled with the Package net amount and cut-off date', () => {
+  const fill = buildPackageFillValues(valuesWith(lastOfPhase), [])
+  assert.equal(fill.check_amount, 1697.25)
+  assert.equal(fill.signature_date, '2026-10-10')
+  assert.deepEqual(fill.waiver_release_dates, [])
 })
 
 test('the generated file has a readable name that is safe to save', () => {

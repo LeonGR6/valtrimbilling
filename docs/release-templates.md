@@ -158,8 +158,13 @@ In the Package detail, **Generate Release** (Admin, Accounting and Project
 Management) fills the Job's confirmed template with the Package's values, saves
 the result as a Package document and downloads it.
 
-- **Which template:** the Job's confirmed templates are offered by Release type;
-  with only one, it is used. A Job with none shows how to create one.
+- **Which template:** the Package decides, nobody picks. Only two types are used
+  for now: Conditional Progress for a normal Package and Conditional Final for
+  the last Package of a scope (see below). If the Job has no confirmed template of
+  the type needed, the Release is not generated and the dialog says which one is
+  missing and that it goes in the Documents section (Releases). A last Package is
+  never filled with the Progress form instead. A Retention Release Package is
+  not generated yet; its Release will be defined later.
 - **Values (editable before generating):**
   - Through Date: the Package's cut-off date. It is the first cut-off of the
     Builder's setup on or after the Package date. A setup that bills on any
@@ -193,6 +198,36 @@ the result as a Package document and downloads it.
 The dialog also lists the Releases already saved for the Package, each with a
 download button.
 
+## Conditional Final Release
+
+The Builder setup asks, under **Required to submit** once Release is checked,
+where the Conditional Final Release applies: **Per Phase**, **Per Building** or
+**Per Project** (`final_release_scope`, `PHASE`, `BUILDING`, `PROJECT`). There is
+no default; saving needs a choice. A setup made before this option has none and
+every Package keeps using the Progress form until the setup is edited. The Job
+uses the scope of the setup version it is pinned to, or the Builder's current
+setup when that version has none.
+
+`private.get_final_release_status(package_id)` decides, and
+`get_package_release_values` returns it as `final_release`
+(`applicable`, `reason`, `scope`, `is_final`, `scopes`). A Package is **final**
+when, counting it as billed, nothing is left to bill in the scope it belongs to.
+
+- **What is left to bill:** every lot x Draw cell of the scope. With separate
+  hardware billed by event, each non-utility lot also has a hardware part per
+  event with a percentage. A cell billed by a Package that is not voided counts
+  as billed, whatever the Package's payment status: paid or not does not change
+  whether it was the last one to bill.
+- **Several scopes:** a Package that touches more than one scope (for example
+  two Buildings) is final only if it finishes every one of them.
+- **Retention Release Packages** are not Draw Packages: `applicable` is false
+  with reason `RETENTION_RELEASE`.
+- Scope labels in the answer: `Phase 5`, `Phase 5 - Building 9`, `Project`.
+
+The Final form has no Through Date and no Exceptions lines, so a Final Package
+fills Amount of Check (its invoice net amount) and Date of Signature (its
+cut-off date).
+
 ## Filling a PDF
 
 `services/releasePdfFiller.js` writes values into a Release PDF at the boxes of a
@@ -223,7 +258,7 @@ the displayed page and its orientation on all four rotations.
 npm run fn:test    # Deno: classifier, fields, geometry, OCR/LLM clients, analysis
 npm run fn:check   # type-check every function
 npm test           # frontend: record, schema and database parity
-npm run db:test    # pgTAP (needs Docker: phase_44 and phase_45)
+npm run db:test    # pgTAP (needs Docker: phase_44, phase_45 and phase_49)
 ```
 
 `_shared/releasePdf.fixtures.test.ts` runs the real pipeline on the PDFs in

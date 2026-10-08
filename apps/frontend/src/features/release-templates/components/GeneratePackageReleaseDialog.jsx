@@ -14,7 +14,6 @@ import {
   FormControlLabel,
   IconButton,
   InputAdornment,
-  MenuItem,
   Stack,
   TextField,
   Typography,
@@ -26,9 +25,8 @@ import {
   buildPackageFillValues,
   buildPackageReleaseFileName,
   describeFillPlan,
+  chooseRelease,
   describePendingPackage,
-  pickDefaultTemplate,
-  sortTemplatesByType,
 } from '../services/packageRelease.js'
 import {
   downloadStoredPdf,
@@ -86,7 +84,6 @@ export default function GeneratePackageReleaseDialog({ packageRecord, job, onClo
   const [attempt, setAttempt] = useState(0)
   const [data, setData] = useState(null)
   const [loadError, setLoadError] = useState(null)
-  const [templateId, setTemplateId] = useState('')
   const [form, setForm] = useState({ through_date: '', check_amount: '', signature_date: '' })
   const [signatureFollows, setSignatureFollows] = useState(true)
   // Unpaid earlier Packages the person took out of the Exceptions lines.
@@ -108,7 +105,7 @@ export default function GeneratePackageReleaseDialog({ packageRecord, job, onClo
           listPackageReleases(packageRecord.id),
         ]).then(([values, templates, releases]) => ({
           values,
-          templates: sortTemplatesByType(templates),
+          templates,
           releases,
         })),
       }
@@ -119,7 +116,6 @@ export default function GeneratePackageReleaseDialog({ packageRecord, job, onClo
         if (!active) return
         setData(loaded)
         setForm(startingForm(loaded.values))
-        setTemplateId(pickDefaultTemplate(loaded.templates)?.id ?? '')
       },
       (loadingError) => {
         if (active) setLoadError(loadingError.message)
@@ -136,7 +132,9 @@ export default function GeneratePackageReleaseDialog({ packageRecord, job, onClo
     setAttempt((current) => current + 1)
   }
 
-  const template = data?.templates.find((candidate) => candidate.id === templateId) ?? null
+  // The Release type is decided by the Package, never picked by hand.
+  const choice = data ? chooseRelease(data.values, data.templates) : null
+  const template = choice?.template ?? null
   const plan = describeFillPlan(template?.mapping)
   const existing = data?.releases.find(
     (release) => release.label === releaseTypeLabel(template?.releaseType),
@@ -218,7 +216,7 @@ export default function GeneratePackageReleaseDialog({ packageRecord, job, onClo
   }
 
   const values = data?.values
-  const hasTemplates = (data?.templates.length ?? 0) > 0
+  const ready = choice?.state === 'ready'
 
   return (
     <Dialog
@@ -251,39 +249,34 @@ export default function GeneratePackageReleaseDialog({ packageRecord, job, onClo
           </Alert>
         )}
 
-        {data && !hasTemplates && (
-          <Alert severity="warning">
-            This Job has no confirmed Release template. Upload a Release in the Job's
-            documents and confirm its template first.
+        {choice?.state === 'retention' && (
+          <Alert severity="info">
+            This Package is a Retention Release. Its Release is not set up yet, so it
+            cannot be generated here.
           </Alert>
         )}
 
-        {data && hasTemplates && (
+        {choice?.state === 'missing_template' && (
+          <Alert severity="warning">
+            {choice.isFinal
+              ? `This is the last Package of ${choice.closing.join(' and ')}, so it needs the Conditional Final Release, and this Job does not have one. Upload it in the Documents section (Releases) and confirm its template, then generate it again.`
+              : 'This Job has no Conditional Progress Release. Upload it in the Documents section (Releases) and confirm its template, then generate it again.'}
+          </Alert>
+        )}
+
+        {ready && (
           <Stack spacing={2.25}>
-            {data.templates.length > 1 ? (
-              <TextField
-                select
-                size="small"
-                label="Release type"
-                value={templateId}
-                disabled={generating}
-                onChange={(event) => {
-                  setTemplateId(event.target.value)
-                  setSaved(null)
-                }}
-              >
-                {data.templates.map((candidate) => (
-                  <MenuItem key={candidate.id} value={candidate.id}>
-                    {releaseTypeLabel(candidate.releaseType)}
-                  </MenuItem>
-                ))}
-              </TextField>
-            ) : (
-              <Box>
-                <Typography variant="caption" color="text.secondary">Release type</Typography>
-                <Typography fontWeight={750}>{releaseTypeLabel(template?.releaseType)}</Typography>
-              </Box>
-            )}
+            <Box>
+              <Typography variant="caption" color="text.secondary">Release type</Typography>
+              <Typography fontWeight={750}>{releaseTypeLabel(template.releaseType)}</Typography>
+              <Typography variant="caption" color="text.secondary">
+                {choice.isFinal
+                  ? `Last Package of ${choice.closing.join(' and ')}.`
+                  : choice.scopeConfigured
+                    ? 'This Package does not finish its Phase, Building or Project.'
+                    : "The Builder's setup does not say where the Conditional Final Release applies, so the Progress form is used."}
+              </Typography>
+            </Box>
 
             {plan.filled.length > 0 && (
               <Stack spacing={1.5}>
@@ -456,7 +449,7 @@ export default function GeneratePackageReleaseDialog({ packageRecord, job, onClo
         <Button
           variant="contained"
           startIcon={generating ? <CircularProgress size={18} color="inherit" /> : <DownloadRoundedIcon />}
-          disabled={!data || !hasTemplates || !template || generating}
+          disabled={!ready || generating}
           onClick={generate}
         >
           {generating ? 'Generating…' : existing ? 'Generate again' : 'Generate and download'}

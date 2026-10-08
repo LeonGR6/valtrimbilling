@@ -5,6 +5,11 @@ import { RELEASE_TYPES, getReleaseVariable } from './releaseTemplateRecord.js'
 
 export const PACKAGE_DOCUMENT_BUCKET = 'package-documents'
 
+// The two Release types a Package uses for now. The Unconditional ones and the
+// Retention Release are not generated yet.
+export const CONDITIONAL_PROGRESS_TYPE = 'ConditionalWaiverAndReleaseOnProgressPayment'
+export const CONDITIONAL_FINAL_TYPE = 'ConditionalWaiverAndReleaseOnFinalPayment'
+
 // Variables a Package fills by itself: its own cut-off date and net amount, and
 // the dates and amounts of the earlier Packages of its Job that are not paid.
 export const PACKAGE_RELEASE_VARIABLES = [
@@ -40,12 +45,34 @@ function toPendingPackage(row) {
   }
 }
 
+function toFinalRelease(row) {
+  const finalRelease = row ?? {}
+  return {
+    // false: nothing says where a Final applies (no scope in the Builder setup)
+    // or the Package is a Retention Release; `reason` tells which.
+    applicable: finalRelease.applicable === true,
+    reason: finalRelease.reason ?? null,
+    scope: finalRelease.scope ?? null,
+    // True when this Package, counted as billed, leaves nothing to bill in
+    // every scope it touches.
+    isFinal: finalRelease.is_final === true,
+    scopes: (finalRelease.scopes ?? []).map((scope) => ({
+      key: scope.key,
+      label: scope.label,
+      total: Number(scope.total),
+      remainingAfter: Number(scope.remaining_after),
+      closes: scope.closes === true,
+    })),
+  }
+}
+
 /** The row the values RPC returns, in the shape the screen uses. */
 export function toPackageReleaseValues(row) {
   return {
     packageId: row.package_id,
     jobId: row.job_id,
     packageNumber: row.package_number,
+    packageType: row.package_type ?? 'DRAW',
     packageDate: row.package_date,
     cutoffDate: row.cutoff_date,
     // 'builder_setup': the cut-off of the Builder's setup. 'package_date': the
@@ -58,6 +85,38 @@ export function toPackageReleaseValues(row) {
     netAmount: toNumberOrNull(row.net_amount),
     // Earlier Packages of the Job that are not paid yet, oldest first.
     pendingPackages: (row.pending_packages ?? []).map(toPendingPackage),
+    finalRelease: toFinalRelease(row.final_release),
+  }
+}
+
+/**
+ * Which Release a Package needs and whether it can be generated.
+ *  - `retention`: a Retention Release Package; its Release is not defined yet.
+ *  - `missing_template`: the Job has no confirmed template of the type needed.
+ *    A last Package is never filled with the Progress form instead.
+ *  - `ready`: `template` is the one to fill.
+ * `isFinal` is true for the Conditional Final Release; `closing` names the
+ * scopes this Package finishes (e.g. "Phase 5").
+ */
+export function chooseRelease(values, templates) {
+  const { finalRelease } = values
+  if (finalRelease.reason === 'RETENTION_RELEASE' || values.packageType === 'RETENTION_RELEASE') {
+    return { state: 'retention', releaseType: null, template: null, isFinal: false, closing: [] }
+  }
+
+  const isFinal = finalRelease.applicable && finalRelease.isFinal
+  const releaseType = isFinal ? CONDITIONAL_FINAL_TYPE : CONDITIONAL_PROGRESS_TYPE
+  const template = templates.find((candidate) => candidate.releaseType === releaseType) ?? null
+
+  return {
+    state: template ? 'ready' : 'missing_template',
+    releaseType,
+    template,
+    isFinal,
+    // Setups made before the Final option have no scope: every Package keeps
+    // using the Progress form until the Builder setup is edited.
+    scopeConfigured: finalRelease.applicable,
+    closing: finalRelease.scopes.filter((scope) => scope.closes).map((scope) => scope.label),
   }
 }
 
@@ -115,19 +174,6 @@ export function describeFillPlan(mapping) {
       .filter((key) => !mapped.includes(key))
       .map((key) => ({ key, label: labelOf(key) })),
   }
-}
-
-/** Confirmed templates of a Job in the order of the four Release types. */
-export function sortTemplatesByType(templates) {
-  const order = RELEASE_TYPES.map(({ value }) => value)
-  return [...templates].sort(
-    (left, right) => order.indexOf(left.releaseType) - order.indexOf(right.releaseType),
-  )
-}
-
-/** The template to start on: the only one, otherwise the first by type order. */
-export function pickDefaultTemplate(templates) {
-  return sortTemplatesByType(templates)[0] ?? null
 }
 
 export function buildPackageDocumentStoragePath(packageId, uniqueId) {

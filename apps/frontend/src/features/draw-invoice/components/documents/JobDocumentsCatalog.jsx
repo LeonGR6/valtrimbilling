@@ -13,6 +13,7 @@ import {
   CircularProgress,
   Divider,
   InputAdornment,
+  MenuItem,
   Stack,
   TextField,
   Typography,
@@ -24,6 +25,11 @@ import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
 import WarningAmberRoundedIcon from '@mui/icons-material/WarningAmberRounded'
 import { useReleaseTemplates } from '../../../release-templates/hooks/useReleaseTemplates.js'
 import { summarizeJobDocumentRequirements } from '../../services/jobDocumentRecord.js'
+import {
+  filterJobsForDocuments,
+  jobDocumentBuilderOptions,
+  jobDocumentCommunityOptions,
+} from '../../utils/jobDocumentFilters.js'
 import DocumentCategoryCard from './DocumentCategoryCard.jsx'
 import DocumentDeleteDialog from './DocumentDeleteDialog.jsx'
 import DocumentUploadDialog from './DocumentUploadDialog.jsx'
@@ -65,6 +71,8 @@ function jobRequirementStatus(requiredTypeKeys, documents) {
 
 export default function JobDocumentsCatalog({ jobs, documentState }) {
   const [search, setSearch] = useState('')
+  const [builderFilter, setBuilderFilter] = useState('ALL')
+  const [communityFilter, setCommunityFilter] = useState('ALL')
   const [expandedJobId, setExpandedJobId] = useState(jobs[0]?.id ?? null)
   const [uploadTarget, setUploadTarget] = useState(null)
   const [deleteTarget, setDeleteTarget] = useState(null)
@@ -102,14 +110,27 @@ export default function JobDocumentsCatalog({ jobs, documentState }) {
     [documentsByJob],
   )
   const releaseTemplates = useReleaseTemplates(releaseDocumentIds)
-  const normalizedSearch = search.trim().toLowerCase()
-  const visibleJobs = jobs.filter((job) => {
-    if (!normalizedSearch) return true
-
-    return [job.code, job.builder, job.community]
-      .filter(Boolean)
-      .some((value) => String(value).toLowerCase().includes(normalizedSearch))
-  })
+  const builderOptions = useMemo(() => jobDocumentBuilderOptions(jobs), [jobs])
+  const communityOptions = useMemo(
+    () => jobDocumentCommunityOptions(jobs, builderFilter),
+    [builderFilter, jobs],
+  )
+  const visibleJobs = useMemo(
+    () => filterJobsForDocuments(jobs, {
+      search,
+      builderId: builderFilter,
+      community: communityFilter,
+    }),
+    [builderFilter, communityFilter, jobs, search],
+  )
+  const hasActiveFilters = Boolean(search.trim())
+    || builderFilter !== 'ALL'
+    || communityFilter !== 'ALL'
+  const clearFilters = () => {
+    setSearch('')
+    setBuilderFilter('ALL')
+    setCommunityFilter('ALL')
+  }
   const requirementStatuses = useMemo(
     () => Object.fromEntries(jobs.map((job) => {
       const jobKey = String(job.id)
@@ -123,7 +144,7 @@ export default function JobDocumentsCatalog({ jobs, documentState }) {
     })),
     [documentsByJob, jobs, requiredTypeKeysByJob],
   )
-  const jobsMissingRequirements = jobs.filter((job) => {
+  const jobsMissingRequirements = visibleJobs.filter((job) => {
     const status = requirementStatuses[String(job.id)]
     return status?.summary.requiredCount > 0 && !status.summary.isComplete
   })
@@ -162,40 +183,41 @@ export default function JobDocumentsCatalog({ jobs, documentState }) {
     <Box sx={{ p: { xs: 2.5, md: 4 } }}>
       <Card variant="outlined" sx={{ mb: 2.5 }}>
         <CardContent sx={{ p: { xs: 2, sm: 2.5 } }}>
+          <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center' }}>
+            <Box
+              sx={{
+                width: 46,
+                height: 46,
+                flexShrink: 0,
+                borderRadius: 1.5,
+                display: 'grid',
+                placeItems: 'center',
+                bgcolor: 'primary.light',
+                color: 'primary.main',
+              }}
+            >
+              <FolderOpenRoundedIcon />
+            </Box>
+            <Box>
+              <Typography variant="h6" fontWeight={850}>Job document center</Typography>
+              <Typography variant="body2" color="text.secondary">
+                Expand a Job to review its files. Requirements follow its Builder billing setup.
+              </Typography>
+            </Box>
+          </Stack>
+
           <Stack
             direction={{ xs: 'column', md: 'row' }}
-            spacing={2}
-            sx={{ alignItems: { md: 'center' }, justifyContent: 'space-between' }}
+            spacing={1.5}
+            sx={{ mt: 2.25, alignItems: { md: 'center' } }}
           >
-            <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center' }}>
-              <Box
-                sx={{
-                  width: 46,
-                  height: 46,
-                  flexShrink: 0,
-                  borderRadius: 1.5,
-                  display: 'grid',
-                  placeItems: 'center',
-                  bgcolor: 'primary.light',
-                  color: 'primary.main',
-                }}
-              >
-                <FolderOpenRoundedIcon />
-              </Box>
-              <Box>
-                <Typography variant="h6" fontWeight={850}>Job document center</Typography>
-                <Typography variant="body2" color="text.secondary">
-                  Expand a Job to review its files. Requirements follow its Builder billing setup.
-                </Typography>
-              </Box>
-            </Stack>
             <TextField
               value={search}
               onChange={(event) => setSearch(event.target.value)}
               placeholder="Search Job, builder or community"
               size="small"
               aria-label="Search document Jobs"
-              sx={{ width: { xs: '100%', md: 340 } }}
+              sx={{ flex: 2, minWidth: { md: 240 } }}
               slotProps={{
                 input: {
                   startAdornment: (
@@ -206,7 +228,47 @@ export default function JobDocumentsCatalog({ jobs, documentState }) {
                 },
               }}
             />
+            <TextField
+              select
+              size="small"
+              label="Builder"
+              value={builderFilter}
+              onChange={(event) => {
+                setBuilderFilter(event.target.value)
+                setCommunityFilter('ALL')
+              }}
+              sx={{ flex: 1, minWidth: { md: 180 } }}
+            >
+              <MenuItem value="ALL">All builders</MenuItem>
+              {builderOptions.map(({ id, name }) => (
+                <MenuItem key={id} value={id}>{name}</MenuItem>
+              ))}
+            </TextField>
+            <TextField
+              select
+              size="small"
+              label="Community"
+              value={communityFilter}
+              onChange={(event) => setCommunityFilter(event.target.value)}
+              sx={{ flex: 1, minWidth: { md: 180 } }}
+            >
+              <MenuItem value="ALL">All communities</MenuItem>
+              {communityOptions.map((community) => (
+                <MenuItem key={community} value={community}>{community}</MenuItem>
+              ))}
+            </TextField>
+            <Button
+              color="inherit"
+              onClick={clearFilters}
+              disabled={!hasActiveFilters}
+              sx={{ flexShrink: 0 }}
+            >
+              Clear filters
+            </Button>
           </Stack>
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1.25 }}>
+            Showing {visibleJobs.length} of {jobs.length} {jobs.length === 1 ? 'Job' : 'Jobs'}.
+          </Typography>
         </CardContent>
       </Card>
 
@@ -393,10 +455,13 @@ export default function JobDocumentsCatalog({ jobs, documentState }) {
           {visibleJobs.length === 0 && (
             <Card variant="outlined" sx={{ p: 5, textAlign: 'center' }}>
               <FolderOpenRoundedIcon color="disabled" sx={{ fontSize: 42 }} />
-              <Typography fontWeight={750} sx={{ mt: 1 }}>No Jobs match this search</Typography>
+              <Typography fontWeight={750} sx={{ mt: 1 }}>No Jobs match these filters</Typography>
               <Typography variant="body2" color="text.secondary">
-                Clear the search to return to the document library.
+                Clear the search and filters to return to the document library.
               </Typography>
+              {hasActiveFilters && (
+                <Button onClick={clearFilters} sx={{ mt: 1.5 }}>Clear filters</Button>
+              )}
             </Card>
           )}
         </Stack>

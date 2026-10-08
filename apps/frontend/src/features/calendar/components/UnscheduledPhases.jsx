@@ -35,14 +35,15 @@ export default function UnscheduledPhases({
 
   if (!ready) {
     return (
-      <Box sx={{ minHeight: 220, display: 'grid', placeItems: 'center' }}>
+      <Box sx={{ minHeight: 220, flex: 1, display: 'grid', placeItems: 'center' }}>
         <CircularProgress size={30} aria-label="Loading Calendar coverage" />
       </Box>
     )
   }
 
   return (
-    <Box sx={{ p: { xs: 2.5, md: 4 } }}>
+    // The Calendar page clips its content, so this tab scrolls on its own.
+    <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto', p: { xs: 2.5, md: 4 } }}>
       {groups.length === 0 ? (
         <Card variant="outlined" sx={{ p: 5, textAlign: 'center' }}>
           <EventAvailableRoundedIcon color="success" sx={{ fontSize: 42 }} />

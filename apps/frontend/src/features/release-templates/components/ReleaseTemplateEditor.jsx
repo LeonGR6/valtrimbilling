@@ -7,6 +7,7 @@ import {
   DialogContent,
   Stack,
 } from '@mui/material'
+import FactCheckRoundedIcon from '@mui/icons-material/FactCheckRounded'
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded'
 import TaskAltRoundedIcon from '@mui/icons-material/TaskAltRounded'
 import { validateReleaseMapping } from '../schemas/releaseMappingSchema.js'
@@ -17,6 +18,7 @@ import {
 } from '../services/releaseTemplateRecord.js'
 import ReleasePdfPages from './ReleasePdfPages.jsx'
 import ReleasePlacementPanel from './ReleasePlacementPanel.jsx'
+import ReleaseTestFillDialog from './ReleaseTestFillDialog.jsx'
 
 const EDITABLE_STATUSES = ['needs_review', 'confirmed']
 
@@ -25,6 +27,7 @@ export default function ReleaseTemplateEditor({
   file,
   canManage,
   onConfirm,
+  documentName,
   onReanalyze,
   onClose,
 }) {
@@ -33,6 +36,7 @@ export default function ReleaseTemplateEditor({
   const [selectedVariable, setSelectedVariable] = useState(null)
   const [saving, setSaving] = useState(false)
   const [reanalyzing, setReanalyzing] = useState(false)
+  const [testFillOpen, setTestFillOpen] = useState(false)
   const [error, setError] = useState(null)
 
   const isSuperseded = template.status === 'superseded'
@@ -156,16 +160,24 @@ export default function ReleaseTemplateEditor({
         </Box>
       </DialogContent>
       <DialogActions sx={{ px: { xs: 1.5, sm: 3 }, py: 1.5, gap: 0.5, flexWrap: 'wrap' }}>
-        {canManage && template.status === 'needs_review' && (
+        <Box sx={{ mr: 'auto', display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
+          {canManage && template.status === 'needs_review' && (
+            <Button
+              startIcon={<RefreshRoundedIcon />}
+              disabled={busy}
+              onClick={handleReanalyze}
+            >
+              {reanalyzing ? 'Analyzing…' : 'Analyze again'}
+            </Button>
+          )}
           <Button
-            startIcon={<RefreshRoundedIcon />}
-            disabled={busy}
-            onClick={handleReanalyze}
-            sx={{ mr: 'auto' }}
+            startIcon={<FactCheckRoundedIcon />}
+            disabled={busy || placements.length === 0 || !validation.success}
+            onClick={() => setTestFillOpen(true)}
           >
-            {reanalyzing ? 'Analyzing…' : 'Analyze again'}
+            Test fill
           </Button>
-        )}
+        </Box>
         <Button onClick={onClose} disabled={saving}>
           {readOnly ? 'Close' : 'Cancel'}
         </Button>
@@ -182,6 +194,14 @@ export default function ReleaseTemplateEditor({
           </Button>
         )}
       </DialogActions>
+      {testFillOpen && (
+        <ReleaseTestFillDialog
+          mapping={mapping}
+          file={file}
+          name={documentName}
+          onClose={() => setTestFillOpen(false)}
+        />
+      )}
     </>
   )
 }

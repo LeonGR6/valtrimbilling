@@ -173,6 +173,7 @@ export default function ReleaseTemplateReviewDialog({
             key={loaded.template.updatedAt}
             template={loaded.template}
             file={loaded.file}
+            documentName={document.name}
             canManage={canManage}
             onConfirm={handleConfirm}
             onReanalyze={handleReanalyze}

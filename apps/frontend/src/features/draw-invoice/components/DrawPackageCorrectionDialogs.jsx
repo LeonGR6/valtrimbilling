@@ -20,6 +20,8 @@ import {
   Typography,
 } from '@mui/material'
 import { canCorrectDrawPackage } from '../services/drawInvoicePackageRecord.js'
+import { usePackageReleases } from '../hooks/usePackageReleases.js'
+import PackageReleasesNotice from './PackageReleasesNotice.jsx'
 import {
   buildBilledHardwareCharges,
   buildBilledUtilityCharges,
@@ -53,6 +55,7 @@ export function EditDrawPackageDialog({
   onClose,
   onSave,
 }) {
+  const releases = usePackageReleases(record.id)
   const availablePhases = job.sequenceSheet?.phases ?? []
   const [activePhaseId, setActivePhaseId] = useState(
     phase?.id ?? availablePhases[0]?.id ?? '',
@@ -89,7 +92,8 @@ export function EditDrawPackageDialog({
   ).length
   const metadataChanged = notes.trim() !== (record.notes ?? '')
   const changed = removedCount > 0 || addedCount > 0 || metadataChanged
-  const canSave = !submitting && selections.length > 0 && changed
+  const canSave = !submitting && !releases.loading && releases.releases.length === 0
+    && selections.length > 0 && changed
     && validateReason(reason) && notes.trim().length <= 500
 
   const toggle = (lotId, drawIndex) => {
@@ -172,6 +176,7 @@ export function EditDrawPackageDialog({
             Package’s date ({record.packageDate}). You may add cells from any
             Phase in this Job. Job, Billing Setup and Package date cannot be edited.
           </Alert>
+          <PackageReleasesNotice state={releases} action="edit this draft" />
           {error && <Alert severity="error">{error}</Alert>}
           <TextField
             select
@@ -434,6 +439,7 @@ export function TransferDrawPackageCellsDialog({
 }
 
 export function CancelDrawPackageDialog({ record, onClose, onCancel }) {
+  const releases = usePackageReleases(record.id)
   const [reason, setReason] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState(null)
@@ -461,6 +467,7 @@ export function CancelDrawPackageDialog({ record, onClose, onCancel }) {
             total to zero. Its Package number and correction history remain
             in the audit trail. This cannot be undone on the same Package.
           </Alert>
+          <PackageReleasesNotice state={releases} action="delete this draft" />
           {error && <Alert severity="error">{error}</Alert>}
           <TextField
             label="Reason for deletion"
@@ -479,7 +486,8 @@ export function CancelDrawPackageDialog({ record, onClose, onCancel }) {
           color="error"
           variant="contained"
           onClick={cancel}
-          disabled={submitting || !validateReason(reason)}
+          disabled={submitting || releases.loading || releases.releases.length > 0
+            || !validateReason(reason)}
         >
           Delete draft
         </Button>

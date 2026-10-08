@@ -215,6 +215,15 @@ function throwRepositoryError(error, operation = 'write') {
     })
   }
 
+  if (error.message?.includes('unissued, unsynced draft Package')) {
+    throw new Error(
+      `${error.message}. A Package with a generated Release, a QuickBooks `
+      + 'reference, a submission or a payment is locked: remove its generated '
+      + 'Release first, or ask an administrator if it was issued or synced.',
+      { cause: error },
+    )
+  }
+
   if (['23514', '22003', '22023', '22P02'].includes(error.code)) {
     throw new Error(error.message || 'Review the Package selections and status.', {
       cause: error,

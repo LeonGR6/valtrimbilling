@@ -194,3 +194,31 @@ export async function savePackageRelease({ packageId, releaseType, fileName, byt
 
   return { documentId: data?.document_id ?? null, storagePath }
 }
+
+/**
+ * Removes a generated Release from a draft Package. The database deletes the
+ * rows and returns the PDF's Storage path; the PDF itself is removed here
+ * because Storage objects cannot be deleted from SQL.
+ */
+export async function deletePackageRelease(documentId) {
+  const client = await requireSupabase()
+  const { data, error } = await client.rpc('delete_package_release', {
+    p_document_id: Number(documentId),
+  })
+
+  if (error) {
+    if (error.code === '42501') {
+      throw fail(error, 'You do not have permission to remove Package documents.')
+    }
+    if (error.code === 'P0002') {
+      throw fail(error, 'The Release was already removed.')
+    }
+    throw fail(error, error.message || 'The Release could not be removed.')
+  }
+
+  const path = data?.removed_storage_path
+  if (path) {
+    // Best effort: the Release is already gone from the Package either way.
+    await client.storage.from(PACKAGE_DOCUMENT_BUCKET).remove([path]).catch(() => {})
+  }
+}

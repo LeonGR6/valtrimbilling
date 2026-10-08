@@ -28,10 +28,25 @@ function groupByJob(unscheduled) {
 export default function UnscheduledPhases({
   unscheduled,
   ready,
+  error = null,
   canSchedule,
   onSchedule,
+  onRetry,
 }) {
   const groups = useMemo(() => groupByJob(unscheduled), [unscheduled])
+
+  if (error) {
+    return (
+      <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto', p: { xs: 2.5, md: 4 } }}>
+        <Alert
+          severity="error"
+          action={onRetry ? <Button color="inherit" onClick={onRetry}>Retry</Button> : undefined}
+        >
+          Calendar coverage could not be loaded: {error}
+        </Alert>
+      </Box>
+    )
+  }
 
   if (!ready) {
     return (

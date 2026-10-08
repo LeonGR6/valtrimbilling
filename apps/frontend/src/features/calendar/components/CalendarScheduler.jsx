@@ -61,7 +61,7 @@ const initialCalendarTitle = new Intl.DateTimeFormat('en-US', {
 export default function CalendarScheduler() {
   const calendarRef = useRef(null)
   const { profile } = useAuth()
-  const { jobs } = useJobs()
+  const { jobs, refreshJobs } = useJobs()
   const { builders } = useBuilders()
   const { people } = usePeople()
   const { contacts: builderContacts } = useBuilderContacts()
@@ -446,8 +446,12 @@ export default function CalendarScheduler() {
         <UnscheduledPhases
           unscheduled={phaseCoverage.unscheduled}
           ready={phaseCoverage.ready}
+          error={phaseCoverage.error}
           canSchedule={canManageProductionActivities}
           onSchedule={openScheduleDrawer}
+          onRetry={() => {
+            Promise.allSettled([refreshJobs(), refreshProductionActivities()])
+          }}
         />
       ) : calendarMode === 'PRODUCTION' ? (
         <>

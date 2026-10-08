@@ -22,6 +22,12 @@ export function formatBuilding(value) {
   return String(value).toLowerCase().startsWith('building') ? String(value) : `Building ${value}`
 }
 
+export function findJobBuilder(job, builders = []) {
+  return builders.find((builder) => (
+    builder.id === job?.builderId || builder.name === job?.builder
+  ))
+}
+
 function sortLotNumbers(lots) {
   return [...lots].sort((a, b) => Number(a.lotNumber) - Number(b.lotNumber))
 }

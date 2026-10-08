@@ -26,6 +26,7 @@ import {
 } from './ProductionFormControls.jsx'
 import {
   createDefaultSplitParts,
+  findJobBuilder,
   formatBuilding,
   formatPhase,
   getPhasePatch,
@@ -68,12 +69,6 @@ function ProductionSummary({ draft }) {
       </Box>
     </Paper>
   )
-}
-
-function findJobBuilder(job, builders) {
-  return builders.find((builder) => (
-    builder.id === job?.builderId || builder.name === job?.builder
-  ))
 }
 
 export default function ActivityForm({

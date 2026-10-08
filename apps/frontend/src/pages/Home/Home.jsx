@@ -25,6 +25,11 @@ import {
 import { useJobs } from '../../features/jobs/context/useJobs.js'
 import { jobDrawInvoicePath } from '../../features/jobs/utils/jobRoutes.js'
 import DashboardDonut from '../../features/dashboard/components/DashboardDonut.jsx'
+import { usePhaseCalendarCoverage } from '../../features/calendar/hooks/usePhaseCalendarCoverage.js'
+import { CALENDAR_UNSCHEDULED_PATH } from '../../features/calendar/utils/calendarRoutes.js'
+import UnscheduledPhasesSummary, {
+  UNSCHEDULED_PHASES_PREVIEW_LIMIT,
+} from '../../features/dashboard/components/UnscheduledPhasesSummary.jsx'
 import UpcomingPackageSuggestions from '../../features/dashboard/components/UpcomingPackageSuggestions.jsx'
 import { buildDashboardMetrics } from '../../features/dashboard/utils/dashboardMetrics.js'
 
@@ -189,6 +194,7 @@ export default function HomePage() {
     drawInvoicePackages, loading: packagesLoading, error: packagesError, refreshDrawInvoicePackages,
   } = useDrawInvoicePackages()
   const { jobs, loading: jobsLoading, error: jobsError, refreshJobs } = useJobs()
+  const phaseCoverage = usePhaseCalendarCoverage()
   const {
     builderDrawSchedules,
     jobBillingSetupVersions,
@@ -309,6 +315,17 @@ export default function HomePage() {
             loading={suggestionsLoading}
             error={suggestionsError}
           />
+        </SectionCard>
+      </Box>
+
+      <Box sx={{ mb: 2.5 }}>
+        <SectionCard
+          title="Phases waiting for Calendar"
+          subtitle={`Created in Sequence Sheets, no EXT, DM or HW events yet · first ${UNSCHEDULED_PHASES_PREVIEW_LIMIT}`}
+          linkLabel="Schedule"
+          to={CALENDAR_UNSCHEDULED_PATH}
+        >
+          <UnscheduledPhasesSummary coverage={phaseCoverage} />
         </SectionCard>
       </Box>
 

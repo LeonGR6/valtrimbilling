@@ -9,6 +9,7 @@ import {
 import CalendarMonthRoundedIcon from '@mui/icons-material/CalendarMonthRounded'
 import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded'
 import ConstructionRoundedIcon from '@mui/icons-material/ConstructionRounded'
+import EventBusyRoundedIcon from '@mui/icons-material/EventBusyRounded'
 import EventAvailableRoundedIcon from '@mui/icons-material/EventAvailableRounded'
 import ForwardToInboxRoundedIcon from '@mui/icons-material/ForwardToInboxRounded'
 import SyncAltRoundedIcon from '@mui/icons-material/SyncAltRounded'
@@ -25,6 +26,7 @@ export default function CalendarPageHeader({
   onConnectGoogleCalendar,
   onSyncGoogleCalendar,
   onCreate,
+  unscheduledCount = 0,
   canConnectGoogleCalendar = false,
   canCreate = true,
   googleCalendarConnected = false,
@@ -53,6 +55,8 @@ export default function CalendarPageHeader({
               ? 'Configure the automatic EXT, Shutter, DM and HW date spacing for each builder.'
               : activeTab === 'FOLLOW_UPS'
                 ? 'Prepare and track scheduling emails to each Jobsite Superintendent.'
+              : activeTab === 'UNSCHEDULED'
+                ? 'Phases created in Sequence Sheets that have no EXT, DM or HW events yet.'
               : calendarMode === 'PRODUCTION'
                 ? 'Schedule EXT, DM and HW as one production activity.'
                 : 'Track extra work and change orders separately.'}
@@ -165,6 +169,14 @@ export default function CalendarPageHeader({
             icon={<ForwardToInboxRoundedIcon />}
             iconPosition="start"
             label="Builder follow-ups"
+          />
+          <Tab
+            value="UNSCHEDULED"
+            icon={<EventBusyRoundedIcon />}
+            iconPosition="start"
+            label={unscheduledCount > 0
+              ? `Unscheduled phases (${unscheduledCount})`
+              : 'Unscheduled phases'}
           />
         </Tabs>
       </Box>

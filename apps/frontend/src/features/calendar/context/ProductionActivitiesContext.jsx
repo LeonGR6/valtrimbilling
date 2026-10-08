@@ -22,6 +22,7 @@ export function ProductionActivitiesProvider({ children }) {
   const { jobs } = useJobs()
   const [activityRecords, setActivityRecords] = useState([])
   const [loading, setLoading] = useState(false)
+  const [loaded, setLoaded] = useState(false)
   const [error, setError] = useState(null)
   const canManageProductionActivities = [
     'ADMIN',
@@ -45,6 +46,7 @@ export function ProductionActivitiesProvider({ children }) {
     try {
       const activities = await listProductionActivities()
       setActivityRecords(activities)
+      setLoaded(true)
       setError(null)
       return activities
     } catch (loadError) {
@@ -60,6 +62,7 @@ export function ProductionActivitiesProvider({ children }) {
       // Authentication is the source of truth for clearing tenant data.
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setActivityRecords([])
+      setLoaded(false)
       setError(null)
       setLoading(false)
       return undefined
@@ -106,6 +109,7 @@ export function ProductionActivitiesProvider({ children }) {
     activities: activityRecords,
     events,
     loading,
+    loaded,
     error,
     canManageProductionActivities,
     refreshProductionActivities,
@@ -117,6 +121,7 @@ export function ProductionActivitiesProvider({ children }) {
     canManageProductionActivities,
     error,
     events,
+    loaded,
     loading,
     refreshProductionActivities,
     saveProductionActivity,

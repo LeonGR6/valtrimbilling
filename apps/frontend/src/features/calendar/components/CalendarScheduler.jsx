@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { Alert, Box, Button, Drawer, LinearProgress, Snackbar } from '@mui/material'
 import { useColorScheme } from '@mui/material/styles'
 import { usePersistentState } from '../../../hooks/usePersistentState.js'
@@ -12,6 +13,8 @@ import {
   createEmptyProductionDraft,
 } from '../data/calendarEvents.js'
 import { useProductionActivities } from '../context/useProductionActivities.js'
+import { getBuilderDateConfiguration } from '../../builders/data/builders.js'
+import { usePhaseCalendarCoverage } from '../hooks/usePhaseCalendarCoverage.js'
 import { calendarEventSchema } from '../schemas/calendarEventSchema.js'
 import {
   getGoogleCalendarConnection,
@@ -28,11 +31,20 @@ import BuilderDateSettings from './BuilderDateSettings.jsx'
 import BuilderFollowUpQueue from './BuilderFollowUpQueue.jsx'
 import CalendarPageHeader from './CalendarPageHeader.jsx'
 import CalendarWorkspace from './CalendarWorkspace.jsx'
+import UnscheduledPhases from './UnscheduledPhases.jsx'
 import ChangeOrdersPlaceholder from './ChangeOrdersPlaceholder.jsx'
+import {
+  calculateProductionDates,
+} from '../utils/calendarDateRules.js'
+import { parseCalendarSchedule } from '../utils/calendarRoutes.js'
+import {
+  findJobBuilder,
+  getPhasePatch,
+} from './calendarSchedulerUtils.js'
 import './CalendarScheduler.css'
 
 const CALENDAR_MODES = ['PRODUCTION', 'CHANGE_ORDERS']
-const CALENDAR_TABS = ['SCHEDULE', 'BUILDER_SETTINGS', 'FOLLOW_UPS']
+const CALENDAR_TABS = ['SCHEDULE', 'BUILDER_SETTINGS', 'FOLLOW_UPS', 'UNSCHEDULED']
 const CALENDAR_VIEWS = ['dayGridMonth', 'dayGridWeek', 'listWeek', 'multiMonthYear']
 const ACTIVITY_TYPES = ['EXT', 'SHUTTER', 'DM', 'HW']
 
@@ -58,6 +70,8 @@ export default function CalendarScheduler() {
     saveProductionActivity,
     cancelProductionActivity,
   } = useProductionActivities()
+  const phaseCoverage = usePhaseCalendarCoverage()
+  const [searchParams, setSearchParams] = useSearchParams()
   const { mode, systemMode } = useColorScheme()
   const resolvedColorMode = mode === 'system' ? systemMode : mode
   const calendarColorMode = resolvedColorMode === 'dark' ? 'dark' : 'light'
@@ -157,6 +171,63 @@ export default function CalendarScheduler() {
     setFormError('')
     setDrawerMode('create')
   }
+
+  const openScheduleDrawer = (job, phase) => {
+    if (!canManageProductionActivities) return
+
+    const emptyDraft = createEmptyProductionDraft()
+    const dateConfiguration = getBuilderDateConfiguration(findJobBuilder(job, builders))
+    setSelectedId(null)
+    // Same result as choosing the Job and then the Phase in the form.
+    setDraft({
+      ...emptyDraft,
+      jobId: job.id,
+      ...calculateProductionDates(emptyDraft.extDate, dateConfiguration),
+      dmShutters: false,
+      shutterDate: '',
+      ...getPhasePatch(job, phase, people, builderContacts),
+    })
+    setFormError('')
+    setDrawerMode('create')
+  }
+
+  // Links from other screens: `?tab=UNSCHEDULED` opens that tab and
+  // `?schedule=<jobId>:<phaseId>` opens "New activity" for that Phase.
+  const requestedTab = searchParams.get('tab')
+  const requestedSchedule = searchParams.get('schedule')
+  // Following a link is an external navigation result synchronized into UI state.
+  /* eslint-disable react-hooks/set-state-in-effect */
+  useEffect(() => {
+    if (!requestedTab && !requestedSchedule) return
+
+    const clearParams = () => {
+      const next = new URLSearchParams(searchParams)
+      next.delete('tab')
+      next.delete('schedule')
+      setSearchParams(next, { replace: true })
+    }
+
+    if (requestedSchedule) {
+      const target = parseCalendarSchedule(requestedSchedule)
+      if (target && jobs.length === 0) return // Jobs are still loading.
+
+      const job = jobs.find((candidate) => candidate.id === target?.jobId)
+      const phase = job?.sequenceSheet?.phases?.find(
+        (candidate) => candidate.id === target.phaseId,
+      )
+      if (job && phase) {
+        setActiveTab('SCHEDULE')
+        setCalendarMode('PRODUCTION')
+        openScheduleDrawer(job, phase)
+      }
+    } else if (CALENDAR_TABS.includes(requestedTab)) {
+      setActiveTab(requestedTab)
+    }
+    clearParams()
+    // The link is consumed once per change of the requested values.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [requestedTab, requestedSchedule, jobs.length])
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const openEventOptions = (eventId) => {
     const calendarEvent = events.find((event) => event.id === eventId)
@@ -319,6 +390,7 @@ export default function CalendarScheduler() {
         onConnectGoogleCalendar={connectGoogleCalendar}
         onSyncGoogleCalendar={syncGoogleCalendar}
         onCreate={openCreateDrawer}
+        unscheduledCount={phaseCoverage.ready ? phaseCoverage.unscheduled.length : 0}
         canConnectGoogleCalendar={profile?.role === 'ADMIN'}
         canCreate={canManageProductionActivities}
         googleCalendarConnected={googleCalendarConnection?.status === 'CONNECTED'}
@@ -333,6 +405,13 @@ export default function CalendarScheduler() {
         <BuilderFollowUpQueue
           canManage={canManageProductionActivities}
           canConfigure={profile?.role === 'ADMIN'}
+        />
+      ) : activeTab === 'UNSCHEDULED' ? (
+        <UnscheduledPhases
+          unscheduled={phaseCoverage.unscheduled}
+          ready={phaseCoverage.ready}
+          canSchedule={canManageProductionActivities}
+          onSchedule={openScheduleDrawer}
         />
       ) : calendarMode === 'PRODUCTION' ? (
         <>

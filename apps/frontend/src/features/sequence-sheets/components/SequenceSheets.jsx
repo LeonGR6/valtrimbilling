@@ -57,7 +57,12 @@ import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded'
 import TableChartRoundedIcon from '@mui/icons-material/TableChartRounded'
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
+import EventBusyRoundedIcon from '@mui/icons-material/EventBusyRounded'
 import { useBuilderDrawSchedules } from '../../builder-draw-schedules/context/useBuilderDrawSchedules.js'
+import PhaseCalendarChip from '../../calendar/components/PhaseCalendarChip.jsx'
+import { calendarSchedulePath } from '../../calendar/utils/calendarRoutes.js'
+import { useProductionActivities } from '../../calendar/context/useProductionActivities.js'
+import { usePhaseCalendarCoverage } from '../../calendar/hooks/usePhaseCalendarCoverage.js'
 import JobModuleNavigation from '../../jobs/components/JobModuleNavigation.jsx'
 import { useJobs } from '../../jobs/context/useJobs.js'
 import {
@@ -143,7 +148,7 @@ function getPlan(job, planId) {
   )
 }
 
-function PhaseCard({ canManage, phase, onDelete, onEdit, onEmail, onOpen }) {
+function PhaseCard({ calendarStatus, canManage, phase, onDelete, onEdit, onEmail, onOpen }) {
   const phaseLabel = formatPhase(phase.name)
   const buildingLabel = formatBuilding(phase.building)
   const selectedOptionCount = (phase.lots ?? []).reduce(
@@ -193,6 +198,7 @@ function PhaseCard({ canManage, phase, onDelete, onEdit, onEmail, onOpen }) {
             useFlexGap
             sx={{ alignItems: 'center', flexWrap: 'wrap' }}
           >
+            <PhaseCalendarChip status={calendarStatus} />
             <Chip size="small" variant="outlined" label={formatBuilding(phase.building, 'short')} />
             <Chip size="small" label={`${rowCounts.lots} lots`} />
             {rowCounts.utility > 0 && (
@@ -242,7 +248,19 @@ function PhaseCard({ canManage, phase, onDelete, onEdit, onEmail, onOpen }) {
   )
 }
 
-function PhaseDetails({ builderId, canManage, job, phase, onBack, onDelete, onEdit, onEmail }) {
+function PhaseDetails({
+  builderId,
+  calendarStatus,
+  canManage,
+  canSchedule,
+  job,
+  phase,
+  onBack,
+  onDelete,
+  onEdit,
+  onEmail,
+  onSchedule,
+}) {
   const phaseLabel = formatPhase(phase.name)
   const buildingLabel = formatBuilding(phase.building)
   const selectedOptionCount = (phase.lots ?? []).reduce(
@@ -291,6 +309,7 @@ function PhaseDetails({ builderId, canManage, job, phase, onBack, onDelete, onEd
           </Box>
           <Stack spacing={1.25} sx={{ alignItems: { xs: 'flex-start', sm: 'flex-end' } }}>
             <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: 'wrap' }}>
+              <PhaseCalendarChip status={calendarStatus} size="medium" />
               <Chip color="primary" variant="outlined" label={formatBuilding(phase.building, 'short')} />
               <Chip label={`${rowCounts.lots} lots`} />
               {rowCounts.utility > 0 && (
@@ -340,6 +359,20 @@ function PhaseDetails({ builderId, canManage, job, phase, onBack, onDelete, onEd
       />
 
       <Box sx={{ p: { xs: 2.5, md: 4 } }}>
+        {calendarStatus === 'unscheduled' && (
+          <Alert
+            severity="warning"
+            sx={{ mb: 2.5 }}
+            action={canSchedule ? (
+              <Button color="inherit" size="small" onClick={onSchedule}>
+                Schedule in Calendar
+              </Button>
+            ) : undefined}
+          >
+            This Phase has no EXT, DM or HW events in the Calendar yet. Package
+            Suggestions only appear for Phases with Calendar work.
+          </Alert>
+        )}
         <Card variant="outlined" sx={{ overflow: 'hidden' }}>
           <Box sx={{ px: 2.5, py: 2, bgcolor: 'action.hover' }}>
             <Typography fontWeight={750}>Phase assignments</Typography>
@@ -1167,6 +1200,8 @@ export default function SequenceSheets() {
     deactivateSequenceSheetPhase,
   } = useJobs()
   const { jobBillingSetupVersions } = useBuilderDrawSchedules()
+  const { canManageProductionActivities } = useProductionActivities()
+  const calendarCoverage = usePhaseCalendarCoverage()
   const [searchParams] = useSearchParams()
   const [search, setSearch] = useState('')
   const [expandedJobId, setExpandedJobId] = useState(jobs[0]?.id ?? null)
@@ -1333,6 +1368,11 @@ export default function SequenceSheets() {
       <>
         <PhaseDetails
           builderId={focusedBuilderId}
+          calendarStatus={calendarCoverage.ready
+            ? calendarCoverage.statusOf(focusedJob, detailPhase)
+            : null}
+          canSchedule={canManageProductionActivities}
+          onSchedule={() => navigate(calendarSchedulePath(focusedJob.id, detailPhase.id))}
           canManage={canManageFocusedJob}
           job={focusedJob}
           phase={detailPhase}
@@ -1489,6 +1529,9 @@ export default function SequenceSheets() {
           {filteredJobs.map((job) => {
             const phases = job.sequenceSheet?.phases ?? []
             const isExpanded = visibleExpandedJobId === job.id
+            const unscheduledCount = calendarCoverage.ready
+              ? calendarCoverage.unscheduledCountByJob.get(String(job.id)) ?? 0
+              : 0
 
             return (
               <Accordion
@@ -1567,6 +1610,14 @@ export default function SequenceSheets() {
                       >
                         <Chip size="small" icon={<FormatListNumberedRoundedIcon />} label={`${getJobPlanCount(job)} plans`} />
                         <Chip size="small" variant="outlined" label={`${phases.length} phases`} />
+                        {unscheduledCount > 0 && (
+                          <Chip
+                            size="small"
+                            color="warning"
+                            icon={<EventBusyRoundedIcon />}
+                            label={`${unscheduledCount} without Calendar`}
+                          />
+                        )}
                       </Stack>
                     </Stack>
                   </AccordionSummary>
@@ -1590,6 +1641,9 @@ export default function SequenceSheets() {
                   {phases.length > 0 ? (
                     phases.map((phase) => (
                       <PhaseCard
+                        calendarStatus={calendarCoverage.ready
+                          ? calendarCoverage.statusOf(job, phase)
+                          : null}
                         canManage={canManageJobs && job.isActive}
                         key={phase.id}
                         phase={phase}

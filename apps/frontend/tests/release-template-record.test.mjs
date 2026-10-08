@@ -152,7 +152,7 @@ test('an already filled label is not pre-placed but still points to its page', (
   assert.equal(bestSuggestion(template, 'check_amount').state, 'filled')
   const placement = placementFromSuggestion(template, 'check_amount')
   assert.equal(placement.page, 1)
-  assert.equal(placement.format, 'currency')
+  assert.equal(placement.format, 'plain')
 })
 
 test('a variable without any suggestion starts from a default box on page 1', () => {
@@ -222,7 +222,7 @@ test('sample values show each format', () => {
   assert.equal(sampleValue('through_date', 'MMMM D, YYYY', day), 'September 30, 2026')
   assert.equal(sampleValue('signature_date', 'YYYY-MM-DD', day), '2026-09-30')
   assert.equal(sampleValue('check_amount', 'currency'), '$1,250.00')
-  assert.equal(sampleValue('check_amount', 'plain'), '1250.00')
+  assert.equal(sampleValue('check_amount', 'plain'), '1,250.00')
 })
 
 test('the exception blanks are in the catalog with their own formats and samples', () => {
@@ -238,8 +238,10 @@ test('the exception blanks are in the catalog with their own formats and samples
   const day = new Date(2026, 8, 30)
   assert.equal(sampleValue('waiver_release_dates', 'MM/DD/YYYY', day), '09/30/2026')
   assert.equal(sampleValue('unpaid_progress_amount', 'currency'), '$1,250.00')
-  assert.equal(sampleValue('unpaid_progress_amount', 'plain'), '1250.00')
-  assert.equal(createPlacement('unpaid_progress_amount').format, 'currency')
+  assert.equal(sampleValue('unpaid_progress_amount', 'plain'), '1,250.00')
+  // The forms print the $ themselves, so amounts default to the number alone.
+  assert.equal(createPlacement('unpaid_progress_amount').format, 'plain')
+  assert.equal(createPlacement('check_amount').format, 'plain')
   assert.equal(createPlacement('waiver_release_dates').format, 'MM/DD/YYYY')
 })
 

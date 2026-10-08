@@ -4,6 +4,7 @@ import {
   filterJobsForDocuments,
   jobDocumentBuilderOptions,
   jobDocumentCommunityOptions,
+  sortJobsMissingFirst,
 } from '../src/features/draw-invoice/utils/jobDocumentFilters.js'
 
 const jobs = [
@@ -36,4 +37,14 @@ test('document Jobs filter by Builder, Community and search together', () => {
   assert.deepEqual(codes({ builderId: '9', community: 'Separate' }), [])
   assert.deepEqual(codes({ search: ' acme ' }), ['1601', '1602'])
   assert.deepEqual(codes({ builderId: '7', search: '1502' }), ['1502'])
+})
+
+test('Jobs missing documents are listed first without reordering the rest', () => {
+  const missing = new Set([3, 1])
+
+  assert.deepEqual(
+    sortJobsMissingFirst(jobs, (job) => missing.has(job.id)).map(({ id }) => id),
+    [1, 3, 2, 4],
+  )
+  assert.deepEqual(sortJobsMissingFirst(jobs).map(({ id }) => id), [1, 2, 3, 4])
 })

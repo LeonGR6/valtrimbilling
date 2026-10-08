@@ -43,3 +43,11 @@ export function filterJobsForDocuments(jobs = [], {
       .some((value) => String(value).toLowerCase().includes(normalizedSearch))
   })
 }
+
+/** Jobs for which `isMissing` is true first; the order inside each group is kept. */
+export function sortJobsMissingFirst(jobs = [], isMissing = () => false) {
+  return [
+    ...jobs.filter((job) => isMissing(job)),
+    ...jobs.filter((job) => !isMissing(job)),
+  ]
+}

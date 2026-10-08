@@ -12,9 +12,11 @@ import {
   Chip,
   CircularProgress,
   Divider,
+  FormControlLabel,
   InputAdornment,
   MenuItem,
   Stack,
+  Switch,
   TextField,
   Typography,
 } from '@mui/material'
@@ -30,6 +32,7 @@ import {
   filterJobsForDocuments,
   jobDocumentBuilderOptions,
   jobDocumentCommunityOptions,
+  sortJobsMissingFirst,
 } from '../../utils/jobDocumentFilters.js'
 import DocumentCategoryCard from './DocumentCategoryCard.jsx'
 import DocumentDeleteDialog from './DocumentDeleteDialog.jsx'
@@ -82,7 +85,13 @@ export default function JobDocumentsCatalog({ jobs, documentState }) {
     'ALL',
     isStoredString,
   )
-  const [expandedJobId, setExpandedJobId] = useState(jobs[0]?.id ?? null)
+  const [missingOnly, setMissingOnly] = usePersistentState(
+    'draw-invoice:documents:missing-only',
+    false,
+    (value) => typeof value === 'boolean',
+  )
+  // undefined = not chosen yet: the first Job on screen (one that still lacks documents, if any) opens.
+  const [expandedJobId, setExpandedJobId] = useState(undefined)
   const [uploadTarget, setUploadTarget] = useState(null)
   const [deleteTarget, setDeleteTarget] = useState(null)
   const [deleteError, setDeleteError] = useState(null)
@@ -133,7 +142,7 @@ export default function JobDocumentsCatalog({ jobs, documentState }) {
     || communityOptions.includes(storedCommunityFilter)
     ? storedCommunityFilter
     : 'ALL'
-  const visibleJobs = useMemo(
+  const scopedJobs = useMemo(
     () => filterJobsForDocuments(jobs, {
       search,
       builderId: builderFilter,
@@ -144,10 +153,12 @@ export default function JobDocumentsCatalog({ jobs, documentState }) {
   const hasActiveFilters = Boolean(search.trim())
     || builderFilter !== 'ALL'
     || communityFilter !== 'ALL'
+    || missingOnly
   const clearFilters = () => {
     setSearch('')
     setBuilderFilter('ALL')
     setCommunityFilter('ALL')
+    setMissingOnly(false)
   }
   const requirementStatuses = useMemo(
     () => Object.fromEntries(jobs.map((job) => {
@@ -162,10 +173,19 @@ export default function JobDocumentsCatalog({ jobs, documentState }) {
     })),
     [documentsByJob, jobs, requiredTypeKeysByJob],
   )
-  const jobsMissingRequirements = visibleJobs.filter((job) => {
+  const isMissingDocuments = (job) => {
     const status = requirementStatuses[String(job.id)]
     return status?.summary.requiredCount > 0 && !status.summary.isComplete
-  })
+  }
+  const jobsMissingRequirements = scopedJobs.filter(isMissingDocuments)
+  // Jobs that still need documents come first, so they are the first thing seen.
+  const visibleJobs = sortJobsMissingFirst(
+    missingOnly ? jobsMissingRequirements : scopedJobs,
+    isMissingDocuments,
+  )
+  const openJobId = expandedJobId === undefined
+    ? visibleJobs[0]?.id ?? null
+    : expandedJobId
 
   const handleAddDocuments = async (files) => {
     if (!uploadTarget) return
@@ -275,6 +295,16 @@ export default function JobDocumentsCatalog({ jobs, documentState }) {
                 <MenuItem key={community} value={community}>{community}</MenuItem>
               ))}
             </TextField>
+            <FormControlLabel
+              sx={{ flexShrink: 0, mx: 0 }}
+              control={(
+                <Switch
+                  checked={missingOnly}
+                  onChange={(event) => setMissingOnly(event.target.checked)}
+                />
+              )}
+              label={`Only missing documents (${jobsMissingRequirements.length})`}
+            />
             <Button
               color="inherit"
               onClick={clearFilters}
@@ -338,7 +368,7 @@ export default function JobDocumentsCatalog({ jobs, documentState }) {
             const status = requirementStatuses[jobKey]
             const StatusIcon = status.Icon
             const jobCode = job.code ?? job.id
-            const isExpanded = expandedJobId === job.id
+            const isExpanded = openJobId === job.id
 
             return (
               <Accordion

@@ -69,6 +69,20 @@ const INLINE_LABELS: Record<ReleaseVariable, LabelSpec[]> = {
       reason: "Date of Signature label",
     },
   ],
+  // These two sit in the "Exceptions" part of the Conditional Progress form,
+  // each followed by a line of underscores that the field is drawn over.
+  waiver_release_dates: [
+    {
+      pattern: /^date\(s\)\s+of\s+waiver\s+and\s+release\s*:/iu,
+      reason: "Date(s) of waiver and release label",
+    },
+  ],
+  unpaid_progress_amount: [
+    {
+      pattern: /^amount\(s\)\s+of\s+unpaid\s+progress\s+payment\(s\)\s*:/iu,
+      reason: "Amount(s) of unpaid progress payment(s) label",
+    },
+  ],
 };
 
 // Sentence that introduces the value on the line BELOW it, as in the
@@ -90,6 +104,8 @@ const WIDGET_BAND = 3;
 const WIDGET_MAX_GAP = 80;
 const SENTENCE_MAX_DISTANCE = 45;
 const BLANK_VALUE_LINE = /^\$?[\s_]{3,}$/u;
+// An underscore is 0.556 em wide in the fonts these forms use.
+const UNDERSCORE_EM = 0.556;
 
 export function buildLines(runs: TextRun[]): TextLine[] {
   const groups: Array<{ y: number; runs: TextRun[] }> = [];
@@ -134,12 +150,23 @@ function valueBox(
   return [x, bottom, xEnd, bottom + Math.max(MIN_VALUE_HEIGHT, line.height * 1.3)];
 }
 
+/**
+ * Where the printed label stops. A line that ends in a run of underscores (a
+ * blank to write on) is longer than its label, and the form field is drawn over
+ * those underscores, so the run is measured and taken off the end.
+ */
+function labelEnd(line: TextLine) {
+  const underscores = (line.text.match(/_/gu) ?? []).length;
+  return Math.max(line.x0, line.x1 - underscores * UNDERSCORE_EM * line.height);
+}
+
 function widgetOnSameLine(line: TextLine, widgets: Widget[]) {
+  const end = labelEnd(line);
   return widgets
     .filter((widget) => {
       const [left, bottom, , top] = widget.rect;
       return line.y >= bottom - WIDGET_BAND && line.y <= top + WIDGET_BAND &&
-        left >= line.x1 - 8 && left - line.x1 <= WIDGET_MAX_GAP;
+        left >= end - 8 && left - end <= WIDGET_MAX_GAP;
     })
     .sort((a, b) => a.rect[0] - b.rect[0])[0] ?? null;
 }
@@ -219,8 +246,13 @@ function inlineSuggestions(
         continue;
       }
 
-      const x = line.x1 + 3;
-      const xEnd = Math.min(x + DEFAULT_VALUE_WIDTH, page.width - RIGHT_MARGIN);
+      // The blank is either the underscores themselves or the space after the
+      // label.
+      const underlined = line.text.includes("_");
+      const x = labelEnd(line) + 3;
+      const xEnd = underlined
+        ? line.x1
+        : Math.min(x + DEFAULT_VALUE_WIDTH, page.width - RIGHT_MARGIN);
       found.push({
         variable,
         page: page.page,

@@ -4,6 +4,7 @@ import { linesOnlyPage, OcrError } from "./releaseOcr.ts";
 import { classifyReleaseType } from "./releaseClassifier.ts";
 import { buildLines, detectReleaseFields } from "./releaseFields.ts";
 import { readReleasePdf } from "./releasePdf.ts";
+import type { ReleaseVariable } from "./releaseTypes.ts";
 
 // Runs the real pipeline against the sample PDFs in fixtures/private/releases
 // (ignored by git: they are real documents). The tests skip themselves when the
@@ -38,7 +39,7 @@ async function analyze(name: string) {
 
 function fieldNames(
   fields: ReturnType<typeof detectReleaseFields>,
-  variable: "through_date" | "check_amount" | "signature_date",
+  variable: ReleaseVariable,
 ) {
   return fields.suggestions
     .filter((suggestion) => suggestion.variable === variable)
@@ -52,6 +53,8 @@ const cases = [
     through: ["through date"],
     amount: ["amount"],
     signature: ["date"],
+    waiverDates: ["affect"],
+    unpaid: ["amount_2"],
   },
   {
     file: "conditional-final.pdf",
@@ -59,6 +62,8 @@ const cases = [
     through: [],
     amount: ["amount"],
     signature: ["date"],
+    waiverDates: [],
+    unpaid: [],
   },
   {
     file: "unconditional-progress.pdf",
@@ -66,6 +71,8 @@ const cases = [
     through: ["through date"],
     amount: ["amount"],
     signature: ["date"],
+    waiverDates: [],
+    unpaid: [],
   },
   {
     file: "unconditional-final.pdf",
@@ -73,6 +80,8 @@ const cases = [
     through: [],
     amount: [],
     signature: ["date"],
+    waiverDates: [],
+    unpaid: [],
   },
 ];
 
@@ -92,6 +101,8 @@ for (const expected of cases) {
       assertEquals(fieldNames(fields, "through_date"), expected.through);
       assertEquals(fieldNames(fields, "check_amount"), expected.amount);
       assertEquals(fieldNames(fields, "signature_date"), expected.signature);
+      assertEquals(fieldNames(fields, "waiver_release_dates"), expected.waiverDates);
+      assertEquals(fieldNames(fields, "unpaid_progress_amount"), expected.unpaid);
       for (const suggestion of fields.suggestions) {
         assertEquals(suggestion.state, "blank");
         assert(suggestion.rect !== null);
@@ -117,7 +128,13 @@ Deno.test({
     );
     assertEquals(fields.hasWidgets, false);
     for (
-      const variable of ["through_date", "check_amount", "signature_date"] as const
+      const variable of [
+        "through_date",
+        "check_amount",
+        "signature_date",
+        "waiver_release_dates",
+        "unpaid_progress_amount",
+      ] as const
     ) {
       const [suggestion, ...rest] = fields.suggestions.filter((candidate) =>
         candidate.variable === variable

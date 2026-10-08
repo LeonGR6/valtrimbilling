@@ -15,6 +15,8 @@ export const RELEASE_VARIABLES = [
   "through_date",
   "check_amount",
   "signature_date",
+  "waiver_release_dates",
+  "unpaid_progress_amount",
 ] as const;
 
 export type ReleaseVariable = (typeof RELEASE_VARIABLES)[number];

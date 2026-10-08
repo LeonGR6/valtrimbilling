@@ -4,7 +4,7 @@ import {
   detectLabelsInLines,
   detectReleaseFields,
 } from "./releaseFields.ts";
-import type { PageContent, TextRun, Widget } from "./releaseTypes.ts";
+import type { PageContent, ReleaseVariable, TextRun, Widget } from "./releaseTypes.ts";
 
 // Synthetic pages that copy the layouts of the real forms (US Letter, points,
 // origin bottom-left). No real document content is used.
@@ -27,7 +27,7 @@ function page(runs: TextRun[], widgets: Widget[] = []): PageContent {
 
 function find(
   result: ReturnType<typeof detectReleaseFields>,
-  variable: "through_date" | "check_amount" | "signature_date",
+  variable: ReleaseVariable,
 ) {
   return result.suggestions.filter((suggestion) =>
     suggestion.variable === variable
@@ -110,11 +110,16 @@ Deno.test("a field that is only named 'amount' is not suggested without its labe
       widget("date", [161, 204, 352, 220]),
     ]),
   ]);
-  // Only the signature date exists in this form; the other two are absent.
+  // Only the signature date exists in this form; the others are absent.
   assertEquals(result.suggestions.map(({ variable }) => variable), [
     "signature_date",
   ]);
-  assertEquals(result.missing, ["through_date", "check_amount"]);
+  assertEquals(result.missing, [
+    "through_date",
+    "check_amount",
+    "waiver_release_dates",
+    "unpaid_progress_amount",
+  ]);
 });
 
 Deno.test("the amount line below a payment sentence uses the field under it", () => {
@@ -203,7 +208,7 @@ Deno.test("a filled form field is reported as filled but keeps its rectangle", (
 });
 
 Deno.test("sentences that mention the Through Date are not labels", () => {
-  const result = detectReleaseFields([page(bodyText)]);
+  const result = detectReleaseFields([page(bodyText.slice(0, 2))]);
   assertEquals(result.suggestions, []);
 });
 
@@ -214,6 +219,8 @@ Deno.test("a page without text yields no suggestions and lists both variables as
     "through_date",
     "check_amount",
     "signature_date",
+    "waiver_release_dates",
+    "unpaid_progress_amount",
   ]);
 });
 
@@ -286,4 +293,74 @@ Deno.test("OCR keeps the payment sentence only when a blank line follows it", ()
     "Exceptions",
   ]]);
   assertEquals(withoutBlank, []);
+});
+
+// The two blanks of the "Exceptions" part of the Conditional Progress form. A
+// label is followed by a line of underscores and the form field is drawn over
+// those underscores (real positions: field "affect" 243-464 and "amount_2"
+// 304-464, on lines whose text spans 108-463 and 108-465 at 9.8 pt).
+function underlinedLines() {
+  const small = (text: string, y: number, width: number): TextRun => ({
+    text, x: 108, y, width, height: 9.8,
+  });
+  return [
+    small("Date(s) of waiver and release:" + "_".repeat(40), 220, 355),
+    small("Amount(s) of unpaid progress payment(s): $" + "_".repeat(29), 208, 357),
+  ];
+}
+
+Deno.test("the two exception blanks are matched to the fields drawn over their underscores", () => {
+  const result = detectReleaseFields([
+    page(underlinedLines(), [
+      widget("affect", [243, 218, 464, 231]),
+      widget("amount_2", [304, 207, 464, 218]),
+    ]),
+  ]);
+
+  const [dates] = find(result, "waiver_release_dates");
+  assertEquals(dates.fieldName, "affect");
+  assertEquals(dates.source, "acroform");
+  assertEquals(dates.state, "blank");
+  assertEquals(dates.label, "Date(s) of waiver and release:");
+  assertAlmostEquals(dates.rect!.x, 243 / 612, 1e-4);
+
+  const [amount] = find(result, "unpaid_progress_amount");
+  assertEquals(amount.fieldName, "amount_2");
+  assertAlmostEquals(amount.rect!.x, 304 / 612, 1e-4);
+  assertEquals(find(result, "check_amount"), []);
+});
+
+Deno.test("on a flat document the box covers the underscores after the label", () => {
+  const result = detectReleaseFields([page(underlinedLines())]);
+
+  const [dates] = find(result, "waiver_release_dates");
+  assertEquals(dates.source, "text_layer");
+  assertEquals(dates.state, "blank");
+  // The label text ends near x 243 and the underscores end at 463.
+  assertAlmostEquals(dates.rect!.x, 246 / 612, 0.01);
+  assertAlmostEquals(dates.rect!.x + dates.rect!.w, 463 / 612, 0.002);
+
+  const [amount] = find(result, "unpaid_progress_amount");
+  assertAlmostEquals(amount.rect!.x, 307 / 612, 0.01);
+  assertAlmostEquals(amount.rect!.x + amount.rect!.w, 465 / 612, 0.002);
+});
+
+Deno.test("an exception line that already has a value is reported as filled", () => {
+  const result = detectReleaseFields([
+    page([
+      { text: "Date(s) of waiver and release: 08/15/2026", x: 108, y: 220, width: 300, height: 9.8 },
+    ]),
+  ]);
+  const [dates] = find(result, "waiver_release_dates");
+  assertEquals(dates.state, "filled");
+  assertEquals(dates.rect, null);
+});
+
+Deno.test("'Disputed claims' amounts are not the unpaid progress payment", () => {
+  const result = detectReleaseFields([
+    page([run("Disputed claims for extras in the amount of: $", 72, 260, 200)], [
+      widget("amount_2", [274, 255, 459, 271]),
+    ]),
+  ]);
+  assertEquals(result.suggestions, []);
 });

@@ -18,6 +18,7 @@ import {
   ListItemIcon,
   ListItemText,
   Avatar,
+  Badge,
   Typography,
   Divider,
   Chip,
@@ -43,12 +44,9 @@ import DomainRoundedIcon from '@mui/icons-material/DomainRounded'
 import AddIcon from '@mui/icons-material/Add'
 import ManageAccountsRoundedIcon from '@mui/icons-material/ManageAccountsRounded'
 import SettingsRoundedIcon from '@mui/icons-material/SettingsRounded'
-import RequestQuoteIcon from '@mui/icons-material/RequestQuote';
 import BallotIcon from '@mui/icons-material/Ballot';
 import DescriptionIcon from '@mui/icons-material/Description';
-import SyncAltIcon from '@mui/icons-material/SyncAlt';
 import SellIcon from '@mui/icons-material/Sell';
-import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import BarChartIcon from '@mui/icons-material/BarChart'
 import SupportAgentIcon from '@mui/icons-material/SupportAgent';
 import LogoutRoundedIcon from '@mui/icons-material/LogoutRounded'
@@ -60,6 +58,7 @@ import ColorModeToggle from '../../common/ColorModeToggle'
 import { useAuth } from '../../../features/auth/context/useAuth.js'
 import { isRoleAllowed } from '../../../features/auth/authorization/roleAccess.js'
 import { MANUAL_SIGN_OUT_STORAGE_KEY } from '../../../config/appConfig.js'
+import { useSidebarBadges } from './useSidebarBadges.js'
 
 const DRAWER_WIDTH = 256
 const RAIL_WIDTH = 72
@@ -136,7 +135,7 @@ const navigationSections = [
   },
 ]
 
-function NavigationItem({ label, path, icon: Icon, nested = false, onNavigate, collapsed }) {
+function NavigationItem({ label, path, icon: Icon, nested = false, onNavigate, collapsed, badge }) {
   const isAvailable = Boolean(path && availablePaths.has(path))
 
   // A grey icon with no label explains nothing, so unbuilt screens step out of
@@ -144,7 +143,10 @@ function NavigationItem({ label, path, icon: Icon, nested = false, onNavigate, c
   if (collapsed && !isAvailable) return null
 
   return (
-    <Tooltip title={collapsed ? label : ''} placement="right">
+    <Tooltip
+      title={collapsed ? [label, badge?.label].filter(Boolean).join(' · ') : (badge?.label ?? '')}
+      placement="right"
+    >
       <ListItem disablePadding sx={{ mb: 0.25 }}>
       <ListItemButton
         {...(isAvailable
@@ -170,12 +172,27 @@ function NavigationItem({ label, path, icon: Icon, nested = false, onNavigate, c
         <ListItemIcon
           sx={{ minWidth: collapsed ? 0 : nested ? 32 : 36, color: 'inherit' }}
         >
-          <Icon fontSize="small" />
+          {badge && collapsed ? (
+            <Badge badgeContent={badge.count} max={99} color="warning">
+              <Icon fontSize="small" />
+            </Badge>
+          ) : (
+            <Icon fontSize="small" />
+          )}
         </ListItemIcon>
         {!collapsed && (
           <ListItemText
             primary={label}
             sx={{ '& .MuiListItemText-primary': { fontSize: 14 } }}
+          />
+        )}
+        {!collapsed && badge && (
+          <Chip
+            label={badge.count > 99 ? '99+' : badge.count}
+            size="small"
+            color="warning"
+            aria-label={badge.label}
+            sx={{ height: 20, '& .MuiChip-label': { px: 0.75, fontSize: 11, fontWeight: 700 } }}
           />
         )}
         {!collapsed && !isAvailable && (
@@ -306,7 +323,7 @@ function hasAvailableItem(section) {
   return section.items.some((item) => item.path && availablePaths.has(item.path))
 }
 
-function SidebarContent({ onNavigate, collapsed = false, onToggleCollapsed }) {
+function SidebarContent({ onNavigate, collapsed = false, onToggleCollapsed, badges = {} }) {
   const navigate = useNavigate()
   const { profile, signOut, user } = useAuth()
   const [signOutDialogOpen, setSignOutDialogOpen] = useState(false)
@@ -419,7 +436,7 @@ function SidebarContent({ onNavigate, collapsed = false, onToggleCollapsed }) {
         ]}
       >
         <List disablePadding>
-        <NavigationItem {...homeItem} onNavigate={onNavigate} collapsed={collapsed} />
+        <NavigationItem {...homeItem} onNavigate={onNavigate} collapsed={collapsed} badge={badges[homeItem.path]} />
 
         {navigationSections
           .filter((section) => !collapsed || hasAvailableItem(section))
@@ -459,6 +476,7 @@ function SidebarContent({ onNavigate, collapsed = false, onToggleCollapsed }) {
                       {...item}
                       onNavigate={onNavigate}
                       collapsed={collapsed}
+                      badge={badges[item.path]}
                     />
                   )
                 ))}
@@ -571,6 +589,10 @@ export default function Sidebar({ mobileOpen = false, onMobileClose }) {
     localStorage.setItem(COLLAPSED_KEY, collapsed ? '1' : '0')
   }, [collapsed])
 
+  const { profile } = useAuth()
+  const badges = useSidebarBadges({
+    canSeePackages: isRoleAllowed(profile?.role, routeAccessByPath.get('/draw-invoice')),
+  })
   const railWidth = collapsed ? RAIL_WIDTH : DRAWER_WIDTH
 
   return (
@@ -586,7 +608,7 @@ export default function Sidebar({ mobileOpen = false, onMobileClose }) {
           '& .MuiDrawer-paper': paperSx(DRAWER_WIDTH),
         }}
       >
-        <SidebarContent onNavigate={onMobileClose} />
+        <SidebarContent onNavigate={onMobileClose} badges={badges} />
       </Drawer>
 
       <Drawer
@@ -600,6 +622,7 @@ export default function Sidebar({ mobileOpen = false, onMobileClose }) {
         })}
       >
         <SidebarContent
+          badges={badges}
           collapsed={collapsed}
           onToggleCollapsed={() => setCollapsed((current) => !current)}
         />

@@ -178,3 +178,10 @@ export function buildPackageSuggestions({
     }]
   }).sort(comparePackageSuggestions)
 }
+
+/** Package Suggestions of Jobs with a fixed cutoff inside the window. */
+export function buildUpcomingCutoffSuggestions(options) {
+  return buildPackageSuggestions(options).filter(
+    (suggestion) => suggestion.mode === 'CUTOFF',
+  )
+}

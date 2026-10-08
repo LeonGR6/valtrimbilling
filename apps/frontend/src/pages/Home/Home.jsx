@@ -19,7 +19,7 @@ import {
   DRAW_PACKAGE_STATUSES, DRAW_PACKAGE_STATUS_LABELS,
 } from '../../features/draw-invoice/services/drawInvoicePackageRecord.js'
 import {
-  buildPackageSuggestions,
+  buildUpcomingCutoffSuggestions,
   selectUpcomingCutoffSuggestions,
 } from '../../features/draw-invoice/utils/packageSuggestions.js'
 import { useJobs } from '../../features/jobs/context/useJobs.js'
@@ -207,14 +207,14 @@ export default function HomePage() {
   const metrics = useMemo(() => (
     buildDashboardMetrics(events, drawInvoicePackages, now, days)
   ), [events, drawInvoicePackages, now, days])
-  const cutoffSuggestions = useMemo(() => buildPackageSuggestions({
+  const cutoffSuggestions = useMemo(() => buildUpcomingCutoffSuggestions({
     jobs,
     schedules: builderDrawSchedules,
     jobBillingSetupVersions,
     packages: drawInvoicePackages,
     productionActivities,
     asOfDate: metrics.startKey,
-  }).filter((suggestion) => suggestion.mode === 'CUTOFF'), [
+  }), [
     builderDrawSchedules,
     drawInvoicePackages,
     jobBillingSetupVersions,

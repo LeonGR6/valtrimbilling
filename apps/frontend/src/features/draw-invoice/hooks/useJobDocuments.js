@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useAuth } from '../../auth/context/useAuth.js'
 import { findJobDocuments } from '../services/jobDocumentRecord.js'
+import { notifyJobDocumentsChanged } from '../services/jobDocumentEvents.js'
 import {
   createJobDocumentSignedUrl,
   deleteJobDocument,
@@ -81,6 +82,7 @@ export function useJobDocuments(jobs) {
       const nextLibrary = await listJobDocumentLibrary(jobs)
       setLibrary(nextLibrary)
       setError(null)
+      notifyJobDocumentsChanged()
       // The documents that were just added, so the screen can open them.
       return findJobDocuments(nextLibrary.documentsByJob, job.id, uploadedIds)
     } catch (uploadError) {
@@ -88,6 +90,7 @@ export function useJobDocuments(jobs) {
         const nextLibrary = await listJobDocumentLibrary(jobs)
         setLibrary(nextLibrary)
         setInitialized(true)
+        notifyJobDocumentsChanged()
       } catch {
         // Preserve the actionable upload error when a follow-up refresh fails.
       }
@@ -125,11 +128,13 @@ export function useJobDocuments(jobs) {
       const nextLibrary = await listJobDocumentLibrary(jobs)
       setLibrary(nextLibrary)
       setError(null)
+      notifyJobDocumentsChanged()
     } catch (deleteError) {
       try {
         const nextLibrary = await listJobDocumentLibrary(jobs)
         setLibrary(nextLibrary)
         setInitialized(true)
+        notifyJobDocumentsChanged()
       } catch {
         // Preserve the deletion error if the follow-up refresh also fails.
       }

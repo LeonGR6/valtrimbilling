@@ -71,21 +71,20 @@ export default function CreateDrawDialog({
   onClose,
   onCreate,
 }) {
-  const firstJob =
-    jobs.find((job) => String(job.id) === String(initialJobId)) ??
-    jobs.find((job) => (job.sequenceSheet?.phases?.length ?? 0) > 0)
+  // Nothing is preselected when the dialog opens from "Create Package": the
+  // user picks the Job and the Phase / Building. A Package Suggestion opens it
+  // with both already chosen.
+  const initialJob = initialJobId == null
+    ? null
+    : jobs.find((candidate) => String(candidate.id) === String(initialJobId))
+  const initialPhase = initialJob?.sequenceSheet?.phases?.find(
+    (phase) => String(phase.id) === String(initialPhaseId),
+  )
   const [selectedJobId, setSelectedJobId] = useState(
-    firstJob == null ? '' : String(firstJob.id),
+    initialJob == null ? '' : String(initialJob.id),
   )
-  const initialJob = jobs.find(
-    (job) => String(job.id) === String(selectedJobId),
-  )
-  const firstPhase =
-    initialJob?.sequenceSheet?.phases?.find(
-      (phase) => String(phase.id) === String(initialPhaseId),
-    ) ?? initialJob?.sequenceSheet?.phases?.[0]
   const [selectedPhaseId, setSelectedPhaseId] = useState(
-    firstPhase == null ? '' : String(firstPhase.id),
+    initialPhase == null ? '' : String(initialPhase.id),
   )
   const [selectionOverrides, setSelectedSelections] = useState(null)
   const [hardwareSelectionKeys, setHardwareSelectionKeys] = useState([])
@@ -102,6 +101,7 @@ export default function CreateDrawDialog({
   const phase = phases.find(
     (candidate) => String(candidate.id) === selectedPhaseId,
   )
+  const hasScope = Boolean(job && phase)
   const schedule = jobBillingSetupVersions.find(
     (candidate) => String(candidate.id) === String(job?.billingSetupVersionId),
   ) ?? schedules.find(
@@ -274,14 +274,8 @@ export default function CreateDrawDialog({
   }
 
   const handleJobChange = (event) => {
-    const nextJobId = event.target.value
-    const nextJob = jobs.find((candidate) => String(candidate.id) === nextJobId)
-    setSelectedJobId(nextJobId)
-    setSelectedPhaseId(
-      nextJob?.sequenceSheet?.phases?.[0]?.id == null
-        ? ''
-        : String(nextJob.sequenceSheet.phases[0].id),
-    )
+    setSelectedJobId(event.target.value)
+    setSelectedPhaseId('')
     setSelectedSelections(null)
     setHardwareSelectionKeys([])
     setSplitHardwareSelectionKeys(null)
@@ -457,6 +451,7 @@ export default function CreateDrawDialog({
     .filter((candidate) => selectedPhaseIds.has(String(candidate.id)))
     .every((candidate) => buildDrawWorksheet(job, candidate, schedule).isReady)
   const canCreate =
+    hasScope &&
     selectedPhasesAreReady &&
     (packageSelections.length > 0 || summary.hardwareIsDue) &&
     summary.unpricedOptionCount === 0
@@ -521,6 +516,7 @@ export default function CreateDrawDialog({
               value={selectedPhaseId}
               onChange={handlePhaseChange}
               disabled={phases.length === 0}
+              helperText={job ? undefined : 'Select a Job first'}
               fullWidth
             >
               {phases.map((candidate) => (
@@ -535,27 +531,34 @@ export default function CreateDrawDialog({
             </TextField>
           </Stack>
 
-          {!worksheet.isReady && (
+          {!hasScope && (
+            <Alert severity="info">
+              Select a Job and a Phase / Building to see its Lots, Draws and
+              Calendar suggestion.
+            </Alert>
+          )}
+
+          {hasScope && !worksheet.isReady && (
             <Alert severity="warning">
               {readinessLabel(worksheet)}. Complete the worksheet prerequisites
               before creating a package.
             </Alert>
           )}
 
-          {lotRows.length > 0 && productionActivitiesLoading && (
+          {hasScope && lotRows.length > 0 && productionActivitiesLoading && (
             <Alert severity="info">
               Loading Calendar work to prepare the Package suggestion…
             </Alert>
           )}
 
-          {lotRows.length > 0 && !productionActivitiesLoading && productionActivitiesError && (
+          {hasScope && lotRows.length > 0 && !productionActivitiesLoading && productionActivitiesError && (
             <Alert severity="warning">
               Calendar suggestions are unavailable: {productionActivitiesError}
               {' '}You can still select Lot / Draw cells manually.
             </Alert>
           )}
 
-          {lotRows.length > 0 && !productionActivitiesLoading
+          {hasScope && lotRows.length > 0 && !productionActivitiesLoading
             && !productionActivitiesError
             && calendarSuggestion.eligibleSelections.length === 0
             && calendarSuggestion.eligibleHardwareSelections.length === 0 && (
@@ -567,7 +570,7 @@ export default function CreateDrawDialog({
               </Alert>
           )}
 
-          {lotRows.length > 0 && !productionActivitiesLoading
+          {hasScope && lotRows.length > 0 && !productionActivitiesLoading
             && !productionActivitiesError
             && (calendarSuggestion.eligibleSelections.length > 0
               || calendarSuggestion.eligibleHardwareSelections.length > 0) && (
@@ -610,7 +613,7 @@ export default function CreateDrawDialog({
               </Alert>
           )}
 
-          {lotRows.length > 0 && (
+          {hasScope && lotRows.length > 0 && (
             <DrawSelectionGrid
               job={job}
               phase={phase}
@@ -628,7 +631,7 @@ export default function CreateDrawDialog({
             />
           )}
 
-          {utilityRows.length > 0 && (
+          {hasScope && utilityRows.length > 0 && (
             <CreatePackageUtilityTable
               phase={phase}
               worksheet={utilityWorksheet}
@@ -643,17 +646,19 @@ export default function CreateDrawDialog({
             />
           )}
 
-          <CreatePackageHardwareTable
-            summary={summary}
-            billedHardwareCharges={billedHardwareCharges}
-            onToggle={toggleHardwareSelection}
-          />
+          {hasScope && (
+            <CreatePackageHardwareTable
+              summary={summary}
+              billedHardwareCharges={billedHardwareCharges}
+              onToggle={toggleHardwareSelection}
+            />
+          )}
 
-          {summary.optionsAreDue && (
+          {hasScope && summary.optionsAreDue && (
             <SelectableOptionsTable summary={summary} onToggle={toggleOption} />
           )}
 
-          {summary.optionsAreDue && summary.selectedOptionRows.length > 0 && (
+          {hasScope && summary.optionsAreDue && summary.selectedOptionRows.length > 0 && (
             summary.unpricedOptionCount > 0 ? (
               <Alert
                 severity="warning"

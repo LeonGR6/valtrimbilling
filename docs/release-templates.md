@@ -26,6 +26,8 @@ Deleting the PDF (existing `delete_job_document` flow) deletes its template.
 | `through_date` | Through Date | `MM/DD/YYYY`, `MMMM D, YYYY`, `YYYY-MM-DD` |
 | `check_amount` | Amount of Check, or the "received the following progress payment" line | `currency`, `plain` |
 | `signature_date` | Date of Signature | same as `through_date` |
+| `waiver_release_dates` | Date(s) of waiver and release (Exceptions, Conditional Progress form only) | same as `through_date` |
+| `unpaid_progress_amount` | Amount(s) of unpaid progress payment(s) (Exceptions, Conditional Progress form only) | same as `check_amount` |
 
 Not every form has every variable (the final-payment forms have no Through
 Date; the Unconditional Final form has no check amount). A mapping needs at

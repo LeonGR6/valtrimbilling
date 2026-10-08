@@ -5,14 +5,39 @@ import { RELEASE_TYPES, getReleaseVariable } from './releaseTemplateRecord.js'
 
 export const PACKAGE_DOCUMENT_BUCKET = 'package-documents'
 
-// Variables a Package can fill by itself today. The other mapped variables stay
-// blank until their data is defined.
-export const PACKAGE_RELEASE_VARIABLES = ['through_date', 'check_amount', 'signature_date']
+// Variables a Package fills by itself: its own cut-off date and net amount, and
+// the dates and amounts of the earlier Packages of its Job that are not paid.
+export const PACKAGE_RELEASE_VARIABLES = [
+  'through_date',
+  'check_amount',
+  'signature_date',
+  'waiver_release_dates',
+  'unpaid_progress_amount',
+]
+
+const WORKFLOW_LABELS = {
+  DRAFT: 'Draft',
+  READY_TO_SUBMIT: 'Ready to submit',
+  AWAITING_PAYMENT: 'Awaiting payment',
+}
 
 function toNumberOrNull(value) {
   if (value === null || value === undefined || value === '') return null
   const number = Number(value)
   return Number.isFinite(number) ? number : null
+}
+
+function toPendingPackage(row) {
+  return {
+    id: row.package_id,
+    number: row.package_number,
+    packageDate: row.package_date,
+    cutoffDate: row.cutoff_date,
+    cutoffSource: row.cutoff_source,
+    netAmount: toNumberOrNull(row.net_amount),
+    status: row.status,
+    workflowStatus: row.workflow_status,
+  }
 }
 
 /** The row the values RPC returns, in the shape the screen uses. */
@@ -31,6 +56,15 @@ export function toPackageReleaseValues(row) {
     retentionAmount: toNumberOrNull(row.retention_amount),
     wrapAmount: toNumberOrNull(row.wrap_amount),
     netAmount: toNumberOrNull(row.net_amount),
+    // Earlier Packages of the Job that are not paid yet, oldest first.
+    pendingPackages: (row.pending_packages ?? []).map(toPendingPackage),
+  }
+}
+
+/** Short description of an unpaid earlier Package for the list. */
+export function describePendingPackage(pending) {
+  return {
+    workflowLabel: WORKFLOW_LABELS[pending.workflowStatus] ?? pending.workflowStatus,
   }
 }
 
@@ -39,12 +73,22 @@ export function toPackageReleaseValues(row) {
  *  - Through Date: the cut-off date of the Package.
  *  - Amount of Check: the invoice net amount (after retention and wrap).
  *  - Date of Signature: the same date as Through Date.
+ *  - Date(s) of waiver and release: the cut-off date of each unpaid earlier
+ *    Package of the Job.
+ *  - Amount(s) of unpaid progress payment(s): the net amount of each of them.
+ *
+ * `pending` is the part of `values.pendingPackages` to include, in order. Dates
+ * and amounts are lists; a Package without an invoice amount adds only its date.
  */
-export function buildPackageFillValues(values) {
+export function buildPackageFillValues(values, pending = values.pendingPackages ?? []) {
   return {
     through_date: values.cutoffDate ?? '',
     check_amount: values.netAmount ?? '',
     signature_date: values.cutoffDate ?? '',
+    waiver_release_dates: pending.map((item) => item.cutoffDate).filter(Boolean),
+    unpaid_progress_amount: pending
+      .map((item) => item.netAmount)
+      .filter((amount) => amount !== null),
   }
 }
 
@@ -56,6 +100,10 @@ export function describeFillPlan(mapping) {
   const mapped = [...new Set((mapping?.fields ?? []).map((field) => field.variable))]
   const labelOf = (key) => getReleaseVariable(key)?.label ?? key
 
+  // The two Exceptions lines only exist on some forms; a form without them is
+  // normal, so only the three always-expected values are reported as missing.
+  const expected = ['through_date', 'check_amount', 'signature_date']
+
   return {
     filled: mapped
       .filter((key) => PACKAGE_RELEASE_VARIABLES.includes(key))
@@ -63,7 +111,7 @@ export function describeFillPlan(mapping) {
     blank: mapped
       .filter((key) => !PACKAGE_RELEASE_VARIABLES.includes(key))
       .map((key) => ({ key, label: labelOf(key) })),
-    missingFromForm: PACKAGE_RELEASE_VARIABLES
+    missingFromForm: expected
       .filter((key) => !mapped.includes(key))
       .map((key) => ({ key, label: labelOf(key) })),
   }

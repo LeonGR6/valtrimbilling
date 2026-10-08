@@ -52,3 +52,13 @@ test('a rotation that is not a multiple of 90 is treated as the nearest one', ()
   assert.deepEqual(odd.origin, upright.origin)
   assert.equal(odd.rotation, 0)
 })
+
+test('the box also reports where it starts and how wide the displayed page is', () => {
+  const upright = boxOnPage({ x: 0, y: 0, width: 612, height: 792, rotation: 0 }, { x: 0.25, y: 0.3, w: 0.3, h: 0.03 })
+  near(upright.left, 0.25 * 612, 'left')
+  near(upright.displayWidth, 612, 'display width')
+
+  const sideways = boxOnPage({ x: 0, y: 0, width: 612, height: 792, rotation: 90 }, { x: 0.25, y: 0.3, w: 0.3, h: 0.03 })
+  near(sideways.left, 0.25 * 792, 'left when rotated')
+  near(sideways.displayWidth, 792, 'display width when rotated')
+})

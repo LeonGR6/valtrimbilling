@@ -29,7 +29,7 @@ async function readBack(bytes, pageNumber = 1) {
     .map((item) => {
       const [x, y] = viewport.convertToViewportPoint(item.transform[4], item.transform[5])
       const [a, b] = pdfjs.Util.transform(viewport.transform, item.transform)
-      return { text: item.str, x, y, upright: a > 0 && Math.abs(b) < 1e-6, size: Math.abs(item.transform[0]) || item.height }
+      return { text: item.str, x, y, width: item.width, upright: a > 0 && Math.abs(b) < 1e-6, size: Math.abs(item.transform[0]) || item.height }
     })
   await pdf.loadingTask.destroy()
   return { items, widgets: annotations.filter((a) => a.subtype === 'Widget').length, viewport }
@@ -197,6 +197,75 @@ test('a form field target is filled through the form when the form works', async
   assert.deepEqual(filled, ['signature_date'])
   const { items } = await readBack(bytes)
   assert.ok(items.some((item) => item.text.includes('09/30/2026')))
+})
+
+// --- Lists of values (the Exceptions lines) -----------------------------------
+
+// The two Exceptions boxes of the Conditional Progress form, as the analysis
+// reports them: dates 243-464 pt wide on a 612 pt page, amounts 304-464.
+const datesBox = { x: 0.397, y: 0.7083, w: 0.3611, h: 0.0164 }
+const amountsBox = { x: 0.4967, y: 0.7247, w: 0.2614, h: 0.0139 }
+
+test('several values on one line are printed separated by commas', async () => {
+  const { bytes, filled } = await fillReleasePdf({
+    pdfBytes: await blankPdf(),
+    mapping: mappingFor(
+      rectField('waiver_release_dates', 'MM/DD/YYYY', datesBox),
+      rectField('unpaid_progress_amount', 'plain', amountsBox),
+    ),
+    values: {
+      waiver_release_dates: ['2026-09-20', '2026-10-05'],
+      unpaid_progress_amount: [1200, 845.5],
+    },
+  })
+
+  assert.deepEqual(filled, ['waiver_release_dates', 'unpaid_progress_amount'])
+  const texts = (await readBack(bytes)).items.map((item) => item.text)
+  assert.ok(texts.includes('09/20/2026, 10/05/2026'))
+  assert.ok(texts.includes('1,200.00, 845.50'))
+})
+
+test('an empty list leaves its blank empty and is reported as skipped', async () => {
+  const { bytes, skipped } = await fillReleasePdf({
+    pdfBytes: await blankPdf(),
+    mapping: mappingFor(rectField('waiver_release_dates', 'MM/DD/YYYY', datesBox)),
+    values: { waiver_release_dates: [] },
+  })
+  assert.deepEqual(skipped, ['waiver_release_dates'])
+  assert.deepEqual((await readBack(bytes)).items.map((item) => item.text), ['FORM TITLE'])
+})
+
+test('a long list shrinks, may use the margin to the right of its box, and stays on the page', async () => {
+  const dates = Array.from({ length: 9 }, (_, index) => `2026-09-${String(10 + index).padStart(2, '0')}`)
+  const { bytes } = await fillReleasePdf({
+    pdfBytes: await blankPdf(),
+    mapping: mappingFor({ ...rectField('waiver_release_dates', 'MM/DD/YYYY', datesBox), fontSize: 10 }),
+    values: { waiver_release_dates: dates },
+  })
+
+  const { items, viewport } = await readBack(bytes)
+  const line = items.find((item) => item.text.startsWith('09/10/2026'))
+  assert.ok(line, 'the whole list is on one line')
+  assert.ok(line.size < 10, `shrunk to ${line.size}`)
+  assert.ok(line.size >= 5 - 0.01, 'never below half the chosen size')
+
+  // It runs past the right edge of its box, into the margin, but stops at the
+  // page margin (36 pt from the right edge).
+  const boxRight = (datesBox.x + datesBox.w) * viewport.width
+  assert.ok(line.text.endsWith('09/18/2026'))
+  assert.ok(line.x < boxRight, 'it starts inside the box')
+  assert.ok(line.x + line.width > boxRight, 'it uses the free space to the right')
+  assert.ok(line.x + line.width <= viewport.width - 36 + 0.5, `ends at ${line.x + line.width}`)
+})
+
+test('a list that fits its box keeps the chosen size', async () => {
+  const { bytes } = await fillReleasePdf({
+    pdfBytes: await blankPdf(),
+    mapping: mappingFor(rectField('waiver_release_dates', 'MM/DD/YYYY', datesBox)),
+    values: { waiver_release_dates: ['2026-09-20', '2026-10-05'] },
+  })
+  const line = (await readBack(bytes)).items.find((item) => item.text.startsWith('09/20/2026'))
+  assert.ok(Math.abs(line.size - 10) < 0.01, `size ${line.size}`)
 })
 
 // --- Real templates (ignored by git; skipped when the folder is missing) ------

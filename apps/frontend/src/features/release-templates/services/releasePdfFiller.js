@@ -1,6 +1,6 @@
 import { boxOnPage } from './releasePdfGeometry.js'
 import { getReleaseVariable } from './releaseTemplateRecord.js'
-import { formatReleaseValue } from './releaseValueFormat.js'
+import { formatReleaseValues } from './releaseValueFormat.js'
 
 // Writes values into a Release PDF at the boxes of a confirmed mapping.
 //
@@ -11,6 +11,10 @@ import { formatReleaseValue } from './releaseValueFormat.js'
 
 const PADDING = 2
 const MIN_FONT_SHARE = 0.6
+// A long list may run past its box into the page margin, but never beyond it,
+// and never below this share of the chosen size.
+const MIN_OVERFLOW_FONT_SHARE = 0.5
+const PAGE_MARGIN = 36
 // Height of a capital letter relative to the font size (Helvetica).
 const CAP_HEIGHT_EM = 0.72
 
@@ -63,12 +67,21 @@ function pageGeometry(page) {
   }
 }
 
-/** Shrinks the font, down to a limit, so the text fits the box width. */
-function fittingFontSize(font, text, size, width) {
-  const available = Math.max(1, width - PADDING * 2)
+/**
+ * Shrinks the font, down to a limit, so the text fits the box width. A text too
+ * long for the box even at that limit may use the free space to its right, up
+ * to the page margin, shrinking further if it needs to.
+ */
+function fittingFontSize(font, text, size, boxWidth, roomWidth) {
+  const inside = Math.max(1, boxWidth - PADDING * 2)
   const needed = font.widthOfTextAtSize(text, size)
-  if (needed <= available) return size
-  return Math.max(size * MIN_FONT_SHARE, size * (available / needed))
+  if (needed <= inside) return size
+
+  const smallest = size * MIN_FONT_SHARE
+  if (font.widthOfTextAtSize(text, smallest) <= inside) return size * (inside / needed)
+
+  const room = Math.max(inside, roomWidth - PADDING * 2)
+  return Math.max(size * MIN_OVERFLOW_FONT_SHARE, Math.min(smallest, size * (room / needed)))
 }
 
 function drawInBox(page, font, text, field, library) {
@@ -87,7 +100,8 @@ function drawInBox(page, font, text, field, library) {
     })
   }
 
-  const size = fittingFontSize(font, text, field.fontSize, box.width)
+  const room = box.displayWidth - PAGE_MARGIN - box.left
+  const size = fittingFontSize(font, text, field.fontSize, box.width, room)
   const baseline = Math.max(1, (box.height - size * CAP_HEIGHT_EM) / 2)
   const anchor = box.at(PADDING, baseline)
   page.drawText(text, {
@@ -104,7 +118,8 @@ function drawInBox(page, font, text, field, library) {
  * @param pdfBytes {Uint8Array}
  * @param mapping a confirmed version 1 mapping
  * @param values raw values by variable key: dates as 'YYYY-MM-DD', amounts as
- *   numbers or numeric text. A missing or unusable value leaves its blank empty.
+ *   numbers or numeric text, or a list of them (printed separated by commas).
+ *   A missing or unusable value leaves its blank empty.
  * @returns {{ bytes: Uint8Array, filled: string[], skipped: string[] }}
  */
 export async function fillReleasePdf({ pdfBytes, mapping, values }) {
@@ -114,7 +129,7 @@ export async function fillReleasePdf({ pdfBytes, mapping, values }) {
 
   const texts = mapping.fields.map((field) => ({
     field,
-    text: formatReleaseValue(field.variable, field.format, values[field.variable]),
+    text: formatReleaseValues(field.variable, field.format, values[field.variable]),
   }))
 
   const filled = []

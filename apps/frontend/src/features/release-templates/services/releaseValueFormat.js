@@ -81,6 +81,18 @@ export function formatReleaseValue(variableKey, format, value) {
     : formatAmount(value, format)
 }
 
+/**
+ * Like formatReleaseValue, but a list prints every item, separated by commas
+ * ("09/10/2026, 09/25/2026"). Items that cannot be printed are left out.
+ */
+export function formatReleaseValues(variableKey, format, value) {
+  const items = Array.isArray(value) ? value : [value]
+  return items
+    .map((item) => formatReleaseValue(variableKey, format, item))
+    .filter(Boolean)
+    .join(', ')
+}
+
 /** What a test fill starts with: today's date and a sample amount. */
 export function defaultTestValue(variableKey, now = new Date()) {
   return getReleaseVariable(variableKey)?.kind === 'amount'

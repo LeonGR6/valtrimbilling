@@ -3,12 +3,15 @@ import {
   Alert,
   Box,
   Button,
+  Checkbox,
+  Chip,
   CircularProgress,
   Dialog,
   DialogActions,
   DialogContent,
   DialogTitle,
   Divider,
+  FormControlLabel,
   IconButton,
   InputAdornment,
   MenuItem,
@@ -23,6 +26,7 @@ import {
   buildPackageFillValues,
   buildPackageReleaseFileName,
   describeFillPlan,
+  describePendingPackage,
   pickDefaultTemplate,
   sortTemplatesByType,
 } from '../services/packageRelease.js'
@@ -34,6 +38,11 @@ import {
   savePackageRelease,
 } from '../services/packageReleaseRepository.js'
 import { getReleaseVariable, releaseTypeLabel } from '../services/releaseTemplateRecord.js'
+import { formatReleaseValue, formatReleaseValues } from '../services/releaseValueFormat.js'
+
+// The three values a person can correct before generating. The two Exceptions
+// lines come from the unpaid earlier Packages instead.
+const EDITABLE_VARIABLES = ['through_date', 'check_amount', 'signature_date']
 
 const HELPER_TEXT = {
   through_date: (values) => values.cutoffSource === 'builder_setup'
@@ -80,6 +89,8 @@ export default function GeneratePackageReleaseDialog({ packageRecord, job, onClo
   const [templateId, setTemplateId] = useState('')
   const [form, setForm] = useState({ through_date: '', check_amount: '', signature_date: '' })
   const [signatureFollows, setSignatureFollows] = useState(true)
+  // Unpaid earlier Packages the person took out of the Exceptions lines.
+  const [leftOut, setLeftOut] = useState(() => new Set())
   const [status, setStatus] = useState('idle')
   const [error, setError] = useState(null)
   const [saved, setSaved] = useState(null)
@@ -131,6 +142,21 @@ export default function GeneratePackageReleaseDialog({ packageRecord, job, onClo
     (release) => release.label === releaseTypeLabel(template?.releaseType),
   ) ?? null
   const generating = status === 'generating'
+  const usesExceptions = plan.filled.some(({ key }) => (
+    key === 'waiver_release_dates' || key === 'unpaid_progress_amount'
+  ))
+  const pending = (data?.values.pendingPackages ?? []).filter(({ id }) => !leftOut.has(id))
+  const formatOf = (key) => template?.mapping.fields.find((field) => field.variable === key)?.format
+  const exceptionLines = buildPackageFillValues(data?.values ?? {}, pending)
+
+  const toggleLeftOut = (id) => {
+    setLeftOut((current) => {
+      const next = new Set(current)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
 
   const setValue = (key, value) => {
     setForm((current) => ({
@@ -151,8 +177,12 @@ export default function GeneratePackageReleaseDialog({ packageRecord, job, onClo
       const { bytes, skipped } = await fillReleasePdf({
         pdfBytes: new Uint8Array(await pdf.arrayBuffer()),
         mapping: template.mapping,
-        // The three variables a Package fills; any other mapped one stays blank.
-        values: form,
+        values: {
+          ...form,
+          // One date and one amount per unpaid earlier Package that is included.
+          waiver_release_dates: exceptionLines.waiver_release_dates,
+          unpaid_progress_amount: exceptionLines.unpaid_progress_amount,
+        },
       })
 
       const fileName = buildPackageReleaseFileName({
@@ -257,7 +287,7 @@ export default function GeneratePackageReleaseDialog({ packageRecord, job, onClo
 
             {plan.filled.length > 0 && (
               <Stack spacing={1.5}>
-                {plan.filled.map(({ key, label }) => {
+                {plan.filled.filter(({ key }) => EDITABLE_VARIABLES.includes(key)).map(({ key, label }) => {
                   const isDate = getReleaseVariable(key).kind === 'date'
                   return (
                     <TextField
@@ -284,6 +314,68 @@ export default function GeneratePackageReleaseDialog({ packageRecord, job, onClo
               </Stack>
             )}
 
+            {usesExceptions && (
+              <Box>
+                <Typography variant="subtitle2" fontWeight={850}>
+                  Unpaid earlier Packages of this Job
+                </Typography>
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
+                  Their cut-off dates and net amounts fill the Exceptions lines of the form.
+                  Uncheck a Package to leave it out.
+                </Typography>
+
+                {values.pendingPackages.length === 0 ? (
+                  <Typography variant="body2" color="text.secondary">
+                    There are none, so those two lines stay blank.
+                  </Typography>
+                ) : (
+                  <Stack>
+                    {values.pendingPackages.map((item) => (
+                      <FormControlLabel
+                        key={item.id}
+                        disabled={generating}
+                        control={(
+                          <Checkbox
+                            size="small"
+                            checked={!leftOut.has(item.id)}
+                            onChange={() => toggleLeftOut(item.id)}
+                          />
+                        )}
+                        label={(
+                          <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexWrap: 'wrap' }} useFlexGap>
+                            <Typography variant="body2" fontWeight={700}>{item.number}</Typography>
+                            <Typography variant="body2" color="text.secondary">
+                              Cut-off {formatReleaseValue('through_date', 'MM/DD/YYYY', item.cutoffDate)}
+                              {' · '}
+                              {item.netAmount === null ? 'no amount' : formatCurrency(item.netAmount)}
+                            </Typography>
+                            <Chip size="small" variant="outlined" label={describePendingPackage(item).workflowLabel} />
+                          </Stack>
+                        )}
+                      />
+                    ))}
+                  </Stack>
+                )}
+
+                {pending.length > 0 && (
+                  <Stack spacing={0.25} sx={{ mt: 1 }}>
+                    {plan.filled.some(({ key }) => key === 'waiver_release_dates') && (
+                      <Typography variant="body2">
+                        <strong>Date(s) of Waiver and Release:</strong>{' '}
+                        {formatReleaseValues('waiver_release_dates', formatOf('waiver_release_dates'), exceptionLines.waiver_release_dates) || '—'}
+                      </Typography>
+                    )}
+                    {plan.filled.some(({ key }) => key === 'unpaid_progress_amount') && (
+                      <Typography variant="body2">
+                        <strong>Amount(s) of Unpaid Progress Payment(s):</strong>{' '}
+                        {formatReleaseValues('unpaid_progress_amount', formatOf('unpaid_progress_amount'), exceptionLines.unpaid_progress_amount) || '—'}
+                      </Typography>
+                    )}
+                  </Stack>
+                )}
+              </Box>
+            )}
+
             {plan.filled.some(({ key }) => key === 'check_amount') && values.netAmount !== null && (
               <Typography variant="caption" color="text.secondary">
                 Invoice {values.invoiceNumber ? `${values.invoiceNumber}: ` : ''}
@@ -305,12 +397,12 @@ export default function GeneratePackageReleaseDialog({ packageRecord, job, onClo
                 {' '}{plan.missingFromForm.length > 1 ? 'they are' : 'it is'} not filled.
               </Alert>
             )}
-            {plan.blank.length > 0 && (
-              <Typography variant="caption" color="text.secondary">
-                Left blank for now: {plan.blank.map(({ label }) => label).join(', ')}.
-                The signature is never filled.
-              </Typography>
-            )}
+            <Typography variant="caption" color="text.secondary">
+              {plan.blank.length > 0
+                ? `Left blank for now: ${plan.blank.map(({ label }) => label).join(', ')}. `
+                : ''}
+              The signature is never filled.
+            </Typography>
 
             {existing && !saved && (
               <Alert severity="info">

@@ -48,6 +48,10 @@ export function boxOnPage(page, rect) {
   return {
     width,
     height,
+    // Where the box starts on the displayed page and how wide that page is, to
+    // know how much free room there is to its right.
+    left,
+    displayWidth,
     // Drawing things rotated like the page keeps them upright when displayed.
     rotation,
     // The displayed bottom-left corner of the box, in PDF coordinates.

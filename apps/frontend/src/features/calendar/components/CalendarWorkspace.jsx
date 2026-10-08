@@ -10,7 +10,9 @@ import {
   Checkbox,
   FormControlLabel,
   IconButton,
+  MenuItem,
   Stack,
+  TextField,
   Tooltip,
   Typography,
 } from '@mui/material'
@@ -23,9 +25,17 @@ import {
 } from '../data/calendarEvents.js'
 import CalendarEventCard from './CalendarEventCard.jsx'
 
+function hasScope(scope) {
+  return scope.builder !== 'ALL' || scope.community !== 'ALL' || scope.jobId !== 'ALL'
+}
+
 export default function CalendarWorkspace({
   calendarRef,
   events,
+  totalEventCount,
+  scope,
+  onChangeScope,
+  onClearScope,
   selectedId,
   viewTitle,
   viewType,
@@ -58,6 +68,51 @@ export default function CalendarWorkspace({
             <span />
             EXT · Order Material
           </Box>
+        </Box>
+
+        <Box className="calendar-scope-filters" aria-label="Filter events by Builder, Community and Job">
+          <TextField
+            select
+            size="small"
+            label="Builder"
+            value={scope.builder}
+            onChange={(event) => onChangeScope('builder', event.target.value)}
+          >
+            <MenuItem value="ALL">All builders</MenuItem>
+            {scope.options.builders.map((name) => (
+              <MenuItem key={name} value={name}>{name}</MenuItem>
+            ))}
+          </TextField>
+          <TextField
+            select
+            size="small"
+            label="Community"
+            value={scope.community}
+            onChange={(event) => onChangeScope('community', event.target.value)}
+          >
+            <MenuItem value="ALL">All communities</MenuItem>
+            {scope.options.communities.map((name) => (
+              <MenuItem key={name} value={name}>{name}</MenuItem>
+            ))}
+          </TextField>
+          <TextField
+            select
+            size="small"
+            label="Job"
+            value={scope.jobId}
+            onChange={(event) => onChangeScope('jobId', event.target.value)}
+          >
+            <MenuItem value="ALL">All jobs</MenuItem>
+            {scope.options.jobs.map(({ id, label }) => (
+              <MenuItem key={id} value={id}>{label}</MenuItem>
+            ))}
+          </TextField>
+          {hasScope(scope) && (
+            <Button size="small" color="inherit" onClick={onClearScope}>Clear filters</Button>
+          )}
+          <Typography variant="caption" color="text.secondary">
+            Showing {events.length} of {totalEventCount} events
+          </Typography>
         </Box>
       </Box>
 

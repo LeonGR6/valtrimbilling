@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { Alert, Box, Button, Drawer, LinearProgress, Snackbar } from '@mui/material'
 import { useColorScheme } from '@mui/material/styles'
-import { usePersistentState } from '../../../hooks/usePersistentState.js'
+import { isStoredString, usePersistentState } from '../../../hooks/usePersistentState.js'
 import { useAuth } from '../../auth/context/useAuth.js'
 import { useJobs } from '../../jobs/context/useJobs.js'
 import { useBuilders } from '../../builders/context/useBuilders.js'
@@ -36,6 +36,10 @@ import ChangeOrdersPlaceholder from './ChangeOrdersPlaceholder.jsx'
 import {
   calculateProductionDates,
 } from '../utils/calendarDateRules.js'
+import {
+  filterCalendarEvents,
+  resolveCalendarScope,
+} from '../utils/calendarEventFilters.js'
 import { parseCalendarSchedule } from '../utils/calendarRoutes.js'
 import {
   findJobBuilder,
@@ -152,9 +156,41 @@ export default function CalendarScheduler() {
     window.history.replaceState({}, '', currentUrl)
   }, [])
 
-  const filteredEvents = useMemo(() => events.filter((event) => (
-    visibleTypes.includes(event.extendedProps.activityType)
-  )), [events, visibleTypes])
+  const [storedBuilder, setStoredBuilder] = usePersistentState('calendar:builder', 'ALL', isStoredString)
+  const [storedCommunity, setStoredCommunity] = usePersistentState('calendar:community', 'ALL', isStoredString)
+  const [storedJobId, setStoredJobId] = usePersistentState('calendar:job', 'ALL', isStoredString)
+  const scope = useMemo(
+    () => resolveCalendarScope(events, {
+      builder: storedBuilder,
+      community: storedCommunity,
+      jobId: storedJobId,
+    }),
+    [events, storedBuilder, storedCommunity, storedJobId],
+  )
+  const filteredEvents = useMemo(() => filterCalendarEvents(events, {
+    types: visibleTypes,
+    builder: scope.builder,
+    community: scope.community,
+    jobId: scope.jobId,
+  }), [events, scope.builder, scope.community, scope.jobId, visibleTypes])
+  const changeScope = (field, value) => {
+    // Narrowing the Builder or Community clears the choices that depended on it.
+    if (field === 'builder') {
+      setStoredBuilder(value)
+      setStoredCommunity('ALL')
+      setStoredJobId('ALL')
+    } else if (field === 'community') {
+      setStoredCommunity(value)
+      setStoredJobId('ALL')
+    } else {
+      setStoredJobId(value)
+    }
+  }
+  const clearScope = () => {
+    setStoredBuilder('ALL')
+    setStoredCommunity('ALL')
+    setStoredJobId('ALL')
+  }
 
   const selectedEvent = events.find((event) => event.id === selectedId) ?? null
 
@@ -436,6 +472,10 @@ export default function CalendarScheduler() {
           <CalendarWorkspace
             calendarRef={calendarRef}
             events={filteredEvents}
+            totalEventCount={events.length}
+            scope={scope}
+            onChangeScope={changeScope}
+            onClearScope={clearScope}
             selectedId={selectedId}
             viewTitle={viewTitle}
             viewType={viewType}

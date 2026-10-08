@@ -531,6 +531,18 @@
   padding: 0 26px 14px;
 }
 
+.calendar-scope-filters {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.calendar-scope-filters .MuiTextField-root {
+  min-width: 170px;
+}
+
 .calendar-type-filters {
   display: flex;
   align-items: center;

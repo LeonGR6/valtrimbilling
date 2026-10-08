@@ -23,6 +23,7 @@ import ExpandMoreRoundedIcon from '@mui/icons-material/ExpandMoreRounded'
 import FolderOpenRoundedIcon from '@mui/icons-material/FolderOpenRounded'
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
 import WarningAmberRoundedIcon from '@mui/icons-material/WarningAmberRounded'
+import { usePersistentState, isStoredString } from '../../../../hooks/usePersistentState.js'
 import { useReleaseTemplates } from '../../../release-templates/hooks/useReleaseTemplates.js'
 import { summarizeJobDocumentRequirements } from '../../services/jobDocumentRecord.js'
 import {
@@ -70,9 +71,17 @@ function jobRequirementStatus(requiredTypeKeys, documents) {
 }
 
 export default function JobDocumentsCatalog({ jobs, documentState }) {
-  const [search, setSearch] = useState('')
-  const [builderFilter, setBuilderFilter] = useState('ALL')
-  const [communityFilter, setCommunityFilter] = useState('ALL')
+  const [search, setSearch] = usePersistentState('draw-invoice:documents:search', '', isStoredString)
+  const [storedBuilderFilter, setBuilderFilter] = usePersistentState(
+    'draw-invoice:documents:builder',
+    'ALL',
+    isStoredString,
+  )
+  const [storedCommunityFilter, setCommunityFilter] = usePersistentState(
+    'draw-invoice:documents:community',
+    'ALL',
+    isStoredString,
+  )
   const [expandedJobId, setExpandedJobId] = useState(jobs[0]?.id ?? null)
   const [uploadTarget, setUploadTarget] = useState(null)
   const [deleteTarget, setDeleteTarget] = useState(null)
@@ -111,10 +120,19 @@ export default function JobDocumentsCatalog({ jobs, documentState }) {
   )
   const releaseTemplates = useReleaseTemplates(releaseDocumentIds)
   const builderOptions = useMemo(() => jobDocumentBuilderOptions(jobs), [jobs])
+  // A remembered Builder or Community that no longer exists falls back to "All".
+  const builderFilter = storedBuilderFilter === 'ALL'
+    || builderOptions.some(({ id }) => id === storedBuilderFilter)
+    ? storedBuilderFilter
+    : 'ALL'
   const communityOptions = useMemo(
     () => jobDocumentCommunityOptions(jobs, builderFilter),
     [builderFilter, jobs],
   )
+  const communityFilter = storedCommunityFilter === 'ALL'
+    || communityOptions.includes(storedCommunityFilter)
+    ? storedCommunityFilter
+    : 'ALL'
   const visibleJobs = useMemo(
     () => filterJobsForDocuments(jobs, {
       search,

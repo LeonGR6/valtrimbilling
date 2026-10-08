@@ -22,6 +22,7 @@ import FolderOpenRoundedIcon from '@mui/icons-material/FolderOpenRounded'
 import LockRoundedIcon from '@mui/icons-material/LockRounded'
 import ReceiptLongRoundedIcon from '@mui/icons-material/ReceiptLongRounded'
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
+import { usePersistentState, isStoredString } from '../../../../hooks/usePersistentState.js'
 import { getJobBuilderId } from '../../../jobs/utils/jobRoutes.js'
 import { useJobDocuments } from '../../hooks/useJobDocuments.js'
 import { countPackagesMissingRequiredDocuments } from '../../services/jobDocumentRecord.js'
@@ -176,11 +177,27 @@ export default function PackageCatalog({
   onTransfer,
   onDelete,
 }) {
-  const [catalogTab, setCatalogTab] = useState('packages')
-  const [search, setSearch] = useState('')
-  const [statusTab, setStatusTab] = useState('ALL')
-  const [builderFilter, setBuilderFilter] = useState('ALL')
-  const [communityFilter, setCommunityFilter] = useState('ALL')
+  const [catalogTab, setCatalogTab] = usePersistentState(
+    'draw-invoice:section',
+    'packages',
+    (value) => value === 'packages' || value === 'documents',
+  )
+  const [search, setSearch] = usePersistentState('draw-invoice:packages:search', '', isStoredString)
+  const [statusTab, setStatusTab] = usePersistentState(
+    'draw-invoice:packages:status',
+    'ALL',
+    (value) => PACKAGE_CATALOG_TABS.some((tab) => tab.value === value),
+  )
+  const [storedBuilderFilter, setBuilderFilter] = usePersistentState(
+    'draw-invoice:packages:builder',
+    'ALL',
+    isStoredString,
+  )
+  const [storedCommunityFilter, setCommunityFilter] = usePersistentState(
+    'draw-invoice:packages:community',
+    'ALL',
+    isStoredString,
+  )
   const [catalogAction, setCatalogAction] = useState(null)
   const [asOfDate] = useState(() => localDateKey())
   const jobDocuments = useJobDocuments(jobs)
@@ -229,10 +246,19 @@ export default function PackageCatalog({
     () => packageCatalogBuilderOptions(contexts),
     [contexts],
   )
+  // A remembered Builder or Community that no longer exists falls back to "All".
+  const builderFilter = storedBuilderFilter === 'ALL'
+    || builderOptions.some(({ id }) => id === storedBuilderFilter)
+    ? storedBuilderFilter
+    : 'ALL'
   const communityOptions = useMemo(
     () => packageCatalogCommunityOptions(contexts, builderFilter),
     [contexts, builderFilter],
   )
+  const communityFilter = storedCommunityFilter === 'ALL'
+    || communityOptions.includes(storedCommunityFilter)
+    ? storedCommunityFilter
+    : 'ALL'
   const scopedContexts = useMemo(
     () => filterPackageCatalogContexts(activeContexts, {
       search, builderId: builderFilter, community: communityFilter,

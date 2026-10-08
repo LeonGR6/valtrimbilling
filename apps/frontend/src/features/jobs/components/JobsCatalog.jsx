@@ -42,6 +42,7 @@ import LayersRoundedIcon from '@mui/icons-material/LayersRounded'
 import MoreHorizRoundedIcon from '@mui/icons-material/MoreHorizRounded'
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
 import ResponsiveCreateButton from '../../../components/common/ResponsiveCreateButton'
+import { usePersistentState, isStoredString } from '../../../hooks/usePersistentState.js'
 import { BuildersCatalog } from '../../builders/index.js'
 import { useBuilders } from '../../builders/context/useBuilders.js'
 import { usePeople } from '../../people/context/usePeople.js'
@@ -286,6 +287,8 @@ function SummaryCard({ icon, label, value }) {
   )
 }
 
+const JOB_ROWS_PER_PAGE_OPTIONS = [5, 10, 25]
+
 export default function JobsCatalog() {
   const navigate = useNavigate()
   const { builderId, jobId } = useParams()
@@ -307,9 +310,13 @@ export default function JobsCatalog() {
     canManageBuilderContacts,
     createBuilderContact,
   } = useBuilderContacts()
-  const [search, setSearch] = useState('')
+  const [search, setSearch] = usePersistentState('jobs:search', '', isStoredString)
   const [page, setPage] = useState(0)
-  const [rowsPerPage, setRowsPerPage] = useState(5)
+  const [rowsPerPage, setRowsPerPage] = usePersistentState(
+    'jobs:rows-per-page',
+    JOB_ROWS_PER_PAGE_OPTIONS[0],
+    (value) => JOB_ROWS_PER_PAGE_OPTIONS.includes(value),
+  )
   const [menuAnchor, setMenuAnchor] = useState(null)
   const [selectedJob, setSelectedJob] = useState(null)
   const [editTarget, setEditTarget] = useState(null)
@@ -841,7 +848,7 @@ export default function JobsCatalog() {
               setRowsPerPage(Number(event.target.value))
               setPage(0)
             }}
-            rowsPerPageOptions={[5, 10, 25]}
+            rowsPerPageOptions={JOB_ROWS_PER_PAGE_OPTIONS}
           />
         </Box>
       </Box>

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Alert, Box, Button, Drawer, LinearProgress, Snackbar } from '@mui/material'
 import { useColorScheme } from '@mui/material/styles'
+import { usePersistentState } from '../../../hooks/usePersistentState.js'
 import { useAuth } from '../../auth/context/useAuth.js'
 import { useJobs } from '../../jobs/context/useJobs.js'
 import { useBuilders } from '../../builders/context/useBuilders.js'
@@ -30,6 +31,11 @@ import CalendarWorkspace from './CalendarWorkspace.jsx'
 import ChangeOrdersPlaceholder from './ChangeOrdersPlaceholder.jsx'
 import './CalendarScheduler.css'
 
+const CALENDAR_MODES = ['PRODUCTION', 'CHANGE_ORDERS']
+const CALENDAR_TABS = ['SCHEDULE', 'BUILDER_SETTINGS', 'FOLLOW_UPS']
+const CALENDAR_VIEWS = ['dayGridMonth', 'dayGridWeek', 'listWeek', 'multiMonthYear']
+const ACTIVITY_TYPES = ['EXT', 'SHUTTER', 'DM', 'HW']
+
 const initialCalendarTitle = new Intl.DateTimeFormat('en-US', {
   month: 'long',
   day: 'numeric',
@@ -55,8 +61,16 @@ export default function CalendarScheduler() {
   const { mode, systemMode } = useColorScheme()
   const resolvedColorMode = mode === 'system' ? systemMode : mode
   const calendarColorMode = resolvedColorMode === 'dark' ? 'dark' : 'light'
-  const [calendarMode, setCalendarMode] = useState('PRODUCTION')
-  const [activeTab, setActiveTab] = useState('SCHEDULE')
+  const [calendarMode, setCalendarMode] = usePersistentState(
+    'calendar:mode',
+    'PRODUCTION',
+    (value) => CALENDAR_MODES.includes(value),
+  )
+  const [activeTab, setActiveTab] = usePersistentState(
+    'calendar:tab',
+    'SCHEDULE',
+    (value) => CALENDAR_TABS.includes(value),
+  )
   const [selectedId, setSelectedId] = useState(null)
   const [drawerMode, setDrawerMode] = useState(null)
   const [draft, setDraft] = useState(createEmptyProductionDraft())
@@ -69,8 +83,17 @@ export default function CalendarScheduler() {
   const [googleCalendarSyncing, setGoogleCalendarSyncing] = useState(false)
   const [googleCalendarError, setGoogleCalendarError] = useState('')
   const [viewTitle, setViewTitle] = useState(initialCalendarTitle)
-  const [viewType, setViewType] = useState('dayGridWeek')
-  const [visibleTypes, setVisibleTypes] = useState(['EXT', 'SHUTTER', 'DM', 'HW'])
+  const [viewType, setViewType] = usePersistentState(
+    'calendar:view',
+    'dayGridMonth',
+    (value) => CALENDAR_VIEWS.includes(value),
+  )
+  const [visibleTypes, setVisibleTypes] = usePersistentState(
+    'calendar:visible-types',
+    ACTIVITY_TYPES,
+    (value) => Array.isArray(value)
+      && value.every((type) => ACTIVITY_TYPES.includes(type)),
+  )
 
   useEffect(() => {
     if (!profile?.id) return undefined

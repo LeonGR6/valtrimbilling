@@ -112,7 +112,7 @@ export default function CalendarWorkspace({
             <FullCalendar
               ref={calendarRef}
               plugins={[dayGridPlugin, interactionPlugin, listPlugin, multiMonthPlugin]}
-              initialView="dayGridMonth"
+              initialView={viewType}
               initialDate={new Date()}
               firstDay={1}
               weekends

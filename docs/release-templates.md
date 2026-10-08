@@ -222,7 +222,7 @@ when, counting it as billed, nothing is left to bill in the scope it belongs to.
   two Buildings) is final only if it finishes every one of them.
 - **Retention Release Packages** are not Draw Packages: `applicable` is false
   with reason `RETENTION_RELEASE`.
-- Scope labels in the answer: `Phase 5`, `Phase 5 - Building 9`, `Project`.
+- Scope labels in the answer: `Phase 5`, `Phase 5 - Building 9`, `the Job`.
 
 The Final form has no Through Date and no Exceptions lines, so a Final Package
 fills Amount of Check (its invoice net amount) and Date of Signature (its

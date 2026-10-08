@@ -1,7 +1,8 @@
-import { useState } from 'react'
+import { lazy, Suspense, useState } from 'react'
 import { Link as RouterLink, useNavigate, useParams } from 'react-router-dom'
 import {
   Alert,
+  Backdrop,
   Box,
   Button,
   Card,
@@ -20,7 +21,9 @@ import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
 import EditRoundedIcon from '@mui/icons-material/EditRounded'
 import LayersRoundedIcon from '@mui/icons-material/LayersRounded'
 import MoveToInboxRoundedIcon from '@mui/icons-material/MoveToInboxRounded'
+import DescriptionRoundedIcon from '@mui/icons-material/DescriptionRounded'
 import ReceiptLongRoundedIcon from '@mui/icons-material/ReceiptLongRounded'
+import { useAuth } from '../../../auth/context/useAuth.js'
 import { useBuilderDrawSchedules } from '../../../builder-draw-schedules/context/useBuilderDrawSchedules.js'
 import { useProductionActivities } from '../../../calendar/context/useProductionActivities.js'
 import JobModuleNavigation from '../../../jobs/components/JobModuleNavigation.jsx'
@@ -69,6 +72,14 @@ import {
   PackageUtilityTable,
 } from './PackageTables.jsx'
 
+// Loaded on demand: it brings the Release generation screens.
+const GeneratePackageReleaseDialog = lazy(
+  () => import('../../../release-templates/components/GeneratePackageReleaseDialog.jsx'),
+)
+
+// The same roles that can save Job documents can generate a Package's Release.
+const RELEASE_ROLES = ['ADMIN', 'ACCOUNTING', 'PROJECT_MANAGEMENT']
+
 export default function DrawPackageDetail() {
   const navigate = useNavigate()
   const { builderId, jobId, phaseId, packageId } = useParams()
@@ -105,6 +116,8 @@ export default function DrawPackageDetail() {
   } = useDrawInvoicePackages()
   const [createDialogOpen, setCreateDialogOpen] = useState(false)
   const [correctionDialog, setCorrectionDialog] = useState(null)
+  const [releaseDialogOpen, setReleaseDialogOpen] = useState(false)
+  const { profile } = useAuth()
 
   const handleCreate = async (input) => {
     const record = await createDrawInvoicePackage(input)
@@ -306,6 +319,16 @@ export default function DrawPackageDetail() {
                   Move cells here
                 </Button>
               </>
+            )}
+            {focusedPackage && RELEASE_ROLES.includes(profile?.role) && (
+              <Button
+                variant="outlined"
+                startIcon={<DescriptionRoundedIcon />}
+                onClick={() => setReleaseDialogOpen(true)}
+                disabled={saving}
+              >
+                Generate Release
+              </Button>
             )}
             {canDeleteFocusedPackage && (
               <Button
@@ -586,6 +609,22 @@ export default function DrawPackageDetail() {
           onCreate={handleCreate}
         />
       )}
+      {releaseDialogOpen && focusedPackage && (
+        <Suspense
+          fallback={(
+            <Backdrop open sx={{ zIndex: 'modal' }}>
+              <CircularProgress color="inherit" />
+            </Backdrop>
+          )}
+        >
+          <GeneratePackageReleaseDialog
+            packageRecord={focusedPackage}
+            job={focusedJob}
+            onClose={() => setReleaseDialogOpen(false)}
+          />
+        </Suspense>
+      )}
+
       {correctionDialog === 'edit' && focusedPackage && (
         <EditDrawPackageDialog
           record={focusedPackage}

@@ -100,3 +100,19 @@ test('a target must be a rectangle or a form field', () => {
   assert.equal(result.success, false)
   assert.equal(validateReleaseMapping(mapping(field({ target: { kind: 'acroform', fieldName: ' padded ' } })), 1).success, false)
 })
+
+test('the exception blanks take dates and amounts respectively', () => {
+  const dates = (format) => mapping(field({ variable: 'waiver_release_dates', format }))
+  const unpaid = (format) => mapping(field({ variable: 'unpaid_progress_amount', format }))
+
+  assert.equal(validateReleaseMapping(dates('MMMM D, YYYY'), 1).success, true)
+  assert.deepEqual(
+    validateReleaseMapping(dates('currency'), 1).errors,
+    ['Select a supported format for waiver_release_dates'],
+  )
+  assert.equal(validateReleaseMapping(unpaid('plain'), 1).success, true)
+  assert.deepEqual(
+    validateReleaseMapping(unpaid('MM/DD/YYYY'), 1).errors,
+    ['Select a supported format for unpaid_progress_amount'],
+  )
+})

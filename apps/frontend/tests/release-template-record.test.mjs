@@ -225,6 +225,24 @@ test('sample values show each format', () => {
   assert.equal(sampleValue('check_amount', 'plain'), '1250.00')
 })
 
+test('the exception blanks are in the catalog with their own formats and samples', () => {
+  const keys = RELEASE_VARIABLES.map(({ key }) => key)
+  assert.deepEqual(keys, [
+    'through_date',
+    'check_amount',
+    'signature_date',
+    'waiver_release_dates',
+    'unpaid_progress_amount',
+  ])
+
+  const day = new Date(2026, 8, 30)
+  assert.equal(sampleValue('waiver_release_dates', 'MM/DD/YYYY', day), '09/30/2026')
+  assert.equal(sampleValue('unpaid_progress_amount', 'currency'), '$1,250.00')
+  assert.equal(sampleValue('unpaid_progress_amount', 'plain'), '1250.00')
+  assert.equal(createPlacement('unpaid_progress_amount').format, 'currency')
+  assert.equal(createPlacement('waiver_release_dates').format, 'MM/DD/YYYY')
+})
+
 test('classification is flagged when unsure or missing', () => {
   const sure = describeClassification(toReleaseTemplate(row))
   assert.equal(sure.percent, '98%')

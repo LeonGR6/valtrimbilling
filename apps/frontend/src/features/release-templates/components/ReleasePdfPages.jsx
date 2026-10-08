@@ -22,6 +22,8 @@ const VARIABLE_COLOR = {
   through_date: 'primary',
   check_amount: 'success',
   signature_date: 'warning',
+  waiver_release_dates: 'info',
+  unpaid_progress_amount: 'secondary',
 }
 
 function PdfLoading({ children }) {

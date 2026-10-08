@@ -31,6 +31,11 @@ const DATE_FORMATS = [
   { value: 'YYYY-MM-DD', label: 'YYYY-MM-DD' },
 ]
 
+const AMOUNT_FORMATS = [
+  { value: 'currency', label: '$1,250.00' },
+  { value: 'plain', label: '1250.00' },
+]
+
 // Must match private.release_template_variables() and the format rule in
 // private.validate_release_template_mapping() (tests read the migrations).
 export const RELEASE_VARIABLES = [
@@ -43,10 +48,7 @@ export const RELEASE_VARIABLES = [
   {
     key: 'check_amount',
     label: 'Amount of Check',
-    formats: [
-      { value: 'currency', label: '$1,250.00' },
-      { value: 'plain', label: '1250.00' },
-    ],
+    formats: AMOUNT_FORMATS,
     defaultFormat: 'currency',
   },
   {
@@ -54,6 +56,19 @@ export const RELEASE_VARIABLES = [
     label: 'Date of Signature',
     formats: DATE_FORMATS,
     defaultFormat: 'MM/DD/YYYY',
+  },
+  // The two blanks of the "Exceptions" part of the Conditional Progress form.
+  {
+    key: 'waiver_release_dates',
+    label: 'Date(s) of Waiver and Release',
+    formats: DATE_FORMATS,
+    defaultFormat: 'MM/DD/YYYY',
+  },
+  {
+    key: 'unpaid_progress_amount',
+    label: 'Amount(s) of Unpaid Progress Payment(s)',
+    formats: AMOUNT_FORMATS,
+    defaultFormat: 'currency',
   },
 ]
 
@@ -260,7 +275,7 @@ function pad(value) {
 
 /** Example of how a value looks with a format, shown inside the placed box. */
 export function sampleValue(variableKey, format, now = new Date()) {
-  if (variableKey === 'check_amount') {
+  if (variableKey === 'check_amount' || variableKey === 'unpaid_progress_amount') {
     return format === 'plain' ? '1250.00' : '$1,250.00'
   }
 

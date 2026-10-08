@@ -138,6 +138,11 @@ The review is full-screen:
    size per value, and confirms. Roles other than Admin, Accounting and Project
    Management see the template read-only.
 
+**Test fill** (button in the review): type the values to print (today's date and
+a sample amount to start) and generate a copy of the PDF with them, shown in a
+preview with download. It uses the boxes as they are on screen, so a layout can
+be checked on the real document before confirming. Nothing is saved.
+
 Deleting a confirmed template's PDF warns that the template goes with it.
 
 Code lives in `apps/frontend/src/features/release-templates`:
@@ -146,6 +151,27 @@ Code lives in `apps/frontend/src/features/release-templates`:
 `services/releaseTemplateRepository.js`, `hooks/useReleaseTemplates.js` and
 `components/`. The review dialog is loaded on demand so the PDF viewer is not
 part of the main bundle.
+
+## Filling a PDF
+
+`services/releasePdfFiller.js` writes values into a Release PDF at the boxes of a
+confirmed mapping (`fillReleasePdf({ pdfBytes, mapping, values })`). Values are
+raw: dates as `YYYY-MM-DD`, amounts as numbers or numeric text; a missing or
+unusable value leaves its blank empty and is reported in `skipped`.
+
+- The text is drawn at the box, not set on the form field, because some
+  templates have a damaged form tree where the form API fails. Form fields are
+  flattened first (keeping anything already printed in them) or, if that fails,
+  removed, so an empty field never covers a value.
+- Box geometry is the exact inverse of the analysis conversion: it handles page
+  rotation and an offset crop box, and the text is drawn upright as displayed.
+- Text shrinks (down to 60% of the chosen size) to fit its box; "cover" paints
+  a white rectangle first.
+- Amounts default to the number alone (`1,250.00`) because the forms print the
+  dollar sign themselves; `$1,250.00` is the other format.
+
+Tests read the filled PDF back with pdf.js and check the text, its position on
+the displayed page and its orientation on all four rotations.
 
 ## Tests
 

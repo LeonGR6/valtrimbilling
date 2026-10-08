@@ -7,6 +7,7 @@ import {
   clampRect,
   createPlacement,
   describeClassification,
+  describeReleaseDocument,
   describeSuggestion,
   describeTemplateStatus,
   displayPageSize,
@@ -270,6 +271,29 @@ test('the document card status follows the template status', () => {
   assert.equal(status('analyzing').color, 'info')
   assert.equal(status('failed').color, 'error')
   assert.equal(status('superseded').color, 'default')
+})
+
+test('the Release card names the type of Release apart from the template state', () => {
+  const info = (value, extra = {}) => describeReleaseDocument(
+    toReleaseTemplate({ ...row, status: value, ...extra }),
+  )
+
+  const confirmed = info('confirmed')
+  assert.equal(confirmed.typeChip.label, 'Conditional · Progress')
+  assert.equal(
+    confirmed.typeChip.title,
+    'Conditional Waiver and Release on Progress Payment',
+  )
+  assert.deepEqual(confirmed.status, { color: 'success', label: 'Template ready' })
+
+  assert.equal(info('needs_review').status.label, 'Needs review')
+  assert.equal(info('needs_review', { release_type: null }).typeChip, null)
+  assert.equal(info('failed').typeChip, null)
+  assert.equal(info('failed').status.color, 'error')
+
+  const missing = describeReleaseDocument(null)
+  assert.equal(missing.typeChip, null)
+  assert.equal(missing.status.label, 'No template yet')
 })
 
 test('release type labels cover the four types', () => {

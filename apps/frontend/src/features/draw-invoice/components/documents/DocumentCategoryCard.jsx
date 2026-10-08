@@ -6,7 +6,6 @@ import {
   Chip,
   CircularProgress,
   Divider,
-  IconButton,
   Stack,
   Tooltip,
   Typography,
@@ -16,7 +15,7 @@ import OpenInNewRoundedIcon from '@mui/icons-material/OpenInNewRounded'
 import PictureAsPdfRoundedIcon from '@mui/icons-material/PictureAsPdfRounded'
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
 import FactCheckRoundedIcon from '@mui/icons-material/FactCheckRounded'
-import { describeTemplateStatus } from '../../../release-templates/services/releaseTemplateRecord.js'
+import { describeReleaseDocument } from '../../../release-templates/services/releaseTemplateRecord.js'
 import { formatFileSize } from './jobDocumentTypes.js'
 
 function formatUploadDate(value) {
@@ -113,104 +112,120 @@ export default function DocumentCategoryCard({
         <Stack spacing={1} sx={{ flex: 1 }}>
           {documents.map((document) => {
             const template = supportsTemplates ? templatesByDocument[document.id] : null
-            const templateStatus = describeTemplateStatus(template)
+            const releaseInfo = supportsTemplates ? describeReleaseDocument(template) : null
             const analyzing = analyzingDocumentId === document.id
+            const busy = openingDocumentId === document.id
+              || deletingDocumentId === document.id
 
             return (
-            <Box
-              key={document.id}
-              sx={{
-                display: 'flex',
-                gap: 1,
-                alignItems: 'center',
-                p: 1.25,
-                border: 1,
-                borderColor: 'divider',
-                borderRadius: 1.5,
-              }}
-            >
-              <PictureAsPdfRoundedIcon color="error" fontSize="small" />
-              <Box sx={{ flex: 1, minWidth: 0 }}>
-                <Typography variant="body2" fontWeight={750} noWrap title={document.name}>
-                  {document.name}
-                </Typography>
-                <Typography variant="caption" color="text.secondary">
-                  {type.singularLabel} · {formatUploadDate(document.createdAt)} ·{' '}
-                  {formatFileSize(document.sizeBytes)}
-                </Typography>
-                {templateStatus && (
-                  <Box sx={{ mt: 0.5 }}>
-                    <Chip
-                      size="small"
-                      color={templateStatus.color}
-                      label={analyzing ? 'Analyzing…' : templateStatus.label}
-                    />
+              <Box
+                key={document.id}
+                sx={{
+                  p: 1.5,
+                  border: 1,
+                  borderColor: 'divider',
+                  borderRadius: 1.5,
+                  minWidth: 0,
+                }}
+              >
+                <Stack direction="row" spacing={1.25} sx={{ alignItems: 'flex-start' }}>
+                  <PictureAsPdfRoundedIcon color="error" sx={{ mt: 0.25 }} />
+                  <Box sx={{ flex: 1, minWidth: 0 }}>
+                    <Typography
+                      variant="body2"
+                      fontWeight={750}
+                      title={document.name}
+                      sx={{
+                        overflowWrap: 'anywhere',
+                        display: '-webkit-box',
+                        WebkitLineClamp: 2,
+                        WebkitBoxOrient: 'vertical',
+                        overflow: 'hidden',
+                      }}
+                    >
+                      {document.name}
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      {formatUploadDate(document.createdAt)} · {formatFileSize(document.sizeBytes)}
+                    </Typography>
                   </Box>
+                </Stack>
+
+                {releaseInfo && (
+                  <Stack
+                    direction="row"
+                    spacing={0.75}
+                    useFlexGap
+                    sx={{ mt: 1, flexWrap: 'wrap' }}
+                  >
+                    {releaseInfo.typeChip && (
+                      <Tooltip title={releaseInfo.typeChip.title}>
+                        <Chip
+                          size="small"
+                          color="primary"
+                          variant="outlined"
+                          label={releaseInfo.typeChip.label}
+                        />
+                      </Tooltip>
+                    )}
+                    {releaseInfo.status && (
+                      <Chip
+                        size="small"
+                        color={releaseInfo.status.color}
+                        variant={releaseInfo.status.color === 'default' ? 'outlined' : 'filled'}
+                        label={analyzing ? 'Analyzing…' : releaseInfo.status.label}
+                      />
+                    )}
+                  </Stack>
                 )}
-              </Box>
-              {supportsTemplates && (canManage || template) && (
-                <Tooltip
-                  title={template && template.status !== 'failed'
-                    ? 'Review template'
-                    : 'Use as template'}
+
+                <Stack
+                  direction="row"
+                  spacing={0.5}
+                  useFlexGap
+                  sx={{ mt: 1.25, flexWrap: 'wrap' }}
                 >
-                  <span>
-                    <IconButton
+                  {supportsTemplates && (canManage || template) && (
+                    <Button
                       size="small"
-                      color="primary"
+                      startIcon={analyzing
+                        ? <CircularProgress size={16} />
+                        : <FactCheckRoundedIcon />}
                       aria-label={`Use ${document.name} as a Release template`}
-                      disabled={
-                        analyzing
-                        || deletingDocumentId === document.id
-                        || openingDocumentId === document.id
-                      }
+                      disabled={analyzing || busy}
                       onClick={() => onReviewTemplate(document)}
                     >
-                      {analyzing
-                        ? <CircularProgress size={18} />
-                        : <FactCheckRoundedIcon fontSize="small" />}
-                    </IconButton>
-                  </span>
-                </Tooltip>
-              )}
-              <Tooltip title="Open PDF">
-                <span>
-                  <IconButton
+                      {template && template.status !== 'failed' ? 'Review' : 'Use as template'}
+                    </Button>
+                  )}
+                  <Button
                     size="small"
+                    color="inherit"
+                    startIcon={openingDocumentId === document.id
+                      ? <CircularProgress size={16} />
+                      : <OpenInNewRoundedIcon />}
                     aria-label={`Open ${document.name}`}
-                    disabled={
-                      openingDocumentId === document.id
-                      || deletingDocumentId === document.id
-                    }
+                    disabled={busy}
                     onClick={() => onOpen(document)}
                   >
-                    {openingDocumentId === document.id
-                      ? <CircularProgress size={18} />
-                      : <OpenInNewRoundedIcon fontSize="small" />}
-                  </IconButton>
-                </span>
-              </Tooltip>
-              {canManage && (
-                <Tooltip title="Delete PDF">
-                  <span>
-                    <IconButton
+                    Open
+                  </Button>
+                  {canManage && (
+                    <Button
                       size="small"
                       color="error"
+                      startIcon={deletingDocumentId === document.id
+                        ? <CircularProgress size={16} color="inherit" />
+                        : <DeleteOutlineRoundedIcon />}
                       aria-label={`Delete ${document.name}`}
-                      disabled={
-                        deletingDocumentId === document.id
-                        || openingDocumentId === document.id
-                      }
+                      disabled={busy}
                       onClick={() => onDelete(document)}
                     >
-                      {deletingDocumentId === document.id
-                        ? <CircularProgress size={18} color="inherit" />
-                        : <DeleteOutlineRoundedIcon fontSize="small" />}
-                    </IconButton>
-                  </span>
-                </Tooltip>
-              )}
-            </Box>
+                      Delete
+                    </Button>
+                  )}
+                </Stack>
+              </Box>
             )
           })}
 

@@ -360,3 +360,33 @@ export function describeTemplateStatus(template) {
       return null
   }
 }
+
+/**
+ * What a Release document card shows apart from the file name: the type of
+ * Release the template was classified as, and where the template stands.
+ */
+export function describeReleaseDocument(template) {
+  const type = getReleaseType(template?.releaseType)
+  const typeChip = type
+    ? { label: type.shortLabel, title: type.label }
+    : null
+
+  if (!template) {
+    return { typeChip, status: { color: 'default', label: 'No template yet' } }
+  }
+
+  switch (template.status) {
+    case 'confirmed':
+      return { typeChip, status: { color: 'success', label: 'Template ready' } }
+    case 'needs_review':
+      return { typeChip, status: { color: 'warning', label: 'Needs review' } }
+    case 'analyzing':
+      return { typeChip, status: { color: 'info', label: 'Analyzing…' } }
+    case 'failed':
+      return { typeChip: null, status: { color: 'error', label: 'Analysis failed' } }
+    case 'superseded':
+      return { typeChip, status: { color: 'default', label: 'Replaced by a newer template' } }
+    default:
+      return { typeChip, status: null }
+  }
+}

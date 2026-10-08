@@ -25,6 +25,7 @@ import {
 import { useJobs } from '../../features/jobs/context/useJobs.js'
 import { jobDrawInvoicePath } from '../../features/jobs/utils/jobRoutes.js'
 import DashboardDonut from '../../features/dashboard/components/DashboardDonut.jsx'
+import { useCurrentDate } from '../../hooks/useCurrentDate.js'
 import { usePhaseCalendarCoverage } from '../../features/calendar/hooks/usePhaseCalendarCoverage.js'
 import { CALENDAR_UNSCHEDULED_PATH } from '../../features/calendar/utils/calendarRoutes.js'
 import UnscheduledPhasesSummary, {
@@ -182,7 +183,7 @@ function InvoiceAgenda({ invoices, jobsById, loading, days, todayKey }) {
 
 export default function HomePage() {
   const [days, setDays] = useState(7)
-  const [now, setNow] = useState(() => new Date())
+  const [now, refreshNow] = useCurrentDate()
   const {
     activities: productionActivities,
     events,
@@ -206,16 +207,14 @@ export default function HomePage() {
   const metrics = useMemo(() => (
     buildDashboardMetrics(events, drawInvoicePackages, now, days)
   ), [events, drawInvoicePackages, now, days])
-  const upcomingPackageSuggestions = useMemo(() => selectUpcomingCutoffSuggestions(
-    buildPackageSuggestions({
-      jobs,
-      schedules: builderDrawSchedules,
-      jobBillingSetupVersions,
-      packages: drawInvoicePackages,
-      productionActivities,
-      asOfDate: metrics.startKey,
-    }),
-  ), [
+  const cutoffSuggestions = useMemo(() => buildPackageSuggestions({
+    jobs,
+    schedules: builderDrawSchedules,
+    jobBillingSetupVersions,
+    packages: drawInvoicePackages,
+    productionActivities,
+    asOfDate: metrics.startKey,
+  }).filter((suggestion) => suggestion.mode === 'CUTOFF'), [
     builderDrawSchedules,
     drawInvoicePackages,
     jobBillingSetupVersions,
@@ -223,6 +222,10 @@ export default function HomePage() {
     metrics.startKey,
     productionActivities,
   ])
+  const upcomingPackageSuggestions = useMemo(
+    () => selectUpcomingCutoffSuggestions(cutoffSuggestions),
+    [cutoffSuggestions],
+  )
   const jobsById = useMemo(() => new Map(jobs.map((job) => [String(job.id), job])), [jobs])
   const eventChartItems = activityTypeOptions.map((type) => ({
     label: type.shortLabel, value: metrics.eventTypeCounts[type.value] ?? 0, color: eventColors[type.value],
@@ -243,7 +246,7 @@ export default function HomePage() {
     || billingSetupsError
 
   const refresh = async () => {
-    setNow(new Date())
+    refreshNow()
     await Promise.allSettled([
       refreshJobs(), refreshProductionActivities(), refreshDrawInvoicePackages(),
       refreshBuilderBillingSetups(),
@@ -312,6 +315,7 @@ export default function HomePage() {
         >
           <UpcomingPackageSuggestions
             suggestions={upcomingPackageSuggestions}
+            totalCount={cutoffSuggestions.length}
             loading={suggestionsLoading}
             error={suggestionsError}
           />

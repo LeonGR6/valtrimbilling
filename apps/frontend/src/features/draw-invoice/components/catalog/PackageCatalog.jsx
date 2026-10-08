@@ -22,6 +22,7 @@ import FolderOpenRoundedIcon from '@mui/icons-material/FolderOpenRounded'
 import LockRoundedIcon from '@mui/icons-material/LockRounded'
 import ReceiptLongRoundedIcon from '@mui/icons-material/ReceiptLongRounded'
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
+import { useCurrentDate } from '../../../../hooks/useCurrentDate.js'
 import { usePersistentState, isStoredString } from '../../../../hooks/usePersistentState.js'
 import { getJobBuilderId } from '../../../jobs/utils/jobRoutes.js'
 import { useJobDocuments } from '../../hooks/useJobDocuments.js'
@@ -199,7 +200,8 @@ export default function PackageCatalog({
     isStoredString,
   )
   const [catalogAction, setCatalogAction] = useState(null)
-  const [asOfDate] = useState(() => localDateKey())
+  const [today] = useCurrentDate()
+  const asOfDate = localDateKey(today)
   const jobDocuments = useJobDocuments(jobs)
   const packageSuggestions = useMemo(
     () => buildPackageSuggestions({

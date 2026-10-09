@@ -20,6 +20,7 @@ import {
 import ArrowDropDownRoundedIcon from '@mui/icons-material/ArrowDropDownRounded'
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
 import EditRoundedIcon from '@mui/icons-material/EditRounded'
+import LayersRoundedIcon from '@mui/icons-material/LayersRounded'
 import MoveToInboxRoundedIcon from '@mui/icons-material/MoveToInboxRounded'
 import ReceiptLongRoundedIcon from '@mui/icons-material/ReceiptLongRounded'
 import {
@@ -35,6 +36,7 @@ import {
   formatLongDate,
 } from '../../utils/drawInvoiceFormatters.js'
 import { canDeleteDraftPackage } from '../../utils/packageCatalog.js'
+import { isMultiPhasePackage } from '../../utils/packagePhaseScope.js'
 import { PackageStatusChip } from '../shared/PackageUi.jsx'
 
 const packageTableColumns = [
@@ -231,6 +233,16 @@ export default function PackageTable({
                           ? `${formatPhase(phase.name)} / ${formatBuilding(phase.building)}`
                           : `${summary.phaseCount} Phases`}
                     </Typography>
+                    {record.packageType !== 'RETENTION_RELEASE' && isMultiPhasePackage(summary.phaseCount) && (
+                      <Chip
+                        size="small"
+                        color="warning"
+                        variant="outlined"
+                        icon={<LayersRoundedIcon />}
+                        label={`Multi-phase · ${summary.phaseCount} Phases / Buildings`}
+                        sx={{ mt: 0.75, mb: 0.25, fontWeight: 750 }}
+                      />
+                    )}
                     {record.packageType === 'RETENTION_RELEASE' && (
                       <Chip
                         size="small"

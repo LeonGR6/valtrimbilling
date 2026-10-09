@@ -7,6 +7,7 @@ import {
   Button,
   Card,
   CardContent,
+  Chip,
   CircularProgress,
   MenuItem,
   Stack,
@@ -48,6 +49,11 @@ import {
   summarizeDrawPackage,
 } from '../../utils/drawPackages.js'
 import { buildDrawWorksheet } from '../../utils/drawWorksheet.js'
+import {
+  isMultiPhasePackage,
+  packagePhaseLabels,
+  phaseScopeLabel,
+} from '../../utils/packagePhaseScope.js'
 import {
   formatCurrency,
   formatDate,
@@ -216,6 +222,9 @@ export default function DrawPackageDetail() {
         schedule,
       )
     : null
+  const isMultiPhase = Boolean(focusedPackage)
+    && !isRetentionRelease
+    && isMultiPhasePackage(packageSummary?.phaseCount)
   const canCorrectFocusedPackage = canManageDrawInvoicePackages
     && canCorrectDrawPackage(focusedPackage)
   const canDeleteFocusedPackage = canManageDrawInvoicePackages
@@ -260,16 +269,24 @@ export default function DrawPackageDetail() {
                 ? 'Retention Release'
                 : `${focusedJob.builder} / ${focusedJob.community}`}
             </Typography>
-            <Typography variant="h5" fontWeight={850}>
-              {focusedPackage?.packageNumber ?? `Job #${focusedJob.code} Draw worksheet`}
-            </Typography>
+            <Stack direction="row" spacing={1.25} useFlexGap sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
+              <Typography variant="h5" fontWeight={850}>
+                {focusedPackage?.packageNumber ?? `Job #${focusedJob.code} Draw worksheet`}
+              </Typography>
+              {isMultiPhase && (
+                <Chip
+                  color="warning"
+                  icon={<LayersRoundedIcon />}
+                  label={`Multi-phase · ${packageSummary.phaseCount} Phases / Buildings`}
+                  sx={{ fontWeight: 750 }}
+                />
+              )}
+            </Stack>
             {selectedPhase && !isRetentionRelease && (
               <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-                Job #{focusedJob.code} · {formatPhase(selectedPhase.name)} ·{' '}
-                {formatBuilding(selectedPhase.building)}
-                {focusedPackage && packageSummary?.phaseCount > 1
-                  ? ` · ${packageSummary.phaseCount} Phases in Package`
-                  : ''}
+                Job #{focusedJob.code} · {isMultiPhase
+                  ? packagePhaseLabels(packageSummary.phaseSummaries).join(' · ')
+                  : `${formatPhase(selectedPhase.name)} · ${formatBuilding(selectedPhase.building)}`}
                 {focusedPackage?.invoiceNumber
                   ? ` · Invoice ${focusedPackage.invoiceNumber}`
                   : ''}
@@ -399,7 +416,27 @@ export default function DrawPackageDetail() {
           </Alert>
         ) : (
           <Stack spacing={2.5}>
-            {!isRetentionRelease && <Card variant="outlined">
+            {isMultiPhase && (
+              <Alert severity="warning" icon={<LayersRoundedIcon />}>
+                <strong>Multi-phase Package.</strong> This Package bills{' '}
+                {packageSummary.phaseCount} Phases / Buildings together on one
+                invoice. Each Phase worksheet is shown below.
+                <Stack direction="row" spacing={0.75} useFlexGap sx={{ mt: 1, flexWrap: 'wrap' }}>
+                  {focusedPackagePhases.map((phase) => (
+                    <Chip
+                      key={phase.id}
+                      size="small"
+                      clickable
+                      component="a"
+                      href={`#package-phase-${phase.id}`}
+                      label={phaseScopeLabel(phase.name, phase.building)}
+                    />
+                  ))}
+                </Stack>
+              </Alert>
+            )}
+
+            {!isRetentionRelease && !isMultiPhase && <Card variant="outlined">
               <CardContent sx={{ p: { xs: 2, sm: 2.5 } }}>
                 <Stack
                   direction={{ xs: 'column', md: 'row' }}
@@ -552,13 +589,25 @@ export default function DrawPackageDetail() {
               </Alert>
             )}
 
-            {!isRetentionRelease && <DrawWorksheetTable
+            {!isRetentionRelease && !isMultiPhase && <DrawWorksheetTable
               job={focusedJob}
               phase={selectedPhase}
               worksheet={worksheet}
               packages={drawInvoicePackages}
               currentPackageId={focusedPackage?.id}
             />}
+            {isMultiPhase && focusedPackagePhases.map((phase, index) => (
+              <Box key={phase.id} id={`package-phase-${phase.id}`} sx={{ scrollMarginTop: 16 }}>
+                <DrawWorksheetTable
+                  job={focusedJob}
+                  phase={phase}
+                  worksheet={buildDrawWorksheet(focusedJob, phase, schedule)}
+                  packages={drawInvoicePackages}
+                  currentPackageId={focusedPackage.id}
+                  phaseHeading={`${index + 1} of ${focusedPackagePhases.length} · ${phaseScopeLabel(phase.name, phase.building)}`}
+                />
+              </Box>
+            ))}
 
             {focusedPackage && !isRetentionRelease && <PackageHardwareTable summary={packageSummary} />}
             {focusedPackage && !isRetentionRelease && <PackageUtilityTable summary={packageSummary} />}

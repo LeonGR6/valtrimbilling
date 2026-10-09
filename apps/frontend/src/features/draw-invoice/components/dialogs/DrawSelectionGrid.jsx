@@ -63,8 +63,7 @@ export default function DrawSelectionGrid({
           <Typography fontWeight={800}>Select Lot / Draw cells</Typography>
           <Typography variant="body2" color="text.secondary">
             Choose each cell independently. Yellow cells already belong to
-            another Package. Change Phase to add more cells from this same Job;
-            selections from earlier Phases remain included.
+            another Package.
           </Typography>
         </Box>
         <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: 'wrap' }}>

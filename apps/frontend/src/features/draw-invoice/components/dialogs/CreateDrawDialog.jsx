@@ -6,6 +6,7 @@ import {
   Button,
   Card,
   CardContent,
+  Chip,
   Dialog,
   DialogActions,
   DialogContent,
@@ -16,6 +17,8 @@ import {
   Typography,
 } from '@mui/material'
 import AddRoundedIcon from '@mui/icons-material/AddRounded'
+import CheckRoundedIcon from '@mui/icons-material/CheckRounded'
+import LayersRoundedIcon from '@mui/icons-material/LayersRounded'
 import {
   getJobBuilderId,
   jobPlanPricingPath,
@@ -50,13 +53,33 @@ import {
   buildAvailableSeparateHardwareSelections,
   buildCalendarDrawSuggestion,
   buildDrawCalendarHeadings,
-  calendarSelectionKey,
   localDateKey,
 } from '../../utils/calendarDrawSuggestions.js'
+import {
+  initialShownPhaseIds,
+  isMultiPhasePackage,
+  packagePhaseLabels,
+} from '../../utils/packagePhaseScope.js'
 import DrawSelectionGrid from './DrawSelectionGrid.jsx'
 import CreatePackageHardwareTable from './CreatePackageHardwareTable.jsx'
 import CreatePackageUtilityTable from './CreatePackageUtilityTable.jsx'
 import SelectableOptionsTable from './SelectableOptionsTable.jsx'
+
+const cellKey = ({ phaseId, lotId, drawIndex }) => `${phaseId}:${lotId}:${drawIndex}`
+
+function resolveSchedule(job, jobBillingSetupVersions, schedules) {
+  return jobBillingSetupVersions.find(
+    (candidate) => String(candidate.id) === String(job?.billingSetupVersionId),
+  ) ?? schedules.find(
+    (candidate) => String(candidate.builderId) === String(getJobBuilderId(job)),
+  )
+}
+
+function phaseLotCounts(phase) {
+  const lots = phase.lots ?? []
+  const utility = lots.filter((row) => row.isUtilityBuilding).length
+  return { lots: lots.length - utility, utility }
+}
 
 export default function CreateDrawDialog({
   jobs = [],
@@ -72,20 +95,22 @@ export default function CreateDrawDialog({
   onCreate,
 }) {
   // Nothing is preselected when the dialog opens from "Create Package": the
-  // user picks the Job and the Phase / Building. A Package Suggestion opens it
-  // with both already chosen.
+  // user picks the Job and every Phase / Building the Package should cover.
+  // A Package Suggestion opens it with the Job and its suggested Phases chosen.
   const initialJob = initialJobId == null
     ? null
     : jobs.find((candidate) => String(candidate.id) === String(initialJobId))
-  const initialPhase = initialJob?.sequenceSheet?.phases?.find(
-    (phase) => String(phase.id) === String(initialPhaseId),
-  )
   const [selectedJobId, setSelectedJobId] = useState(
     initialJob == null ? '' : String(initialJob.id),
   )
-  const [selectedPhaseId, setSelectedPhaseId] = useState(
-    initialPhase == null ? '' : String(initialPhase.id),
-  )
+  const [shownPhaseIds, setShownPhaseIds] = useState(() => initialShownPhaseIds({
+    job: initialJob,
+    initialPhaseId,
+    schedule: resolveSchedule(initialJob, jobBillingSetupVersions, schedules),
+    productionActivities,
+    packages,
+    asOfDate: localDateKey(),
+  }))
   const [selectionOverrides, setSelectedSelections] = useState(null)
   const [hardwareSelectionKeys, setHardwareSelectionKeys] = useState([])
   const [splitHardwareSelectionKeys, setSplitHardwareSelectionKeys] = useState(null)
@@ -98,21 +123,12 @@ export default function CreateDrawDialog({
 
   const job = jobs.find((candidate) => String(candidate.id) === selectedJobId)
   const phases = job?.sequenceSheet?.phases ?? []
-  const phase = phases.find(
-    (candidate) => String(candidate.id) === selectedPhaseId,
+  const shownPhaseIdSet = new Set(shownPhaseIds)
+  const shownPhases = phases.filter(
+    (candidate) => shownPhaseIdSet.has(String(candidate.id)),
   )
-  const hasScope = Boolean(job && phase)
-  const schedule = jobBillingSetupVersions.find(
-    (candidate) => String(candidate.id) === String(job?.billingSetupVersionId),
-  ) ?? schedules.find(
-    (candidate) => String(candidate.builderId) === String(getJobBuilderId(job)),
-  )
-  const worksheet = buildDrawWorksheet(job, phase, schedule)
-  const lotRows = worksheet.rows.filter((row) => !row.isUtilityBuilding)
-  const utilityRows = worksheet.rows.filter((row) => row.isUtilityBuilding)
-  const lotRowIds = new Set(lotRows.map((row) => String(row.id)))
-  const lotWorksheet = { ...worksheet, rows: lotRows }
-  const utilityWorksheet = { ...worksheet, rows: utilityRows }
+  const hasScope = Boolean(job && shownPhases.length > 0)
+  const schedule = resolveSchedule(job, jobBillingSetupVersions, schedules)
   const usedSelections = useMemo(
     () => buildUsedDrawSelections(packages),
     [packages],
@@ -126,90 +142,106 @@ export default function CreateDrawDialog({
     packages,
     asOfDate,
   })
-  const drawCalendarHeadings = buildDrawCalendarHeadings({
-    activities: productionActivities,
-    job,
-    phase,
-    schedule,
-  })
-  const selectedSelections = selectionOverrides
-    ?? calendarSuggestion.suggestedSelections
-  const lotSelectedSelections = selectedSelections.filter(
-    (selection) => lotRowIds.has(String(selection.lotId)),
+  // Suggestions only count for the Phases that are on screen.
+  const suggestedSelections = calendarSuggestion.suggestedSelections.filter(
+    ({ phaseId }) => shownPhaseIdSet.has(String(phaseId)),
   )
+  const selectedSelections = selectionOverrides ?? suggestedSelections
   const calendarReadySelectionKeys = new Set(
-    calendarSuggestion.eligibleSelections.map(
-      ({ phaseId, lotId, drawIndex }) =>
-        calendarSelectionKey(phaseId, lotId, drawIndex),
-    ),
+    calendarSuggestion.eligibleSelections.map(cellKey),
   )
   const suggestedSelectionKeys = new Set(
-    calendarSuggestion.suggestedSelections.map(
-      ({ phaseId, lotId, drawIndex }) =>
-        calendarSelectionKey(phaseId, lotId, drawIndex),
-    ),
+    calendarSuggestion.suggestedSelections.map(cellKey),
   )
-  const selectedSelectionKeys = new Set(
-    selectedSelections.map(
-      ({ phaseId, lotId, drawIndex }) => `${phaseId}:${lotId}:${drawIndex}`,
-    ),
-  )
+  const selectedSelectionKeys = new Set(selectedSelections.map(cellKey))
   const utilityBillingMode = getUtilityBillingMode(schedule)
   const hardwareBillingMode = getHardwareBillingMode(schedule)
-  const selectedLotDrawIndexes = [...new Set(
-    lotSelectedSelections.map(({ drawIndex }) => Number(drawIndex)),
-  )].sort((left, right) => left - right)
-  const fullUtilityAnchorDrawIndex = selectedLotDrawIndexes[0] ?? null
-  const fullUtilitySelections = utilityBillingMode === 'FULL'
-    && fullUtilityAnchorDrawIndex !== null
-    ? utilityRows.flatMap((row) => (
-        fullUtilityRowIds.includes(String(row.id))
-        && !billedUtilityCharges.has(utilityChargeKey(row.id, 'FULL'))
-          ? [{
-              phaseId: phase.id,
+
+  // Everything one Phase / Building section needs: its own worksheet, its
+  // selected Lot cells and the Utility charges that follow from them.
+  const buildPhaseModel = (candidate) => {
+    const sheet = buildDrawWorksheet(job, candidate, schedule)
+    const lotRows = sheet.rows.filter((row) => !row.isUtilityBuilding)
+    const utilityRows = sheet.rows.filter((row) => row.isUtilityBuilding)
+    const lotRowIds = new Set(lotRows.map((row) => String(row.id)))
+    const lotSelected = selectedSelections.filter(
+      (selection) => lotRowIds.has(String(selection.lotId)),
+    )
+    const selectedLotDrawIndexes = [...new Set(
+      lotSelected.map(({ drawIndex }) => Number(drawIndex)),
+    )].sort((left, right) => left - right)
+    const anchorDrawIndex = selectedLotDrawIndexes[0] ?? null
+    const fullUtilitySelections = utilityBillingMode === 'FULL'
+      && anchorDrawIndex !== null
+      ? utilityRows.flatMap((row) => (
+          fullUtilityRowIds.includes(String(row.id))
+          && !billedUtilityCharges.has(utilityChargeKey(row.id, 'FULL'))
+            ? [{ phaseId: candidate.id, lotId: row.id, drawIndex: anchorDrawIndex }]
+            : []
+        ))
+      : []
+    const suggestedSplitUtilitySelections = utilityBillingMode === 'BY_EVENT'
+      ? utilityRows.flatMap((row) => {
+          const selectionsByEvent = new Map()
+          for (const selection of lotSelected) {
+            const eventType = schedule?.draws?.[selection.drawIndex]?.eventType
+            if (
+              getUtilityEventPercentage(schedule, eventType) <= 0
+              || selectionsByEvent.has(eventType)
+              || billedUtilityCharges.has(
+                utilityChargeKey(row.id, 'BY_EVENT', eventType),
+              )
+            ) continue
+            selectionsByEvent.set(eventType, {
+              phaseId: candidate.id,
               lotId: row.id,
-              drawIndex: fullUtilityAnchorDrawIndex,
-            }]
-          : []
-      ))
-    : []
-  const suggestedSplitUtilitySelections = utilityBillingMode === 'BY_EVENT'
-    ? utilityRows.flatMap((row) => {
-        const selectionsByEvent = new Map()
-        for (const selection of lotSelectedSelections) {
-          const eventType = schedule?.draws?.[selection.drawIndex]?.eventType
-          if (
-            getUtilityEventPercentage(schedule, eventType) <= 0
-            || selectionsByEvent.has(eventType)
-            || billedUtilityCharges.has(
-              utilityChargeKey(row.id, 'BY_EVENT', eventType),
-            )
-          ) continue
-          selectionsByEvent.set(eventType, {
-            phaseId: phase.id,
-            lotId: row.id,
-            drawIndex: selection.drawIndex,
-          })
-        }
-        return [...selectionsByEvent.values()]
-      })
-    : []
-  const splitUtilitySelections = suggestedSplitUtilitySelections.filter(
-    ({ lotId, drawIndex }) => !excludedUtilityChargeKeys.includes(
-      utilityChargeKey(
-        lotId,
-        'BY_EVENT',
-        schedule?.draws?.[drawIndex]?.eventType,
+              drawIndex: selection.drawIndex,
+            })
+          }
+          return [...selectionsByEvent.values()]
+        })
+      : []
+    const splitUtilitySelections = suggestedSplitUtilitySelections.filter(
+      ({ lotId, drawIndex }) => !excludedUtilityChargeKeys.includes(
+        utilityChargeKey(
+          lotId,
+          'BY_EVENT',
+          schedule?.draws?.[drawIndex]?.eventType,
+        ),
       ),
-    ),
-  )
-  const utilitySelections = utilityBillingMode === 'BY_EVENT'
-    ? splitUtilitySelections
-    : fullUtilitySelections
+    )
+
+    return {
+      phase: candidate,
+      worksheet: sheet,
+      lotRows,
+      utilityRows,
+      lotWorksheet: { ...sheet, rows: lotRows },
+      utilityWorksheet: { ...sheet, rows: utilityRows },
+      lotSelected,
+      selectedLotDrawIndexes,
+      anchorDrawIndex,
+      utilitySelections: utilityBillingMode === 'BY_EVENT'
+        ? splitUtilitySelections
+        : fullUtilitySelections,
+      headings: buildDrawCalendarHeadings({
+        activities: productionActivities,
+        job,
+        phase: candidate,
+        schedule,
+      }),
+    }
+  }
+  const phaseModels = shownPhases.map(buildPhaseModel)
+  const utilitySelections = phaseModels.flatMap((model) => model.utilitySelections)
+
   const suggestedSplitHardwareSelections = hardwareBillingMode === 'BY_EVENT'
     ? calendarSuggestion.suggestedHardwareSelections.filter(
-        ({ lotId, eventType }) => !billedHardwareCharges.has(
-          hardwareChargeKey(lotId, 'BY_EVENT', eventType),
+        ({ phaseId, lotId, eventType }) => (
+          shownPhaseIdSet.has(String(phaseId))
+          && !billedHardwareCharges.has(
+            hardwareChargeKey(lotId, 'BY_EVENT', eventType),
+          )
         ),
       )
     : []
@@ -222,19 +254,21 @@ export default function CreateDrawDialog({
     splitHardwareSelectionKeys ?? suggestedSplitHardwareChargeKeys,
   )
   const splitHardwareSelections = hardwareBillingMode === 'BY_EVENT'
-    ? buildAvailableSeparateHardwareSelections({ job, schedule }).map((selection) => {
-        const chargeKey = hardwareChargeKey(
-          selection.lotId,
-          'BY_EVENT',
-          selection.eventType,
-        )
-        return {
-          ...selection,
-          isCalendarSuggested: suggestedSplitHardwareChargeKeys.has(chargeKey),
-          chargeHardware: selectedSplitHardwareChargeKeys.has(chargeKey)
-            && !billedHardwareCharges.has(chargeKey),
-        }
-      })
+    ? buildAvailableSeparateHardwareSelections({ job, schedule })
+        .filter(({ phaseId }) => shownPhaseIdSet.has(String(phaseId)))
+        .map((selection) => {
+          const chargeKey = hardwareChargeKey(
+            selection.lotId,
+            'BY_EVENT',
+            selection.eventType,
+          )
+          return {
+            ...selection,
+            isCalendarSuggested: suggestedSplitHardwareChargeKeys.has(chargeKey),
+            chargeHardware: selectedSplitHardwareChargeKeys.has(chargeKey)
+              && !billedHardwareCharges.has(chargeKey),
+          }
+        })
     : []
   const effectiveHardwareSelectionKeys = hardwareBillingMode === 'BY_EVENT'
     ? []
@@ -244,13 +278,11 @@ export default function CreateDrawDialog({
     packageSelections.map(({ drawIndex }) => drawIndex),
   )].sort((left, right) => left - right)
 
-  const selectionIsUsed = (lotId, drawIndex) =>
-    usedSelections.has(
-      drawSelectionKey(job?.id, phase?.id, lotId, drawIndex),
-    )
+  const selectionIsUsed = (phaseId, lotId, drawIndex) =>
+    usedSelections.has(drawSelectionKey(job?.id, phaseId, lotId, drawIndex))
 
-  const selectionIsSelected = (lotId, drawIndex) =>
-    selectedSelectionKeys.has(`${phase?.id}:${lotId}:${drawIndex}`)
+  const selectionIsSelected = (phaseId, lotId, drawIndex) =>
+    selectedSelectionKeys.has(`${phaseId}:${lotId}:${drawIndex}`)
 
   const clearExcludedOptionsWithoutBillingDraw = (selections) => {
     const optionsBillingDrawIndex = schedule?.optionsBillingDrawIndex
@@ -273,42 +305,65 @@ export default function CreateDrawDialog({
     ))
   }
 
+  const resetPackageChoices = () => {
+    setSelectedSelections(null)
+    setHardwareSelectionKeys([])
+    setSplitHardwareSelectionKeys(null)
+    setFullUtilityRowIds([])
+    setExcludedUtilityChargeKeys([])
+    setExcludedOptionKeys([])
+  }
+
   const handleJobChange = (event) => {
     setSelectedJobId(event.target.value)
-    setSelectedPhaseId('')
-    setSelectedSelections(null)
-    setHardwareSelectionKeys([])
-    setSplitHardwareSelectionKeys(null)
-    setFullUtilityRowIds([])
-    setExcludedUtilityChargeKeys([])
-    setExcludedOptionKeys([])
+    setShownPhaseIds([])
+    resetPackageChoices()
   }
 
-  const handlePhaseChange = (event) => {
-    setSelectedPhaseId(event.target.value)
-    setSelectedSelections(null)
-    setHardwareSelectionKeys([])
-    setSplitHardwareSelectionKeys(null)
-    setFullUtilityRowIds([])
-    setExcludedUtilityChargeKeys([])
-    setExcludedOptionKeys([])
+  // Adding Phases brings the Calendar's suggested cells for them along.
+  const addPhases = (phaseIds) => {
+    const ids = phaseIds.map(String).filter((id) => !shownPhaseIdSet.has(id))
+    if (ids.length === 0) return
+
+    setShownPhaseIds((current) => [...current, ...ids])
+    if (selectionOverrides !== null) {
+      const known = new Set(selectionOverrides.map(cellKey))
+      setSelectedSelections([
+        ...selectionOverrides,
+        ...calendarSuggestion.suggestedSelections.filter(
+          (selection) => ids.includes(String(selection.phaseId))
+            && !known.has(cellKey(selection)),
+        ),
+      ])
+    }
   }
 
-  const toggleSelection = (lotId, drawIndex) => {
-    if (selectionIsUsed(lotId, drawIndex)) return
-
-    const key = `${phase.id}:${lotId}:${drawIndex}`
-    const nextSelections = selectedSelections.some(
-      (selection) => (
-        `${selection.phaseId}:${selection.lotId}:${selection.drawIndex}` === key
-      ),
+  // Removing a Phase also removes the cells and charges it contributed.
+  const removePhase = (candidate) => {
+    const id = String(candidate.id)
+    const lotIds = new Set((candidate.lots ?? []).map((lot) => String(lot.id)))
+    const nextSelections = selectedSelections.filter(
+      (selection) => String(selection.phaseId) !== id,
     )
-      ? selectedSelections.filter(
-          (selection) => (
-            `${selection.phaseId}:${selection.lotId}:${selection.drawIndex}` !== key
-          ),
-        )
-      : [...selectedSelections, { phaseId: phase.id, lotId, drawIndex }]
+
+    setShownPhaseIds((current) => current.filter((value) => value !== id))
+    setSelectedSelections(nextSelections)
+    setSplitHardwareSelectionKeys((current) => current === null
+      ? null
+      : current.filter((key) => !lotIds.has(key.split(':')[0])))
+    clearExcludedOptionsWithoutBillingDraw(nextSelections)
+    pruneHardwareSelections(nextSelections)
+  }
+
+  const toggleSelection = (candidate, lotId, drawIndex) => {
+    if (selectionIsUsed(candidate.id, lotId, drawIndex)) return
+
+    const key = `${candidate.id}:${lotId}:${drawIndex}`
+    const nextSelections = selectedSelections.some(
+      (selection) => cellKey(selection) === key,
+    )
+      ? selectedSelections.filter((selection) => cellKey(selection) !== key)
+      : [...selectedSelections, { phaseId: candidate.id, lotId, drawIndex }]
 
     clearExcludedOptionsWithoutBillingDraw(nextSelections)
     pruneHardwareSelections(nextSelections)
@@ -333,33 +388,18 @@ export default function CreateDrawDialog({
   }
 
   const toggleSelectionGroup = (available) => {
-    const availableKeys = new Set(
-      available.map(
-        ({ phaseId, lotId, drawIndex }) => `${phaseId}:${lotId}:${drawIndex}`,
-      ),
-    )
-
+    const availableKeys = new Set(available.map(cellKey))
     const allSelected = available.length > 0 && available.every(
-      ({ phaseId, lotId, drawIndex }) => (
-        selectedSelectionKeys.has(`${phaseId}:${lotId}:${drawIndex}`)
-      ),
+      (selection) => selectedSelectionKeys.has(cellKey(selection)),
     )
-
-    const currentKeys = new Set(selectedSelections.map(
-      ({ phaseId, lotId, drawIndex }) => `${phaseId}:${lotId}:${drawIndex}`,
-    ))
     const nextSelections = allSelected
       ? selectedSelections.filter(
-        (selection) => !availableKeys.has(
-          `${selection.phaseId}:${selection.lotId}:${selection.drawIndex}`,
-        ),
+        (selection) => !availableKeys.has(cellKey(selection)),
       )
       : [
           ...selectedSelections,
           ...available.filter(
-            ({ phaseId, lotId, drawIndex }) => !currentKeys.has(
-              `${phaseId}:${lotId}:${drawIndex}`,
-            ),
+            (selection) => !selectedSelectionKeys.has(cellKey(selection)),
           ),
         ]
 
@@ -402,20 +442,20 @@ export default function CreateDrawDialog({
     })
   }
 
-  const toggleLotSelections = (lotId) => {
-    const available = worksheet.draws
-      .map((_, drawIndex) => ({ phaseId: phase.id, lotId, drawIndex }))
-      .filter(({ drawIndex }) => !selectionIsUsed(lotId, drawIndex))
-
-    toggleSelectionGroup(available)
+  const toggleLotSelections = (model, lotId) => {
+    toggleSelectionGroup(
+      model.worksheet.draws
+        .map((_, drawIndex) => ({ phaseId: model.phase.id, lotId, drawIndex }))
+        .filter(({ drawIndex }) => !selectionIsUsed(model.phase.id, lotId, drawIndex)),
+    )
   }
 
-  const toggleDrawSelections = (drawIndex) => {
-    const available = lotRows
-      .map((row) => ({ phaseId: phase.id, lotId: row.id, drawIndex }))
-      .filter(({ lotId }) => !selectionIsUsed(lotId, drawIndex))
-
-    toggleSelectionGroup(available)
+  const toggleDrawSelections = (model, drawIndex) => {
+    toggleSelectionGroup(
+      model.lotRows
+        .map((row) => ({ phaseId: model.phase.id, lotId: row.id, drawIndex }))
+        .filter(({ lotId }) => !selectionIsUsed(model.phase.id, lotId, drawIndex)),
+    )
   }
 
   const optionChargeContext = buildOptionChargeContext(
@@ -434,6 +474,8 @@ export default function CreateDrawDialog({
     ...optionChargeContext,
   }
   const summary = summarizeDrawPackage(draftRecord, job, phases, schedule)
+  const packagePhaseLabelList = packagePhaseLabels(summary.phaseSummaries)
+  const isMultiPhase = isMultiPhasePackage(summary.phaseCount)
 
   const toggleOption = (option) => {
     setExcludedOptionKeys((current) => current.includes(option.id)
@@ -447,14 +489,24 @@ export default function CreateDrawDialog({
     ]
       .map(({ phaseId }) => String(phaseId)),
   )
-  const selectedPhasesAreReady = phases
-    .filter((candidate) => selectedPhaseIds.has(String(candidate.id)))
-    .every((candidate) => buildDrawWorksheet(job, candidate, schedule).isReady)
+  const selectedPhasesAreReady = phaseModels
+    .filter((model) => selectedPhaseIds.has(String(model.phase.id)))
+    .every((model) => model.worksheet.isReady)
   const canCreate =
     hasScope &&
     selectedPhasesAreReady &&
     (packageSelections.length > 0 || summary.hardwareIsDue) &&
     summary.unpricedOptionCount === 0
+
+  const hasLotRows = phaseModels.some((model) => model.lotRows.length > 0)
+  const calendarIsReady = hasScope && hasLotRows && !productionActivitiesLoading
+    && !productionActivitiesError
+  const hiddenSuggestedPhaseIds = [...new Set([
+    ...calendarSuggestion.suggestedSelections,
+    ...calendarSuggestion.suggestedHardwareSelections,
+  ].map(({ phaseId }) => String(phaseId)))].filter(
+    (id) => !shownPhaseIdSet.has(id),
+  )
 
   const handleSubmit = async () => {
     setSubmitting(true)
@@ -486,9 +538,25 @@ export default function CreateDrawDialog({
   return (
     <Dialog open onClose={onClose} fullWidth maxWidth="lg">
       <DialogTitle sx={{ pb: 1 }}>
-        <Typography variant="h6" component="div" fontWeight={800}>
-          Create Draw Package
-        </Typography>
+        <Stack
+          direction="row"
+          spacing={1.25}
+          useFlexGap
+          sx={{ alignItems: 'center', flexWrap: 'wrap' }}
+        >
+          <Typography variant="h6" component="div" fontWeight={800}>
+            Create Draw Package
+          </Typography>
+          {isMultiPhase && (
+            <Chip
+              size="small"
+              color="warning"
+              icon={<LayersRoundedIcon />}
+              label={`Multi-phase · ${summary.phaseCount} Phases / Buildings`}
+              sx={{ fontWeight: 750 }}
+            />
+          )}
+        </Stack>
         <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
           A Draw Package creates one persisted package, its immutable calculated lines,
           and an invoice total snapshot.
@@ -496,70 +564,95 @@ export default function CreateDrawDialog({
       </DialogTitle>
       <DialogContent sx={{ pt: '16px !important' }}>
         <Stack spacing={2.5}>
-          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
-            <TextField
-              select
-              label="Job"
-              value={selectedJobId}
-              onChange={handleJobChange}
-              fullWidth
-            >
-              {jobs.map((candidate) => (
-                <MenuItem key={candidate.id} value={String(candidate.id)}>
-                  Job #{candidate.code} · {candidate.builder} · {candidate.community}
-                </MenuItem>
-              ))}
-            </TextField>
-            <TextField
-              select
-              label="Phase / Building"
-              value={selectedPhaseId}
-              onChange={handlePhaseChange}
-              disabled={phases.length === 0}
-              helperText={job ? undefined : 'Select a Job first'}
-              fullWidth
-            >
-              {phases.map((candidate) => (
-                <MenuItem key={candidate.id} value={String(candidate.id)}>
-                  {formatPhase(candidate.name)} · {formatBuilding(candidate.building)} ·{' '}
-                  {(candidate.lots ?? []).filter((row) => !row.isUtilityBuilding).length} lots
-                  {(candidate.lots ?? []).some((row) => row.isUtilityBuilding)
-                    ? ` · ${(candidate.lots ?? []).filter((row) => row.isUtilityBuilding).length} Utility`
-                    : ''}
-                </MenuItem>
-              ))}
-            </TextField>
-          </Stack>
+          <TextField
+            select
+            label="Job"
+            value={selectedJobId}
+            onChange={handleJobChange}
+            fullWidth
+          >
+            {jobs.map((candidate) => (
+              <MenuItem key={candidate.id} value={String(candidate.id)}>
+                Job #{candidate.code} · {candidate.builder} · {candidate.community}
+              </MenuItem>
+            ))}
+          </TextField>
+
+          <Box>
+            <Typography fontWeight={800}>Phases / Buildings in this Package</Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 1.25 }}>
+              {job
+                ? 'Select every Phase / Building to include. Each one appears below, and they are all billed together in one invoice.'
+                : 'Select a Job first.'}
+            </Typography>
+            {job && phases.length === 0 && (
+              <Alert severity="warning">
+                This Job has no Phases yet. Create a Phase and assign its Lots in
+                Sequence Sheets first.
+              </Alert>
+            )}
+            <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: 'wrap' }}>
+              {phases.map((candidate) => {
+                const id = String(candidate.id)
+                const shown = shownPhaseIdSet.has(id)
+                const counts = phaseLotCounts(candidate)
+                const cellCount = selectedSelections.filter(
+                  (selection) => String(selection.phaseId) === id,
+                ).length
+
+                return (
+                  <Chip
+                    key={candidate.id}
+                    clickable
+                    color={shown ? 'primary' : 'default'}
+                    variant={shown ? 'filled' : 'outlined'}
+                    icon={shown ? <CheckRoundedIcon /> : <AddRoundedIcon />}
+                    onClick={() => (shown ? removePhase(candidate) : addPhases([candidate.id]))}
+                    title={shown
+                      ? 'Remove this Phase and its selected cells from the Package'
+                      : 'Add this Phase to the Package'}
+                    label={[
+                      `${formatPhase(candidate.name)} · ${formatBuilding(candidate.building)}`,
+                      `${counts.lots} lots`,
+                      counts.utility > 0 ? `${counts.utility} Utility` : null,
+                      cellCount > 0 ? `${cellCount} ${cellCount === 1 ? 'cell' : 'cells'}` : null,
+                    ].filter(Boolean).join(' · ')}
+                  />
+                )
+              })}
+            </Stack>
+          </Box>
+
+          {isMultiPhase && (
+            <Alert severity="warning" icon={<LayersRoundedIcon />}>
+              <strong>Multi-phase Package.</strong> This Package bills{' '}
+              {summary.phaseCount} Phases / Buildings together on one invoice:{' '}
+              {packagePhaseLabelList.join(' · ')}.
+            </Alert>
+          )}
 
           {!hasScope && (
             <Alert severity="info">
-              Select a Job and a Phase / Building to see its Lots, Draws and
-              Calendar suggestion.
+              {job
+                ? 'Select at least one Phase / Building to see its Lots, Draws and Calendar suggestion.'
+                : 'Select a Job and its Phases / Buildings to see their Lots, Draws and Calendar suggestion.'}
             </Alert>
           )}
 
-          {hasScope && !worksheet.isReady && (
-            <Alert severity="warning">
-              {readinessLabel(worksheet)}. Complete the worksheet prerequisites
-              before creating a package.
-            </Alert>
-          )}
-
-          {hasScope && lotRows.length > 0 && productionActivitiesLoading && (
+          {hasScope && hasLotRows && productionActivitiesLoading && (
             <Alert severity="info">
               Loading Calendar work to prepare the Package suggestion…
             </Alert>
           )}
 
-          {hasScope && lotRows.length > 0 && !productionActivitiesLoading && productionActivitiesError && (
+          {hasScope && hasLotRows && !productionActivitiesLoading && productionActivitiesError && (
             <Alert severity="warning">
               Calendar suggestions are unavailable: {productionActivitiesError}
               {' '}You can still select Lot / Draw cells manually.
             </Alert>
           )}
 
-          {hasScope && lotRows.length > 0 && !productionActivitiesLoading
-            && !productionActivitiesError
+          {calendarIsReady
             && calendarSuggestion.eligibleSelections.length === 0
             && calendarSuggestion.eligibleHardwareSelections.length === 0 && (
               <Alert severity="info">
@@ -570,11 +663,22 @@ export default function CreateDrawDialog({
               </Alert>
           )}
 
-          {hasScope && lotRows.length > 0 && !productionActivitiesLoading
-            && !productionActivitiesError
+          {calendarIsReady
             && (calendarSuggestion.eligibleSelections.length > 0
               || calendarSuggestion.eligibleHardwareSelections.length > 0) && (
-              <Alert severity="success">
+              <Alert
+                severity="success"
+                action={hiddenSuggestedPhaseIds.length > 0 ? (
+                  <Button
+                    color="inherit"
+                    size="small"
+                    onClick={() => addPhases(hiddenSuggestedPhaseIds)}
+                  >
+                    Add {hiddenSuggestedPhaseIds.length}{' '}
+                    {hiddenSuggestedPhaseIds.length === 1 ? 'Phase' : 'Phases'}
+                  </Button>
+                ) : undefined}
+              >
                 {calendarSuggestion.mode === 'ANY_DATE' ? (
                   <>
                     <strong>Any date suggestion:</strong>{' '}
@@ -582,7 +686,7 @@ export default function CreateDrawDialog({
                     {' '}is the highest-value rolling 14-day window.{' '}
                     <strong>{calendarSuggestion.suggestedSelections.length
                       + calendarSuggestion.suggestedHardwareSelections.length}</strong>{' '}
-                    billing items are preselected for an estimated{' '}
+                    billing items are suggested for an estimated{' '}
                     <strong>{formatCurrency(calendarSuggestion.estimatedInvoiceAmount)}</strong>
                     {' '}invoice.
                     {calendarSuggestion.eligibleSelections.length
@@ -605,46 +709,110 @@ export default function CreateDrawDialog({
                     {calendarSuggestion.suggestedSelections.length} open Lot / Draw cells
                     {' '}and {calendarSuggestion.suggestedHardwareSelections.length}{' '}
                     Separate Hardware charges
-                    {' '}for {calendarSuggestion.eventTypes.join(' / ')} are preselected.{' '}
+                    {' '}for {calendarSuggestion.eventTypes.join(' / ')} are suggested.{' '}
                     Estimated invoice:{' '}
                     <strong>{formatCurrency(calendarSuggestion.estimatedInvoiceAmount)}</strong>.
+                  </>
+                )}
+                {hiddenSuggestedPhaseIds.length > 0 && (
+                  <>
+                    {' '}Some of that work is in{' '}
+                    {hiddenSuggestedPhaseIds.length}{' '}
+                    {hiddenSuggestedPhaseIds.length === 1 ? 'Phase' : 'Phases'} not added yet.
                   </>
                 )}
               </Alert>
           )}
 
-          {hasScope && lotRows.length > 0 && (
-            <DrawSelectionGrid
-              job={job}
-              phase={phase}
-              worksheet={lotWorksheet}
-              drawCalendarHeadings={drawCalendarHeadings}
-              usedSelections={usedSelections}
-              selectedSelections={lotSelectedSelections}
-              selectionIsUsed={selectionIsUsed}
-              selectionIsSelected={selectionIsSelected}
-              calendarReadySelectionKeys={calendarReadySelectionKeys}
-              suggestedSelectionKeys={suggestedSelectionKeys}
-              toggleSelection={toggleSelection}
-              toggleLotSelections={toggleLotSelections}
-              toggleDrawSelections={toggleDrawSelections}
-            />
-          )}
+          {phaseModels.map((model, index) => {
+            const { phase } = model
+            const phaseKeyPrefix = `${phase.id}:`
+            const phaseSuggestedKeys = new Set(
+              [...suggestedSelectionKeys].filter((key) => key.startsWith(phaseKeyPrefix)),
+            )
+            const phaseReadyKeys = new Set(
+              [...calendarReadySelectionKeys].filter((key) => key.startsWith(phaseKeyPrefix)),
+            )
 
-          {hasScope && utilityRows.length > 0 && (
-            <CreatePackageUtilityTable
-              phase={phase}
-              worksheet={utilityWorksheet}
-              drawCalendarHeadings={drawCalendarHeadings}
-              selectedUtilitySelections={utilitySelections}
-              selectedLotDrawIndexes={selectedLotDrawIndexes}
-              billedUtilityCharges={billedUtilityCharges}
-              fullUtilityRowIds={fullUtilityRowIds}
-              fullUtilityAnchorDrawIndex={fullUtilityAnchorDrawIndex}
-              onToggleFull={toggleFullUtilityCharge}
-              onToggleSplit={toggleSplitUtilityCharge}
-            />
-          )}
+            return (
+              <Stack
+                key={phase.id}
+                spacing={2}
+                sx={phaseModels.length > 1 ? {
+                  pl: 2,
+                  borderLeft: 4,
+                  borderColor: 'primary.main',
+                } : undefined}
+              >
+                {phaseModels.length > 1 && (
+                  <Stack
+                    direction="row"
+                    spacing={1}
+                    useFlexGap
+                    sx={{ alignItems: 'center', flexWrap: 'wrap' }}
+                  >
+                    <Chip size="small" color="primary" label={`${index + 1} of ${phaseModels.length}`} />
+                    <Typography variant="subtitle1" fontWeight={850}>
+                      {formatPhase(phase.name)} · {formatBuilding(phase.building)}
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      {model.lotRows.length} lots
+                      {model.utilityRows.length > 0
+                        ? ` · ${model.utilityRows.length} Utility`
+                        : ''}
+                    </Typography>
+                  </Stack>
+                )}
+
+                {!model.worksheet.isReady && (
+                  <Alert severity="warning">
+                    {formatPhase(phase.name)} · {formatBuilding(phase.building)}:{' '}
+                    {readinessLabel(model.worksheet)}. Complete the worksheet
+                    prerequisites before creating a package.
+                  </Alert>
+                )}
+
+                {model.lotRows.length > 0 && (
+                  <DrawSelectionGrid
+                    job={job}
+                    phase={phase}
+                    worksheet={model.lotWorksheet}
+                    drawCalendarHeadings={model.headings}
+                    usedSelections={usedSelections}
+                    selectedSelections={model.lotSelected}
+                    selectionIsUsed={(lotId, drawIndex) => (
+                      selectionIsUsed(phase.id, lotId, drawIndex)
+                    )}
+                    selectionIsSelected={(lotId, drawIndex) => (
+                      selectionIsSelected(phase.id, lotId, drawIndex)
+                    )}
+                    calendarReadySelectionKeys={phaseReadyKeys}
+                    suggestedSelectionKeys={phaseSuggestedKeys}
+                    toggleSelection={(lotId, drawIndex) => (
+                      toggleSelection(phase, lotId, drawIndex)
+                    )}
+                    toggleLotSelections={(lotId) => toggleLotSelections(model, lotId)}
+                    toggleDrawSelections={(drawIndex) => toggleDrawSelections(model, drawIndex)}
+                  />
+                )}
+
+                {model.utilityRows.length > 0 && (
+                  <CreatePackageUtilityTable
+                    phase={phase}
+                    worksheet={model.utilityWorksheet}
+                    drawCalendarHeadings={model.headings}
+                    selectedUtilitySelections={model.utilitySelections}
+                    selectedLotDrawIndexes={model.selectedLotDrawIndexes}
+                    billedUtilityCharges={billedUtilityCharges}
+                    fullUtilityRowIds={fullUtilityRowIds}
+                    fullUtilityAnchorDrawIndex={model.anchorDrawIndex}
+                    onToggleFull={toggleFullUtilityCharge}
+                    onToggleSplit={toggleSplitUtilityCharge}
+                  />
+                )}
+              </Stack>
+            )
+          })}
 
           {hasScope && (
             <CreatePackageHardwareTable
@@ -688,7 +856,22 @@ export default function CreateDrawDialog({
           {canCreate && (
             <Card variant="outlined" sx={{ bgcolor: 'action.hover' }}>
               <CardContent sx={{ p: '16px !important' }}>
-                <Typography fontWeight={800}>Package preview</Typography>
+                <Stack
+                  direction="row"
+                  spacing={1}
+                  useFlexGap
+                  sx={{ alignItems: 'center', flexWrap: 'wrap' }}
+                >
+                  <Typography fontWeight={800}>Package preview</Typography>
+                  {isMultiPhase && (
+                    <Chip
+                      size="small"
+                      color="warning"
+                      icon={<LayersRoundedIcon />}
+                      label={`Multi-phase · ${summary.phaseCount} Phases / Buildings`}
+                    />
+                  )}
+                </Stack>
                 <Stack spacing={0.75} sx={{ mt: 1 }}>
                   {summary.phaseSummaries.map((phaseSummary) => (
                     <Box key={phaseSummary.phaseId}>
@@ -722,7 +905,6 @@ export default function CreateDrawDialog({
                   sx={{ mt: 1, flexWrap: 'wrap' }}
                 >
                   <Typography variant="body2">
-                    {/* <strong>{summary.scopeCount}</strong> billing scopes */}
                     {summary.lotCount > 0 && (
                       <> <strong>{summary.lotCount}</strong> lots</>
                     )}

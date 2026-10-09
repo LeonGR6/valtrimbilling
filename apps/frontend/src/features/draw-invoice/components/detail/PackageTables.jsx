@@ -38,6 +38,7 @@ export function DrawWorksheetTable({
   worksheet,
   packages,
   currentPackageId,
+  phaseHeading = null,
 }) {
   const minimumWidth = 300 + worksheet.draws.length * 230
   const usedSelections = useMemo(
@@ -58,6 +59,9 @@ export function DrawWorksheetTable({
           sx={{ justifyContent: 'space-between', alignItems: { sm: 'center' } }}
         >
           <Box>
+            {phaseHeading && (
+              <Chip size="small" color="primary" label={phaseHeading} sx={{ mb: 0.75, fontWeight: 800 }} />
+            )}
             <Typography fontWeight={800}>Draw worksheet</Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mt: 0.25 }}>
               Yellow cells are already assigned. Utility follows this Job's

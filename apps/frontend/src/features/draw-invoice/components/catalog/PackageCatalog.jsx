@@ -26,6 +26,7 @@ import { useCurrentDate } from '../../../../hooks/useCurrentDate.js'
 import { usePersistentState, isStoredString } from '../../../../hooks/usePersistentState.js'
 import { getJobBuilderId } from '../../../jobs/utils/jobRoutes.js'
 import { useJobDocuments } from '../../hooks/useJobDocuments.js'
+import { useQuickbooksConnection } from '../../hooks/useQuickbooksConnection.js'
 import { countPackagesMissingRequiredDocuments } from '../../services/jobDocumentRecord.js'
 import {
   CancelDrawPackageDialog,
@@ -52,6 +53,7 @@ import {
 import PackageSuggestionsPanel from './PackageSuggestionsPanel.jsx'
 import RetentionSuggestionsPanel from './RetentionSuggestionsPanel.jsx'
 import PackageTable from './PackageTable.jsx'
+import QuickbooksConnectButton from './QuickbooksConnectButton.jsx'
 
 const packageSummaryCards = [
   { status: 'DRAFT', icon: <ReceiptLongRoundedIcon />, color: 'primary.main' },
@@ -211,6 +213,7 @@ export default function PackageCatalog({
   const [today] = useCurrentDate()
   const asOfDate = localDateKey(today)
   const jobDocuments = useJobDocuments(jobs)
+  const quickbooks = useQuickbooksConnection()
   const packageSuggestions = useMemo(
     () => buildPackageSuggestions({
       jobs,
@@ -341,15 +344,23 @@ export default function PackageCatalog({
             </Typography>
           </Box>
           {catalogTab === 'packages' && (
-            <Button
-              variant="contained"
-              startIcon={<AddRoundedIcon />}
-              onClick={onCreate}
-              disabled={!canManage || createDisabled}
-              disableElevation
-            >
-              Create Package
-            </Button>
+            <Stack direction="row" spacing={1.5} sx={{ flexWrap: 'wrap', rowGap: 1 }}>
+              <QuickbooksConnectButton
+                connection={quickbooks.connection}
+                loading={quickbooks.loading}
+                canConnect={quickbooks.canConnect}
+                onConnect={quickbooks.connect}
+              />
+              <Button
+                variant="contained"
+                startIcon={<AddRoundedIcon />}
+                onClick={onCreate}
+                disabled={!canManage || createDisabled}
+                disableElevation
+              >
+                Create Package
+              </Button>
+            </Stack>
           )}
         </Stack>
 
@@ -385,6 +396,16 @@ export default function PackageCatalog({
               sx={{ mb: 2 }}
             >
               {error}
+            </Alert>
+          )}
+          {quickbooks.error && (
+            <Alert severity="error" onClose={quickbooks.dismissError} sx={{ mb: 2 }}>
+              {quickbooks.error}
+            </Alert>
+          )}
+          {quickbooks.notice && (
+            <Alert severity="success" onClose={quickbooks.dismissNotice} sx={{ mb: 2 }}>
+              {quickbooks.notice}
             </Alert>
           )}
           <PackageSuggestionsPanel

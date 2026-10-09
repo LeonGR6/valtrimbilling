@@ -21,6 +21,8 @@ const PACKAGE_COLUMNS = [
   'invoice_line_format',
   'workflow_status',
   'status',
+  'quickbooks_status',
+  'quickbooks_reference',
   'voided_at',
   'void_reason',
   'notes',

@@ -41,9 +41,14 @@ import {
   formatPhase,
 } from '../../../sequence-sheets/utils/phaseBuildingCodes.js'
 import { useDrawInvoicePackages } from '../../context/useDrawInvoicePackages.js'
+import { useQuickbooksInvoiceSync } from '../../hooks/useQuickbooksInvoiceSync.js'
 import {
   canCorrectDrawPackage,
 } from '../../services/drawInvoicePackageRecord.js'
+import {
+  canCreateQuickbooksInvoice,
+  quickbooksPackageStatusView,
+} from '../../services/quickbooksRecord.js'
 import {
   buildPackageOptionHistory,
   summarizeDrawPackage,
@@ -65,6 +70,8 @@ import {
   TransferDrawPackageCellsDialog,
 } from '../DrawPackageCorrectionDialogs.jsx'
 import CreateDrawDialog from '../dialogs/CreateDrawDialog.jsx'
+import QuickbooksInvoiceDialog from './QuickbooksInvoiceDialog.jsx'
+import QuickbooksStatusCard from '../shared/QuickbooksStatusCard.jsx'
 import {
   MetricCard,
   PackageStatusChip,
@@ -123,7 +130,14 @@ export default function DrawPackageDetail() {
   const [createDialogOpen, setCreateDialogOpen] = useState(false)
   const [correctionDialog, setCorrectionDialog] = useState(null)
   const [releaseDialogOpen, setReleaseDialogOpen] = useState(false)
+  const [quickbooksDialogOpen, setQuickbooksDialogOpen] = useState(false)
   const { profile } = useAuth()
+  const focusedPackageRecord = drawInvoicePackages.find(
+    (record) =>
+      String(record.id) === String(packageId) &&
+      String(record.jobId) === String(jobId),
+  )
+  const quickbooksSync = useQuickbooksInvoiceSync(focusedPackageRecord)
 
   const handleCreate = async (input) => {
     const record = await createDrawInvoicePackage(input)
@@ -229,6 +243,12 @@ export default function DrawPackageDetail() {
     && canCorrectDrawPackage(focusedPackage)
   const canDeleteFocusedPackage = canManageDrawInvoicePackages
     && canDeleteDraftPackage(focusedPackage)
+  const canSendToQuickbooks = canCreateQuickbooksInvoice(focusedPackage, profile?.role)
+  const quickbooksView = quickbooksPackageStatusView({
+    record: focusedPackage,
+    sync: quickbooksSync,
+    canSend: canSendToQuickbooks,
+  })
 
   const handlePhaseChange = (event) => {
     navigate(jobDrawInvoicePath(focusedBuilderId, focusedJob.id, event.target.value))
@@ -317,6 +337,18 @@ export default function DrawPackageDetail() {
             ) : (
               <ReadinessChip worksheet={worksheet} />
             )}
+            {quickbooksView && (
+              <QuickbooksStatusCard
+                tone={quickbooksView.tone}
+                status={quickbooksView.status}
+                detail={quickbooksView.detail}
+                title={quickbooksView.href ? 'Open this invoice in QuickBooks' : undefined}
+                href={quickbooksView.href ?? undefined}
+                onClick={quickbooksView.action === 'send' && !saving
+                  ? () => setQuickbooksDialogOpen(true)
+                  : undefined}
+              />
+            )}
             {canCorrectFocusedPackage && (
               <>
                 <Button
@@ -401,6 +433,51 @@ export default function DrawPackageDetail() {
               ? ' Its retained source amounts are available for a new release; the Package number remains for history.'
               : ' Its Lot / Draw cells were released; the Package number remains for history.'}
             {focusedPackage.cancellationReason && ` Reason: ${focusedPackage.cancellationReason}`}
+          </Alert>
+        )}
+        {focusedPackage?.quickbooksStatus === 'CREATED' && !isRetentionRelease && (
+          <Alert
+            severity="success"
+            sx={{ mb: 2.5 }}
+            action={quickbooksView?.href && (
+              <Button
+                color="inherit"
+                size="small"
+                component="a"
+                href={quickbooksView.href}
+                target="_blank"
+                rel="noopener noreferrer"
+                sx={{ whiteSpace: 'nowrap' }}
+              >
+                Open in QuickBooks
+              </Button>
+            )}
+          >
+            <strong>Already invoiced in QuickBooks.</strong>{' '}
+            {focusedPackage.quickbooksReference
+              ? `Invoice ${focusedPackage.quickbooksReference}`
+              : 'This Package has an invoice'}
+            {quickbooksSync?.totalAmount != null
+              ? ` · ${formatCurrency(quickbooksSync.totalAmount)}`
+              : ''}
+            {quickbooksSync?.updatedAt
+              ? ` · sent ${new Date(quickbooksSync.updatedAt).toLocaleDateString('en-US')}`
+              : ''}
+            . It cannot be sent again or edited here.
+          </Alert>
+        )}
+        {focusedPackage?.quickbooksStatus === 'SYNC_ERROR' && !isRetentionRelease && (
+          <Alert
+            severity="warning"
+            sx={{ mb: 2.5 }}
+            action={canSendToQuickbooks && (
+              <Button color="inherit" size="small" onClick={() => setQuickbooksDialogOpen(true)}>
+                Retry
+              </Button>
+            )}
+          >
+            <strong>The last QuickBooks attempt failed.</strong>
+            {quickbooksSync?.error ? ` ${quickbooksSync.error}` : ''}
           </Alert>
         )}
         {phases.length === 0 ? (
@@ -672,6 +749,14 @@ export default function DrawPackageDetail() {
             onClose={() => setReleaseDialogOpen(false)}
           />
         </Suspense>
+      )}
+
+      {quickbooksDialogOpen && focusedPackage && (
+        <QuickbooksInvoiceDialog
+          record={focusedPackage}
+          onClose={() => setQuickbooksDialogOpen(false)}
+          onSettled={refreshDrawInvoicePackages}
+        />
       )}
 
       {correctionDialog === 'edit' && focusedPackage && (

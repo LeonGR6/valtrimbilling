@@ -412,6 +412,20 @@ verify_jwt = true
 [functions.google-calendar-oauth-callback]
 verify_jwt = false
 
+# A signed-in administrator initiates the QuickBooks OAuth connection. Intuit then
+# returns through the callback without a Supabase JWT; its one-time, expiring
+# state is the trust boundary before the callback performs any privileged write.
+[functions.quickbooks-oauth-start]
+verify_jwt = true
+
+[functions.quickbooks-oauth-callback]
+verify_jwt = false
+
+# A signed-in ADMIN or ACCOUNTING user creates the QuickBooks invoice of a
+# Package. The function re-checks the role before any service-role access.
+[functions.quickbooks-invoice-create]
+verify_jwt = true
+
 # A signed-in administrator requests one-way synchronization. The function
 # validates that user before service-role access to Vault and event mappings.
 [functions.google-calendar-sync]

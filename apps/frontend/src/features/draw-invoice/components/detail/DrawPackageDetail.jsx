@@ -682,6 +682,7 @@ export default function DrawPackageDetail() {
           phases={focusedPackagePhases}
           schedule={schedule}
           packages={drawInvoicePackages}
+          productionActivities={productionActivities}
           onClose={() => setCorrectionDialog(null)}
           onSave={editDrawInvoicePackage}
         />

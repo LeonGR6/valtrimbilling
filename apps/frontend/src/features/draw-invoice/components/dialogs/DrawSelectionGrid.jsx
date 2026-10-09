@@ -47,6 +47,10 @@ export default function DrawSelectionGrid({
   toggleSelection,
   toggleLotSelections,
   toggleDrawSelections,
+  // Optional: a cell that cannot be chosen for a reason other than belonging to
+  // another Package, and the rows that the "select all" checkboxes may touch.
+  cellDisabled = () => false,
+  rowAllowsGroupSelection = () => true,
 }) {
   const selectedLotKeys = [...new Set(
     selectedSelections.map(({ phaseId, lotId }) => `${phaseId}:${lotId}`),
@@ -158,7 +162,9 @@ export default function DrawSelectionGrid({
               <TableRow>
                 {worksheet.draws.map((_, drawIndex) => {
                   const availableRows = worksheet.rows.filter(
-                    (row) => !selectionIsUsed(row.id, drawIndex),
+                    (row) => rowAllowsGroupSelection(row)
+                      && !selectionIsUsed(row.id, drawIndex)
+                      && !cellDisabled(row, drawIndex),
                   )
                   const selectedCount = availableRows.filter(
                     (row) => selectionIsSelected(row.id, drawIndex),
@@ -200,7 +206,9 @@ export default function DrawSelectionGrid({
               {worksheet.rows.map((row) => {
                 const availableDrawIndexes = worksheet.draws
                   .map((_, drawIndex) => drawIndex)
-                  .filter((drawIndex) => !selectionIsUsed(row.id, drawIndex))
+                  .filter((drawIndex) => !selectionIsUsed(row.id, drawIndex)
+                    && !cellDisabled(row, drawIndex))
+                const groupSelectable = rowAllowsGroupSelection(row)
                 const selectedCount = availableDrawIndexes.filter(
                   (drawIndex) => selectionIsSelected(row.id, drawIndex),
                 ).length
@@ -211,18 +219,20 @@ export default function DrawSelectionGrid({
                   <TableRow key={row.id} hover>
                     <TableCell>
                       <Stack direction="row" spacing={0.25} sx={{ alignItems: 'center' }}>
-                        <Checkbox
-                          size="small"
-                          checked={allSelected}
-                          indeterminate={selectedCount > 0 && !allSelected}
-                          disabled={availableDrawIndexes.length === 0}
-                          onChange={() => toggleLotSelections(row.id)}
-                          inputProps={{
-                            'aria-label': `Select available Draws for lot ${row.lotNumber}`,
-                          }}
-                        />
+                        {groupSelectable && (
+                          <Checkbox
+                            size="small"
+                            checked={allSelected}
+                            indeterminate={selectedCount > 0 && !allSelected}
+                            disabled={availableDrawIndexes.length === 0}
+                            onChange={() => toggleLotSelections(row.id)}
+                            inputProps={{
+                              'aria-label': `Select available Draws for lot ${row.lotNumber}`,
+                            }}
+                          />
+                        )}
                         <Typography color="error.main" fontWeight={850}>
-                          {row.lotNumber}
+                          {row.utilityLabel ?? row.lotNumber}
                         </Typography>
                       </Stack>
                     </TableCell>
@@ -256,6 +266,7 @@ export default function DrawSelectionGrid({
                       )
                       const calendarSuggested = suggestedSelectionKeys.has(calendarKey)
                       const calendarReady = calendarReadySelectionKeys.has(calendarKey)
+                      const disabled = !owner && cellDisabled(row, drawIndex)
 
                       return (
                         <TableCell
@@ -266,7 +277,7 @@ export default function DrawSelectionGrid({
                             : calendarReady
                               ? 'Calendar work is ready; available for manual selection'
                               : undefined}
-                          onClick={() => !owner && toggleSelection(row.id, drawIndex)}
+                          onClick={() => !owner && !disabled && toggleSelection(row.id, drawIndex)}
                           sx={{
                             borderLeft: 1,
                             borderColor: selected
@@ -281,7 +292,8 @@ export default function DrawSelectionGrid({
                                   : selected
                                     ? 'primary.light'
                                     : undefined,
-                            cursor: owner ? 'default' : 'pointer',
+                            cursor: owner || disabled ? 'default' : 'pointer',
+                            opacity: disabled ? 0.5 : 1,
                           }}
                         >
                           {owner ? (
@@ -309,6 +321,7 @@ export default function DrawSelectionGrid({
                               <Checkbox
                                 size="small"
                                 checked={selected}
+                                disabled={disabled}
                                 onClick={(event) => event.stopPropagation()}
                                 onChange={() => toggleSelection(row.id, drawIndex)}
                                 inputProps={{

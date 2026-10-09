@@ -11,12 +11,6 @@ import {
   DialogTitle,
   MenuItem,
   Stack,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
   TextField,
   Typography,
 } from '@mui/material'
@@ -28,6 +22,8 @@ import {
   formatPhase,
 } from '../../sequence-sheets/utils/phaseBuildingCodes.js'
 import { canCorrectDrawPackage } from '../services/drawInvoicePackageRecord.js'
+import { buildDrawCalendarHeadings } from '../utils/calendarDrawSuggestions.js'
+import DrawSelectionGrid from './dialogs/DrawSelectionGrid.jsx'
 import { usePackageReleases } from '../hooks/usePackageReleases.js'
 import PackageReleasesNotice from './PackageReleasesNotice.jsx'
 import {
@@ -47,6 +43,8 @@ import {
 } from '../utils/drawWorksheet.js'
 import { isMultiPhasePackage, phaseScopeLabel } from '../utils/packagePhaseScope.js'
 
+const NO_KEYS = new Set()
+
 function cellKey({ phaseId, lotId, drawIndex }) {
   return `${phaseId}:${lotId}:${drawIndex}`
 }
@@ -61,6 +59,7 @@ export function EditDrawPackageDialog({
   phase,
   schedule,
   packages,
+  productionActivities = [],
   onClose,
   onSave,
 }) {
@@ -85,14 +84,6 @@ export function EditDrawPackageDialog({
   const shownPhases = availablePhases.filter(
     (candidate) => shownPhaseIdSet.has(String(candidate.id)),
   )
-  const phaseModels = shownPhases.map((candidate) => {
-    const sheet = buildDrawWorksheet(job, candidate, schedule)
-    return {
-      phase: candidate,
-      worksheet: sheet,
-      rowsById: new Map(sheet.rows.map((row) => [String(row.id), row])),
-    }
-  })
   const occupied = useMemo(
     () => buildUsedDrawSelections(packages, record.id),
     [packages, record.id],
@@ -101,6 +92,45 @@ export function EditDrawPackageDialog({
     () => buildBilledUtilityCharges(packages, record.jobId, record.id),
     [packages, record.id, record.jobId],
   )
+  const phaseModels = shownPhases.map((candidate) => {
+    const sheet = buildDrawWorksheet(job, candidate, schedule)
+    // Cells another Package holds, plus Utility charges it already billed, so
+    // the grid can lock both the same way.
+    const lockedCells = new Map(occupied)
+    for (const row of sheet.rows.filter((item) => item.isUtilityBuilding)) {
+      sheet.draws.forEach((draw, drawIndex) => {
+        const utilityOwner = billedUtilityCharges.get(utilityChargeKey(
+          row.id,
+          getUtilityBillingMode(schedule),
+          draw.eventType,
+        ))
+        if (utilityOwner) {
+          lockedCells.set(
+            drawSelectionKey(record.jobId, candidate.id, row.id, drawIndex),
+            utilityOwner,
+          )
+        }
+      })
+    }
+    const calendarHeadings = buildDrawCalendarHeadings({
+      activities: productionActivities,
+      job,
+      phase: candidate,
+      schedule,
+    })
+
+    return {
+      phase: candidate,
+      worksheet: sheet,
+      rowsById: new Map(sheet.rows.map((row) => [String(row.id), row])),
+      lockedCells,
+      headings: sheet.draws.map((draw, drawIndex) => (
+        calendarHeadings[drawIndex]?.eventType
+          ? calendarHeadings[drawIndex]
+          : { eventType: draw.eventType ?? null, eventDates: [] }
+      )),
+    }
+  })
   const billedHardwareCharges = useMemo(
     () => buildBilledHardwareCharges(packages, record.jobId, record.id),
     [packages, record.id, record.jobId],
@@ -124,57 +154,90 @@ export function EditDrawPackageDialog({
   )
   const isMultiPhase = isMultiPhasePackage(packagePhases.length)
 
-  const toggle = (model, lotId, drawIndex) => {
+  const toggleCell = (current, model, lotId, drawIndex) => {
     const { phase: activePhase, worksheet, rowsById } = model
     const key = `${activePhase.id}:${lotId}:${drawIndex}`
-    setSelections((current) => {
-      const isSelected = current.some(
-        (selection) => cellKey(selection) === key,
-      )
-      if (isSelected) {
-        return current.filter((selection) => cellKey(selection) !== key)
-      }
+    const isSelected = current.some(
+      (selection) => cellKey(selection) === key,
+    )
+    if (isSelected) {
+      return current.filter((selection) => cellKey(selection) !== key)
+    }
 
-      const utilityBillingMode = getUtilityBillingMode(schedule)
-      const selectedEventType = worksheet.draws[drawIndex]?.eventType
-      const withoutCurrentUtilityRow = rowsById.get(String(lotId))?.isUtilityBuilding
-        ? current.filter((selection) => {
-            const sameUtilityRow = String(selection.phaseId) === String(activePhase.id)
-              && String(selection.lotId) === String(lotId)
-            if (!sameUtilityRow) return true
-            if (utilityBillingMode === 'FULL') return false
-            return worksheet.draws[selection.drawIndex]?.eventType
-              !== selectedEventType
-          })
-        : current
-      const hardwareBillingMode = getHardwareBillingMode(schedule)
-      const hardwareEventType = worksheet.draws[drawIndex]?.eventType
-      const hardwareKey = hardwareChargeKey(
+    const utilityBillingMode = getUtilityBillingMode(schedule)
+    const selectedEventType = worksheet.draws[drawIndex]?.eventType
+    const withoutCurrentUtilityRow = rowsById.get(String(lotId))?.isUtilityBuilding
+      ? current.filter((selection) => {
+          const sameUtilityRow = String(selection.phaseId) === String(activePhase.id)
+            && String(selection.lotId) === String(lotId)
+          if (!sameUtilityRow) return true
+          if (utilityBillingMode === 'FULL') return false
+          return worksheet.draws[selection.drawIndex]?.eventType
+            !== selectedEventType
+        })
+      : current
+    const hardwareBillingMode = getHardwareBillingMode(schedule)
+    const hardwareEventType = worksheet.draws[drawIndex]?.eventType
+    const hardwareKey = hardwareChargeKey(
+      lotId,
+      hardwareBillingMode,
+      hardwareEventType,
+    )
+    const hardwareAlreadySelected = current.some((selection) => (
+      String(selection.lotId) === String(lotId)
+      && selection.chargeHardware
+      && hardwareChargeKey(
         lotId,
         hardwareBillingMode,
-        hardwareEventType,
-      )
-      const hardwareAlreadySelected = current.some((selection) => (
-        String(selection.lotId) === String(lotId)
-        && selection.chargeHardware
-        && hardwareChargeKey(
-          lotId,
-          hardwareBillingMode,
-          worksheet.draws[selection.drawIndex]?.eventType,
-        ) === hardwareKey
-      ))
-      const chargeHardware = !rowsById.get(String(lotId))?.isUtilityBuilding
-        && hardwareBillingMode === 'BY_EVENT'
-        && getHardwareEventPercentage(schedule, hardwareEventType) > 0
-        && !billedHardwareCharges.has(hardwareKey)
-        && !hardwareAlreadySelected
-      return [
-        ...withoutCurrentUtilityRow,
-        record.selections.find((selection) => cellKey(selection) === key)
-          ?? { phaseId: activePhase.id, lotId, drawIndex, chargeHardware },
-      ]
+        worksheet.draws[selection.drawIndex]?.eventType,
+      ) === hardwareKey
+    ))
+    const chargeHardware = !rowsById.get(String(lotId))?.isUtilityBuilding
+      && hardwareBillingMode === 'BY_EVENT'
+      && getHardwareEventPercentage(schedule, hardwareEventType) > 0
+      && !billedHardwareCharges.has(hardwareKey)
+      && !hardwareAlreadySelected
+    return [
+      ...withoutCurrentUtilityRow,
+      record.selections.find((selection) => cellKey(selection) === key)
+        ?? { phaseId: activePhase.id, lotId, drawIndex, chargeHardware },
+    ]
+  }
+
+  const toggle = (model, lotId, drawIndex) => {
+    setSelections((current) => toggleCell(current, model, lotId, drawIndex))
+  }
+
+  // "Select all" for a Lot or a Draw: selects the missing cells, or clears the
+  // group when it is already complete.
+  const toggleGroup = (model, cells) => {
+    setSelections((current) => {
+      const selectedNow = new Set(current.map(cellKey))
+      const keyOf = ({ lotId, drawIndex }) => `${model.phase.id}:${lotId}:${drawIndex}`
+      const allSelected = cells.length > 0
+        && cells.every((cell) => selectedNow.has(keyOf(cell)))
+
+      return cells.reduce((next, cell) => {
+        const isSelected = next.some((selection) => cellKey(selection) === keyOf(cell))
+        return isSelected === allSelected
+          ? toggleCell(next, model, cell.lotId, cell.drawIndex)
+          : next
+      }, current)
     })
   }
+
+  const cellIsLocked = (model, lotId, drawIndex) => model.lockedCells.has(
+    drawSelectionKey(record.jobId, model.phase.id, lotId, drawIndex),
+  )
+
+  const cellIsUnavailable = (model, row, drawIndex) => submitting || (
+    row.isUtilityBuilding
+    && getUtilityBillingMode(schedule) === 'BY_EVENT'
+    && getUtilityEventPercentage(
+      schedule,
+      model.worksheet.draws[drawIndex]?.eventType,
+    ) <= 0
+  )
 
   const save = async () => {
     setSubmitting(true)
@@ -195,9 +258,11 @@ export function EditDrawPackageDialog({
 
   return (
     <Dialog open onClose={submitting ? undefined : onClose} fullWidth maxWidth="lg">
-      <DialogTitle>
+      <DialogTitle sx={{ pb: 1 }}>
         <Stack direction="row" spacing={1.25} useFlexGap sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
-          <span>Edit {record.packageNumber}</span>
+          <Typography variant="h6" component="div" fontWeight={800}>
+            Edit {record.packageNumber}
+          </Typography>
           {isMultiPhase && (
             <Chip
               size="small"
@@ -208,9 +273,13 @@ export function EditDrawPackageDialog({
             />
           )}
         </Stack>
+        <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+          Correct the Lot / Draw cells of this draft Package. The reason is kept
+          in its correction history.
+        </Typography>
       </DialogTitle>
-      <DialogContent>
-        <Stack spacing={2} sx={{ pt: 1 }}>
+      <DialogContent sx={{ pt: '16px !important' }}>
+        <Stack spacing={2.5}>
           <Alert severity="info">
             Keep at least one cell. Yellow cells belong to another Package;
             use “Move cells here” to transfer them. Unchanged cells retain
@@ -307,90 +376,64 @@ export function EditDrawPackageDialog({
                     </Typography>
                   </Stack>
                 )}
-                <TableContainer sx={{ maxHeight: 440, border: 1, borderColor: 'divider' }}>
-                  <Table
-                    size="small"
-                    stickyHeader
-                    aria-label={`Edit Package Lot and Draw cells for ${formatPhase(sectionPhase.name)} ${formatBuilding(sectionPhase.building)}`}
-                  >
-                    <TableHead>
-                      <TableRow>
-                        <TableCell>Lot / Utility</TableCell>
-                        <TableCell>Plan</TableCell>
-                        {worksheet.draws.map((_, drawIndex) => (
-                          <TableCell key={drawIndex} align="center">
-                            Draw #{drawIndex + 1}
-                          </TableCell>
-                        ))}
-                      </TableRow>
-                    </TableHead>
-                    <TableBody>
-                      {worksheet.rows.map((row) => (
-                        <TableRow key={row.id}>
-                          <TableCell>{row.utilityLabel ?? row.lotNumber}</TableCell>
-                          <TableCell>{row.planCode ?? '—'}</TableCell>
-                          {worksheet.draws.map((_, drawIndex) => {
-                            const owner = occupied.get(drawSelectionKey(
-                              record.jobId, sectionPhase.id, row.id, drawIndex,
-                            ))
-                            const utilityOwner = row.isUtilityBuilding
-                              ? billedUtilityCharges.get(utilityChargeKey(
-                                  row.id,
-                                  getUtilityBillingMode(schedule),
-                                  worksheet.draws[drawIndex]?.eventType,
-                                ))
-                              : null
-                            const selected = selectedKeys.has(
-                              `${sectionPhase.id}:${row.id}:${drawIndex}`,
-                            )
-                            const utilityAllocationUnavailable = row.isUtilityBuilding
-                              && getUtilityBillingMode(schedule) === 'BY_EVENT'
-                              && getUtilityEventPercentage(
-                                schedule,
-                                worksheet.draws[drawIndex]?.eventType,
-                              ) <= 0
-                            return (
-                              <TableCell
-                                key={drawIndex}
-                                align="center"
-                                sx={{ bgcolor: owner || utilityOwner ? 'warning.light' : undefined }}
-                              >
-                                <Checkbox
-                                  size="small"
-                                  checked={selected}
-                                  disabled={Boolean(owner || utilityOwner)
-                                    || utilityAllocationUnavailable
-                                    || submitting}
-                                  onChange={() => toggle(model, row.id, drawIndex)}
-                                  inputProps={{
-                                    'aria-label': `${row.utilityLabel ?? `Lot ${row.lotNumber}`} Draw ${drawIndex + 1}`,
-                                  }}
-                                />
-                                {owner && (
-                                  <Typography variant="caption" component="div">
-                                    {owner.packageNumber}
-                                  </Typography>
-                                )}
-                                {!owner && utilityOwner && (
-                                  <Typography variant="caption" component="div">
-                                    {utilityOwner.packageNumber}
-                                  </Typography>
-                                )}
-                              </TableCell>
-                            )
-                          })}
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </TableContainer>
+                <DrawSelectionGrid
+                  job={job}
+                  phase={sectionPhase}
+                  worksheet={worksheet}
+                  drawCalendarHeadings={model.headings}
+                  usedSelections={model.lockedCells}
+                  selectedSelections={selections.filter(
+                    (selection) => String(selection.phaseId) === String(sectionPhase.id),
+                  )}
+                  selectionIsUsed={(lotId, drawIndex) => cellIsLocked(model, lotId, drawIndex)}
+                  selectionIsSelected={(lotId, drawIndex) => (
+                    selectedKeys.has(`${sectionPhase.id}:${lotId}:${drawIndex}`)
+                  )}
+                  calendarReadySelectionKeys={NO_KEYS}
+                  suggestedSelectionKeys={NO_KEYS}
+                  toggleSelection={(lotId, drawIndex) => toggle(model, lotId, drawIndex)}
+                  toggleLotSelections={(lotId) => toggleGroup(
+                    model,
+                    worksheet.draws
+                      .map((_, drawIndex) => ({ lotId, drawIndex }))
+                      .filter(({ drawIndex }) => !cellIsLocked(model, lotId, drawIndex)
+                        && !cellIsUnavailable(model, model.rowsById.get(String(lotId)), drawIndex)),
+                  )}
+                  toggleDrawSelections={(drawIndex) => toggleGroup(
+                    model,
+                    worksheet.rows
+                      .filter((row) => !row.isUtilityBuilding)
+                      .map((row) => ({ lotId: row.id, drawIndex }))
+                      .filter(({ lotId }) => !cellIsLocked(model, lotId, drawIndex)
+                        && !cellIsUnavailable(model, model.rowsById.get(String(lotId)), drawIndex)),
+                  )}
+                  cellDisabled={(row, drawIndex) => cellIsUnavailable(model, row, drawIndex)}
+                  rowAllowsGroupSelection={(row) => !row.isUtilityBuilding}
+                />
               </Stack>
             )
           })}
 
-          <Typography variant="body2">
-            {selections.length} cells after edit · {addedCount} added · {removedCount} removed
-          </Typography>
+          <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: 'wrap' }}>
+            <Chip
+              size="small"
+              color="primary"
+              variant={selections.length > 0 ? 'filled' : 'outlined'}
+              label={`${selections.length} ${selections.length === 1 ? 'cell' : 'cells'} after edit`}
+            />
+            <Chip
+              size="small"
+              color={addedCount > 0 ? 'success' : 'default'}
+              variant="outlined"
+              label={`${addedCount} added`}
+            />
+            <Chip
+              size="small"
+              color={removedCount > 0 ? 'error' : 'default'}
+              variant="outlined"
+              label={`${removedCount} removed`}
+            />
+          </Stack>
           <TextField
             label="Package notes"
             value={notes}
@@ -410,10 +453,10 @@ export function EditDrawPackageDialog({
           />
         </Stack>
       </DialogContent>
-      <DialogActions>
-        <Button onClick={onClose} disabled={submitting}>Back</Button>
-        <Button variant="contained" onClick={save} disabled={!canSave}>
-          Save correction
+      <DialogActions sx={{ px: 3, pb: 2.5 }}>
+        <Button color="inherit" onClick={onClose} disabled={submitting}>Cancel</Button>
+        <Button variant="contained" disableElevation onClick={save} disabled={!canSave}>
+          {submitting ? 'Saving…' : 'Save correction'}
         </Button>
       </DialogActions>
     </Dialog>

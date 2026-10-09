@@ -516,6 +516,7 @@ export default function PackageCatalog({
           phases={selectedContext.phases}
           schedule={selectedContext.schedule}
           packages={packages}
+          productionActivities={productionActivities}
           onClose={() => setCatalogAction(null)}
           onSave={onEdit}
         />

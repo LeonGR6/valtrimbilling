@@ -6,6 +6,9 @@ import {
   filterPackageCatalogContexts,
   packageCatalogBuilderOptions,
   packageCatalogCommunityOptions,
+  isValidPackageSort,
+  nextPackageSort,
+  sortPackageCatalogContexts,
   summarizePackageCatalogStatuses,
 } from '../src/features/draw-invoice/utils/packageCatalog.js'
 
@@ -110,4 +113,50 @@ test('an unissued Retention Release Draft can be cancelled but not edited', () =
   }
 
   assert.equal(canDeleteDraftPackage(release), true)
+})
+
+const sortable = [
+  { record: { id: 1, createdAt: '2026-10-01T10:00:00Z' }, job: { builder: 'beta', community: 'Pines' }, summary: { invoiceAmount: 300 } },
+  { record: { id: 2, createdAt: '2026-10-03T10:00:00Z' }, job: { builder: 'Acme', community: 'Lakes' }, summary: { invoiceAmount: 100 } },
+  { record: { id: 3, createdAt: '2026-10-02T10:00:00Z' }, job: { builder: 'Acme', community: 'Brook' }, summary: { invoiceAmount: 100 } },
+]
+const sortedIds = (sort) => sortPackageCatalogContexts(sortable, sort).map(({ record }) => record.id)
+
+test('Packages sort by created date in both directions', () => {
+  assert.deepEqual(sortedIds({ key: 'created', direction: 'desc' }), [2, 3, 1])
+  assert.deepEqual(sortedIds({ key: 'created', direction: 'asc' }), [1, 3, 2])
+})
+
+test('Packages sort by Builder A to Z, then Community, and back', () => {
+  assert.deepEqual(sortedIds({ key: 'builder', direction: 'asc' }), [3, 2, 1])
+  assert.deepEqual(sortedIds({ key: 'builder', direction: 'desc' }), [1, 2, 3])
+})
+
+test('Packages sort by Invoice Amount and break ties by newest Package number', () => {
+  assert.deepEqual(sortedIds({ key: 'invoice', direction: 'asc' }), [3, 2, 1])
+  assert.deepEqual(sortedIds({ key: 'invoice', direction: 'desc' }), [1, 3, 2])
+})
+
+test('without a sort the Packages keep their order and the input is never mutated', () => {
+  assert.deepEqual(sortedIds(null), [1, 2, 3])
+  sortPackageCatalogContexts(sortable, { key: 'invoice', direction: 'desc' })
+  assert.deepEqual(sortable.map(({ record }) => record.id), [1, 2, 3])
+})
+
+test('a column header cycles first direction, opposite direction, then no sort', () => {
+  const first = nextPackageSort(null, 'created')
+  assert.deepEqual(first, { key: 'created', direction: 'desc' })
+  const second = nextPackageSort(first, 'created')
+  assert.deepEqual(second, { key: 'created', direction: 'asc' })
+  assert.equal(nextPackageSort(second, 'created'), null)
+  assert.deepEqual(nextPackageSort(second, 'builder'), { key: 'builder', direction: 'asc' })
+  assert.deepEqual(nextPackageSort(null, 'invoice'), { key: 'invoice', direction: 'asc' })
+})
+
+test('only known sorts are accepted from storage', () => {
+  assert.equal(isValidPackageSort(null), true)
+  assert.equal(isValidPackageSort({ key: 'builder', direction: 'desc' }), true)
+  assert.equal(isValidPackageSort({ key: 'status', direction: 'asc' }), false)
+  assert.equal(isValidPackageSort({ key: 'builder', direction: 'up' }), false)
+  assert.equal(isValidPackageSort('builder'), false)
 })

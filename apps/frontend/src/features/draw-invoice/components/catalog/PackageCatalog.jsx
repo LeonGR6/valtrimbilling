@@ -42,8 +42,11 @@ import { buildRetentionSuggestions } from '../../utils/retentionSuggestions.js'
 import {
   PACKAGE_CATALOG_TABS,
   filterPackageCatalogContexts,
+  isValidPackageSort,
+  nextPackageSort,
   packageCatalogBuilderOptions,
   packageCatalogCommunityOptions,
+  sortPackageCatalogContexts,
   summarizePackageCatalogStatuses,
 } from '../../utils/packageCatalog.js'
 import PackageSuggestionsPanel from './PackageSuggestionsPanel.jsx'
@@ -199,6 +202,11 @@ export default function PackageCatalog({
     'ALL',
     isStoredString,
   )
+  const [packageSort, setPackageSort] = usePersistentState(
+    'draw-invoice:packages:sort',
+    null,
+    isValidPackageSort,
+  )
   const [catalogAction, setCatalogAction] = useState(null)
   const [today] = useCurrentDate()
   const asOfDate = localDateKey(today)
@@ -286,8 +294,11 @@ export default function PackageCatalog({
     scopedContexts,
   ])
   const filteredContexts = useMemo(
-    () => filterPackageCatalogContexts(scopedContexts, { status: statusTab }),
-    [scopedContexts, statusTab],
+    () => sortPackageCatalogContexts(
+      filterPackageCatalogContexts(scopedContexts, { status: statusTab }),
+      packageSort,
+    ),
+    [packageSort, scopedContexts, statusTab],
   )
   const selectedContext = contexts.find(
     ({ record }) => String(record.id) === String(catalogAction?.packageId),
@@ -498,6 +509,8 @@ export default function PackageCatalog({
             activeContexts={activeContexts}
             documentState={jobDocuments}
             canManage={canManage}
+            sort={packageSort}
+            onSort={(column) => setPackageSort((current) => nextPackageSort(current, column))}
             onOpen={onOpen}
             onAction={(action, selected) => setCatalogAction({
               action,

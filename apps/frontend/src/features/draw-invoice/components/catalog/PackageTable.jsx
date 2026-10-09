@@ -14,6 +14,7 @@ import {
   TableContainer,
   TableHead,
   TableRow,
+  TableSortLabel,
   Typography,
   Chip,
 } from '@mui/material'
@@ -36,6 +37,7 @@ import {
   formatLongDate,
 } from '../../utils/drawInvoiceFormatters.js'
 import { canDeleteDraftPackage } from '../../utils/packageCatalog.js'
+import { PACKAGE_SORT_COLUMNS } from '../../utils/packageCatalog.js'
 import { isMultiPhasePackage } from '../../utils/packagePhaseScope.js'
 import { PackageStatusChip } from '../shared/PackageUi.jsx'
 
@@ -153,11 +155,39 @@ function PackageDocumentProgress({ job, documentState }) {
   )
 }
 
+function SortableHeader({ column, label, sort, onSort }) {
+  const active = sort?.key === column
+  const direction = active ? sort.direction : PACKAGE_SORT_COLUMNS[column].firstDirection
+
+  return (
+    <TableCell sortDirection={active ? direction : false}>
+      <TableSortLabel
+        active={active}
+        direction={direction}
+        onClick={() => onSort(column)}
+        title={`Sort by ${PACKAGE_SORT_COLUMNS[column].label}`}
+        sx={{
+          color: 'inherit !important',
+          // Show the arrow faintly on every sortable column so it reads as clickable.
+          '& .MuiTableSortLabel-icon': {
+            color: 'inherit !important',
+            opacity: active ? 1 : 0.4,
+          },
+        }}
+      >
+        {label}
+      </TableSortLabel>
+    </TableCell>
+  )
+}
+
 export default function PackageTable({
   filteredContexts,
   activeContexts,
   documentState,
   canManage,
+  sort = null,
+  onSort = () => {},
   onOpen,
   onAction,
   onClearFilters,
@@ -185,13 +215,13 @@ export default function PackageTable({
                   },
                 }}
               >
-                <TableCell>Package</TableCell>
-                <TableCell>Builder/Community</TableCell>
+                <SortableHeader column="created" label="Package" sort={sort} onSort={onSort} />
+                <SortableHeader column="builder" label="Builder/Community" sort={sort} onSort={onSort} />
                 <TableCell>Billing Period</TableCell>
                 <TableCell>Lots/Scopes</TableCell>
                 <TableCell>Current Draw</TableCell>
                 <TableCell>Retention / WRAP Insurance</TableCell>
-                <TableCell>Invoice Amount</TableCell>
+                <SortableHeader column="invoice" label="Invoice Amount" sort={sort} onSort={onSort} />
                 <TableCell>Documents</TableCell>
                 <TableCell>Status</TableCell>
                 <TableCell>Action</TableCell>

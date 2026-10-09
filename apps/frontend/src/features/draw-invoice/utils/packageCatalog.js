@@ -88,3 +88,58 @@ export function packageCatalogCommunityOptions(contexts, builderId = 'ALL') {
     .map(({ job }) => job.community)
     .filter(Boolean))].sort((left, right) => left.localeCompare(right))
 }
+
+// Sortable columns of the Packages table. The first click uses the direction
+// each column is read in most often: newest first, A to Z, smallest first.
+export const PACKAGE_SORT_COLUMNS = {
+  created: { label: 'Created date', firstDirection: 'desc' },
+  builder: { label: 'Builder', firstDirection: 'asc' },
+  invoice: { label: 'Invoice Amount', firstDirection: 'asc' },
+}
+
+export function isValidPackageSort(value) {
+  return value === null || (
+    typeof value === 'object'
+    && value !== null
+    && value.key in PACKAGE_SORT_COLUMNS
+    && (value.direction === 'asc' || value.direction === 'desc')
+  )
+}
+
+/** Click on a column header: first direction, then the opposite, then no sort. */
+export function nextPackageSort(current, key) {
+  const column = PACKAGE_SORT_COLUMNS[key]
+  if (!column) return current
+  if (current?.key !== key) return { key, direction: column.firstDirection }
+  if (current.direction === column.firstDirection) {
+    return { key, direction: column.firstDirection === 'asc' ? 'desc' : 'asc' }
+  }
+  return null
+}
+
+const text = (left, right) => String(left ?? '').localeCompare(String(right ?? ''), 'en', {
+  numeric: true,
+  sensitivity: 'base',
+})
+
+const sortValues = {
+  created: (left, right) => String(left.record.createdAt ?? '')
+    .localeCompare(String(right.record.createdAt ?? '')),
+  builder: (left, right) => text(left.job.builder, right.job.builder)
+    || text(left.job.community, right.job.community),
+  invoice: (left, right) => (Number(left.summary?.invoiceAmount) || 0)
+    - (Number(right.summary?.invoiceAmount) || 0),
+}
+
+/** Returns a sorted copy; without a sort the order is left as it came. */
+export function sortPackageCatalogContexts(contexts, sort) {
+  const compare = sortValues[sort?.key]
+  if (!compare) return contexts
+
+  const direction = sort.direction === 'desc' ? -1 : 1
+  return [...contexts].sort((left, right) => (
+    direction * compare(left, right)
+    // Equal values keep a stable, predictable order: newest Package number first.
+    || Number(right.record.id) - Number(left.record.id)
+  ))
+}

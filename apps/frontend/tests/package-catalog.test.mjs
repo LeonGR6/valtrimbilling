@@ -7,6 +7,7 @@ import {
   packageCatalogBuilderOptions,
   packageCatalogCommunityOptions,
   isValidPackageSort,
+  packageBillingPeriodDate,
   nextPackageSort,
   sortPackageCatalogContexts,
   summarizePackageCatalogStatuses,
@@ -159,4 +160,33 @@ test('only known sorts are accepted from storage', () => {
   assert.equal(isValidPackageSort({ key: 'status', direction: 'asc' }), false)
   assert.equal(isValidPackageSort({ key: 'builder', direction: 'up' }), false)
   assert.equal(isValidPackageSort('builder'), false)
+})
+
+test('Packages sort by Billing Period and keep undated ones last in both directions', () => {
+  const periods = [
+    { record: { id: 1, billingCutoffDate: '2026-10-10' }, job: {}, summary: {} },
+    { record: { id: 2, billingCutoffAnyDate: true, billingCutoffDate: null }, job: {}, summary: {} },
+    { record: { id: 3, billingCutoffDate: '2026-09-25' }, job: {}, summary: {} },
+    {
+      record: {
+        id: 4,
+        packageType: 'RETENTION_RELEASE',
+        retentionRelease: { availableDate: '2026-11-05' },
+      },
+      job: {},
+      summary: {},
+    },
+    { record: { id: 5, billingCutoffDate: null }, job: {}, summary: {} },
+  ]
+  const ids = (direction) => sortPackageCatalogContexts(
+    periods,
+    { key: 'period', direction },
+  ).map(({ record }) => record.id)
+
+  assert.deepEqual(ids('desc'), [4, 1, 3, 5, 2])
+  assert.deepEqual(ids('asc'), [3, 1, 4, 5, 2])
+  assert.equal(packageBillingPeriodDate(periods[1].record), null)
+  assert.equal(packageBillingPeriodDate(periods[3].record), '2026-11-05')
+  assert.deepEqual(nextPackageSort(null, 'period'), { key: 'period', direction: 'desc' })
+  assert.equal(isValidPackageSort({ key: 'period', direction: 'asc' }), true)
 })

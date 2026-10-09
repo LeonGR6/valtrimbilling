@@ -93,6 +93,7 @@ export function packageCatalogCommunityOptions(contexts, builderId = 'ALL') {
 // each column is read in most often: newest first, A to Z, smallest first.
 export const PACKAGE_SORT_COLUMNS = {
   created: { label: 'Created date', firstDirection: 'desc' },
+  period: { label: 'Billing Period', firstDirection: 'desc' },
   builder: { label: 'Builder', firstDirection: 'asc' },
   invoice: { label: 'Invoice Amount', firstDirection: 'asc' },
 }
@@ -122,11 +123,25 @@ const text = (left, right) => String(left ?? '').localeCompare(String(right ?? '
   sensitivity: 'base',
 })
 
+/**
+ * The date shown in the Billing Period column: the cutoff of a Draw Package, or
+ * the date a Retention Release becomes available. "Any date" and "Not set" have none.
+ */
+export function packageBillingPeriodDate(record) {
+  if (record?.packageType === 'RETENTION_RELEASE') {
+    return record.retentionRelease?.availableDate ?? null
+  }
+  if (record?.billingCutoffAnyDate) return null
+  return record?.billingCutoffDate ?? null
+}
+
 const sortValues = {
   created: (left, right) => String(left.record.createdAt ?? '')
     .localeCompare(String(right.record.createdAt ?? '')),
   builder: (left, right) => text(left.job.builder, right.job.builder)
     || text(left.job.community, right.job.community),
+  period: (left, right) => String(packageBillingPeriodDate(left.record) ?? '')
+    .localeCompare(String(packageBillingPeriodDate(right.record) ?? '')),
   invoice: (left, right) => (Number(left.summary?.invoiceAmount) || 0)
     - (Number(right.summary?.invoiceAmount) || 0),
 }
@@ -137,9 +152,16 @@ export function sortPackageCatalogContexts(contexts, sort) {
   if (!compare) return contexts
 
   const direction = sort.direction === 'desc' ? -1 : 1
-  return [...contexts].sort((left, right) => (
-    direction * compare(left, right)
-    // Equal values keep a stable, predictable order: newest Package number first.
-    || Number(right.record.id) - Number(left.record.id)
-  ))
+  return [...contexts].sort((left, right) => {
+    // Packages without a Billing Period date go last in either direction.
+    if (sort.key === 'period') {
+      const leftDate = packageBillingPeriodDate(left.record)
+      const rightDate = packageBillingPeriodDate(right.record)
+      if (!leftDate !== !rightDate) return leftDate ? -1 : 1
+    }
+
+    return direction * compare(left, right)
+      // Equal values keep a stable, predictable order: newest Package number first.
+      || Number(right.record.id) - Number(left.record.id)
+  })
 }

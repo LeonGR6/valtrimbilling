@@ -217,7 +217,7 @@ export default function PackageTable({
               >
                 <SortableHeader column="created" label="Package" sort={sort} onSort={onSort} />
                 <SortableHeader column="builder" label="Builder/Community" sort={sort} onSort={onSort} />
-                <TableCell>Billing Period</TableCell>
+                <SortableHeader column="period" label="Billing Period" sort={sort} onSort={onSort} />
                 <TableCell>Lots/Scopes</TableCell>
                 <TableCell>Current Draw</TableCell>
                 <TableCell>Retention / WRAP Insurance</TableCell>

@@ -59,6 +59,11 @@ import TableChartRoundedIcon from '@mui/icons-material/TableChartRounded'
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
 import EventBusyRoundedIcon from '@mui/icons-material/EventBusyRounded'
 import { useBuilderDrawSchedules } from '../../builder-draw-schedules/context/useBuilderDrawSchedules.js'
+import { isStoredString, usePersistentState } from '../../../hooks/usePersistentState.js'
+import {
+  filterJobsByScope,
+  resolveJobScope,
+} from '../../jobs/utils/jobScopeFilters.js'
 import PhaseCalendarChip from '../../calendar/components/PhaseCalendarChip.jsx'
 import { calendarSchedulePath } from '../../calendar/utils/calendarRoutes.js'
 import { useProductionActivities } from '../../calendar/context/useProductionActivities.js'
@@ -1203,7 +1208,9 @@ export default function SequenceSheets() {
   const { canManageProductionActivities } = useProductionActivities()
   const calendarCoverage = usePhaseCalendarCoverage()
   const [searchParams] = useSearchParams()
-  const [search, setSearch] = useState('')
+  const [search, setSearch] = usePersistentState('sequence-sheets:search', '', isStoredString)
+  const [storedBuilderId, setStoredBuilderId] = usePersistentState('sequence-sheets:builder', 'ALL', isStoredString)
+  const [storedCommunity, setStoredCommunity] = usePersistentState('sequence-sheets:community', 'ALL', isStoredString)
   const [expandedJobId, setExpandedJobId] = useState(jobs[0]?.id ?? null)
   const [dialogJobId, setDialogJobId] = useState(null)
   const [dialogPhaseId, setDialogPhaseId] = useState(null)
@@ -1228,23 +1235,40 @@ export default function SequenceSheets() {
   const visibleExpandedJobId = focusedJob?.id ?? expandedJobId
   const canManageFocusedJob = canManageJobs && Boolean(focusedJob?.isActive)
 
-  const filteredJobs = useMemo(() => {
-    const query = search.trim().toLowerCase()
-    if (!query) return scopedJobs
+  const scope = useMemo(
+    () => resolveJobScope(scopedJobs, {
+      builderId: storedBuilderId,
+      community: storedCommunity,
+    }),
+    [scopedJobs, storedBuilderId, storedCommunity],
+  )
+  // Looking at one Job never applies the remembered filters, or they could hide it.
+  const filtersApply = !focusedJob && !jobId
+  const filteredJobs = useMemo(
+    () => (filtersApply
+      ? filterJobsByScope(scopedJobs, {
+          search,
+          builderId: scope.builderId,
+          community: scope.community,
+        })
+      : scopedJobs),
+    [filtersApply, scope.builderId, scope.community, scopedJobs, search],
+  )
+  const hasActiveFilters = Boolean(search.trim())
+    || scope.builderId !== 'ALL'
+    || scope.community !== 'ALL'
+  const clearFilters = () => {
+    setSearch('')
+    setStoredBuilderId('ALL')
+    setStoredCommunity('ALL')
+  }
 
-    return scopedJobs.filter((job) =>
-      [job.code, job.builder, job.community]
-        .join(' ')
-        .toLowerCase()
-        .includes(query),
-    )
-  }, [scopedJobs, search])
-
-  const totalPhases = scopedJobs.reduce(
+  // The summary follows the filters, like the Packages cards do.
+  const totalPhases = filteredJobs.reduce(
     (total, job) => total + getJobPhaseCount(job),
     0,
   )
-  const totalAssignedLots = scopedJobs.reduce(
+  const totalAssignedLots = filteredJobs.reduce(
     (total, job) => total + getJobAssignedLotCount(job),
     0,
   )
@@ -1503,27 +1527,75 @@ export default function SequenceSheets() {
         )}
 
         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} sx={{ mb: 3 }}>
-          <SummaryCard icon={<FolderRoundedIcon />} value={scopedJobs.length} label="Jobs" />
+          <SummaryCard icon={<FolderRoundedIcon />} value={filteredJobs.length} label="Jobs" />
           <SummaryCard icon={<TableChartRoundedIcon />} value={totalPhases} label="Phases" />
           <SummaryCard icon={<ApartmentRoundedIcon />} value={totalAssignedLots} label="Assigned lots" />
         </Stack>
 
-        <TextField
-          value={search}
-          onChange={(event) => setSearch(event.target.value)}
-          placeholder="Search by Job#, builder or community"
-          fullWidth
-          sx={{ mb: 2 }}
-          slotProps={{
-            input: {
-              startAdornment: (
-                <InputAdornment position="start">
-                  <SearchRoundedIcon color="action" />
-                </InputAdornment>
-              ),
-            },
-          }}
-        />
+        {filtersApply && (
+          <>
+            <Stack
+              direction={{ xs: 'column', md: 'row' }}
+              spacing={1.5}
+              sx={{ mb: 1, alignItems: { md: 'center' } }}
+            >
+              <TextField
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Search by Job#, builder or community"
+                aria-label="Search Sequence Sheets"
+                sx={{ flex: 2, minWidth: { md: 260 } }}
+                slotProps={{
+                  input: {
+                    startAdornment: (
+                      <InputAdornment position="start">
+                        <SearchRoundedIcon color="action" />
+                      </InputAdornment>
+                    ),
+                  },
+                }}
+              />
+              <TextField
+                select
+                label="Builder"
+                value={scope.builderId}
+                onChange={(event) => {
+                  setStoredBuilderId(event.target.value)
+                  setStoredCommunity('ALL')
+                }}
+                sx={{ flex: 1, minWidth: { md: 190 } }}
+              >
+                <MenuItem value="ALL">All builders</MenuItem>
+                {scope.builderOptions.map(({ id, name }) => (
+                  <MenuItem key={id} value={id}>{name}</MenuItem>
+                ))}
+              </TextField>
+              <TextField
+                select
+                label="Community"
+                value={scope.community}
+                onChange={(event) => setStoredCommunity(event.target.value)}
+                sx={{ flex: 1, minWidth: { md: 190 } }}
+              >
+                <MenuItem value="ALL">All communities</MenuItem>
+                {scope.communityOptions.map((community) => (
+                  <MenuItem key={community} value={community}>{community}</MenuItem>
+                ))}
+              </TextField>
+              <Button
+                color="inherit"
+                onClick={clearFilters}
+                disabled={!hasActiveFilters}
+                sx={{ flexShrink: 0 }}
+              >
+                Clear filters
+              </Button>
+            </Stack>
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
+              Showing {filteredJobs.length} of {scopedJobs.length} {scopedJobs.length === 1 ? 'Job' : 'Jobs'}.
+            </Typography>
+          </>
+        )}
 
         <Stack spacing={1.5}>
           {filteredJobs.map((job) => {
@@ -1690,13 +1762,16 @@ export default function SequenceSheets() {
         {!loading && filteredJobs.length === 0 && (
           <Box sx={{ py: 8, textAlign: 'center' }}>
             <Typography fontWeight={700}>
-              {jobId ? 'The selected Job is unavailable.' : 'No Jobs match your search.'}
+              {jobId ? 'The selected Job is unavailable.' : 'No Jobs match these filters.'}
             </Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
               {jobId
                 ? 'Return to Jobs and choose a Job that belongs to this builder.'
-                : 'Try another Job number, builder or community.'}
+                : 'Try another Job number, builder or community, or clear the filters.'}
             </Typography>
+            {!jobId && hasActiveFilters && (
+              <Button onClick={clearFilters} sx={{ mt: 1.5 }}>Clear filters</Button>
+            )}
           </Box>
         )}
       </Box>

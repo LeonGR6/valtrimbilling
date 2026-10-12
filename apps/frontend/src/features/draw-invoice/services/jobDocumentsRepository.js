@@ -2,6 +2,7 @@ import { requireSupabase } from '../../../services/api.js'
 import {
   buildJobDocumentLibrary,
   buildJobDocumentStoragePath,
+  toJobDocument,
   JOB_DOCUMENT_BUCKET,
   MAX_JOB_DOCUMENT_SIZE,
 } from './jobDocumentRecord.js'
@@ -120,6 +121,36 @@ export async function listJobDocumentLibrary(jobs) {
     documentResult.data ?? [],
     requirementResult.data ?? [],
   )
+}
+
+/** The Preliminary Notice PDFs of one Job, newest first. */
+export async function listJobPreliminaryNotices(jobId) {
+  const client = await requireSupabase()
+  const { data, error } = await client
+    .from('job_documents')
+    .select(DOCUMENT_COLUMNS)
+    .eq('job_id', Number(jobId))
+    .eq('document_type', 'PRELIMINARY_NOTICE')
+    .order('created_at', { ascending: false })
+
+  throwDocumentError(error, 'The Preliminary Notice could not be loaded.')
+  return (data ?? []).map(toJobDocument)
+}
+
+export async function hasPreliminaryNotice(jobId) {
+  const documents = await listJobPreliminaryNotices(jobId)
+  return documents.length > 0
+}
+
+/** The bytes of a stored Job PDF. */
+export async function downloadJobDocumentBytes(document) {
+  const client = await requireSupabase()
+  const { data, error } = await client.storage
+    .from(document.bucket)
+    .download(document.storagePath)
+
+  throwDocumentError(error, `Could not open ${document.name}.`)
+  return new Uint8Array(await data.arrayBuffer())
 }
 
 export async function uploadJobDocument({ jobId, documentType, file }) {

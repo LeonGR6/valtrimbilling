@@ -14,6 +14,7 @@ import AddRoundedIcon from '@mui/icons-material/AddRounded'
 import OpenInNewRoundedIcon from '@mui/icons-material/OpenInNewRounded'
 import PictureAsPdfRoundedIcon from '@mui/icons-material/PictureAsPdfRounded'
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
+import EditNoteRoundedIcon from '@mui/icons-material/EditNoteRounded'
 import FactCheckRoundedIcon from '@mui/icons-material/FactCheckRounded'
 import { describeReleaseDocument } from '../../../release-templates/services/releaseTemplateRecord.js'
 import {
@@ -47,6 +48,7 @@ export default function DocumentCategoryCard({
   onOpen,
   onReviewTemplate,
   onReviewSchedule,
+  onFillNotice,
 }) {
   const { Icon } = type
   const supportsTemplates = type.documentType === 'RELEASE' && Boolean(onReviewTemplate)
@@ -318,6 +320,20 @@ export default function DocumentCategoryCard({
           )}
         </Stack>
 
+        {type.documentType === 'PRELIMINARY_NOTICE' && onFillNotice && (
+          <Button
+            fullWidth
+            variant="contained"
+            color={type.color}
+            disableElevation
+            startIcon={<EditNoteRoundedIcon />}
+            onClick={onFillNotice}
+            disabled={!canManage}
+            sx={{ mt: 1.75 }}
+          >
+            Fill in a PDF
+          </Button>
+        )}
         <Button
           fullWidth
           variant="outlined"

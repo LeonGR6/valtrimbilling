@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useAuth } from '../../auth/context/useAuth.js'
 import { findJobDocuments } from '../services/jobDocumentRecord.js'
-import { notifyJobDocumentsChanged } from '../services/jobDocumentEvents.js'
+import { notifyJobDocumentsChanged, onJobDocumentsChanged } from '../services/jobDocumentEvents.js'
 import {
   createJobDocumentSignedUrl,
   deleteJobDocument,
@@ -28,6 +28,17 @@ export function useJobDocuments(jobs) {
     'ACCOUNTING',
     'PROJECT_MANAGEMENT',
   ].includes(profile?.role)
+
+  // Announces a change this hook made itself, so it does not reload twice.
+  const announcing = useRef(false)
+  const notifyChanged = useCallback(() => {
+    announcing.current = true
+    try {
+      notifyJobDocumentsChanged()
+    } finally {
+      announcing.current = false
+    }
+  }, [])
 
   const refreshJobDocuments = useCallback(async () => {
     if (!profile?.id) {
@@ -67,6 +78,11 @@ export function useJobDocuments(jobs) {
     return undefined
   }, [profile?.id, refreshJobDocuments])
 
+  // A document saved elsewhere (the Preliminary Notice editor) shows up here too.
+  useEffect(() => onJobDocumentsChanged(() => {
+    if (!announcing.current) refreshJobDocuments().catch(() => {})
+  }), [refreshJobDocuments])
+
   const uploadJobDocuments = useCallback(async ({ job, type, files }) => {
     setUploading(true)
     try {
@@ -82,7 +98,7 @@ export function useJobDocuments(jobs) {
       const nextLibrary = await listJobDocumentLibrary(jobs)
       setLibrary(nextLibrary)
       setError(null)
-      notifyJobDocumentsChanged()
+      notifyChanged()
       // The documents that were just added, so the screen can open them.
       return findJobDocuments(nextLibrary.documentsByJob, job.id, uploadedIds)
     } catch (uploadError) {
@@ -90,7 +106,7 @@ export function useJobDocuments(jobs) {
         const nextLibrary = await listJobDocumentLibrary(jobs)
         setLibrary(nextLibrary)
         setInitialized(true)
-        notifyJobDocumentsChanged()
+        notifyChanged()
       } catch {
         // Preserve the actionable upload error when a follow-up refresh fails.
       }
@@ -99,7 +115,7 @@ export function useJobDocuments(jobs) {
     } finally {
       setUploading(false)
     }
-  }, [jobs])
+  }, [jobs, notifyChanged])
 
   const openJobDocument = useCallback(async (document) => {
     const previewWindow = window.open('', '_blank')
@@ -128,13 +144,13 @@ export function useJobDocuments(jobs) {
       const nextLibrary = await listJobDocumentLibrary(jobs)
       setLibrary(nextLibrary)
       setError(null)
-      notifyJobDocumentsChanged()
+      notifyChanged()
     } catch (deleteError) {
       try {
         const nextLibrary = await listJobDocumentLibrary(jobs)
         setLibrary(nextLibrary)
         setInitialized(true)
-        notifyJobDocumentsChanged()
+        notifyChanged()
       } catch {
         // Preserve the deletion error if the follow-up refresh also fails.
       }
@@ -143,7 +159,7 @@ export function useJobDocuments(jobs) {
     } finally {
       setDeletingDocumentId(null)
     }
-  }, [jobs])
+  }, [jobs, notifyChanged])
 
   return useMemo(() => ({
     ...library,

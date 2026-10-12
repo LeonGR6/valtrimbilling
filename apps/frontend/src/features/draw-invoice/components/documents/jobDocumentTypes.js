@@ -1,9 +1,21 @@
 import DescriptionRoundedIcon from '@mui/icons-material/DescriptionRounded'
+import GavelRoundedIcon from '@mui/icons-material/GavelRounded'
 import Inventory2RoundedIcon from '@mui/icons-material/Inventory2Rounded'
 import ShoppingCartCheckoutRoundedIcon from '@mui/icons-material/ShoppingCartCheckoutRounded'
 import TodayRoundedIcon from '@mui/icons-material/TodayRounded'
 
 export const DOCUMENT_TYPES = [
+  {
+    key: 'preliminary-notice',
+    documentType: 'PRELIMINARY_NOTICE',
+    singularLabel: 'Preliminary Notice',
+    pluralLabel: 'Preliminary Notices',
+    addLabel: 'Add preliminary notices',
+    emptyLabel: 'No preliminary notices added yet.',
+    helperText: 'Preliminary Notice for this Job. Every Job needs one.',
+    Icon: GavelRoundedIcon,
+    color: 'error',
+  },
   {
     key: 'release',
     documentType: 'RELEASE',

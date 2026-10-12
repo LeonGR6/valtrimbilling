@@ -1,7 +1,11 @@
 export const JOB_DOCUMENT_BUCKET = 'job-documents'
 export const MAX_JOB_DOCUMENT_SIZE = 25 * 1024 * 1024
 
+// Every Job needs a Preliminary Notice, whatever its Builder's Billing Setup asks for.
+export const ALWAYS_REQUIRED_TYPE_KEYS = ['preliminary-notice']
+
 const documentTypeKeys = {
+  PRELIMINARY_NOTICE: 'preliminary-notice',
   PURCHASE_ORDER: 'purchase-order',
   PAYMENT_SCHEDULE: 'payment-schedule',
   RELEASE: 'release',
@@ -9,6 +13,7 @@ const documentTypeKeys = {
 }
 
 const storageFolders = {
+  PRELIMINARY_NOTICE: 'preliminary_notice',
   PURCHASE_ORDER: 'purchase_order',
   PAYMENT_SCHEDULE: 'payment_schedule',
   RELEASE: 'release',
@@ -50,7 +55,7 @@ export function buildJobDocumentLibrary(jobs, documentRows, requirementRows) {
     jobs.map((job) => [String(job.id), []]),
   )
   const requiredTypeKeysByJob = Object.fromEntries(
-    jobs.map((job) => [String(job.id), []]),
+    jobs.map((job) => [String(job.id), [...ALWAYS_REQUIRED_TYPE_KEYS]]),
   )
   const jobIdsByVersion = new Map()
 

@@ -45,6 +45,7 @@ import { DOCUMENT_TYPES } from './jobDocumentTypes.js'
 const ReleaseTemplateReviewDialog = lazy(
   () => import('../../../release-templates/components/ReleaseTemplateReviewDialog.jsx'),
 )
+const PreliminaryNoticeEditorDialog = lazy(() => import('./PreliminaryNoticeEditorDialog.jsx'))
 const PaymentScheduleReviewDialog = lazy(
   () => import('../../../payment-schedules/components/PaymentScheduleReviewDialog.jsx'),
 )
@@ -99,6 +100,7 @@ export default function JobDocumentsCatalog({ jobs, documentState }) {
   const [expandedJobId, setExpandedJobId] = useState(undefined)
   const [uploadTarget, setUploadTarget] = useState(null)
   const [deleteTarget, setDeleteTarget] = useState(null)
+  const [noticeEditorJob, setNoticeEditorJob] = useState(null)
   const [deleteError, setDeleteError] = useState(null)
   // Documents waiting to be reviewed as templates, each a Release or a Payment
   // Schedule (`kind`). The first one is open; `total` lets the dialog say
@@ -499,6 +501,7 @@ export default function JobDocumentsCatalog({ jobs, documentState }) {
                         analyzingScheduleDocumentId={scheduleTemplates.analyzingDocumentId}
                         onReviewTemplate={(document) => openTemplateReview([{ job, document, kind: 'release' }])}
                         onReviewSchedule={(document) => openTemplateReview([{ job, document, kind: 'schedule' }])}
+                        onFillNotice={() => setNoticeEditorJob(job)}
                         onAdd={() => setUploadTarget({ job, type })}
                         onDelete={(document) => {
                           setDeleteError(null)
@@ -601,6 +604,22 @@ export default function JobDocumentsCatalog({ jobs, documentState }) {
           }}
           onDelete={handleDeleteDocument}
         />
+      )}
+
+      {noticeEditorJob && (
+        <Suspense
+          fallback={(
+            <Backdrop open sx={{ zIndex: 'modal' }}>
+              <CircularProgress color="inherit" />
+            </Backdrop>
+          )}
+        >
+          <PreliminaryNoticeEditorDialog
+            job={noticeEditorJob}
+            canManage={canManageJobDocuments && noticeEditorJob.isActive !== false}
+            onClose={() => setNoticeEditorJob(null)}
+          />
+        </Suspense>
       )}
     </Box>
   )

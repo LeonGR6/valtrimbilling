@@ -73,10 +73,37 @@ test('document requirements follow each Job billing setup version', () => {
   const library = buildJobDocumentLibrary(jobs, [], requirements)
 
   assert.deepEqual(library.requiredTypeKeysByJob['1307'], [
+    'preliminary-notice',
     'purchase-order',
     'release',
   ])
-  assert.deepEqual(library.requiredTypeKeysByJob['1412'], ['payment-schedule'])
+  assert.deepEqual(library.requiredTypeKeysByJob['1412'], [
+    'preliminary-notice',
+    'payment-schedule',
+  ])
+})
+
+test('every Job requires a Preliminary Notice even when its setup asks for nothing', () => {
+  const library = buildJobDocumentLibrary(
+    [{ id: 1500, billingSetupVersionId: 3 }],
+    [],
+    [],
+  )
+
+  assert.deepEqual(library.requiredTypeKeysByJob['1500'], ['preliminary-notice'])
+  assert.deepEqual(
+    toJobDocument({
+      id: 'a',
+      job_id: 1500,
+      document_type: 'PRELIMINARY_NOTICE',
+      size_bytes: 1,
+    }).typeKey,
+    'preliminary-notice',
+  )
+  assert.equal(
+    buildJobDocumentStoragePath(1500, 'PRELIMINARY_NOTICE', 'abc'),
+    '1500/preliminary_notice/abc.pdf',
+  )
 })
 
 test('multiple Releases satisfy one required document type', () => {

@@ -1,12 +1,14 @@
-import { useMemo, useState } from 'react'
+import { lazy, Suspense, useMemo, useState } from 'react'
 import { Link as RouterLink } from 'react-router-dom'
 import {
   Alert,
+  Backdrop,
   Box,
   Button,
   Card,
   CardContent,
   Chip,
+  CircularProgress,
   Dialog,
   DialogActions,
   DialogContent,
@@ -60,10 +62,19 @@ import {
   isMultiPhasePackage,
   packagePhaseLabels,
 } from '../../utils/packagePhaseScope.js'
+import { useAuth } from '../../../auth/context/useAuth.js'
+import { usePreliminaryNoticeGate } from '../../hooks/usePreliminaryNoticeGate.js'
 import DrawSelectionGrid from './DrawSelectionGrid.jsx'
 import CreatePackageHardwareTable from './CreatePackageHardwareTable.jsx'
 import CreatePackageUtilityTable from './CreatePackageUtilityTable.jsx'
 import SelectableOptionsTable from './SelectableOptionsTable.jsx'
+
+const PreliminaryNoticeEditorDialog = lazy(
+  () => import('../documents/PreliminaryNoticeEditorDialog.jsx'),
+)
+
+// The roles that can save a Job's documents, the notice included.
+const NOTICE_ROLES = ['ADMIN', 'ACCOUNTING', 'PROJECT_MANAGEMENT']
 
 const cellKey = ({ phaseId, lotId, drawIndex }) => `${phaseId}:${lotId}:${drawIndex}`
 
@@ -120,6 +131,8 @@ export default function CreateDrawDialog({
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState(null)
   const [asOfDate] = useState(() => localDateKey())
+  const [noticeEditorOpen, setNoticeEditorOpen] = useState(false)
+  const { profile } = useAuth()
 
   const job = jobs.find((candidate) => String(candidate.id) === selectedJobId)
   const phases = job?.sequenceSheet?.phases ?? []
@@ -492,7 +505,10 @@ export default function CreateDrawDialog({
   const selectedPhasesAreReady = phaseModels
     .filter((model) => selectedPhaseIds.has(String(model.phase.id)))
     .every((model) => model.worksheet.isReady)
+  // The first Package of a Job needs the Job's Preliminary Notice uploaded.
+  const noticeGate = usePreliminaryNoticeGate(job?.id, packages)
   const canCreate =
+    !noticeGate.blocked &&
     hasScope &&
     selectedPhasesAreReady &&
     (packageSelections.length > 0 || summary.hardwareIsDue) &&
@@ -577,6 +593,32 @@ export default function CreateDrawDialog({
               </MenuItem>
             ))}
           </TextField>
+
+          {job && noticeGate.status === 'missing' && (
+            <Alert
+              severity="warning"
+              action={NOTICE_ROLES.includes(profile?.role) && (
+                <Button
+                  color="inherit"
+                  size="small"
+                  onClick={() => setNoticeEditorOpen(true)}
+                  sx={{ whiteSpace: 'nowrap' }}
+                >
+                  Add Preliminary Notice
+                </Button>
+              )}
+            >
+              <strong>This is the first Package of Job #{job.code}.</strong> Upload its
+              Preliminary Notice before creating it. You can also add it from the
+              Documents tab.
+            </Alert>
+          )}
+          {job && noticeGate.status === 'error' && (
+            <Alert severity="info">
+              The Preliminary Notice of this Job could not be checked ({noticeGate.error}).
+              It is checked again when the Package is created.
+            </Alert>
+          )}
 
           <Box>
             <Typography fontWeight={800}>Phases / Buildings in this Package</Typography>
@@ -952,6 +994,20 @@ export default function CreateDrawDialog({
           {submitting ? 'Creating…' : 'Create package'}
         </Button>
       </DialogActions>
+      {noticeEditorOpen && job && (
+        <Suspense
+          fallback={(
+            <Backdrop open sx={{ zIndex: 'modal' }}>
+              <CircularProgress color="inherit" />
+            </Backdrop>
+          )}
+        >
+          <PreliminaryNoticeEditorDialog
+            job={job}
+            onClose={() => setNoticeEditorOpen(false)}
+          />
+        </Suspense>
+      )}
     </Dialog>
   )
 }

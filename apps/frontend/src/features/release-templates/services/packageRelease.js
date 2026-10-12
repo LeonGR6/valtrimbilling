@@ -180,7 +180,7 @@ export function buildPackageDocumentStoragePath(packageId, uniqueId) {
   return `${Number(packageId)}/release/${uniqueId}.pdf`
 }
 
-function cleanNamePart(value) {
+export function cleanNamePart(value) {
   return Array.from(String(value ?? ''))
     // Control characters and the ones a file name cannot hold.
     .map((character) => (character.charCodeAt(0) < 32 || '\\/:*?"<>|'.includes(character) ? ' ' : character))

@@ -54,9 +54,17 @@ function toWidget(annotation: Record<string, unknown>, origin: [number, number])
   } satisfies Widget;
 }
 
+export interface ReadPdfOptions {
+  // How many pages get their text and fields read. A Release is one or two
+  // pages; a Payment Schedule table can run over many.
+  maxContentPages?: number;
+}
+
 export async function readReleasePdf(
   bytes: Uint8Array,
+  options: ReadPdfOptions = {},
 ): Promise<ReleasePdfContent> {
+  const maxContentPages = options.maxContentPages ?? MAX_CONTENT_PAGES;
   let pdf;
   try {
     // pdf.js may detach the buffer it receives, so it gets a copy.
@@ -86,7 +94,7 @@ export async function readReleasePdf(
         rotation: normalizeRotation(page.rotate ?? 0),
       };
       pageSizes.push(size);
-      if (pageNumber > MAX_CONTENT_PAGES) continue;
+      if (pageNumber > maxContentPages) continue;
 
       const content = await page.getTextContent();
       const runs: TextRun[] = [];

@@ -16,6 +16,10 @@ import PictureAsPdfRoundedIcon from '@mui/icons-material/PictureAsPdfRounded'
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
 import FactCheckRoundedIcon from '@mui/icons-material/FactCheckRounded'
 import { describeReleaseDocument } from '../../../release-templates/services/releaseTemplateRecord.js'
+import {
+  describePaymentScheduleDocument,
+  isPaymentScheduleDocumentType,
+} from '../../../payment-schedules/services/paymentScheduleRecord.js'
 import { formatFileSize } from './jobDocumentTypes.js'
 
 function formatUploadDate(value) {
@@ -36,13 +40,19 @@ export default function DocumentCategoryCard({
   deletingDocumentId,
   templatesByDocument = {},
   analyzingDocumentId = null,
+  scheduleTemplatesByDocument = {},
+  analyzingScheduleDocumentId = null,
   onAdd,
   onDelete,
   onOpen,
   onReviewTemplate,
+  onReviewSchedule,
 }) {
   const { Icon } = type
   const supportsTemplates = type.documentType === 'RELEASE' && Boolean(onReviewTemplate)
+  // A Payment Schedule PDF can be used as the Job's schedule.
+  const supportsSchedules = isPaymentScheduleDocumentType(type.documentType)
+    && Boolean(onReviewSchedule)
   const missingRequiredDocument = required && documents.length === 0
 
   return (
@@ -111,9 +121,14 @@ export default function DocumentCategoryCard({
 
         <Stack spacing={1} sx={{ flex: 1 }}>
           {documents.map((document) => {
-            const template = supportsTemplates ? templatesByDocument[document.id] : null
+            const template = supportsTemplates
+              ? templatesByDocument[document.id]
+              : supportsSchedules ? scheduleTemplatesByDocument[document.id] : null
             const releaseInfo = supportsTemplates ? describeReleaseDocument(template) : null
-            const analyzing = analyzingDocumentId === document.id
+            const scheduleInfo = supportsSchedules ? describePaymentScheduleDocument(template) : null
+            const analyzing = supportsSchedules
+              ? analyzingScheduleDocumentId === document.id
+              : analyzingDocumentId === document.id
             const busy = openingDocumentId === document.id
               || deletingDocumentId === document.id
 
@@ -179,12 +194,53 @@ export default function DocumentCategoryCard({
                   </Stack>
                 )}
 
+                {scheduleInfo && (
+                  <Stack
+                    direction="row"
+                    spacing={0.75}
+                    useFlexGap
+                    sx={{ mt: 1, flexWrap: 'wrap' }}
+                  >
+                    {scheduleInfo.layoutChip && (
+                      <Tooltip title={scheduleInfo.layoutChip.title}>
+                        <Chip
+                          size="small"
+                          color="primary"
+                          variant="outlined"
+                          label={scheduleInfo.layoutChip.label}
+                        />
+                      </Tooltip>
+                    )}
+                    {scheduleInfo.status && (
+                      <Chip
+                        size="small"
+                        color={scheduleInfo.status.color}
+                        variant={scheduleInfo.status.color === 'default' ? 'outlined' : 'filled'}
+                        label={analyzing ? 'Analyzing…' : scheduleInfo.status.label}
+                      />
+                    )}
+                  </Stack>
+                )}
+
                 <Stack
                   direction="row"
                   spacing={0.5}
                   useFlexGap
                   sx={{ mt: 1.25, flexWrap: 'wrap' }}
                 >
+                  {supportsSchedules && (canManage || template) && (
+                    <Button
+                      size="small"
+                      startIcon={analyzing
+                        ? <CircularProgress size={16} />
+                        : <FactCheckRoundedIcon />}
+                      aria-label={`Use ${document.name} as a Payment Schedule`}
+                      disabled={analyzing || busy}
+                      onClick={() => onReviewSchedule(document)}
+                    >
+                      {template && template.status !== 'failed' ? 'Review' : 'Use as schedule'}
+                    </Button>
+                  )}
                   {supportsTemplates && (canManage || template) && (
                     <Button
                       size="small"

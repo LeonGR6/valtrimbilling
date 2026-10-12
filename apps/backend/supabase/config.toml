@@ -464,6 +464,12 @@ verify_jwt = false
 [functions.release-template-analyze]
 verify_jwt = true
 
+# Finds the Lots and draws of a Payment Schedule PDF. Same trust model as
+# release-template-analyze: the function checks the caller's JWT and role, reads
+# the document with the caller's permissions, then writes as service_role.
+[functions.payment-schedule-analyze]
+verify_jwt = true
+
 [analytics]
 enabled = true
 port = 54327

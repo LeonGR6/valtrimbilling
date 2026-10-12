@@ -2,9 +2,22 @@ import { useState } from 'react'
 import { Alert, Box, Button, CircularProgress, Stack, Typography } from '@mui/material'
 import PictureAsPdfRoundedIcon from '@mui/icons-material/PictureAsPdfRounded'
 
+const KIND_LABELS = {
+  release: { one: 'Release', many: 'Releases' },
+  payment_schedule: { one: 'Payment Schedule', many: 'Payment Schedules' },
+}
+
+// What to call the generated documents of a Package: by their kind when they are
+// all of one, else just documents.
+function describeDocuments(releases) {
+  const kinds = [...new Set(releases.map(({ kind }) => kind ?? 'release'))]
+  const labels = kinds.length === 1 ? KIND_LABELS[kinds[0]] : { one: 'document', many: 'documents' }
+  return releases.length === 1 ? `a generated ${labels.one}` : `${releases.length} generated ${labels.many}`
+}
+
 /**
- * A Package with a generated Release cannot be edited or deleted. This lists
- * those Releases and lets the user remove them first.
+ * A Package with a generated Release or Payment Schedule cannot be edited or
+ * deleted. This lists those documents and lets the user remove them first.
  */
 export default function PackageReleasesNotice({ state, action }) {
   const { releases, loading, removingId, error, remove } = state
@@ -25,11 +38,11 @@ export default function PackageReleasesNotice({ state, action }) {
     <Stack spacing={1}>
       {releases.length > 0 && (
         <Alert severity="warning">
-          This Package has {releases.length === 1 ? 'a generated Release' : `${releases.length} generated Releases`}.
+          This Package has {describeDocuments(releases)}.
           {' '}Remove {releases.length === 1 ? 'it' : 'them'} first to {action}.
         </Alert>
       )}
-      {releases.map(({ id, label, file }) => (
+      {releases.map(({ id, kind, label, file }) => (
         <Stack
           key={id}
           direction="row"
@@ -64,7 +77,7 @@ export default function PackageReleasesNotice({ state, action }) {
             </>
           ) : (
             <Button size="small" color="error" onClick={() => setConfirmingId(id)}>
-              Remove Release
+              Remove {KIND_LABELS[kind ?? 'release'].one}
             </Button>
           )}
         </Stack>

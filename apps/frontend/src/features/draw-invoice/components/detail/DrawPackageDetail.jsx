@@ -20,9 +20,11 @@ import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded'
 import AttachMoneyRoundedIcon from '@mui/icons-material/AttachMoneyRounded'
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
 import EditRoundedIcon from '@mui/icons-material/EditRounded'
-import LayersRoundedIcon from '@mui/icons-material/LayersRounded'
+import MergeTypeRoundedIcon from '@mui/icons-material/MergeTypeRounded'
 import MoveToInboxRoundedIcon from '@mui/icons-material/MoveToInboxRounded'
 import DescriptionRoundedIcon from '@mui/icons-material/DescriptionRounded'
+import TableChartRoundedIcon from '@mui/icons-material/TableChartRounded'
+import LayersRoundedIcon from '@mui/icons-material/LayersRounded'
 import ReceiptLongRoundedIcon from '@mui/icons-material/ReceiptLongRounded'
 import { useAuth } from '../../../auth/context/useAuth.js'
 import { useBuilderDrawSchedules } from '../../../builder-draw-schedules/context/useBuilderDrawSchedules.js'
@@ -91,6 +93,11 @@ const GeneratePackageReleaseDialog = lazy(
   () => import('../../../release-templates/components/GeneratePackageReleaseDialog.jsx'),
 )
 
+const GeneratePackageDialog = lazy(() => import('./GeneratePackageDialog.jsx'))
+const GeneratePackageScheduleDialog = lazy(
+  () => import('../../../payment-schedules/components/GeneratePackageScheduleDialog.jsx'),
+)
+
 // The same roles that can save Job documents can generate a Package's Release.
 const RELEASE_ROLES = ['ADMIN', 'ACCOUNTING', 'PROJECT_MANAGEMENT']
 
@@ -131,6 +138,8 @@ export default function DrawPackageDetail() {
   const [createDialogOpen, setCreateDialogOpen] = useState(false)
   const [correctionDialog, setCorrectionDialog] = useState(null)
   const [releaseDialogOpen, setReleaseDialogOpen] = useState(false)
+  const [scheduleDialogOpen, setScheduleDialogOpen] = useState(false)
+  const [packageDialogOpen, setPackageDialogOpen] = useState(false)
   const [quickbooksDialogOpen, setQuickbooksDialogOpen] = useState(false)
   const { profile } = useAuth()
   const focusedPackageRecord = drawInvoicePackages.find(
@@ -372,12 +381,33 @@ export default function DrawPackageDetail() {
             )}
             {focusedPackage && RELEASE_ROLES.includes(profile?.role) && (
               <Button
+                variant="contained"
+                disableElevation
+                startIcon={<MergeTypeRoundedIcon />}
+                onClick={() => setPackageDialogOpen(true)}
+                disabled={saving}
+              >
+                Generate package (PDF)
+              </Button>
+            )}
+            {focusedPackage && RELEASE_ROLES.includes(profile?.role) && (
+              <Button
                 variant="outlined"
                 startIcon={<DescriptionRoundedIcon />}
                 onClick={() => setReleaseDialogOpen(true)}
                 disabled={saving}
               >
                 Generate Release
+              </Button>
+            )}
+            {focusedPackage && RELEASE_ROLES.includes(profile?.role) && (
+              <Button
+                variant="outlined"
+                startIcon={<TableChartRoundedIcon />}
+                onClick={() => setScheduleDialogOpen(true)}
+                disabled={saving}
+              >
+                Generate Payment Schedule
               </Button>
             )}
             {canDeleteFocusedPackage && (
@@ -712,6 +742,40 @@ export default function DrawPackageDetail() {
             packageRecord={focusedPackage}
             job={focusedJob}
             onClose={() => setReleaseDialogOpen(false)}
+          />
+        </Suspense>
+      )}
+
+      {packageDialogOpen && focusedPackage && (
+        <Suspense
+          fallback={(
+            <Backdrop open sx={{ zIndex: 'modal' }}>
+              <CircularProgress color="inherit" />
+            </Backdrop>
+          )}
+        >
+          <GeneratePackageDialog
+            packageRecord={focusedPackage}
+            job={focusedJob}
+            packages={drawInvoicePackages}
+            onClose={() => setPackageDialogOpen(false)}
+          />
+        </Suspense>
+      )}
+
+      {scheduleDialogOpen && focusedPackage && (
+        <Suspense
+          fallback={(
+            <Backdrop open sx={{ zIndex: 'modal' }}>
+              <CircularProgress color="inherit" />
+            </Backdrop>
+          )}
+        >
+          <GeneratePackageScheduleDialog
+            packageRecord={focusedPackage}
+            job={focusedJob}
+            packages={drawInvoicePackages}
+            onClose={() => setScheduleDialogOpen(false)}
           />
         </Suspense>
       )}

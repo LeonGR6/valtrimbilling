@@ -27,6 +27,8 @@ import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
 import WarningAmberRoundedIcon from '@mui/icons-material/WarningAmberRounded'
 import { usePersistentState, isStoredString } from '../../../../hooks/usePersistentState.js'
 import { useReleaseTemplates } from '../../../release-templates/hooks/useReleaseTemplates.js'
+import { usePaymentScheduleTemplates } from '../../../payment-schedules/hooks/usePaymentScheduleTemplates.js'
+import { isPaymentScheduleDocumentType } from '../../../payment-schedules/services/paymentScheduleRecord.js'
 import { summarizeJobDocumentRequirements } from '../../services/jobDocumentRecord.js'
 import {
   filterJobsForDocuments,
@@ -42,6 +44,9 @@ import { DOCUMENT_TYPES } from './jobDocumentTypes.js'
 // Loaded on demand: it brings the PDF viewer, which most visits never need.
 const ReleaseTemplateReviewDialog = lazy(
   () => import('../../../release-templates/components/ReleaseTemplateReviewDialog.jsx'),
+)
+const PaymentScheduleReviewDialog = lazy(
+  () => import('../../../payment-schedules/components/PaymentScheduleReviewDialog.jsx'),
 )
 
 function jobRequirementStatus(requiredTypeKeys, documents) {
@@ -95,8 +100,9 @@ export default function JobDocumentsCatalog({ jobs, documentState }) {
   const [uploadTarget, setUploadTarget] = useState(null)
   const [deleteTarget, setDeleteTarget] = useState(null)
   const [deleteError, setDeleteError] = useState(null)
-  // Release documents waiting to be reviewed as templates. The first one is
-  // open; `total` lets the dialog say "Release 1 of 3".
+  // Documents waiting to be reviewed as templates, each a Release or a Payment
+  // Schedule (`kind`). The first one is open; `total` lets the dialog say
+  // "Release 1 of 3".
   const [templateQueue, setTemplateQueue] = useState({ items: [], total: 0 })
   const templateTarget = templateQueue.items[0] ?? null
   const openTemplateReview = (items) => setTemplateQueue({ items, total: items.length })
@@ -128,6 +134,15 @@ export default function JobDocumentsCatalog({ jobs, documentState }) {
     [documentsByJob],
   )
   const releaseTemplates = useReleaseTemplates(releaseDocumentIds)
+  const scheduleDocumentIds = useMemo(
+    () => Object.values(documentsByJob)
+      .flat()
+      .filter((document) => isPaymentScheduleDocumentType(document.documentType))
+      .map((document) => document.id)
+      .sort(),
+    [documentsByJob],
+  )
+  const scheduleTemplates = usePaymentScheduleTemplates(scheduleDocumentIds)
   const builderOptions = useMemo(() => jobDocumentBuilderOptions(jobs), [jobs])
   // A remembered Builder or Community that no longer exists falls back to "All".
   const builderFilter = storedBuilderFilter === 'ALL'
@@ -196,7 +211,12 @@ export default function JobDocumentsCatalog({ jobs, documentState }) {
       // A Release is uploaded to be used as a template: go straight to the
       // review instead of waiting for a click on "Use as template".
       if (type.documentType === 'RELEASE' && uploaded?.length > 0) {
-        openTemplateReview(uploaded.map((document) => ({ job, document })))
+        openTemplateReview(uploaded.map((document) => ({ job, document, kind: 'release' })))
+      }
+      // A Payment Schedule is read the same way, in either layout (matrix or
+      // list); the review asks whether it will be used as the Job's schedule.
+      if (type.documentType === 'PAYMENT_SCHEDULE' && uploaded?.length > 0) {
+        openTemplateReview(uploaded.map((document) => ({ job, document, kind: 'schedule' })))
       }
     } catch {
       // The hook exposes the actionable error and refreshes any successful files.
@@ -475,7 +495,10 @@ export default function JobDocumentsCatalog({ jobs, documentState }) {
                         deletingDocumentId={deletingDocumentId}
                         templatesByDocument={releaseTemplates.templatesByDocumentId}
                         analyzingDocumentId={releaseTemplates.analyzingDocumentId}
-                        onReviewTemplate={(document) => openTemplateReview([{ job, document }])}
+                        scheduleTemplatesByDocument={scheduleTemplates.templatesByDocumentId}
+                        analyzingScheduleDocumentId={scheduleTemplates.analyzingDocumentId}
+                        onReviewTemplate={(document) => openTemplateReview([{ job, document, kind: 'release' }])}
+                        onReviewSchedule={(document) => openTemplateReview([{ job, document, kind: 'schedule' }])}
                         onAdd={() => setUploadTarget({ job, type })}
                         onDelete={(document) => {
                           setDeleteError(null)
@@ -483,7 +506,11 @@ export default function JobDocumentsCatalog({ jobs, documentState }) {
                             job,
                             type,
                             document,
-                            template: releaseTemplates.templatesByDocumentId[document.id] ?? null,
+                            template: (
+                              isPaymentScheduleDocumentType(document.documentType)
+                                ? scheduleTemplates.templatesByDocumentId[document.id]
+                                : releaseTemplates.templatesByDocumentId[document.id]
+                            ) ?? null,
                             isOnlyRequiredDocument:
                               requiredTypeKeys.includes(type.key)
                               && documents.filter(
@@ -534,17 +561,31 @@ export default function JobDocumentsCatalog({ jobs, documentState }) {
             </Backdrop>
           )}
         >
-          <ReleaseTemplateReviewDialog
-            key={templateTarget.document.id}
-            job={templateTarget.job}
-            document={templateTarget.document}
-            templateState={releaseTemplates}
-            canManage={canManageJobDocuments && templateTarget.job.isActive !== false}
-            position={templateQueue.total > 1
-              ? { index: templateQueue.total - templateQueue.items.length + 1, total: templateQueue.total }
-              : null}
-            onClose={closeTemplateReview}
-          />
+          {templateTarget.kind === 'schedule' ? (
+            <PaymentScheduleReviewDialog
+              key={templateTarget.document.id}
+              job={templateTarget.job}
+              document={templateTarget.document}
+              templateState={scheduleTemplates}
+              canManage={canManageJobDocuments && templateTarget.job.isActive !== false}
+              position={templateQueue.total > 1
+                ? { index: templateQueue.total - templateQueue.items.length + 1, total: templateQueue.total }
+                : null}
+              onClose={closeTemplateReview}
+            />
+          ) : (
+            <ReleaseTemplateReviewDialog
+              key={templateTarget.document.id}
+              job={templateTarget.job}
+              document={templateTarget.document}
+              templateState={releaseTemplates}
+              canManage={canManageJobDocuments && templateTarget.job.isActive !== false}
+              position={templateQueue.total > 1
+                ? { index: templateQueue.total - templateQueue.items.length + 1, total: templateQueue.total }
+                : null}
+              onClose={closeTemplateReview}
+            />
+          )}
         </Suspense>
       )}
 

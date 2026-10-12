@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useImperativeHandle, useRef, useState } from 'react'
 import {
   Alert,
   Box,
@@ -19,7 +19,9 @@ import {
   Typography,
 } from '@mui/material'
 import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded'
+import VisibilityRoundedIcon from '@mui/icons-material/VisibilityRounded'
 import TaskAltRoundedIcon from '@mui/icons-material/TaskAltRounded'
+import PdfPreviewDialog from './PdfPreviewDialog.jsx'
 import { formatCurrency } from '../../draw-invoice/utils/drawInvoiceFormatters.js'
 import {
   buildPackageFillValues,
@@ -80,7 +82,16 @@ function startingForm(values) {
  * document and downloads it. Values come from the Package; they are shown and
  * can be corrected before generating.
  */
-export default function GeneratePackageReleaseDialog({ packageRecord, job, onClose }) {
+export default function GeneratePackageReleaseDialog({
+  packageRecord,
+  job,
+  // Inside the combined Package dialog: only the content, no frame or buttons. The
+  // parent generates through `ref` and learns whether it can through `onReadyChange`.
+  embedded = false,
+  ref = null,
+  onReadyChange = null,
+  onClose,
+}) {
   const [attempt, setAttempt] = useState(0)
   const [data, setData] = useState(null)
   const [loadError, setLoadError] = useState(null)
@@ -91,6 +102,7 @@ export default function GeneratePackageReleaseDialog({ packageRecord, job, onClo
   const [status, setStatus] = useState('idle')
   const [error, setError] = useState(null)
   const [saved, setSaved] = useState(null)
+  const [preview, setPreview] = useState(null)
   const request = useRef({ attempt: null, promise: null })
 
   useEffect(() => {
@@ -139,7 +151,9 @@ export default function GeneratePackageReleaseDialog({ packageRecord, job, onClo
   const existing = data?.releases.find(
     (release) => release.label === releaseTypeLabel(template?.releaseType),
   ) ?? null
-  const generating = status === 'generating'
+  // True while anything is being built, so the controls stay still.
+  const generating = status !== 'idle'
+  const buildingFile = status === 'generating'
   const usesExceptions = plan.filled.some(({ key }) => (
     key === 'waiver_release_dates' || key === 'unpaid_progress_amount'
   ))
@@ -164,44 +178,66 @@ export default function GeneratePackageReleaseDialog({ packageRecord, job, onClo
     }))
   }
 
-  const generate = async () => {
+  // Fills the template for this Package and returns the file. Nothing is saved.
+  const build = async () => {
+    const pdf = await downloadStoredPdf(template.pdf)
+    // The PDF library is only loaded when a Release is generated.
+    const { fillReleasePdf } = await import('../services/releasePdfFiller.js')
+    const { bytes, skipped } = await fillReleasePdf({
+      pdfBytes: new Uint8Array(await pdf.arrayBuffer()),
+      mapping: template.mapping,
+      values: {
+        ...form,
+        // One date and one amount per unpaid earlier Package that is included.
+        waiver_release_dates: exceptionLines.waiver_release_dates,
+        unpaid_progress_amount: exceptionLines.unpaid_progress_amount,
+      },
+    })
+
+    const fileName = buildPackageReleaseFileName({
+      jobCode: job.code,
+      packageNumber: packageRecord.packageNumber,
+      releaseType: template.releaseType,
+    })
+    return { bytes, fileName, skipped }
+  }
+
+  // Builds the file and shows it; nothing is saved.
+  const showPreview = async () => {
+    setStatus('previewing')
+    setError(null)
+    try {
+      setPreview(await build())
+    } catch (previewError) {
+      setError(previewError.message)
+    } finally {
+      setStatus('idle')
+    }
+  }
+
+  // Returns the saved file, or null when it failed (the error is shown).
+  const generate = async ({ download = true } = {}) => {
     setStatus('generating')
     setError(null)
     setSaved(null)
     try {
-      const pdf = await downloadStoredPdf(template.pdf)
-      // The PDF library is only loaded when a Release is generated.
-      const { fillReleasePdf } = await import('../services/releasePdfFiller.js')
-      const { bytes, skipped } = await fillReleasePdf({
-        pdfBytes: new Uint8Array(await pdf.arrayBuffer()),
-        mapping: template.mapping,
-        values: {
-          ...form,
-          // One date and one amount per unpaid earlier Package that is included.
-          waiver_release_dates: exceptionLines.waiver_release_dates,
-          unpaid_progress_amount: exceptionLines.unpaid_progress_amount,
-        },
-      })
-
-      const fileName = buildPackageReleaseFileName({
-        jobCode: job.code,
-        packageNumber: packageRecord.packageNumber,
-        releaseType: template.releaseType,
-      })
+      const { bytes, fileName, skipped } = await build()
       await savePackageRelease({
         packageId: packageRecord.id,
         releaseType: template.releaseType,
         fileName,
         bytes,
       })
-      saveToDisk(new Blob([bytes], { type: 'application/pdf' }), fileName)
+      if (download) saveToDisk(new Blob([bytes], { type: 'application/pdf' }), fileName)
 
-      setSaved({ fileName, skipped })
+      setSaved({ fileName, skipped, downloaded: download })
       listPackageReleases(packageRecord.id)
         .then((releases) => setData((current) => ({ ...current, releases })))
         .catch(() => {})
+      return { bytes, fileName }
     } catch (generationError) {
       setError(generationError.message)
+      return null
     } finally {
       setStatus('idle')
     }
@@ -218,22 +254,15 @@ export default function GeneratePackageReleaseDialog({ packageRecord, job, onClo
   const values = data?.values
   const ready = choice?.state === 'ready'
 
-  return (
-    <Dialog
-      open
-      fullWidth
-      maxWidth="sm"
-      onClose={generating ? undefined : onClose}
-      aria-labelledby="generate-release-title"
-    >
-      <DialogTitle id="generate-release-title">
-        Generate Release
-        <Typography variant="body2" color="text.secondary">
-          {packageRecord.packageNumber} · Job #{job.code}
-        </Typography>
-      </DialogTitle>
+  const canGenerate = ready
 
-      <DialogContent dividers>
+  useImperativeHandle(ref, () => ({ generate, build }))
+  useEffect(() => {
+    onReadyChange?.({ canGenerate, generating })
+  }, [canGenerate, generating, onReadyChange])
+
+  const body = (
+    <>
         {!data && !loadError && (
           <Stack spacing={1.5} sx={{ alignItems: 'center', py: 5 }}>
             <CircularProgress />
@@ -409,7 +438,7 @@ export default function GeneratePackageReleaseDialog({ packageRecord, job, onClo
         {error && <Alert severity="error" sx={{ mt: 2 }}>{error}</Alert>}
         {saved && (
           <Alert severity="success" icon={<TaskAltRoundedIcon />} sx={{ mt: 2 }}>
-            Saved to this Package and downloaded as “{saved.fileName}”.
+            Saved to this Package{saved.downloaded ? ' and downloaded' : ''} as “{saved.fileName}”.
           </Alert>
         )}
 
@@ -442,19 +471,85 @@ export default function GeneratePackageReleaseDialog({ packageRecord, job, onClo
             </Stack>
           </>
         )}
+    </>
+  )
+
+  const previewDialog = preview && (
+    <PdfPreviewDialog
+      title="Release"
+      subtitle={preview.fileName}
+      bytes={preview.bytes}
+      confirmLabel={existing ? 'Generate again' : 'Generate and download'}
+      onConfirm={canGenerate && !embedded
+        ? () => {
+          setPreview(null)
+          generate()
+        }
+        : null}
+      onClose={() => setPreview(null)}
+    />
+  )
+
+  if (embedded) {
+    return (
+      <>
+        {body}
+        {ready && (
+          <Button
+            size="small"
+            startIcon={status === 'previewing' ? <CircularProgress size={16} /> : <VisibilityRoundedIcon />}
+            disabled={generating}
+            onClick={showPreview}
+            sx={{ mt: 1.5 }}
+          >
+            {status === 'previewing' ? 'Building preview…' : 'Preview'}
+          </Button>
+        )}
+        {previewDialog}
+      </>
+    )
+  }
+
+  return (
+    <Dialog
+      open
+      fullWidth
+      maxWidth="sm"
+      onClose={generating ? undefined : onClose}
+      aria-labelledby="generate-release-title"
+    >
+      <DialogTitle id="generate-release-title">
+        Generate Release
+        <Typography variant="body2" color="text.secondary">
+          {packageRecord.packageNumber} · Job #{job.code}
+        </Typography>
+      </DialogTitle>
+
+      <DialogContent dividers>
+        {body}
       </DialogContent>
 
       <DialogActions sx={{ px: 3, py: 1.5 }}>
+        <Box sx={{ mr: 'auto' }}>
+          <Button
+            startIcon={status === 'previewing' ? <CircularProgress size={16} /> : <VisibilityRoundedIcon />}
+            disabled={!ready || generating}
+            onClick={showPreview}
+          >
+            {status === 'previewing' ? 'Building preview…' : 'Preview'}
+          </Button>
+        </Box>
         <Button onClick={onClose} disabled={generating}>Close</Button>
         <Button
           variant="contained"
-          startIcon={generating ? <CircularProgress size={18} color="inherit" /> : <DownloadRoundedIcon />}
+          startIcon={buildingFile ? <CircularProgress size={18} color="inherit" /> : <DownloadRoundedIcon />}
           disabled={!ready || generating}
-          onClick={generate}
+          onClick={() => generate()}
         >
-          {generating ? 'Generating…' : existing ? 'Generate again' : 'Generate and download'}
+          {buildingFile ? 'Generating…' : existing ? 'Generate again' : 'Generate and download'}
         </Button>
       </DialogActions>
+      {previewDialog}
     </Dialog>
   )
 }

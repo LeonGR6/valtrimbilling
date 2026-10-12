@@ -27,9 +27,11 @@ const clamp = (value, min, max) => Math.min(Math.max(value, min), max)
 
 const FIELD_PADDING = 2
 const FIELD_BACKGROUND = 'rgba(25, 118, 210, 0.08)'
+// A required blank that is still empty.
+const MISSING_BACKGROUND = 'rgba(237, 108, 2, 0.16)'
 
 // A printed blank: an input right on its line, so clicking and typing is all it takes.
-function BlankField({ field, pixelSize, pointsPerPixel, value, onChange }) {
+function BlankField({ field, pixelSize, pointsPerPixel, value, missing, onChange }) {
   const width = field.w * pixelSize.width
   const height = field.h * pixelSize.height
   const pagePoints = pixelSize.width * pointsPerPixel
@@ -60,7 +62,7 @@ function BlankField({ field, pixelSize, pointsPerPixel, value, onChange }) {
         border: 0,
         borderRadius: 2,
         outlineOffset: 0,
-        background: FIELD_BACKGROUND,
+        background: missing ? MISSING_BACKGROUND : FIELD_BACKGROUND,
         color: '#000',
         fontFamily: FONT_FAMILY,
         fontSize: `${size / pointsPerPixel}px`,
@@ -263,6 +265,7 @@ export default function PreliminaryNoticePages({
   focusId,
   fields = [],
   fieldValues = {},
+  missingFieldIds = new Set(),
   onSelect,
   onAdd,
   onChange,
@@ -375,6 +378,7 @@ export default function PreliminaryNoticePages({
                         pixelSize={pixelSize}
                         pointsPerPixel={pointsPerPixel}
                         value={fieldValues[field.id] ?? ''}
+                        missing={missingFieldIds.has(field.id)}
                         onChange={onFieldChange}
                       />
                     )))}

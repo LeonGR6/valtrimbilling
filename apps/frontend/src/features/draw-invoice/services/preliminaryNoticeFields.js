@@ -164,7 +164,7 @@ export function detectFieldsInPage({ page, operatorList, OPS, viewport, textItem
     const before = labelBefore(texts, line)
     if (!before && line.width >= viewport.width * DIVIDER_WIDTH_SHARE) return
 
-    let label = before?.text.replace(/[:$]+$/, '').trim() ?? null
+    let label = before?.text.replace(/[\s:$]+$/u, '').trim() ?? null
     if (!label) {
       // A continuation line: it carries the label of the line above it.
       const above = lines
@@ -174,7 +174,7 @@ export function detectFieldsInPage({ page, operatorList, OPS, viewport, textItem
           && candidate.x < line.x + line.width && candidate.x + candidate.width > line.x
         ))
         .at(-1)
-      const aboveLabel = above ? labelBefore(texts, above)?.text.replace(/[:$]+$/, '').trim() : null
+      const aboveLabel = above ? labelBefore(texts, above)?.text.replace(/[\s:$]+$/u, '').trim() : null
       label = aboveLabel ? `${aboveLabel} (cont.)` : 'Text'
     }
 

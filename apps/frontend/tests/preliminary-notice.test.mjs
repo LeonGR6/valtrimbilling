@@ -12,6 +12,12 @@ import {
   writeNoticeText,
   describeEntriesProblem,
 } from '../src/features/draw-invoice/services/preliminaryNoticePdf.js'
+import {
+  applyFieldValue,
+  isRequiredField,
+  linkedFieldIds,
+  missingRequiredFields,
+} from '../src/features/draw-invoice/services/preliminaryNoticeRules.js'
 import { detectFieldsInPage } from '../src/features/draw-invoice/services/preliminaryNoticeFields.js'
 import {
   isFirstPackageOfJob,
@@ -268,4 +274,63 @@ test('a long text shrinks to stay inside its blank', async () => {
   assert.equal(fitFieldFontSize({ size: 10, textWidth: 100, maxWidth: 200 }), 10)
   assert.equal(fitFieldFontSize({ size: 10, textWidth: 400, maxWidth: 200 }), 5)
   assert.equal(fitFieldFontSize({ size: 10, textWidth: 1000, maxWidth: 200 }), 5)
+})
+
+// --- Printing rules ----------------------------------------------------------
+
+test('only the signature, the current demand, the attachments and second address lines may stay empty', async () => {
+  const fields = await detectIn(californiaNotice())
+  const required = fields.filter(isRequiredField)
+  const optional = fields.filter((field) => field.kind === 'text' && !isRequiredField(field))
+
+  assert.deepEqual(optional.map(({ label }) => label).sort(), [
+    'Construction or reputed lender (if any) · Address (cont.)',
+    'Current demand, if any, less credits / offsets',
+    'Direct or reputed direct contractor · Address (cont.)',
+    'Notice attachments / pages',
+    'Signature',
+    'TO: Owner or reputed owner · Address (cont.)',
+  ])
+  assert.equal(required.length, 21)
+  // Check boxes are choices, never required.
+  assert.equal(fields.filter((field) => field.kind === 'check').some(isRequiredField), false)
+
+  assert.equal(missingRequiredFields(fields, {}).length, 21)
+  const filledAll = Object.fromEntries(required.map(({ id }) => [id, 'x']))
+  assert.equal(missingRequiredFields(fields, filledAll).length, 0)
+  // A blank with only spaces is still empty.
+  assert.equal(
+    missingRequiredFields(fields, { ...filledAll, [required[0].id]: '   ' }).length,
+    1,
+  )
+})
+
+test('the Direct Contractor and the person the work is for share name and address', async () => {
+  const fields = await detectIn(californiaNotice())
+  const links = linkedFieldIds(fields)
+  const byLabel = (label) => fields.find((field) => field.label === label)
+  const contractorName = byLabel('Direct or reputed direct contractor · Name')
+  const contractorAddress = byLabel('Direct or reputed direct contractor · Address')
+  const personName = byLabel('Name')
+  const personAddress = byLabel('Address')
+
+  assert.deepEqual(links.get(contractorName.id), [contractorName.id, personName.id])
+  assert.deepEqual(links.get(personAddress.id), [contractorAddress.id, personAddress.id])
+  // The owner's and the lender's blanks stay their own.
+  assert.equal(links.has(byLabel('TO: Owner or reputed owner · Name').id), false)
+
+  // Typing in either one fills both, and only those two.
+  const fromContractor = applyFieldValue({}, links, contractorName.id, 'Acme Builders')
+  assert.deepEqual(fromContractor, { [contractorName.id]: 'Acme Builders', [personName.id]: 'Acme Builders' })
+  const fromPerson = applyFieldValue(fromContractor, links, personName.id, 'Acme Homes')
+  assert.equal(fromPerson[contractorName.id], 'Acme Homes')
+  assert.deepEqual(applyFieldValue({}, links, 'p1-1', 'Owner'), { 'p1-1': 'Owner' })
+})
+
+test('a form without those labels is not linked', () => {
+  const links = linkedFieldIds([
+    { id: 'a', kind: 'text', label: 'Name' },
+    { id: 'b', kind: 'text', label: 'Address' },
+  ])
+  assert.equal(links.size, 0)
 })

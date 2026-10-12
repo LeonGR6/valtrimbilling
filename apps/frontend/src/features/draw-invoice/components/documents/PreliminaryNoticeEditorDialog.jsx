@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   Alert,
   AppBar,
@@ -15,12 +15,14 @@ import {
   Stack,
   ToggleButton,
   Toolbar,
+  Tooltip,
   Typography,
 } from '@mui/material'
 import AddRoundedIcon from '@mui/icons-material/AddRounded'
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded'
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
 import RemoveRoundedIcon from '@mui/icons-material/RemoveRounded'
+import PrintRoundedIcon from '@mui/icons-material/PrintRounded'
 import SaveRoundedIcon from '@mui/icons-material/SaveRounded'
 import TextFieldsRoundedIcon from '@mui/icons-material/TextFieldsRounded'
 import UploadFileRoundedIcon from '@mui/icons-material/UploadFileRounded'
@@ -43,6 +45,12 @@ import {
   writableEntries,
   writeNoticeText,
 } from '../../services/preliminaryNoticePdf.js'
+import { printPdfBytes } from '../../services/printPdf.js'
+import {
+  applyFieldValue,
+  linkedFieldIds,
+  missingRequiredFields,
+} from '../../services/preliminaryNoticeRules.js'
 import { detectNoticeFields } from '../../services/preliminaryNoticeFieldsLoader.js'
 import { MAX_JOB_DOCUMENT_SIZE } from '../../services/jobDocumentRecord.js'
 import { formatFileSize } from './jobDocumentTypes.js'
@@ -140,6 +148,7 @@ export default function PreliminaryNoticeEditorDialog({ job, canManage = true, o
   const [focusId, setFocusId] = useState(null)
   const [adding, setAdding] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [printing, setPrinting] = useState(false)
   const [error, setError] = useState(null)
   const [confirmingClose, setConfirmingClose] = useState(false)
   const lastFontSize = useRef(DEFAULT_FONT_SIZE)
@@ -218,6 +227,10 @@ export default function PreliminaryNoticeEditorDialog({ job, canManage = true, o
   // A copy of an uploaded notice without any text would only duplicate it.
   const canSave = canManage && !saving && !problem && (!source?.existing || filled.length > 0)
   const dirty = filled.length > 0
+  const links = useMemo(() => linkedFieldIds(fields), [fields])
+  const missingFields = missingRequiredFields(fields, fieldValues)
+  const missingFieldIds = new Set(missingFields.map(({ id }) => id))
+  const canPrint = Boolean(source) && !saving && !printing && !problem && missingFields.length === 0
 
   const addEntry = ({ page, x, y, pixelSize, pointsPerPixel }) => {
     const fontSize = lastFontSize.current
@@ -271,6 +284,19 @@ export default function PreliminaryNoticeEditorDialog({ job, canManage = true, o
     } catch (saveError) {
       setError(saveError.message)
       setSaving(false)
+    }
+  }
+
+  const print = async () => {
+    setPrinting(true)
+    setError(null)
+    try {
+      const bytes = await writeNoticeText({ pdfBytes: source.bytes, entries: allEntries })
+      await printPdfBytes(bytes)
+    } catch (printError) {
+      setError(printError.message)
+    } finally {
+      setPrinting(false)
     }
   }
 
@@ -334,6 +360,22 @@ export default function PreliminaryNoticeEditorDialog({ job, canManage = true, o
               >
                 Remove text
               </Button>
+              <Tooltip
+                title={missingFields.length > 0
+                  ? `Fill in the ${missingFields.length} highlighted ${missingFields.length === 1 ? 'blank' : 'blanks'} to print. The signature, the current demand, the attachments and the second address lines are optional.`
+                  : 'Print the Preliminary Notice as it is filled in'}
+              >
+                <span>
+                  <Button
+                    variant="outlined"
+                    startIcon={printing ? <CircularProgress size={18} color="inherit" /> : <PrintRoundedIcon />}
+                    disabled={!canPrint}
+                    onClick={print}
+                  >
+                    {missingFields.length > 0 ? `Print (${missingFields.length} to fill)` : 'Print'}
+                  </Button>
+                </span>
+              </Tooltip>
               <Button
                 variant="contained"
                 disableElevation
@@ -374,7 +416,7 @@ export default function PreliminaryNoticeEditorDialog({ job, canManage = true, o
                 : `Saves as ${source.saveName} (${source.pageSizes.length} ${source.pageSizes.length === 1 ? 'page' : 'pages'}).`}
               {' '}
               {fields.length > 0
-                ? `${fields.length} fields were found (highlighted): click one and type, or press Tab to go to the next. Click a square to mark it. Use Add free text for anything else.`
+                ? `${fields.length} fields were found (highlighted): click one and type, or press Tab to go to the next. Click a square to mark it. The Direct Contractor and the person the work is provided for share their name and address. Orange blanks are still needed to print. Use Add free text for anything else.`
                 : `No fields were found on this PDF${source.detectionError ? ` (${source.detectionError})` : ''}: press Add free text, click where it goes and type. Drag the handle to move it.`}
             </Typography>
             <PreliminaryNoticePages
@@ -386,7 +428,10 @@ export default function PreliminaryNoticeEditorDialog({ job, canManage = true, o
               focusId={focusId}
               fields={fields}
               fieldValues={fieldValues}
-              onFieldChange={(id, value) => setFieldValues((current) => ({ ...current, [id]: value }))}
+              missingFieldIds={missingFieldIds}
+              onFieldChange={(id, value) => setFieldValues(
+                (current) => applyFieldValue(current, links, id, value),
+              )}
               onSelect={setSelectedId}
               onAdd={addEntry}
               onChange={changeEntry}

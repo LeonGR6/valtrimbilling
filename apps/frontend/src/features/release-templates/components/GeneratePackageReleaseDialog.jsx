@@ -343,12 +343,12 @@ export default function GeneratePackageReleaseDialog({
                 </Typography>
                 <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
                   Their cut-off dates and net amounts fill the Exceptions lines of the form.
-                  Uncheck a Package to leave it out.
+                  Only Packages from an earlier cut-off count. Uncheck a Package to leave it out.
                 </Typography>
 
                 {values.pendingPackages.length === 0 ? (
                   <Typography variant="body2" color="text.secondary">
-                    There are none, so those two lines stay blank.
+                    There are none from an earlier cut-off, so those two lines stay blank.
                   </Typography>
                 ) : (
                   <Stack>
@@ -377,6 +377,14 @@ export default function GeneratePackageReleaseDialog({
                       />
                     ))}
                   </Stack>
+                )}
+
+                {values.sameCutoffPackages.length > 0 && (
+                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+                    Not counted, because they share this Package's cut-off date (
+                    {formatReleaseValue('through_date', 'MM/DD/YYYY', values.cutoffDate)}
+                    ): {values.sameCutoffPackages.map(({ number }) => number).join(', ')}.
+                  </Typography>
                 )}
 
                 {pending.length > 0 && (

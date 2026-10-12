@@ -66,8 +66,21 @@ function toFinalRelease(row) {
   }
 }
 
+/**
+ * Whether an unpaid earlier Package belongs to a cut-off that has already passed
+ * for this one. Packages in the same cut-off are billed together, so they are not
+ * "earlier" payments to list: only a strictly earlier cut-off date counts. Dates
+ * are ISO (YYYY-MM-DD), which compare as text. A date that is missing cannot be
+ * told apart, so that Package is kept rather than hidden.
+ */
+export function isFromPastCutoff(pendingCutoffDate, ownCutoffDate) {
+  if (!pendingCutoffDate || !ownCutoffDate) return true
+  return pendingCutoffDate < ownCutoffDate
+}
+
 /** The row the values RPC returns, in the shape the screen uses. */
 export function toPackageReleaseValues(row) {
+  const unpaidEarlier = (row.pending_packages ?? []).map(toPendingPackage)
   return {
     packageId: row.package_id,
     jobId: row.job_id,
@@ -83,8 +96,16 @@ export function toPackageReleaseValues(row) {
     retentionAmount: toNumberOrNull(row.retention_amount),
     wrapAmount: toNumberOrNull(row.wrap_amount),
     netAmount: toNumberOrNull(row.net_amount),
-    // Earlier Packages of the Job that are not paid yet, oldest first.
-    pendingPackages: (row.pending_packages ?? []).map(toPendingPackage),
+    // Earlier Packages of the Job that are not paid yet and whose cut-off date has
+    // already passed, oldest first. These fill the Exceptions lines.
+    pendingPackages: unpaidEarlier.filter(
+      (pending) => isFromPastCutoff(pending.cutoffDate, row.cutoff_date),
+    ),
+    // Unpaid earlier Packages left out because they share this Package's cut-off
+    // date: they are part of the same billing, not an earlier payment.
+    sameCutoffPackages: unpaidEarlier.filter(
+      (pending) => !isFromPastCutoff(pending.cutoffDate, row.cutoff_date),
+    ),
     finalRelease: toFinalRelease(row.final_release),
   }
 }

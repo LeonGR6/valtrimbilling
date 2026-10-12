@@ -6,6 +6,7 @@ import {
   buildPackageReleaseFileName,
   describeFillPlan,
   chooseRelease,
+  isFromPastCutoff,
   CONDITIONAL_FINAL_TYPE,
   CONDITIONAL_PROGRESS_TYPE,
   describePendingPackage,
@@ -97,6 +98,7 @@ test('the values row maps to the model the screen uses', () => {
         workflowStatus: 'READY_TO_SUBMIT',
       },
     ],
+    sameCutoffPackages: [],
     finalRelease: {
       applicable: true,
       reason: null,
@@ -107,6 +109,65 @@ test('the values row maps to the model the screen uses', () => {
       ],
     },
   })
+})
+
+const pendingRow = (id, cutoff, net = 100) => ({
+  package_id: id,
+  package_number: `DP-${id}`,
+  package_date: cutoff,
+  cutoff_date: cutoff,
+  cutoff_source: 'builder_setup',
+  net_amount: net,
+  status: 'SUBMITTED',
+  workflow_status: 'AWAITING_PAYMENT',
+})
+
+test('an unpaid Package with the same cut-off date is not counted, only past cut-offs are', () => {
+  const values = toPackageReleaseValues({
+    ...row, // cut-off 2026-10-10
+    pending_packages: [
+      pendingRow(1, '2026-09-25', 300),
+      pendingRow(2, '2026-10-10', 400), // same cut-off: billed together with this one
+      pendingRow(3, '2026-10-09', 500), // the day before: a past cut-off
+      pendingRow(4, '2026-10-10', 600),
+    ],
+  })
+
+  assert.deepEqual(values.pendingPackages.map(({ id }) => id), [1, 3])
+  assert.deepEqual(values.sameCutoffPackages.map(({ id }) => id), [2, 4])
+
+  // They do not reach the Exceptions lines either.
+  const fill = buildPackageFillValues(values)
+  assert.deepEqual(fill.waiver_release_dates, ['2026-09-25', '2026-10-09'])
+  assert.deepEqual(fill.unpaid_progress_amount, [300, 500])
+})
+
+test('when every unpaid Package shares the cut-off date both lines stay empty', () => {
+  const values = toPackageReleaseValues({
+    ...row,
+    pending_packages: [pendingRow(2, '2026-10-10'), pendingRow(4, '2026-10-10')],
+  })
+  assert.deepEqual(values.pendingPackages, [])
+  assert.equal(values.sameCutoffPackages.length, 2)
+
+  const fill = buildPackageFillValues(values)
+  assert.deepEqual([fill.waiver_release_dates, fill.unpaid_progress_amount], [[], []])
+})
+
+test('the cut-off rule compares dates, so a Package date earlier in the same cut-off is still left out', () => {
+  assert.equal(isFromPastCutoff('2026-09-30', '2026-10-10'), true)
+  assert.equal(isFromPastCutoff('2026-10-10', '2026-10-10'), false)
+  assert.equal(isFromPastCutoff('2026-10-11', '2026-10-10'), false)
+  // A date that is missing cannot be told apart, so the Package is kept.
+  assert.equal(isFromPastCutoff(null, '2026-10-10'), true)
+  assert.equal(isFromPastCutoff('2026-09-30', null), true)
+
+  // Packages of two different days that fall in the same cut-off share its date.
+  const values = toPackageReleaseValues({
+    ...row,
+    pending_packages: [{ ...pendingRow(5, '2026-10-10'), package_date: '2026-10-01' }],
+  })
+  assert.deepEqual(values.pendingPackages, [])
 })
 
 test('a Package row without a pending list (an older answer) has none', () => {

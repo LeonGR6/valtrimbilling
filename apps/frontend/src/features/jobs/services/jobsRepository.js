@@ -8,6 +8,11 @@ const JOB_COLUMNS = [
   'community',
   'supervisor_id',
   'superintendent_id',
+  'estimator_id',
+  'job_coordinator_id',
+  'purchasing_id',
+  'scheduling_id',
+  'options_coordinator_id',
   'billing_setup_version_id',
   'sequence_sheet_name',
   'status',
@@ -44,8 +49,9 @@ function throwRepositoryError(error) {
     throw new Error('Select an active Supervisor.', { cause: error })
   }
 
-  if (error.message?.includes('Superintendent debe estar activo')) {
-    throw new Error('Select an active Jobsite Superintendent for this Builder.', {
+  const inactiveContact = error.message?.match(/El (.+) debe estar activo y pertenecer al builder/)
+  if (inactiveContact) {
+    throw new Error(`Select an active ${inactiveContact[1]} for this Builder.`, {
       cause: error,
     })
   }

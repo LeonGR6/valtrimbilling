@@ -4,6 +4,11 @@ export const emptyJob = {
   community: '',
   supervisorId: null,
   superintendentId: null,
+  estimatorId: null,
+  jobCoordinatorId: null,
+  purchasingId: null,
+  schedulingId: null,
+  optionsCoordinatorId: null,
 }
 
 export const emptyJobPlan = {

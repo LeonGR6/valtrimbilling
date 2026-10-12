@@ -9,6 +9,11 @@ export function toJobMutation(job) {
     community: job.community.trim(),
     supervisor_id: requiredId(job.supervisorId),
     superintendent_id: requiredId(job.superintendentId),
+    estimator_id: requiredId(job.estimatorId),
+    job_coordinator_id: requiredId(job.jobCoordinatorId),
+    purchasing_id: requiredId(job.purchasingId),
+    scheduling_id: requiredId(job.schedulingId),
+    options_coordinator_id: requiredId(job.optionsCoordinatorId),
   }
 }
 
@@ -20,6 +25,11 @@ export function toJob(row) {
     community: row.community,
     supervisorId: row.supervisor_id,
     superintendentId: row.superintendent_id,
+    estimatorId: row.estimator_id,
+    jobCoordinatorId: row.job_coordinator_id,
+    purchasingId: row.purchasing_id,
+    schedulingId: row.scheduling_id,
+    optionsCoordinatorId: row.options_coordinator_id,
     billingSetupVersionId: row.billing_setup_version_id,
     sequenceSheetName: row.sequence_sheet_name ?? '',
     status: row.status,

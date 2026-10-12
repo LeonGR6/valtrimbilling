@@ -13,6 +13,36 @@ export const contactTypeOptions = [
     label: 'AP Contact',
     description: 'Receives the billing package and answers payment questions.',
   },
+  {
+    value: 'ESTIMATOR',
+    label: 'Estimator',
+    description: 'Prices the scope of work for the builder.',
+  },
+  {
+    value: 'JOB_COORDINATOR',
+    label: 'Job Coordinator',
+    description: 'Coordinates the day-to-day details of each job.',
+  },
+  {
+    value: 'PURCHASING',
+    label: 'Purchasing',
+    description: 'Handles purchase orders and material buying.',
+  },
+  {
+    value: 'SCHEDULING',
+    label: 'Scheduling',
+    description: 'Sets and confirms the builder’s production schedule.',
+  },
+  {
+    value: 'OPTIONS_COORDINATOR',
+    label: 'Options Coordinator',
+    description: 'Manages the homebuyer options selected for each lot.',
+  },
+  {
+    value: 'PROJECT_MANAGER',
+    label: 'Project Manager',
+    description: 'Oversees the builder’s projects and communities.',
+  },
 ]
 
 export const contactTypeLabels = Object.fromEntries(

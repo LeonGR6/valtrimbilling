@@ -47,6 +47,7 @@ import { BuildersCatalog } from '../../builders/index.js'
 import { useBuilders } from '../../builders/context/useBuilders.js'
 import { usePeople } from '../../people/context/usePeople.js'
 import { emptyContact } from '../../builder-contacts'
+import { emptyPerson } from '../../people/data/people.js'
 import { useBuilderContacts } from '../../builder-contacts/context/useBuilderContacts.js'
 import JobDetails from './JobDetails.jsx'
 import PersonPickerField from './PersonPickerField.jsx'
@@ -55,6 +56,7 @@ import {
   getJobPlanCount,
   getJobUnitCount,
 } from '../data/jobs.js'
+import { jobContactRoles } from '../data/jobContactRoles.js'
 import { useJobs } from '../context/useJobs.js'
 import { createJobSchema } from '../schemas/jobSchema.js'
 import {
@@ -71,12 +73,15 @@ function JobDialog({
   builderIdsByName,
   defaultBuilder,
   supervisors,
-  superintendents,
+  contacts,
   job,
   jobs,
   onClose,
-  onCreateSuperintendent,
+  onCreateContact,
+  onCreateSupervisor,
   onSave,
+  onUpdateContact,
+  onUpdateSupervisor,
   submitting,
 }) {
 
@@ -97,7 +102,9 @@ function JobDialog({
           builder: job.builder,
           community: job.community,
           supervisorId: job.supervisorId ?? null,
-          superintendentId: job.superintendentId ?? null,
+          ...Object.fromEntries(jobContactRoles.map(
+            ({ field }) => [field, job[field] ?? null],
+          )),
         }
       : { ...emptyJob, builder: defaultBuilder ?? '' },
     mode: 'onTouched',
@@ -105,19 +112,24 @@ function JobDialog({
   })
   const selectedBuilderName = useWatch({ control, name: 'builder' })
   const selectedBuilderId = builderIdsByName.get(selectedBuilderName)
-  const availableSuperintendents = useMemo(
-    () => superintendents.filter(
-      (contact) =>
-        contact.type === 'JOBSITE_SUPERINTENDENT'
-        && (
-          contact.id === job?.superintendentId
-          || (
-            contact.isActive
-            && (!selectedBuilderId || contact.builderId === selectedBuilderId)
-          )
-        ),
-    ),
-    [job?.superintendentId, selectedBuilderId, superintendents],
+  // Per role: the active contacts of the selected Builder, plus the one the Job
+  // already has so an inactive assignment still shows while editing.
+  const availableContacts = useMemo(
+    () => Object.fromEntries(jobContactRoles.map((role) => [
+      role.field,
+      contacts.filter(
+        (contact) =>
+          contact.type === role.type
+          && (
+            contact.id === job?.[role.field]
+            || (
+              contact.isActive
+              && (!selectedBuilderId || contact.builderId === selectedBuilderId)
+            )
+          ),
+      ),
+    ])),
+    [contacts, job, selectedBuilderId],
   )
 
   return (
@@ -210,10 +222,13 @@ function JobDialog({
             <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1.5 }}>
               Job team
             </Typography>
-            <Stack
-              direction={{ xs: 'column', sm: 'row' }}
-              spacing={2}
-              sx={{ alignItems: 'flex-start' }}
+            <Box
+              sx={{
+                display: 'grid',
+                gap: 2,
+                gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))' },
+                alignItems: 'start',
+              }}
             >
               <PersonPickerField
                 name="supervisorId"
@@ -222,21 +237,31 @@ function JobDialog({
                 control={control}
                 error={errors.supervisorId}
                 people={supervisors}
+                onCreate={onCreateSupervisor}
+                onUpdate={onUpdateSupervisor}
+                createTitle="Add new supervisor"
+                editTitle="Edit supervisor"
+                extraFields={['phone', 'territory']}
               />
-              <PersonPickerField
-                name="superintendentId"
-                label="Jobsite Superintendent"
-                helperText="Builder contact responsible for the jobsite."
-                control={control}
-                error={errors.superintendentId}
-                people={availableSuperintendents}
-                onCreate={onCreateSuperintendent
-                  ? (draft) => onCreateSuperintendent(draft, selectedBuilderName)
-                  : undefined}
-                createTitle="Add new superintendent"
-                extraFields={['phone']}
-              />
-            </Stack>
+              {jobContactRoles.map((role) => (
+                <PersonPickerField
+                  key={role.field}
+                  name={role.field}
+                  label={role.label}
+                  helperText={role.helperText}
+                  control={control}
+                  error={errors[role.field]}
+                  people={availableContacts[role.field]}
+                  onCreate={onCreateContact
+                    ? (draft) => onCreateContact(draft, selectedBuilderName, role.type)
+                    : undefined}
+                  onUpdate={onUpdateContact}
+                  createTitle={role.addTitle}
+                  editTitle={role.editTitle}
+                  extraFields={['phone']}
+                />
+              ))}
+            </Box>
           </Box>
 
           <Alert severity="info">
@@ -304,11 +329,17 @@ export default function JobsCatalog() {
     deactivateJob,
   } = useJobs()
   const { builders } = useBuilders()
-  const { people } = usePeople()
+  const {
+    people,
+    canManageSupervisors,
+    createSupervisor,
+    updateSupervisor,
+  } = usePeople()
   const {
     contacts,
     canManageBuilderContacts,
     createBuilderContact,
+    updateBuilderContact,
   } = useBuilderContacts()
   const [search, setSearch] = usePersistentState('jobs:search', '', isStoredString)
   const [page, setPage] = useState(0)
@@ -499,19 +530,36 @@ export default function JobsCatalog() {
     if (job) openJobDetails(job)
   }
 
-  const handleCreateSuperintendent = async (draft, builderName) => {
+  const handleCreateContact = async (draft, builderName, type) => {
     const builderIdForContact = builderIdsByName.get(builderName)
     if (!builderIdForContact) {
-      throw new Error('Select a persisted Builder before adding a superintendent.')
+      throw new Error('Select a persisted Builder before adding a contact.')
     }
 
     return createBuilderContact({
       ...emptyContact,
       ...draft,
-      type: 'JOBSITE_SUPERINTENDENT',
+      type,
       builderId: builderIdForContact,
       isActive: true,
     })
+  }
+
+  const handleUpdateContact = (contactId, draft) => {
+    const existing = contacts.find((contact) => contact.id === contactId)
+    if (!existing) throw new Error('That contact no longer exists.')
+
+    return updateBuilderContact(contactId, { ...existing, ...draft })
+  }
+
+  const handleCreateSupervisor = (draft) =>
+    createSupervisor({ ...emptyPerson, ...draft, isActive: true })
+
+  const handleUpdateSupervisor = (supervisorId, draft) => {
+    const existing = people.find((person) => person.id === supervisorId)
+    if (!existing) throw new Error('That supervisor no longer exists.')
+
+    return updateSupervisor(supervisorId, { ...existing, ...draft })
   }
 
   const handleSave = async (form) => {
@@ -885,14 +933,23 @@ export default function JobsCatalog() {
           builderIdsByName={builderIdsByName}
           defaultBuilder={selectedBuilder.name}
           supervisors={availableSupervisors}
-          superintendents={superintendents}
+          contacts={contacts}
           job={dialogJob}
           jobs={jobs}
           onClose={closeDialog}
-          onCreateSuperintendent={
-            canManageBuilderContacts ? handleCreateSuperintendent : undefined
+          onCreateContact={
+            canManageBuilderContacts ? handleCreateContact : undefined
+          }
+          onCreateSupervisor={
+            canManageSupervisors ? handleCreateSupervisor : undefined
           }
           onSave={handleSave}
+          onUpdateContact={
+            canManageBuilderContacts ? handleUpdateContact : undefined
+          }
+          onUpdateSupervisor={
+            canManageSupervisors ? handleUpdateSupervisor : undefined
+          }
           submitting={submitting}
         />
       )}

@@ -1,7 +1,16 @@
 import { z } from 'zod'
 import { normalizePhoneNumber } from '../../../utils/phoneNumbers.js'
 
-export const contactTypeSchema = z.enum(['JOBSITE_SUPERINTENDENT', 'AP_CONTACT'])
+export const contactTypeSchema = z.enum([
+  'JOBSITE_SUPERINTENDENT',
+  'AP_CONTACT',
+  'ESTIMATOR',
+  'JOB_COORDINATOR',
+  'PURCHASING',
+  'SCHEDULING',
+  'OPTIONS_COORDINATOR',
+  'PROJECT_MANAGER',
+])
 
 const namePattern = /^[\p{L}\p{M}\s.'-]+$/u
 const optionalPhone = z

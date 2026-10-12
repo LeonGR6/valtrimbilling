@@ -88,13 +88,22 @@ test('builder schema rejects invalid optional contact data when provided', () =>
   assert.ok(result.error.flatten().fieldErrors.contactPhone)
 })
 
+const jobContacts = {
+  superintendentId: 5,
+  estimatorId: 6,
+  jobCoordinatorId: 7,
+  purchasingId: 8,
+  schedulingId: 9,
+  optionsCoordinatorId: 10,
+}
+
 test('job schema normalizes the fields used to create a job', () => {
   const result = createJobSchema([], null).parse({
     code: ' job-1005 ',
     builder: ' KB Home ',
     community: ' Andara ',
     supervisorId: 2,
-    superintendentId: 5,
+    ...jobContacts,
   })
 
   assert.deepEqual(result, {
@@ -102,21 +111,21 @@ test('job schema normalizes the fields used to create a job', () => {
     builder: 'KB Home',
     community: 'Andara',
     supervisorId: 2,
-    superintendentId: 5,
+    ...jobContacts,
   })
 })
 
-test('job schema requires a supervisor and a superintendent to be picked', () => {
+test('job schema requires a supervisor and every builder contact to be picked', () => {
   const schema = createJobSchema([], null)
   const base = {
     code: 'JOB-2001',
     builder: 'KB Home',
     community: 'Andara',
     supervisorId: 2,
-    superintendentId: 5,
+    ...jobContacts,
   }
 
-  for (const field of ['supervisorId', 'superintendentId']) {
+  for (const field of ['supervisorId', ...Object.keys(jobContacts)]) {
     const missing = schema.safeParse({ ...base, [field]: null })
     assert.equal(missing.success, false, `${field} should be required`)
 
@@ -132,7 +141,7 @@ test('job schema rejects a duplicate job number', () => {
     builder: 'KB Home',
     community: 'Andara',
     supervisorId: 2,
-    superintendentId: 5,
+    ...jobContacts,
   }
   const schema = createJobSchema([existingJob], null)
 
@@ -141,7 +150,7 @@ test('job schema rejects a duplicate job number', () => {
     builder: ' kb home ',
     community: 'andara',
     supervisorId: 2,
-    superintendentId: 5,
+    ...jobContacts,
   })
 
   assert.equal(duplicate.success, false)
@@ -600,6 +609,33 @@ test('builder contact schema stores selected phone country without guessing', ()
   assert.equal(result.officePhone, '')
   assert.equal(result.builderId, 2)
   assert.equal(result.isActive, true)
+})
+
+test('builder contact schema accepts every builder contact type', () => {
+  const types = [
+    'JOBSITE_SUPERINTENDENT',
+    'AP_CONTACT',
+    'ESTIMATOR',
+    'JOB_COORDINATOR',
+    'PURCHASING',
+    'SCHEDULING',
+    'OPTIONS_COORDINATOR',
+    'PROJECT_MANAGER',
+  ]
+
+  for (const type of types) {
+    const result = createBuilderContactSchema([], null).safeParse({
+      name: 'Daniel Torres',
+      type,
+      builderId: 2,
+      email: 'daniel@example.com',
+      phone: '',
+      officePhone: '',
+      notes: '',
+    })
+
+    assert.equal(result.success, true, type)
+  }
 })
 
 test('person schema requires and normalizes a territory for Valtrim supervisors', () => {

@@ -14,6 +14,11 @@ test('Job rows map the persisted catalog and initialize unopened child modules',
     community: 'Andara',
     supervisor_id: 31,
     superintendent_id: 44,
+    estimator_id: 45,
+    job_coordinator_id: 46,
+    purchasing_id: 47,
+    scheduling_id: 48,
+    options_coordinator_id: 49,
     billing_setup_version_id: 8,
     sequence_sheet_name: null,
     status: 'ACTIVE',
@@ -28,6 +33,11 @@ test('Job rows map the persisted catalog and initialize unopened child modules',
     community: 'Andara',
     supervisorId: 31,
     superintendentId: 44,
+    estimatorId: 45,
+    jobCoordinatorId: 46,
+    purchasingId: 47,
+    schedulingId: 48,
+    optionsCoordinatorId: 49,
     billingSetupVersionId: 8,
     sequenceSheetName: '',
     status: 'ACTIVE',
@@ -43,7 +53,7 @@ test('Job rows map the persisted catalog and initialize unopened child modules',
   })
 })
 
-test('Job mutations expose only the five fields owned by the current form', () => {
+test('Job mutations expose only the fields owned by the current form', () => {
   assert.deepEqual(toJobMutation({
     id: 91,
     code: ' job-91 ',
@@ -51,6 +61,11 @@ test('Job mutations expose only the five fields owned by the current form', () =
     community: '  Andara  ',
     supervisorId: '31',
     superintendentId: '44',
+    estimatorId: '45',
+    jobCoordinatorId: '46',
+    purchasingId: '47',
+    schedulingId: '48',
+    optionsCoordinatorId: '49',
     billingSetupVersionId: 999,
     createdBy: 'browser-must-not-write-this',
   }), {
@@ -59,6 +74,11 @@ test('Job mutations expose only the five fields owned by the current form', () =
     community: 'Andara',
     supervisor_id: 31,
     superintendent_id: 44,
+    estimator_id: 45,
+    job_coordinator_id: 46,
+    purchasing_id: 47,
+    scheduling_id: 48,
+    options_coordinator_id: 49,
   })
 })
 

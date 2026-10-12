@@ -11,13 +11,18 @@ import {
   Typography,
 } from '@mui/material'
 import AddRoundedIcon from '@mui/icons-material/AddRounded'
+import EditOutlinedIcon from '@mui/icons-material/EditOutlined'
 import PersonAddAltRoundedIcon from '@mui/icons-material/PersonAddAltRounded'
 import InternationalPhoneInput from '../../../components/common/InternationalPhoneInput.jsx'
-import { normalizePhoneNumber } from '../../../utils/phoneNumbers.js'
+import {
+  getNationalPhoneNumber,
+  getPhoneCountry,
+  normalizePhoneNumber,
+} from '../../../utils/phoneNumbers.js'
 
-// One field for both job roles: pick someone from the roster, or add a person
-// without leaving the job form. The add button replaces the popup arrow so the
-// input keeps a single icon.
+// One field for both job roles: pick someone from the roster, add a person, or
+// fix the selected person's details without leaving the job form. The action
+// buttons replace the popup arrow so the input keeps a tidy set of icons.
 export default function PersonPickerField({
   name,
   label,
@@ -26,7 +31,9 @@ export default function PersonPickerField({
   error,
   people,
   onCreate,
+  onUpdate,
   createTitle,
+  editTitle,
   extraFields = [],
 }) {
   const [draft, setDraft] = useState(null)
@@ -40,8 +47,23 @@ export default function PersonPickerField({
       email: '',
       phone: '',
       phoneCountry: 'US',
+      territory: '',
     })
   }
+  const openEditDraft = (person) => {
+    setCreateError('')
+    const phoneCountry = getPhoneCountry(person.phone)
+    setDraft({
+      id: person.id,
+      name: person.name ?? '',
+      email: person.email ?? '',
+      phone: getNationalPhoneNumber(person.phone, phoneCountry),
+      phoneCountry,
+      territory: person.territory ?? '',
+    })
+  }
+  const needsTerritory = extraFields.includes('territory')
+  const draftTerritoryIsValid = !needsTerritory || Boolean(draft?.territory.trim())
   const draftEmailIsValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(
     draft?.email.trim() ?? '',
   )
@@ -52,18 +74,19 @@ export default function PersonPickerField({
   const draftPhoneIsValid = !draft?.phone.trim() || Boolean(normalizedDraftPhone)
 
   const save = async (field) => {
-    if (!onCreate || !draft) return
+    if (!draft || !(draft.id ? onUpdate : onCreate)) return
     const contactDraft = Object.fromEntries(
-      Object.entries(draft).filter(([key]) => key !== 'phoneCountry'),
+      Object.entries(draft).filter(([key]) => !['id', 'phoneCountry'].includes(key)),
     )
+    const payload = {
+      ...contactDraft,
+      phone: normalizedDraftPhone ?? '',
+    }
     setSaving(true)
     setCreateError('')
     try {
-      const created = await onCreate({
-        ...contactDraft,
-        phone: normalizedDraftPhone ?? '',
-      })
-      field.onChange(created.id)
+      const saved = draft.id ? await onUpdate(draft.id, payload) : await onCreate(payload)
+      field.onChange(saved.id)
       setDraft(null)
     } catch (error) {
       setCreateError(error.message)
@@ -88,7 +111,7 @@ export default function PersonPickerField({
               disableClearable
               // forcePopupIcon also drops the hasPopupIcon class; popupIcon={null}
               // only hides the arrow and leaves its 39px of reserved padding.
-              forcePopupIcon={onCreate ? false : 'auto'}
+              forcePopupIcon={onCreate || onUpdate ? false : 'auto'}
               getOptionLabel={(option) => option.name}
               isOptionEqualToValue={(option, value) => option.id === value.id}
               sx={{ '& .MuiOutlinedInput-root': { pr: 1 } }}
@@ -118,28 +141,50 @@ export default function PersonPickerField({
                     ...params.slotProps,
                     input: {
                       ...params.slotProps.input,
-                      endAdornment: onCreate
+                      endAdornment: onCreate || onUpdate
                         ? (
-                            <Tooltip title={createTitle}>
-                              <IconButton
-                                size="small"
-                                aria-label={createTitle}
-                                // Without this the Autocomplete reads the click as
-                                // "toggle the list" and opens it over the panel.
-                                onMouseDown={(event) => event.stopPropagation()}
-                                onClick={() =>
-                                  openDraft(params.slotProps.htmlInput.value ?? '')
-                                }
-                                sx={{
-                                  width: 28,
-                                  height: 28,
-                                  bgcolor: 'primary.light',
-                                  color: 'primary.main',
-                                }}
-                              >
-                                <AddRoundedIcon sx={{ fontSize: 18 }} />
-                              </IconButton>
-                            </Tooltip>
+                            <Stack direction="row" spacing={0.5}>
+                              {onUpdate && selected && (
+                                <Tooltip title={editTitle}>
+                                  <IconButton
+                                    size="small"
+                                    aria-label={editTitle}
+                                    onMouseDown={(event) => event.stopPropagation()}
+                                    onClick={() => openEditDraft(selected)}
+                                    sx={{
+                                      width: 28,
+                                      height: 28,
+                                      bgcolor: 'action.hover',
+                                      color: 'text.secondary',
+                                    }}
+                                  >
+                                    <EditOutlinedIcon sx={{ fontSize: 18 }} />
+                                  </IconButton>
+                                </Tooltip>
+                              )}
+                              {onCreate && (
+                                <Tooltip title={createTitle}>
+                                  <IconButton
+                                    size="small"
+                                    aria-label={createTitle}
+                                    // Without this the Autocomplete reads the click as
+                                    // "toggle the list" and opens it over the panel.
+                                    onMouseDown={(event) => event.stopPropagation()}
+                                    onClick={() =>
+                                      openDraft(params.slotProps.htmlInput.value ?? '')
+                                    }
+                                    sx={{
+                                      width: 28,
+                                      height: 28,
+                                      bgcolor: 'primary.light',
+                                      color: 'primary.main',
+                                    }}
+                                  >
+                                    <AddRoundedIcon sx={{ fontSize: 18 }} />
+                                  </IconButton>
+                                </Tooltip>
+                              )}
+                            </Stack>
                           )
                         : params.slotProps.input.endAdornment,
                     },
@@ -162,7 +207,7 @@ export default function PersonPickerField({
                 <Stack direction="row" spacing={1} sx={{ alignItems: 'center', mb: 1.5 }}>
                   <PersonAddAltRoundedIcon fontSize="small" sx={{ color: 'primary.main' }} />
                   <Typography variant="body2" fontWeight={700} color="primary.main">
-                    {createTitle}
+                    {draft.id ? editTitle : createTitle}
                   </Typography>
                 </Stack>
 
@@ -189,6 +234,18 @@ export default function PersonPickerField({
                     fullWidth
                     required
                   />
+                  {needsTerritory && (
+                    <TextField
+                      label="Territory"
+                      value={draft.territory}
+                      onChange={(event) => setDraft({ ...draft, territory: event.target.value })}
+                      helperText="Required · example: Inland Empire"
+                      size="small"
+                      fullWidth
+                      required
+                      slotProps={{ htmlInput: { maxLength: 80 } }}
+                    />
+                  )}
                   {extraFields.includes('phone') && (
                     <InternationalPhoneInput
                       label="Phone number"
@@ -234,11 +291,15 @@ export default function PersonPickerField({
                     variant="contained"
                     disableElevation
                     disabled={
-                      saving || !draft.name.trim() || !draftEmailIsValid || !draftPhoneIsValid
+                      saving
+                      || !draft.name.trim()
+                      || !draftEmailIsValid
+                      || !draftPhoneIsValid
+                      || !draftTerritoryIsValid
                     }
                     onClick={() => save(field)}
                   >
-                    {saving ? 'Saving...' : 'Save and assign'}
+                    {saving ? 'Saving...' : draft.id ? 'Save changes' : 'Save and assign'}
                   </Button>
                 </Stack>
               </Box>

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   Alert,
   Box,
@@ -16,9 +16,11 @@ import {
 } from '@mui/material'
 import EmailRoundedIcon from '@mui/icons-material/EmailRounded'
 import {
-  DEFAULT_SEQUENCE_SHEET_RECIPIENT_TEXT,
+  MAX_SEQUENCE_SHEET_SUBJECT_LENGTH,
   parseSequenceSheetRecipients,
+  sequenceSheetEmailDrafts,
   sequenceSheetEmailPreviewDocument,
+  validateSequenceSheetSubject,
 } from '../services/sequenceSheetEmailRecord.js'
 import {
   previewSequenceSheetEmail,
@@ -32,29 +34,39 @@ function newRequestId() {
   return `request-${Date.now()}-${Math.random().toString(36).slice(2)}`
 }
 
+function formatRoles(roles) {
+  return roles.length > 1
+    ? `${roles.slice(0, -1).join(', ')} and ${roles.at(-1)}`
+    : roles.join('')
+}
+
 export default function SequenceSheetEmailDialog({
   phase,
   onClose,
   onSent,
 }) {
-  const [recipientText, setRecipientText] = useState(
-    DEFAULT_SEQUENCE_SHEET_RECIPIENT_TEXT,
-  )
-  const [recipientError, setRecipientError] = useState('')
+  const [drafts, setDrafts] = useState([])
   const [preview, setPreview] = useState(null)
   const [loadingPreview, setLoadingPreview] = useState(true)
   const [sending, setSending] = useState(false)
   const [error, setError] = useState('')
-  const [requestId] = useState(newRequestId)
+  // Emails that already went out, so a retry after a failure only sends the rest.
+  const sentResultsRef = useRef([])
 
   useEffect(() => {
     let ignore = false
 
     previewSequenceSheetEmail(phase.id)
       .then((result) => {
-        if (!ignore) {
-          setPreview(result)
-        }
+        if (ignore) return
+        setPreview(result)
+        setDrafts(sequenceSheetEmailDrafts(result).map((draft) => ({
+          ...draft,
+          requestId: newRequestId(),
+          recipientError: '',
+          subjectError: '',
+          sent: false,
+        })))
       })
       .catch((previewError) => {
         if (!ignore) setError(previewError.message)
@@ -68,28 +80,59 @@ export default function SequenceSheetEmailDialog({
     }
   }, [phase.id])
 
-  const sendEmail = async () => {
-    const parsed = parseSequenceSheetRecipients(recipientText)
-    if (!parsed.success) {
-      setRecipientError(parsed.error)
-      return
-    }
+  const updateDraft = (key, changes) => {
+    setDrafts((current) => current.map((draft) => (
+      draft.key === key ? { ...draft, ...changes } : draft
+    )))
+  }
+
+  const pendingDrafts = drafts.filter((draft) => !draft.sent)
+
+  const sendEmails = async () => {
+    const checked = drafts.map((draft) => {
+      if (draft.sent) return { draft, valid: true }
+      const recipients = parseSequenceSheetRecipients(draft.recipientText)
+      const subject = validateSequenceSheetSubject(draft.subject)
+
+      return {
+        draft: {
+          ...draft,
+          recipientError: recipients.success ? '' : recipients.error,
+          subjectError: subject.success ? '' : subject.error,
+        },
+        recipients: recipients.recipients,
+        subject: subject.subject,
+        valid: recipients.success && subject.success,
+      }
+    })
+
+    setDrafts(checked.map(({ draft }) => draft))
+    if (checked.some(({ valid }) => !valid)) return
 
     setSending(true)
     setError('')
     try {
-      const result = await sendSequenceSheetEmail(
-        phase.id,
-        parsed.recipients,
-        requestId,
-      )
-      onSent(result)
+      for (const { draft, recipients, subject } of checked) {
+        if (draft.sent) continue
+
+        const result = await sendSequenceSheetEmail(
+          phase.id,
+          recipients,
+          draft.requestId,
+          subject,
+        )
+        sentResultsRef.current.push(result)
+        updateDraft(draft.key, { sent: true })
+      }
+      onSent(sentResultsRef.current)
     } catch (sendError) {
       setError(sendError.message)
     } finally {
       setSending(false)
     }
   }
+
+  const multipleEmails = drafts.length > 1
 
   return (
     <Dialog
@@ -114,7 +157,9 @@ export default function SequenceSheetEmailDialog({
               Email Sequence Sheet
             </Typography>
             <Typography variant="body2" color="text.secondary">
-              Review the HTML table and choose who should receive it.
+              {multipleEmails
+                ? 'This is the first Sequence Sheet of the job, so two emails go out. Review who gets each one and its subject.'
+                : 'Review the HTML table, the subject and who should receive it.'}
             </Typography>
           </Box>
           <Chip size="small" color="info" variant="outlined" label="HTML email · No attachments" />
@@ -125,19 +170,58 @@ export default function SequenceSheetEmailDialog({
         <Stack spacing={2.25}>
           {error && <Alert severity="error">{error}</Alert>}
 
-          <TextField
-            label="Recipients"
-            value={recipientText}
-            onChange={(event) => {
-              setRecipientText(event.target.value)
-              if (recipientError) setRecipientError('')
-            }}
-            error={Boolean(recipientError)}
-            helperText={recipientError || 'Separate multiple email addresses with commas.'}
-            placeholder="superintendent@example.com"
-            disabled={sending}
-            fullWidth
-          />
+          {drafts.map((draft, index) => (
+            <Paper key={draft.key} variant="outlined" sx={{ p: 2 }}>
+              <Stack spacing={2}>
+                <Stack
+                  direction="row"
+                  spacing={1}
+                  sx={{ alignItems: 'center', justifyContent: 'space-between' }}
+                >
+                  <Typography fontWeight={750}>
+                    {multipleEmails ? `Email ${index + 1} · ${draft.label}` : 'Email'}
+                  </Typography>
+                  {draft.sent && (
+                    <Chip size="small" color="success" label="Sent" />
+                  )}
+                </Stack>
+                <TextField
+                  label="Recipients"
+                  value={draft.recipientText}
+                  onChange={(event) => updateDraft(draft.key, {
+                    recipientText: event.target.value,
+                    recipientError: '',
+                  })}
+                  error={Boolean(draft.recipientError)}
+                  helperText={
+                    draft.recipientError
+                    || [
+                      draft.recipientRoles.length > 0
+                        ? `Suggested: ${formatRoles(draft.recipientRoles)}.`
+                        : null,
+                      'Separate multiple email addresses with commas.',
+                    ].filter(Boolean).join(' ')
+                  }
+                  placeholder="coordinator@example.com"
+                  disabled={sending || draft.sent}
+                  fullWidth
+                />
+                <TextField
+                  label="Subject"
+                  value={draft.subject}
+                  onChange={(event) => updateDraft(draft.key, {
+                    subject: event.target.value,
+                    subjectError: '',
+                  })}
+                  error={Boolean(draft.subjectError)}
+                  helperText={draft.subjectError || ' '}
+                  disabled={sending || draft.sent}
+                  fullWidth
+                  slotProps={{ htmlInput: { maxLength: MAX_SEQUENCE_SHEET_SUBJECT_LENGTH } }}
+                />
+              </Stack>
+            </Paper>
+          ))}
 
           {loadingPreview && (
             <Box sx={{ py: 8, display: 'grid', placeItems: 'center' }}>
@@ -151,34 +235,28 @@ export default function SequenceSheetEmailDialog({
           )}
 
           {preview?.rendered && (
-            <>
-              <Paper variant="outlined" sx={{ p: 2 }}>
-                <Typography variant="caption" color="text.secondary">Subject</Typography>
-                <Typography fontWeight={730}>{preview.rendered.subject}</Typography>
-              </Paper>
-              <Paper variant="outlined" sx={{ overflow: 'hidden' }}>
-                <Box
-                  sx={{
-                    px: 2,
-                    py: 1.25,
-                    borderBottom: 1,
-                    borderColor: 'divider',
-                    bgcolor: 'action.hover',
-                  }}
-                >
-                  <Typography variant="overline" color="text.secondary">
-                    Rendered email
-                  </Typography>
-                </Box>
-                <Box
-                  component="iframe"
-                  title="Rendered Sequence Sheet email"
-                  srcDoc={sequenceSheetEmailPreviewDocument(preview.rendered.html)}
-                  sandbox=""
-                  sx={{ display: 'block', width: '100%', height: 560, border: 0, bgcolor: '#f8fafc' }}
-                />
-              </Paper>
-            </>
+            <Paper variant="outlined" sx={{ overflow: 'hidden' }}>
+              <Box
+                sx={{
+                  px: 2,
+                  py: 1.25,
+                  borderBottom: 1,
+                  borderColor: 'divider',
+                  bgcolor: 'action.hover',
+                }}
+              >
+                <Typography variant="overline" color="text.secondary">
+                  Rendered email{multipleEmails ? ' (same body in both emails)' : ''}
+                </Typography>
+              </Box>
+              <Box
+                component="iframe"
+                title="Rendered Sequence Sheet email"
+                srcDoc={sequenceSheetEmailPreviewDocument(preview.rendered.html)}
+                sandbox=""
+                sx={{ display: 'block', width: '100%', height: 560, border: 0, bgcolor: '#f8fafc' }}
+              />
+            </Paper>
           )}
         </Stack>
       </DialogContent>
@@ -188,11 +266,17 @@ export default function SequenceSheetEmailDialog({
         <Button
           variant="contained"
           startIcon={sending ? <CircularProgress size={16} color="inherit" /> : <EmailRoundedIcon />}
-          onClick={sendEmail}
-          disabled={loadingPreview || !preview?.rendered || sending}
+          onClick={sendEmails}
+          disabled={
+            loadingPreview || !preview?.rendered || sending || pendingDrafts.length === 0
+          }
           disableElevation
         >
-          {sending ? 'Sending…' : 'Send email'}
+          {sending
+            ? 'Sending…'
+            : pendingDrafts.length > 1
+              ? `Send ${pendingDrafts.length} emails`
+              : 'Send email'}
         </Button>
       </DialogActions>
     </Dialog>

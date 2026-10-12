@@ -25,11 +25,12 @@ export function previewSequenceSheetEmail(phaseId) {
   return invokeSequenceSheetEmail({ action: 'preview', phaseId })
 }
 
-export function sendSequenceSheetEmail(phaseId, recipientEmails, requestId) {
+export function sendSequenceSheetEmail(phaseId, recipientEmails, requestId, subject) {
   return invokeSequenceSheetEmail({
     action: 'send',
     phaseId,
     recipientEmails,
+    subject,
     requestId,
   })
 }

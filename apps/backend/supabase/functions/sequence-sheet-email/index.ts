@@ -1,5 +1,7 @@
 import {
+  buildSequenceSheetEmailDrafts,
   type SequenceSheetEmailLot,
+  type SequenceSheetEmailRecipient,
   type SequenceSheetEmailOption,
   type SequenceSheetEmailSnapshot,
   renderSequenceSheetEmail,
@@ -14,6 +16,7 @@ interface RequestBody {
   action?: Action
   phaseId?: string | number
   recipientEmails?: string[]
+  subject?: string
   requestId?: string
 }
 
@@ -60,6 +63,15 @@ function recipientEmails(value: unknown) {
   return recipients
 }
 
+// The user may rewrite the subject in the dialog; only the shape is checked.
+function subjectOverride(value: unknown, fallback: string) {
+  if (value == null || String(value).trim() === '') return fallback
+  const subject = String(value).trim()
+  if (/[\r\n]/u.test(subject)) throw new Error('The subject must be a single line.')
+  if (subject.length > 200) throw new Error('Use 200 characters or fewer in the subject.')
+  return subject
+}
+
 function requestId(value: unknown) {
   const normalized = String(value ?? '').trim()
   if (!/^[A-Za-z0-9_-]{8,100}$/u.test(normalized)) {
@@ -68,10 +80,10 @@ function requestId(value: unknown) {
   return normalized
 }
 
-async function recipientFingerprint(recipients: string[]) {
+async function recipientFingerprint(recipients: string[], subject: string) {
   const digest = await crypto.subtle.digest(
     'SHA-256',
-    new TextEncoder().encode(recipients.join(',')),
+    new TextEncoder().encode(`${recipients.join(',')}|${subject}`),
   )
   return Array.from(new Uint8Array(digest).slice(0, 6))
     .map((value) => value.toString(16).padStart(2, '0'))
@@ -115,7 +127,9 @@ async function loadSnapshot(
   const [{ data: job, error: jobError }, { data: lots, error: lotsError }] = await Promise.all([
     caller
       .from('jobs')
-      .select('id, code, builder_id, community, superintendent_id, sequence_sheet_name, is_active')
+      .select(
+        'id, code, builder_id, community, superintendent_id, job_coordinator_id, options_coordinator_id, purchasing_id, supervisor_id, is_active',
+      )
       .eq('id', phase.job_id)
       .eq('is_active', true)
       .maybeSingle(),
@@ -133,18 +147,44 @@ async function loadSnapshot(
 
   const planIds = [...new Set(lots.map((lot) => lot.plan_id))]
   const lotIds = lots.map((lot) => lot.id)
-  const [builderResult, recipientResult, plansResult, lotOptionsResult] = await Promise.all([
+  const [
+    builderResult,
+    recipientResult,
+    releaseContactsResult,
+    supervisorResult,
+    firstPhaseResult,
+    plansResult,
+    lotOptionsResult,
+  ] = await Promise.all([
     caller.from('builders').select('id, name').eq('id', job.builder_id).maybeSingle(),
     caller
       .from('builder_contacts')
       .select('id, name, email')
       .eq('id', job.superintendent_id)
       .maybeSingle(),
+    caller
+      .from('builder_contacts')
+      .select('id, name, email')
+      .in('id', [job.job_coordinator_id, job.options_coordinator_id, job.purchasing_id]),
+    caller.from('people').select('id, name, email').eq('id', job.supervisor_id).maybeSingle(),
+    // The first Sequence Sheet of a Job is its earliest active Phase. Deleting
+    // a Phase only deactivates it, so a deleted one must not count.
+    caller
+      .from('phases')
+      .select('id')
+      .eq('job_id', job.id)
+      .eq('is_active', true)
+      .order('id', { ascending: true })
+      .limit(1)
+      .maybeSingle(),
     caller.from('plans').select('id, code').in('id', planIds),
     caller.from('lot_options').select('lot_id, option_id').in('lot_id', lotIds),
   ])
   if (builderResult.error) throw builderResult.error
   if (recipientResult.error) throw recipientResult.error
+  if (releaseContactsResult.error) throw releaseContactsResult.error
+  if (supervisorResult.error) throw supervisorResult.error
+  if (firstPhaseResult.error) throw firstPhaseResult.error
   if (plansResult.error) throw plansResult.error
   if (lotOptionsResult.error) throw lotOptionsResult.error
 
@@ -172,6 +212,16 @@ async function loadSnapshot(
     optionIdsByLot.set(key, [...(optionIdsByLot.get(key) ?? []), String(row.option_id)])
   }
 
+  const contactsById = new Map(
+    (releaseContactsResult.data ?? []).map((contact) => [String(contact.id), contact]),
+  )
+  const recipientFor = (role: string, contactId: unknown): SequenceSheetEmailRecipient | null => {
+    const contact = contactsById.get(String(contactId))
+    return contact?.email
+      ? { role, name: String(contact.name ?? ''), email: String(contact.email) }
+      : null
+  }
+
   const emailLots: SequenceSheetEmailLot[] = lots.map((lot) => ({
     lotNumber: String(
       lot.is_utility_building
@@ -188,7 +238,6 @@ async function loadSnapshot(
 
   return {
     phaseId: String(phase.id),
-    sequenceSheetName: String(job.sequence_sheet_name ?? 'Options Sequence Sheet'),
     jobCode: String(job.code ?? ''),
     community: String(job.community ?? ''),
     builderName: String(builderResult.data?.name ?? ''),
@@ -196,6 +245,17 @@ async function loadSnapshot(
     building: String(phase.building ?? ''),
     defaultRecipientName: String(recipientResult.data?.name ?? ''),
     defaultRecipientEmail: String(recipientResult.data?.email ?? ''),
+    isFirstRelease: String(firstPhaseResult.data?.id ?? '') === String(phase.id),
+    jobCoordinator: recipientFor('Job Coordinator', job.job_coordinator_id),
+    optionsCoordinator: recipientFor('Options Coordinator', job.options_coordinator_id),
+    purchasing: recipientFor('Purchasing', job.purchasing_id),
+    supervisor: supervisorResult.data?.email
+      ? {
+        role: 'Supervisor',
+        name: String(supervisorResult.data.name ?? ''),
+        email: String(supervisorResult.data.email),
+      }
+      : null,
     lots: emailLots,
   }
 }
@@ -224,15 +284,21 @@ Deno.serve(async (req) => {
     const rendered = renderSequenceSheetEmail(snapshot)
 
     if (action === 'preview') {
-      return json({ preview: true, snapshot, rendered })
+      return json({
+        preview: true,
+        snapshot,
+        rendered,
+        drafts: buildSequenceSheetEmailDrafts(snapshot, rendered.subject),
+      })
     }
 
     const recipients = recipientEmails(body.recipientEmails)
+    const subject = subjectOverride(body.subject, rendered.subject)
     const idempotencyKey = [
       'sequence-sheet',
       snapshot.phaseId,
       requestId(body.requestId),
-      await recipientFingerprint(recipients),
+      await recipientFingerprint(recipients, subject),
     ].join('-')
     const providerMessageId = await sendSequenceSheetWithResend({
       apiKey: requiredEnv('RESEND_API_KEY'),
@@ -240,7 +306,7 @@ Deno.serve(async (req) => {
       replyTo: requiredEnv('SEQUENCE_SHEET_REPLY_TO', 'FOLLOW_UP_REPLY_TO'),
       idempotencyKey,
       recipients,
-      rendered,
+      rendered: { ...rendered, subject },
     })
 
     return json({
@@ -248,7 +314,7 @@ Deno.serve(async (req) => {
       sentAt: new Date().toISOString(),
       providerMessageId,
       recipients,
-      rendered,
+      rendered: { ...rendered, subject },
     })
   } catch (error) {
     console.error('Sequence Sheet email failed:', error)

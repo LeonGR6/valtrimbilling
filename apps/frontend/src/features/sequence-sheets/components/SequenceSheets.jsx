@@ -87,6 +87,7 @@ import {
 } from '../utils/phaseBuildingCodes.js'
 import { parseLotRange } from '../utils/lotRange.js'
 import SequenceSheetEmailDialog from './SequenceSheetEmailDialog.jsx'
+import { describeSequenceSheetEmailsSent } from '../services/sequenceSheetEmailRecord.js'
 
 const emptyLot = {
   lotNumber: '',
@@ -1432,11 +1433,11 @@ export default function SequenceSheets() {
             key={`${emailTarget.phase.id}-email`}
             phase={emailTarget.phase}
             onClose={() => setEmailTarget(null)}
-            onSent={(result) => {
+            onSent={(results) => {
               setEmailTarget(null)
               setNotice({
                 severity: 'success',
-                message: `Sequence Sheet emailed to ${result.recipients.join(', ')}.`,
+                message: describeSequenceSheetEmailsSent(results),
               })
             }}
           />
@@ -1802,11 +1803,11 @@ export default function SequenceSheets() {
           key={`${emailTarget.phase.id}-email`}
           phase={emailTarget.phase}
           onClose={() => setEmailTarget(null)}
-          onSent={(result) => {
+          onSent={(results) => {
             setEmailTarget(null)
             setNotice({
               severity: 'success',
-              message: `Sequence Sheet emailed to ${result.recipients.join(', ')}.`,
+              message: describeSequenceSheetEmailsSent(results),
             })
           }}
         />

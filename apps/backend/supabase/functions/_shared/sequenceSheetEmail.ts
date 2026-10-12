@@ -11,9 +11,22 @@ export interface SequenceSheetEmailLot {
   isUtilityBuilding?: boolean;
 }
 
+export interface SequenceSheetEmailRecipient {
+  role: string;
+  name: string;
+  email: string;
+}
+
+// A Job's very first Sequence Sheet goes out as two emails: the release notice
+// to the Job and Options Coordinators, and a finishes question to the Job
+// Coordinator alone.
+export const FIRST_RELEASE_SUBJECT =
+  "First Release of Project - Check Model Deco Plans & Options & Cased openings";
+export const FIRST_RELEASE_FINISHES_SUBJECT =
+  'Drywall Size 1/2" or 5/8", 1 - Coat Stucco or 3-Coat Stucco';
+
 export interface SequenceSheetEmailSnapshot {
   phaseId: string;
-  sequenceSheetName: string;
   jobCode: string;
   community: string;
   builderName: string;
@@ -21,7 +34,25 @@ export interface SequenceSheetEmailSnapshot {
   building: string;
   defaultRecipientName: string;
   defaultRecipientEmail: string;
+  // True when this Phase is the first Sequence Sheet created for its Job.
+  isFirstRelease: boolean;
+  // The Job's Builder contacts the emails are addressed to; null when the
+  // contact has no email on file.
+  jobCoordinator: SequenceSheetEmailRecipient | null;
+  optionsCoordinator: SequenceSheetEmailRecipient | null;
+  purchasing: SequenceSheetEmailRecipient | null;
+  // Valtrim's Supervisor of the Job; copied on every Sequence Sheet email.
+  supervisor: SequenceSheetEmailRecipient | null;
   lots: SequenceSheetEmailLot[];
+}
+
+// One email the user reviews before sending: who it goes to and its subject.
+// Both are only defaults, the dialog lets the user change them.
+export interface SequenceSheetEmailDraft {
+  key: string;
+  label: string;
+  subject: string;
+  recipients: SequenceSheetEmailRecipient[];
 }
 
 export interface RenderedSequenceSheetEmail {
@@ -97,12 +128,63 @@ function lotRowHtml(lot: SequenceSheetEmailLot, index: number) {
     </tr>`;
 }
 
+function presentRecipients(
+  ...recipients: (SequenceSheetEmailRecipient | null)[]
+): SequenceSheetEmailRecipient[] {
+  return recipients.filter(
+    (recipient): recipient is SequenceSheetEmailRecipient => Boolean(recipient?.email),
+  );
+}
+
+/**
+ * The emails to review for a Sequence Sheet. The first one of a Job produces
+ * two; every later one goes to the Job Coordinator and Purchasing with the
+ * usual subject. The Job's Supervisor is copied on all of them except the
+ * first release's drywall and stucco question.
+ */
+export function buildSequenceSheetEmailDrafts(
+  snapshot: SequenceSheetEmailSnapshot,
+  standardSubject: string,
+): SequenceSheetEmailDraft[] {
+  if (snapshot.isFirstRelease) {
+    return [
+      {
+        key: "first-release",
+        label: "First release",
+        subject: FIRST_RELEASE_SUBJECT,
+        recipients: presentRecipients(
+          snapshot.jobCoordinator,
+          snapshot.optionsCoordinator,
+          snapshot.supervisor,
+        ),
+      },
+      {
+        key: "first-release-finishes",
+        label: "Drywall & stucco",
+        subject: FIRST_RELEASE_FINISHES_SUBJECT,
+        recipients: presentRecipients(snapshot.jobCoordinator),
+      },
+    ];
+  }
+
+  return [{
+    key: "sequence-sheet",
+    label: "Sequence Sheet",
+    subject: standardSubject,
+    recipients: presentRecipients(
+      snapshot.jobCoordinator,
+      snapshot.purchasing,
+      snapshot.supervisor,
+    ),
+  }];
+}
+
 export function renderSequenceSheetEmail(
   snapshot: SequenceSheetEmailSnapshot,
 ): RenderedSequenceSheetEmail {
   const phase = phaseLabel(snapshot.phaseCode);
   const building = buildingLabel(snapshot.building);
-  const title = snapshot.sequenceSheetName.trim() || "Sequence Sheet";
+  const title = "Sequence Sheet";
   const subject = `${title} · Job #${snapshot.jobCode} · ${phase}`;
   const rows = snapshot.lots.map((lot, index) => lotRowHtml(lot, index)).join("");
   const textRows = snapshot.lots.map((lot) => {

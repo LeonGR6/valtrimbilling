@@ -89,7 +89,7 @@ const navigationSections = [
     label: 'BILLING',
     items: [
       { label: 'Draw & Invoice Packages', path: '/draw-invoice', icon: BallotIcon },
-      { label: 'Release - Builder Portal', icon: DescriptionIcon },
+      // { label: 'Release - Builder Portal', icon: DescriptionIcon },
       // { label: 'Extra / Change Orders', icon:  SyncAltIcon },
     ],
   },

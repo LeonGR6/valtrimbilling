@@ -12,11 +12,15 @@
 import {
   createQuickbooksInvoice,
   type CreatedQuickbooksInvoice,
+  fetchQuickbooksCustomFieldDefinitions,
   findQuickbooksCustomers,
+  getQuickbooksCustomer,
   QuickbooksApiError,
   type QuickbooksApiOptions,
   type QuickbooksCustomer,
+  type QuickbooksCustomerDetail,
 } from './quickbooksApi.ts'
+import { type CustomFieldDefinition, matchJobCustomFields } from './quickbooksCustomFields.ts'
 import {
   type ResolvedQuickbooksCustomer,
   resolveBuilderCustomer,
@@ -65,7 +69,10 @@ export interface InvoiceSyncDeps {
     environment: string,
     customer: { customerId: string; displayName: string },
   ): Promise<void>
+  clearCustomerMapping(builderId: number, environment: string): Promise<void>
   searchCustomers(api: QuickbooksApiOptions, name: string): Promise<QuickbooksCustomer[]>
+  verifyCustomer(api: QuickbooksApiOptions, customerId: string): Promise<QuickbooksCustomerDetail | null>
+  getCustomFieldDefinitions(api: QuickbooksApiOptions): Promise<CustomFieldDefinition[]>
   claim(packageId: number, environment: string, realmId: string): Promise<ClaimResult>
   createInvoice(
     api: QuickbooksApiOptions,
@@ -77,6 +84,11 @@ export interface InvoiceSyncDeps {
     created: CreatedQuickbooksInvoice,
     payload: QuickbooksInvoicePayload,
   ): Promise<void>
+  /** Saves QuickBooks' own PDF of the new invoice as the Package's INVOICE document. */
+  saveInvoicePdf(
+    api: QuickbooksApiOptions,
+    input: { packageId: number; invoiceId: string; documentNumber: string },
+  ): Promise<void>
   fail(packageId: number, message: string, requestReusable: boolean): Promise<void>
 }
 
@@ -85,6 +97,8 @@ export type CreatePackageInvoiceResult =
     dryRun: true
     customer: ResolvedQuickbooksCustomer
     invoice: QuickbooksInvoicePayload
+    /** Things that were left out or changed, e.g. a custom field QuickBooks does not have. */
+    warnings: string[]
   }
   | {
     dryRun: false
@@ -92,6 +106,7 @@ export type CreatePackageInvoiceResult =
     docNumber: string | null
     totalAmount: number | null
     customer: ResolvedQuickbooksCustomer
+    warnings: string[]
   }
 
 export function realDeps(
@@ -101,14 +116,18 @@ export function realDeps(
     | 'openSession'
     | 'getCustomerMapping'
     | 'saveCustomerMapping'
+    | 'clearCustomerMapping'
     | 'claim'
     | 'complete'
+    | 'saveInvoicePdf'
     | 'fail'
   >,
 ): InvoiceSyncDeps {
   return {
     ...base,
     searchCustomers: (api, name) => findQuickbooksCustomers(api, name),
+    verifyCustomer: (api, customerId) => getQuickbooksCustomer(api, customerId),
+    getCustomFieldDefinitions: (api) => fetchQuickbooksCustomFieldDefinitions(api),
     createInvoice: (api, payload, requestId) => createQuickbooksInvoice(api, payload, requestId),
   }
 }
@@ -142,8 +161,35 @@ export async function createPackageInvoice(
   const customer = await resolveBuilderCustomer({
     builderName: loaded.builder.name,
     mapping: await deps.getCustomerMapping(loaded.builder.id, session.environment),
+    verify: (customerId) => deps.verifyCustomer(api, customerId),
+    // A preview must not change anything, so only a real send drops a stale mapping.
+    clearMapping: () =>
+      dryRun
+        ? Promise.resolve()
+        : deps.clearCustomerMapping(loaded.builder.id, session.environment),
     search: (name) => deps.searchCustomers(api, name),
   })
+
+  const warnings: string[] = []
+  if (customer.replacedStale) {
+    warnings.push(
+      `The QuickBooks Customer saved for ${loaded.builder.name} no longer existed, so it was matched again by name.`,
+    )
+  }
+
+  // Job Name and Job # are optional extras: a failure reading them never blocks the invoice.
+  let customFields: ReturnType<typeof matchJobCustomFields>['fields'] = []
+  try {
+    const definitions = await deps.getCustomFieldDefinitions(api)
+    const matched = matchJobCustomFields(definitions, {
+      jobName: loaded.job.community,
+      jobNumber: loaded.job.code,
+    })
+    customFields = matched.fields
+    warnings.push(...matched.warnings)
+  } catch (error) {
+    warnings.push(`The QuickBooks custom fields could not be read: ${(error as Error).message}`)
+  }
 
   const payload = buildQuickbooksInvoicePayload({
     customerId: customer.customerId,
@@ -152,10 +198,11 @@ export async function createPackageInvoice(
     dueDate: dueDateFor(txnDate, loaded.paymentTermsDays),
     docNumber: loaded.packageNumber,
     privateNote: `ValtrimBilling ${loaded.packageNumber}`,
+    customFields,
     ...mapped,
   })
 
-  if (dryRun) return { dryRun: true, customer, invoice: payload }
+  if (dryRun) return { dryRun: true, customer, invoice: payload, warnings }
 
   if (customer.source === 'quickbooks') {
     await deps.saveCustomerMapping(loaded.builder.id, session.environment, {
@@ -188,11 +235,27 @@ export async function createPackageInvoice(
     throw error
   }
 
+  // The invoice is the money record and is already saved: a PDF that cannot be
+  // stored is reported, never allowed to undo or fail the invoice.
+  try {
+    await deps.saveInvoicePdf(api, {
+      packageId,
+      invoiceId: created.id,
+      documentNumber: created.docNumber ?? loaded.packageNumber,
+    })
+  } catch (error) {
+    warnings.push(
+      `The invoice was created, but its PDF could not be saved: ${(error as Error).message} `
+        + 'Use "Save PDF" on the Package to try again.',
+    )
+  }
+
   return {
     dryRun: false,
     invoiceId: created.id,
     docNumber: created.docNumber,
     totalAmount: created.totalAmount,
     customer,
+    warnings,
   }
 }

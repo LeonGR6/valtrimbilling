@@ -12,6 +12,8 @@ export interface LoadedPackage {
   packageNumber: string
   quickbooksStatus: string
   builder: { id: number; name: string }
+  /** Job Name in QuickBooks is the community; Job # is the Job code. */
+  job: { code: string; community: string | null }
   paymentTermsDays: number | null
   source: PackageInvoiceSource
 }
@@ -33,14 +35,14 @@ export async function loadPackageSource(admin: Admin, packageId: number): Promis
     await admin
       .from('draw_packages')
       .select(
-        'id, package_number, package_type, status, quickbooks_status, invoice_line_format, builder_id, setup_version_id',
+        'id, package_number, package_type, status, quickbooks_status, invoice_line_format, builder_id, job_id, setup_version_id',
       )
       .eq('id', packageId)
       .maybeSingle(),
   )
   if (!header) throw new PackageNotFoundError()
 
-  const [draws, hardwareLines, invoice, builder, setup] = await Promise.all([
+  const [draws, hardwareLines, invoice, builder, job, setup] = await Promise.all([
     admin
       .from('package_draws')
       .select(
@@ -58,6 +60,7 @@ export async function loadPackageSource(admin: Admin, packageId: number): Promis
       .order('id'),
     admin.from('invoices').select('net_amount').eq('package_id', packageId).maybeSingle(),
     admin.from('builders').select('id, name').eq('id', header.builder_id).single(),
+    admin.from('jobs').select('code, community').eq('id', header.job_id).single(),
     admin
       .from('billing_setup_versions')
       .select('payment_terms_days')
@@ -67,6 +70,8 @@ export async function loadPackageSource(admin: Admin, packageId: number): Promis
 
   const builderRow = orThrow(builder)
   if (!builderRow) throw new Error('The Package Builder no longer exists.')
+  const jobRow = orThrow(job)
+  if (!jobRow) throw new Error('The Package Job no longer exists.')
   const setupRow = orThrow(setup)
 
   return {
@@ -74,6 +79,7 @@ export async function loadPackageSource(admin: Admin, packageId: number): Promis
     packageNumber: header.package_number,
     quickbooksStatus: header.quickbooks_status,
     builder: { id: builderRow.id, name: builderRow.name },
+    job: { code: jobRow.code, community: jobRow.community ?? null },
     paymentTermsDays: setupRow?.payment_terms_days ?? null,
     source: {
       package: header,

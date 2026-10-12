@@ -39,6 +39,7 @@ import {
 import { canDeleteDraftPackage } from '../../utils/packageCatalog.js'
 import { PACKAGE_SORT_COLUMNS } from '../../utils/packageCatalog.js'
 import { isMultiPhasePackage } from '../../utils/packagePhaseScope.js'
+import { quickbooksTableStatusView } from '../../services/quickbooksRecord.js'
 import { PackageStatusChip } from '../shared/PackageUi.jsx'
 
 const packageTableColumns = [
@@ -50,9 +51,16 @@ const packageTableColumns = [
   { key: 'retention-wrap', width: 180 },
   { key: 'invoice-amount', width: 140 },
   { key: 'documents', width: 125 },
+  { key: 'quickbooks', width: 160 },
   { key: 'status', width: 155 },
   { key: 'action', width: 140 },
 ]
+
+const quickbooksToneColors = {
+  success: 'success.main',
+  warning: 'warning.main',
+  neutral: 'text.secondary',
+}
 
 const packageTableMinimumWidth = packageTableColumns.reduce(
   (total, column) => total + column.width,
@@ -155,6 +163,23 @@ function PackageDocumentProgress({ job, documentState }) {
   )
 }
 
+function PackageQuickbooksStatus({ record }) {
+  const view = quickbooksTableStatusView(record)
+
+  if (!view) return <Typography variant="body2" color="text.secondary">—</Typography>
+
+  return (
+    <Box aria-label={`QuickBooks ${view.status}`}>
+      <Typography fontWeight={750} sx={{ color: quickbooksToneColors[view.tone] }}>
+        {view.status}
+      </Typography>
+      {view.detail && (
+        <Typography variant="body2" color="text.secondary">{view.detail}</Typography>
+      )}
+    </Box>
+  )
+}
+
 function SortableHeader({ column, label, sort, onSort }) {
   const active = sort?.key === column
   const direction = active ? sort.direction : PACKAGE_SORT_COLUMNS[column].firstDirection
@@ -223,6 +248,7 @@ export default function PackageTable({
                 <TableCell>Retention / WRAP Insurance</TableCell>
                 <SortableHeader column="invoice" label="Invoice Amount" sort={sort} onSort={onSort} />
                 <TableCell>Documents</TableCell>
+                <TableCell>QuickBooks</TableCell>
                 <TableCell>Status</TableCell>
                 <TableCell>Action</TableCell>
               </TableRow>
@@ -378,6 +404,7 @@ export default function PackageTable({
                   <TableCell>
                     <PackageDocumentProgress job={job} documentState={documentState} />
                   </TableCell>
+                  <TableCell><PackageQuickbooksStatus record={record} /></TableCell>
                   <TableCell><PackageStatusChip status={record.status} /></TableCell>
                   <TableCell onClick={(event) => event.stopPropagation()}>
                     <PackageActionMenu

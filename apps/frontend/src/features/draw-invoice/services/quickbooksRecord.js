@@ -23,11 +23,34 @@ export function quickbooksProductMissing(connection) {
   return connection?.status === 'CONNECTED' && !connection.itemId
 }
 
+const lastInvoiceTimeFormatter = new Intl.DateTimeFormat('en-US', {
+  hour: 'numeric',
+  minute: '2-digit',
+})
+const lastInvoiceDayFormatter = new Intl.DateTimeFormat('en-US', {
+  month: 'short',
+  day: 'numeric',
+})
+
+/** "12:42 PM" for today, "Oct 9, 12:42 PM" for an earlier day, or null. */
+export function quickbooksLastInvoiceLabel(value, now = new Date()) {
+  if (!value) return null
+
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return null
+
+  const time = lastInvoiceTimeFormatter.format(date)
+  return date.toDateString() === now.toDateString()
+    ? time
+    : `${lastInvoiceDayFormatter.format(date)}, ${time}`
+}
+
 /**
  * What the QuickBooks status card shows: a short status word, one line of
- * detail and a tone the card maps to a colour.
+ * detail and a tone the card maps to a colour. The company and environment are
+ * in the tooltip; only a sandbox is flagged on the card itself.
  */
-export function quickbooksStatusView({ loading, connection, canConnect }) {
+export function quickbooksStatusView({ loading, connection, canConnect, lastInvoiceAt = null, now }) {
   if (loading) {
     return { tone: 'neutral', status: 'Checking…', detail: 'Reading the connection' }
   }
@@ -40,15 +63,19 @@ export function quickbooksStatusView({ loading, connection, canConnect }) {
     }
   }
 
-  const company = connection.companyName || `Company ${connection.realmId}`
-  const environment = ENVIRONMENT_LABELS[connection.environment]
-  const detail = connection.environment === 'production' || !environment
-    ? company
-    : `${company} · ${environment}`
+  const sandbox = connection.environment === 'sandbox' ? ' · Sandbox' : ''
 
-  return quickbooksProductMissing(connection)
-    ? { tone: 'warning', status: 'Product missing', detail }
-    : { tone: 'success', status: 'Connected', detail }
+  if (quickbooksProductMissing(connection)) {
+    const company = connection.companyName || `Company ${connection.realmId}`
+    return { tone: 'warning', status: 'Product missing', detail: `${company}${sandbox}` }
+  }
+
+  const last = quickbooksLastInvoiceLabel(lastInvoiceAt, now)
+  return {
+    tone: 'success',
+    status: 'Connected',
+    detail: `${last ? `Last invoice: ${last}` : 'No invoices yet'}${sandbox}`,
+  }
 }
 
 export function quickbooksButtonTitle({ canConnect, connection }) {
@@ -122,6 +149,11 @@ export function toQuickbooksInvoicePreview(data) {
     docNumber: invoice.DocNumber ?? '',
     lines,
     total: totalCents / 100,
+    customFields: (invoice.CustomField ?? []).map((field) => ({
+      name: field.Name,
+      value: field.StringValue,
+    })),
+    warnings: Array.isArray(data.warnings) ? data.warnings : [],
   }
 }
 
@@ -131,6 +163,7 @@ export function toQuickbooksInvoiceResult(data) {
     docNumber: data?.docNumber ?? '',
     totalAmount: typeof data?.totalAmount === 'number' ? data.totalAmount : null,
     customerName: data?.customer?.displayName ?? '',
+    warnings: Array.isArray(data?.warnings) ? data.warnings : [],
   }
 }
 
@@ -186,6 +219,14 @@ export function quickbooksPackageStatusView({ record, sync, canSend }) {
         action: canSend ? 'send' : 'none',
         href: null,
       }
+    case 'VOIDED':
+      return {
+        tone: 'neutral',
+        status: 'Invoice voided',
+        detail: record.quickbooksReference ? `Invoice ${record.quickbooksReference}` : 'Voided in QuickBooks',
+        action: 'none',
+        href: null,
+      }
     case 'NOT_CREATED':
       // Only people who can act on it need to see an invoice that was never sent.
       return record.status === 'CANCELLED' || !canSend
@@ -199,5 +240,99 @@ export function quickbooksPackageStatusView({ record, sync, canSend }) {
         }
     default:
       return null
+  }
+}
+
+/**
+ * The QuickBooks cell of the Packages table. Unlike the detail card it shows
+ * the state to every role, because the table only reports and never acts.
+ * Returns null for packages that are never invoiced (Retention Releases).
+ */
+export function quickbooksTableStatusView(record) {
+  if (!record || record.packageType === 'RETENTION_RELEASE') return null
+
+  switch (record.quickbooksStatus) {
+    case 'CREATED':
+      return {
+        tone: 'success',
+        status: 'Invoice created',
+        detail: record.quickbooksReference ? `Invoice ${record.quickbooksReference}` : '',
+      }
+    case 'SYNC_ERROR':
+      return { tone: 'warning', status: 'Sync error', detail: 'Last attempt failed' }
+    case 'VOIDED':
+      return {
+        tone: 'neutral',
+        status: 'Invoice voided',
+        detail: record.quickbooksReference ? `Invoice ${record.quickbooksReference}` : '',
+      }
+    default:
+      return { tone: 'neutral', status: 'Not sent', detail: '' }
+  }
+}
+
+export function canManageQuickbooksCustomers(role) {
+  return INVOICE_ROLES.includes(role)
+}
+
+export function toQuickbooksCustomerLink(row) {
+  return {
+    builderId: row.builder_id,
+    environment: row.environment,
+    customerId: row.customer_id,
+    displayName: row.display_name ?? '',
+  }
+}
+
+/**
+ * One row per Builder with the QuickBooks Customer it is linked to in the
+ * connected environment (links of the other environment are ignored).
+ */
+export function quickbooksCustomerRows(builders, links, environment) {
+  const byBuilder = new Map(
+    links
+      .filter((link) => link.environment === environment)
+      .map((link) => [String(link.builderId), link]),
+  )
+
+  return [...builders]
+    .sort((left, right) => left.name.localeCompare(right.name, 'en', { sensitivity: 'base' }))
+    .map((builder) => {
+      const link = byBuilder.get(String(builder.id))
+      return {
+        builderId: builder.id,
+        builderName: builder.name,
+        linked: Boolean(link),
+        customerId: link?.customerId ?? null,
+        customerName: link?.displayName ?? '',
+      }
+    })
+}
+
+/**
+ * Whether to offer voiding the QuickBooks invoice of a Package. The Edge
+ * Function and the database re-check everything (payments in QuickBooks, a
+ * Package already submitted); this only hides the action when it cannot apply.
+ */
+export function canVoidQuickbooksInvoice(record, role) {
+  return INVOICE_ROLES.includes(role)
+    && record != null
+    && record.packageType !== 'RETENTION_RELEASE'
+    && record.quickbooksStatus === 'CREATED'
+    && ['DRAFT', 'READY_TO_SUBMIT'].includes(record.status)
+}
+
+/** The saved QuickBooks PDF of a Package (its INVOICE document), or null. */
+export function toQuickbooksInvoicePdf(document, file) {
+  if (!document || !file) return null
+  return {
+    documentId: document.id,
+    savedAt: document.completed_at ?? null,
+    file: {
+      bucket: file.bucket_id,
+      storagePath: file.object_path,
+      name: file.original_filename,
+      sizeBytes: Number(file.size_bytes),
+    },
   }
 }

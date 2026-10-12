@@ -1,6 +1,7 @@
 // QuickBooks Online accounting API calls. Every call takes an injectable
 // `fetcher` so it can be tested without touching Intuit.
 
+import { type CustomFieldDefinition, parseCustomFieldDefinitions } from './quickbooksCustomFields.ts'
 import type { QuickbooksInvoicePayload } from './quickbooksInvoice.ts'
 
 export const QUICKBOOKS_PRODUCT_NAME = 'Material Installation & Supply'
@@ -31,6 +32,20 @@ export interface QuickbooksCustomer {
   displayName: string
 }
 
+export interface QuickbooksCustomerDetail extends QuickbooksCustomer {
+  active: boolean
+}
+
+export interface QuickbooksInvoiceDetail {
+  id: string
+  syncToken: string
+  docNumber: string | null
+  totalAmount: number
+  balance: number
+  /** Types of the payments, credits and other transactions linked to the invoice. */
+  linkedTransactions: string[]
+}
+
 export interface CreatedQuickbooksInvoice {
   id: string
   docNumber: string | null
@@ -46,12 +61,15 @@ export interface CreatedQuickbooksInvoice {
 export class QuickbooksApiError extends Error {
   readonly status: number | null
   readonly definite: boolean
+  /** QuickBooks' own error code, e.g. "610" for an object that does not exist. */
+  readonly faultCode: string | null
 
-  constructor(message: string, status: number | null, definite: boolean) {
+  constructor(message: string, status: number | null, definite: boolean, faultCode: string | null = null) {
     super(message)
     this.name = 'QuickbooksApiError'
     this.status = status
     this.definite = definite
+    this.faultCode = faultCode
   }
 }
 
@@ -68,10 +86,13 @@ async function jsonBody(response: Response) {
   return await response.json().catch(() => null) as Record<string, unknown> | null
 }
 
-function faultMessage(operation: string, response: Response, body: Record<string, unknown> | null) {
-  const fault = body?.Fault as { Error?: { Message?: string; Detail?: string }[] } | undefined
+function faultDetails(operation: string, response: Response, body: Record<string, unknown> | null) {
+  const fault = body?.Fault as { Error?: { Message?: string; Detail?: string; code?: string }[] } | undefined
   const first = fault?.Error?.[0]
-  return `${operation} failed: ${first?.Detail ?? first?.Message ?? `HTTP ${response.status}`}`
+  return {
+    message: `${operation} failed: ${first?.Detail ?? first?.Message ?? `HTTP ${response.status}`}`,
+    code: typeof first?.code === 'string' ? first.code : null,
+  }
 }
 
 function companyUrl(
@@ -100,7 +121,8 @@ async function apiGet(
   })
   const body = await jsonBody(response)
   if (!response.ok) {
-    throw new QuickbooksApiError(faultMessage(operation, response, body), response.status, true)
+    const fault = faultDetails(operation, response, body)
+    throw new QuickbooksApiError(fault.message, response.status, true, fault.code)
   }
   return body
 }
@@ -172,17 +194,60 @@ export async function findQuickbooksCustomers(
   )
 }
 
-export async function createQuickbooksInvoice(
+/** One Customer by id, or null when it no longer exists. */
+export async function getQuickbooksCustomer(
   options: QuickbooksApiOptions,
-  payload: QuickbooksInvoicePayload,
-  requestId: string,
+  customerId: string,
   fetcher: Fetcher = fetch,
-): Promise<CreatedQuickbooksInvoice> {
-  const operation = 'Creating the QuickBooks invoice'
+): Promise<QuickbooksCustomerDetail | null> {
+  let body: Record<string, unknown> | null
+  try {
+    body = await apiGet(
+      'Reading the QuickBooks Customer',
+      options,
+      `customer/${encodeURIComponent(customerId)}`,
+      {},
+      fetcher,
+    )
+  } catch (error) {
+    // 610 is QuickBooks' "Object Not Found".
+    if (error instanceof QuickbooksApiError && (error.faultCode === '610' || error.status === 404)) {
+      return null
+    }
+    throw error
+  }
 
+  const customer = body?.Customer as { Id?: unknown; DisplayName?: unknown; Active?: unknown } | undefined
+  return typeof customer?.Id === 'string' && typeof customer.DisplayName === 'string'
+    ? { id: customer.Id, displayName: customer.DisplayName, active: customer.Active !== false }
+    : null
+}
+
+/** The text custom fields (Job Name, Job #, ...) the company has defined for sales forms. */
+export async function fetchQuickbooksCustomFieldDefinitions(
+  options: QuickbooksApiOptions,
+  fetcher: Fetcher = fetch,
+): Promise<CustomFieldDefinition[]> {
+  return parseCustomFieldDefinitions(
+    await apiGet('Reading the QuickBooks preferences', options, 'preferences', {}, fetcher),
+  )
+}
+
+/**
+ * POSTs JSON. A network failure or a 5xx may have changed something in
+ * QuickBooks before failing, so those are reported as not definite.
+ */
+async function apiPost(
+  operation: string,
+  options: QuickbooksApiOptions,
+  path: string,
+  params: Record<string, string>,
+  payload: unknown,
+  fetcher: Fetcher,
+) {
   let response: Response
   try {
-    response = await fetcher(companyUrl(options, 'invoice', { requestid: requestId }), {
+    response = await fetcher(companyUrl(options, path, params), {
       method: 'POST',
       headers: {
         Accept: 'application/json',
@@ -192,24 +257,32 @@ export async function createQuickbooksInvoice(
       body: JSON.stringify(payload),
     })
   } catch (error) {
-    throw new QuickbooksApiError(
-      `${operation} failed: ${(error as Error).message}`,
-      null,
-      false,
-    )
+    throw new QuickbooksApiError(`${operation} failed: ${(error as Error).message}`, null, false)
   }
 
   const body = await jsonBody(response)
   if (!response.ok) {
     const definite = response.status >= 400 && response.status < 500 && response.status !== 408
-    throw new QuickbooksApiError(faultMessage(operation, response, body), response.status, definite)
+    const fault = faultDetails(operation, response, body)
+    throw new QuickbooksApiError(fault.message, response.status, definite, fault.code)
   }
+  return { body, status: response.status }
+}
+
+export async function createQuickbooksInvoice(
+  options: QuickbooksApiOptions,
+  payload: QuickbooksInvoicePayload,
+  requestId: string,
+  fetcher: Fetcher = fetch,
+): Promise<CreatedQuickbooksInvoice> {
+  const operation = 'Creating the QuickBooks invoice'
+  const { body, status } = await apiPost(operation, options, 'invoice', { requestid: requestId }, payload, fetcher)
 
   const invoice = body?.Invoice as
     | { Id?: unknown; DocNumber?: unknown; SyncToken?: unknown; TotalAmt?: unknown }
     | undefined
   if (typeof invoice?.Id !== 'string') {
-    throw new QuickbooksApiError(`${operation} failed: QuickBooks returned no invoice.`, response.status, false)
+    throw new QuickbooksApiError(`${operation} failed: QuickBooks returned no invoice.`, status, false)
   }
 
   return {
@@ -218,4 +291,90 @@ export async function createQuickbooksInvoice(
     syncToken: typeof invoice.SyncToken === 'string' ? invoice.SyncToken : null,
     totalAmount: typeof invoice.TotalAmt === 'number' ? invoice.TotalAmt : null,
   }
+}
+
+/** One invoice as it is in QuickBooks right now, or null when it no longer exists. */
+export async function getQuickbooksInvoice(
+  options: QuickbooksApiOptions,
+  invoiceId: string,
+  fetcher: Fetcher = fetch,
+): Promise<QuickbooksInvoiceDetail | null> {
+  let body: Record<string, unknown> | null
+  try {
+    body = await apiGet(
+      'Reading the QuickBooks invoice',
+      options,
+      `invoice/${encodeURIComponent(invoiceId)}`,
+      {},
+      fetcher,
+    )
+  } catch (error) {
+    if (error instanceof QuickbooksApiError && (error.faultCode === '610' || error.status === 404)) {
+      return null
+    }
+    throw error
+  }
+
+  const invoice = body?.Invoice as {
+    Id?: unknown
+    SyncToken?: unknown
+    DocNumber?: unknown
+    TotalAmt?: unknown
+    Balance?: unknown
+    LinkedTxn?: { TxnType?: unknown }[]
+  } | undefined
+  if (typeof invoice?.Id !== 'string' || typeof invoice.SyncToken !== 'string') return null
+
+  return {
+    id: invoice.Id,
+    syncToken: invoice.SyncToken,
+    docNumber: typeof invoice.DocNumber === 'string' ? invoice.DocNumber : null,
+    totalAmount: Number(invoice.TotalAmt ?? 0),
+    balance: Number(invoice.Balance ?? 0),
+    linkedTransactions: (invoice.LinkedTxn ?? []).map((txn) => String(txn.TxnType ?? 'Unknown')),
+  }
+}
+
+/**
+ * Voids an invoice: QuickBooks keeps it, with its number, and zeroes its amounts.
+ * The SyncToken must be the current one, so it is read just before.
+ */
+export async function voidQuickbooksInvoice(
+  options: QuickbooksApiOptions,
+  invoice: { id: string; syncToken: string },
+  fetcher: Fetcher = fetch,
+): Promise<void> {
+  await apiPost(
+    'Voiding the QuickBooks invoice',
+    options,
+    'invoice',
+    { operation: 'void' },
+    { Id: invoice.id, SyncToken: invoice.syncToken, sparse: true },
+    fetcher,
+  )
+}
+
+/** The PDF QuickBooks generates for an invoice, as its own "Download" produces it. */
+export async function getQuickbooksInvoicePdf(
+  options: QuickbooksApiOptions,
+  invoiceId: string,
+  fetcher: Fetcher = fetch,
+): Promise<Uint8Array> {
+  const operation = 'Downloading the QuickBooks invoice PDF'
+  const response = await fetcher(
+    companyUrl(options, `invoice/${encodeURIComponent(invoiceId)}/pdf`, {}),
+    { headers: { Accept: 'application/pdf', Authorization: `Bearer ${options.accessToken}` } },
+  )
+
+  if (!response.ok) {
+    const fault = faultDetails(operation, response, await jsonBody(response))
+    throw new QuickbooksApiError(fault.message, response.status, true, fault.code)
+  }
+
+  const bytes = new Uint8Array(await response.arrayBuffer())
+  // Every PDF starts with "%PDF"; anything else is an error page, not a document.
+  if (bytes.length < 5 || String.fromCharCode(...bytes.slice(0, 4)) !== '%PDF') {
+    throw new QuickbooksApiError(`${operation} failed: QuickBooks did not return a PDF.`, response.status, true)
+  }
+  return bytes
 }

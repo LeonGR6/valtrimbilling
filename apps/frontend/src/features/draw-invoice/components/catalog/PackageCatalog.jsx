@@ -20,6 +20,7 @@ import AttachMoneyRoundedIcon from '@mui/icons-material/AttachMoneyRounded'
 import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded'
 import FolderOpenRoundedIcon from '@mui/icons-material/FolderOpenRounded'
 import LockRoundedIcon from '@mui/icons-material/LockRounded'
+import PeopleAltRoundedIcon from '@mui/icons-material/PeopleAltRounded'
 import ReceiptLongRoundedIcon from '@mui/icons-material/ReceiptLongRounded'
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
 import { useCurrentDate } from '../../../../hooks/useCurrentDate.js'
@@ -54,6 +55,7 @@ import PackageSuggestionsPanel from './PackageSuggestionsPanel.jsx'
 import RetentionSuggestionsPanel from './RetentionSuggestionsPanel.jsx'
 import PackageTable from './PackageTable.jsx'
 import QuickbooksConnectButton from './QuickbooksConnectButton.jsx'
+import QuickbooksCustomersDialog from './QuickbooksCustomersDialog.jsx'
 
 const packageSummaryCards = [
   { status: 'DRAFT', icon: <ReceiptLongRoundedIcon />, color: 'primary.main' },
@@ -210,6 +212,7 @@ export default function PackageCatalog({
     isValidPackageSort,
   )
   const [catalogAction, setCatalogAction] = useState(null)
+  const [customersDialogOpen, setCustomersDialogOpen] = useState(false)
   const [today] = useCurrentDate()
   const asOfDate = localDateKey(today)
   const jobDocuments = useJobDocuments(jobs)
@@ -349,8 +352,19 @@ export default function PackageCatalog({
                 connection={quickbooks.connection}
                 loading={quickbooks.loading}
                 canConnect={quickbooks.canConnect}
+                lastInvoiceAt={quickbooks.lastInvoiceAt}
                 onConnect={quickbooks.connect}
               />
+              {quickbooks.connection?.status === 'CONNECTED' && quickbooks.canManageCustomers && (
+                <Button
+                  variant="outlined"
+                  color="inherit"
+                  startIcon={<PeopleAltRoundedIcon />}
+                  onClick={() => setCustomersDialogOpen(true)}
+                >
+                  QuickBooks customers
+                </Button>
+              )}
               <Button
                 variant="contained"
                 startIcon={<AddRoundedIcon />}
@@ -358,7 +372,7 @@ export default function PackageCatalog({
                 disabled={!canManage || createDisabled}
                 disableElevation
               >
-                Create Package
+                New Package
               </Button>
             </Stack>
           )}
@@ -568,6 +582,12 @@ export default function PackageCatalog({
           record={selectedContext.record}
           onClose={() => setCatalogAction(null)}
           onCancel={onDelete}
+        />
+      )}
+      {customersDialogOpen && quickbooks.connection && (
+        <QuickbooksCustomersDialog
+          environment={quickbooks.connection.environment}
+          onClose={() => setCustomersDialogOpen(false)}
         />
       )}
     </Box>

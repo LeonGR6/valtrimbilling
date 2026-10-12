@@ -9,7 +9,13 @@ import {
   realDeps,
 } from '../_shared/quickbooksInvoiceSync.ts'
 import { loadPackageSource, PackageNotFoundError } from '../_shared/quickbooksPackageSource.ts'
-import { openQuickbooksSession, QuickbooksNotConnectedError } from '../_shared/quickbooksSession.ts'
+import { storeInvoicePdf } from '../_shared/quickbooksInvoicePdf.ts'
+import { realPdfStoreDeps } from '../_shared/quickbooksPdfStorage.ts'
+import {
+  openQuickbooksSession,
+  QuickbooksBusyError,
+  QuickbooksNotConnectedError,
+} from '../_shared/quickbooksSession.ts'
 import { serviceClient, userClient } from '../_shared/supabase.ts'
 
 const ALLOWED_ROLES = ['ADMIN', 'ACCOUNTING']
@@ -31,6 +37,9 @@ function errorResponse(error: unknown) {
   }
   if (error instanceof QuickbooksNotConnectedError) {
     return json({ code: 'NOT_CONNECTED', error: error.message }, 409)
+  }
+  if (error instanceof QuickbooksBusyError) {
+    return json({ code: 'BUSY', error: error.message }, 503)
   }
   if (error instanceof QuickbooksSyncConflictError) {
     return json({ code: error.reason, error: error.message }, 409)
@@ -114,6 +123,14 @@ Deno.serve(async (req) => {
           })
           if (error) throw error
         },
+        clearCustomerMapping: async (builderId, environment) => {
+          const { error } = await admin
+            .from('builder_quickbooks_customers')
+            .delete()
+            .eq('builder_id', builderId)
+            .eq('environment', environment)
+          if (error) throw error
+        },
         claim: async (id, environment, realmId) => {
           const { data, error } = await admin.rpc('claim_quickbooks_invoice_sync', {
             p_package_id: id,
@@ -135,6 +152,8 @@ Deno.serve(async (req) => {
           })
           rpcFailure(error)
         },
+        saveInvoicePdf: (api, input) =>
+          storeInvoicePdf(realPdfStoreDeps(admin, user.id), { api, ...input }).then(() => undefined),
         fail: async (id, message, requestReusable) => {
           const { error } = await admin.rpc('fail_quickbooks_invoice_sync', {
             p_package_id: id,

@@ -26,39 +26,64 @@ export interface ResolvedQuickbooksCustomer {
   displayName: string
   /** `mapping` was saved earlier; `quickbooks` was just found and should be saved. */
   source: 'mapping' | 'quickbooks'
+  /** A saved mapping pointed to a Customer that no longer exists, so it was dropped. */
+  replacedStale: boolean
 }
 
 export function normalizeCustomerName(value: string) {
   return value.trim().replace(/\s+/gu, ' ').toLowerCase()
 }
 
+/**
+ * A saved mapping is checked against QuickBooks every time: if its Customer was
+ * deleted or deactivated the mapping is dropped and the Builder is matched by
+ * name again, instead of sending an invoice to a Customer that is gone.
+ */
 export async function resolveBuilderCustomer(
-  { builderName, mapping, search }: {
+  { builderName, mapping, verify, clearMapping, search }: {
     builderName: string
     mapping: { customerId: string; displayName: string | null } | null
+    verify: (customerId: string) => Promise<{ displayName: string; active: boolean } | null>
+    clearMapping: () => Promise<void>
     search: (name: string) => Promise<QuickbooksCustomer[]>
   },
 ): Promise<ResolvedQuickbooksCustomer> {
+  let replacedStale = false
+
   if (mapping) {
-    return {
-      customerId: mapping.customerId,
-      displayName: mapping.displayName ?? builderName,
-      source: 'mapping',
+    const current = await verify(mapping.customerId)
+    if (current?.active) {
+      return {
+        customerId: mapping.customerId,
+        displayName: current.displayName,
+        source: 'mapping',
+        replacedStale: false,
+      }
     }
+    await clearMapping()
+    replacedStale = true
   }
 
   const wanted = normalizeCustomerName(builderName)
   const found = await search(builderName.trim())
   const exact = found.filter(({ displayName }) => normalizeCustomerName(displayName) === wanted)
+  const staleNote = replacedStale
+    ? `The QuickBooks Customer saved for "${builderName}" no longer exists or is inactive. `
+    : ''
 
   if (exact.length === 1) {
-    return { customerId: exact[0].id, displayName: exact[0].displayName, source: 'quickbooks' }
+    return {
+      customerId: exact[0].id,
+      displayName: exact[0].displayName,
+      source: 'quickbooks',
+      replacedStale,
+    }
   }
 
   if (exact.length > 1) {
     throw new QuickbooksCustomerError(
       'CUSTOMER_AMBIGUOUS',
-      `QuickBooks has ${exact.length} Customers named "${builderName}". Keep only one active.`,
+      `${staleNote}QuickBooks has ${exact.length} Customers named "${builderName}". Keep only one active.`,
       exact.map(({ displayName }) => displayName),
     )
   }
@@ -67,8 +92,8 @@ export async function resolveBuilderCustomer(
   throw new QuickbooksCustomerError(
     'CUSTOMER_NOT_FOUND',
     suggestions.length > 0
-      ? `QuickBooks has no Customer named exactly "${builderName}". Similar: ${suggestions.join(', ')}.`
-      : `QuickBooks has no Customer named "${builderName}". Create it in QuickBooks with that exact name.`,
+      ? `${staleNote}QuickBooks has no Customer named exactly "${builderName}". Similar: ${suggestions.join(', ')}.`
+      : `${staleNote}QuickBooks has no Customer named "${builderName}". Create it in QuickBooks with that exact name.`,
     suggestions,
   )
 }

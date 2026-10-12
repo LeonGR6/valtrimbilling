@@ -15,6 +15,7 @@ const loaded = (patch: Partial<LoadedPackage['source']['package']> = {}, quickbo
   packageNumber: 'DP-00000068',
   quickbooksStatus,
   builder: { id: 1, name: 'Trumark' },
+  job: { code: '1307', community: 'Sunset Ridge' },
   paymentTermsDays: 30,
   source: {
     package: { package_type: 'DRAW', status: 'DRAFT', invoice_line_format: 'LOT_SCOPE', ...patch },
@@ -66,6 +67,19 @@ function harness(overrides: Partial<InvoiceSyncDeps> = {}, pkg: LoadedPackage = 
       calls.push('saveCustomerMapping')
       return Promise.resolve()
     },
+    clearCustomerMapping: () => {
+      calls.push('clearCustomerMapping')
+      return Promise.resolve()
+    },
+    verifyCustomer: () => {
+      calls.push('verifyCustomer')
+      return Promise.resolve({ id: '99', displayName: 'Trumark Homes', active: true })
+    },
+    getCustomFieldDefinitions: () =>
+      Promise.resolve([
+        { definitionId: '1', label: 'Job Name', enabled: true },
+        { definitionId: '2', label: 'Job #', enabled: true },
+      ]),
     searchCustomers: () => {
       calls.push('searchCustomers')
       return Promise.resolve([{ id: '58', displayName: 'Trumark' }])
@@ -81,6 +95,10 @@ function harness(overrides: Partial<InvoiceSyncDeps> = {}, pkg: LoadedPackage = 
     },
     complete: () => {
       calls.push('complete')
+      return Promise.resolve()
+    },
+    saveInvoicePdf: () => {
+      calls.push('saveInvoicePdf')
       return Promise.resolve()
     },
     fail: (_id, _message, reusable) => {
@@ -103,7 +121,12 @@ Deno.test('dry run previews the invoice and changes nothing', async () => {
   assertEquals(calls, ['openSession', 'searchCustomers'])
   assertEquals(result.dryRun, true)
   if (!result.dryRun) return
-  assertEquals(result.customer, { customerId: '58', displayName: 'Trumark', source: 'quickbooks' })
+  assertEquals(result.customer, {
+    customerId: '58',
+    displayName: 'Trumark',
+    source: 'quickbooks',
+    replacedStale: false,
+  })
   assertEquals(result.invoice.DocNumber, 'DP-00000068')
   assertEquals(result.invoice.TxnDate, '2026-10-09')
   assertEquals(result.invoice.DueDate, '2026-11-08')
@@ -118,7 +141,15 @@ Deno.test('creates the invoice: claim, create with the claimed request id, then 
 
   const result = await run(deps)
 
-  assertEquals(calls, ['openSession', 'searchCustomers', 'saveCustomerMapping', 'claim', 'createInvoice', 'complete'])
+  assertEquals(calls, [
+    'openSession',
+    'searchCustomers',
+    'saveCustomerMapping',
+    'claim',
+    'createInvoice',
+    'complete',
+    'saveInvoicePdf',
+  ])
   assertEquals(sent[0].requestId, 'req-1')
   assertEquals(result.dryRun, false)
   if (result.dryRun) return
@@ -133,7 +164,100 @@ Deno.test('a saved customer mapping is used without searching or saving again', 
 
   await run(deps)
 
-  assertEquals(calls, ['openSession', 'claim', 'createInvoice', 'complete'])
+  assertEquals(calls, ['openSession', 'verifyCustomer', 'claim', 'createInvoice', 'complete', 'saveInvoicePdf'])
+})
+
+Deno.test('fills Job Name with the community and Job # with the job code', async () => {
+  const { deps, sent } = harness()
+
+  await run(deps)
+
+  assertEquals((sent[0].payload as { CustomField: unknown }).CustomField, [
+    { DefinitionId: '1', Name: 'Job Name', Type: 'StringType', StringValue: 'Sunset Ridge' },
+    { DefinitionId: '2', Name: 'Job #', Type: 'StringType', StringValue: '1307' },
+  ])
+})
+
+Deno.test('says so in the preview when QuickBooks has no Job Name or Job # field', async () => {
+  const { deps } = harness({ getCustomFieldDefinitions: () => Promise.resolve([]) })
+
+  const result = await run(deps, true)
+
+  assertEquals(result.warnings.length, 2)
+  assertEquals(result.warnings[0].includes('no "Job Name" custom field'), true)
+  assertEquals('CustomField' in (result.dryRun ? result.invoice : {}), false)
+})
+
+Deno.test('failing to read the custom fields never blocks the invoice', async () => {
+  const { deps, calls } = harness({
+    getCustomFieldDefinitions: () => Promise.reject(new Error('HTTP 403')),
+  })
+
+  const result = await run(deps)
+
+  assertEquals(calls.at(-1), 'saveInvoicePdf')
+  assertEquals(result.warnings, ['The QuickBooks custom fields could not be read: HTTP 403'])
+})
+
+Deno.test('a stale saved Customer is dropped on a real send but left alone in a preview', async () => {
+  const stale = {
+    getCustomerMapping: () => Promise.resolve({ customerId: '99', displayName: 'Trumark Homes' }),
+    verifyCustomer: () => Promise.resolve(null),
+  }
+
+  const real = harness(stale)
+  const sent = await run(real.deps)
+  assertEquals(real.calls.slice(0, 5), [
+    'openSession',
+    'clearCustomerMapping',
+    'searchCustomers',
+    'saveCustomerMapping',
+    'claim',
+  ])
+  assertEquals(sent.warnings[0].includes('no longer existed'), true)
+
+  const preview = harness(stale)
+  const result = await run(preview.deps, true)
+  assertEquals(preview.calls.includes('clearCustomerMapping'), false)
+  assertEquals(result.dryRun && result.customer.replacedStale, true)
+})
+
+Deno.test('saves the QuickBooks PDF of the invoice once it is recorded', async () => {
+  const saved: unknown[] = []
+  const { deps, calls } = harness({
+    saveInvoicePdf: (_api, input) => {
+      saved.push(input)
+      return Promise.resolve()
+    },
+  })
+
+  await run(deps)
+
+  assertEquals(saved, [{ packageId: 68, invoiceId: '147', documentNumber: 'DP-00000068' }])
+  assertEquals(calls.includes('complete'), true)
+})
+
+Deno.test('a PDF that cannot be saved is reported but never undoes the invoice', async () => {
+  const { deps, calls } = harness({
+    saveInvoicePdf: () => Promise.reject(new Error('Storage is down.')),
+  })
+
+  const result = await run(deps)
+
+  assertEquals(calls.at(-1), 'complete')
+  assertEquals(calls.some((call) => call.startsWith('fail')), false)
+  assertEquals(result.dryRun, false)
+  assertEquals(result.warnings.length, 1)
+  assertEquals(result.warnings[0].includes('its PDF could not be saved: Storage is down.'), true)
+  assertEquals(result.warnings[0].includes('Save PDF'), true)
+})
+
+Deno.test('a preview never saves a PDF', async () => {
+  const { deps, calls } = harness()
+
+  await run(deps, true)
+
+  assertEquals(calls.includes('saveInvoicePdf'), false)
 })
 
 Deno.test('a Builder missing from QuickBooks creates and claims nothing', async () => {

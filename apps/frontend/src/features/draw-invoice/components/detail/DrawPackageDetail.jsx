@@ -71,6 +71,7 @@ import {
 } from '../DrawPackageCorrectionDialogs.jsx'
 import CreateDrawDialog from '../dialogs/CreateDrawDialog.jsx'
 import QuickbooksInvoiceDialog from './QuickbooksInvoiceDialog.jsx'
+import QuickbooksPackageNotice from './QuickbooksPackageNotice.jsx'
 import QuickbooksStatusCard from '../shared/QuickbooksStatusCard.jsx'
 import {
   MetricCard,
@@ -402,7 +403,7 @@ export default function DrawPackageDetail() {
               }
               disableElevation
             >
-              Create Package
+              New Package
             </Button>
           </Stack>
         </Stack>
@@ -435,51 +436,15 @@ export default function DrawPackageDetail() {
             {focusedPackage.cancellationReason && ` Reason: ${focusedPackage.cancellationReason}`}
           </Alert>
         )}
-        {focusedPackage?.quickbooksStatus === 'CREATED' && !isRetentionRelease && (
-          <Alert
-            severity="success"
-            sx={{ mb: 2.5 }}
-            action={quickbooksView?.href && (
-              <Button
-                color="inherit"
-                size="small"
-                component="a"
-                href={quickbooksView.href}
-                target="_blank"
-                rel="noopener noreferrer"
-                sx={{ whiteSpace: 'nowrap' }}
-              >
-                Open in QuickBooks
-              </Button>
-            )}
-          >
-            <strong>Already invoiced in QuickBooks.</strong>{' '}
-            {focusedPackage.quickbooksReference
-              ? `Invoice ${focusedPackage.quickbooksReference}`
-              : 'This Package has an invoice'}
-            {quickbooksSync?.totalAmount != null
-              ? ` · ${formatCurrency(quickbooksSync.totalAmount)}`
-              : ''}
-            {quickbooksSync?.updatedAt
-              ? ` · sent ${new Date(quickbooksSync.updatedAt).toLocaleDateString('en-US')}`
-              : ''}
-            . It cannot be sent again or edited here.
-          </Alert>
-        )}
-        {focusedPackage?.quickbooksStatus === 'SYNC_ERROR' && !isRetentionRelease && (
-          <Alert
-            severity="warning"
-            sx={{ mb: 2.5 }}
-            action={canSendToQuickbooks && (
-              <Button color="inherit" size="small" onClick={() => setQuickbooksDialogOpen(true)}>
-                Retry
-              </Button>
-            )}
-          >
-            <strong>The last QuickBooks attempt failed.</strong>
-            {quickbooksSync?.error ? ` ${quickbooksSync.error}` : ''}
-          </Alert>
-        )}
+        <QuickbooksPackageNotice
+          record={focusedPackage}
+          sync={quickbooksSync}
+          href={quickbooksView?.href}
+          canSend={canSendToQuickbooks}
+          role={profile?.role}
+          onSend={() => setQuickbooksDialogOpen(true)}
+          onChanged={refreshDrawInvoicePackages}
+        />
         {phases.length === 0 ? (
           <Alert
             severity="info"

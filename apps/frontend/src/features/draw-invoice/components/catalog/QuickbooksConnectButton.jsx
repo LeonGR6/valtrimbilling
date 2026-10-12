@@ -9,9 +9,10 @@ export default function QuickbooksConnectButton({
   connection,
   loading,
   canConnect,
+  lastInvoiceAt,
   onConnect,
 }) {
-  const view = quickbooksStatusView({ loading, connection, canConnect })
+  const view = quickbooksStatusView({ loading, connection, canConnect, lastInvoiceAt })
 
   return (
     <QuickbooksStatusCard

@@ -2,6 +2,8 @@ import { requireSupabase } from '../../../services/api.js'
 import {
   QuickbooksInvoiceRequestError,
   toQuickbooksConnection,
+  toQuickbooksCustomerLink,
+  toQuickbooksInvoicePdf,
   toQuickbooksInvoicePreview,
   toQuickbooksInvoiceResult,
   toQuickbooksInvoiceSync,
@@ -9,6 +11,9 @@ import {
 
 const OAUTH_START_FUNCTION = 'quickbooks-oauth-start'
 const INVOICE_FUNCTION = 'quickbooks-invoice-create'
+const CUSTOMERS_FUNCTION = 'quickbooks-customers'
+const VOID_FUNCTION = 'quickbooks-invoice-void'
+const PDF_FUNCTION = 'quickbooks-invoice-pdf'
 const SYNC_COLUMNS = 'status, error, environment, qbo_invoice_id, qbo_doc_number, total_amount, updated_at'
 const INTUIT_AUTHORIZATION_ORIGIN = 'https://appcenter.intuit.com'
 // Never select refresh_token_secret_id: the browser only needs the status.
@@ -82,13 +87,16 @@ async function invoiceRequestError(error, data) {
   )
 }
 
-async function invoiceRequest(body) {
+async function functionRequest(name, body) {
   const client = await requireSupabase()
-  const { data, error } = await client.functions.invoke(INVOICE_FUNCTION, { body })
+  const { data, error } = await client.functions.invoke(name, { body })
 
   if (error || data?.error) throw await invoiceRequestError(error, data)
   return data
 }
+
+const invoiceRequest = (body) => functionRequest(INVOICE_FUNCTION, body)
+const customersRequest = (body) => functionRequest(CUSTOMERS_FUNCTION, body)
 
 /** Builds the invoice lines and finds the Customer without sending anything. */
 export async function previewQuickbooksInvoice(packageId, txnDate) {
@@ -113,4 +121,90 @@ export async function getQuickbooksInvoiceSync(packageId) {
     .maybeSingle()
   if (error) throw error
   return toQuickbooksInvoiceSync(data)
+}
+
+/** When the last invoice was created in QuickBooks, or null if none yet. */
+export async function getLastQuickbooksInvoiceAt() {
+  const client = await requireSupabase()
+  const { data, error } = await client
+    .from('quickbooks_invoice_syncs')
+    .select('updated_at')
+    .eq('status', 'CREATED')
+    .order('updated_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  if (error) throw error
+  return data?.updated_at ?? null
+}
+
+/** Which QuickBooks Customer each Builder is linked to, in every environment. */
+export async function listQuickbooksCustomerLinks() {
+  const client = await requireSupabase()
+  const { data, error } = await client
+    .from('builder_quickbooks_customers')
+    .select('builder_id, environment, customer_id, display_name')
+  if (error) throw error
+  return (data ?? []).map(toQuickbooksCustomerLink)
+}
+
+export async function searchQuickbooksCustomers(query) {
+  const data = await customersRequest({ action: 'search', query })
+  return data?.customers ?? []
+}
+
+export async function linkQuickbooksCustomer(builderId, customerId) {
+  const data = await customersRequest({ action: 'link', builderId, customerId })
+  return data?.customer ?? null
+}
+
+export async function unlinkQuickbooksCustomer(builderId) {
+  const data = await customersRequest({ action: 'unlink', builderId })
+  return Boolean(data?.removed)
+}
+
+/** Voids the Package's invoice in QuickBooks; the Package can then be deleted. */
+export async function voidQuickbooksInvoice(packageId) {
+  const data = await functionRequest(VOID_FUNCTION, { packageId })
+  return { quickbooks: data?.quickbooks ?? 'voided' }
+}
+
+/** Downloads QuickBooks' PDF of the invoice and saves it as the Package's INVOICE document. */
+export async function saveQuickbooksInvoicePdf(packageId) {
+  const data = await functionRequest(PDF_FUNCTION, { packageId })
+  return { fileName: data?.fileName ?? '', sizeBytes: Number(data?.sizeBytes ?? 0) }
+}
+
+/** The saved QuickBooks invoice PDF of a Package, or null when none is saved. */
+export async function getQuickbooksInvoicePdf(packageId) {
+  const client = await requireSupabase()
+  const { data: document, error } = await client
+    .from('package_documents')
+    .select('id, file_id, completed_at')
+    .eq('package_id', packageId)
+    .eq('document_type', 'INVOICE')
+    .eq('status', 'COMPLETE')
+    .maybeSingle()
+  if (error) throw error
+  if (!document?.file_id) return null
+
+  const { data: file, error: fileError } = await client
+    .from('stored_files')
+    .select('bucket_id, object_path, original_filename, size_bytes')
+    .eq('id', document.file_id)
+    .maybeSingle()
+  if (fileError) throw fileError
+
+  return toQuickbooksInvoicePdf(document, file)
+}
+
+/** The saved PDF as bytes, ready to join into the Package PDF, or null. */
+export async function downloadQuickbooksInvoicePdf(packageId) {
+  const pdf = await getQuickbooksInvoicePdf(packageId)
+  if (!pdf) return null
+
+  const client = await requireSupabase()
+  const { data, error } = await client.storage.from(pdf.file.bucket).download(pdf.file.storagePath)
+  if (error || !data) throw new Error('The saved invoice PDF could not be downloaded.', { cause: error })
+
+  return { name: pdf.file.name, bytes: new Uint8Array(await data.arrayBuffer()) }
 }

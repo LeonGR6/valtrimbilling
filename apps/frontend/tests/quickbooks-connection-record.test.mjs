@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
+  quickbooksLastInvoiceLabel,
   quickbooksStatusView,
+  canManageQuickbooksCustomers,
+  quickbooksCustomerRows,
+  toQuickbooksCustomerLink,
   quickbooksButtonTitle,
   quickbooksOAuthReturnMessage,
   quickbooksProductMissing,
@@ -35,10 +39,21 @@ test('maps the connection row and tolerates no connection', () => {
   })
 })
 
+test('formats the last invoice as a time today and as a day and time before', () => {
+  const now = new Date(2026, 9, 9, 18, 0)
+
+  assert.equal(quickbooksLastInvoiceLabel(new Date(2026, 9, 9, 12, 42).toISOString(), now), '12:42 PM')
+  assert.equal(quickbooksLastInvoiceLabel(new Date(2026, 9, 8, 9, 5).toISOString(), now), 'Oct 8, 9:05 AM')
+  assert.equal(quickbooksLastInvoiceLabel(null, now), null)
+  assert.equal(quickbooksLastInvoiceLabel('not a date', now), null)
+})
+
 test('describes the status card for every connection state', () => {
   const connected = toQuickbooksConnection(row)
   const noProduct = toQuickbooksConnection({ ...row, item_id: null, item_name: null })
   const production = toQuickbooksConnection({ ...row, environment: 'production' })
+  const now = new Date(2026, 9, 9, 18, 0)
+  const lastInvoiceAt = new Date(2026, 9, 9, 12, 42).toISOString()
 
   assert.deepEqual(quickbooksStatusView({ loading: true, connection: null, canConnect: true }), {
     tone: 'neutral',
@@ -54,19 +69,23 @@ test('describes the status card for every connection state', () => {
     quickbooksStatusView({ loading: false, connection: null, canConnect: false }).detail,
     'Administrator only',
   )
-  assert.deepEqual(quickbooksStatusView({ loading: false, connection: connected, canConnect: true }), {
-    tone: 'success',
-    status: 'Connected',
+  assert.deepEqual(
+    quickbooksStatusView({ loading: false, connection: connected, canConnect: true, lastInvoiceAt, now }),
+    { tone: 'success', status: 'Connected', detail: 'Last invoice: 12:42 PM · Sandbox' },
+  )
+  assert.equal(
+    quickbooksStatusView({ loading: false, connection: connected, canConnect: true, now }).detail,
+    'No invoices yet · Sandbox',
+  )
+  assert.equal(
+    quickbooksStatusView({ loading: false, connection: production, canConnect: true, lastInvoiceAt, now }).detail,
+    'Last invoice: 12:42 PM',
+  )
+  assert.deepEqual(quickbooksStatusView({ loading: false, connection: noProduct, canConnect: true }), {
+    tone: 'warning',
+    status: 'Product missing',
     detail: 'Sandbox Co · Sandbox',
   })
-  assert.equal(
-    quickbooksStatusView({ loading: false, connection: production, canConnect: true }).detail,
-    'Sandbox Co',
-  )
-  assert.equal(
-    quickbooksStatusView({ loading: false, connection: noProduct, canConnect: true }).tone,
-    'warning',
-  )
   assert.equal(quickbooksProductMissing(noProduct), true)
   assert.equal(quickbooksProductMissing(connected), false)
 })
@@ -95,6 +114,7 @@ import {
   canCreateQuickbooksInvoice,
   quickbooksInvoiceUrl,
   quickbooksPackageStatusView,
+  quickbooksTableStatusView,
   toQuickbooksInvoicePreview,
   toQuickbooksInvoiceResult,
   toQuickbooksInvoiceSync,
@@ -226,6 +246,8 @@ test('maps the dry run to preview lines and a cent-exact total', () => {
   assert.equal(preview.dueDate, '2026-11-08')
   assert.equal(preview.lines.length, 3)
   assert.equal(preview.total, 2620.59)
+  assert.deepEqual(preview.customFields, [])
+  assert.deepEqual(preview.warnings, [])
   assert.equal(toQuickbooksInvoicePreview({}), null)
 })
 
@@ -238,7 +260,13 @@ test('maps the created invoice and the last sync attempt', () => {
       totalAmount: 760,
       customer: { displayName: 'Trumark' },
     }),
-    { invoiceId: '147', docNumber: 'DP-00000068', totalAmount: 760, customerName: 'Trumark' },
+    {
+      invoiceId: '147',
+      docNumber: 'DP-00000068',
+      totalAmount: 760,
+      customerName: 'Trumark',
+      warnings: [],
+    },
   )
   assert.equal(toQuickbooksInvoiceSync(null), null)
   assert.deepEqual(
@@ -251,6 +279,154 @@ test('maps the created invoice and the last sync attempt', () => {
       docNumber: null,
       totalAmount: null,
       updatedAt: 't',
+    },
+  )
+})
+
+test('the Packages table reports the QuickBooks state of every invoiced package', () => {
+  const draw = { packageType: 'DRAW', status: 'DRAFT' }
+
+  assert.deepEqual(quickbooksTableStatusView({ ...draw, quickbooksStatus: 'NOT_CREATED' }), {
+    tone: 'neutral', status: 'Not sent', detail: '',
+  })
+  assert.deepEqual(
+    quickbooksTableStatusView({
+      ...draw, quickbooksStatus: 'CREATED', quickbooksReference: 'DP-00000068',
+    }),
+    { tone: 'success', status: 'Invoice created', detail: 'Invoice DP-00000068' },
+  )
+  assert.equal(quickbooksTableStatusView({ ...draw, quickbooksStatus: 'SYNC_ERROR' }).status, 'Sync error')
+  assert.equal(
+    quickbooksTableStatusView({ packageType: 'RETENTION_RELEASE', quickbooksStatus: 'NOT_CREATED' }),
+    null,
+  )
+})
+
+test('the preview carries the custom fields and the warnings of the function', () => {
+  const preview = toQuickbooksInvoicePreview({
+    customer: { displayName: 'Trumark' },
+    invoice: {
+      Line: [],
+      CustomField: [
+        { DefinitionId: '1', Name: 'Job Name', Type: 'StringType', StringValue: 'Sunset Ridge' },
+        { DefinitionId: '2', Name: 'Job #', Type: 'StringType', StringValue: '1307' },
+      ],
+    },
+    warnings: ['"Job Name" was shortened to 31 characters, the QuickBooks limit.'],
+  })
+
+  assert.deepEqual(preview.customFields, [
+    { name: 'Job Name', value: 'Sunset Ridge' },
+    { name: 'Job #', value: '1307' },
+  ])
+  assert.deepEqual(preview.warnings, ['"Job Name" was shortened to 31 characters, the QuickBooks limit.'])
+  assert.deepEqual(toQuickbooksInvoiceResult({ warnings: ['x'] }).warnings, ['x'])
+  assert.deepEqual(toQuickbooksInvoiceResult({}).warnings, [])
+})
+
+test('only ADMIN and ACCOUNTING manage the Builder to Customer links', () => {
+  assert.equal(canManageQuickbooksCustomers('ADMIN'), true)
+  assert.equal(canManageQuickbooksCustomers('ACCOUNTING'), true)
+  assert.equal(canManageQuickbooksCustomers('PROJECT_MANAGEMENT'), false)
+})
+
+test('lists every Builder with the Customer it is linked to in the connected environment', () => {
+  const builders = [
+    { id: 24, name: 'Separate HW Builder' },
+    { id: 1, name: 'Trumark Homes' },
+    { id: 16, name: 'monte vista' },
+  ]
+  const links = [
+    toQuickbooksCustomerLink({ builder_id: 1, environment: 'sandbox', customer_id: '58', display_name: 'Trumark Homes' }),
+    toQuickbooksCustomerLink({ builder_id: 16, environment: 'production', customer_id: '9', display_name: 'Monte Vista' }),
+  ]
+
+  assert.deepEqual(quickbooksCustomerRows(builders, links, 'sandbox'), [
+    { builderId: 16, builderName: 'monte vista', linked: false, customerId: null, customerName: '' },
+    { builderId: 24, builderName: 'Separate HW Builder', linked: false, customerId: null, customerName: '' },
+    { builderId: 1, builderName: 'Trumark Homes', linked: true, customerId: '58', customerName: 'Trumark Homes' },
+  ])
+  assert.equal(quickbooksCustomerRows(builders, links, 'production').find((row) => row.builderId === 16).linked, true)
+})
+
+import {
+  canVoidQuickbooksInvoice,
+  toQuickbooksInvoicePdf,
+} from '../src/features/draw-invoice/services/quickbooksRecord.js'
+import {
+  canDeleteVoidedQuickbooksPackage,
+} from '../src/features/draw-invoice/services/drawInvoicePackageRecord.js'
+import { canDeleteDraftPackage } from '../src/features/draw-invoice/utils/packageCatalog.js'
+
+const invoicedDraft = {
+  packageType: 'DRAW',
+  status: 'DRAFT',
+  quickbooksStatus: 'CREATED',
+  quickbooksReference: 'DP-00000029',
+  invoiceNumber: null,
+  invoiceDate: null,
+  submissionStatus: 'NOT_SUBMITTED',
+  submittedAt: null,
+  persistedInvoice: { status: 'DRAFT', paidAmount: 0 },
+}
+
+test('only ADMIN and ACCOUNTING can void, and only a created invoice of an open Package', () => {
+  assert.equal(canVoidQuickbooksInvoice(invoicedDraft, 'ADMIN'), true)
+  assert.equal(canVoidQuickbooksInvoice(invoicedDraft, 'ACCOUNTING'), true)
+  assert.equal(canVoidQuickbooksInvoice(invoicedDraft, 'PROJECT_MANAGEMENT'), false)
+  assert.equal(canVoidQuickbooksInvoice({ ...invoicedDraft, status: 'READY_TO_SUBMIT' }, 'ADMIN'), true)
+  assert.equal(canVoidQuickbooksInvoice({ ...invoicedDraft, status: 'AWAITING_PAYMENT' }, 'ADMIN'), false)
+  assert.equal(canVoidQuickbooksInvoice({ ...invoicedDraft, status: 'PAID_CLOSED' }, 'ADMIN'), false)
+  assert.equal(canVoidQuickbooksInvoice({ ...invoicedDraft, quickbooksStatus: 'NOT_CREATED' }, 'ADMIN'), false)
+  assert.equal(canVoidQuickbooksInvoice({ ...invoicedDraft, quickbooksStatus: 'VOIDED' }, 'ADMIN'), false)
+  assert.equal(canVoidQuickbooksInvoice({ ...invoicedDraft, packageType: 'RETENTION_RELEASE' }, 'ADMIN'), false)
+})
+
+test('a voided draft can be deleted, an invoiced one cannot, and neither can be edited', () => {
+  const voided = { ...invoicedDraft, quickbooksStatus: 'VOIDED' }
+
+  assert.equal(canDeleteVoidedQuickbooksPackage(voided), true)
+  assert.equal(canDeleteDraftPackage(voided), true)
+  assert.equal(canDeleteDraftPackage(invoicedDraft), false)
+  assert.equal(canDeleteVoidedQuickbooksPackage({ ...voided, submissionStatus: 'SUBMITTED' }), false)
+  assert.equal(canDeleteVoidedQuickbooksPackage({ ...voided, persistedInvoice: { status: 'DRAFT', paidAmount: 50 } }), false)
+  assert.equal(canDeleteVoidedQuickbooksPackage({ ...voided, status: 'PAID_CLOSED' }), false)
+  assert.equal(canDeleteVoidedQuickbooksPackage({ ...voided, packageType: 'RETENTION_RELEASE' }), false)
+})
+
+test('a voided invoice is shown as such in the card and the table', () => {
+  const voided = { ...invoicedDraft, quickbooksStatus: 'VOIDED' }
+
+  assert.deepEqual(quickbooksPackageStatusView({ record: voided, sync: null, canSend: true }), {
+    tone: 'neutral',
+    status: 'Invoice voided',
+    detail: 'Invoice DP-00000029',
+    action: 'none',
+    href: null,
+  })
+  assert.deepEqual(quickbooksTableStatusView(voided), {
+    tone: 'neutral',
+    status: 'Invoice voided',
+    detail: 'Invoice DP-00000029',
+  })
+})
+
+test('maps the saved QuickBooks PDF of a Package', () => {
+  assert.equal(toQuickbooksInvoicePdf(null, null), null)
+  assert.deepEqual(
+    toQuickbooksInvoicePdf(
+      { id: 5, completed_at: '2026-10-10T16:00:00Z' },
+      { bucket_id: 'package-documents', object_path: '29/invoice/a.pdf', original_filename: 'Invoice - DP-00000029.pdf', size_bytes: '51234' },
+    ),
+    {
+      documentId: 5,
+      savedAt: '2026-10-10T16:00:00Z',
+      file: {
+        bucket: 'package-documents',
+        storagePath: '29/invoice/a.pdf',
+        name: 'Invoice - DP-00000029.pdf',
+        sizeBytes: 51234,
+      },
     },
   )
 })

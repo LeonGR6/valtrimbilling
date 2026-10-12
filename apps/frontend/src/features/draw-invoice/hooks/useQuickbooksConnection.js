@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useAuth } from '../../auth/context/useAuth.js'
-import { quickbooksOAuthReturnMessage } from '../services/quickbooksRecord.js'
 import {
+  canManageQuickbooksCustomers,
+  quickbooksOAuthReturnMessage,
+} from '../services/quickbooksRecord.js'
+import {
+  getLastQuickbooksInvoiceAt,
   getQuickbooksConnection,
   startQuickbooksOAuth,
 } from '../services/quickbooksRepository.js'
@@ -10,15 +14,23 @@ import {
 export function useQuickbooksConnection() {
   const { profile } = useAuth()
   const [connection, setConnection] = useState(null)
+  const [lastInvoiceAt, setLastInvoiceAt] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const canConnect = profile?.role === 'ADMIN'
+  const canManageCustomers = canManageQuickbooksCustomers(profile?.role)
 
   useEffect(() => {
     if (!profile?.id) return undefined
 
     let mounted = true
+    // The last invoice time is a nicety: not being able to read it never hides the connection.
+    getLastQuickbooksInvoiceAt()
+      .then((next) => {
+        if (mounted) setLastInvoiceAt(next)
+      })
+      .catch(() => {})
     getQuickbooksConnection()
       .then((next) => {
         if (!mounted) return
@@ -71,10 +83,12 @@ export function useQuickbooksConnection() {
 
   return {
     connection,
+    lastInvoiceAt,
     loading,
     error,
     notice,
     canConnect,
+    canManageCustomers,
     connect,
     dismissError: () => setError(''),
     dismissNotice: () => setNotice(''),

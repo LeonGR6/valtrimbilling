@@ -506,6 +506,23 @@ export function canManageDraftDrawPackage(record) {
     && !record.submittedAt
 }
 
+/**
+ * A draft whose QuickBooks invoice was voided can still be deleted, but not
+ * edited: the invoice number stays in QuickBooks, so its cells are not reused.
+ */
+export function canDeleteVoidedQuickbooksPackage(record) {
+  return record != null
+    && record.packageType !== 'RETENTION_RELEASE'
+    && ['DRAFT', 'READY_TO_SUBMIT'].includes(record.status)
+    && record.quickbooksStatus === 'VOIDED'
+    && record.persistedInvoice?.status === 'DRAFT'
+    && !record.invoiceNumber
+    && !record.invoiceDate
+    && record.persistedInvoice.paidAmount === 0
+    && record.submissionStatus === 'NOT_SUBMITTED'
+    && !record.submittedAt
+}
+
 export function canCorrectDrawPackage(record) {
   return canManageDraftDrawPackage(record)
     && (record.persistedHardwareLines?.length ?? 0) === 0

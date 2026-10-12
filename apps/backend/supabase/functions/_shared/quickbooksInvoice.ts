@@ -7,6 +7,8 @@
 // and Wrap are separate negative lines so the invoice total equals the Package
 // net amount.
 
+import type { InvoiceCustomField } from './quickbooksCustomFields.ts'
+
 export type InvoiceLineFormat = 'LOT_SCOPE' | 'BUILDING_SCOPE'
 
 export type PackageChargeKind = 'DRAW' | 'HARDWARE' | 'OPTIONS' | 'UTILITY'
@@ -34,6 +36,8 @@ export interface QuickbooksInvoiceInput {
   privateNote?: string | null
   /** Optional QuickBooks TaxCode id (e.g. "NON"). Omitted from the payload when unset. */
   taxCodeId?: string | null
+  /** Text custom fields of the invoice (e.g. Job Name, Job #). */
+  customFields?: InvoiceCustomField[]
   invoiceLineFormat: InvoiceLineFormat
   charges: PackageCharge[]
   /** Package totals as positive magnitudes; they are sent as negative lines. */
@@ -55,12 +59,20 @@ export interface QuickbooksInvoiceLine {
   }
 }
 
+export interface QuickbooksInvoiceCustomField {
+  DefinitionId: string
+  Name: string
+  Type: 'StringType'
+  StringValue: string
+}
+
 export interface QuickbooksInvoicePayload {
   CustomerRef: { value: string }
   TxnDate: string
   DueDate?: string
   DocNumber?: string
   PrivateNote?: string
+  CustomField?: QuickbooksInvoiceCustomField[]
   Line: QuickbooksInvoiceLine[]
 }
 
@@ -305,6 +317,16 @@ export function buildQuickbooksInvoicePayload(
     ...(dueDate ? { DueDate: dueDate } : {}),
     ...(docNumber ? { DocNumber: docNumber } : {}),
     ...(input.privateNote?.trim() ? { PrivateNote: input.privateNote.trim() } : {}),
+    ...(input.customFields?.length
+      ? {
+        CustomField: input.customFields.map(({ definitionId, name, value }) => ({
+          DefinitionId: definitionId,
+          Name: name,
+          Type: 'StringType' as const,
+          StringValue: value,
+        })),
+      }
+      : {}),
     Line: lines,
   }
 }

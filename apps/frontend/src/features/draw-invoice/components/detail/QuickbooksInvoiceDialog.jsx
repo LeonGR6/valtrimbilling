@@ -100,11 +100,16 @@ export default function QuickbooksInvoiceDialog({ record, onClose, onSettled }) 
       <DialogContent>
         <Stack spacing={2} sx={{ pt: 1 }}>
           {result ? (
-            <Alert severity="success">
-              Invoice <strong>{result.docNumber || result.invoiceId}</strong> was created in
-              QuickBooks{result.customerName ? ` for ${result.customerName}` : ''}
-              {result.totalAmount != null ? ` · ${formatCurrency(result.totalAmount)}` : ''}.
-            </Alert>
+            <>
+              <Alert severity="success">
+                Invoice <strong>{result.docNumber || result.invoiceId}</strong> was created in
+                QuickBooks{result.customerName ? ` for ${result.customerName}` : ''}
+                {result.totalAmount != null ? ` · ${formatCurrency(result.totalAmount)}` : ''}.
+              </Alert>
+              {result.warnings.map((warning) => (
+                <Alert key={warning} severity="info">{warning}</Alert>
+              ))}
+            </>
           ) : (
             <>
               {hadSyncError && lastSync?.error && !submitError && (
@@ -143,6 +148,21 @@ export default function QuickbooksInvoiceDialog({ record, onClose, onSettled }) 
                       · Due {formatDate(previewData.dueDate)}
                     </Typography>
                   </Stack>
+                  {previewData.customFields.length > 0 && (
+                    <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: 'wrap' }}>
+                      {previewData.customFields.map((field) => (
+                        <Chip
+                          key={field.name}
+                          size="small"
+                          variant="outlined"
+                          label={`${field.name}: ${field.value}`}
+                        />
+                      ))}
+                    </Stack>
+                  )}
+                  {previewData.warnings.map((warning) => (
+                    <Alert key={warning} severity="info">{warning}</Alert>
+                  ))}
                   <Box sx={{ overflowX: 'auto' }}>
                     <Table size="small" aria-label="QuickBooks invoice lines">
                       <TableHead>

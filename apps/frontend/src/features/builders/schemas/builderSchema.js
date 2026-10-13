@@ -2,6 +2,9 @@ import { z } from 'zod'
 import { normalizePhoneNumber } from '../../../utils/phoneNumbers.js'
 
 const namePattern = /^[\p{L}\s'-]*$/u
+// A Builder's company name may carry numbers too ("G3 URBAN HOMES").
+const builderNamePattern = /^[\p{L}\p{N}\s'-]*$/u
+
 export function createBuilderSchema(builders, currentBuilderId) {
   return z
     .object({
@@ -16,7 +19,7 @@ export function createBuilderSchema(builders, currentBuilderId) {
         .trim()
         .min(1, 'Enter a builder name.')
         .max(100, 'Use 100 characters or fewer.')
-        .regex(namePattern, 'Only letters are allowed.'),
+        .regex(builderNamePattern, 'Only letters and numbers are allowed.'),
       description: z.string().trim().max(240, 'Use 240 characters or fewer.'),
       address: z.string().trim().max(240, 'Use 240 characters or fewer.'),
       contactName: z

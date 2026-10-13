@@ -53,6 +53,31 @@ test('builder schema normalizes values before saving', () => {
   })
 })
 
+test('a builder name may have numbers, but not symbols', () => {
+  const schema = createBuilderSchema([], null)
+  const base = {
+    code: 'G3',
+    description: '',
+    address: '',
+    contactName: '',
+    contactEmail: '',
+    contactPhone: '',
+    isActive: true,
+  }
+
+  assert.equal(schema.parse({ ...base, name: ' G3 URBAN HOMES ' }).name, 'G3 URBAN HOMES')
+  assert.equal(schema.safeParse({ ...base, name: '3 Pines' }).success, true)
+
+  const symbols = schema.safeParse({ ...base, name: 'G3 <Urban> Homes' })
+  assert.equal(symbols.success, false)
+  assert.deepEqual(symbols.error.flatten().fieldErrors.name, [
+    'Only letters and numbers are allowed.',
+  ])
+
+  // The contact person's name still takes letters only.
+  assert.equal(schema.safeParse({ ...base, name: 'G3', contactName: 'Jo 3' }).success, false)
+})
+
 test('builder schema rejects an existing code', () => {
   const result = createBuilderSchema([{ id: 1, code: 'CV' }], null).safeParse({
     code: 'cv',

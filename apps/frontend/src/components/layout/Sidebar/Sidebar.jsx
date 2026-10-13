@@ -50,6 +50,7 @@ import SellIcon from '@mui/icons-material/Sell';
 import BarChartIcon from '@mui/icons-material/BarChart'
 import SupportAgentIcon from '@mui/icons-material/SupportAgent';
 import LogoutRoundedIcon from '@mui/icons-material/LogoutRounded'
+import SyncAltIcon from '@mui/icons-material/SyncAlt'
 
 import valtrimLogoDark from '../../../assets/icons/Valtrim-White-Transparent.png'
 import valtrimLogoLight from '../../../assets/icons/Valtrim-Blue-Transparent.png'
@@ -74,8 +75,8 @@ const navigationSections = [
   {
     label: 'OPERATION',
     items: [
-      { label: 'Calendar', path: '/calendar', icon: CalendarMonthRoundedIcon },
       { label: 'Jobs', path: '/jobs', icon: FolderRoundedIcon },
+      { label: 'Calendar', path: '/calendar', icon: CalendarMonthRoundedIcon },
       { label: 'Sequence Sheets', path: '/sequence-sheets', icon: TableChartRoundedIcon },
     ],
   },
@@ -90,7 +91,7 @@ const navigationSections = [
     items: [
       { label: 'Draw & Invoice Packages', path: '/draw-invoice', icon: BallotIcon },
       // { label: 'Release - Builder Portal', icon: DescriptionIcon },
-      // { label: 'Extra / Change Orders', icon:  SyncAltIcon },
+      { label: 'Extra / Change Orders', path: '/change-orders', icon:  SyncAltIcon },
     ],
   },
   {

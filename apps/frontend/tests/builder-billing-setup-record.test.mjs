@@ -45,7 +45,7 @@ test('billing setup records map database columns and one-based draws to the form
     { setup_version_id: 91, draw_number: 2, name: null, percentage: '75.00', event_type: 'DM' },
     { setup_version_id: 22, draw_number: 1, name: 'Other', percentage: '50.00', event_type: 'EXT' },
     { setup_version_id: 91, draw_number: 1, name: 'Start', percentage: '10.00', event_type: 'EXT' },
-    { setup_version_id: 91, draw_number: 3, name: 'Final', percentage: '15.00', event_type: 'HW' },
+    { setup_version_id: 91, draw_number: 3, name: 'Final', percentage: '15.00', event_type: 'HW', lag_value: 1, lag_unit: 'MONTHS' },
   ]
   const documents = [
     { setup_version_id: 91, document_type: 'INVOICE', is_required: true },
@@ -59,9 +59,9 @@ test('billing setup records map database columns and one-based draws to the form
   assert.equal(schedule.builderId, 7)
   assert.equal(schedule.versionNumber, 3)
   assert.deepEqual(schedule.draws, [
-    { name: 'Start', percentage: 10, eventType: 'EXT' },
-    { name: '', percentage: 75, eventType: 'DM' },
-    { name: 'Final', percentage: 15, eventType: 'HW' },
+    { name: 'Start', percentage: 10, eventType: 'EXT', lag: null },
+    { name: '', percentage: 75, eventType: 'DM', lag: null },
+    { name: 'Final', percentage: 15, eventType: 'HW', lag: { value: 1, unit: 'MONTHS' } },
   ])
   assert.equal('hardwareBillingDrawIndex' in schedule, false)
   assert.equal(schedule.hardwareBillingMode, 'BY_EVENT')
@@ -88,7 +88,7 @@ test('form values map to normalized RPC payloads and one-based draw numbers', ()
     builderId: 7,
     draws: [
       { name: ' Start ', percentage: '25', eventType: 'HW' },
-      { name: '', percentage: 75, eventType: 'HW' },
+      { name: '', percentage: 75, eventType: 'HW', lag: { value: '1', unit: 'MONTHS' } },
     ],
     separateHardwarePrice: true,
     hardwareBillingMode: 'BY_EVENT',
@@ -148,8 +148,8 @@ test('form values map to normalized RPC payloads and one-based draw numbers', ()
   assert.equal(payload.p_config.submissionDestination, 'billing@example.com')
   assert.equal(payload.p_config.portalName, null)
   assert.deepEqual(payload.p_draws, [
-    { drawNumber: 1, name: 'Start', percentage: 25, eventType: 'HW' },
-    { drawNumber: 2, name: null, percentage: 75, eventType: 'HW' },
+    { drawNumber: 1, name: 'Start', percentage: 25, eventType: 'HW', lagValue: null, lagUnit: null },
+    { drawNumber: 2, name: null, percentage: 75, eventType: 'HW', lagValue: 1, lagUnit: 'MONTHS' },
   ])
   assert.deepEqual(
     payload.p_required_documents.map(({ type }) => type),

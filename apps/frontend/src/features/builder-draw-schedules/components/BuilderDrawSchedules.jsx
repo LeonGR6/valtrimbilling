@@ -39,6 +39,8 @@ import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined'
 import ResponsiveCreateButton from '../../../components/common/ResponsiveCreateButton'
 import { useBuilders } from '../../builders/context/useBuilders.js'
+import { drawSharesEvent, formatLagShort } from '../utils/drawLag.js'
+import DrawLagControl from './DrawLagControl.jsx'
 import {
   defaultDraws,
   defaultBillingSettings,
@@ -470,10 +472,11 @@ function BuilderDrawScheduleDialog({
                   >
                     {index + 1}
                   </Avatar>
+                  <Box sx={{ flex: 1, minWidth: 0 }}>
                   <Stack
                     direction={{ xs: 'column', sm: 'row' }}
                     spacing={1.25}
-                    sx={{ flex: 1, minWidth: 0 }}
+                    sx={{ minWidth: 0 }}
                   >
                     <TextField
                       label={`Draw ${index + 1} name`}
@@ -569,6 +572,21 @@ function BuilderDrawScheduleDialog({
                       }}
                     />
                   </Stack>
+                  {(drawSharesEvent(watchedDraws, index) || watchedDraws[index]?.lag) && (
+                    <Box sx={{ mt: 0.25 }}>
+                      <DrawLagControl
+                        drawNumber={index + 1}
+                        eventType={watchedDraws[index]?.eventType}
+                        lag={watchedDraws[index]?.lag}
+                        error={errors.draws?.[index]?.lag?.message}
+                        onChange={(next) => setValue(`draws.${index}.lag`, next, {
+                          shouldDirty: true,
+                          shouldValidate: true,
+                        })}
+                      />
+                    </Box>
+                  )}
+                  </Box>
                   {fields.length > MIN_DRAW_COUNT && (
                     <IconButton
                       aria-label={`Remove Draw ${index + 1}`}
@@ -616,7 +634,7 @@ function BuilderDrawScheduleDialog({
                 variant="outlined"
                 startIcon={<AddRoundedIcon />}
                 disabled={fields.length >= MAX_DRAW_COUNT}
-                onClick={() => append({ name: '', percentage: 0, eventType: '' })}
+                onClick={() => append({ name: '', percentage: 0, eventType: '', lag: null })}
               >
                 Add draw
               </Button>
@@ -1452,7 +1470,11 @@ function BuilderDrawScheduleCard({
               Draw {index + 1}
               {draw.name?.trim() ? ` (${draw.name.trim()})` : ''}
             </Typography>
-            <Chip size="small" variant="outlined" label={draw.eventType} />
+            <Chip
+              size="small"
+              variant="outlined"
+              label={draw.lag ? `${draw.eventType} ${formatLagShort(draw.lag)}` : draw.eventType}
+            />
             {schedule.optionsBillingDrawIndex != null
               && Number(schedule.optionsBillingDrawIndex) === index && (
               <Chip size="small" color="primary" label="Options billed" />

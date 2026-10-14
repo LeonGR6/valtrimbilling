@@ -1,3 +1,5 @@
+import { normalizeLag } from '../utils/drawLag.js'
+
 const requiredDocumentDefinitions = [
   {
     field: 'requiresPo',
@@ -68,6 +70,7 @@ export function toBuilderDrawSchedule(version, draws = [], documents = []) {
         name: draw.name ?? '',
         percentage: toNumber(draw.percentage),
         eventType: draw.event_type,
+        lag: normalizeLag({ value: draw.lag_value, unit: draw.lag_unit }),
       })),
     separateHardwarePrice: version.separate_hardware_price,
     hardwareBillingMode: normalizeHardwareBillingMode(
@@ -195,6 +198,8 @@ export function toBuilderBillingSetupRpc(schedule) {
       name: draw.name.trim() || null,
       percentage: Number(draw.percentage),
       eventType: draw.eventType,
+      lagValue: normalizeLag(draw.lag)?.value ?? null,
+      lagUnit: normalizeLag(draw.lag)?.unit ?? null,
     })),
     p_required_documents: requiredDocumentDefinitions
       .filter(({ field }) => schedule[field])

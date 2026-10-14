@@ -25,8 +25,8 @@ export const emptyHardwareEventPercentages = {
 }
 
 export const defaultDraws = [
-  { name: '', percentage: 0, eventType: '' },
-  { name: '', percentage: 0, eventType: '' },
+  { name: '', percentage: 0, eventType: '', lag: null },
+  { name: '', percentage: 0, eventType: '', lag: null },
 ]
 
 export const frequencyOptions = [

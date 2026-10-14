@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { MAX_DRAW_COUNT, MIN_DRAW_COUNT } from '../data/builderDrawSchedules.js'
+import { LAG_UNITS, lagLimit } from '../utils/drawLag.js'
 
 const drawPercentageSchema = z.preprocess(
   (value) => {
@@ -58,6 +59,22 @@ const optionalDayOfMonthSchema = z.preprocess(
     .nullable(),
 )
 
+// How long after its event a Draw is billed. Empty (null) means on the event date.
+const lagSchema = z.preprocess(
+  (value) => (
+    value == null || value.value === '' || value.value == null ? null : value
+  ),
+  z.object({
+    value: z.preprocess(
+      (value) => Number(value),
+      z.number({ invalid_type_error: 'Enter a number.' })
+        .int('Use a whole number.')
+        .min(1, 'Use 1 or more.'),
+    ),
+    unit: z.enum(LAG_UNITS, { message: 'Select days, weeks or months.' }),
+  }).nullable(),
+).default(null)
+
 const optionalDrawIndexSchema = z.preprocess(
   (value) => (value === '' || value === null || value === undefined
     ? null
@@ -89,6 +106,7 @@ export function createBuilderDrawScheduleSchema(schedules, currentScheduleId) {
               'Select EXT, DM or HW.',
             ),
           ),
+          lag: lagSchema,
         }))
         .min(MIN_DRAW_COUNT, `Configure at least ${MIN_DRAW_COUNT} draws.`)
         .max(MAX_DRAW_COUNT, `Configure no more than ${MAX_DRAW_COUNT} draws.`),
@@ -157,6 +175,29 @@ export function createBuilderDrawScheduleSchema(schedules, currentScheduleId) {
           message: 'Select where the Conditional Final Release applies.',
         })
       }
+
+      data.draws.forEach((draw, index) => {
+        if (!draw.lag) return
+
+        if (draw.lag.value > lagLimit(draw.lag.unit)) {
+          context.addIssue({
+            code: 'custom',
+            path: ['draws', index, 'lag'],
+            message: `Use ${lagLimit(draw.lag.unit)} or fewer.`,
+          })
+        }
+
+        const sharesEvent = data.draws.some(
+          (other, otherIndex) => otherIndex !== index && other.eventType === draw.eventType,
+        )
+        if (!sharesEvent) {
+          context.addIssue({
+            code: 'custom',
+            path: ['draws', index, 'lag'],
+            message: 'A lag needs another Draw with the same event.',
+          })
+        }
+      })
 
       const total = data.draws.reduce(
         (sum, draw) => sum + draw.percentage,

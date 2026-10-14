@@ -46,6 +46,8 @@ const DRAW_COLUMNS = [
   'name',
   'percentage',
   'event_type',
+  'lag_value',
+  'lag_unit',
 ].join(', ')
 
 const DOCUMENT_COLUMNS = [

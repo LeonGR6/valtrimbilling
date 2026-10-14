@@ -113,6 +113,7 @@ test('turns each OAuth return reason into a readable message', () => {
 import {
   canCreateQuickbooksInvoice,
   quickbooksInvoiceUrl,
+  quickbooksPaymentView,
   quickbooksPackageStatusView,
   quickbooksTableStatusView,
   toQuickbooksInvoicePreview,
@@ -279,8 +280,47 @@ test('maps the created invoice and the last sync attempt', () => {
       docNumber: null,
       totalAmount: null,
       updatedAt: 't',
+      paymentState: null,
+      paymentBalance: null,
+      paymentTotal: null,
+      dueDate: null,
+      overdue: false,
+      linkedTransactions: [],
+      paymentCheckedAt: null,
     },
   )
+})
+
+test('the QuickBooks card speaks in QuickBooks words once the payment is known', () => {
+  const sync = (overrides) => toQuickbooksInvoiceSync({
+    status: 'CREATED',
+    environment: 'sandbox',
+    qbo_invoice_id: '150',
+    qbo_doc_number: 'DP-00000004',
+    qbo_state: 'OPEN',
+    qbo_balance: 1000,
+    qbo_total: 1000,
+    qbo_due_date: '2026-11-12',
+    qbo_overdue: false,
+    updated_at: 't',
+    ...overrides,
+  })
+  const record = { packageType: 'DRAW', status: 'AWAITING_PAYMENT', quickbooksStatus: 'CREATED', quickbooksReference: 'DP-00000004' }
+  const view = (overrides) => quickbooksPackageStatusView({ record, sync: sync(overrides), canSend: true })
+
+  // Before QuickBooks was asked, the card says the invoice was created.
+  assert.equal(quickbooksPackageStatusView({ record, sync: null, canSend: true }).status, 'Invoice created')
+  assert.deepEqual(
+    [view({}).status, view({}).tone, view({}).detail],
+    ['Open', 'success', 'Invoice DP-00000004 · $1,000.00 due · due Nov 12'],
+  )
+  assert.deepEqual([view({ qbo_state: 'OVERDUE', qbo_overdue: true }).status, view({ qbo_state: 'OVERDUE', qbo_overdue: true }).tone], ['Overdue', 'error'])
+  assert.equal(view({ qbo_state: 'PARTIALLY_PAID', qbo_balance: 400, qbo_overdue: true }).status, 'Partially paid · Overdue')
+  assert.equal(view({ qbo_state: 'PAID', qbo_balance: 0 }).status, 'Paid')
+  assert.equal(view({ qbo_state: 'CLOSED', qbo_balance: 0 }).detail.includes('Settled'), true)
+  assert.equal(view({ qbo_state: 'VOIDED' }).status, 'Voided')
+  assert.equal(view({ qbo_state: 'DELETED' }).tone, 'warning')
+  assert.equal(quickbooksPaymentView(sync({ qbo_state: null })), null)
 })
 
 test('the Packages table reports the QuickBooks state of every invoiced package', () => {
@@ -374,7 +414,7 @@ test('only ADMIN and ACCOUNTING can void, and only a created invoice of an open 
   assert.equal(canVoidQuickbooksInvoice(invoicedDraft, 'ADMIN'), true)
   assert.equal(canVoidQuickbooksInvoice(invoicedDraft, 'ACCOUNTING'), true)
   assert.equal(canVoidQuickbooksInvoice(invoicedDraft, 'PROJECT_MANAGEMENT'), false)
-  assert.equal(canVoidQuickbooksInvoice({ ...invoicedDraft, status: 'READY_TO_SUBMIT' }, 'ADMIN'), true)
+  assert.equal(canVoidQuickbooksInvoice({ ...invoicedDraft, status: 'AWAITING_PAYMENT' }, 'ADMIN'), false)
   assert.equal(canVoidQuickbooksInvoice({ ...invoicedDraft, status: 'AWAITING_PAYMENT' }, 'ADMIN'), false)
   assert.equal(canVoidQuickbooksInvoice({ ...invoicedDraft, status: 'PAID_CLOSED' }, 'ADMIN'), false)
   assert.equal(canVoidQuickbooksInvoice({ ...invoicedDraft, quickbooksStatus: 'NOT_CREATED' }, 'ADMIN'), false)

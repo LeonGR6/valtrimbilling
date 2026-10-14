@@ -235,9 +235,9 @@ function describe(group: LineGroup) {
   if (group.kind === 'UTILITY') {
     return `${phaseText(group.phaseCode)} ${group.lots[0].trim().toUpperCase()}\n${group.scope}`
   }
-  const place = group.building
-    ? `BUILDING ${group.building.toUpperCase()}`
-    : `${new Set(group.lots).size > 1 ? 'LOTS' : 'LOT'} #${formatLotRanges(group.lots)}`
+  // The lots are always named, also on a line that groups a whole building.
+  const lots = `${new Set(group.lots).size > 1 ? 'LOTS' : 'LOT'} #${formatLotRanges(group.lots)}`
+  const place = group.building ? `BUILDING ${group.building.toUpperCase()} ${lots}` : lots
   return `${phaseText(group.phaseCode)} ${place}\n${group.scope}`
 }
 

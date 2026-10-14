@@ -440,6 +440,13 @@ verify_jwt = true
 [functions.quickbooks-invoice-pdf]
 verify_jwt = true
 
+# Reads what QuickBooks shows for Package invoices (open, overdue, paid...). A
+# signed-in Admin or Accounting user is checked inside the function; the
+# scheduled run sends QUICKBOOKS_SYNC_CRON_SECRET instead. No request is trusted
+# solely because it reached this public endpoint.
+[functions.quickbooks-payments-sync]
+verify_jwt = false
+
 # A signed-in administrator requests one-way synchronization. The function
 # validates that user before service-role access to Vault and event mappings.
 [functions.google-calendar-sync]

@@ -4,6 +4,7 @@ import QuickbooksLogo from './QuickbooksLogo.jsx'
 const TONE_COLORS = {
   success: 'success.main',
   warning: 'warning.main',
+  error: 'error.main',
   neutral: 'text.secondary',
 }
 

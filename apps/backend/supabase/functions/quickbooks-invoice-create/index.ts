@@ -141,6 +141,13 @@ Deno.serve(async (req) => {
           rpcFailure(error)
           return data as ClaimResult
         },
+        peekInvoiceNumber: async (id) => {
+          const { data, error } = await admin.rpc('preview_quickbooks_invoice_number', {
+            p_package_id: id,
+          })
+          rpcFailure(error)
+          return (data as string | null) ?? null
+        },
         complete: async (id, created, payload) => {
           const { error } = await admin.rpc('complete_quickbooks_invoice_sync', {
             p_package_id: id,

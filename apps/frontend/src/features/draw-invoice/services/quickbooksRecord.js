@@ -177,6 +177,73 @@ export function toQuickbooksInvoiceSync(row) {
     docNumber: row.qbo_doc_number ?? null,
     totalAmount: row.total_amount == null ? null : Number(row.total_amount),
     updatedAt: row.updated_at,
+    // What QuickBooks shows about the payment (null until it has been read).
+    paymentState: row.qbo_state ?? null,
+    paymentBalance: row.qbo_balance == null ? null : Number(row.qbo_balance),
+    paymentTotal: row.qbo_total == null ? null : Number(row.qbo_total),
+    dueDate: row.qbo_due_date ?? null,
+    overdue: Boolean(row.qbo_overdue),
+    linkedTransactions: row.qbo_linked_transactions ?? [],
+    paymentCheckedAt: row.qbo_state_checked_at ?? null,
+  }
+}
+
+const dueDateFormatter = new Intl.DateTimeFormat('en-US', {
+  month: 'short',
+  day: 'numeric',
+  timeZone: 'UTC',
+})
+
+function formatDueDate(isoDate) {
+  const [year, month, day] = String(isoDate ?? '').split('-').map(Number)
+  return year && month && day ? dueDateFormatter.format(new Date(Date.UTC(year, month - 1, day))) : ''
+}
+
+const money = (value) => Number(value).toLocaleString('en-US', { style: 'currency', currency: 'USD' })
+
+/**
+ * How QuickBooks shows the payment of a Package's invoice, in its own words:
+ * Open, Overdue, Partially paid, Paid, Closed, Voided. Returns null when the
+ * payment has not been read yet.
+ */
+export function quickbooksPaymentView(sync) {
+  const state = sync?.paymentState
+  if (!state) return null
+
+  const due = formatDueDate(sync.dueDate)
+  switch (state) {
+    case 'PAID':
+      return { tone: 'success', status: 'Paid', detail: 'Paid in QuickBooks' }
+    case 'PARTIALLY_PAID':
+      return {
+        tone: sync.overdue ? 'error' : 'warning',
+        status: sync.overdue ? 'Partially paid · Overdue' : 'Partially paid',
+        detail: `${money(sync.paymentBalance ?? 0)} still due${due ? ` · due ${due}` : ''}`,
+      }
+    case 'OVERDUE':
+      return {
+        tone: 'error',
+        status: 'Overdue',
+        detail: `${money(sync.paymentBalance ?? 0)} due${due ? ` since ${due}` : ''}`,
+      }
+    case 'OPEN':
+      return {
+        tone: 'success',
+        status: 'Open',
+        detail: `${money(sync.paymentBalance ?? 0)} due${due ? ` · due ${due}` : ''}`,
+      }
+    case 'CLOSED':
+      return {
+        tone: 'neutral',
+        status: 'Closed',
+        detail: 'Settled in QuickBooks without a payment',
+      }
+    case 'VOIDED':
+      return { tone: 'neutral', status: 'Voided', detail: 'Voided in QuickBooks' }
+    case 'DELETED':
+      return { tone: 'warning', status: 'Deleted', detail: 'No longer in QuickBooks' }
+    default:
+      return null
   }
 }
 
@@ -203,10 +270,14 @@ export function quickbooksPackageStatusView({ record, sync, canSend }) {
   switch (record.quickbooksStatus) {
     case 'CREATED': {
       const number = record.quickbooksReference || sync?.docNumber || ''
+      // Once QuickBooks has been asked, its own word for the invoice is shown.
+      const payment = quickbooksPaymentView(sync)
       return {
-        tone: 'success',
-        status: 'Invoice created',
-        detail: number ? `Invoice ${number}` : 'Created in QuickBooks',
+        tone: payment?.tone ?? 'success',
+        status: payment?.status ?? 'Invoice created',
+        detail: payment
+          ? `${number ? `Invoice ${number} · ` : ''}${payment.detail}`
+          : number ? `Invoice ${number}` : 'Created in QuickBooks',
         action: 'open',
         href: quickbooksInvoiceUrl(sync?.environment, sync?.invoiceId),
       }
@@ -319,7 +390,7 @@ export function canVoidQuickbooksInvoice(record, role) {
     && record != null
     && record.packageType !== 'RETENTION_RELEASE'
     && record.quickbooksStatus === 'CREATED'
-    && ['DRAFT', 'READY_TO_SUBMIT'].includes(record.status)
+    && record.status === 'DRAFT'
 }
 
 /** The saved QuickBooks PDF of a Package (its INVOICE document), or null. */

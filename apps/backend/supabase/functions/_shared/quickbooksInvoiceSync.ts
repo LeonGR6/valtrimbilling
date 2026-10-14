@@ -54,7 +54,9 @@ export class QuickbooksSyncConflictError extends Error {
 }
 
 export type ClaimResult =
-  | { claimed: true; requestId: string }
+  // `invoiceNumber` is the Package's serial invoice number (15001, 15002...),
+  // the same on every retry.
+  | { claimed: true; requestId: string; invoiceNumber?: string }
   | { claimed: false; reason: SyncConflictReason }
 
 export interface InvoiceSyncDeps {
@@ -74,6 +76,8 @@ export interface InvoiceSyncDeps {
   verifyCustomer(api: QuickbooksApiOptions, customerId: string): Promise<QuickbooksCustomerDetail | null>
   getCustomFieldDefinitions(api: QuickbooksApiOptions): Promise<CustomFieldDefinition[]>
   claim(packageId: number, environment: string, realmId: string): Promise<ClaimResult>
+  /** The invoice number the Package has or would get, without taking it (previews). */
+  peekInvoiceNumber?(packageId: number): Promise<string | null>
   createInvoice(
     api: QuickbooksApiOptions,
     payload: QuickbooksInvoicePayload,
@@ -118,6 +122,7 @@ export function realDeps(
     | 'saveCustomerMapping'
     | 'clearCustomerMapping'
     | 'claim'
+    | 'peekInvoiceNumber'
     | 'complete'
     | 'saveInvoicePdf'
     | 'fail'
@@ -196,13 +201,23 @@ export async function createPackageInvoice(
     itemId: session.itemId,
     txnDate,
     dueDate: dueDateFor(txnDate, loaded.paymentTermsDays),
-    docNumber: loaded.packageNumber,
+    // The invoice number is taken when the invoice is really sent (see below);
+    // `privateNote` keeps the Package number so the two can be matched.
+    docNumber: undefined,
     privateNote: `ValtrimBilling ${loaded.packageNumber}`,
     customFields,
     ...mapped,
   })
 
-  if (dryRun) return { dryRun: true, customer, invoice: payload, warnings }
+  if (dryRun) {
+    const previewNumber = (await deps.peekInvoiceNumber?.(packageId)) ?? loaded.packageNumber
+    return {
+      dryRun: true,
+      customer,
+      invoice: { ...payload, DocNumber: previewNumber },
+      warnings,
+    }
+  }
 
   if (customer.source === 'quickbooks') {
     await deps.saveCustomerMapping(loaded.builder.id, session.environment, {
@@ -214,9 +229,15 @@ export async function createPackageInvoice(
   const claim = await deps.claim(packageId, session.environment, session.realmId)
   if (!claim.claimed) throw new QuickbooksSyncConflictError(claim.reason)
 
+  // The Package's own invoice number (not its DP- number) is what QuickBooks shows.
+  const sendPayload: QuickbooksInvoicePayload = {
+    ...payload,
+    DocNumber: claim.invoiceNumber ?? loaded.packageNumber,
+  }
+
   let created: CreatedQuickbooksInvoice
   try {
-    created = await deps.createInvoice(api, payload, claim.requestId)
+    created = await deps.createInvoice(api, sendPayload, claim.requestId)
   } catch (error) {
     const definite = error instanceof QuickbooksApiError ? error.definite : false
     await deps.fail(packageId, (error as Error).message, !definite)
@@ -224,7 +245,7 @@ export async function createPackageInvoice(
   }
 
   try {
-    await deps.complete(packageId, created, payload)
+    await deps.complete(packageId, created, sendPayload)
   } catch (error) {
     // The invoice exists in QuickBooks; keep the request id so a retry gets it back.
     await deps.fail(
@@ -241,7 +262,7 @@ export async function createPackageInvoice(
     await deps.saveInvoicePdf(api, {
       packageId,
       invoiceId: created.id,
-      documentNumber: created.docNumber ?? loaded.packageNumber,
+      documentNumber: created.docNumber ?? sendPayload.DocNumber ?? loaded.packageNumber,
     })
   } catch (error) {
     warnings.push(

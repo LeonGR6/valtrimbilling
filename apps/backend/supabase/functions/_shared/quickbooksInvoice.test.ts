@@ -145,7 +145,7 @@ Deno.test('sums in cents so floating point noise cannot break the total', () => 
   assertEquals(payload.Line[0].Amount, 0.3)
 })
 
-Deno.test('BUILDING_SCOPE groups by building and requires one', () => {
+Deno.test('BUILDING_SCOPE groups by building, names its lots and requires a building', () => {
   const payload = buildQuickbooksInvoicePayload({
     ...base,
     invoiceLineFormat: 'BUILDING_SCOPE',
@@ -160,8 +160,8 @@ Deno.test('BUILDING_SCOPE groups by building and requires one', () => {
   assertEquals(
     payload.Line.map((row) => [row.Description, row.Amount]),
     [
-      ['PHASE 1 BUILDING A\nDRAW 3', 200],
-      ['PHASE 1 BUILDING B\nDRAW 3', 50],
+      ['PHASE 1 BUILDING A LOTS #1-2\nDRAW 3', 200],
+      ['PHASE 1 BUILDING B LOT #3\nDRAW 3', 50],
     ],
   )
 
@@ -199,7 +199,7 @@ Deno.test('hardware and utility each get their own row, also per building', () =
       charges,
       expectedNetAmount: 1550,
     })
-    const place = invoiceLineFormat === 'LOT_SCOPE' ? 'LOT #97' : 'BUILDING A'
+    const place = invoiceLineFormat === 'LOT_SCOPE' ? 'LOT #97' : 'BUILDING A LOT #97'
 
     assertEquals(
       payload.Line.map((row) => [row.Description, row.Amount]),

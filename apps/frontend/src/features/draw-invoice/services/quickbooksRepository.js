@@ -14,7 +14,22 @@ const INVOICE_FUNCTION = 'quickbooks-invoice-create'
 const CUSTOMERS_FUNCTION = 'quickbooks-customers'
 const VOID_FUNCTION = 'quickbooks-invoice-void'
 const PDF_FUNCTION = 'quickbooks-invoice-pdf'
-const SYNC_COLUMNS = 'status, error, environment, qbo_invoice_id, qbo_doc_number, total_amount, updated_at'
+const SYNC_COLUMNS = [
+  'status',
+  'error',
+  'environment',
+  'qbo_invoice_id',
+  'qbo_doc_number',
+  'total_amount',
+  'updated_at',
+  'qbo_state',
+  'qbo_total',
+  'qbo_balance',
+  'qbo_due_date',
+  'qbo_overdue',
+  'qbo_linked_transactions',
+  'qbo_state_checked_at',
+].join(', ')
 const INTUIT_AUTHORIZATION_ORIGIN = 'https://appcenter.intuit.com'
 // Never select refresh_token_secret_id: the browser only needs the status.
 const CONNECTION_COLUMNS = [
@@ -207,4 +222,19 @@ export async function downloadQuickbooksInvoicePdf(packageId) {
   if (error || !data) throw new Error('The saved invoice PDF could not be downloaded.', { cause: error })
 
   return { name: pdf.file.name, bytes: new Uint8Array(await data.arrayBuffer()) }
+}
+
+const PAYMENTS_FUNCTION = 'quickbooks-payments-sync'
+
+/**
+ * Asks QuickBooks how a Package's invoice stands (open, overdue, paid...) and
+ * records it. A Package paid there becomes Paid / Closed here.
+ * @returns {{ state: string, overdue: boolean, workflowStatus: string|null }}
+ */
+export async function refreshQuickbooksPayment(packageId) {
+  const data = await functionRequest(PAYMENTS_FUNCTION, { packageId })
+  const [result] = data?.results ?? []
+  if (!result) throw new QuickbooksInvoiceRequestError('QuickBooks returned no payment state.')
+  if (result.error) throw new QuickbooksInvoiceRequestError(result.error)
+  return result
 }

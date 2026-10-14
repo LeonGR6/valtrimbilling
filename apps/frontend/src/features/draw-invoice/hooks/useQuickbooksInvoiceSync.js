@@ -8,9 +8,9 @@ const TRACKED_STATUSES = ['CREATED', 'SYNC_ERROR']
  * total and date once created, or the error after a failure. Re-read whenever
  * the Package's QuickBooks status or reference changes, e.g. after sending.
  */
-export function useQuickbooksInvoiceSync(record) {
+export function useQuickbooksInvoiceSync(record, refreshKey = 0) {
   const tracked = TRACKED_STATUSES.includes(record?.quickbooksStatus)
-  const key = `${record?.id}:${record?.quickbooksStatus}:${record?.quickbooksReference ?? ''}`
+  const key = `${record?.id}:${record?.quickbooksStatus}:${record?.quickbooksReference ?? ''}:${refreshKey}`
   const [loaded, setLoaded] = useState({ key: null, sync: null })
 
   useEffect(() => {

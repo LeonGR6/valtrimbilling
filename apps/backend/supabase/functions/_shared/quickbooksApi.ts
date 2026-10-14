@@ -44,6 +44,12 @@ export interface QuickbooksInvoiceDetail {
   balance: number
   /** Types of the payments, credits and other transactions linked to the invoice. */
   linkedTransactions: string[]
+  /** YYYY-MM-DD, when QuickBooks has one. */
+  dueDate?: string | null
+  /** The private note: a voided invoice is marked there. */
+  privateNote?: string | null
+  /** When QuickBooks last changed the invoice (ISO). */
+  lastUpdatedAt?: string | null
 }
 
 export interface CreatedQuickbooksInvoice {
@@ -321,6 +327,9 @@ export async function getQuickbooksInvoice(
     DocNumber?: unknown
     TotalAmt?: unknown
     Balance?: unknown
+    DueDate?: unknown
+    PrivateNote?: unknown
+    MetaData?: { LastUpdatedTime?: unknown }
     LinkedTxn?: { TxnType?: unknown }[]
   } | undefined
   if (typeof invoice?.Id !== 'string' || typeof invoice.SyncToken !== 'string') return null
@@ -332,6 +341,11 @@ export async function getQuickbooksInvoice(
     totalAmount: Number(invoice.TotalAmt ?? 0),
     balance: Number(invoice.Balance ?? 0),
     linkedTransactions: (invoice.LinkedTxn ?? []).map((txn) => String(txn.TxnType ?? 'Unknown')),
+    dueDate: typeof invoice.DueDate === 'string' ? invoice.DueDate : null,
+    privateNote: typeof invoice.PrivateNote === 'string' ? invoice.PrivateNote : null,
+    lastUpdatedAt: typeof invoice.MetaData?.LastUpdatedTime === 'string'
+      ? invoice.MetaData.LastUpdatedTime
+      : null,
   }
 }
 

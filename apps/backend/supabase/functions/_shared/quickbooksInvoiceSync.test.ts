@@ -343,3 +343,30 @@ Deno.test('if the created invoice cannot be recorded the claim stays reusable', 
 
   assertEquals(calls.slice(-2), ['createInvoice', 'fail(reusable=true)'])
 })
+
+Deno.test('a real send uses the serial invoice number as the QuickBooks DocNumber', async () => {
+  const sent: (string | undefined)[] = []
+  const { deps } = harness({
+    claim: () => Promise.resolve({ claimed: true, requestId: 'req-1', invoiceNumber: '15001' }),
+    createInvoice: (_api, payload) => {
+      sent.push(payload.DocNumber)
+      return Promise.resolve({ id: '147', docNumber: '15001', syncToken: '0', totalAmount: 760 })
+    },
+  })
+
+  const result = await createPackageInvoice(deps, { packageId: 68, txnDate: '2026-10-14', dryRun: false })
+
+  assertEquals(sent, ['15001'])
+  assertEquals(result.dryRun === false && result.docNumber, '15001')
+})
+
+Deno.test('a preview shows the number the invoice would get and takes none', async () => {
+  const { deps, calls } = harness({
+    peekInvoiceNumber: () => Promise.resolve('15002'),
+  })
+
+  const result = await createPackageInvoice(deps, { packageId: 68, txnDate: '2026-10-14', dryRun: true })
+
+  assertEquals(result.dryRun && result.invoice.DocNumber, '15002')
+  assertEquals(calls.includes('claim'), false)
+})

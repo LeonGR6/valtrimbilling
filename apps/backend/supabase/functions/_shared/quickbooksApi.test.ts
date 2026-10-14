@@ -144,6 +144,9 @@ Deno.test('reads an invoice with its balance and linked payments', async () => {
     totalAmount: 13320,
     balance: 13320,
     linkedTransactions: ['Payment'],
+    dueDate: null,
+    privateNote: null,
+    lastUpdatedAt: null,
   })
   assertEquals(calls[0].url.pathname, '/v3/company/9341/invoice/146')
   assertEquals(await getQuickbooksInvoice(options, '1', recording(faultReply('610')).fetcher), null)

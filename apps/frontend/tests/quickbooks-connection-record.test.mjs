@@ -414,8 +414,17 @@ test('only ADMIN and ACCOUNTING can void, and only a created invoice of an open 
   assert.equal(canVoidQuickbooksInvoice(invoicedDraft, 'ADMIN'), true)
   assert.equal(canVoidQuickbooksInvoice(invoicedDraft, 'ACCOUNTING'), true)
   assert.equal(canVoidQuickbooksInvoice(invoicedDraft, 'PROJECT_MANAGEMENT'), false)
-  assert.equal(canVoidQuickbooksInvoice({ ...invoicedDraft, status: 'AWAITING_PAYMENT' }, 'ADMIN'), false)
-  assert.equal(canVoidQuickbooksInvoice({ ...invoicedDraft, status: 'AWAITING_PAYMENT' }, 'ADMIN'), false)
+  // An open invoice leaves the Package Awaiting payment; it can still be voided
+  // until it is sent to the Builder.
+  assert.equal(canVoidQuickbooksInvoice({ ...invoicedDraft, status: 'AWAITING_PAYMENT' }, 'ADMIN'), true)
+  assert.equal(
+    canVoidQuickbooksInvoice({ ...invoicedDraft, status: 'AWAITING_PAYMENT', submissionStatus: 'SUBMITTED' }, 'ADMIN'),
+    false,
+  )
+  assert.equal(
+    canVoidQuickbooksInvoice({ ...invoicedDraft, status: 'AWAITING_PAYMENT', submittedAt: '2026-10-14T10:00:00Z' }, 'ADMIN'),
+    false,
+  )
   assert.equal(canVoidQuickbooksInvoice({ ...invoicedDraft, status: 'PAID_CLOSED' }, 'ADMIN'), false)
   assert.equal(canVoidQuickbooksInvoice({ ...invoicedDraft, quickbooksStatus: 'NOT_CREATED' }, 'ADMIN'), false)
   assert.equal(canVoidQuickbooksInvoice({ ...invoicedDraft, quickbooksStatus: 'VOIDED' }, 'ADMIN'), false)

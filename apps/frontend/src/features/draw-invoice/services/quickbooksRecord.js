@@ -390,7 +390,11 @@ export function canVoidQuickbooksInvoice(record, role) {
     && record != null
     && record.packageType !== 'RETENTION_RELEASE'
     && record.quickbooksStatus === 'CREATED'
-    && record.status === 'DRAFT'
+    // An open invoice puts the Package in Awaiting payment; it can be voided
+    // there as long as it was not sent to the Builder and nothing was paid.
+    && ['DRAFT', 'AWAITING_PAYMENT'].includes(record.status)
+    && (record.submissionStatus ?? 'NOT_SUBMITTED') === 'NOT_SUBMITTED'
+    && !record.submittedAt
 }
 
 /** The saved QuickBooks PDF of a Package (its INVOICE document), or null. */

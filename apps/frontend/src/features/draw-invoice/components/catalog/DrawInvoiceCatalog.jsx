@@ -1,8 +1,9 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Box, CircularProgress, Stack, Typography } from '@mui/material'
 import { useBuilderDrawSchedules } from '../../../builder-draw-schedules/context/useBuilderDrawSchedules.js'
 import { useProductionActivities } from '../../../calendar/context/useProductionActivities.js'
+import { useAuth } from '../../../auth/context/useAuth.js'
 import { useJobs } from '../../../jobs/context/useJobs.js'
 import {
   getJobBuilderId,
@@ -11,7 +12,13 @@ import {
 import { useDrawInvoicePackages } from '../../context/useDrawInvoicePackages.js'
 import CreateDrawDialog from '../dialogs/CreateDrawDialog.jsx'
 import CreateRetentionReleaseDialog from '../dialogs/CreateRetentionReleaseDialog.jsx'
+import { refreshAllQuickbooksPayments } from '../../services/quickbooksRepository.js'
 import PackageCatalog from './PackageCatalog.jsx'
+
+// Opening the catalog asks QuickBooks how the open invoices stand, at most once
+// every few minutes, so a Package paid there shows as Paid / Closed here.
+const PAYMENT_CHECK_INTERVAL_MS = 5 * 60 * 1000
+let lastPaymentCheck = 0
 
 export default function DrawInvoiceCatalog() {
   const navigate = useNavigate()
@@ -45,6 +52,16 @@ export default function DrawInvoiceCatalog() {
     transferDrawPackageCells,
     cancelDrawInvoicePackage,
   } = useDrawInvoicePackages()
+  const { profile } = useAuth()
+  const canCheckPayments = ['ADMIN', 'ACCOUNTING'].includes(profile?.role)
+  useEffect(() => {
+    if (!canCheckPayments || Date.now() - lastPaymentCheck < PAYMENT_CHECK_INTERVAL_MS) return
+    lastPaymentCheck = Date.now()
+    refreshAllQuickbooksPayments()
+      .then((checked) => (checked > 0 ? refreshDrawInvoicePackages() : null))
+      // The scheduler keeps trying; a failed check here is not worth a message.
+      .catch(() => { lastPaymentCheck = 0 })
+  }, [canCheckPayments, refreshDrawInvoicePackages])
   const [createDialogContext, setCreateDialogContext] = useState(null)
   const [retentionSuggestion, setRetentionSuggestion] = useState(null)
 

@@ -238,3 +238,13 @@ export async function refreshQuickbooksPayment(packageId) {
   if (result.error) throw new QuickbooksInvoiceRequestError(result.error)
   return result
 }
+
+/**
+ * Checks every open QuickBooks invoice at once (the same check the scheduler
+ * runs), so Packages paid there reach Paid / Closed without being opened one by
+ * one. Returns how many Packages were checked.
+ */
+export async function refreshAllQuickbooksPayments() {
+  const data = await functionRequest(PAYMENTS_FUNCTION, { all: true })
+  return data?.results?.length ?? 0
+}

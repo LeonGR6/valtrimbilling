@@ -525,6 +525,35 @@ export function canDeleteVoidedQuickbooksPackage(record) {
     && !record.submittedAt
 }
 
+/**
+ * Why a Draft Package can no longer be edited, moved or deleted, in the words
+ * shown to the person; null when the Package is not a locked Draft.
+ */
+export function draftLockReason(record) {
+  if (record == null || record.status !== 'DRAFT' || canManageDraftDrawPackage(record)) {
+    return null
+  }
+  if (record.packageType === 'RETENTION_RELEASE') {
+    return 'A Retention Release cannot be edited. Cancel it from the Packages list if it was created by mistake.'
+  }
+  if (record.submissionStatus !== 'NOT_SUBMITTED' || record.submittedAt) {
+    return 'This Package was already sent to the Builder, so its cells are locked.'
+  }
+  if (record.quickbooksStatus === 'CREATED') {
+    return 'This Package already has a QuickBooks invoice, so its cells are locked.'
+  }
+  if (record.quickbooksStatus === 'VOIDED') {
+    return 'The QuickBooks invoice was voided. The Package can be deleted but not edited.'
+  }
+  if (record.invoiceNumber || record.invoiceDate || record.quickbooksReference) {
+    return 'This Package already has an invoice number, so its cells are locked.'
+  }
+  if (record.persistedInvoice?.paidAmount > 0) {
+    return 'This Package has a payment recorded, so its cells are locked.'
+  }
+  return 'This Package can no longer be changed.'
+}
+
 export function canCorrectDrawPackage(record) {
   return canManageDraftDrawPackage(record)
     && (record.persistedHardwareLines?.length ?? 0) === 0

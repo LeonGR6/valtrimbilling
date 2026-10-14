@@ -1,7 +1,6 @@
 import {
   Box,
   Button,
-  Card,
   Chip,
   Divider,
   Stack,
@@ -10,6 +9,7 @@ import {
 import AccountBalanceRoundedIcon from '@mui/icons-material/AccountBalanceRounded'
 import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded'
 import HourglassBottomRoundedIcon from '@mui/icons-material/HourglassBottomRounded'
+import SuggestionsCard from './SuggestionsCard.jsx'
 import {
   formatBuilding,
   formatPhase,
@@ -54,121 +54,124 @@ function eligibilityMessage(suggestion) {
 export default function RetentionSuggestionsPanel({
   suggestions,
   disabled,
+  open,
+  onToggle,
   onReview,
 }) {
   if (suggestions.length === 0) return null
 
   return (
-    <Card variant="outlined" sx={{ mb: 2.5, overflow: 'hidden' }}>
-      <Box sx={{ px: { xs: 2, md: 2.5 }, py: 2.25 }}>
-        <Stack direction="row" spacing={1.5} sx={{ alignItems: 'flex-start' }}>
-          <Box sx={{
-            width: 42,
-            height: 42,
-            flexShrink: 0,
-            borderRadius: 1.5,
-            display: 'grid',
-            placeItems: 'center',
-            bgcolor: 'success.light',
-            color: 'success.dark',
-          }}>
-            <AccountBalanceRoundedIcon />
-          </Box>
-          <Box>
-            <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
-              <Typography variant="h6" fontWeight={850}>Retention Suggestions</Typography>
-              <Chip size="small" color="success" label={suggestions.length} />
-            </Stack>
-            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.25 }}>
-              Projected and releasable retention after Hardware completion.
-            </Typography>
-          </Box>
-        </Stack>
-      </Box>
-
-      {suggestions.map((suggestion) => {
+    <SuggestionsCard
+      id="retention-suggestions"
+      icon={<AccountBalanceRoundedIcon />}
+      iconSx={{ bgcolor: 'success.light', color: 'success.dark' }}
+      title="Retention Suggestions"
+      count={suggestions.length}
+      countColor="success"
+      hint="Projected and releasable retention after Hardware completion."
+      open={open}
+      onToggle={onToggle}
+    >
+      {suggestions.map((suggestion, index) => {
         const content = statusContent[suggestion.status]
         return (
           <Box key={`${suggestion.job.id}:${suggestion.phaseId ?? 'JOB'}`}>
-            <Divider />
-            <Box sx={{ px: { xs: 2, md: 2.5 }, py: 2 }}>
-              <Stack
-                direction={{ xs: 'column', lg: 'row' }}
-                spacing={2}
-                sx={{ alignItems: { lg: 'center' } }}
-              >
-                <Box sx={{ flex: 1.25, minWidth: 0 }}>
-                  <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
-                    <Typography fontWeight={850}>Job #{suggestion.job.code}</Typography>
-                    <Chip
-                      size="small"
-                      color={content.color}
-                      variant="outlined"
-                      icon={content.icon}
-                      label={content.label}
-                    />
-                  </Stack>
-                  <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-                    {suggestion.job.builder} · {suggestion.job.community}
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary">
-                    {scopeLabel(suggestion)}
-                  </Typography>
-                </Box>
+            {index > 0 && <Divider />}
+            <Box
+              sx={{
+                px: { xs: 1.5, md: 2 },
+                py: 1.1,
+                display: 'grid',
+                gap: { xs: 0.75, lg: 2 },
+                alignItems: 'center',
+                gridTemplateColumns: {
+                  xs: '1fr',
+                  lg: 'minmax(0, 1.4fr) 130px minmax(0, 1.2fr) 130px auto',
+                },
+                '&:hover': { bgcolor: 'action.hover' },
+              }}
+            >
+              <Box sx={{ minWidth: 0 }}>
+                <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexWrap: 'wrap', rowGap: 0.25 }}>
+                  <Typography fontWeight={800}>Job #{suggestion.job.code}</Typography>
+                  <Chip
+                    size="small"
+                    color={content.color}
+                    variant="outlined"
+                    icon={content.icon}
+                    label={content.label}
+                    sx={{ height: 22 }}
+                  />
+                </Stack>
+                <Typography
+                  variant="body2"
+                  color="text.secondary"
+                  noWrap
+                  title={`${suggestion.job.builder} · ${suggestion.job.community} · ${scopeLabel(suggestion)}`}
+                >
+                  {suggestion.job.builder} · {suggestion.job.community} · {scopeLabel(suggestion)}
+                </Typography>
+              </Box>
 
-                <Box sx={{ flex: 1, minWidth: 0 }}>
-                  <Typography variant="caption" color="text.secondary">
-                    Projected retention
+              <Box>
+                <Typography variant="caption" color="text.secondary" component="div">
+                  Projected
+                </Typography>
+                <Typography fontWeight={800} sx={{ fontVariantNumeric: 'tabular-nums' }}>
+                  {formatCurrency(suggestion.projectedRetention)}
+                </Typography>
+                {suggestion.draftRetention > 0 && (
+                  <Typography variant="caption" color="warning.main" component="div">
+                    {formatCurrency(suggestion.draftRetention)} in Draft
                   </Typography>
-                  <Typography fontWeight={850}>
-                    {formatCurrency(suggestion.projectedRetention)}
-                  </Typography>
-                  {suggestion.draftRetention > 0 && (
-                    <Typography variant="caption" color="warning.dark">
-                      {formatCurrency(suggestion.draftRetention)} remains in Draft
-                    </Typography>
-                  )}
-                </Box>
+                )}
+              </Box>
 
-                <Box sx={{ flex: 1, minWidth: 0 }}>
-                  <Typography variant="caption" color="text.secondary">
-                    Releasable amount
-                  </Typography>
-                  <Typography fontWeight={850} color={suggestion.isReady ? 'success.dark' : 'text.primary'}>
-                    {formatCurrency(suggestion.releasableRetention)}
-                  </Typography>
-                  <Typography variant="caption" color="text.secondary" component="div">
-                    {eligibilityMessage(suggestion)}
-                  </Typography>
-                </Box>
+              <Box sx={{ minWidth: 0 }}>
+                <Typography variant="caption" color="text.secondary" component="div">
+                  Releasable
+                </Typography>
+                <Typography
+                  fontWeight={800}
+                  color={suggestion.isReady ? 'success.main' : 'text.primary'}
+                  sx={{ fontVariantNumeric: 'tabular-nums' }}
+                >
+                  {formatCurrency(suggestion.releasableRetention)}
+                </Typography>
+                <Typography variant="caption" color="text.secondary" component="div">
+                  {eligibilityMessage(suggestion)}
+                </Typography>
+              </Box>
 
+              <Box>
                 {suggestion.sourceCutoffDate && (
-                  <Box sx={{ flex: 0.8, minWidth: 150 }}>
-                    <Typography variant="caption" color="text.secondary">
+                  <>
+                    <Typography variant="caption" color="text.secondary" component="div">
                       Final Hardware cutoff
                     </Typography>
                     <Typography variant="body2" fontWeight={750}>
                       {formatLongDate(suggestion.sourceCutoffDate)}
                     </Typography>
-                  </Box>
+                  </>
                 )}
+              </Box>
 
-                <Button
-                  variant="contained"
-                  color="success"
-                  size="small"
-                  disabled={disabled || !suggestion.isReady}
-                  onClick={() => onReview(suggestion)}
-                  disableElevation
-                  sx={{ flexShrink: 0, alignSelf: { xs: 'stretch', lg: 'center' } }}
-                >
-                  Review Retention Package
-                </Button>
-              </Stack>
+              <Button
+                variant="contained"
+                color="success"
+                size="small"
+                disabled={disabled || !suggestion.isReady}
+                onClick={() => onReview(suggestion)}
+                aria-label={`Review Retention Package for Job #${suggestion.job.code}`}
+                disableElevation
+                sx={{ flexShrink: 0, justifySelf: { xs: 'stretch', lg: 'end' } }}
+              >
+                Review
+              </Button>
             </Box>
           </Box>
         )
       })}
-    </Card>
+    </SuggestionsCard>
   )
 }

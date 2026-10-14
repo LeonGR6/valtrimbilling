@@ -5,8 +5,6 @@ import {
   Backdrop,
   Box,
   Button,
-  Card,
-  CardContent,
   Chip,
   CircularProgress,
   IconButton,
@@ -16,18 +14,10 @@ import {
   TextField,
   Typography,
 } from '@mui/material'
-import AddRoundedIcon from '@mui/icons-material/AddRounded'
-import ApartmentRoundedIcon from '@mui/icons-material/ApartmentRounded'
 import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded'
-import AttachMoneyRoundedIcon from '@mui/icons-material/AttachMoneyRounded'
-import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
 import SyncRoundedIcon from '@mui/icons-material/SyncRounded'
 import MarkEmailReadRoundedIcon from '@mui/icons-material/MarkEmailReadRounded'
-import EditRoundedIcon from '@mui/icons-material/EditRounded'
-import MergeTypeRoundedIcon from '@mui/icons-material/MergeTypeRounded'
-import MoveToInboxRoundedIcon from '@mui/icons-material/MoveToInboxRounded'
 import LayersRoundedIcon from '@mui/icons-material/LayersRounded'
-import ReceiptLongRoundedIcon from '@mui/icons-material/ReceiptLongRounded'
 import { useAuth } from '../../../auth/context/useAuth.js'
 import { useBuilderDrawSchedules } from '../../../builder-draw-schedules/context/useBuilderDrawSchedules.js'
 import { displayInvoiceNumber } from '../../utils/packageInvoiceLabel.js'
@@ -52,6 +42,7 @@ import { useQuickbooksInvoiceSync } from '../../hooks/useQuickbooksInvoiceSync.j
 import { refreshQuickbooksPayment } from '../../services/quickbooksRepository.js'
 import {
   canCorrectDrawPackage,
+  draftLockReason,
 } from '../../services/drawInvoicePackageRecord.js'
 import {
   canCreateQuickbooksInvoice,
@@ -82,11 +73,13 @@ import QuickbooksInvoiceDialog from './QuickbooksInvoiceDialog.jsx'
 import QuickbooksPackageNotice from './QuickbooksPackageNotice.jsx'
 import QuickbooksStatusCard from '../shared/QuickbooksStatusCard.jsx'
 import {
-  MetricCard,
   PackageStatusChip,
   PackageStatusControl,
+  PackageSummaryPanel,
   ReadinessChip,
 } from '../shared/PackageUi.jsx'
+import PackageCorrectionHistory from './PackageCorrectionHistory.jsx'
+import PackageHeaderActions from './PackageHeaderActions.jsx'
 import {
   DrawWorksheetTable,
   PackageHardwareTable,
@@ -304,12 +297,31 @@ export default function DrawPackageDetail() {
       .catch(() => {})
   }
 
+  const packageContext = isRetentionRelease
+    ? `Job #${focusedJob.code} · ${focusedPackage.retentionRelease?.scopeType === 'JOB'
+      ? 'Per Job'
+      : `${formatPhase(focusedPackage.retentionRelease?.phaseCode)} · ${formatBuilding(focusedPackage.retentionRelease?.building)}`}`
+    : selectedPhase
+      ? `Job #${focusedJob.code} · ${isMultiPhase
+        ? packagePhaseLabels(packageSummary.phaseSummaries).join(' · ')
+        : `${formatPhase(selectedPhase.name)} · ${formatBuilding(selectedPhase.building)}`}`
+      : null
+  const canCreatePackage = canManageDrawInvoicePackages
+    && !billingSetupsLoading
+    && jobBillingSetupIsAvailable
+  // Why a Draft cannot be edited, moved or deleted, so the button explains itself.
+  const editLockedReason = canManageDrawInvoicePackages && !canCorrectFocusedPackage
+    && !canDeleteFocusedPackage
+    ? draftLockReason(focusedPackage)
+    : null
+
   return (
     <Box sx={{ minHeight: '100%', bgcolor: 'background.default' }}>
       <Box
         sx={{
-          px: { xs: 2.5, md: 4 },
-          py: 2.5,
+          px: { xs: 2, md: 3 },
+          pt: 1,
+          pb: 2,
           bgcolor: 'background.paper',
           borderBottom: 1,
           borderColor: 'divider',
@@ -317,29 +329,49 @@ export default function DrawPackageDetail() {
       >
         <Button
           color="inherit"
+          size="small"
           startIcon={<ArrowBackRoundedIcon />}
           onClick={() => navigate('/draw-invoice')}
-          sx={{ mb: 1.5 }}
+          sx={{ ml: -1, mb: 1, color: 'text.secondary' }}
         >
           All packages
         </Button>
         <Stack
           direction={{ xs: 'column', md: 'row' }}
           spacing={2}
-          sx={{ alignItems: { md: 'center' }, justifyContent: 'space-between' }}
+          sx={{ alignItems: { md: 'flex-start' }, justifyContent: 'space-between' }}
         >
-          <Box>
-            <Typography variant="overline" color="primary.main" fontWeight={800}>
+          <Box sx={{ minWidth: 0 }}>
+            <Typography variant="body2" color="text.secondary">
               {isRetentionRelease
-                ? 'Retention Release'
+                ? `Retention Release · ${focusedJob.builder} / ${focusedJob.community}`
                 : `${focusedJob.builder} / ${focusedJob.community}`}
             </Typography>
-            <Stack direction="row" spacing={1.25} useFlexGap sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
-              <Typography variant="h5" fontWeight={850}>
+            <Stack
+              direction="row"
+              spacing={1.25}
+              useFlexGap
+              sx={{ alignItems: 'center', flexWrap: 'wrap', mt: 0.25 }}
+            >
+              <Typography variant="h5" component="h1" fontWeight={850} letterSpacing="-0.01em">
                 {focusedPackage?.packageNumber ?? `Job #${focusedJob.code} Draw worksheet`}
               </Typography>
+              {focusedPackage ? (
+                canManageDrawInvoicePackages && focusedPackage.status !== 'CANCELLED' ? (
+                  <PackageStatusControl
+                    status={focusedPackage.status}
+                    disabled={saving}
+                    onChange={handlePackageStatusChange}
+                  />
+                ) : (
+                  <PackageStatusChip status={focusedPackage.status} />
+                )
+              ) : (
+                <ReadinessChip worksheet={worksheet} />
+              )}
               {isMultiPhase && (
                 <Chip
+                  size="small"
                   color="warning"
                   icon={<LayersRoundedIcon />}
                   label={`Multi-phase · ${packageSummary.phaseCount} Phases / Buildings`}
@@ -347,67 +379,65 @@ export default function DrawPackageDetail() {
                 />
               )}
             </Stack>
-            {selectedPhase && !isRetentionRelease && (
+            {(packageContext || focusedInvoiceNumber) && (
               <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-                Job #{focusedJob.code} · {isMultiPhase
-                  ? packagePhaseLabels(packageSummary.phaseSummaries).join(' · ')
-                  : `${formatPhase(selectedPhase.name)} · ${formatBuilding(selectedPhase.building)}`}
-                {focusedInvoiceNumber ? ` · Invoice ${focusedInvoiceNumber}` : ''}
-              </Typography>
-            )}
-            {isRetentionRelease && (
-              <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-                Job #{focusedJob.code} · {focusedPackage.retentionRelease?.scopeType === 'JOB'
-                  ? 'Per Job'
-                  : `${formatPhase(focusedPackage.retentionRelease?.phaseCode)} · ${formatBuilding(focusedPackage.retentionRelease?.building)}`}
-                {focusedInvoiceNumber ? ` · Invoice ${focusedInvoiceNumber}` : ''}
+                {[packageContext, focusedInvoiceNumber ? `Invoice ${focusedInvoiceNumber}` : null]
+                  .filter(Boolean)
+                  .join(' · ')}
               </Typography>
             )}
           </Box>
-          <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: 'wrap' }}>
-            {focusedPackage ? (
-              canManageDrawInvoicePackages && focusedPackage.status !== 'CANCELLED' ? (
-                <PackageStatusControl
-                  status={focusedPackage.status}
-                  disabled={saving}
-                  onChange={handlePackageStatusChange}
-                />
-              ) : (
-                <PackageStatusChip status={focusedPackage.status} />
-              )
-            ) : (
-              <ReadinessChip worksheet={worksheet} />
-            )}
-            {quickbooksView && (
-              <QuickbooksStatusCard
-                tone={quickbooksView.tone}
-                status={quickbooksView.status}
-                detail={quickbooksView.detail}
-                title={quickbooksView.href ? 'Open this invoice in QuickBooks' : undefined}
-                href={quickbooksView.href ?? undefined}
-                onClick={quickbooksView.action === 'send' && !saving
-                  ? () => setQuickbooksDialogOpen(true)
-                  : undefined}
-              />
-            )}
-            {canCheckPayment && (
-              <Tooltip
-                title={paymentError
-                  ?? 'Check in QuickBooks whether this invoice is open, overdue or paid'}
-              >
-                <span>
-                  <IconButton
-                    size="small"
-                    color={paymentError ? 'error' : 'default'}
-                    aria-label="Check payment in QuickBooks"
-                    disabled={refreshingPayment}
-                    onClick={() => checkPayment()}
-                  >
-                    {refreshingPayment ? <CircularProgress size={18} /> : <SyncRoundedIcon fontSize="small" />}
-                  </IconButton>
-                </span>
-              </Tooltip>
-            )}
+          <Stack spacing={1} sx={{ alignItems: { xs: 'flex-start', md: 'flex-end' }, flexShrink: 0 }}>
+            <PackageHeaderActions
+              leading={(
+                <>
+                  {quickbooksView && (
+                    <QuickbooksStatusCard
+                      compact
+                      tone={quickbooksView.tone}
+                      status={quickbooksView.status}
+                      detail={quickbooksView.detail}
+                      title={quickbooksView.href ? 'Open this invoice in QuickBooks' : undefined}
+                      href={quickbooksView.href ?? undefined}
+                      onClick={quickbooksView.action === 'send' && !saving
+                        ? () => setQuickbooksDialogOpen(true)
+                        : undefined}
+                    />
+                  )}
+                  {canCheckPayment && (
+                    <Tooltip
+                      title={paymentError
+                        ?? 'Check in QuickBooks whether this invoice is open, overdue or paid'}
+                    >
+                      <span>
+                        <IconButton
+                          size="small"
+                          color={paymentError ? 'error' : 'default'}
+                          aria-label="Check payment in QuickBooks"
+                          disabled={refreshingPayment}
+                          onClick={() => checkPayment()}
+                        >
+                          {refreshingPayment ? <CircularProgress size={18} /> : <SyncRoundedIcon fontSize="small" />}
+                        </IconButton>
+                      </span>
+                    </Tooltip>
+                  )}
+                </>
+              )}
+              lockedReason={editLockedReason}
+              hasPackage={Boolean(focusedPackage)}
+              canGenerate={RELEASE_ROLES.includes(profile?.role)}
+              canEdit={canCorrectFocusedPackage}
+              canMoveCells={canCorrectFocusedPackage}
+              canDelete={canDeleteFocusedPackage}
+              canCreate={canCreatePackage}
+              saving={saving}
+              onGenerate={() => setPackageDialogOpen(true)}
+              onEdit={() => setCorrectionDialog('edit')}
+              onMoveCells={() => setCorrectionDialog('transfer')}
+              onDelete={() => setCorrectionDialog('delete')}
+              onCreate={() => setCreateDialogOpen(true)}
+            />
             {submissions.length > 0 && (
               <Tooltip
                 arrow
@@ -431,68 +461,13 @@ export default function DrawPackageDetail() {
                 <Chip
                   color="success"
                   variant="outlined"
+                  tabIndex={0}
                   icon={<MarkEmailReadRoundedIcon />}
                   label={describeSentPackage(submissions)}
                   sx={{ fontWeight: 650, height: 'auto', minHeight: 32 }}
                 />
               </Tooltip>
             )}
-            {canCorrectFocusedPackage && (
-              <>
-                <Button
-                  variant="outlined"
-                  startIcon={<EditRoundedIcon />}
-                  onClick={() => setCorrectionDialog('edit')}
-                  disabled={saving}
-                >
-                  Edit Package
-                </Button>
-                <Button
-                  variant="outlined"
-                  startIcon={<MoveToInboxRoundedIcon />}
-                  onClick={() => setCorrectionDialog('transfer')}
-                  disabled={saving}
-                >
-                  Move cells here
-                </Button>
-              </>
-            )}
-            {focusedPackage && RELEASE_ROLES.includes(profile?.role) && (
-              <Button
-                variant="contained"
-                disableElevation
-                startIcon={<MergeTypeRoundedIcon />}
-                onClick={() => setPackageDialogOpen(true)}
-                disabled={saving}
-              >
-                Generate package (PDF)
-              </Button>
-            )}
-            {canDeleteFocusedPackage && (
-              <Button
-                color="error"
-                variant="outlined"
-                startIcon={<DeleteOutlineRoundedIcon />}
-                onClick={() => setCorrectionDialog('delete')}
-                disabled={saving}
-              >
-                Delete draft
-              </Button>
-            )}
-            <Button
-              variant="contained"
-              startIcon={<AddRoundedIcon />}
-              onClick={() => setCreateDialogOpen(true)}
-              disabled={
-                !canManageDrawInvoicePackages
-                || saving
-                || billingSetupsLoading
-                || !jobBillingSetupIsAvailable
-              }
-              disableElevation
-            >
-              New Package
-            </Button>
           </Stack>
         </Stack>
       </Box>
@@ -505,18 +480,17 @@ export default function DrawPackageDetail() {
         />
       )}
 
-      <Box sx={{ p: { xs: 2.5, md: 4 } }}>
+      <Stack spacing={2} sx={{ p: { xs: 2, md: 3 } }}>
         {error && (
           <Alert
             severity="error"
             action={<Button color="inherit" onClick={handleRetry}>Retry</Button>}
-            sx={{ mb: 2.5 }}
           >
             {error}
           </Alert>
         )}
         {focusedPackage?.status === 'CANCELLED' && (
-          <Alert severity="info" sx={{ mb: 2.5 }}>
+          <Alert severity="info">
             This Package was cancelled on {formatDate(focusedPackage.cancelledAt?.slice(0, 10))}.
             {isRetentionRelease
               ? ' Its retained source amounts are available for a new release; the Package number remains for history.'
@@ -545,13 +519,105 @@ export default function DrawPackageDetail() {
             This Job has no phases yet. Create a phase and assign its lots first.
           </Alert>
         ) : (
-          <Stack spacing={2.5}>
+          <>
+            {isRetentionRelease && focusedPackage.status !== 'CANCELLED' && (
+              <Alert severity="success">
+                This is a positive retention release. Retention and WRAP are not deducted again.
+              </Alert>
+            )}
+
+            {isRetentionRelease ? (
+              <PackageSummaryPanel
+                facts={[
+                  {
+                    label: 'Release scope',
+                    value: focusedPackage.retentionRelease?.scopeType === 'JOB'
+                      ? 'Per Job'
+                      : formatBuilding(focusedPackage.retentionRelease?.building),
+                    detail: focusedPackage.retentionRelease?.scopeType === 'BUILDING'
+                      ? formatPhase(focusedPackage.retentionRelease?.phaseCode)
+                      : `Job #${focusedJob.code}`,
+                  },
+                  {
+                    label: 'Source lines',
+                    value: focusedPackage.retentionRelease?.sourceLines?.length ?? 0,
+                    detail: `Cutoff ${formatDate(focusedPackage.retentionRelease?.sourceCutoffDate)}`,
+                  },
+                ]}
+                lines={[
+                  {
+                    label: 'Retention released',
+                    value: formatCurrency(focusedPackage.retentionRelease?.retainedAmount),
+                  },
+                ]}
+                total={{
+                  label: 'Invoice Amount',
+                  value: formatCurrency(packageSummary.invoiceAmount),
+                  detail: [
+                    focusedInvoiceNumber ? `Invoice ${focusedInvoiceNumber}` : 'Invoice pending',
+                    `available ${formatDate(focusedPackage.retentionRelease?.availableDate)}`,
+                  ].join(' · '),
+                }}
+              />
+            ) : packageSummary ? (
+              <PackageSummaryPanel
+                facts={[
+                  {
+                    label: packageSummary.utilityCount > 0 && packageSummary.lotCount === 0
+                      ? 'Utility rows'
+                      : 'Lots in package',
+                    value: packageSummary.utilityCount > 0 && packageSummary.lotCount === 0
+                      ? packageSummary.utilityCount
+                      : packageSummary.lotCount,
+                  },
+                  {
+                    label: 'Draws in package',
+                    value: focusedPackage.drawIndexes.length,
+                    chips: focusedPackage.drawIndexes.map((drawIndex) => `Draw ${drawIndex + 1}`),
+                  },
+                ]}
+                lines={[
+                  { label: 'Current Draw', value: formatCurrency(packageSummary.currentDraw) },
+                  { label: 'Retention', value: formatCurrency(packageSummary.retention), tone: packageSummary.retention > 0 ? 'deduction' : 'muted' },
+                  { label: 'WRAP', value: formatCurrency(packageSummary.wrapInsurance), tone: packageSummary.wrapInsurance > 0 ? 'deduction' : 'muted' },
+                ]}
+                total={{
+                  label: 'Invoice Amount',
+                  value: formatCurrency(packageSummary.invoiceAmount),
+                  detail: focusedInvoiceNumber ? `Invoice ${focusedInvoiceNumber}` : 'Invoice pending',
+                }}
+                note={[
+                  packageSummary.optionsTotal > 0 && `Options ${formatCurrency(packageSummary.optionsTotal)}`,
+                  packageSummary.hardwareTotal > 0 && `Hardware ${formatCurrency(packageSummary.hardwareTotal)}`,
+                  packageSummary.utilityTotal > 0 && `Utility ${formatCurrency(packageSummary.utilityTotal)}`,
+                ].filter(Boolean).join(' · ') || null}
+              />
+            ) : (
+              <Alert severity="info">
+                This is the worksheet overview. Use New Package to select lots and
+                one or more available draws for a new package.
+              </Alert>
+            )}
+
             {isMultiPhase && (
-              <Alert severity="warning" icon={<LayersRoundedIcon />}>
-                <strong>Multi-phase Package.</strong> This Package bills{' '}
-                {packageSummary.phaseCount} Phases / Buildings together on one
-                invoice. Each Phase worksheet is shown below.
-                <Stack direction="row" spacing={0.75} useFlexGap sx={{ mt: 1, flexWrap: 'wrap' }}>
+              <Stack
+                direction={{ xs: 'column', sm: 'row' }}
+                spacing={1}
+                useFlexGap
+                sx={{
+                  px: 2,
+                  py: 1,
+                  border: 1,
+                  borderColor: 'divider',
+                  borderRadius: 2,
+                  bgcolor: 'background.paper',
+                  alignItems: { sm: 'center' },
+                }}
+              >
+                <Typography variant="body2" color="text.secondary">
+                  {packageSummary.phaseCount} Phases / Buildings on one invoice. Jump to a worksheet:
+                </Typography>
+                <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: 'wrap' }}>
                   {focusedPackagePhases.map((phase) => (
                     <Chip
                       key={phase.id}
@@ -563,143 +629,7 @@ export default function DrawPackageDetail() {
                     />
                   ))}
                 </Stack>
-              </Alert>
-            )}
-
-            {!isRetentionRelease && !isMultiPhase && <Card variant="outlined">
-              <CardContent sx={{ p: { xs: 2, sm: 2.5 } }}>
-                <Stack
-                  direction={{ xs: 'column', md: 'row' }}
-                  spacing={2}
-                  sx={{ alignItems: { md: 'center' }, justifyContent: 'space-between' }}
-                >
-                  <Box>
-                    <Typography fontWeight={800}>Worksheet scope</Typography>
-                    <Typography variant="body2" color="text.secondary">
-                      Review which lot/draw combinations are available or already packaged.
-                    </Typography>
-                  </Box>
-                  <TextField
-                    select
-                    label="Phase / Building"
-                    value={selectedPhase?.id ?? ''}
-                    onChange={handlePhaseChange}
-                    sx={{ minWidth: { xs: '100%', md: 280 } }}
-                  >
-                    {phases.map((phase) => (
-                      <MenuItem key={phase.id} value={phase.id}>
-                        {formatPhase(phase.name)} · {formatBuilding(phase.building)} ·{' '}
-                        {(phase.lots ?? []).filter((row) => !row.isUtilityBuilding).length} lots
-                        {(phase.lots ?? []).some((row) => row.isUtilityBuilding)
-                          ? ` · ${(phase.lots ?? []).filter((row) => row.isUtilityBuilding).length} Utility`
-                          : ''}
-                      </MenuItem>
-                    ))}
-                  </TextField>
-                </Stack>
-              </CardContent>
-            </Card>}
-
-            {isRetentionRelease ? (
-              <>
-                <Alert severity="success">
-                  This is a positive retention release. Retention and WRAP are not deducted again.
-                </Alert>
-                <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} useFlexGap sx={{ flexWrap: 'wrap' }}>
-                  <MetricCard
-                    icon={<ApartmentRoundedIcon />}
-                    label="Release scope"
-                    value={focusedPackage.retentionRelease?.scopeType === 'JOB'
-                      ? 'Per Job'
-                      : formatBuilding(focusedPackage.retentionRelease?.building)}
-                    detail={focusedPackage.retentionRelease?.scopeType === 'BUILDING'
-                      ? formatPhase(focusedPackage.retentionRelease?.phaseCode)
-                      : `Job #${focusedJob.code}`}
-                  />
-                  <MetricCard
-                    icon={<LayersRoundedIcon />}
-                    label="Source lines"
-                    value={focusedPackage.retentionRelease?.sourceLines?.length ?? 0}
-                    detail={`Cutoff ${formatDate(focusedPackage.retentionRelease?.sourceCutoffDate)}`}
-                  />
-                  <MetricCard
-                    icon={<AttachMoneyRoundedIcon />}
-                    label="Retention released"
-                    value={formatCurrency(focusedPackage.retentionRelease?.retainedAmount)}
-                    valueColor="success.main"
-                    detail={`Available ${formatDate(focusedPackage.retentionRelease?.availableDate)}`}
-                  />
-                  <MetricCard
-                    icon={<ReceiptLongRoundedIcon />}
-                    label="Invoice Amount"
-                    value={formatCurrency(packageSummary.invoiceAmount)}
-                    valueColor="success.main"
-                    detail={focusedInvoiceNumber
-                      ? `Invoice ${focusedInvoiceNumber}`
-                      : 'Invoice pending'}
-                  />
-                </Stack>
-              </>
-            ) : packageSummary ? (
-              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} useFlexGap sx={{ flexWrap: 'wrap' }}>
-                <MetricCard
-                  icon={<ApartmentRoundedIcon />}
-                  label={packageSummary.utilityCount > 0 && packageSummary.lotCount === 0
-                    ? 'Utility rows'
-                    : 'Lots in package'}
-                  value={packageSummary.utilityCount > 0 && packageSummary.lotCount === 0
-                    ? packageSummary.utilityCount
-                    : packageSummary.lotCount}
-                  // detail={`${packageSummary.scopeCount} billing scopes`}
-                />
-                <MetricCard
-                  icon={<LayersRoundedIcon />}
-                  label="Draws in package"
-                  value={focusedPackage.drawIndexes.length}
-                  detail={focusedPackage.drawIndexes.map((drawIndex) => `Draw ${drawIndex + 1}`).join(', ')}
-                />
-                <MetricCard
-                  icon={<AttachMoneyRoundedIcon />}
-                  label="Current Draw"
-                  value={formatCurrency(packageSummary.currentDraw)}
-                  detail={(
-                    <>
-                      Retention{' '}
-                      <Typography
-                        component="span"
-                        variant="inherit"
-                        sx={{ color: 'error.main', fontWeight: 750 }}
-                      >
-                        {formatCurrency(packageSummary.retention)}
-                      </Typography>
-                      {' · '}WRAP{' '}
-                      <Typography
-                        component="span"
-                        variant="inherit"
-                        sx={{ color: 'error.main', fontWeight: 750 }}
-                      >
-                        {formatCurrency(packageSummary.wrapInsurance)}
-                      </Typography>
-                    </>
-                  )}
-                />
-                <MetricCard
-                  icon={<ReceiptLongRoundedIcon />}
-                  label="Invoice Amount"
-                  value={formatCurrency(packageSummary.invoiceAmount)}
-                  valueColor="success.main"
-                  detail={packageSummary.optionsTotal > 0
-                    ? `${formatCurrency(packageSummary.optionsTotal)} options included`
-                    : focusedInvoiceNumber
-                      ? `Invoice ${focusedInvoiceNumber}`
-                      : 'Invoice pending'}
-                />
               </Stack>
-            ) : (
-              <Alert severity="info">
-                This is the worksheet overview. Use Create Draw Package to select lots and
-                one or more available draws for a new package.
-              </Alert>
             )}
 
             {!isRetentionRelease && !worksheet.hasSchedule && (
@@ -717,6 +647,36 @@ export default function DrawPackageDetail() {
               >
                 Complete missing plan assignments and prices before creating a package.
               </Alert>
+            )}
+
+            {!isRetentionRelease && !isMultiPhase && (
+              <Stack
+                direction={{ xs: 'column', sm: 'row' }}
+                spacing={1.5}
+                sx={{ alignItems: { sm: 'center' }, justifyContent: 'space-between' }}
+              >
+                <Typography variant="body2" color="text.secondary">
+                  Choose a Phase / Building to review which lot and draw combinations are available or already packaged.
+                </Typography>
+                <TextField
+                  select
+                  size="small"
+                  label="Phase / Building"
+                  value={selectedPhase?.id ?? ''}
+                  onChange={handlePhaseChange}
+                  sx={{ minWidth: { xs: '100%', sm: 280 }, bgcolor: 'background.paper' }}
+                >
+                  {phases.map((phase) => (
+                    <MenuItem key={phase.id} value={phase.id}>
+                      {formatPhase(phase.name)} · {formatBuilding(phase.building)} ·{' '}
+                      {(phase.lots ?? []).filter((row) => !row.isUtilityBuilding).length} lots
+                      {(phase.lots ?? []).some((row) => row.isUtilityBuilding)
+                        ? ` · ${(phase.lots ?? []).filter((row) => row.isUtilityBuilding).length} Utility`
+                        : ''}
+                    </MenuItem>
+                  ))}
+                </TextField>
+              </Stack>
             )}
 
             {!isRetentionRelease && !isMultiPhase && <DrawWorksheetTable
@@ -745,33 +705,11 @@ export default function DrawPackageDetail() {
               <PackageOptionsTable summary={packageSummary} />
             )}
             {focusedPackage?.corrections?.length > 0 && (
-              <Card variant="outlined">
-                <CardContent>
-                  <Typography fontWeight={800} sx={{ mb: 1 }}>Correction history</Typography>
-                  <Stack spacing={1}>
-                    {focusedPackage.corrections.map((correction) => (
-                      <Typography key={correction.id} variant="body2" color="text.secondary">
-                        {new Date(correction.changed_at).toLocaleString('en-US')} ·{' '}
-                        {correction.action === 'TRANSFER'
-                          ? String(correction.package_id) === String(focusedPackage.id)
-                            ? 'Cells moved here'
-                            : 'Cells moved out'
-                          : correction.action.toLowerCase()} ·{' '}
-                        {correction.reason}
-                        {correction.action === 'TRANSFER' && ` · Other Package ID ${
-                          String(correction.package_id) === String(focusedPackage.id)
-                            ? correction.other_package_id
-                            : correction.package_id
-                        }`}
-                      </Typography>
-                    ))}
-                  </Stack>
-                </CardContent>
-              </Card>
+              <PackageCorrectionHistory package={focusedPackage} />
             )}
-          </Stack>
+          </>
         )}
-      </Box>
+      </Stack>
 
       {createDialogOpen && (
         <CreateDrawDialog

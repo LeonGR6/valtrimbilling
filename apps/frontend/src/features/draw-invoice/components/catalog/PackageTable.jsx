@@ -43,18 +43,25 @@ import { quickbooksTableStatusView } from '../../services/quickbooksRecord.js'
 import { PackageStatusChip } from '../shared/PackageUi.jsx'
 
 const packageTableColumns = [
-  { key: 'package', width: 220 },
-  { key: 'builder', width: 180 },
+  { key: 'package', width: 240 },
+  { key: 'status', width: 140 },
+  { key: 'builder', width: 170 },
   { key: 'billing-period', width: 130 },
   { key: 'lots', width: 105 },
   { key: 'current-draw', width: 135 },
   { key: 'retention-wrap', width: 180 },
   { key: 'invoice-amount', width: 140 },
   { key: 'documents', width: 125 },
-  { key: 'quickbooks', width: 160 },
-  { key: 'status', width: 155 },
-  { key: 'action', width: 140 },
+  { key: 'quickbooks', width: 150 },
+  { key: 'action', width: 120 },
 ]
+
+// A thin bar on the row's left edge, so the status reads at a glance.
+const statusAccentPalettes = {
+  DRAFT: 'warning',
+  AWAITING_PAYMENT: 'info',
+  PAID_CLOSED: 'success',
+}
 
 const quickbooksToneColors = {
   success: 'success.main',
@@ -81,7 +88,7 @@ function PackageActionMenu({ context, canManage, onOpen, onAction }) {
 
   return (
     <>
-      <ButtonGroup size="small" variant="contained" disableElevation>
+      <ButtonGroup size="small" variant="outlined" color="inherit">
         <Button onClick={() => onOpen(context)}>Open</Button>
         <Button
           aria-label={`More actions for ${record.packageNumber}`}
@@ -219,9 +226,17 @@ export default function PackageTable({
 }) {
   return (
     <>
-      <Box sx={{ bgcolor: 'background.paper', border: 1, borderColor: 'divider', borderRadius: 2, overflow: 'hidden', mt: 1.5 }}>
+      <Box sx={{ bgcolor: 'background.paper', border: 1, borderColor: 'divider', borderRadius: 2, overflow: 'hidden' }}>
         <TableContainer>
-          <Table sx={{ minWidth: packageTableMinimumWidth, tableLayout: 'fixed' }}>
+          <Table
+            sx={{
+              minWidth: packageTableMinimumWidth,
+              tableLayout: 'fixed',
+              '& .MuiTableCell-root': { px: 1.5, py: 1.1, verticalAlign: 'top' },
+              '& .MuiTableCell-head': { py: 0.9 },
+              '& tbody tr:last-of-type .MuiTableCell-root': { borderBottom: 0 },
+            }}
+          >
             <colgroup>
               {packageTableColumns.map((column) => (
                 <col key={column.key} style={{ width: column.width }} />
@@ -241,6 +256,7 @@ export default function PackageTable({
                 }}
               >
                 <SortableHeader column="created" label="Package" sort={sort} onSort={onSort} />
+                <TableCell>Status</TableCell>
                 <SortableHeader column="builder" label="Builder/Community" sort={sort} onSort={onSort} />
                 <SortableHeader column="period" label="Billing Period" sort={sort} onSort={onSort} />
                 <TableCell>Lots/Scopes</TableCell>
@@ -249,7 +265,6 @@ export default function PackageTable({
                 <SortableHeader column="invoice" label="Invoice Amount" sort={sort} onSort={onSort} />
                 <TableCell>Documents</TableCell>
                 <TableCell>QuickBooks</TableCell>
-                <TableCell>Status</TableCell>
                 <TableCell>Action</TableCell>
               </TableRow>
             </TableHead>
@@ -259,7 +274,14 @@ export default function PackageTable({
                   key={record.id}
                   hover
                   onClick={() => onOpen(record, job, phase)}
-                  sx={{ cursor: 'pointer' }}
+                  sx={{
+                    cursor: 'pointer',
+                    '& > td:first-of-type': {
+                      boxShadow: (theme) => `inset 3px 0 0 ${
+                        theme.palette[statusAccentPalettes[record.status]]?.main ?? 'transparent'
+                      }`,
+                    },
+                  }}
                 >
                   <TableCell>
                     <Button
@@ -273,7 +295,7 @@ export default function PackageTable({
                         p: 0,
                         minWidth: 0,
                         fontWeight: 800,
-                        fontSize: '1rem',
+                        fontSize: '0.95rem',
                         textTransform: 'none',
                         justifyContent: 'flex-start',
                       }}
@@ -333,6 +355,7 @@ export default function PackageTable({
                       Created: {formatLongDate(record.createdAt)}
                     </Typography>
                   </TableCell>
+                  <TableCell><PackageStatusChip status={record.status} /></TableCell>
                   <TableCell>
                     <Typography color="text.primary" sx={{ fontWeight: 'medium'}}>{job.builder}</Typography>
                     <Typography variant="body2" color="text.secondary">{job.community}</Typography>
@@ -405,7 +428,6 @@ export default function PackageTable({
                     <PackageDocumentProgress job={job} documentState={documentState} />
                   </TableCell>
                   <TableCell><PackageQuickbooksStatus record={record} /></TableCell>
-                  <TableCell><PackageStatusChip status={record.status} /></TableCell>
                   <TableCell onClick={(event) => event.stopPropagation()}>
                     <PackageActionMenu
                       context={{ record, job, phase, phases, summary }}
@@ -424,7 +446,7 @@ export default function PackageTable({
       </Box>
 
       {filteredContexts.length === 0 && (
-        <Card variant="outlined" sx={{ p: 5, textAlign: 'center', mt: 2 }}>
+        <Card variant="outlined" sx={{ p: 4, textAlign: 'center' }}>
           <ReceiptLongRoundedIcon color="disabled" sx={{ fontSize: 42 }} />
           <Typography fontWeight={750} sx={{ mt: 1 }}>
             {activeContexts.length === 0 ? 'No active Packages yet' : 'No Packages match these filters'}

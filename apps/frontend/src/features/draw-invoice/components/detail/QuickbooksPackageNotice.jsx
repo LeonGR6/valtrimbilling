@@ -46,7 +46,7 @@ export default function QuickbooksPackageNotice({
 
   if (record.quickbooksStatus === 'VOIDED') {
     return (
-      <Alert severity="info" sx={{ mb: 2.5 }}>
+      <Alert severity="info">
         <strong>The QuickBooks invoice was voided.</strong>
         {record.quickbooksReference ? ` Invoice ${record.quickbooksReference} stays in QuickBooks with its amounts at $0.` : ''}
         {' '}This Package can be deleted as a draft; to invoice its cells again, create a new Package.
@@ -58,7 +58,6 @@ export default function QuickbooksPackageNotice({
     return (
       <Alert
         severity="warning"
-        sx={{ mb: 2.5 }}
         action={canSend && (
           <Button color="inherit" size="small" onClick={onSend}>Retry</Button>
         )}
@@ -77,7 +76,7 @@ export default function QuickbooksPackageNotice({
     <>
       <Alert
         severity="success"
-        sx={{ mb: 2.5, '& .MuiAlert-message': { flex: 1 } }}
+        sx={{ '& .MuiAlert-message': { flex: 1 } }}
       >
         <Stack
           direction={{ xs: 'column', md: 'row' }}

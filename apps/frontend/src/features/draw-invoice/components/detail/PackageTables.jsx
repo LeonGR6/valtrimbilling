@@ -4,7 +4,6 @@ import {
   Box,
   Card,
   Chip,
-  Divider,
   Stack,
   Table,
   TableBody,
@@ -31,6 +30,27 @@ import {
   formatCurrency,
   formatPercentage,
 } from '../../utils/drawInvoiceFormatters.js'
+import { TableCardHeader } from '../shared/PackageUi.jsx'
+import { packageTableSx } from '../shared/packageTableStyles.js'
+
+// The key to the worksheet's cell colours: a swatch and what it means.
+function LegendSwatch({ label, sx }) {
+  return (
+    <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center' }}>
+      <Box
+        aria-hidden
+        sx={{ width: 14, height: 14, borderRadius: 0.5, border: 1, borderColor: 'divider', ...sx }}
+      />
+      <Typography variant="caption" color="text.secondary">{label}</Typography>
+    </Stack>
+  )
+}
+
+const currentSwatchSx = {
+  bgcolor: 'warning.light',
+  boxShadow: (theme) => `inset 3px 0 0 ${theme.palette.warning.dark}`,
+}
+const earlierSwatchSx = { bgcolor: 'primary.light' }
 
 export function DrawWorksheetTable({
   job,
@@ -52,40 +72,46 @@ export function DrawWorksheetTable({
 
   return (
     <Card variant="outlined" sx={{ overflow: 'hidden' }}>
-      <Box sx={{ px: { xs: 2, sm: 2.5 }, py: 2, bgcolor: 'action.hover' }}>
-        <Stack
-          direction={{ xs: 'column', sm: 'row' }}
-          spacing={1}
-          sx={{ justifyContent: 'space-between', alignItems: { sm: 'center' } }}
-        >
-          <Box>
-            {phaseHeading && (
-              <Chip size="small" color="primary" label={phaseHeading} sx={{ mb: 0.75, fontWeight: 800 }} />
-            )}
-            <Typography fontWeight={800}>Draw worksheet</Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.25 }}>
-              {currentPackageId != null ? 'Yellow cells are billed in this Package' : 'Blue cells are already billed in a Package'}
-              {currentPackageId != null ? ', blue ones in earlier Packages.' : '.'}
-              {worksheet.utilityBuildingEnabled
-                ? " Utility follows this Job's 100% or event-based Builder Setup."
-                : ''}
-            </Typography>
-          </Box>
+      <TableCardHeader
+        title={(
+          <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
+            {phaseHeading && <Chip size="small" color="primary" label={phaseHeading} sx={{ fontWeight: 800 }} />}
+            <span>Draw worksheet</span>
+          </Stack>
+        )}
+        chip={(
           <Chip
             size="small"
             variant="outlined"
             label={`${worksheet.rows.length} ${worksheet.rows.length === 1 ? 'row' : 'rows'}`}
           />
+        )}
+      >
+        <Stack direction="row" spacing={2} useFlexGap sx={{ mt: 0.5, flexWrap: 'wrap' }}>
+          {currentPackageId != null && (
+            <LegendSwatch label="Billed in this Package" sx={currentSwatchSx} />
+          )}
+          <LegendSwatch
+            label={currentPackageId != null ? 'Billed in an earlier Package' : 'Already billed in a Package'}
+            sx={earlierSwatchSx}
+          />
+          <LegendSwatch label="Available" />
         </Stack>
-      </Box>
-      <Divider />
+        {worksheet.utilityBuildingEnabled && (
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+            Utility follows this Job&apos;s 100% or event-based Builder Setup.
+          </Typography>
+        )}
+      </TableCardHeader>
       <TableContainer>
         <Table
           size="medium"
           aria-label={`${formatPhase(phase.name)} ${formatBuilding(phase.building)} draw worksheet`}
           sx={{
+            ...packageTableSx,
             minWidth: minimumWidth,
-            '& .MuiTableCell-root': { px: 1.2, py: 1, fontSize: 12.25 },
+            '& .MuiTableCell-root': { px: 1.2, py: 1, fontSize: 12.25, fontVariantNumeric: 'tabular-nums' },
+            '& .MuiTableHead-root .MuiTableCell-head.draw-heading': { bgcolor: 'primary.light' },
           }}
         >
           <TableHead>
@@ -100,9 +126,10 @@ export function DrawWorksheetTable({
               {worksheet.draws.map((draw, drawIndex) => (
                 <TableCell
                   key={`draw-heading-${drawIndex}`}
+                  className="draw-heading"
                   colSpan={2}
                   align="center"
-                  sx={{ borderLeft: 1, borderColor: 'divider', bgcolor: 'primary.light' }}
+                  sx={{ borderLeft: 1, borderColor: 'divider' }}
                 >
                   <Typography color="primary.main" fontWeight={850}>
                     Draw #{drawIndex + 1}
@@ -263,28 +290,19 @@ export function PackageUtilityTable({ summary }) {
 
   return (
     <Card variant="outlined" sx={{ overflow: 'hidden' }}>
-      <Box sx={{ px: { xs: 2, sm: 2.5 }, py: 2, bgcolor: 'action.hover' }}>
-        <Stack
-          direction={{ xs: 'column', sm: 'row' }}
-          spacing={1}
-          sx={{ justifyContent: 'space-between', alignItems: { sm: 'center' } }}
-        >
-          <Box>
-            <Typography fontWeight={800}>Utility Building</Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.25 }}>
-              Utility Plan Price charges included in this package.
-            </Typography>
-          </Box>
+      <TableCardHeader
+        title="Utility Building"
+        description="Utility Plan Price charges included in this package."
+        chip={(
           <Chip
             size="small"
             variant="outlined"
             label={`Total · ${formatCurrency(summary.utilityTotal)}`}
           />
-        </Stack>
-      </Box>
-      <Divider />
+        )}
+      />
       <TableContainer>
-        <Table size="small" aria-label="Utility Building charges in this package">
+        <Table size="small" aria-label="Utility Building charges in this package" sx={packageTableSx}>
           <TableHead>
             <TableRow>
               <TableCell>Phase</TableCell>
@@ -347,26 +365,17 @@ export function PackageOptionsTable({ summary }) {
 
   return (
     <Card variant="outlined" sx={{ overflow: 'hidden' }}>
-      <Box sx={{ px: { xs: 2, sm: 2.5 }, py: 2, bgcolor: 'action.hover' }}>
-        <Stack
-          direction={{ xs: 'column', sm: 'row' }}
-          spacing={1}
-          sx={{ justifyContent: 'space-between', alignItems: { sm: 'center' } }}
-        >
-          <Box>
-            <Typography fontWeight={800}>Options</Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.25 }}>
-              Options charged for this Job through the current package.
-            </Typography>
-          </Box>
+      <TableCardHeader
+        title="Options"
+        description="Options charged for this Job through the current package."
+        chip={(
           <Chip
             size="small"
             variant="outlined"
             label={`Available from · ${availableFromDrawLabel}`}
           />
-        </Stack>
-      </Box>
-      <Divider />
+        )}
+      />
 
       {summary.optionsBillingDrawIndex == null ? (
         <Alert severity="info" sx={{ m: 2 }}>
@@ -378,7 +387,7 @@ export function PackageOptionsTable({ summary }) {
         </Alert>
       ) : (
         <TableContainer>
-          <Table size="small" aria-label="Options charged through this package">
+          <Table size="small" aria-label="Options charged through this package" sx={packageTableSx}>
             <TableHead>
               <TableRow>
                 <TableCell>Phase</TableCell>
@@ -459,28 +468,19 @@ export function PackageHardwareTable({ summary }) {
 
   return (
     <Card variant="outlined" sx={{ overflow: 'hidden' }}>
-      <Box sx={{ px: { xs: 2, sm: 2.5 }, py: 2, bgcolor: 'action.hover' }}>
-        <Stack
-          direction={{ xs: 'column', sm: 'row' }}
-          spacing={1}
-          sx={{ justifyContent: 'space-between', alignItems: { sm: 'center' } }}
-        >
-          <Box>
-            <Typography fontWeight={800}>Hardware</Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.25 }}>
-              Separate hardware prices included in this package.
-            </Typography>
-          </Box>
+      <TableCardHeader
+        title="Hardware"
+        description="Separate hardware prices included in this package."
+        chip={(
           <Chip
             size="small"
             variant="outlined"
             label={`${hardwareRows.length} ${hardwareRows.length === 1 ? 'charge' : 'charges'}`}
           />
-        </Stack>
-      </Box>
-      <Divider />
+        )}
+      />
       <TableContainer>
-        <Table size="small" aria-label="Separate hardware charged in this package">
+        <Table size="small" aria-label="Separate hardware charged in this package" sx={packageTableSx}>
           <TableHead>
             <TableRow>
               <TableCell>Phase</TableCell>

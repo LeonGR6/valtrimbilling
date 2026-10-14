@@ -1,18 +1,19 @@
 import { useMemo, useState } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import {
   Alert,
   Box,
   Button,
-  Card,
-  CardActionArea,
-  CardContent,
+  ButtonBase,
   CircularProgress,
+  IconButton,
   InputAdornment,
   MenuItem,
   Stack,
   Tab,
   Tabs,
   TextField,
+  Tooltip,
   Typography,
 } from '@mui/material'
 import AddRoundedIcon from '@mui/icons-material/AddRounded'
@@ -21,6 +22,7 @@ import FolderOpenRoundedIcon from '@mui/icons-material/FolderOpenRounded'
 import LockRoundedIcon from '@mui/icons-material/LockRounded'
 import PeopleAltRoundedIcon from '@mui/icons-material/PeopleAltRounded'
 import ReceiptLongRoundedIcon from '@mui/icons-material/ReceiptLongRounded'
+import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined'
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
 import { useCurrentDate } from '../../../../hooks/useCurrentDate.js'
 import { usePersistentState, isStoredString } from '../../../../hooks/usePersistentState.js'
@@ -92,74 +94,88 @@ function getPackageContext(record, jobs, schedules, jobBillingSetupVersions) {
   }
 }
 
+const summaryCardSx = (color, selected, interactive) => ({
+  display: 'flex',
+  alignItems: 'center',
+  gap: 1.25,
+  minWidth: 0,
+  width: '100%',
+  px: 1.5,
+  py: 1,
+  textAlign: 'left',
+  border: 1,
+  borderColor: selected ? color : 'divider',
+  borderRadius: 2,
+  bgcolor: 'background.paper',
+  boxShadow: selected ? (theme) => `inset 0 0 0 1px ${theme.palette.primary.main}` : 'none',
+  transition: 'border-color 120ms, background-color 120ms',
+  cursor: interactive ? 'pointer' : 'default',
+  '&:hover': interactive ? { bgcolor: 'action.hover' } : undefined,
+  '&.Mui-focusVisible': { outline: 2, outlineStyle: 'solid', outlineColor: 'primary.main' },
+})
+
+function SummaryIcon({ children, color, bgcolor }) {
+  return (
+    <Box sx={{
+      width: 34, height: 34, flexShrink: 0, borderRadius: 1.5,
+      display: 'grid', placeItems: 'center', '& svg': { fontSize: 20 },
+      bgcolor: bgcolor ?? 'action.hover', color,
+    }}>
+      {children}
+    </Box>
+  )
+}
+
 function PackageSummaryCard({ status, icon, color, count, total, selected, onSelect }) {
   return (
-    <Card
-      variant="outlined"
-      sx={{ borderColor: selected ? color : 'divider', minWidth: 0 }}
+    <ButtonBase
+      onClick={onSelect}
+      aria-pressed={selected}
+      aria-label={`Show ${DRAW_PACKAGE_STATUS_LABELS[status]} Packages`}
+      sx={summaryCardSx(color, selected, true)}
     >
-      <CardActionArea onClick={onSelect} aria-label={`Show ${DRAW_PACKAGE_STATUS_LABELS[status]} Packages`}>
-        <CardContent sx={{ p: '18px !important' }}>
-          <Stack direction="row" spacing={1.5} sx={{ alignItems: 'flex-start' }}>
-            <Box sx={{
-              width: 42, height: 42, flexShrink: 0, borderRadius: 1.5,
-              display: 'grid', placeItems: 'center',
-              bgcolor: 'action.hover', color,
-            }}>
-              {icon}
-            </Box>
-            <Box>
-              <Typography variant="body2" fontWeight={750} color="text.secondary">
-                {DRAW_PACKAGE_STATUS_LABELS[status]}
-              </Typography>
-              <Typography variant="h5" fontWeight={850} sx={{ lineHeight: 1.3 }}>
-                {count}
-              </Typography>
-              <Typography variant="body2" color="text.secondary">
-                {formatCurrency(total)} invoice total
-              </Typography>
-            </Box>
-          </Stack>
-        </CardContent>
-      </CardActionArea>
-    </Card>
+      <SummaryIcon color={color}>{icon}</SummaryIcon>
+      <Box sx={{ minWidth: 0 }}>
+        <Stack direction="row" spacing={0.75} sx={{ alignItems: 'baseline' }}>
+          <Typography variant="h6" fontWeight={850} sx={{ lineHeight: 1.2 }}>
+            {count}
+          </Typography>
+          <Typography variant="body2" fontWeight={750} color="text.secondary" noWrap>
+            {DRAW_PACKAGE_STATUS_LABELS[status]}
+          </Typography>
+        </Stack>
+        <Typography variant="caption" color="text.secondary" noWrap component="div" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+          {formatCurrency(total)} invoice total
+        </Typography>
+      </Box>
+    </ButtonBase>
   )
 }
 
 function MissingDocumentsSummaryCard({ count, loading, unavailable }) {
   return (
-    <Card variant="outlined" sx={{ minWidth: 0 }}>
-      <CardContent sx={{ p: '18px !important' }}>
-        <Stack direction="row" spacing={1.5} sx={{ alignItems: 'flex-start' }}>
-          <Box sx={{
-            width: 42, height: 42, flexShrink: 0, borderRadius: 1.5,
-            display: 'grid', placeItems: 'center',
-            bgcolor: 'warning.light', color: 'warning.dark',
-          }}>
-            <FolderOpenRoundedIcon />
-          </Box>
-          <Box>
-            <Typography variant="body2" fontWeight={750} color="text.secondary">
-              Packages Missing Documents
+    <Box sx={summaryCardSx('divider', false, false)}>
+      <SummaryIcon color="warning.dark" bgcolor="warning.light">
+        <FolderOpenRoundedIcon />
+      </SummaryIcon>
+      <Box sx={{ minWidth: 0 }}>
+        <Stack direction="row" spacing={0.75} sx={{ alignItems: 'baseline' }}>
+          {loading ? (
+            <CircularProgress size={16} aria-label="Loading missing document Jobs" />
+          ) : (
+            <Typography variant="h6" fontWeight={850} sx={{ lineHeight: 1.2 }}>
+              {unavailable ? '—' : count}
             </Typography>
-            {loading ? (
-              <Box sx={{ minHeight: 32, display: 'flex', alignItems: 'center' }}>
-                <CircularProgress size={20} aria-label="Loading missing document Jobs" />
-              </Box>
-            ) : (
-              <Typography variant="h5" fontWeight={850} sx={{ lineHeight: 1.3 }}>
-                {unavailable ? '—' : count}
-              </Typography>
-            )}
-            <Typography variant="body2" color="text.secondary">
-              {unavailable
-                ? 'Document status unavailable'
-                : 'Packages with pending requirements'}
-            </Typography>
-          </Box>
+          )}
+          <Typography variant="body2" fontWeight={750} color="text.secondary" noWrap>
+            Missing Documents
+          </Typography>
         </Stack>
-      </CardContent>
-    </Card>
+        <Typography variant="caption" color="text.secondary" noWrap component="div">
+          {unavailable ? 'Document status unavailable' : 'Packages with pending requirements'}
+        </Typography>
+      </Box>
+    </Box>
   )
 }
 
@@ -314,39 +330,62 @@ export default function PackageCatalog({
     setStatusTab('ALL')
   }
 
+  const location = useLocation()
+  const navigate = useNavigate()
+  const [suggestionsOpen, setSuggestionsOpen] = usePersistentState(
+    'draw-invoice:packages:suggestions-open',
+    true,
+    (value) => typeof value === 'boolean',
+  )
+  const [retentionOpen, setRetentionOpen] = usePersistentState(
+    'draw-invoice:packages:retention-open',
+    true,
+    (value) => typeof value === 'boolean',
+  )
+  // A link to the suggestions (from Home) always shows them.
+  const linkedToSuggestions = location.hash === '#package-suggestions'
+  const showSuggestions = suggestionsOpen || linkedToSuggestions
+  const toggleSuggestions = () => {
+    // Folding the list must also drop the link's hash, or it would stay forced open.
+    if (linkedToSuggestions) navigate({ hash: '' }, { replace: true })
+    setSuggestionsOpen(!showSuggestions)
+  }
+  const filtersActive = search !== '' || builderFilter !== 'ALL'
+    || communityFilter !== 'ALL' || statusTab !== 'ALL'
+
   return (
     <Box sx={{ minHeight: '100%', bgcolor: 'background.default' }}>
       <Box
         sx={{
-          px: { xs: 2.5, md: 4 },
-          pt: 3,
-          pb: 0,
+          px: { xs: 2, md: 3 },
+          pt: 1.5,
           bgcolor: 'background.paper',
           borderBottom: 1,
           borderColor: 'divider',
         }}
       >
         <Stack
-          direction={{ xs: 'column', sm: 'row' }}
-          spacing={2}
-          sx={{ alignItems: { sm: 'center' }, justifyContent: 'space-between' }}
+          direction="row"
+          sx={{ alignItems: 'center', flexWrap: 'wrap', columnGap: 3, rowGap: 0.5 }}
         >
-          <Box>
-            <Typography variant="overline" color="primary.main" fontWeight={800}>
-              Draw & Invoice Packages
+          <Box sx={{ minWidth: 0 }}>
+            <Typography variant="h6" component="h1" fontWeight={800} letterSpacing="-0.01em" sx={{ lineHeight: 1.2 }}>
+              Draw & Invoice
             </Typography>
-            <Typography variant="h5" fontWeight={800}>
-              {catalogTab === 'packages' ? 'Packages' : 'Documents'}
-            </Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, maxWidth: 760 }}>
+            <Typography variant="caption" color="text.secondary" sx={{ display: { xs: 'none', sm: 'block' } }}>
               {catalogTab === 'packages'
                 ? 'Review active Packages by status and manage their billing workflow.'
                 : 'Keep each Job’s releases, purchase orders, and payment schedules together.'}
             </Typography>
           </Box>
           {catalogTab === 'packages' && (
-            <Stack direction="row" spacing={1.5} sx={{ flexWrap: 'wrap', rowGap: 1 }}>
+            <Stack
+              direction="row"
+              spacing={1}
+              sx={{ ml: 'auto', alignItems: 'center', flexWrap: 'wrap', rowGap: 1 }}
+            >
               <QuickbooksConnectButton
+                compact
                 connection={quickbooks.connection}
                 loading={quickbooks.loading}
                 canConnect={quickbooks.canConnect}
@@ -354,14 +393,15 @@ export default function PackageCatalog({
                 onConnect={quickbooks.connect}
               />
               {quickbooks.connection?.status === 'CONNECTED' && quickbooks.canManageCustomers && (
-                <Button
-                  variant="outlined"
-                  color="inherit"
-                  startIcon={<PeopleAltRoundedIcon />}
-                  onClick={() => setCustomersDialogOpen(true)}
-                >
-                  QuickBooks customers
-                </Button>
+                <Tooltip title="QuickBooks customers">
+                  <IconButton
+                    aria-label="QuickBooks customers"
+                    onClick={() => setCustomersDialogOpen(true)}
+                    sx={{ border: 1, borderColor: 'divider', borderRadius: 2 }}
+                  >
+                    <PeopleAltRoundedIcon fontSize="small" />
+                  </IconButton>
+                </Tooltip>
               )}
               <Button
                 variant="contained"
@@ -380,7 +420,7 @@ export default function PackageCatalog({
           value={catalogTab}
           onChange={(_event, value) => setCatalogTab(value)}
           aria-label="Draw and Invoice sections"
-          sx={{ mt: 2.5 }}
+          sx={{ mt: 0.5, minHeight: 40, '& .MuiTab-root': { minHeight: 40, py: 0 } }}
         >
           <Tab
             value="packages"
@@ -400,23 +440,22 @@ export default function PackageCatalog({
       {catalogTab === 'documents' ? (
         <JobDocumentsCatalog jobs={jobs} documentState={jobDocuments} />
       ) : (
-        <Box sx={{ p: { xs: 2.5, md: 4 } }}>
+        <Stack spacing={1.5} sx={{ p: { xs: 2, md: 3 } }}>
           {error && (
             <Alert
               severity="error"
               action={<Button color="inherit" onClick={onRetry}>Retry</Button>}
-              sx={{ mb: 2 }}
             >
               {error}
             </Alert>
           )}
           {quickbooks.error && (
-            <Alert severity="error" onClose={quickbooks.dismissError} sx={{ mb: 2 }}>
+            <Alert severity="error" onClose={quickbooks.dismissError}>
               {quickbooks.error}
             </Alert>
           )}
           {quickbooks.notice && (
-            <Alert severity="success" onClose={quickbooks.dismissNotice} sx={{ mb: 2 }}>
+            <Alert severity="success" onClose={quickbooks.dismissNotice}>
               {quickbooks.notice}
             </Alert>
           )}
@@ -425,18 +464,21 @@ export default function PackageCatalog({
             loading={productionActivitiesLoading}
             error={productionActivitiesError}
             disabled={!canManage || createDisabled}
+            open={showSuggestions}
+            onToggle={toggleSuggestions}
             onReview={onReviewSuggestion}
           />
           <RetentionSuggestionsPanel
             suggestions={retentionSuggestions}
             disabled={!canManage || createDisabled}
+            open={retentionOpen}
+            onToggle={() => setRetentionOpen((current) => !current)}
             onReview={onReviewRetention}
           />
           <Box sx={{
             display: 'grid',
             gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))',
             gap: 1.5,
-            mb: 2.5,
           }}>
             {packageSummaryCards.map(({ status, icon, color }) => (
               <PackageSummaryCard
@@ -447,7 +489,7 @@ export default function PackageCatalog({
                 count={statusSummary[status].count}
                 total={statusSummary[status].total}
                 selected={statusTab === status}
-                onSelect={() => setStatusTab(status)}
+                onSelect={() => setStatusTab(statusTab === status ? 'ALL' : status)}
               />
             ))}
             <MissingDocumentsSummaryCard
@@ -458,83 +500,106 @@ export default function PackageCatalog({
           </Box>
 
           <Box sx={{ bgcolor: 'background.paper', border: 1, borderColor: 'divider', borderRadius: 2, overflow: 'hidden' }}>
-            <Tabs
-              value={statusTab}
-              onChange={(_, value) => setStatusTab(value)}
-              variant="scrollable"
-              scrollButtons="auto"
-              aria-label="Filter Packages by status"
-              sx={{ borderBottom: 1, borderColor: 'divider', px: 1 }}
-            >
-              {PACKAGE_CATALOG_TABS.map(({ value, label }) => (
-                <Tab
-                  key={value}
-                  value={value}
-                  label={`${label} (${value === 'ALL'
-                    ? scopedContexts.length
-                    : statusSummary[value].count})`}
-                />
-              ))}
-            </Tabs>
             <Stack
-              direction={{ xs: 'column', md: 'row' }}
-              spacing={1.5}
-              sx={{ p: 2, alignItems: { md: 'center' } }}
+              direction={{ xs: 'column', lg: 'row' }}
+              sx={{ alignItems: { lg: 'center' } }}
             >
-              <TextField
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                placeholder="Search Package, Invoice, Job or Phase"
-                size="small"
-                aria-label="Search Packages"
-                sx={{ flex: 2, minWidth: { md: 230 } }}
-                slotProps={{
-                  input: {
-                    startAdornment: (
-                      <InputAdornment position="start">
-                        <SearchRoundedIcon color="action" />
-                      </InputAdornment>
-                    ),
-                  },
+              <Tabs
+                value={statusTab}
+                onChange={(_, value) => setStatusTab(value)}
+                variant="scrollable"
+                scrollButtons="auto"
+                aria-label="Filter Packages by status"
+                sx={{
+                  flexShrink: 0,
+                  minHeight: 44,
+                  px: 1,
+                  maxWidth: '100%',
+                  borderBottom: { xs: 1, lg: 0 },
+                  borderColor: 'divider',
+                  '& .MuiTab-root': { minHeight: 44, py: 0 },
                 }}
-              />
-              <TextField
-                select
-                size="small"
-                label="Builder"
-                value={builderFilter}
-                onChange={(event) => {
-                  setBuilderFilter(event.target.value)
-                  setCommunityFilter('ALL')
-                }}
-                sx={{ flex: 1, minWidth: { md: 170 } }}
               >
-                <MenuItem value="ALL">All builders</MenuItem>
-                {builderOptions.map(({ id, name }) => (
-                  <MenuItem key={id} value={id}>{name}</MenuItem>
+                {PACKAGE_CATALOG_TABS.map(({ value, label }) => (
+                  <Tab
+                    key={value}
+                    value={value}
+                    label={`${label} (${value === 'ALL'
+                      ? scopedContexts.length
+                      : statusSummary[value].count})`}
+                  />
                 ))}
-              </TextField>
-              <TextField
-                select
-                size="small"
-                label="Community"
-                value={communityFilter}
-                onChange={(event) => setCommunityFilter(event.target.value)}
-                sx={{ flex: 1, minWidth: { md: 170 } }}
+              </Tabs>
+              <Stack
+                direction={{ xs: 'column', md: 'row' }}
+                spacing={1}
+                sx={{ flex: 1, minWidth: 0, p: 1, alignItems: { md: 'center' } }}
               >
-                <MenuItem value="ALL">All communities</MenuItem>
-                {communityOptions.map((community) => (
-                  <MenuItem key={community} value={community}>{community}</MenuItem>
-                ))}
-              </TextField>
-              <Button color="inherit" onClick={clearFilters} sx={{ flexShrink: 0 }}>
-                Clear filters
-              </Button>
+                <TextField
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                  placeholder="Search Package, Invoice, Job or Phase"
+                  size="small"
+                  aria-label="Search Packages"
+                  sx={{ flex: 2, minWidth: { md: 200 } }}
+                  slotProps={{
+                    input: {
+                      startAdornment: (
+                        <InputAdornment position="start">
+                          <SearchRoundedIcon color="action" />
+                        </InputAdornment>
+                      ),
+                    },
+                  }}
+                />
+                <TextField
+                  select
+                  size="small"
+                  label="Builder"
+                  value={builderFilter}
+                  onChange={(event) => {
+                    setBuilderFilter(event.target.value)
+                    setCommunityFilter('ALL')
+                  }}
+                  sx={{ flex: 1, minWidth: { md: 150 } }}
+                >
+                  <MenuItem value="ALL">All builders</MenuItem>
+                  {builderOptions.map(({ id, name }) => (
+                    <MenuItem key={id} value={id}>{name}</MenuItem>
+                  ))}
+                </TextField>
+                <TextField
+                  select
+                  size="small"
+                  label="Community"
+                  value={communityFilter}
+                  onChange={(event) => setCommunityFilter(event.target.value)}
+                  sx={{ flex: 1, minWidth: { md: 150 } }}
+                >
+                  <MenuItem value="ALL">All communities</MenuItem>
+                  {communityOptions.map((community) => (
+                    <MenuItem key={community} value={community}>{community}</MenuItem>
+                  ))}
+                </TextField>
+                <Button
+                  color="inherit"
+                  onClick={clearFilters}
+                  disabled={!filtersActive}
+                  sx={{ flexShrink: 0 }}
+                >
+                  Clear filters
+                </Button>
+                <Tooltip title="The cards follow the current filters. Missing Documents counts each Package whose Job still has pending requirements.">
+                  <IconButton
+                    size="small"
+                    aria-label="About the summary cards"
+                    sx={{ display: { xs: 'none', md: 'inline-flex' }, flexShrink: 0 }}
+                  >
+                    <InfoOutlinedIcon fontSize="small" />
+                  </IconButton>
+                </Tooltip>
+              </Stack>
             </Stack>
-            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', px: 2, pb: 1.5 }}>
-              Cards follow the current filters. Missing Documents counts each Package whose Job
-              {' '}still has pending requirements.
-            </Typography>
           </Box>
 
           <PackageTable
@@ -551,7 +616,7 @@ export default function PackageCatalog({
             })}
             onClearFilters={clearFilters}
           />
-        </Box>
+        </Stack>
       )}
 
       {catalogAction?.action === 'edit' && selectedContext && (

@@ -11,11 +11,13 @@ export default function QuickbooksConnectButton({
   canConnect,
   lastInvoiceAt,
   onConnect,
+  compact = false,
 }) {
   const view = quickbooksStatusView({ loading, connection, canConnect, lastInvoiceAt })
 
   return (
     <QuickbooksStatusCard
+      compact={compact}
       tone={view.tone}
       status={view.status}
       detail={view.detail}

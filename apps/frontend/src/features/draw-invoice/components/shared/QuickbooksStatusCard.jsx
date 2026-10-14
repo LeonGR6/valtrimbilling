@@ -10,7 +10,7 @@ const TONE_COLORS = {
 
 /**
  * QuickBooks logo, a status word in the tone's colour, one line of detail and a
- * status dot. It is a button when `onClick` is given, a link when `href` is
+ * status dot (`compact` shrinks it for a page header). It is a button when `onClick` is given, a link when `href` is
  * given, and plain information otherwise.
  */
 export default function QuickbooksStatusCard({
@@ -20,6 +20,7 @@ export default function QuickbooksStatusCard({
   title,
   onClick,
   href,
+  compact = false,
 }) {
   const color = TONE_COLORS[tone]
   const interactive = Boolean(onClick || href)
@@ -35,11 +36,11 @@ export default function QuickbooksStatusCard({
         aria-label={`QuickBooks ${status}. ${detail}${href ? ' Opens in QuickBooks.' : ''}`}
         aria-disabled={!interactive}
         sx={{
-          gap: 1.5,
-          pl: 1,
-          pr: 1.75,
-          py: 0.75,
-          minWidth: 220,
+          gap: compact ? 1 : 1.5,
+          pl: compact ? 0.75 : 1,
+          pr: compact ? 1.25 : 1.75,
+          py: compact ? 0.5 : 0.75,
+          minWidth: compact ? 0 : 220,
           justifyContent: 'flex-start',
           textAlign: 'left',
           border: 1,
@@ -52,7 +53,7 @@ export default function QuickbooksStatusCard({
           '&.Mui-focusVisible': { outline: 2, outlineStyle: 'solid', outlineColor: 'primary.main' },
         }}
       >
-        <QuickbooksLogo size={38} />
+        <QuickbooksLogo size={compact ? 28 : 38} />
         <Box sx={{ minWidth: 0, flex: 1 }}>
           <Typography component="span" sx={{ display: 'block', lineHeight: 1.3 }}>
             <Box component="span" sx={{ fontWeight: 800 }}>QuickBooks</Box>
@@ -64,7 +65,7 @@ export default function QuickbooksStatusCard({
           <Typography
             variant="caption"
             noWrap
-            sx={{ display: 'block', color: 'text.secondary', lineHeight: 1.4, maxWidth: 240 }}
+            sx={{ display: 'block', color: 'text.secondary', lineHeight: 1.4, maxWidth: compact ? 200 : 240 }}
           >
             {detail}
           </Typography>

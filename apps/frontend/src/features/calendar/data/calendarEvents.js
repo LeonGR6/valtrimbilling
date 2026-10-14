@@ -648,7 +648,8 @@ function shortPhaseOrBuilding(prefix, value) {
 
 /**
  * One line for a Production event in the Month view:
- * "Job # · Community · P1 B2 · (Lots) · Event".
+ * "Community · P1 B2 · (Lots) · Event". The Job number is left out: the
+ * community already says which job it is.
  */
 export function getMonthEventLabel(props) {
   const type = activityTypeMap[props.activityType]
@@ -663,7 +664,6 @@ export function getMonthEventLabel(props) {
     .replace(/^Lots?\s+/, '')
 
   return [
-    props.jobCode,
     props.community,
     phaseBuilding,
     lots ? `(${lots})` : '',

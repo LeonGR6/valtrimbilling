@@ -7,6 +7,7 @@ import {
   hardwareChargeKey,
   summarizeDrawPackage,
 } from './drawPackages.js'
+import { addLag, normalizeLag } from '../../builder-draw-schedules/utils/drawLag.js'
 import {
   getHardwareBillingMode,
   getHardwareEventPercentage,
@@ -161,6 +162,7 @@ export function buildDrawCalendarHeadings({
     const eventType = EVENT_TYPE_ORDER.includes(draw.eventType)
       ? draw.eventType
       : null
+    const lag = normalizeLag(draw.lag)
     if (!job || !phase || !eventType || phaseLotIds.size === 0) {
       return { eventType, eventDates: [] }
     }
@@ -190,10 +192,17 @@ export function buildDrawCalendarHeadings({
       }
     }
 
-    return {
-      eventType,
-      eventDates: [...eventDates].sort(),
-    }
+    const sortedDates = [...eventDates].sort()
+    // Only a Draw with a lag says when it becomes billable; the others keep the
+    // plain event dates.
+    return lag
+      ? {
+          eventType,
+          eventDates: sortedDates,
+          lag,
+          availableDates: sortedDates.map((date) => addLag(date, lag)),
+        }
+      : { eventType, eventDates: sortedDates }
   })
 }
 
@@ -271,6 +280,11 @@ export function buildCalendarDrawSuggestion({
               drawIndex,
               eventType: stage.type,
               eventDate: productionSchedule.date,
+              // A Draw with a lag is billable that long after its event.
+              billableDate: addLag(
+                productionSchedule.date,
+                schedule.draws?.[drawIndex]?.lag,
+              ),
               activityId: activity.id,
               scheduleId: productionSchedule.id,
             }
@@ -297,6 +311,7 @@ export function buildCalendarDrawSuggestion({
               lotId,
               eventType: stage.type,
               eventDate: productionSchedule.date,
+              billableDate: productionSchedule.date,
               activityId: activity.id,
               scheduleId: productionSchedule.id,
             }
@@ -317,15 +332,15 @@ export function buildCalendarDrawSuggestion({
   if (!latestEligibleDate) return emptySuggestion(mode, cutoffDate)
 
   const eligibleCandidates = [...candidatesByKey.values()]
-    .filter((candidate) => candidate.eventDate <= latestEligibleDate)
-    .sort((left, right) => left.eventDate.localeCompare(right.eventDate)
+    .filter((candidate) => candidate.billableDate <= latestEligibleDate)
+    .sort((left, right) => left.billableDate.localeCompare(right.billableDate)
       || compareSelections(left, right))
   const eligibleSelections = eligibleCandidates
     .map(({ phaseId, lotId, drawIndex }) => ({ phaseId, lotId, drawIndex }))
     .sort(compareSelections)
   const eligibleHardwareCandidates = [...hardwareCandidatesByKey.values()]
-    .filter((candidate) => candidate.eventDate <= latestEligibleDate)
-    .sort((left, right) => left.eventDate.localeCompare(right.eventDate)
+    .filter((candidate) => candidate.billableDate <= latestEligibleDate)
+    .sort((left, right) => left.billableDate.localeCompare(right.billableDate)
       || compareHardwareSelections(left, right))
   const eligibleHardwareSelections = eligibleHardwareCandidates
     .map(({ phaseId, lotId, eventType }) => ({ phaseId, lotId, eventType }))
@@ -361,19 +376,19 @@ export function buildCalendarDrawSuggestion({
   let bestWindow = null
   const windowEnds = [...new Set(
     [...eligibleCandidates, ...eligibleHardwareCandidates]
-      .map(({ eventDate }) => eventDate),
+      .map(({ billableDate }) => billableDate),
   )].sort()
 
   for (const windowEnd of windowEnds) {
     const windowStart = addDays(windowEnd, -13)
     const windowCandidates = eligibleCandidates.filter(
-      ({ eventDate }) => eventDate >= windowStart && eventDate <= windowEnd,
+      ({ billableDate }) => billableDate >= windowStart && billableDate <= windowEnd,
     )
     const selections = windowCandidates
       .map(({ phaseId, lotId, drawIndex }) => ({ phaseId, lotId, drawIndex }))
       .sort(compareSelections)
     const hardwareSelections = eligibleHardwareCandidates
-      .filter(({ eventDate }) => eventDate >= windowStart && eventDate <= windowEnd)
+      .filter(({ billableDate }) => billableDate >= windowStart && billableDate <= windowEnd)
       .map(({ phaseId, lotId, eventType }) => ({ phaseId, lotId, eventType }))
       .sort(compareHardwareSelections)
     const estimatedInvoiceAmount = estimateInvoiceAmount(

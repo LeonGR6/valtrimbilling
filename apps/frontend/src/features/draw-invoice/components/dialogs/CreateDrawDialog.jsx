@@ -65,6 +65,7 @@ import {
   buildDrawCalendarHeadings,
   localDateKey,
 } from '../../utils/calendarDrawSuggestions.js'
+import { formatLag } from '../../../builder-draw-schedules/utils/drawLag.js'
 import {
   initialShownPhaseIds,
   isMultiPhasePackage,
@@ -276,6 +277,21 @@ export default function CreateDrawDialog({
     }
   }
   const phaseModels = shownPhases.map(buildPhaseModel)
+  // Selected cells of a Draw billed some time after its event, before that time
+  // has passed. They can still be packaged: the Calendar only suggests them later.
+  const todayKey = localDateKey()
+  const lagNotices = [...phaseModels.reduce((notices, model) => {
+    for (const drawIndex of new Set(model.lotSelected.map((selection) => selection.drawIndex))) {
+      const heading = model.headings[drawIndex]
+      const availableFrom = heading?.availableDates?.[0]
+      if (!heading?.lag || !availableFrom || availableFrom <= todayKey) continue
+      const known = notices.get(drawIndex)
+      if (!known || availableFrom < known.availableFrom) {
+        notices.set(drawIndex, { drawIndex, lag: heading.lag, eventType: heading.eventType, availableFrom })
+      }
+    }
+    return notices
+  }, new Map()).values()].sort((left, right) => left.drawIndex - right.drawIndex)
   const utilitySelections = phaseModels.flatMap((model) => model.utilitySelections)
 
   const suggestedSplitHardwareSelections = hardwareBillingMode === 'BY_EVENT'
@@ -826,6 +842,18 @@ export default function CreateDrawDialog({
                   : `There are no open Calendar Draw or Separate Hardware charges scheduled on or before ${formatLongDate(calendarSuggestion.cutoffDate)}.`}
                 {' '}You can still select cells manually.
               </Alert>
+          )}
+
+          {lagNotices.length > 0 && (
+            <Alert severity="warning">
+              {lagNotices.map(({ drawIndex, lag, eventType, availableFrom }) => (
+                <Box key={drawIndex}>
+                  <strong>Draw #{drawIndex + 1}</strong> is billed {formatLag(lag)} after{' '}
+                  {eventType}, so it is not billable until {formatLongDate(availableFrom)}.
+                </Box>
+              ))}
+              You can still include it in this Package.
+            </Alert>
           )}
 
           {calendarIsReady

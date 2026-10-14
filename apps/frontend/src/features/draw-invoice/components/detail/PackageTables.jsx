@@ -30,6 +30,7 @@ import {
   formatCurrency,
   formatPercentage,
 } from '../../utils/drawInvoiceFormatters.js'
+import { formatLagShort } from '../../../builder-draw-schedules/utils/drawLag.js'
 import { TableCardHeader } from '../shared/PackageUi.jsx'
 import { packageTableSx } from '../shared/packageTableStyles.js'
 
@@ -137,6 +138,7 @@ export function DrawWorksheetTable({
                   </Typography>
                   <Typography variant="caption" color="primary.main" fontWeight={750} sx={{ display: 'block' }}>
                     {formatPercentage(draw.percentage)}%
+                    {draw.lag ? ` · ${draw.eventType} ${formatLagShort(draw.lag)}` : ''}
                   </Typography>
                   {worksheet.utilityBuildingEnabled && (
                     <Typography variant="caption" color="primary.main" fontWeight={750} sx={{ display: 'block' }}>

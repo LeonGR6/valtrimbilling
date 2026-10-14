@@ -14,6 +14,7 @@ import {
   Typography,
 } from '@mui/material'
 import LockRoundedIcon from '@mui/icons-material/LockRounded'
+import { formatLag, formatLagShort } from '../../../builder-draw-schedules/utils/drawLag.js'
 import { drawSelectionKey } from '../../utils/drawPackages.js'
 import { calendarSelectionKey } from '../../utils/calendarDrawSuggestions.js'
 import {
@@ -28,9 +29,10 @@ function calendarHeadingLabel(heading) {
 
   const firstDate = formatLongDate(heading.eventDates[0])
   const additionalDateCount = heading.eventDates.length - 1
+  const lag = heading.lag ? ` ${formatLagShort(heading.lag)}` : ''
   return additionalDateCount > 0
-    ? `${heading.eventType} (${firstDate} +${additionalDateCount} more)`
-    : `${heading.eventType} (${firstDate})`
+    ? `${heading.eventType}${lag} (${firstDate} +${additionalDateCount} more)`
+    : `${heading.eventType}${lag} (${firstDate})`
 }
 
 export default function DrawSelectionGrid({
@@ -137,9 +139,13 @@ export default function DrawSelectionGrid({
                       color="primary.main"
                       fontWeight={800}
                       component="div"
-                      title={(drawCalendarHeadings[drawIndex]?.eventDates ?? [])
-                        .map(formatLongDate)
-                        .join(' · ')}
+                      title={drawCalendarHeadings[drawIndex]?.lag
+                        ? `Billed ${formatLag(drawCalendarHeadings[drawIndex].lag)} after ${drawCalendarHeadings[drawIndex].eventType}. Available: ${(drawCalendarHeadings[drawIndex].availableDates ?? [])
+                          .map(formatLongDate)
+                          .join(' · ')}`
+                        : (drawCalendarHeadings[drawIndex]?.eventDates ?? [])
+                          .map(formatLongDate)
+                          .join(' · ')}
                       sx={{ mb: 0.25, whiteSpace: 'normal' }}
                     >
                       {calendarHeadingLabel(drawCalendarHeadings[drawIndex])}

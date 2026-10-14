@@ -345,10 +345,10 @@ test('the Month view shows one line: job, community, phase and building, lots an
     variant: 'base',
   }
 
-  assert.equal(getMonthEventLabel(props), '1319 · El Monte · P1 B2 · (1–9) · EXT')
+  assert.equal(getMonthEventLabel(props), 'El Monte · P1 B2 · (1–9) · EXT')
   assert.equal(
     getMonthEventLabel({ ...props, phase: '1.1', building: 'B', lotNumbers: [4], activityType: 'HW', variant: 'install-only' }),
-    '1319 · El Monte · P1.1 B · (4) · HW INSTALL ONLY',
+    'El Monte · P1.1 B · (4) · HW INSTALL ONLY',
   )
 })
 

@@ -1,13 +1,12 @@
+// A Package is a Draft until it is submitted, then it waits for payment.
 export const DRAW_PACKAGE_STATUSES = [
   'DRAFT',
-  'READY_TO_SUBMIT',
   'AWAITING_PAYMENT',
   'PAID_CLOSED',
 ]
 
 export const DRAW_PACKAGE_STATUS_LABELS = {
   DRAFT: 'Draft',
-  READY_TO_SUBMIT: 'Ready to submit',
   AWAITING_PAYMENT: 'Awaiting payment',
   PAID_CLOSED: 'Paid / Closed',
   CANCELLED: 'Cancelled',
@@ -201,11 +200,14 @@ export function toDrawInvoicePackage(
     portalName: submissionMethod === 'PORTAL' ? submissionDestination : '',
     quickbooksStatus: packageRow.quickbooks_status ?? 'NOT_CREATED',
     quickbooksReference: packageRow.quickbooks_reference ?? null,
+    paymentState: packageRow.quickbooks_invoice_syncs?.qbo_state ?? null,
+    paymentOverdue: Boolean(packageRow.quickbooks_invoice_syncs?.qbo_overdue),
     submissionStatus: packageRow.submission_status ?? 'NOT_SUBMITTED',
     submittedAt: packageRow.submitted_at ?? null,
+    // "Ready to submit" no longer exists: a Package still stored in it is a Draft.
     status: packageRow.status === 'VOIDED'
       ? 'CANCELLED'
-      : packageRow.workflow_status,
+      : packageRow.workflow_status === 'READY_TO_SUBMIT' ? 'DRAFT' : packageRow.workflow_status,
     cancelledAt: packageRow.voided_at ?? null,
     cancellationReason: packageRow.void_reason ?? null,
     corrections,
@@ -495,7 +497,7 @@ function toSelectionRecords(selections) {
 export function canManageDraftDrawPackage(record) {
   return record != null
     && record.packageType !== 'RETENTION_RELEASE'
-    && ['DRAFT', 'READY_TO_SUBMIT'].includes(record.status)
+    && record.status === 'DRAFT'
     && record.persistedInvoice?.status === 'DRAFT'
     && !record.invoiceNumber
     && !record.invoiceDate
@@ -513,7 +515,7 @@ export function canManageDraftDrawPackage(record) {
 export function canDeleteVoidedQuickbooksPackage(record) {
   return record != null
     && record.packageType !== 'RETENTION_RELEASE'
-    && ['DRAFT', 'READY_TO_SUBMIT'].includes(record.status)
+    && record.status === 'DRAFT'
     && record.quickbooksStatus === 'VOIDED'
     && record.persistedInvoice?.status === 'DRAFT'
     && !record.invoiceNumber

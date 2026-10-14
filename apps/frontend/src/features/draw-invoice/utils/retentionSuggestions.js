@@ -1,7 +1,6 @@
 import { resolveJobBillingSchedule } from './packageSuggestions.js'
 
 const QUALIFYING_STATUSES = new Set([
-  'READY_TO_SUBMIT',
   'AWAITING_PAYMENT',
   'PAID_CLOSED',
 ])

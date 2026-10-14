@@ -395,6 +395,12 @@ export function buildBilledUtilityCharges(
         eventType,
         packageId: record.id,
         packageNumber: record.packageNumber,
+        // To name the invoice that bills it, like the cells of the Lots do.
+        invoiceNumber: record.invoiceNumber ?? null,
+        quickbooksStatus: record.quickbooksStatus,
+        quickbooksReference: record.quickbooksReference ?? null,
+        paymentState: record.paymentState ?? null,
+        paymentOverdue: Boolean(record.paymentOverdue),
         utilityAmount: Number(line.utilityAmount),
       })
     }

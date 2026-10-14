@@ -93,8 +93,8 @@ test('Utility event split supports two events and rejects missing or incomplete 
 
 test('Builder Draw Schedule supports only the two invoice line formats', () => {
   assert.deepEqual(invoiceLineFormatOptions, [
-    { value: 'LOT_SCOPE', label: 'One line per lot and scope' },
     { value: 'BUILDING_SCOPE', label: 'One line per building and scope' },
+    { value: 'LOT_SCOPE', label: 'One line per lot and scope' },
   ])
 
   for (const invoiceLineFormat of ['LOT_SCOPE', 'BUILDING_SCOPE']) {

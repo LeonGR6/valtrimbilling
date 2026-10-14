@@ -16,6 +16,7 @@ import {
   Typography,
 } from '@mui/material'
 import LockRoundedIcon from '@mui/icons-material/LockRounded'
+import { worksheetCellLabels } from '../../utils/packageInvoiceLabel.js'
 import {
   formatBuilding,
   formatPhase,
@@ -28,7 +29,6 @@ import {
 } from '../../utils/drawPackages.js'
 import {
   formatCurrency,
-  formatDate,
   formatPercentage,
 } from '../../utils/drawInvoiceFormatters.js'
 
@@ -64,8 +64,11 @@ export function DrawWorksheetTable({
             )}
             <Typography fontWeight={800}>Draw worksheet</Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mt: 0.25 }}>
-              Yellow cells are already assigned. Utility follows this Job's
-              100% or event-based Builder Setup.
+              {currentPackageId != null ? 'Yellow cells are billed in this Package' : 'Blue cells are already billed in a Package'}
+              {currentPackageId != null ? ', blue ones in earlier Packages.' : '.'}
+              {worksheet.utilityBuildingEnabled
+                ? " Utility follows this Job's 100% or event-based Builder Setup."
+                : ''}
             </Typography>
           </Box>
           <Chip
@@ -105,15 +108,20 @@ export function DrawWorksheetTable({
                     Draw #{drawIndex + 1}
                     {draw.name?.trim() ? ` · ${draw.name.trim()}` : ''}
                   </Typography>
-                  <Typography variant="caption" color="primary.main" fontWeight={750}>
-                    {formatPercentage(draw.percentage)}% · Utility{' '}
-                    {worksheet.utilityBillingMode === 'BY_EVENT'
-                      ? `${formatPercentage(
-                          worksheet.rows.find((row) => row.isUtilityBuilding)
-                            ?.utilityPercentages?.[drawIndex] ?? 0,
-                        )}%`
-                      : '100% selectable'}
+                  <Typography variant="caption" color="primary.main" fontWeight={750} sx={{ display: 'block' }}>
+                    {formatPercentage(draw.percentage)}%
                   </Typography>
+                  {worksheet.utilityBuildingEnabled && (
+                    <Typography variant="caption" color="primary.main" fontWeight={750} sx={{ display: 'block' }}>
+                      Utility{' '}
+                      {worksheet.utilityBillingMode === 'BY_EVENT'
+                        ? `${formatPercentage(
+                            worksheet.rows.find((row) => row.isUtilityBuilding)
+                              ?.utilityPercentages?.[drawIndex] ?? 0,
+                          )}%`
+                        : '100% selectable'}
+                    </Typography>
+                  )}
                 </TableCell>
               ))}
             </TableRow>
@@ -157,8 +165,18 @@ export function DrawWorksheetTable({
                       ))
                     : null
                   const owner = exactOwner ?? utilityOwner
-                  const isCurrent = owner?.id === currentPackageId
-                    || owner?.packageId === currentPackageId
+                  // The invoice number and how the invoice stands; the Package
+                  // number and what is missing until the invoice exists.
+                  const ownerLabels = owner
+                    ? worksheetCellLabels(
+                      owner,
+                      utilityOwner && !exactOwner
+                        ? `Billed on Draw #${utilityOwner.drawIndex + 1}`
+                        : 'Invoice pending',
+                    )
+                    : null
+                  const isCurrent = currentPackageId != null
+                    && (owner?.id === currentPackageId || owner?.packageId === currentPackageId)
 
                   return [
                     <TableCell
@@ -174,12 +192,18 @@ export function DrawWorksheetTable({
                       key={`${key}-usage`}
                       sx={
                         owner
-                          ? {
-                              bgcolor: 'warning.light',
-                              color: 'warning.contrastText',
-                              boxShadow: isCurrent ? 'inset 3px 0 0' : undefined,
-                              boxShadowColor: isCurrent ? 'warning.dark' : undefined,
-                            }
+                          ? isCurrent
+                            // Billed in the Package on screen: yellow, with an accent.
+                            ? {
+                                bgcolor: 'warning.light',
+                                color: 'warning.contrastText',
+                                boxShadow: (theme) => `inset 3px 0 0 ${theme.palette.warning.dark}`,
+                              }
+                            // Billed in an earlier Package: the calm blue of the app.
+                            : {
+                                bgcolor: 'primary.light',
+                                color: 'primary.main',
+                              }
                           : undefined
                       }
                     >
@@ -188,15 +212,11 @@ export function DrawWorksheetTable({
                           <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center' }}>
                             <LockRoundedIcon sx={{ fontSize: 14 }} />
                             <Typography variant="caption" fontWeight={850}>
-                              {owner.packageNumber}
+                              {ownerLabels.title}
                             </Typography>
                           </Stack>
                           <Typography variant="caption" component="div">
-                            {exactOwner?.invoiceNumber
-                              ? `${owner.invoiceNumber} · ${formatDate(owner.invoiceDate)}`
-                              : utilityOwner && !exactOwner
-                                ? `Billed on Draw #${utilityOwner.drawIndex + 1}`
-                                : 'Invoice pending'}
+                            {ownerLabels.subtitle}
                           </Typography>
                         </Box>
                       ) : (

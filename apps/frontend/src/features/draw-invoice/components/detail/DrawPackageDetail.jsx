@@ -1,4 +1,4 @@
-import { lazy, Suspense, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { Link as RouterLink, useNavigate, useParams } from 'react-router-dom'
 import {
   Alert,
@@ -9,6 +9,8 @@ import {
   CardContent,
   Chip,
   CircularProgress,
+  IconButton,
+  Tooltip,
   MenuItem,
   Stack,
   TextField,
@@ -19,15 +21,18 @@ import ApartmentRoundedIcon from '@mui/icons-material/ApartmentRounded'
 import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded'
 import AttachMoneyRoundedIcon from '@mui/icons-material/AttachMoneyRounded'
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
+import SyncRoundedIcon from '@mui/icons-material/SyncRounded'
+import MarkEmailReadRoundedIcon from '@mui/icons-material/MarkEmailReadRounded'
 import EditRoundedIcon from '@mui/icons-material/EditRounded'
 import MergeTypeRoundedIcon from '@mui/icons-material/MergeTypeRounded'
 import MoveToInboxRoundedIcon from '@mui/icons-material/MoveToInboxRounded'
-import DescriptionRoundedIcon from '@mui/icons-material/DescriptionRounded'
-import TableChartRoundedIcon from '@mui/icons-material/TableChartRounded'
 import LayersRoundedIcon from '@mui/icons-material/LayersRounded'
 import ReceiptLongRoundedIcon from '@mui/icons-material/ReceiptLongRounded'
 import { useAuth } from '../../../auth/context/useAuth.js'
 import { useBuilderDrawSchedules } from '../../../builder-draw-schedules/context/useBuilderDrawSchedules.js'
+import { displayInvoiceNumber } from '../../utils/packageInvoiceLabel.js'
+import { usePackageSubmissions } from '../../hooks/usePackageSubmissions.js'
+import { describeSentHistory, describeSentPackage } from '../../services/packageSubmissionRecord.js'
 import { useProductionActivities } from '../../../calendar/context/useProductionActivities.js'
 import JobModuleNavigation from '../../../jobs/components/JobModuleNavigation.jsx'
 import { useJobs } from '../../../jobs/context/useJobs.js'
@@ -44,6 +49,7 @@ import {
 } from '../../../sequence-sheets/utils/phaseBuildingCodes.js'
 import { useDrawInvoicePackages } from '../../context/useDrawInvoicePackages.js'
 import { useQuickbooksInvoiceSync } from '../../hooks/useQuickbooksInvoiceSync.js'
+import { refreshQuickbooksPayment } from '../../services/quickbooksRepository.js'
 import {
   canCorrectDrawPackage,
 } from '../../services/drawInvoicePackageRecord.js'
@@ -89,14 +95,7 @@ import {
 } from './PackageTables.jsx'
 
 // Loaded on demand: it brings the Release generation screens.
-const GeneratePackageReleaseDialog = lazy(
-  () => import('../../../release-templates/components/GeneratePackageReleaseDialog.jsx'),
-)
-
 const GeneratePackageDialog = lazy(() => import('./GeneratePackageDialog.jsx'))
-const GeneratePackageScheduleDialog = lazy(
-  () => import('../../../payment-schedules/components/GeneratePackageScheduleDialog.jsx'),
-)
 
 // The same roles that can save Job documents can generate a Package's Release.
 const RELEASE_ROLES = ['ADMIN', 'ACCOUNTING', 'PROJECT_MANAGEMENT']
@@ -137,8 +136,6 @@ export default function DrawPackageDetail() {
   } = useDrawInvoicePackages()
   const [createDialogOpen, setCreateDialogOpen] = useState(false)
   const [correctionDialog, setCorrectionDialog] = useState(null)
-  const [releaseDialogOpen, setReleaseDialogOpen] = useState(false)
-  const [scheduleDialogOpen, setScheduleDialogOpen] = useState(false)
   const [packageDialogOpen, setPackageDialogOpen] = useState(false)
   const [quickbooksDialogOpen, setQuickbooksDialogOpen] = useState(false)
   const { profile } = useAuth()
@@ -147,7 +144,44 @@ export default function DrawPackageDetail() {
       String(record.id) === String(packageId) &&
       String(record.jobId) === String(jobId),
   )
-  const quickbooksSync = useQuickbooksInvoiceSync(focusedPackageRecord)
+  const [paymentRefresh, setPaymentRefresh] = useState(0)
+  const [refreshingPayment, setRefreshingPayment] = useState(false)
+  const [paymentError, setPaymentError] = useState(null)
+  const quickbooksSync = useQuickbooksInvoiceSync(focusedPackageRecord, paymentRefresh)
+
+  // Asks QuickBooks how the invoice stands (open, overdue, paid...). A Package
+  // that is paid there becomes Paid / Closed here. Admin and Accounting only:
+  // the same people who send the invoice.
+  const checkedPackageId = focusedPackageRecord?.id ?? null
+  const canCheckPayment = ['ADMIN', 'ACCOUNTING'].includes(profile?.role)
+    && focusedPackageRecord?.quickbooksStatus === 'CREATED'
+  const checkPayment = useCallback(async ({ silent = false } = {}) => {
+    if (checkedPackageId == null) return
+    if (!silent) {
+      setRefreshingPayment(true)
+      setPaymentError(null)
+    }
+    try {
+      await refreshQuickbooksPayment(checkedPackageId)
+      await refreshDrawInvoicePackages()
+      setPaymentRefresh((count) => count + 1)
+    } catch (error) {
+      if (!silent) setPaymentError(error.message)
+    } finally {
+      if (!silent) setRefreshingPayment(false)
+    }
+  }, [checkedPackageId, refreshDrawInvoicePackages])
+
+  // Once when a Package is opened, so what is shown is not stale.
+  const autoCheckedRef = useRef(null)
+  useEffect(() => {
+    if (!canCheckPayment || autoCheckedRef.current === checkedPackageId) return
+    autoCheckedRef.current = checkedPackageId
+    checkPayment({ silent: true })
+  }, [canCheckPayment, checkedPackageId, checkPayment])
+  const { submissions, reload: reloadSubmissions } = usePackageSubmissions(
+    focusedPackageRecord?.id ?? null,
+  )
 
   const handleCreate = async (input) => {
     const record = await createDrawInvoicePackage(input)
@@ -212,6 +246,7 @@ export default function DrawPackageDetail() {
       String(record.id) === String(packageId) &&
       String(record.jobId) === String(focusedJob.id),
   )
+  const focusedInvoiceNumber = focusedPackage ? displayInvoiceNumber(focusedPackage) : null
   const jobBillingSetupIsAvailable = jobBillingSetupVersions.some(
     (version) => String(version.id) === String(focusedJob.billingSetupVersionId),
   )
@@ -317,9 +352,7 @@ export default function DrawPackageDetail() {
                 Job #{focusedJob.code} · {isMultiPhase
                   ? packagePhaseLabels(packageSummary.phaseSummaries).join(' · ')
                   : `${formatPhase(selectedPhase.name)} · ${formatBuilding(selectedPhase.building)}`}
-                {focusedPackage?.invoiceNumber
-                  ? ` · Invoice ${focusedPackage.invoiceNumber}`
-                  : ''}
+                {focusedInvoiceNumber ? ` · Invoice ${focusedInvoiceNumber}` : ''}
               </Typography>
             )}
             {isRetentionRelease && (
@@ -327,9 +360,7 @@ export default function DrawPackageDetail() {
                 Job #{focusedJob.code} · {focusedPackage.retentionRelease?.scopeType === 'JOB'
                   ? 'Per Job'
                   : `${formatPhase(focusedPackage.retentionRelease?.phaseCode)} · ${formatBuilding(focusedPackage.retentionRelease?.building)}`}
-                {focusedPackage.invoiceNumber
-                  ? ` · Invoice ${focusedPackage.invoiceNumber}`
-                  : ''}
+                {focusedInvoiceNumber ? ` · Invoice ${focusedInvoiceNumber}` : ''}
               </Typography>
             )}
           </Box>
@@ -358,6 +389,53 @@ export default function DrawPackageDetail() {
                   ? () => setQuickbooksDialogOpen(true)
                   : undefined}
               />
+            )}
+            {canCheckPayment && (
+              <Tooltip
+                title={paymentError
+                  ?? 'Check in QuickBooks whether this invoice is open, overdue or paid'}
+              >
+                <span>
+                  <IconButton
+                    size="small"
+                    color={paymentError ? 'error' : 'default'}
+                    aria-label="Check payment in QuickBooks"
+                    disabled={refreshingPayment}
+                    onClick={() => checkPayment()}
+                  >
+                    {refreshingPayment ? <CircularProgress size={18} /> : <SyncRoundedIcon fontSize="small" />}
+                  </IconButton>
+                </span>
+              </Tooltip>
+            )}
+            {submissions.length > 0 && (
+              <Tooltip
+                arrow
+                title={(
+                  <Box sx={{ py: 0.5 }}>
+                    {describeSentHistory(submissions).map((entry) => (
+                      <Box key={entry.id} sx={{ mb: 1, '&:last-child': { mb: 0 } }}>
+                        <Typography variant="caption" sx={{ fontWeight: 800, display: 'block' }}>
+                          {entry.isLatest ? 'Last sent' : 'Sent earlier'} · {entry.when}
+                        </Typography>
+                        {entry.recipients.map((email) => (
+                          <Typography key={email} variant="caption" sx={{ display: 'block' }}>
+                            {email}
+                          </Typography>
+                        ))}
+                      </Box>
+                    ))}
+                  </Box>
+                )}
+              >
+                <Chip
+                  color="success"
+                  variant="outlined"
+                  icon={<MarkEmailReadRoundedIcon />}
+                  label={describeSentPackage(submissions)}
+                  sx={{ fontWeight: 650, height: 'auto', minHeight: 32 }}
+                />
+              </Tooltip>
             )}
             {canCorrectFocusedPackage && (
               <>
@@ -388,26 +466,6 @@ export default function DrawPackageDetail() {
                 disabled={saving}
               >
                 Generate package (PDF)
-              </Button>
-            )}
-            {focusedPackage && RELEASE_ROLES.includes(profile?.role) && (
-              <Button
-                variant="outlined"
-                startIcon={<DescriptionRoundedIcon />}
-                onClick={() => setReleaseDialogOpen(true)}
-                disabled={saving}
-              >
-                Generate Release
-              </Button>
-            )}
-            {focusedPackage && RELEASE_ROLES.includes(profile?.role) && (
-              <Button
-                variant="outlined"
-                startIcon={<TableChartRoundedIcon />}
-                onClick={() => setScheduleDialogOpen(true)}
-                disabled={saving}
-              >
-                Generate Payment Schedule
               </Button>
             )}
             {canDeleteFocusedPackage && (
@@ -576,8 +634,8 @@ export default function DrawPackageDetail() {
                     label="Invoice Amount"
                     value={formatCurrency(packageSummary.invoiceAmount)}
                     valueColor="success.main"
-                    detail={focusedPackage.invoiceNumber
-                      ? `Invoice ${focusedPackage.invoiceNumber}`
+                    detail={focusedInvoiceNumber
+                      ? `Invoice ${focusedInvoiceNumber}`
                       : 'Invoice pending'}
                   />
                 </Stack>
@@ -632,8 +690,8 @@ export default function DrawPackageDetail() {
                   valueColor="success.main"
                   detail={packageSummary.optionsTotal > 0
                     ? `${formatCurrency(packageSummary.optionsTotal)} options included`
-                    : focusedPackage.invoiceNumber
-                      ? `Invoice ${focusedPackage.invoiceNumber}`
+                    : focusedInvoiceNumber
+                      ? `Invoice ${focusedInvoiceNumber}`
                       : 'Invoice pending'}
                 />
               </Stack>
@@ -730,22 +788,6 @@ export default function DrawPackageDetail() {
           onCreate={handleCreate}
         />
       )}
-      {releaseDialogOpen && focusedPackage && (
-        <Suspense
-          fallback={(
-            <Backdrop open sx={{ zIndex: 'modal' }}>
-              <CircularProgress color="inherit" />
-            </Backdrop>
-          )}
-        >
-          <GeneratePackageReleaseDialog
-            packageRecord={focusedPackage}
-            job={focusedJob}
-            onClose={() => setReleaseDialogOpen(false)}
-          />
-        </Suspense>
-      )}
-
       {packageDialogOpen && focusedPackage && (
         <Suspense
           fallback={(
@@ -758,24 +800,16 @@ export default function DrawPackageDetail() {
             packageRecord={focusedPackage}
             job={focusedJob}
             packages={drawInvoicePackages}
+            submission={{
+              method: schedule?.submissionMethod,
+              destination: schedule?.submissionDestination,
+            }}
+            submissions={submissions}
+            onSent={() => {
+              reloadSubmissions()
+              refreshDrawInvoicePackages()
+            }}
             onClose={() => setPackageDialogOpen(false)}
-          />
-        </Suspense>
-      )}
-
-      {scheduleDialogOpen && focusedPackage && (
-        <Suspense
-          fallback={(
-            <Backdrop open sx={{ zIndex: 'modal' }}>
-              <CircularProgress color="inherit" />
-            </Backdrop>
-          )}
-        >
-          <GeneratePackageScheduleDialog
-            packageRecord={focusedPackage}
-            job={focusedJob}
-            packages={drawInvoicePackages}
-            onClose={() => setScheduleDialogOpen(false)}
           />
         </Suspense>
       )}

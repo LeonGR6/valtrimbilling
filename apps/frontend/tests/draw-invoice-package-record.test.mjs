@@ -200,7 +200,8 @@ test('maps persisted package, invoice and calculated snapshots to the UI model',
   )
 
   assert.equal(record.id, 91)
-  assert.equal(record.status, 'READY_TO_SUBMIT')
+  // A Package still stored as "ready to submit" is a Draft: that status was removed.
+  assert.equal(record.status, 'DRAFT')
   assert.deepEqual(record.lotIds, [41])
   assert.deepEqual(record.phaseIds, [21])
   assert.deepEqual(record.drawIndexes, [1])
@@ -628,7 +629,6 @@ test('derives a multi-Phase Package scope from its immutable draw lines', () => 
 test('exposes exactly the requested Package statuses', () => {
   assert.deepEqual(DRAW_PACKAGE_STATUSES, [
     'DRAFT',
-    'READY_TO_SUBMIT',
     'AWAITING_PAYMENT',
     'PAID_CLOSED',
   ])

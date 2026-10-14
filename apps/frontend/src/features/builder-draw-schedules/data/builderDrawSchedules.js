@@ -49,9 +49,10 @@ export const weekdayOptions = [
   { value: 6, label: 'Saturday' },
 ]
 
+// Building scope is listed first and is the default for a new setup.
 export const invoiceLineFormatOptions = [
-  { value: 'LOT_SCOPE', label: 'One line per lot and scope' },
   { value: 'BUILDING_SCOPE', label: 'One line per building and scope' },
+  { value: 'LOT_SCOPE', label: 'One line per lot and scope' },
 ]
 
 export const invoiceLineFormatLabels = Object.fromEntries(
@@ -113,7 +114,7 @@ export const defaultBillingSettings = {
   requiresRelease: false,
   finalReleaseScope: '',
   requiresBackup: false,
-  invoiceLineFormat: 'LOT_SCOPE',
+  invoiceLineFormat: 'BUILDING_SCOPE',
   submissionMethod: 'PORTAL',
   submissionDestination: '',
   notes: '',

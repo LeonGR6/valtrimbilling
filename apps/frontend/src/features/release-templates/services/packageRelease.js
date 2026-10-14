@@ -22,7 +22,6 @@ export const PACKAGE_RELEASE_VARIABLES = [
 
 const WORKFLOW_LABELS = {
   DRAFT: 'Draft',
-  READY_TO_SUBMIT: 'Ready to submit',
   AWAITING_PAYMENT: 'Awaiting payment',
 }
 

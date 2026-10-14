@@ -21,7 +21,7 @@ const contexts = [
     summary: { invoiceAmount: 100.25 },
   },
   {
-    record: { id: 2, builderId: 11, status: 'READY_TO_SUBMIT', packageNumber: 'DP-2' },
+    record: { id: 2, builderId: 11, status: 'DRAFT', packageNumber: 'DP-2' },
     job: { code: '1307', builder: 'Acme', community: 'Brookside' },
     phase: { name: 'Phase 2', building: 'P2' },
     summary: { invoiceAmount: 50.5 },
@@ -48,7 +48,7 @@ const contexts = [
 
 test('catalog tabs use only the Package statuses actually persisted by the workflow', () => {
   assert.deepEqual(PACKAGE_CATALOG_TABS.map(({ value }) => value), [
-    'ALL', 'DRAFT', 'READY_TO_SUBMIT', 'AWAITING_PAYMENT', 'PAID_CLOSED',
+    'ALL', 'DRAFT', 'AWAITING_PAYMENT', 'PAID_CLOSED',
   ])
 })
 
@@ -56,8 +56,7 @@ test('cancelled Packages stay out of the catalog and all status totals', () => {
   const active = filterPackageCatalogContexts(contexts)
   assert.deepEqual(active.map(({ record }) => record.id), [1, 2, 3, 4])
   assert.deepEqual(summarizePackageCatalogStatuses(active), {
-    DRAFT: { count: 1, total: 100.25 },
-    READY_TO_SUBMIT: { count: 1, total: 50.5 },
+    DRAFT: { count: 2, total: 150.75 },
     AWAITING_PAYMENT: { count: 1, total: 25.1 },
     PAID_CLOSED: { count: 1, total: 10.3 },
   })
@@ -95,7 +94,7 @@ test('Delete is offered only for a correctable Draft, never cancelled or ready',
     submissionStatus: 'NOT_SUBMITTED',
   }
   assert.equal(canDeleteDraftPackage(draft), true)
-  assert.equal(canDeleteDraftPackage({ ...draft, status: 'READY_TO_SUBMIT' }), false)
+  assert.equal(canDeleteDraftPackage({ ...draft, status: 'AWAITING_PAYMENT' }), false)
   assert.equal(canDeleteDraftPackage({ ...draft, status: 'CANCELLED' }), false)
   assert.equal(canDeleteDraftPackage({ ...draft, invoiceNumber: 'INV-1' }), false)
 })

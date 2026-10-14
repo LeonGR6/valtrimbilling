@@ -175,7 +175,7 @@ function scheduleWithRows(id = 'ex1') {
 }
 const lotsLines = (lots, draw, amount) => lots.map((lot) => line('3', lot, draw - 1, amount))
 const pkg = (id, createdAt, lines, extra = {}) => ({
-  id, jobId: 1, packageNumber: `DP-${id}`, packageType: 'DRAW', status: 'READY_TO_SUBMIT',
+  id, jobId: 1, packageNumber: `DP-${id}`, packageType: 'DRAW', status: 'AWAITING_PAYMENT',
   createdAt, persistedDrawLines: lines, ...extra,
 })
 

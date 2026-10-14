@@ -57,7 +57,7 @@ const row = {
       cutoff_source: 'package_date',
       net_amount: '845.5',
       status: 'DRAFT',
-      workflow_status: 'READY_TO_SUBMIT',
+      workflow_status: 'AWAITING_PAYMENT',
     },
   ],
 }
@@ -95,7 +95,7 @@ test('the values row maps to the model the screen uses', () => {
         cutoffSource: 'package_date',
         netAmount: 845.5,
         status: 'DRAFT',
-        workflowStatus: 'READY_TO_SUBMIT',
+        workflowStatus: 'AWAITING_PAYMENT',
       },
     ],
     sameCutoffPackages: [],
@@ -428,7 +428,6 @@ test('a list prints only the items that can be printed', () => {
 
 test('the list shows the stage of an unpaid Package', () => {
   assert.equal(describePendingPackage({ workflowStatus: 'AWAITING_PAYMENT' }).workflowLabel, 'Awaiting payment')
-  assert.equal(describePendingPackage({ workflowStatus: 'READY_TO_SUBMIT' }).workflowLabel, 'Ready to submit')
   assert.equal(describePendingPackage({ workflowStatus: 'DRAFT' }).workflowLabel, 'Draft')
   assert.equal(describePendingPackage({ workflowStatus: 'OTHER' }).workflowLabel, 'OTHER')
 })

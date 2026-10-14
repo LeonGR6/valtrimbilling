@@ -373,6 +373,8 @@ export function buildDrawWorksheet(job, phase, schedule) {
     unpricedLotCount,
     missingHardwarePriceCount,
     hasUtilityRows,
+    // Whether the Builder's setup bills a Utility Building at all.
+    utilityBuildingEnabled: Boolean(schedule?.utilityBuilding),
     utilityCapabilityMissing,
     separateHardwarePrice,
     hardwareBillingMode,

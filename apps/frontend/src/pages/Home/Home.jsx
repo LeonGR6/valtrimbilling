@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { displayInvoiceNumber } from '../../features/draw-invoice/utils/packageInvoiceLabel.js'
 import { Link as RouterLink } from 'react-router-dom'
 import {
   Alert, Box, Button, Card, CardContent, Chip, Divider, List, ListItemButton,
@@ -43,7 +44,6 @@ const eventColors = {
 }
 const packageColors = {
   DRAFT: 'text.secondary',
-  READY_TO_SUBMIT: 'info.main',
   AWAITING_PAYMENT: 'warning.main',
   PAID_CLOSED: 'success.main',
 }
@@ -155,7 +155,7 @@ function InvoiceAgenda({ invoices, jobsById, loading, days, todayKey }) {
               <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.25} sx={{ alignItems: { sm: 'center' }, width: '100%', minWidth: 0 }}>
                 <Box sx={{ flexGrow: 1, minWidth: 0 }}>
                   <Typography variant="body2" fontWeight={700} noWrap>
-                    {record.invoiceNumber ? `Invoice ${record.invoiceNumber}` : record.packageNumber}
+                    {displayInvoiceNumber(record) ? `Invoice ${displayInvoiceNumber(record)}` : record.packageNumber}
                   </Typography>
                   <Typography variant="caption" color="text.secondary" noWrap component="div">
                     {job ? `Job ${job.code} · ${job.community}` : `Package ${record.packageNumber}`}
@@ -298,8 +298,8 @@ export default function HomePage() {
         <MetricCard label="Tentative dates" value={metrics.tentativeCount}
           detail={`Production dates to review · next ${days} days`}
           icon={<PendingActionsRoundedIcon />} tone="warning" to="/calendar" loading={productionPending} />
-        <MetricCard label="Ready to submit" value={metrics.readyPackageCount}
-          detail="Draw & Invoice Packages · all periods"
+        <MetricCard label="Awaiting payment" value={metrics.awaitingPaymentCount}
+          detail="Submitted Draw & Invoice Packages · all periods"
           icon={<TaskAltRoundedIcon />} tone="info" to="/draw-invoice" loading={packagesLoading} />
         <MetricCard label="Pending collection" value={currencyFormatter.format(metrics.pendingBalance)}
           detail="Unpaid balance of issued invoices"

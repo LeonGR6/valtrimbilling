@@ -1,4 +1,5 @@
 import { useEffect, useImperativeHandle, useRef, useState } from 'react'
+import { displayInvoiceNumber, packageDocumentNumber } from '../../draw-invoice/utils/packageInvoiceLabel.js'
 import {
   Alert,
   Box,
@@ -88,6 +89,10 @@ export default function GeneratePackageReleaseDialog({
   // Inside the combined Package dialog: only the content, no frame or buttons. The
   // parent generates through `ref` and learns whether it can through `onReadyChange`.
   embedded = false,
+  // The Package list, to name the earlier Packages by their invoice number.
+  packages = [],
+  // The parent has its own Preview button and calls `showPreview` through `ref`.
+  hideInlinePreview = false,
   ref = null,
   onReadyChange = null,
   onClose,
@@ -161,6 +166,12 @@ export default function GeneratePackageReleaseDialog({
   const formatOf = (key) => template?.mapping.fields.find((field) => field.variable === key)?.format
   const exceptionLines = buildPackageFillValues(data?.values ?? {}, pending)
 
+  // An earlier Package is named by its invoice number once it has one.
+  const labelOfEarlier = (item) => {
+    const record = packages.find((candidate) => String(candidate.id) === String(item.id))
+    return record ? packageDocumentNumber(record) : item.number
+  }
+
   const toggleLeftOut = (id) => {
     setLeftOut((current) => {
       const next = new Set(current)
@@ -196,7 +207,7 @@ export default function GeneratePackageReleaseDialog({
 
     const fileName = buildPackageReleaseFileName({
       jobCode: job.code,
-      packageNumber: packageRecord.packageNumber,
+      packageNumber: packageDocumentNumber(packageRecord),
       releaseType: template.releaseType,
     })
     return { bytes, fileName, skipped }
@@ -256,10 +267,23 @@ export default function GeneratePackageReleaseDialog({
 
   const canGenerate = ready
 
-  useImperativeHandle(ref, () => ({ generate, build }))
+  useImperativeHandle(ref, () => ({ generate, build, showPreview }))
   useEffect(() => {
-    onReadyChange?.({ canGenerate, generating })
-  }, [canGenerate, generating, onReadyChange])
+    onReadyChange?.({
+      canGenerate,
+      generating,
+      previewing: status === 'previewing',
+      loading: !data && !loadError,
+      // Why it cannot be generated, so the parent can offer a way to fix it.
+      blocker: loadError
+        ? 'error'
+        : choice?.state === 'missing_template' || choice?.state === 'retention'
+          ? choice.state
+          : null,
+      // Changes whenever the generated file would change.
+      signature: JSON.stringify([form, [...leftOut]]),
+    })
+  }, [canGenerate, choice?.state, data, form, generating, leftOut, loadError, onReadyChange, status])
 
   const body = (
     <>
@@ -365,7 +389,9 @@ export default function GeneratePackageReleaseDialog({
                         )}
                         label={(
                           <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexWrap: 'wrap' }} useFlexGap>
-                            <Typography variant="body2" fontWeight={700}>{item.number}</Typography>
+                            <Typography variant="body2" fontWeight={700}>
+                              {labelOfEarlier(item)}
+                            </Typography>
                             <Typography variant="body2" color="text.secondary">
                               Cut-off {formatReleaseValue('through_date', 'MM/DD/YYYY', item.cutoffDate)}
                               {' · '}
@@ -408,7 +434,10 @@ export default function GeneratePackageReleaseDialog({
 
             {plan.filled.some(({ key }) => key === 'check_amount') && values.netAmount !== null && (
               <Typography variant="caption" color="text.secondary">
-                Invoice {values.invoiceNumber ? `${values.invoiceNumber}: ` : ''}
+                {(() => {
+                  const invoiceNumber = values.invoiceNumber ?? displayInvoiceNumber(packageRecord)
+                  return `Invoice ${invoiceNumber ? `${invoiceNumber}: ` : ''}`
+                })()}
                 Gross {formatCurrency(values.grossAmount ?? 0)} − Retention{' '}
                 {formatCurrency(values.retentionAmount ?? 0)} − Wrap{' '}
                 {formatCurrency(values.wrapAmount ?? 0)} = Net {formatCurrency(values.netAmount)}
@@ -502,7 +531,7 @@ export default function GeneratePackageReleaseDialog({
     return (
       <>
         {body}
-        {ready && (
+        {ready && !hideInlinePreview && (
           <Button
             size="small"
             startIcon={status === 'previewing' ? <CircularProgress size={16} /> : <VisibilityRoundedIcon />}

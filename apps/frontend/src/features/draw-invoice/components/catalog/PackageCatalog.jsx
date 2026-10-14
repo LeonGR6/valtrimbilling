@@ -17,7 +17,6 @@ import {
 } from '@mui/material'
 import AddRoundedIcon from '@mui/icons-material/AddRounded'
 import AttachMoneyRoundedIcon from '@mui/icons-material/AttachMoneyRounded'
-import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded'
 import FolderOpenRoundedIcon from '@mui/icons-material/FolderOpenRounded'
 import LockRoundedIcon from '@mui/icons-material/LockRounded'
 import PeopleAltRoundedIcon from '@mui/icons-material/PeopleAltRounded'
@@ -59,7 +58,6 @@ import QuickbooksCustomersDialog from './QuickbooksCustomersDialog.jsx'
 
 const packageSummaryCards = [
   { status: 'DRAFT', icon: <ReceiptLongRoundedIcon />, color: 'primary.main' },
-  { status: 'READY_TO_SUBMIT', icon: <CheckCircleRoundedIcon />, color: 'success.main' },
   { status: 'AWAITING_PAYMENT', icon: <AttachMoneyRoundedIcon />, color: 'info.main' },
   { status: 'PAID_CLOSED', icon: <LockRoundedIcon />, color: 'success.main' },
 ]

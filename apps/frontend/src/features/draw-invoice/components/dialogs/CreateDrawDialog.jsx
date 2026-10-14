@@ -1,6 +1,9 @@
 import { lazy, Suspense, useMemo, useState } from 'react'
 import { Link as RouterLink } from 'react-router-dom'
 import {
+  Accordion,
+  AccordionDetails,
+  AccordionSummary,
   Alert,
   Backdrop,
   Box,
@@ -13,13 +16,18 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
+  IconButton,
   MenuItem,
+  Paper,
   Stack,
   TextField,
   Typography,
 } from '@mui/material'
 import AddRoundedIcon from '@mui/icons-material/AddRounded'
+import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded'
 import CheckRoundedIcon from '@mui/icons-material/CheckRounded'
+import CloseRoundedIcon from '@mui/icons-material/CloseRounded'
+import ExpandMoreRoundedIcon from '@mui/icons-material/ExpandMoreRounded'
 import LayersRoundedIcon from '@mui/icons-material/LayersRounded'
 import {
   getJobBuilderId,
@@ -61,6 +69,7 @@ import {
   initialShownPhaseIds,
   isMultiPhasePackage,
   packagePhaseLabels,
+  phaseBillingProgress,
 } from '../../utils/packagePhaseScope.js'
 import { useAuth } from '../../../auth/context/useAuth.js'
 import { usePreliminaryNoticeGate } from '../../hooks/usePreliminaryNoticeGate.js'
@@ -132,6 +141,7 @@ export default function CreateDrawDialog({
   const [submitError, setSubmitError] = useState(null)
   const [asOfDate] = useState(() => localDateKey())
   const [noticeEditorOpen, setNoticeEditorOpen] = useState(false)
+  const [completedOpen, setCompletedOpen] = useState(false)
   const { profile } = useAuth()
 
   const job = jobs.find((candidate) => String(candidate.id) === selectedJobId)
@@ -148,6 +158,26 @@ export default function CreateDrawDialog({
   )
   const billedHardwareCharges = buildBilledHardwareCharges(packages, job?.id)
   const billedUtilityCharges = buildBilledUtilityCharges(packages, job?.id)
+  // Phases whose every cell and charge is already in a Package go to their own
+  // collapsed section, so the ones that still have something to bill come first.
+  const progressByPhaseId = new Map(phases.map((candidate) => [
+    String(candidate.id),
+    phaseBillingProgress({
+      job,
+      phase: candidate,
+      schedule,
+      usedSelections,
+      billedUtilityCharges,
+      billedHardwareCharges,
+    }),
+  ]))
+  // A Phase already added to the Package stays among the chips so it can be removed.
+  const isCollapsedAsComplete = (candidate) => (
+    progressByPhaseId.get(String(candidate.id)).isComplete
+    && !shownPhaseIdSet.has(String(candidate.id))
+  )
+  const openPhases = phases.filter((candidate) => !isCollapsedAsComplete(candidate))
+  const completedPhases = phases.filter(isCollapsedAsComplete)
   const calendarSuggestion = buildCalendarDrawSuggestion({
     activities: productionActivities,
     job,
@@ -551,9 +581,50 @@ export default function CreateDrawDialog({
     }
   }
 
+  const renderPhaseChip = (candidate) => {
+    const id = String(candidate.id)
+    const shown = shownPhaseIdSet.has(id)
+    const counts = phaseLotCounts(candidate)
+    const cellCount = selectedSelections.filter(
+      (selection) => String(selection.phaseId) === id,
+    ).length
+
+    return (
+      <Chip
+        key={candidate.id}
+        clickable
+        color={shown ? 'primary' : 'default'}
+        variant={shown ? 'filled' : 'outlined'}
+        icon={shown ? <CheckRoundedIcon /> : <AddRoundedIcon />}
+        onClick={() => (shown ? removePhase(candidate) : addPhases([candidate.id]))}
+        title={shown
+          ? 'Remove this Phase and its selected cells from the Package'
+          : 'Add this Phase to the Package'}
+        label={[
+          `${formatPhase(candidate.name)} · ${formatBuilding(candidate.building)}`,
+          `${counts.lots} lots`,
+          counts.utility > 0 ? `${counts.utility} Utility` : null,
+          cellCount > 0 ? `${cellCount} ${cellCount === 1 ? 'cell' : 'cells'}` : null,
+        ].filter(Boolean).join(' · ')}
+      />
+    )
+  }
+
   return (
-    <Dialog open onClose={onClose} fullWidth maxWidth="lg">
-      <DialogTitle sx={{ pb: 1 }}>
+    <Dialog open fullScreen onClose={onClose}>
+      <DialogTitle
+        sx={{
+          px: 3,
+          py: 1.75,
+          display: 'flex',
+          alignItems: 'flex-start',
+          justifyContent: 'space-between',
+          gap: 2,
+          borderBottom: 1,
+          borderColor: 'divider',
+        }}
+      >
+        <Box sx={{ minWidth: 0 }}>
         <Stack
           direction="row"
           spacing={1.25}
@@ -577,9 +648,15 @@ export default function CreateDrawDialog({
           A Draw Package creates one persisted package, its immutable calculated lines,
           and an invoice total snapshot.
         </Typography>
+        </Box>
+        <IconButton aria-label="Close" onClick={onClose} edge="end" sx={{ mt: -0.5 }}>
+          <CloseRoundedIcon />
+        </IconButton>
       </DialogTitle>
-      <DialogContent sx={{ pt: '16px !important' }}>
-        <Stack spacing={2.5}>
+      <DialogContent sx={{ px: { xs: 2, md: 3 }, py: '20px !important', bgcolor: 'background.default' }}>
+        <Stack spacing={2.5} sx={{ width: '100%', maxWidth: 1480, mx: 'auto' }}>
+          <Paper variant="outlined" sx={{ p: { xs: 2, md: 2.5 }, borderRadius: 2 }}>
+          <Stack spacing={2.5}>
           <TextField
             select
             label="Job"
@@ -633,37 +710,83 @@ export default function CreateDrawDialog({
                 Sequence Sheets first.
               </Alert>
             )}
+            {job && phases.length > 0 && openPhases.length === 0 && (
+              <Alert severity="success" icon={<CheckCircleRoundedIcon />}>
+                <strong>Every Phase / Building of this Job is fully billed.</strong>{' '}
+                There is nothing left to include in a new Package.
+              </Alert>
+            )}
             <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: 'wrap' }}>
-              {phases.map((candidate) => {
-                const id = String(candidate.id)
-                const shown = shownPhaseIdSet.has(id)
-                const counts = phaseLotCounts(candidate)
-                const cellCount = selectedSelections.filter(
-                  (selection) => String(selection.phaseId) === id,
-                ).length
-
-                return (
-                  <Chip
-                    key={candidate.id}
-                    clickable
-                    color={shown ? 'primary' : 'default'}
-                    variant={shown ? 'filled' : 'outlined'}
-                    icon={shown ? <CheckRoundedIcon /> : <AddRoundedIcon />}
-                    onClick={() => (shown ? removePhase(candidate) : addPhases([candidate.id]))}
-                    title={shown
-                      ? 'Remove this Phase and its selected cells from the Package'
-                      : 'Add this Phase to the Package'}
-                    label={[
-                      `${formatPhase(candidate.name)} · ${formatBuilding(candidate.building)}`,
-                      `${counts.lots} lots`,
-                      counts.utility > 0 ? `${counts.utility} Utility` : null,
-                      cellCount > 0 ? `${cellCount} ${cellCount === 1 ? 'cell' : 'cells'}` : null,
-                    ].filter(Boolean).join(' · ')}
-                  />
-                )
-              })}
+              {openPhases.map(renderPhaseChip)}
             </Stack>
+
+            {completedPhases.length > 0 && (
+              <Accordion
+                disableGutters
+                variant="outlined"
+                expanded={completedOpen}
+                onChange={(_, expanded) => setCompletedOpen(expanded)}
+                sx={{ mt: 1.75, borderRadius: 2, '&:before': { display: 'none' } }}
+              >
+                <AccordionSummary expandIcon={<ExpandMoreRoundedIcon />}>
+                  <Stack
+                    direction="row"
+                    spacing={1}
+                    useFlexGap
+                    sx={{ alignItems: 'center', flexWrap: 'wrap' }}
+                  >
+                    <CheckCircleRoundedIcon color="success" fontSize="small" />
+                    <Typography fontWeight={750}>
+                      Completed Phases / Buildings ({completedPhases.length})
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      Everything is already billed
+                    </Typography>
+                  </Stack>
+                </AccordionSummary>
+                <AccordionDetails sx={{ pt: 0 }}>
+                  <Stack spacing={0.75}>
+                    {completedPhases.map((candidate) => {
+                      const progress = progressByPhaseId.get(String(candidate.id))
+                      return (
+                        <Stack
+                          key={candidate.id}
+                          direction="row"
+                          spacing={1.5}
+                          useFlexGap
+                          sx={{
+                            alignItems: 'center',
+                            flexWrap: 'wrap',
+                            py: 0.75,
+                            borderTop: 1,
+                            borderColor: 'divider',
+                          }}
+                        >
+                          <Typography variant="body2" fontWeight={800} sx={{ minWidth: 200 }}>
+                            {formatPhase(candidate.name)} · {formatBuilding(candidate.building)}
+                          </Typography>
+                          <Typography variant="body2" color="text.secondary">
+                            {[
+                              `${progress.lotCount} ${progress.lotCount === 1 ? 'lot' : 'lots'}`,
+                              `${progress.billedCells} of ${progress.totalCells} Lot / Draw cells billed`,
+                              progress.utilityCount > 0
+                                ? `${progress.utilityCount} Utility ${progress.utilityCount === 1 ? 'row' : 'rows'} billed`
+                                : null,
+                              progress.totalHardware > 0
+                                ? `${progress.billedHardware} Separate Hardware ${progress.billedHardware === 1 ? 'charge' : 'charges'}`
+                                : null,
+                            ].filter(Boolean).join(' · ')}
+                          </Typography>
+                        </Stack>
+                      )
+                    })}
+                  </Stack>
+                </AccordionDetails>
+              </Accordion>
+            )}
           </Box>
+          </Stack>
+          </Paper>
 
           {isMultiPhase && (
             <Alert severity="warning" icon={<LayersRoundedIcon />}>
@@ -982,7 +1105,28 @@ export default function CreateDrawDialog({
           {submitError && <Alert severity="error">{submitError}</Alert>}
         </Stack>
       </DialogContent>
-      <DialogActions sx={{ px: 3, pb: 2.5 }}>
+      <DialogActions
+        sx={{
+          px: 3,
+          py: 1.5,
+          gap: 1,
+          flexWrap: 'wrap',
+          borderTop: 1,
+          borderColor: 'divider',
+          justifyContent: 'space-between',
+        }}
+      >
+        <Typography variant="body2" color="text.secondary" sx={{ minWidth: 0 }}>
+          {canCreate
+            ? (
+                <>
+                  {isMultiPhase ? `${summary.phaseCount} Phases / Buildings · ` : ''}
+                  Invoice Amount <strong>{formatCurrency(summary.invoiceAmount)}</strong>
+                </>
+              )
+            : 'Select what to bill to see the invoice amount.'}
+        </Typography>
+        <Stack direction="row" spacing={1}>
         <Button color="inherit" onClick={onClose}>Cancel</Button>
         <Button
           variant="contained"
@@ -993,6 +1137,7 @@ export default function CreateDrawDialog({
         >
           {submitting ? 'Creating…' : 'Create package'}
         </Button>
+        </Stack>
       </DialogActions>
       {noticeEditorOpen && job && (
         <Suspense

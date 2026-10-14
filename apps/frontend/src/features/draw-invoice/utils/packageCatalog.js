@@ -1,3 +1,4 @@
+import { displayInvoiceNumber } from './packageInvoiceLabel.js'
 import {
   DRAW_PACKAGE_STATUSES,
   DRAW_PACKAGE_STATUS_LABELS,
@@ -47,6 +48,7 @@ export function filterPackageCatalogContexts(contexts, {
     return [
       record.packageNumber,
       record.invoiceNumber,
+      displayInvoiceNumber(record),
       record.packageType === 'RETENTION_RELEASE' ? 'retention release' : 'draw',
       record.retentionRelease?.scopeType,
       record.retentionRelease?.phaseCode,

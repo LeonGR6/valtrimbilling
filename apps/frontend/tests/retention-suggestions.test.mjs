@@ -103,7 +103,7 @@ test('DRAFT retention is projected, including Utility and Options, but is not re
     packages: [
       drawPackage({
         id: 1,
-        status: 'READY_TO_SUBMIT',
+        status: 'AWAITING_PAYMENT',
         packageDate: '2026-09-15',
         lines: [
           // The retention snapshot includes base Draw plus Options.
@@ -141,7 +141,7 @@ test('Per Building becomes ready one clamped calendar month after final Hardware
   const packages = [
     drawPackage({
       id: 1,
-      status: 'READY_TO_SUBMIT',
+      status: 'AWAITING_PAYMENT',
       packageDate: '2026-09-15',
       lines: [line({ lotId: 101, drawId: 1, retentionAmount: 55 })],
     }),
@@ -186,7 +186,7 @@ test('Per Job waits for every Building and excludes amounts allocated to an acti
     }),
     drawPackage({
       id: 2,
-      status: 'READY_TO_SUBMIT',
+      status: 'AWAITING_PAYMENT',
       packageDate: '2026-08-18',
       lines: [line({ phaseId: 22, lotId: 201, drawId: 3, retentionAmount: 25 })],
     }),
@@ -233,7 +233,7 @@ test('Separate Hardware waits until every configured Event Type portion is bille
   })
   const packages = [drawPackage({
     id: 1,
-    status: 'READY_TO_SUBMIT',
+    status: 'AWAITING_PAYMENT',
     packageDate: '2026-09-15',
     lines: [
       line({
@@ -290,7 +290,7 @@ test('independent Calendar Hardware lines complete retention and are released on
     {
       ...drawPackage({
         id: 1,
-        status: 'READY_TO_SUBMIT',
+        status: 'AWAITING_PAYMENT',
         packageDate: '2026-09-15',
         lines: [line({ lotId: 101, drawId: 1, eventType: 'EXT', retentionAmount: 40 })],
       }),

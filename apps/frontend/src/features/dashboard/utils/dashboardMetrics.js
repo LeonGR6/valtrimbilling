@@ -84,7 +84,7 @@ export function buildDashboardMetrics(events, packages, now = new Date(), days =
     eventTypeCounts,
     tentativeCount,
     packageStatusCounts,
-    readyPackageCount: packageStatusCounts.READY_TO_SUBMIT ?? 0,
+    awaitingPaymentCount: packageStatusCounts.AWAITING_PAYMENT ?? 0,
     pendingBalance: pendingBalanceCents / 100,
     dueInvoices,
   }

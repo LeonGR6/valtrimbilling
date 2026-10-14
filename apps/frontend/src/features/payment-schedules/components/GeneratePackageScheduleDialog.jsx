@@ -1,4 +1,5 @@
 import { useEffect, useImperativeHandle, useRef, useState } from 'react'
+import { packageDocumentNumber } from '../../draw-invoice/utils/packageInvoiceLabel.js'
 import {
   Alert,
   Box,
@@ -100,6 +101,8 @@ export default function GeneratePackageScheduleDialog({
   // Inside the combined Package dialog: only the content, no frame or buttons. The
   // parent generates through `ref` and learns whether it can through `onReadyChange`.
   embedded = false,
+  // The parent has its own Preview button and calls `showPreview` through `ref`.
+  hideInlinePreview = false,
   ref = null,
   onReadyChange = null,
   onClose,
@@ -160,7 +163,7 @@ export default function GeneratePackageScheduleDialog({
       .filter(({ id }) => !leftOut.has(id))
       .map((earlier) => ({
         id: earlier.id,
-        number: earlier.packageNumber,
+        number: packageDocumentNumber(earlier),
         plan: matchPackageToSchedules(packageScheduleLines(earlier), data.templates),
       }))
     : []
@@ -206,7 +209,7 @@ export default function GeneratePackageScheduleDialog({
 
     const fileName = buildPackageScheduleFileName({
       jobCode: job.code,
-      packageNumber: packageRecord.packageNumber,
+      packageNumber: packageDocumentNumber(packageRecord),
     })
     return { bytes, fileName, highlighted, filled, replaced }
   }
@@ -257,10 +260,39 @@ export default function GeneratePackageScheduleDialog({
 
   const canGenerate = ready && (!needsAcknowledgement || acknowledged)
 
-  useImperativeHandle(ref, () => ({ generate, build }))
+  useImperativeHandle(ref, () => ({ generate, build, showPreview }))
   useEffect(() => {
-    onReadyChange?.({ canGenerate, generating })
-  }, [canGenerate, generating, onReadyChange])
+    onReadyChange?.({
+      canGenerate,
+      generating,
+      previewing: status === 'previewing',
+      loading: !data && !loadError,
+      // Why it cannot be generated, so the parent can offer a way to fix it.
+      blocker: loadError
+        ? 'error'
+        : isRetention
+          ? 'retention'
+          : data && data.templates.length === 0
+            ? 'missing_template'
+            : data && !summary?.canGenerate
+              ? 'unmatched'
+              : needsAcknowledgement && !acknowledged ? 'acknowledge' : null,
+      // Changes whenever the generated file would change.
+      signature: JSON.stringify([[...leftOut]]),
+    })
+  }, [
+    acknowledged,
+    canGenerate,
+    data,
+    generating,
+    isRetention,
+    leftOut,
+    loadError,
+    needsAcknowledgement,
+    onReadyChange,
+    status,
+    summary?.canGenerate,
+  ])
 
   const body = (
     <>
@@ -389,7 +421,9 @@ export default function GeneratePackageScheduleDialog({
                         )}
                         label={(
                           <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexWrap: 'wrap' }} useFlexGap>
-                            <Typography variant="body2" fontWeight={700}>{earlier.packageNumber}</Typography>
+                            <Typography variant="body2" fontWeight={700}>
+                              {packageDocumentNumber(earlier)}
+                            </Typography>
                             <Chip size="small" variant="outlined" label={earlier.status} />
                           </Stack>
                         )}
@@ -530,7 +564,7 @@ export default function GeneratePackageScheduleDialog({
     return (
       <>
         {body}
-        {ready && (
+        {ready && !hideInlinePreview && (
           <Button
             size="small"
             startIcon={status === 'previewing' ? <CircularProgress size={16} /> : <VisibilityRoundedIcon />}

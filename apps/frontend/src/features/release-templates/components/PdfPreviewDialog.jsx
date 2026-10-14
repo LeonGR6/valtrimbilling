@@ -30,6 +30,8 @@ export default function PdfPreviewDialog({
   bytes,
   confirmLabel = null,
   onConfirm = null,
+  // What to tell about the file; the default is for one that was only built.
+  statusNote = 'nothing has been saved yet',
   onClose,
 }) {
   const containerRef = useRef(null)
@@ -67,7 +69,7 @@ export default function PdfPreviewDialog({
             noWrap
             sx={{ display: 'block' }}
           >
-            Preview{subtitle ? ` · ${subtitle}` : ''} · nothing has been saved yet
+            Preview{subtitle ? ` · ${subtitle}` : ''}{statusNote ? ` · ${statusNote}` : ''}
           </Typography>
         </Box>
         <IconButton aria-label="Close preview" onClick={onClose}>

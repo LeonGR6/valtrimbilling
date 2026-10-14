@@ -546,14 +546,16 @@ function BuilderDrawScheduleDialog({
                         </Stack>
                       )}
                       control={(
-                        <Radio
-                          name="optionsBillingDrawIndex"
+                        // Only one Draw charges the Options: clicking it selects it,
+                        // clicking it again goes back to "Do not bill Options".
+                        <Checkbox
                           checked={optionsBillingDrawIndex != null
                             && Number(optionsBillingDrawIndex) === index}
-                          onChange={() => setValue('optionsBillingDrawIndex', index, {
-                            shouldDirty: true,
-                            shouldValidate: true,
-                          })}
+                          onChange={(_, checked) => setValue(
+                            'optionsBillingDrawIndex',
+                            checked ? index : null,
+                            { shouldDirty: true, shouldValidate: true },
+                          )}
                           inputProps={{
                             'aria-label': `Charge Options in Draw ${index + 1}`,
                           }}

@@ -45,7 +45,7 @@ test('upcoming Production counts scheduled dates once per calendar event and res
 
 test('collection uses issued unpaid invoice balances and keeps draft and voided amounts out', () => {
   const packages = [
-    record(1, 'READY_TO_SUBMIT', 'DRAFT', null, 1000),
+    record(1, 'DRAFT', 'DRAFT', null, 1000),
     record(2, 'AWAITING_PAYMENT', 'ISSUED', '2026-09-14', 100, 20),
     record(3, 'AWAITING_PAYMENT', 'PARTIALLY_PAID', '2026-09-20', 40, 10),
     record(4, 'AWAITING_PAYMENT', 'SUBMITTED', '2026-09-23', 30),
@@ -54,12 +54,11 @@ test('collection uses issued unpaid invoice balances and keeps draft and voided 
   ]
   const result = buildDashboardMetrics([], packages, now, 7)
 
-  assert.equal(result.readyPackageCount, 1)
+  assert.equal(result.awaitingPaymentCount, 3)
   assert.deepEqual(result.packageStatusCounts, {
-    READY_TO_SUBMIT: 1,
     AWAITING_PAYMENT: 3,
     PAID_CLOSED: 1,
-    DRAFT: 1,
+    DRAFT: 2,
   })
   assert.equal(result.pendingBalance, 140)
   assert.deepEqual(result.dueInvoices.map(({ id, balance, overdue }) => ({ id, balance, overdue })), [

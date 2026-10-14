@@ -1070,7 +1070,7 @@ test('Hardware charge history tracks each Event Type portion independently', () 
     id: 10,
     packageNumber: 'DP-00000010',
     jobId: 7,
-    status: 'READY_TO_SUBMIT',
+    status: 'AWAITING_PAYMENT',
     persistedDrawLines: [
       {
         lotId: 101,

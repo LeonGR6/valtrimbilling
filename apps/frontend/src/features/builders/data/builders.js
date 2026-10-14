@@ -55,9 +55,28 @@ export const emptyBuilder = {
   code: '',
   name: '',
   description: '',
-  address: '',
+  addressLine1: '',
+  addressLine2: '',
+  city: '',
+  state: '',
+  zipCode: '',
+  country: 'US',
   contactName: '',
   contactEmail: '',
   contactPhone: '',
   isActive: true,
+  // Other contacts added while the builder is created.
+  contacts: [],
+}
+
+export const builderCountries = Object.freeze([
+  { value: 'US', label: 'United States' },
+  { value: 'MX', label: 'Mexico' },
+])
+
+/** The address as lines of text: the street lines, then "City, ST 12345". */
+export function formatBuilderAddress(builder) {
+  const region = [builder?.state, builder?.zipCode].filter(Boolean).join(' ')
+  const place = [builder?.city, region].filter(Boolean).join(', ')
+  return [builder?.addressLine1, builder?.addressLine2, place].filter(Boolean).join('\n')
 }

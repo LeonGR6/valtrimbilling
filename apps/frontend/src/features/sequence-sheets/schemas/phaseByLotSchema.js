@@ -64,13 +64,15 @@ export function createPhaseByLotSchema(
         phases.some(
           (phase) =>
             phase.id !== currentPhaseId &&
-            normalizePhaseCode(phase.name) === normalizePhaseCode(data.phaseName),
+            normalizePhaseCode(phase.name) === normalizePhaseCode(data.phaseName) &&
+            normalizeBuildingCode(phase.building) === normalizeBuildingCode(data.building),
         )
       ) {
+        // The same Phase code may be used by several Buildings; only the pair repeats.
         context.addIssue({
           code: 'custom',
-          path: ['phaseName'],
-          message: 'This phase already exists for the selected Job.',
+          path: ['building'],
+          message: 'This phase and building already exist for the selected Job.',
         })
       }
 

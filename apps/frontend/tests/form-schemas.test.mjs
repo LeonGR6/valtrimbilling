@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { createBuilderSchema } from '../src/features/builders/schemas/builderSchema.js'
+import { formatBuilderAddress } from '../src/features/builders/data/builders.js'
 import { createJobSchema } from '../src/features/jobs/schemas/jobSchema.js'
 import {
   getJobOptionCount,
@@ -34,7 +35,12 @@ test('builder schema normalizes values before saving', () => {
     code: ' cv ',
     name: ' City Ventures ',
     description: ' Residential builder ',
-    address: ' Main Street ',
+    addressLine1: ' 1234 Main St ',
+    addressLine2: ' Apt 5B ',
+    city: ' Austin ',
+    state: ' tx ',
+    zipCode: ' 78701 ',
+    country: 'US',
     contactName: ' María López ',
     contactEmail: ' CONTACT@EXAMPLE.COM ',
     contactPhone: ' (415) 555-0128 ',
@@ -45,11 +51,17 @@ test('builder schema normalizes values before saving', () => {
     code: 'CV',
     name: 'City Ventures',
     description: 'Residential builder',
-    address: 'Main Street',
+    addressLine1: '1234 Main St',
+    addressLine2: 'Apt 5B',
+    city: 'Austin',
+    state: 'TX',
+    zipCode: '78701',
+    country: 'US',
     contactName: 'María López',
     contactEmail: 'contact@example.com',
     contactPhone: '+14155550128',
     isActive: true,
+    contacts: [],
   })
 })
 
@@ -58,7 +70,12 @@ test('a builder name may have numbers, but not symbols', () => {
   const base = {
     code: 'G3',
     description: '',
-    address: '',
+    addressLine1: '',
+    addressLine2: '',
+    city: '',
+    state: '',
+    zipCode: '',
+    country: 'US',
     contactName: '',
     contactEmail: '',
     contactPhone: '',
@@ -78,12 +95,46 @@ test('a builder name may have numbers, but not symbols', () => {
   assert.equal(schema.safeParse({ ...base, name: 'G3', contactName: 'Jo 3' }).success, false)
 })
 
+test('a builder address is saved in parts, all optional, and checked', () => {
+  const schema = createBuilderSchema([], null)
+  const base = {
+    code: 'ADDR',
+    name: 'Address Builder',
+    description: '',
+    addressLine1: '',
+    addressLine2: '',
+    city: '',
+    state: '',
+    zipCode: '',
+    country: 'US',
+    contactName: '',
+    contactEmail: '',
+    contactPhone: '',
+    isActive: true,
+  }
+
+  assert.equal(schema.safeParse(base).success, true)
+  assert.equal(schema.parse({ ...base, zipCode: '78701-1234' }).zipCode, '78701-1234')
+
+  const wrong = schema.safeParse({ ...base, state: 'Texas', zipCode: '787', country: 'FR' })
+  assert.equal(wrong.success, false)
+  const errors = wrong.error.flatten().fieldErrors
+  assert.deepEqual(errors.state, ['Use the two-letter state code.'])
+  assert.deepEqual(errors.zipCode, ['Enter a five-digit ZIP code.'])
+  assert.ok(errors.country)
+})
+
 test('builder schema rejects an existing code', () => {
   const result = createBuilderSchema([{ id: 1, code: 'CV' }], null).safeParse({
     code: 'cv',
     name: 'Builder',
     description: '',
-    address: '',
+    addressLine1: '',
+    addressLine2: '',
+    city: '',
+    state: '',
+    zipCode: '',
+    country: 'US',
     contactName: '',
     contactEmail: '',
     contactPhone: '',
@@ -101,7 +152,12 @@ test('builder schema rejects invalid optional contact data when provided', () =>
     code: 'NEW',
     name: 'Builder',
     description: '',
-    address: '',
+    addressLine1: '',
+    addressLine2: '',
+    city: '',
+    state: '',
+    zipCode: '',
+    country: 'US',
     contactName: '',
     contactEmail: 'not-an-email',
     contactPhone: 'call me',
@@ -525,11 +581,11 @@ test('lot ranges reject invalid, reversed and oversized ranges', () => {
   assert.equal(parseLotRange('1-300, 400-600').success, false)
 })
 
-test('phase by lot schema rejects duplicate phase names and lot numbers', () => {
+test('phase by lot schema rejects a repeated phase and building and repeated lot numbers', () => {
   const job = testJobs.find((item) => item.code === '1307')
   const result = createPhaseByLotSchema(job).safeParse({
     phaseName: ' p2 ',
-    building: '4',
+    building: ' b15 ',
     lots: [
       { lotNumber: '1', planId: 1101, reverse: false, optionIds: [] },
       { lotNumber: ' 1 ', planId: 1101, reverse: false, optionIds: [] },
@@ -538,8 +594,24 @@ test('phase by lot schema rejects duplicate phase names and lot numbers', () => 
 
   assert.equal(result.success, false)
   const messages = result.error.issues.map((issue) => issue.message)
-  assert.ok(messages.includes('This phase already exists for the selected Job.'))
+  assert.ok(messages.includes('This phase and building already exist for the selected Job.'))
   assert.ok(messages.includes('Each lot can only appear once in the phase.'))
+})
+
+test('the same phase can be created in another building of the job', () => {
+  const job = testJobs.find((item) => item.code === '1307')
+  const lots = [{ lotNumber: '1', planId: 1101, reverse: false, optionIds: [] }]
+
+  // Phase 2 already exists in Building 15: Building 16 is a different Phase.
+  assert.equal(
+    createPhaseByLotSchema(job).safeParse({ phaseName: '2', building: '16', lots }).success,
+    true,
+  )
+  // Editing a phase does not clash with itself.
+  assert.equal(
+    createPhaseByLotSchema(job, 2102).safeParse({ phaseName: '2', building: '15', lots }).success,
+    true,
+  )
 })
 
 test('phase by lot schema rejects options from another plan', () => {
@@ -620,7 +692,7 @@ test('person schema stores Mexico numbers in E.164 format', () => {
 test('builder contact schema stores selected phone country without guessing', () => {
   const result = createBuilderContactSchema([], null).parse({
     name: 'Daniel Torres',
-    type: 'JOBSITE_SUPERINTENDENT',
+    typeName: 'Jobsite Superintendent',
     builderId: 2,
     email: 'daniel@example.com',
     phone: '55 1234 5678',
@@ -636,31 +708,77 @@ test('builder contact schema stores selected phone country without guessing', ()
   assert.equal(result.isActive, true)
 })
 
-test('builder contact schema accepts every builder contact type', () => {
-  const types = [
-    'JOBSITE_SUPERINTENDENT',
-    'AP_CONTACT',
-    'ESTIMATOR',
-    'JOB_COORDINATOR',
-    'PURCHASING',
-    'SCHEDULING',
-    'OPTIONS_COORDINATOR',
-    'PROJECT_MANAGER',
-  ]
-
-  for (const type of types) {
-    const result = createBuilderContactSchema([], null).safeParse({
-      name: 'Daniel Torres',
-      type,
-      builderId: 2,
-      email: 'daniel@example.com',
-      phone: '',
-      officePhone: '',
-      notes: '',
-    })
-
-    assert.equal(result.success, true, type)
+test('builder contact schema takes the fixed types and any typed one', () => {
+  const schema = createBuilderContactSchema([], null)
+  const base = {
+    name: 'Daniel Torres',
+    builderId: 2,
+    email: 'daniel@example.com',
+    phone: '',
+    officePhone: '',
+    notes: '',
   }
+
+  for (const typeName of ['Jobsite Superintendent', 'AP Contact', ' Land   Manager ', 'Coordinator']) {
+    assert.equal(schema.safeParse({ ...base, typeName }).success, true, typeName)
+  }
+  assert.equal(schema.parse({ ...base, typeName: ' Land   Manager ' }).typeName, 'Land Manager')
+
+  assert.equal(schema.safeParse({ ...base, typeName: '  ' }).success, false)
+  assert.equal(schema.safeParse({ ...base, typeName: '<script>' }).success, false)
+  assert.equal(schema.safeParse({ ...base, typeName: 'x'.repeat(61) }).success, false)
+})
+
+test('a builder can be created with other contacts that carry a typed type', () => {
+  const schema = createBuilderSchema([], null, ['taken@example.com'])
+  const base = {
+    code: 'NEW',
+    name: 'New Builder',
+    description: '',
+    addressLine1: '',
+    addressLine2: '',
+    city: '',
+    state: '',
+    zipCode: '',
+    country: 'US',
+    contactName: '',
+    contactEmail: '',
+    contactPhone: '',
+    isActive: true,
+  }
+  const contact = {
+    name: 'Sam Rivera',
+    typeName: ' Coordinator ',
+    email: ' SAM@EXAMPLE.COM ',
+    phone: '(415) 555-0128',
+    phoneCountry: 'US',
+    officePhone: '',
+    officePhoneCountry: 'US',
+  }
+
+  assert.deepEqual(schema.parse(base).contacts, [])
+  assert.deepEqual(schema.parse({ ...base, contacts: [contact] }).contacts, [{
+    name: 'Sam Rivera',
+    typeName: 'Coordinator',
+    email: 'sam@example.com',
+    phone: '+14155550128',
+    officePhone: '',
+  }])
+
+  const clashes = schema.safeParse({
+    ...base,
+    contacts: [
+      { ...contact, email: 'taken@example.com' },
+      contact,
+      { ...contact, name: 'Pat Doe' },
+    ],
+  })
+  assert.equal(clashes.success, false)
+  const emailPaths = clashes.error.issues.map((issue) => issue.path.join('.'))
+  assert.deepEqual(emailPaths.filter((path) => path.endsWith('email')), [
+    'contacts.0.email',
+    'contacts.2.email',
+  ])
 })
 
 test('person schema requires and normalizes a territory for Valtrim supervisors', () => {
@@ -712,4 +830,19 @@ test('saved job assignment catalogs keep Valtrim supervisors separate from build
       ['JOBSITE_SUPERINTENDENT', 'AP_CONTACT'].includes(contact.type),
     ),
   )
+})
+
+test('a builder address is shown as street lines and then city, state and ZIP', () => {
+  assert.equal(
+    formatBuilderAddress({
+      addressLine1: '1234 Main St',
+      addressLine2: 'Apt 5B',
+      city: 'Austin',
+      state: 'TX',
+      zipCode: '78701',
+    }),
+    '1234 Main St\nApt 5B\nAustin, TX 78701',
+  )
+  assert.equal(formatBuilderAddress({ city: 'Austin' }), 'Austin')
+  assert.equal(formatBuilderAddress({}), '')
 })

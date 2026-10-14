@@ -1,6 +1,8 @@
-// Builder-side contacts. Unlike features/people — which holds Valtrim's own
-// supervisors and crews — everyone here works for the builder and never signs
-// in to the app.
+// Builder-side contacts: everyone here works for the builder and never signs in
+// to the app. The Jobsite Superintendent and the AP Contact are fixed types;
+// any other contact carries a type the team typed ("Coordinator", "Land
+// Manager"), saved so it can be picked again. Valtrim's own people live in
+// features/people as Company Contacts.
 
 export const contactTypeOptions = [
   {
@@ -13,41 +15,33 @@ export const contactTypeOptions = [
     label: 'AP Contact',
     description: 'Receives the billing package and answers payment questions.',
   },
-  {
-    value: 'ESTIMATOR',
-    label: 'Estimator',
-    description: 'Prices the scope of work for the builder.',
-  },
-  {
-    value: 'JOB_COORDINATOR',
-    label: 'Job Coordinator',
-    description: 'Coordinates the day-to-day details of each job.',
-  },
-  {
-    value: 'PURCHASING',
-    label: 'Purchasing',
-    description: 'Handles purchase orders and material buying.',
-  },
-  {
-    value: 'SCHEDULING',
-    label: 'Scheduling',
-    description: 'Sets and confirms the builder’s production schedule.',
-  },
-  {
-    value: 'OPTIONS_COORDINATOR',
-    label: 'Options Coordinator',
-    description: 'Manages the homebuyer options selected for each lot.',
-  },
-  {
-    value: 'PROJECT_MANAGER',
-    label: 'Project Manager',
-    description: 'Oversees the builder’s projects and communities.',
-  },
 ]
+
+export const OTHER_CONTACT_TYPE = 'OTHER'
+export const MAX_CONTACT_TYPE_LENGTH = 60
 
 export const contactTypeLabels = Object.fromEntries(
   contactTypeOptions.map(({ value, label }) => [value, label]),
 )
+
+/** Collapses spaces so "Land   manager " and "land manager" are one type. */
+export function cleanContactTypeName(name) {
+  return String(name ?? '').trim().replace(/\s+/g, ' ')
+}
+
+/**
+ * The stored type for what was typed: a fixed type when the text is its label,
+ * otherwise OTHER with the typed name (to be saved as a custom type).
+ */
+export function resolveContactType(typeName) {
+  const name = cleanContactTypeName(typeName)
+  const fixed = contactTypeOptions.find(
+    (option) => option.label.toLowerCase() === name.toLowerCase(),
+  )
+  return fixed
+    ? { type: fixed.value, name: fixed.label }
+    : { type: OTHER_CONTACT_TYPE, name }
+}
 
 export const contactTypeDescriptions = Object.fromEntries(
   contactTypeOptions.map(({ value, description }) => [value, description]),
@@ -55,7 +49,8 @@ export const contactTypeDescriptions = Object.fromEntries(
 
 export const emptyContact = {
   name: '',
-  type: 'JOBSITE_SUPERINTENDENT',
+  // What the contact is: a fixed type's label or any text the team types.
+  typeName: 'Jobsite Superintendent',
   builderId: '',
   email: '',
   phone: '',
@@ -125,4 +120,19 @@ export const initialContacts = [
     officePhone: '+14155550100',
     notes: 'Prefers the payment schedule as Excel.',
   },
-].map((contact) => ({ ...contact, isActive: true }))
+].map((contact) => ({
+  ...contact,
+  typeName: contactTypeLabels[contact.type],
+  isActive: true,
+}))
+
+/** Every contact type name to offer: the fixed ones, then the ones saved. */
+export function contactTypeNames(customTypes = []) {
+  const names = contactTypeOptions.map(({ label }) => label)
+  for (const { name } of customTypes) {
+    if (!names.some((existing) => existing.toLowerCase() === name.toLowerCase())) {
+      names.push(name)
+    }
+  }
+  return names
+}

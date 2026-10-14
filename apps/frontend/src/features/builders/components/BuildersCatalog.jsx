@@ -31,6 +31,8 @@ import {
 } from '@mui/material'
 import BusinessRoundedIcon from '@mui/icons-material/BusinessRounded'
 import ArrowForwardRoundedIcon from '@mui/icons-material/ArrowForwardRounded'
+import AddRoundedIcon from '@mui/icons-material/AddRounded'
+import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
 import BlockRoundedIcon from '@mui/icons-material/BlockRounded'
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined'
 import FilterListRoundedIcon from '@mui/icons-material/FilterListRounded'
@@ -45,10 +47,14 @@ import {
   getPhoneCountry,
 } from '../../../utils/phoneNumbers.js'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { Controller, useForm, useWatch } from 'react-hook-form'
+import { Controller, useFieldArray, useForm, useWatch } from 'react-hook-form'
 import { useBuilders } from '../context/useBuilders.js'
-import { emptyBuilder } from '../data/builders.js'
+import { builderCountries, emptyBuilder, formatBuilderAddress } from '../data/builders.js'
+import { emptyContact } from '../../builder-contacts/data/builderContacts.js'
 import { createBuilderSchema } from '../schemas/builderSchema.js'
+import { useBuilderContacts } from '../../builder-contacts/context/useBuilderContacts.js'
+import ContactTypeField from '../../builder-contacts/components/ContactTypeField.jsx'
+import { contactTypeNames } from '../../builder-contacts/data/builderContacts.js'
 
 function OptionalLabel({ children }) {
   return (
@@ -77,10 +83,29 @@ function getBuilderFormValues(builder) {
   }
 }
 
-function BuilderDialog({ open, builder, builders, onClose, onSave, submitting }) {
+const emptyExtraContact = {
+  name: '',
+  typeName: '',
+  email: '',
+  phone: '',
+  phoneCountry: 'US',
+  officePhone: '',
+  officePhoneCountry: 'US',
+}
+
+function BuilderDialog({
+  open,
+  builder,
+  builders,
+  contactEmails,
+  typeNames,
+  onClose,
+  onSave,
+  submitting,
+}) {
   const schema = useMemo(
-    () => createBuilderSchema(builders, builder?.id),
-    [builder?.id, builders],
+    () => createBuilderSchema(builders, builder?.id, contactEmails),
+    [builder?.id, builders, contactEmails],
   )
   const {
     control,
@@ -94,6 +119,11 @@ function BuilderDialog({ open, builder, builders, onClose, onSave, submitting })
     reValidateMode: 'onChange',
   })
   const description = useWatch({ control, name: 'description' })
+  const {
+    fields: extraContacts,
+    append: addExtraContact,
+    remove: removeExtraContact,
+  } = useFieldArray({ control, name: 'contacts' })
 
   return (
     <Dialog
@@ -160,18 +190,72 @@ function BuilderDialog({ open, builder, builders, onClose, onSave, submitting })
 
               <Box>
                 <OptionalLabel>Address</OptionalLabel>
-                <TextField
-                  aria-label="Address"
-                  {...register('address')}
-                  multiline
-                  minRows={2}
-                  placeholder="Street, city, state and ZIP code"
-                  fullWidth
-                  sx={{ mt: 1 }}
-                  slotProps={{ htmlInput: { maxLength: 240 } }}
-                  error={Boolean(errors.address)}
-                  helperText={errors.address?.message}
-                />
+                <Stack spacing={2} sx={{ mt: 1.5 }}>
+                  <TextField
+                    label="Address line 1"
+                    placeholder="Street and number"
+                    {...register('addressLine1')}
+                    error={Boolean(errors.addressLine1)}
+                    helperText={errors.addressLine1?.message ?? ' '}
+                    fullWidth
+                    slotProps={{ htmlInput: { maxLength: 120 } }}
+                  />
+                  <TextField
+                    label="Address line 2"
+                    placeholder="Apartment, suite, unit"
+                    {...register('addressLine2')}
+                    error={Boolean(errors.addressLine2)}
+                    helperText={errors.addressLine2?.message ?? ' '}
+                    fullWidth
+                    slotProps={{ htmlInput: { maxLength: 120 } }}
+                  />
+                  <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
+                    <TextField
+                      label="City"
+                      {...register('city')}
+                      error={Boolean(errors.city)}
+                      helperText={errors.city?.message ?? ' '}
+                      fullWidth
+                      slotProps={{ htmlInput: { maxLength: 80 } }}
+                    />
+                    <TextField
+                      label="State"
+                      {...register('state')}
+                      error={Boolean(errors.state)}
+                      helperText={errors.state?.message ?? ' '}
+                      sx={{ width: { xs: '100%', sm: 140 } }}
+                      slotProps={{ htmlInput: { maxLength: 2 } }}
+                    />
+                    <TextField
+                      label="ZIP code"
+                      {...register('zipCode')}
+                      error={Boolean(errors.zipCode)}
+                      helperText={errors.zipCode?.message ?? ' '}
+                      sx={{ width: { xs: '100%', sm: 180 } }}
+                      slotProps={{ htmlInput: { maxLength: 10 } }}
+                    />
+                  </Stack>
+                  <Controller
+                    name="country"
+                    control={control}
+                    render={({ field }) => (
+                      <TextField
+                        select
+                        label="Country"
+                        {...field}
+                        error={Boolean(errors.country)}
+                        helperText={errors.country?.message ?? ' '}
+                        fullWidth
+                      >
+                        {builderCountries.map((country) => (
+                          <MenuItem key={country.value} value={country.value}>
+                            {country.label}
+                          </MenuItem>
+                        ))}
+                      </TextField>
+                    )}
+                  />
+                </Stack>
               </Box>
             </Stack>
           </Box>
@@ -216,6 +300,87 @@ function BuilderDialog({ open, builder, builders, onClose, onSave, submitting })
               </Stack>
             </Stack>
           </Box>
+
+          {!builder && (
+            <Box>
+              <OptionalLabel>Other contacts</OptionalLabel>
+              <Typography variant="caption" color="text.secondary" component="div" sx={{ mt: 0.5 }}>
+                People at the builder besides the primary contact. Pick a contact type
+                or type a new one: it is saved for the next builder.
+              </Typography>
+              <Stack spacing={2} sx={{ mt: 1.5 }}>
+                {extraContacts.map((item, index) => (
+                  <Box
+                    key={item.id}
+                    sx={{ border: 1, borderColor: 'divider', borderRadius: 2, p: 2 }}
+                  >
+                    <Stack spacing={2}>
+                      <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
+                        <TextField
+                          label="Name"
+                          {...register(`contacts.${index}.name`)}
+                          error={Boolean(errors.contacts?.[index]?.name)}
+                          helperText={errors.contacts?.[index]?.name?.message ?? ' '}
+                          fullWidth
+                          slotProps={{ htmlInput: { maxLength: 100 } }}
+                        />
+                        <Box sx={{ width: '100%' }}>
+                          <ContactTypeField
+                            control={control}
+                            name={`contacts.${index}.typeName`}
+                            typeNames={typeNames}
+                            error={errors.contacts?.[index]?.typeName}
+                            hideDescription
+                          />
+                        </Box>
+                        <IconButton
+                          aria-label="Remove contact"
+                          onClick={() => removeExtraContact(index)}
+                          sx={{ alignSelf: { xs: 'flex-end', sm: 'flex-start' }, mt: { sm: 0.5 } }}
+                        >
+                          <DeleteOutlineRoundedIcon />
+                        </IconButton>
+                      </Stack>
+                      <TextField
+                        label="Email"
+                        type="email"
+                        {...register(`contacts.${index}.email`)}
+                        error={Boolean(errors.contacts?.[index]?.email)}
+                        helperText={errors.contacts?.[index]?.email?.message ?? ' '}
+                        fullWidth
+                        slotProps={{ htmlInput: { maxLength: 160 } }}
+                      />
+                      <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
+                        <FormPhoneInput
+                          control={control}
+                          name={`contacts.${index}.officePhone`}
+                          label="Office number"
+                          error={errors.contacts?.[index]?.officePhone}
+                          helperText="Optional · choose +1 or +52"
+                        />
+                        <FormPhoneInput
+                          control={control}
+                          name={`contacts.${index}.phone`}
+                          label="Cell phone"
+                          error={errors.contacts?.[index]?.phone}
+                          helperText="Optional · choose +1 or +52"
+                        />
+                      </Stack>
+                    </Stack>
+                  </Box>
+                ))}
+                <Box>
+                  <Button
+                    size="small"
+                    startIcon={<AddRoundedIcon />}
+                    onClick={() => addExtraContact(emptyExtraContact)}
+                  >
+                    Add contact
+                  </Button>
+                </Box>
+              </Stack>
+            </Box>
+          )}
 
           <Box
             sx={{
@@ -287,6 +452,9 @@ export default function BuildersCatalog({
     updateBuilder,
     deactivateBuilder,
   } = useBuilders()
+  const { contacts, contactTypes, createBuilderContact } = useBuilderContacts()
+  const contactEmails = useMemo(() => contacts.map((contact) => contact.email), [contacts])
+  const typeNames = useMemo(() => contactTypeNames(contactTypes), [contactTypes])
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState('all')
   const [page, setPage] = useState(0)
@@ -308,7 +476,7 @@ export default function BuildersCatalog({
           builder.code,
           builder.name,
           builder.description,
-          builder.address,
+          formatBuilderAddress(builder),
           builder.contactName,
           builder.contactEmail,
           builder.contactPhone,
@@ -364,9 +532,33 @@ export default function BuildersCatalog({
         }
         setNotice({ severity: 'success', message: 'Builder updated.' })
       } else {
-        await createBuilder(form)
+        const { contacts: newContacts, ...builderFields } = form
+        const created = await createBuilder(builderFields)
         setPage(0)
-        setNotice({ severity: 'success', message: 'Builder created.' })
+
+        // The builder exists now; its other contacts are saved one by one, and
+        // the ones that fail are named so they can be added from Builder Contacts.
+        const failed = []
+        for (const contact of newContacts ?? []) {
+          try {
+            await createBuilderContact({
+              ...emptyContact,
+              ...contact,
+              builderId: created.id,
+              isActive: true,
+            })
+          } catch {
+            failed.push(contact.name)
+          }
+        }
+        setNotice(
+          failed.length === 0
+            ? { severity: 'success', message: 'Builder created.' }
+            : {
+                severity: 'warning',
+                message: `Builder created, but these contacts could not be saved: ${failed.join(', ')}. Add them from Builder Contacts.`,
+              },
+        )
       }
 
       setDialogState(null)
@@ -619,7 +811,7 @@ export default function BuildersCatalog({
                         color="text.secondary"
                         sx={{ whiteSpace: 'pre-line' }}
                       >
-                        {builder.address || 'No address'}
+                        {formatBuilderAddress(builder) || 'No address'}
                       </Typography>
                     </TableCell>
                     {getBuilderJobCount && (
@@ -754,6 +946,8 @@ export default function BuildersCatalog({
           open
           builder={dialogState.builder}
           builders={builders}
+          contactEmails={contactEmails}
+          typeNames={typeNames}
           onClose={() => setDialogState(null)}
           onSave={handleSave}
           submitting={submitting}

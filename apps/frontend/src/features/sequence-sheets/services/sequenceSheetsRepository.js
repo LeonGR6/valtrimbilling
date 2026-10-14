@@ -43,7 +43,7 @@ function throwRepositoryError(error) {
   }
 
   if (error.code === '23505') {
-    throw new Error('That Phase or Lot number already exists in this Sequence Sheet.', {
+    throw new Error('That Phase and Building, or that Lot number, already exists in this Sequence Sheet.', {
       cause: error,
     })
   }

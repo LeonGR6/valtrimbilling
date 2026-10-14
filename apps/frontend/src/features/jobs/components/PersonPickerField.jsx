@@ -32,6 +32,8 @@ export default function PersonPickerField({
   people,
   onCreate,
   onUpdate,
+  optionCaption,
+  selectedNote,
   createTitle,
   editTitle,
   extraFields = [],
@@ -113,6 +115,21 @@ export default function PersonPickerField({
               // only hides the arrow and leaves its 39px of reserved padding.
               forcePopupIcon={onCreate || onUpdate ? false : 'auto'}
               getOptionLabel={(option) => option.name}
+              renderOption={optionCaption
+                ? (optionProps, option) => {
+                    const { key, ...rest } = optionProps
+                    return (
+                      <li key={key} {...rest}>
+                        <Box sx={{ minWidth: 0 }}>
+                          <Typography variant="body2">{option.name}</Typography>
+                          <Typography variant="caption" color="text.secondary">
+                            {optionCaption(option)}
+                          </Typography>
+                        </Box>
+                      </li>
+                    )
+                  }
+                : undefined}
               isOptionEqualToValue={(option, value) => option.id === value.id}
               sx={{ '& .MuiOutlinedInput-root': { pr: 1 } }}
               onChange={(_, next) => field.onChange(next ? next.id : null)}
@@ -134,7 +151,7 @@ export default function PersonPickerField({
                   {...params}
                   label={label}
                   error={Boolean(error)}
-                  helperText={error?.message ?? helperText}
+                  helperText={error?.message ?? (selected && selectedNote?.(selected)) ?? helperText}
                   // MUI 9 hands the input wiring over in params.slotProps —
                   // the older InputProps / inputProps pair no longer exists.
                   slotProps={{

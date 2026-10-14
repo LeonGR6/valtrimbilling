@@ -162,8 +162,10 @@ async function loadSnapshot(
       .select('id, name, email')
       .eq('id', job.superintendent_id)
       .maybeSingle(),
+    // The Job Coordinator, Options Coordinator and Purchasing are Company
+    // Contacts (people), not Builder contacts.
     caller
-      .from('builder_contacts')
+      .from('people')
       .select('id, name, email')
       .in('id', [job.job_coordinator_id, job.options_coordinator_id, job.purchasing_id]),
     caller.from('people').select('id, name, email').eq('id', job.supervisor_id).maybeSingle(),

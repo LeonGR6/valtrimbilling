@@ -1140,7 +1140,9 @@ function PhaseDeleteDialog({ busy, target, onClose, onDelete }) {
       fullWidth
       maxWidth="xs"
     >
-      <DialogTitle>Delete {target ? formatPhase(target.phase.name) : 'phase'}?</DialogTitle>
+      <DialogTitle>
+        Delete {target ? `${formatPhase(target.phase.name)} · ${formatBuilding(target.phase.building)}` : 'phase'}?
+      </DialogTitle>
       <DialogContent>
         <Stack spacing={2}>
           <Alert severity="warning">
@@ -1347,7 +1349,7 @@ export default function SequenceSheets() {
       }, { lots: 0, utility: 0 })
       setNotice({
         severity: 'success',
-        message: `${formatPhase(form.phaseName)} ${isEditing ? 'updated' : 'created'} with ${rowCounts.lots} lot${rowCounts.lots === 1 ? '' : 's'}${rowCounts.utility > 0 ? ` and ${rowCounts.utility} Utility ${rowCounts.utility === 1 ? 'row' : 'rows'}` : ''}. Total Lots updated.`,
+        message: `${formatPhase(form.phaseName)} · ${formatBuilding(form.building)} ${isEditing ? 'updated' : 'created'} with ${rowCounts.lots} lot${rowCounts.lots === 1 ? '' : 's'}${rowCounts.utility > 0 ? ` and ${rowCounts.utility} Utility ${rowCounts.utility === 1 ? 'row' : 'rows'}` : ''}. Total Lots updated.`,
       })
       if (!isEditing && savedJob) {
         setEmailTarget({ job: savedJob, phase: savedPhase })
@@ -1378,7 +1380,7 @@ export default function SequenceSheets() {
       }
       setNotice({
         severity: 'success',
-        message: `${formatPhase(deleteTarget.phase.name)} deleted. Total Lots updated.`,
+        message: `${formatPhase(deleteTarget.phase.name)} · ${formatBuilding(deleteTarget.phase.building)} deleted. Total Lots updated.`,
       })
       setDeleteTarget(null)
     } catch (deleteError) {

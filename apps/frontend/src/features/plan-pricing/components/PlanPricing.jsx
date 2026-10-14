@@ -49,7 +49,8 @@ import {
   getJobUnitCount,
 } from '../../jobs/data/jobs.js'
 import { useJobs } from '../../jobs/context/useJobs.js'
-import { resolveJobAssignmentNames } from '../../jobs/utils/jobAssignments.js'
+import { resolveJobContacts } from '../../jobs/utils/jobAssignments.js'
+import { JobContactsGrid } from '../../jobs/components/JobContacts.jsx'
 import {
   getJobBuilderId,
   jobBelongsToBuilder,
@@ -1011,7 +1012,7 @@ export default function PlanPricing() {
           jobBelongsToBuilder(item, builderId),
       )
     : null
-  const jobAssignments = resolveJobAssignmentNames(job, people, builderContacts)
+  const jobContacts = resolveJobContacts(job, people, builderContacts)
   const resolvedBuilderId = builderId ?? getJobBuilderId(job)
   const builderSetup = builderDrawSchedules.find(
     (setup) => String(setup.builderId) === String(resolvedBuilderId),
@@ -1230,12 +1231,11 @@ export default function PlanPricing() {
             >
               <JobField label="Builder" value={job.builder} />
               <JobField label="Community / Project" value={job.community} />
-              <JobField label="Supervisor" value={jobAssignments.supervisor} />
-              <JobField
-                label="Jobsite Superintendent"
-                value={jobAssignments.jobsiteSuperintendent}
-              />
             </Stack>
+            <Typography variant="subtitle2" fontWeight={700} sx={{ mt: 2.5, mb: 0.5 }}>
+              Contacts
+            </Typography>
+            <JobContactsGrid contacts={jobContacts} />
           </CardContent>
         </Card>
 

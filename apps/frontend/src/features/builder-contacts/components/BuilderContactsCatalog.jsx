@@ -46,12 +46,8 @@ import {
   getNationalPhoneNumber,
   getPhoneCountry,
 } from '../../../utils/phoneNumbers.js'
-import {
-  contactTypeDescriptions,
-  contactTypeLabels,
-  contactTypeOptions,
-  emptyContact,
-} from '../data/builderContacts.js'
+import { contactTypeNames, emptyContact } from '../data/builderContacts.js'
+import ContactTypeField from './ContactTypeField.jsx'
 import { useBuilders } from '../../builders/context/useBuilders.js'
 import { useBuilderContacts } from '../context/useBuilderContacts.js'
 import { createBuilderContactSchema } from '../schemas/builderContactSchema.js'
@@ -86,7 +82,7 @@ function getContactFormValues(contact) {
   }
 }
 
-function ContactDialog({ contact, contacts, builders, onClose, onSave, submitting }) {
+function ContactDialog({ contact, contacts, builders, typeNames, onClose, onSave, submitting }) {
   const {
     control,
     register,
@@ -155,30 +151,11 @@ function ContactDialog({ contact, contacts, builders, onClose, onSave, submittin
             )}
           />
 
-          <Controller
-            name="type"
+          <ContactTypeField
             control={control}
-            render={({ field }) => (
-              <FormControl error={Boolean(errors.type)} fullWidth>
-                <InputLabel id="contact-type-label">Contact type</InputLabel>
-                <Select
-                  labelId="contact-type-label"
-                  label="Contact type"
-                  value={field.value}
-                  onChange={field.onChange}
-                  onBlur={field.onBlur}
-                >
-                  {contactTypeOptions.map((option) => (
-                    <MenuItem key={option.value} value={option.value}>
-                      {option.label}
-                    </MenuItem>
-                  ))}
-                </Select>
-                <FormHelperText>
-                  {errors.type?.message ?? contactTypeDescriptions[field.value]}
-                </FormHelperText>
-              </FormControl>
-            )}
+            name="typeName"
+            typeNames={typeNames}
+            error={errors.typeName}
           />
 
           <TextField
@@ -282,6 +259,7 @@ function ContactDialog({ contact, contacts, builders, onClose, onSave, submittin
 export default function BuilderContactsCatalog() {
   const {
     contacts,
+    contactTypes,
     loading: contactsLoading,
     error: contactsError,
     canManageBuilderContacts,
@@ -308,6 +286,7 @@ export default function BuilderContactsCatalog() {
   const [deactivateTarget, setDeactivateTarget] = useState(null)
   const [submitting, setSubmitting] = useState(false)
   const [notice, setNotice] = useState(null)
+  const typeNames = useMemo(() => contactTypeNames(contactTypes), [contactTypes])
   const buildersById = useMemo(
     () => new Map(builders.map((builder) => [builder.id, builder])),
     [builders],
@@ -324,6 +303,7 @@ export default function BuilderContactsCatalog() {
           contact.email,
           contact.phone,
           contact.officePhone,
+          contact.typeName,
           buildersById.get(contact.builderId)?.name,
           buildersById.get(contact.builderId)?.code,
         ]
@@ -331,7 +311,9 @@ export default function BuilderContactsCatalog() {
           .join(' ')
           .toLowerCase()
           .includes(query)
-      const matchesType = typeFilter === 'all' || contact.type === typeFilter
+      const matchesType =
+        typeFilter === 'all'
+        || contact.typeName.toLowerCase() === typeFilter.toLowerCase()
       const matchesBuilder =
         builderFilter === 'all' || contact.builderId === Number(builderFilter)
       const matchesStatus =
@@ -510,9 +492,9 @@ export default function BuilderContactsCatalog() {
                 }}
               >
                 <MenuItem value="all">All types</MenuItem>
-                {contactTypeOptions.map((option) => (
-                  <MenuItem key={option.value} value={option.value}>
-                    {option.label}
+                {typeNames.map((typeName) => (
+                  <MenuItem key={typeName} value={typeName}>
+                    {typeName}
                   </MenuItem>
                 ))}
               </Select>
@@ -624,7 +606,7 @@ export default function BuilderContactsCatalog() {
                     </TableCell>
                     <TableCell>
                       <Chip
-                        label={contactTypeLabels[contact.type]}
+                        label={contact.typeName}
                         size="small"
                         variant="outlined"
                         color={contact.type === 'AP_CONTACT' ? 'primary' : 'default'}
@@ -727,6 +709,7 @@ export default function BuilderContactsCatalog() {
           contact={dialogState.contact}
           contacts={contacts}
           builders={dialogBuilders}
+          typeNames={typeNames}
           onClose={() => setDialogState(null)}
           onSave={handleSave}
           submitting={submitting}

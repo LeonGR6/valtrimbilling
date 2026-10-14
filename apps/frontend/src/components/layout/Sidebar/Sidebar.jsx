@@ -76,15 +76,9 @@ const navigationSections = [
     label: 'OPERATION',
     items: [
       { label: 'Jobs', path: '/jobs', icon: FolderRoundedIcon },
-      { label: 'Calendar', path: '/calendar', icon: CalendarMonthRoundedIcon },
       { label: 'Sequence Sheets', path: '/sequence-sheets', icon: TableChartRoundedIcon },
+      { label: 'Calendar', path: '/calendar', icon: CalendarMonthRoundedIcon },
     ],
-  },
-  {
-    label: 'CUSTOMER SERVICE',
-    items: [
-      { label: 'Customer Service', path: '/customer-service', icon: SupportAgentIcon }
-    ]
   },
   {
     label: 'BILLING',
@@ -107,6 +101,12 @@ const navigationSections = [
     ]
   },
   {
+    label: 'CUSTOMER SERVICE',
+    items: [
+      { label: 'Customer Service', path: '/customer-service', icon: SupportAgentIcon }
+    ]
+  },
+  {
     label: 'REPORTING',
     items: [
       { label: 'Reports', icon: BarChartIcon },
@@ -115,7 +115,7 @@ const navigationSections = [
   {
     label: 'CATALOGS',
     items: [
-      { label: 'Crews & Foremen', path: '/people', icon: PeopleAltRoundedIcon },
+      { label: 'Company Contacts', path: '/people', icon: PeopleAltRoundedIcon },
       { label: 'Builder Contacts', path: '/builder-contacts', icon: ContactPhoneRoundedIcon },
       {
         label: 'Builder Types',

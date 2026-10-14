@@ -50,6 +50,7 @@ import {
 } from '../schemas/jobSequenceSheetSchema.js'
 import { useJobs } from '../context/useJobs.js'
 import JobModuleNavigation from './JobModuleNavigation.jsx'
+import { JobContactsGrid } from './JobContacts.jsx'
 
 function PlanDialog({ plans, plan, onClose, onSave, submitting }) {
   const schema = useMemo(
@@ -807,8 +808,7 @@ function PlansOptionsSheet({
 export default function JobDetails({
   builderId,
   job,
-  supervisorName,
-  jobsiteSuperintendentName,
+  contacts,
   onBack,
 }) {
   const {
@@ -1012,12 +1012,11 @@ export default function JobDetails({
             >
               <JobField label="Builder" value={job.builder} />
               <JobField label="Community / Project" value={job.community} />
-              <JobField label="Supervisor" value={supervisorName} />
-              <JobField
-                label="Jobsite Superintendent"
-                value={jobsiteSuperintendentName}
-              />
             </Stack>
+            <Typography variant="subtitle2" fontWeight={700} sx={{ mt: 2.5, mb: 0.5 }}>
+              Contacts
+            </Typography>
+            <JobContactsGrid contacts={contacts} />
           </CardContent>
         </Card>
 

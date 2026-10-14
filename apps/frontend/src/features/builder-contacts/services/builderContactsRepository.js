@@ -1,4 +1,5 @@
 import { requireSupabase } from '../../../services/api.js'
+import { resolveContactType } from '../data/builderContacts.js'
 import {
   toBuilderContact,
   toBuilderContactMutation,
@@ -14,6 +15,8 @@ const BUILDER_CONTACT_COLUMNS = [
   'office_phone',
   'notes',
   'is_active',
+  'custom_type_id',
+  'builder_contact_types(name)',
 ].join(', ')
 
 function throwRepositoryError(error) {
@@ -34,6 +37,58 @@ function throwRepositoryError(error) {
   throw new Error(error.message || 'The Builder Contacts request failed.', { cause: error })
 }
 
+export async function listBuilderContactTypes() {
+  const client = await requireSupabase()
+  const { data, error } = await client
+    .from('builder_contact_types')
+    .select('id, name')
+    .order('name', { ascending: true })
+
+  throwRepositoryError(error)
+  return data ?? []
+}
+
+/**
+ * The id of the saved contact type with this name, saving it first when the
+ * team typed one that did not exist. Two people typing the same new type at
+ * once end up with one record.
+ */
+async function ensureContactTypeId(client, name) {
+  const findByName = async () => {
+    const { data, error } = await client
+      .from('builder_contact_types')
+      .select('id')
+      .ilike('name', name.replace(/[\\%_]/g, '\\$&'))
+      .maybeSingle()
+    throwRepositoryError(error)
+    return data?.id ?? null
+  }
+
+  const existingId = await findByName()
+  if (existingId) return existingId
+
+  const { data, error } = await client
+    .from('builder_contact_types')
+    .insert({ name })
+    .select('id')
+    .single()
+
+  if (error?.code === '23505') {
+    const racedId = await findByName()
+    if (racedId) return racedId
+  }
+  throwRepositoryError(error)
+  return data.id
+}
+
+async function toMutation(client, contact) {
+  const resolved = resolveContactType(contact.typeName)
+  const customTypeId = resolved.type === 'OTHER'
+    ? await ensureContactTypeId(client, resolved.name)
+    : null
+  return toBuilderContactMutation(contact, customTypeId)
+}
+
 export async function listBuilderContacts() {
   const client = await requireSupabase()
   const { data, error } = await client
@@ -47,7 +102,7 @@ export async function listBuilderContacts() {
 
 export async function createBuilderContact(contact) {
   const client = await requireSupabase()
-  const mutation = toBuilderContactMutation(contact)
+  const mutation = await toMutation(client, contact)
   delete mutation.is_active
   const { data, error } = await client
     .from('builder_contacts')
@@ -63,7 +118,7 @@ export async function updateBuilderContact(contactId, contact) {
   const client = await requireSupabase()
   const { data, error } = await client
     .from('builder_contacts')
-    .update(toBuilderContactMutation(contact))
+    .update(await toMutation(client, contact))
     .eq('id', contactId)
     .select(BUILDER_CONTACT_COLUMNS)
     .single()

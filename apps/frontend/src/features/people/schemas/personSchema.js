@@ -1,9 +1,17 @@
 import { z } from 'zod'
 import { normalizePhoneNumber } from '../../../utils/phoneNumbers.js'
 
-// Builder-side types moved to features/builder-contacts. This screen only
-// holds Valtrim's own field staff.
-export const personTypeSchema = z.enum(['SUPERVISOR'])
+// Company Contacts work for Valtrim. Builder-side types live in
+// features/builder-contacts.
+export const personTypeSchema = z.enum([
+  'SUPERVISOR',
+  'ESTIMATOR',
+  'JOB_COORDINATOR',
+  'PURCHASING',
+  'SCHEDULING',
+  'OPTIONS_COORDINATOR',
+  'PROJECT_MANAGER',
+])
 
 const namePattern = /^[\p{L}\p{M}\s.'-]+$/u
 const optionalPhone = z
@@ -22,7 +30,7 @@ export const personSchema = z
     name: z
       .string()
       .trim()
-      .min(1, 'Enter the person’s name.')
+      .min(1, 'Enter the contact’s name.')
       .max(100, 'Use 100 characters or fewer.')
       .regex(namePattern, 'Enter a valid name.'),
     phone: optionalPhone,
@@ -38,7 +46,7 @@ export const personSchema = z
       .transform((value) => value.toLowerCase()),
     types: z
       .array(personTypeSchema)
-      .min(1, 'Select at least one person type.'),
+      .min(1, 'Select at least one contact type.'),
     territory: z
       .string()
       .trim()

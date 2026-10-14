@@ -46,8 +46,8 @@ import { usePersistentState, isStoredString } from '../../../hooks/usePersistent
 import { BuildersCatalog } from '../../builders/index.js'
 import { useBuilders } from '../../builders/context/useBuilders.js'
 import { usePeople } from '../../people/context/usePeople.js'
-import { emptyContact } from '../../builder-contacts'
-import { emptyPerson } from '../../people/data/people.js'
+import { contactTypeLabels, emptyContact } from '../../builder-contacts'
+import { emptyPerson, personTypeLabels } from '../../people/data/people.js'
 import { useBuilderContacts } from '../../builder-contacts/context/useBuilderContacts.js'
 import JobDetails from './JobDetails.jsx'
 import PersonPickerField from './PersonPickerField.jsx'
@@ -64,9 +64,11 @@ import {
   getJobBuilderId,
   jobPlansOptionsPath,
 } from '../utils/jobRoutes.js'
-import { resolveJobAssignmentNames } from '../utils/jobAssignments.js'
-
-const personName = (index, id) => index.get(id)?.name ?? 'Unassigned'
+import {
+  contactTypesToAdd,
+  resolveJobContacts,
+} from '../utils/jobAssignments.js'
+import { JobContactsSummary } from './JobContacts.jsx'
 
 function JobDialog({
   builderOptions,
@@ -74,14 +76,15 @@ function JobDialog({
   defaultBuilder,
   supervisors,
   contacts,
+  companyContacts,
   job,
   jobs,
   onClose,
   onCreateContact,
-  onCreateSupervisor,
+  onCreateCompanyContact,
   onSave,
   onUpdateContact,
-  onUpdateSupervisor,
+  onUpdateCompanyContact,
   submitting,
 }) {
 
@@ -112,24 +115,34 @@ function JobDialog({
   })
   const selectedBuilderName = useWatch({ control, name: 'builder' })
   const selectedBuilderId = builderIdsByName.get(selectedBuilderName)
-  // Per role: the active contacts of the selected Builder, plus the one the Job
-  // already has so an inactive assignment still shows while editing.
+  // Per role: the active contacts that fit it, plus the one the Job already
+  // has so an inactive assignment still shows while editing. The Superintendent
+  // comes from the selected Builder; the rest are Company Contacts of that type.
   const availableContacts = useMemo(
     () => Object.fromEntries(jobContactRoles.map((role) => [
       role.field,
-      contacts.filter(
-        (contact) =>
-          contact.type === role.type
-          && (
-            contact.id === job?.[role.field]
-            || (
-              contact.isActive
-              && (!selectedBuilderId || contact.builderId === selectedBuilderId)
-            )
-          ),
-      ),
+      role.source === 'builder'
+        ? contacts.filter(
+            (contact) =>
+              contact.type === role.type
+              && (
+                contact.id === job?.[role.field]
+                || (
+                  contact.isActive
+                  && (!selectedBuilderId || contact.builderId === selectedBuilderId)
+                )
+              ),
+          )
+        // Any active Company Contact can fill the role, so one person can hold
+        // several; the ones who already have the type come first.
+        : companyContacts
+            .filter((contact) => contact.id === job?.[role.field] || contact.isActive)
+            .sort((left, right) => (
+              Number(right.types.includes(role.type)) - Number(left.types.includes(role.type))
+              || left.name.localeCompare(right.name)
+            )),
     ])),
-    [contacts, job, selectedBuilderId],
+    [companyContacts, contacts, job, selectedBuilderId],
   )
 
   return (
@@ -233,12 +246,13 @@ function JobDialog({
               <PersonPickerField
                 name="supervisorId"
                 label="Supervisor"
-                helperText="Loaded from the saved Crews & Foremen roster."
                 control={control}
                 error={errors.supervisorId}
                 people={supervisors}
-                onCreate={onCreateSupervisor}
-                onUpdate={onUpdateSupervisor}
+                onCreate={onCreateCompanyContact
+                  ? (draft) => onCreateCompanyContact(draft, 'SUPERVISOR')
+                  : undefined}
+                onUpdate={onUpdateCompanyContact}
                 createTitle="Add new supervisor"
                 editTitle="Edit supervisor"
                 extraFields={['phone', 'territory']}
@@ -252,10 +266,22 @@ function JobDialog({
                   control={control}
                   error={errors[role.field]}
                   people={availableContacts[role.field]}
-                  onCreate={onCreateContact
-                    ? (draft) => onCreateContact(draft, selectedBuilderName, role.type)
+                  optionCaption={role.source === 'company'
+                    ? (person) => person.types.map((type) => personTypeLabels[type]).join(' · ')
                     : undefined}
-                  onUpdate={onUpdateContact}
+                  selectedNote={role.source === 'company'
+                    ? (person) => (person.types.includes(role.type)
+                      ? null
+                      : `${person.name} will also be set as ${role.label} in Company Contacts.`)
+                    : undefined}
+                  onCreate={role.source === 'builder'
+                    ? (onCreateContact
+                      ? (draft) => onCreateContact(draft, selectedBuilderName, role.type)
+                      : undefined)
+                    : (onCreateCompanyContact
+                      ? (draft) => onCreateCompanyContact(draft, role.type)
+                      : undefined)}
+                  onUpdate={role.source === 'builder' ? onUpdateContact : onUpdateCompanyContact}
                   createTitle={role.addTitle}
                   editTitle={role.editTitle}
                   extraFields={['phone']}
@@ -331,9 +357,9 @@ export default function JobsCatalog() {
   const { builders } = useBuilders()
   const {
     people,
-    canManageSupervisors,
-    createSupervisor,
-    updateSupervisor,
+    canManageContacts,
+    createContact,
+    updateContact,
   } = usePeople()
   const {
     contacts,
@@ -358,21 +384,9 @@ export default function JobsCatalog() {
     () => people.filter((person) => person.types.includes('SUPERVISOR')),
     [people],
   )
-  const superintendents = useMemo(
-    () => contacts.filter((contact) => contact.type === 'JOBSITE_SUPERINTENDENT'),
-    [contacts],
-  )
   const builderIdsByName = useMemo(
     () => new Map(builders.map((builder) => [builder.name, builder.id])),
     [builders],
-  )
-  const supervisorsById = useMemo(
-    () => new Map(supervisors.map((person) => [person.id, person])),
-    [supervisors],
-  )
-  const superintendentsById = useMemo(
-    () => new Map(superintendents.map((person) => [person.id, person])),
-    [superintendents],
   )
 
   const createRequested = searchParams.get('create') === '1'
@@ -403,14 +417,13 @@ export default function JobsCatalog() {
           job.code,
           job.community,
           job.builder,
-          personName(supervisorsById, job.supervisorId),
-          personName(superintendentsById, job.superintendentId),
+          ...resolveJobContacts(job, people, contacts).map((contact) => contact.name),
       ]
         .join(' ')
         .toLowerCase()
         .includes(query),
     )
-  }, [builderJobs, search, superintendentsById, supervisorsById])
+  }, [builderJobs, contacts, people, search])
 
   const visibleJobs = filteredJobs.slice(
     page * rowsPerPage,
@@ -426,11 +439,6 @@ export default function JobsCatalog() {
   )
   const detailJob = builderJobs.find(
     (job) => String(job.id) === jobId,
-  )
-  const detailJobAssignments = resolveJobAssignmentNames(
-    detailJob,
-    people,
-    contacts,
   )
   const builderOptions = builders
     .filter(
@@ -539,7 +547,7 @@ export default function JobsCatalog() {
     return createBuilderContact({
       ...emptyContact,
       ...draft,
-      type,
+      typeName: contactTypeLabels[type],
       builderId: builderIdForContact,
       isActive: true,
     })
@@ -552,14 +560,14 @@ export default function JobsCatalog() {
     return updateBuilderContact(contactId, { ...existing, ...draft })
   }
 
-  const handleCreateSupervisor = (draft) =>
-    createSupervisor({ ...emptyPerson, ...draft, isActive: true })
+  const handleCreateCompanyContact = (draft, type) =>
+    createContact({ ...emptyPerson, ...draft, types: [type], isActive: true })
 
-  const handleUpdateSupervisor = (supervisorId, draft) => {
-    const existing = people.find((person) => person.id === supervisorId)
-    if (!existing) throw new Error('That supervisor no longer exists.')
+  const handleUpdateCompanyContact = (contactId, draft) => {
+    const existing = people.find((person) => person.id === contactId)
+    if (!existing) throw new Error('That contact no longer exists.')
 
-    return updateSupervisor(supervisorId, { ...existing, ...draft })
+    return updateContact(contactId, { ...existing, ...draft })
   }
 
   const handleSave = async (form) => {
@@ -571,6 +579,13 @@ export default function JobsCatalog() {
     setSubmitting(true)
     try {
       const mutation = { ...form, builderId: savedBuilderId }
+
+      // A person picked for a role they do not have yet gets that type first,
+      // because the Job only accepts contacts of the matching type.
+      for (const { person, types } of contactTypesToAdd(form, people, jobContactRoles)) {
+        await updateContact(person.id, { ...person, types })
+      }
+
       if (editTarget) {
         await updateJob(editTarget.id, mutation)
         setNotice({ severity: 'success', message: 'Job updated.' })
@@ -620,8 +635,7 @@ export default function JobsCatalog() {
       <JobDetails
         job={detailJob}
         builderId={selectedBuilder.id}
-        supervisorName={detailJobAssignments.supervisor}
-        jobsiteSuperintendentName={detailJobAssignments.jobsiteSuperintendent}
+        contacts={resolveJobContacts(detailJob, people, contacts)}
         onBack={() => navigate(builderJobsPath(selectedBuilder.id))}
       />
     )
@@ -759,8 +773,7 @@ export default function JobsCatalog() {
                 >
                   <TableCell>Job#</TableCell>
                   <TableCell>Community / Builder</TableCell>
-                  <TableCell>Supervisor</TableCell>
-                  <TableCell>Jobsite Superintendent</TableCell>
+                  <TableCell>Contacts</TableCell>
                   <TableCell width={150}>Lots from Phases</TableCell>
                 </TableRow>
               </TableHead>
@@ -828,15 +841,10 @@ export default function JobsCatalog() {
                         {job.builder}
                       </Typography>
                     </TableCell>
-                    <TableCell>
-                      <Typography variant="body2" fontWeight={600} noWrap>
-                        {personName(supervisorsById, job.supervisorId)}
-                      </Typography>
-                    </TableCell>
-                    <TableCell>
-                      <Typography variant="body2" fontWeight={600} noWrap>
-                        {personName(superintendentsById, job.superintendentId)}
-                      </Typography>
+                    <TableCell sx={{ minWidth: 260 }}>
+                      <JobContactsSummary
+                        contacts={resolveJobContacts(job, people, contacts)}
+                      />
                     </TableCell>
                     <TableCell>
                       <Stack
@@ -863,7 +871,7 @@ export default function JobsCatalog() {
 
                 {loading && visibleJobs.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={5} sx={{ py: 8, textAlign: 'center' }}>
+                    <TableCell colSpan={4} sx={{ py: 8, textAlign: 'center' }}>
                       <Typography color="text.secondary">Loading Jobs...</Typography>
                     </TableCell>
                   </TableRow>
@@ -871,7 +879,7 @@ export default function JobsCatalog() {
 
                 {!loading && visibleJobs.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={5} sx={{ py: 8, textAlign: 'center' }}>
+                    <TableCell colSpan={4} sx={{ py: 8, textAlign: 'center' }}>
                       <SearchRoundedIcon color="action" sx={{ fontSize: 40, mb: 1 }} />
                       <Typography fontWeight={600}>No jobs found</Typography>
                       <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
@@ -934,21 +942,22 @@ export default function JobsCatalog() {
           defaultBuilder={selectedBuilder.name}
           supervisors={availableSupervisors}
           contacts={contacts}
+          companyContacts={people}
           job={dialogJob}
           jobs={jobs}
           onClose={closeDialog}
           onCreateContact={
             canManageBuilderContacts ? handleCreateContact : undefined
           }
-          onCreateSupervisor={
-            canManageSupervisors ? handleCreateSupervisor : undefined
+          onCreateCompanyContact={
+            canManageContacts ? handleCreateCompanyContact : undefined
           }
           onSave={handleSave}
           onUpdateContact={
             canManageBuilderContacts ? handleUpdateContact : undefined
           }
-          onUpdateSupervisor={
-            canManageSupervisors ? handleUpdateSupervisor : undefined
+          onUpdateCompanyContact={
+            canManageContacts ? handleUpdateCompanyContact : undefined
           }
           submitting={submitting}
         />

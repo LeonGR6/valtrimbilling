@@ -1,8 +1,20 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { Alert, Box, Button, Drawer, LinearProgress, Snackbar } from '@mui/material'
+import {
+  Alert,
+  Box,
+  Button,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogContentText,
+  DialogTitle,
+  Drawer,
+  LinearProgress,
+  Snackbar,
+} from '@mui/material'
 import { useColorScheme } from '@mui/material/styles'
-import { isStoredString, usePersistentState } from '../../../hooks/usePersistentState.js'
+import { usePersistentState } from '../../../hooks/usePersistentState.js'
 import { useAuth } from '../../auth/context/useAuth.js'
 import { useJobs } from '../../jobs/context/useJobs.js'
 import { useBuilders } from '../../builders/context/useBuilders.js'
@@ -41,13 +53,19 @@ import {
   resolveCalendarScope,
 } from '../utils/calendarEventFilters.js'
 import { parseCalendarSchedule } from '../utils/calendarRoutes.js'
+import { describeDateChanges, moveEventInDraft } from '../utils/calendarEventMove.js'
+import { searchCalendarEvents } from '../utils/calendarEventSearch.js'
+import { existingPhaseEvents } from '../utils/phaseCalendarCoverage.js'
 import {
   findJobBuilder,
+  formatBuilding,
+  formatPhase,
   getPhasePatch,
 } from './calendarSchedulerUtils.js'
 import './CalendarScheduler.css'
 
-const CALENDAR_MODES = ['PRODUCTION', 'CHANGE_ORDERS']
+// Production is the only mode shown; a CHANGE_ORDERS value saved earlier is ignored.
+const CALENDAR_MODES = ['PRODUCTION']
 const CALENDAR_TABS = ['SCHEDULE', 'BUILDER_SETTINGS', 'FOLLOW_UPS', 'UNSCHEDULED']
 const CALENDAR_VIEWS = ['dayGridMonth', 'dayGridWeek', 'listWeek', 'multiMonthYear']
 const ACTIVITY_TYPES = ['EXT', 'SHUTTER', 'DM', 'HW']
@@ -93,6 +111,9 @@ export default function CalendarScheduler() {
   const [drawerMode, setDrawerMode] = useState(null)
   const [draft, setDraft] = useState(createEmptyProductionDraft())
   const [formError, setFormError] = useState('')
+  const [duplicateWarning, setDuplicateWarning] = useState(null)
+  // Set while the configuration is open because an event was dragged.
+  const [dateMove, setDateMove] = useState(null)
   const [saving, setSaving] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [notice, setNotice] = useState('')
@@ -106,12 +127,10 @@ export default function CalendarScheduler() {
     'dayGridMonth',
     (value) => CALENDAR_VIEWS.includes(value),
   )
-  const [visibleTypes, setVisibleTypes] = usePersistentState(
-    'calendar:visible-types',
-    ACTIVITY_TYPES,
-    (value) => Array.isArray(value)
-      && value.every((type) => ACTIVITY_TYPES.includes(type)),
-  )
+  // The filters and the search are not remembered between visits: a filter
+  // left on from before could hide events without anyone noticing.
+  const [visibleTypes, setVisibleTypes] = useState(ACTIVITY_TYPES)
+  const [search, setSearch] = useState('')
 
   useEffect(() => {
     if (!profile?.id) return undefined
@@ -156,9 +175,9 @@ export default function CalendarScheduler() {
     window.history.replaceState({}, '', currentUrl)
   }, [])
 
-  const [storedBuilder, setStoredBuilder] = usePersistentState('calendar:builder', 'ALL', isStoredString)
-  const [storedCommunity, setStoredCommunity] = usePersistentState('calendar:community', 'ALL', isStoredString)
-  const [storedJobId, setStoredJobId] = usePersistentState('calendar:job', 'ALL', isStoredString)
+  const [storedBuilder, setStoredBuilder] = useState('ALL')
+  const [storedCommunity, setStoredCommunity] = useState('ALL')
+  const [storedJobId, setStoredJobId] = useState('ALL')
   const scope = useMemo(
     () => resolveCalendarScope(events, {
       builder: storedBuilder,
@@ -173,6 +192,11 @@ export default function CalendarScheduler() {
     community: scope.community,
     jobId: scope.jobId,
   }), [events, scope.builder, scope.community, scope.jobId, visibleTypes])
+  // The search looks at every event, not only the ones the filters leave.
+  const searchResults = useMemo(
+    () => searchCalendarEvents(events, search),
+    [events, search],
+  )
   const changeScope = (field, value) => {
     // Narrowing the Builder or Community clears the choices that depended on it.
     if (field === 'builder') {
@@ -197,11 +221,13 @@ export default function CalendarScheduler() {
   const closeDrawer = () => {
     setDrawerMode(null)
     setSelectedId(null)
+    setDateMove(null)
     setFormError('')
   }
 
   const openCreateDrawer = () => {
     if (!canManageProductionActivities) return
+    setDateMove(null)
     setSelectedId(null)
     setDraft(createEmptyProductionDraft())
     setFormError('')
@@ -213,6 +239,7 @@ export default function CalendarScheduler() {
 
     const emptyDraft = createEmptyProductionDraft()
     const dateConfiguration = getBuilderDateConfiguration(findJobBuilder(job, builders))
+    setDateMove(null)
     setSelectedId(null)
     // Same result as choosing the Job and then the Phase in the form.
     setDraft({
@@ -269,15 +296,44 @@ export default function CalendarScheduler() {
     const calendarEvent = events.find((event) => event.id === eventId)
     if (!calendarEvent) return
 
+    setDateMove(null)
     setSelectedId(eventId)
     setDraft(createDraftFromProductionEvent(calendarEvent))
     setFormError('')
     setDrawerMode('detail')
   }
 
+  // An event dragged to another day: it is not moved yet. Its configuration
+  // opens with the new date filled in so the change is confirmed (or dropped)
+  // there, with the other dates the rules would move shown too.
+  const startEventMove = (eventId, newDate) => {
+    if (!canManageProductionActivities) return
+    const calendarEvent = events.find((event) => event.id === eventId)
+    if (!calendarEvent || !newDate || newDate === calendarEvent.start) return
+
+    const props = calendarEvent.extendedProps
+    const job = jobs.find((item) => item.id === Number(props.jobId))
+    const original = createDraftFromProductionEvent(calendarEvent)
+    const moved = moveEventInDraft({
+      draft: original,
+      props,
+      newDate,
+      configuration: getBuilderDateConfiguration(findJobBuilder(job, builders)),
+    })
+    const changes = describeDateChanges(original, moved)
+    if (changes.length === 0) return
+
+    setSelectedId(eventId)
+    setDraft(moved)
+    setFormError('')
+    setDateMove({ changes })
+    setDrawerMode('edit')
+  }
+
   const openEditDrawer = () => {
     if (!selectedEvent || !canManageProductionActivities) return
 
+    setDateMove(null)
     setDraft(createDraftFromProductionEvent(selectedEvent))
     setFormError('')
     setDrawerMode('edit')
@@ -291,6 +347,31 @@ export default function CalendarScheduler() {
       setFormError(result.error.issues[0]?.message ?? 'Review the production details.')
       return
     }
+
+    // A new activity creates EXT, DM and HW together, so a Phase that already
+    // has events would get the same ones twice: ask before doing that.
+    const job = jobs.find((item) => item.id === Number(result.data.jobId))
+    const phase = job?.sequenceSheet?.phases?.find(
+      (item) => item.id === Number(result.data.phaseId),
+    )
+    if (
+      !result.data.activityId
+      && job
+      && phase
+      && phaseCoverage.statusOf(job, phase) === 'scheduled'
+    ) {
+      setDuplicateWarning({
+        label: `${formatPhase(phase.name)} · ${formatBuilding(phase.building)} of Job #${job.code}`,
+        eventId: existingPhaseEvents(events, job.id, phase.id)[0]?.eventId ?? null,
+        result,
+      })
+      return
+    }
+
+    await persistActivity(result)
+  }
+
+  const persistActivity = async (result) => {
 
     const isEditing = Boolean(result.data.activityId)
     const savedActivityType = isEditing
@@ -311,6 +392,7 @@ export default function CalendarScheduler() {
       )) ?? savedEvents[0]
 
       setSelectedId(nextSelectedEvent?.id ?? null)
+      setDateMove(null)
       setDrawerMode(nextSelectedEvent ? 'detail' : null)
       setFormError('')
       setNotice(isEditing
@@ -356,12 +438,6 @@ export default function CalendarScheduler() {
     setVisibleTypes((current) => current.includes(activityType)
       ? current.filter((type) => type !== activityType)
       : [...current, activityType])
-  }
-
-  const changeCalendarMode = (_, nextMode) => {
-    if (!nextMode) return
-    closeDrawer()
-    setCalendarMode(nextMode)
   }
 
   const changeActiveTab = (_, nextTab) => {
@@ -422,7 +498,6 @@ export default function CalendarScheduler() {
         activeTab={activeTab}
         calendarMode={calendarMode}
         onChangeTab={changeActiveTab}
-        onChangeMode={changeCalendarMode}
         onConnectGoogleCalendar={connectGoogleCalendar}
         onSyncGoogleCalendar={syncGoogleCalendar}
         onCreate={openCreateDrawer}
@@ -490,8 +565,13 @@ export default function CalendarScheduler() {
               setViewType(type)
             }}
             onEventClick={openEventOptions}
+            onEventMove={startEventMove}
+            canMove={canManageProductionActivities}
             onNavigate={navigateCalendar}
             onToggleType={toggleType}
+            search={search}
+            searchResults={searchResults}
+            onChangeSearch={setSearch}
           />
         </>
       ) : (
@@ -532,6 +612,10 @@ export default function CalendarScheduler() {
             builders={builders}
             people={people}
             builderContacts={builderContacts}
+            events={events}
+            dateMove={dateMove}
+            phaseStatusOf={phaseCoverage.ready ? phaseCoverage.statusOf : undefined}
+            onOpenExisting={openEventOptions}
             draft={draft}
             isEditing={drawerMode === 'edit'}
             activeActivityType={selectedEvent?.extendedProps.activityType}
@@ -543,6 +627,42 @@ export default function CalendarScheduler() {
           />
         )}
       </Drawer>
+
+      <Dialog open={Boolean(duplicateWarning)} onClose={() => setDuplicateWarning(null)} maxWidth="xs" fullWidth>
+        <DialogTitle>This phase already has events</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            {duplicateWarning?.label} is already on the calendar. Creating this
+            activity adds another EXT, DM and HW for the same phase.
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          {duplicateWarning?.eventId && (
+            <Button
+              onClick={() => {
+                const { eventId } = duplicateWarning
+                setDuplicateWarning(null)
+                openEventOptions(eventId)
+              }}
+            >
+              Open existing
+            </Button>
+          )}
+          <Button color="inherit" onClick={() => setDuplicateWarning(null)}>Go back</Button>
+          <Button
+            variant="contained"
+            color="warning"
+            disableElevation
+            onClick={() => {
+              const { result } = duplicateWarning
+              setDuplicateWarning(null)
+              persistActivity(result)
+            }}
+          >
+            Schedule anyway
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       <Snackbar open={Boolean(notice)} autoHideDuration={3200} onClose={() => setNotice('')} message={notice} />
     </Box>

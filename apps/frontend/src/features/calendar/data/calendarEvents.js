@@ -637,3 +637,36 @@ export function createDraftFromProductionEvent(event) {
     hwLockUpScheduleId: schedule.HW.lockUpScheduleId ?? null,
   }
 }
+
+// "Phase 1" -> "P1", "Building 2" -> "B2": the short form the Month view uses.
+function shortPhaseOrBuilding(prefix, value) {
+  const text = String(value ?? '').trim().replace(/^(phase|building)\s*/i, '')
+  if (!text) return ''
+  // "Building B" is already short: do not turn it into "BB".
+  return text.toLowerCase().startsWith(prefix.toLowerCase()) ? text : `${prefix}${text}`
+}
+
+/**
+ * One line for a Production event in the Month view:
+ * "Job # · Community · P1 B2 · (Lots) · Event".
+ */
+export function getMonthEventLabel(props) {
+  const type = activityTypeMap[props.activityType]
+  const extra = props.variant === 'install-only'
+    ? 'INSTALL ONLY'
+    : props.variant === 'lock-up' ? 'LOCK UP' : ''
+  const phaseBuilding = [
+    shortPhaseOrBuilding('P', props.phase),
+    shortPhaseOrBuilding('B', props.building),
+  ].filter(Boolean).join(' ')
+  const lots = getLotsLabel(props.lotStart, props.lotEnd, props.lotNumbers)
+    .replace(/^Lots?\s+/, '')
+
+  return [
+    props.jobCode,
+    props.community,
+    phaseBuilding,
+    lots ? `(${lots})` : '',
+    [type?.shortLabel ?? props.activityType, extra].filter(Boolean).join(' '),
+  ].filter(Boolean).join(' · ')
+}

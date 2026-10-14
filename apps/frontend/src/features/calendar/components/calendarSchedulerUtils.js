@@ -63,7 +63,10 @@ export function getPhasePatch(job, phase, people = [], builderContacts = []) {
   }
 }
 
-export function createDefaultSplitParts(draft, date, dateOwner = '', note = '') {
+// The two starting divisions split the lots in half. Their date and note are
+// left empty on purpose: the person has to enter them, so a date is never
+// copied over by mistake.
+export function createDefaultSplitParts(draft, dateOwner = '') {
   const lotStart = Math.max(1, Number(draft.lotStart) || 1)
   const requestedEnd = Number(draft.lotEnd) || lotStart + 1
   const lotEnd = Math.max(lotStart + 1, requestedEnd)
@@ -71,8 +74,8 @@ export function createDefaultSplitParts(draft, date, dateOwner = '', note = '') 
   const stamp = Date.now()
 
   return [
-    { id: `split-${stamp}-a`, lotStart, lotEnd: midpoint, date, dateOwner, note, history: [] },
-    { id: `split-${stamp}-b`, lotStart: midpoint + 1, lotEnd, date, dateOwner, note, history: [] },
+    { id: `split-${stamp}-a`, lotStart, lotEnd: midpoint, date: '', dateOwner, note: '', history: [] },
+    { id: `split-${stamp}-b`, lotStart: midpoint + 1, lotEnd, date: '', dateOwner, note: '', history: [] },
   ]
 }
 
@@ -97,7 +100,16 @@ export function addSplitDivision(parts) {
     widestIndex,
     1,
     { ...part, lotEnd: midpoint },
-    { ...part, id: `split-${Date.now()}`, lotStart: midpoint + 1 },
+    // The new division starts blank: its date and note are entered by hand.
+    {
+      id: `split-${Date.now()}`,
+      lotStart: midpoint + 1,
+      lotEnd: part.lotEnd,
+      date: '',
+      dateOwner: part.dateOwner,
+      note: '',
+      history: [],
+    },
   )
   return nextParts
 }

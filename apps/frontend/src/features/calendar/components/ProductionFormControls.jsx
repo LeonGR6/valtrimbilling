@@ -9,6 +9,7 @@ import {
   TextField,
   Typography,
 } from '@mui/material'
+import DateField from '../../../components/common/DateField.jsx'
 import AddRoundedIcon from '@mui/icons-material/AddRounded'
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
 import { activityTypeMap, dateOwnerOptions } from '../data/calendarEvents.js'
@@ -124,14 +125,12 @@ export function SplitScheduleEditor({ activityType, parts, totalLots, onChange, 
                 slotProps={{ htmlInput: { min: 1 } }}
                 required
               />
-              <TextField
+              <DateField
                 label="Date"
-                type="date"
                 value={part.date}
-                onChange={(event) => onChange(parts.map((item) => item.id === part.id
-                  ? { ...item, date: event.target.value }
+                onChange={(date) => onChange(parts.map((item) => item.id === part.id
+                  ? { ...item, date }
                   : item))}
-                slotProps={{ inputLabel: { shrink: true } }}
                 required
               />
             </Box>
@@ -187,12 +186,10 @@ export function StageCard({
             <Typography variant="caption" color="text.secondary">{type.description}</Typography>
           </Box>
         </Box>
-        <TextField
+        <DateField
           label={`${activityType} date`}
-          type="date"
           value={date}
-          onChange={(event) => onDateChange(event.target.value)}
-          slotProps={{ inputLabel: { shrink: true } }}
+          onChange={onDateChange}
           required
           size="small"
           className="production-stage-card__date"

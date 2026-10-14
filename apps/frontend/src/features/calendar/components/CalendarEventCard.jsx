@@ -5,13 +5,24 @@ import {
   getDateOwnerLabel,
   getFollowUpStatusMeta,
   getLotsLabel,
+  getMonthEventLabel,
 } from '../data/calendarEvents.js'
 
-export default function CalendarEventCard({ event, isList = false }) {
+export default function CalendarEventCard({ event, isList = false, isMonth = false }) {
   const props = event.extendedProps
   const type = activityTypeMap[props.activityType]
   const tone = getActivityTone(props.activityType, props.orderMaterial)
   const followUp = getFollowUpStatusMeta(props.followUp)
+
+  // Month view: one line per event, like a Google Calendar chip.
+  if (isMonth) {
+    const label = getMonthEventLabel(props)
+    return (
+      <Box className={`month-event activity-tone--${tone}`} title={label}>
+        {label}
+      </Box>
+    )
+  }
 
   if (isList) {
     return (

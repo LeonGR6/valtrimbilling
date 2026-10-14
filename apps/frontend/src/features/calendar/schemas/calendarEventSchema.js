@@ -34,7 +34,8 @@ const splitPartSchema = z.object({
   scheduleId: persistedIdField.optional().default(null),
   lotStart: lotField,
   lotEnd: lotField,
-  date: dateField,
+  // A division starts without a date: it has to be entered by hand.
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Enter the date of every division.'),
   dateOwner: dateOwnerField,
   note: dateNoteField,
   history: dateHistoryField,

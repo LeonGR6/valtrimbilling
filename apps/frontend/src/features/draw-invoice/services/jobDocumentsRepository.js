@@ -142,17 +142,6 @@ export async function hasPreliminaryNotice(jobId) {
   return documents.length > 0
 }
 
-/** The bytes of a stored Job PDF. */
-export async function downloadJobDocumentBytes(document) {
-  const client = await requireSupabase()
-  const { data, error } = await client.storage
-    .from(document.bucket)
-    .download(document.storagePath)
-
-  throwDocumentError(error, `Could not open ${document.name}.`)
-  return new Uint8Array(await data.arrayBuffer())
-}
-
 export async function uploadJobDocument({ jobId, documentType, file }) {
   await validatePdfFile(file)
   const client = await requireSupabase()

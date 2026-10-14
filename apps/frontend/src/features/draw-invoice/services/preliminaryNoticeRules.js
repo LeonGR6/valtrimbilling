@@ -12,6 +12,21 @@ export const OPTIONAL_FIELD_LABELS = [
   'Signature',
   'Current demand, if any, less credits / offsets',
   'Notice attachments / pages',
+  // Personal delivery is only filled in when the notice was handed over.
+  'A. Personal delivery to (name and title)',
+  'At (address)',
+  'On (date / time)',
+]
+
+// Check boxes that start marked: the notice goes to the Owner, the Direct
+// Contractor and the Construction lender, and is sent by mail / carrier,
+// certified.
+export const PRECHECKED_FIELD_LABELS = [
+  'Owner',
+  'Direct contractor',
+  'Construction lender',
+  'B. Mail / carrier service (select actual method)',
+  'Certified',
 ]
 
 // Blanks that hold the same text: the Direct Contractor is the firm the work
@@ -19,7 +34,29 @@ export const OPTIONAL_FIELD_LABELS = [
 export const LINKED_FIELD_LABELS = [
   ['Direct or reputed direct contractor · Name', 'Name'],
   ['Direct or reputed direct contractor · Address', 'Address'],
+  // The name under the proof of notice / service declaration is the one signing.
+  ['I,', 'Printed name'],
 ]
+
+/** The values a blank notice starts with: its usual check boxes already marked. */
+export function initialFieldValues(fields) {
+  return Object.fromEntries(
+    fields
+      .filter((field) => field.kind === 'check' && PRECHECKED_FIELD_LABELS.includes(field.label))
+      .map((field) => [field.id, true]),
+  )
+}
+
+/** True when the values differ from `base`, ignoring blanks that were emptied. */
+export function fieldValuesChanged(values, base) {
+  const normalize = (source) => Object.fromEntries(
+    Object.entries(source).filter(([, value]) => value !== '' && value !== false && value != null),
+  )
+  const left = normalize(values)
+  const right = normalize(base)
+  const keys = new Set([...Object.keys(left), ...Object.keys(right)])
+  return [...keys].some((key) => left[key] !== right[key])
+}
 
 const isFilled = (value) => typeof value === 'string' && value.trim() !== ''
 

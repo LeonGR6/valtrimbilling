@@ -5,7 +5,6 @@ import { degrees, PDFDocument } from '@cantoo/pdf-lib'
 import * as pdfjs from 'pdfjs-dist/legacy/build/pdf.mjs'
 import {
   buildFieldEntries,
-  filledNoticeFileName,
   fitFieldFontSize,
   isPrintableNoticeText,
   readNoticePages,
@@ -14,6 +13,8 @@ import {
 } from '../src/features/draw-invoice/services/preliminaryNoticePdf.js'
 import {
   applyFieldValue,
+  fieldValuesChanged,
+  initialFieldValues,
   isRequiredField,
   linkedFieldIds,
   missingRequiredFields,
@@ -151,12 +152,6 @@ test('empty texts are skipped and unprintable ones are refused', async () => {
   )
 })
 
-test('a filled notice keeps the original name once', () => {
-  assert.equal(filledNoticeFileName('Notice.pdf'), 'Notice (filled).pdf')
-  assert.equal(filledNoticeFileName('Notice (filled).pdf'), 'Notice (filled).pdf')
-  assert.equal(filledNoticeFileName(''), 'Preliminary Notice (filled).pdf')
-})
-
 // --- Detected blanks ---------------------------------------------------------
 
 async function detectIn(bytes) {
@@ -182,7 +177,7 @@ async function detectIn(bytes) {
 }
 
 const californiaNotice = () => readFileSync(
-  new URL('./fixtures/california-preliminary-notice.pdf', import.meta.url),
+  new URL('../src/features/draw-invoice/assets/california-preliminary-notice.pdf', import.meta.url),
 )
 
 test('every blank and check box of the California notice is found', async () => {
@@ -278,24 +273,27 @@ test('a long text shrinks to stay inside its blank', async () => {
 
 // --- Printing rules ----------------------------------------------------------
 
-test('only the signature, the current demand, the attachments and second address lines may stay empty', async () => {
+test('only the signature, the current demand, the attachments, personal delivery and second address lines may stay empty', async () => {
   const fields = await detectIn(californiaNotice())
   const required = fields.filter(isRequiredField)
   const optional = fields.filter((field) => field.kind === 'text' && !isRequiredField(field))
 
   assert.deepEqual(optional.map(({ label }) => label).sort(), [
+    'A. Personal delivery to (name and title)',
+    'At (address)',
     'Construction or reputed lender (if any) · Address (cont.)',
     'Current demand, if any, less credits / offsets',
     'Direct or reputed direct contractor · Address (cont.)',
     'Notice attachments / pages',
+    'On (date / time)',
     'Signature',
     'TO: Owner or reputed owner · Address (cont.)',
   ])
-  assert.equal(required.length, 21)
+  assert.equal(required.length, 18)
   // Check boxes are choices, never required.
   assert.equal(fields.filter((field) => field.kind === 'check').some(isRequiredField), false)
 
-  assert.equal(missingRequiredFields(fields, {}).length, 21)
+  assert.equal(missingRequiredFields(fields, {}).length, 18)
   const filledAll = Object.fromEntries(required.map(({ id }) => [id, 'x']))
   assert.equal(missingRequiredFields(fields, filledAll).length, 0)
   // A blank with only spaces is still empty.
@@ -325,6 +323,40 @@ test('the Direct Contractor and the person the work is for share name and addres
   const fromPerson = applyFieldValue(fromContractor, links, personName.id, 'Acme Homes')
   assert.equal(fromPerson[contractorName.id], 'Acme Homes')
   assert.deepEqual(applyFieldValue({}, links, 'p1-1', 'Owner'), { 'p1-1': 'Owner' })
+})
+
+test('the name of the declaration is the printed name of whoever signs', async () => {
+  const fields = await detectIn(californiaNotice())
+  const links = linkedFieldIds(fields)
+  const declared = fields.find((field) => field.label === 'I,')
+  const printed = fields.find((field) => field.label === 'Printed name')
+
+  assert.deepEqual(links.get(declared.id), [declared.id, printed.id])
+  const typed = applyFieldValue({}, links, printed.id, 'Jane Doe')
+  assert.deepEqual(typed, { [declared.id]: 'Jane Doe', [printed.id]: 'Jane Doe' })
+})
+
+test('a blank notice starts with the usual recipients, mail service and Certified marked', async () => {
+  const fields = await detectIn(californiaNotice())
+  const marked = initialFieldValues(fields)
+  const labelsOf = (ids) => ids.map((id) => fields.find((field) => field.id === id).label)
+
+  assert.deepEqual(labelsOf(Object.keys(marked)), [
+    'Owner',
+    'Direct contractor',
+    'Construction lender',
+    'B. Mail / carrier service (select actual method)',
+    'Certified',
+  ])
+  assert.ok(Object.values(marked).every((value) => value === true))
+  // Personal delivery and substituted service stay unmarked.
+  assert.equal(labelsOf(Object.keys(marked)).some((label) => label.startsWith('A.') || label.startsWith('C.')), false)
+
+  // The marks alone are not something the person typed.
+  assert.equal(fieldValuesChanged(marked, marked), false)
+  assert.equal(fieldValuesChanged({ ...marked, 'p1-1': 'Acme' }, marked), true)
+  assert.equal(fieldValuesChanged({ ...marked, [Object.keys(marked)[0]]: false }, marked), true)
+  assert.equal(fieldValuesChanged({ ...marked, 'p1-1': '' }, marked), false)
 })
 
 test('a form without those labels is not linked', () => {

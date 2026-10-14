@@ -56,6 +56,9 @@ export default function DocumentCategoryCard({
   const supportsSchedules = isPaymentScheduleDocumentType(type.documentType)
     && Boolean(onReviewSchedule)
   const missingRequiredDocument = required && documents.length === 0
+  // The Preliminary Notice is never uploaded: it is the form that ships with
+  // the app, filled in for each Job.
+  const isNotice = type.documentType === 'PRELIMINARY_NOTICE'
 
   return (
     <Card
@@ -312,7 +315,9 @@ export default function DocumentCategoryCard({
                 </Typography>
                 {missingRequiredDocument && (
                   <Typography variant="caption" color="warning.dark">
-                    Upload at least one PDF to complete this requirement.
+                    {isNotice
+                      ? 'Fill in the Preliminary Notice to complete this requirement.'
+                      : 'Upload at least one PDF to complete this requirement.'}
                   </Typography>
                 )}
               </Box>
@@ -320,7 +325,7 @@ export default function DocumentCategoryCard({
           )}
         </Stack>
 
-        {type.documentType === 'PRELIMINARY_NOTICE' && onFillNotice && (
+        {isNotice && onFillNotice && (
           <Button
             fullWidth
             variant="contained"
@@ -331,20 +336,22 @@ export default function DocumentCategoryCard({
             disabled={!canManage}
             sx={{ mt: 1.75 }}
           >
-            Fill in a PDF
+            {documents.length === 0 ? 'Fill in Preliminary Notice' : 'Fill in another copy'}
           </Button>
         )}
-        <Button
-          fullWidth
-          variant="outlined"
-          color={type.color}
-          startIcon={<AddRoundedIcon />}
-          onClick={onAdd}
-          disabled={!canManage}
-          sx={{ mt: 1.75 }}
-        >
-          {type.addLabel}
-        </Button>
+        {!isNotice && (
+          <Button
+            fullWidth
+            variant="outlined"
+            color={type.color}
+            startIcon={<AddRoundedIcon />}
+            onClick={onAdd}
+            disabled={!canManage}
+            sx={{ mt: 1.75 }}
+          >
+            {type.addLabel}
+          </Button>
+        )}
       </CardContent>
     </Card>
   )

@@ -207,9 +207,3 @@ export async function writeNoticeText({ pdfBytes, entries }) {
 
   return doc.save({ updateFieldAppearances: false })
 }
-
-/** The name a notice that was filled in is saved under. */
-export function filledNoticeFileName(name) {
-  const base = String(name ?? '').trim().replace(/\.pdf$/i, '') || 'Preliminary Notice'
-  return base.endsWith(' (filled)') ? `${base}.pdf` : `${base} (filled).pdf`
-}

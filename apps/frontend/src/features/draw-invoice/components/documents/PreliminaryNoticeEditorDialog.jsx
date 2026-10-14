@@ -11,7 +11,6 @@ import {
   DialogContentText,
   DialogTitle,
   IconButton,
-  Paper,
   Stack,
   ToggleButton,
   Toolbar,
@@ -25,13 +24,8 @@ import RemoveRoundedIcon from '@mui/icons-material/RemoveRounded'
 import PrintRoundedIcon from '@mui/icons-material/PrintRounded'
 import SaveRoundedIcon from '@mui/icons-material/SaveRounded'
 import TextFieldsRoundedIcon from '@mui/icons-material/TextFieldsRounded'
-import UploadFileRoundedIcon from '@mui/icons-material/UploadFileRounded'
 import { notifyJobDocumentsChanged } from '../../services/jobDocumentEvents.js'
-import {
-  downloadJobDocumentBytes,
-  listJobPreliminaryNotices,
-  uploadJobDocument,
-} from '../../services/jobDocumentsRepository.js'
+import { uploadJobDocument } from '../../services/jobDocumentsRepository.js'
 import {
   DEFAULT_FONT_SIZE,
   buildFieldEntries,
@@ -40,20 +34,22 @@ import {
   MIN_FONT_SIZE,
   clampFontSize,
   describeEntriesProblem,
-  filledNoticeFileName,
   readNoticePages,
-  writableEntries,
   writeNoticeText,
 } from '../../services/preliminaryNoticePdf.js'
 import { printPdfBytes } from '../../services/printPdf.js'
 import {
   applyFieldValue,
+  fieldValuesChanged,
+  initialFieldValues,
   linkedFieldIds,
   missingRequiredFields,
 } from '../../services/preliminaryNoticeRules.js'
+import {
+  loadNoticeTemplate,
+  noticeFileNameForJob,
+} from '../../services/preliminaryNoticeTemplate.js'
 import { detectNoticeFields } from '../../services/preliminaryNoticeFieldsLoader.js'
-import { MAX_JOB_DOCUMENT_SIZE } from '../../services/jobDocumentRecord.js'
-import { formatFileSize } from './jobDocumentTypes.js'
 import PreliminaryNoticePages from './PreliminaryNoticePages.jsx'
 
 let entryCounter = 0
@@ -62,84 +58,16 @@ const newEntryId = () => {
   return `entry-${entryCounter}`
 }
 
-function SourcePicker({ job, documents, loading, error, busy, onFile, onExisting }) {
-  const inputRef = useRef(null)
-
-  return (
-    <Stack spacing={2.5} sx={{ maxWidth: 560, mx: 'auto', py: 4 }}>
-      <Box>
-        <Typography variant="h6" fontWeight={850}>Preliminary Notice</Typography>
-        <Typography color="text.secondary">
-          Job #{job.code}. Upload the PDF, click where text goes on its pages and type it,
-          then save it as the Job&apos;s Preliminary Notice.
-        </Typography>
-      </Box>
-      {error && <Alert severity="error">{error}</Alert>}
-      <Box>
-        <input
-          ref={inputRef}
-          type="file"
-          accept="application/pdf,.pdf"
-          hidden
-          onChange={(event) => {
-            const file = event.target.files?.[0]
-            event.target.value = ''
-            if (file) onFile(file)
-          }}
-        />
-        <Button
-          variant="contained"
-          disableElevation
-          startIcon={busy ? <CircularProgress size={18} color="inherit" /> : <UploadFileRoundedIcon />}
-          disabled={busy}
-          onClick={() => inputRef.current?.click()}
-        >
-          Upload a PDF to fill in
-        </Button>
-      </Box>
-      <Box>
-        <Typography fontWeight={800} sx={{ mb: 1 }}>Already uploaded for this Job</Typography>
-        {loading && <CircularProgress size={22} />}
-        {!loading && documents.length === 0 && (
-          <Typography variant="body2" color="text.secondary">
-            No Preliminary Notice uploaded yet.
-          </Typography>
-        )}
-        <Stack spacing={1}>
-          {documents.map((document) => (
-            <Paper
-              key={document.id}
-              variant="outlined"
-              sx={{ p: 1.25, display: 'flex', alignItems: 'center', gap: 1.5 }}
-            >
-              <Box sx={{ flex: 1, minWidth: 0 }}>
-                <Typography noWrap fontWeight={700}>{document.name}</Typography>
-                <Typography variant="caption" color="text.secondary">
-                  {formatFileSize(document.sizeBytes)}
-                </Typography>
-              </Box>
-              <Button size="small" disabled={busy} onClick={() => onExisting(document)}>
-                Fill in
-              </Button>
-            </Paper>
-          ))}
-        </Stack>
-      </Box>
-    </Stack>
-  )
-}
-
 /**
- * Fills in a Job's Preliminary Notice like a simple PDF editor: the user puts
- * text anywhere on the pages and saves the result as a Job document. The PDF is
- * either uploaded here or one the Job already has; either way the filled copy is
- * saved as a new Preliminary Notice and the original is left alone.
+ * Fills in a Job's Preliminary Notice. The form is the California notice that
+ * ships with the app: it opens blank for the Job, with its usual boxes already
+ * marked, and the filled copy is saved as the Job's Preliminary Notice. Text
+ * can also be placed anywhere on the pages like in a simple PDF editor.
  */
 export default function PreliminaryNoticeEditorDialog({ job, canManage = true, onClose, onSaved }) {
-  const [documents, setDocuments] = useState([])
-  const [loadingDocuments, setLoadingDocuments] = useState(true)
   const [source, setSource] = useState(null)
-  const [opening, setOpening] = useState(false)
+  const [opening, setOpening] = useState(true)
+  const [loadAttempt, setLoadAttempt] = useState(0)
   const [entries, setEntries] = useState([])
   // The blanks and check boxes found on the PDF, and what was typed in them.
   const [fields, setFields] = useState([])
@@ -153,81 +81,60 @@ export default function PreliminaryNoticeEditorDialog({ job, canManage = true, o
   const [confirmingClose, setConfirmingClose] = useState(false)
   const lastFontSize = useRef(DEFAULT_FONT_SIZE)
 
+  // The form opens by itself: there is nothing to upload.
   useEffect(() => {
     let cancelled = false
-    listJobPreliminaryNotices(job.id)
-      .then((next) => {
-        if (!cancelled) setDocuments(next)
-      })
-      .catch((loadError) => {
-        if (!cancelled) setError(loadError.message)
-      })
-      .finally(() => {
-        if (!cancelled) setLoadingDocuments(false)
-      })
+
+    ;(async () => {
+      try {
+        const bytes = await loadNoticeTemplate()
+        const pageSizes = await readNoticePages(bytes)
+        // If the blanks cannot be found, the form is still filled by clicking
+        // where text goes.
+        let detectionError = null
+        const detected = await detectNoticeFields(bytes).catch((detectError) => {
+          detectionError = detectError.message
+          return []
+        })
+        if (cancelled) return
+
+        setFields(detected)
+        setFieldValues(initialFieldValues(detected))
+        setSource({
+          bytes,
+          pageSizes,
+          saveName: noticeFileNameForJob(job),
+          detectionError,
+        })
+        setAdding(detected.length === 0)
+        setError(null)
+      } catch (openError) {
+        if (!cancelled) setError(openError.message)
+      } finally {
+        if (!cancelled) setOpening(false)
+      }
+    })()
+
     return () => {
       cancelled = true
     }
-  }, [job.id])
+  }, [job, loadAttempt])
 
-  const open = async ({ name, load, existing }) => {
+  const retryLoad = () => {
     setOpening(true)
     setError(null)
-    try {
-      const bytes = await load()
-      const pageSizes = await readNoticePages(bytes)
-      // A PDF whose blanks cannot be found is still filled by clicking where text goes.
-      let detectionError = null
-      const detected = await detectNoticeFields(bytes).catch((detectError) => {
-        detectionError = detectError.message
-        return []
-      })
-      setFields(detected)
-      setFieldValues({})
-      setSource({
-        bytes,
-        pageSizes,
-        saveName: existing ? filledNoticeFileName(name) : name,
-        existing,
-        detectionError,
-      })
-      setAdding(detected.length === 0)
-    } catch (openError) {
-      setError(openError.message)
-    } finally {
-      setOpening(false)
-    }
+    setLoadAttempt((attempt) => attempt + 1)
   }
-
-  const openFile = (file) => open({
-    name: file.name,
-    existing: false,
-    load: async () => {
-      if (!file.name.toLowerCase().endsWith('.pdf') || file.size === 0 || file.size > MAX_JOB_DOCUMENT_SIZE) {
-        throw new Error('Use a PDF file no larger than 25 MB.')
-      }
-      const bytes = new Uint8Array(await file.arrayBuffer())
-      if (String.fromCharCode(...bytes.slice(0, 5)) !== '%PDF-') {
-        throw new Error('Use a valid PDF file. Renaming another file to .pdf is not supported.')
-      }
-      return bytes
-    },
-  })
-
-  const openExisting = (document) => open({
-    name: document.name,
-    existing: true,
-    load: () => downloadJobDocumentBytes(document),
-  })
 
   const selected = entries.find((entry) => entry.id === selectedId) ?? null
   const allEntries = [...entries, ...buildFieldEntries(fields, fieldValues)]
-  const filled = writableEntries(allEntries)
   const problem = describeEntriesProblem(allEntries)
-  // A copy of an uploaded notice without any text would only duplicate it.
-  const canSave = canManage && !saving && !problem && (!source?.existing || filled.length > 0)
-  const dirty = filled.length > 0
+  const canSave = canManage && !saving && !problem
   const links = useMemo(() => linkedFieldIds(fields), [fields])
+  const startingValues = useMemo(() => initialFieldValues(fields), [fields])
+  // The boxes that start marked do not count as something typed.
+  const dirty = entries.some((entry) => entry.text.trim() !== '')
+    || fieldValuesChanged(fieldValues, startingValues)
   const missingFields = missingRequiredFields(fields, fieldValues)
   const missingFieldIds = new Set(missingFields.map(({ id }) => id))
   const canPrint = Boolean(source) && !saving && !printing && !problem && missingFields.length === 0
@@ -315,7 +222,6 @@ export default function PreliminaryNoticeEditorDialog({ job, canManage = true, o
           </IconButton>
           <Typography fontWeight={850} sx={{ flex: 1, minWidth: 160 }} noWrap>
             Preliminary Notice · Job #{job.code}
-            {source ? ` · ${source.saveName}` : ''}
           </Typography>
           {source && (
             <>
@@ -362,7 +268,7 @@ export default function PreliminaryNoticeEditorDialog({ job, canManage = true, o
               </Button>
               <Tooltip
                 title={missingFields.length > 0
-                  ? `Fill in the ${missingFields.length} highlighted ${missingFields.length === 1 ? 'blank' : 'blanks'} to print. The signature, the current demand, the attachments and the second address lines are optional.`
+                  ? `Fill in the ${missingFields.length} highlighted ${missingFields.length === 1 ? 'blank' : 'blanks'} to print. The signature, the current demand, the attachments, the personal delivery lines and the second address lines are optional.`
                   : 'Print the Preliminary Notice as it is filled in'}
               >
                 <span>
@@ -399,24 +305,28 @@ export default function PreliminaryNoticeEditorDialog({ job, canManage = true, o
           </Alert>
         )}
         {!source ? (
-          <SourcePicker
-            job={job}
-            documents={documents}
-            loading={loadingDocuments}
-            error={error}
-            busy={opening}
-            onFile={openFile}
-            onExisting={openExisting}
-          />
+          <Stack spacing={2} sx={{ maxWidth: 480, mx: 'auto', py: 8, alignItems: 'center' }}>
+            {opening ? (
+              <>
+                <CircularProgress />
+                <Typography color="text.secondary">Opening the Preliminary Notice…</Typography>
+              </>
+            ) : (
+              <>
+                <Alert severity="error" sx={{ width: '100%' }}>
+                  {error ?? 'The Preliminary Notice could not be opened.'}
+                </Alert>
+                <Button variant="outlined" onClick={retryLoad}>Try again</Button>
+              </>
+            )}
+          </Stack>
         ) : (
           <>
             <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center', mb: 2 }}>
-              {source.existing
-                ? 'The filled copy is saved as a new Preliminary Notice; the original stays as it is.'
-                : `Saves as ${source.saveName} (${source.pageSizes.length} ${source.pageSizes.length === 1 ? 'page' : 'pages'}).`}
+              {`Saves as ${source.saveName}.`}
               {' '}
               {fields.length > 0
-                ? `${fields.length} fields were found (highlighted): click one and type, or press Tab to go to the next. Click a square to mark it. The Direct Contractor and the person the work is provided for share their name and address. Orange blanks are still needed to print. Use Add free text for anything else.`
+                ? `${fields.length} fields (highlighted): click one and type, or press Tab to go to the next. Click a square to mark it. The Owner, Direct Contractor, Construction lender, Mail / carrier service and Certified boxes start marked. The Direct Contractor and the person the work is provided for share their name and address, and so do the declaration name and the printed name. Orange blanks are still needed to print. Use Add free text for anything else.`
                 : `No fields were found on this PDF${source.detectionError ? ` (${source.detectionError})` : ''}: press Add free text, click where it goes and type. Drag the handle to move it.`}
             </Typography>
             <PreliminaryNoticePages

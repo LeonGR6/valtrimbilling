@@ -5,8 +5,13 @@ import {
   createProductionCalendarEvents,
   getActivityTone,
   getLotsLabel,
+  getMonthEventLabel,
   recordProductionDateHistory,
 } from '../src/features/calendar/data/calendarEvents.js'
+import {
+  addSplitDivision,
+  createDefaultSplitParts,
+} from '../src/features/calendar/components/calendarSchedulerUtils.js'
 import { calendarEventSchema } from '../src/features/calendar/schemas/calendarEventSchema.js'
 
 const validActivity = {
@@ -21,6 +26,7 @@ const validActivity = {
   lotStart: '66',
   lotEnd: '70',
   lotNumbers: ['66', '67', '68', '69', '70'],
+  lotIds: [501, 502, 503, 504, 505],
   foreman: 'Lauren Mitchell',
   superintendent: 'Daniel Torres',
   notes: '',
@@ -68,6 +74,7 @@ test('non-contiguous lots are grouped without filling gaps', () => {
     lotStart: '1',
     lotEnd: '12',
     lotNumbers,
+    lotIds: [601, 602, 603, 604, 610, 611, 612],
   })
   const events = createProductionCalendarEvents(values, 'production-discrete-lots', 124)
 
@@ -323,4 +330,65 @@ test('Order Material changes the EXT tone without changing DM or HW', () => {
   assert.equal(getActivityTone('EXT', true), 'ext-order')
   assert.equal(getActivityTone('DM', true), 'dm')
   assert.equal(getActivityTone('HW', true), 'hw')
+})
+
+test('the Month view shows one line: job, community, phase and building, lots and event', () => {
+  const props = {
+    jobCode: '1319',
+    community: 'El Monte',
+    phase: 'Phase 1',
+    building: 'Building 2',
+    lotStart: 1,
+    lotEnd: 9,
+    lotNumbers: [1, 2, 3, 4, 5, 6, 7, 8, 9],
+    activityType: 'EXT',
+    variant: 'base',
+  }
+
+  assert.equal(getMonthEventLabel(props), 'El Monte · P1 B2 · (1–9) · EXT')
+  assert.equal(
+    getMonthEventLabel({ ...props, phase: '1.1', building: 'B', lotNumbers: [4], activityType: 'HW', variant: 'install-only' }),
+    'El Monte · P1.1 B · (4) · HW INSTALL ONLY',
+  )
+})
+
+test('split divisions start without a date or a note', () => {
+  const parts = createDefaultSplitParts({ lotStart: 1, lotEnd: 9 }, 'SUPERVISOR')
+
+  assert.deepEqual(parts.map(({ lotStart, lotEnd }) => [lotStart, lotEnd]), [[1, 5], [6, 9]])
+  assert.deepEqual(parts.map((part) => [part.date, part.note, part.dateOwner]), [
+    ['', '', 'SUPERVISOR'],
+    ['', '', 'SUPERVISOR'],
+  ])
+
+  // A division added later starts blank too, and is not tied to a saved schedule.
+  const withDates = parts.map((part) => ({ ...part, date: '2026-07-21', note: 'x', scheduleId: 9 }))
+  const added = addSplitDivision(withDates)
+  const newest = added.find((part) => !withDates.some((old) => old.id === part.id))
+  assert.equal(newest.date, '')
+  assert.equal(newest.note, '')
+  assert.equal(newest.scheduleId, undefined)
+})
+
+test('saving a split without its dates asks for them', () => {
+  const split = createDefaultSplitParts({ lotStart: 1, lotEnd: 4 }, 'SUPERVISOR')
+  const result = calendarEventSchema.safeParse({
+    ...validActivity,
+    lotStart: 1,
+    lotEnd: 4,
+    dmSplitPhase: true,
+    dmSplitParts: split,
+  })
+
+  assert.equal(result.success, false)
+  assert.ok(result.error.issues.some((issue) => issue.message === 'Enter the date of every division.'))
+
+  const filled = calendarEventSchema.safeParse({
+    ...validActivity,
+    lotStart: 1,
+    lotEnd: 4,
+    dmSplitPhase: true,
+    dmSplitParts: split.map((part) => ({ ...part, date: '2026-07-21' })),
+  })
+  assert.equal(filled.success, true)
 })

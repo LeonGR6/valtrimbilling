@@ -82,6 +82,37 @@
   --activity-soft: #1d3528;
 }
 
+/* Calendar events use flat, solid fills (the same in light and dark themes). */
+.activity-tone--ext {
+  --activity-solid: #8e24aa;
+  --activity-on-solid: #ffffff;
+}
+
+.activity-tone--ext-order {
+  --activity-solid: #f6bf26;
+  --activity-on-solid: #1f2937;
+}
+
+.activity-tone--dm {
+  --activity-solid: #d50000;
+  --activity-on-solid: #ffffff;
+}
+
+.activity-tone--shutter {
+  --activity-solid: #00897b;
+  --activity-on-solid: #ffffff;
+}
+
+.activity-tone--hw {
+  --activity-solid: #039be5;
+  --activity-on-solid: #ffffff;
+}
+
+.activity-tone--change-order {
+  --activity-solid: #0b8043;
+  --activity-on-solid: #ffffff;
+}
+
 .calendar-page {
   --calendar-shell-surface: #ffffff;
   --calendar-toolbar-surface: #f8fafc;
@@ -171,7 +202,21 @@
 .calendar-page__actions {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
   gap: 10px;
+}
+
+.google-calendar-sync-action {
+  display: flex;
+  align-items: center;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.google-calendar-sync-action__timestamp {
+  line-height: 1.2;
+  white-space: nowrap;
 }
 
 .calendar-primary-tabs,
@@ -209,6 +254,190 @@
   gap: 16px;
   overflow-y: auto;
   padding: 20px 26px 28px;
+}
+
+.builder-follow-up-queue {
+  min-height: 0;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 14px;
+  overflow: auto;
+  padding: 20px 26px 28px;
+}
+
+.builder-follow-up-queue__toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.builder-follow-up-responses {
+  flex: 0 0 auto;
+  overflow: hidden;
+}
+
+.builder-follow-up-responses__header {
+  min-height: 66px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 14px 10px 16px;
+}
+
+.builder-follow-up-responses__heading {
+  min-width: 0;
+}
+
+.builder-follow-up-responses__summary {
+  flex: 0 0 auto;
+  justify-content: flex-end;
+}
+
+.builder-follow-up-responses__list {
+  max-height: 300px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 330px), 1fr));
+  gap: 10px;
+  overflow-y: auto;
+  padding: 12px 14px 14px;
+  border-top: 1px solid var(--mui-palette-divider);
+  background: color-mix(in srgb, var(--mui-palette-background-default) 38%, transparent);
+}
+
+.builder-follow-up-responses__card {
+  min-width: 0;
+  padding: 11px 12px;
+}
+
+.builder-follow-up-responses__contact {
+  overflow-wrap: anywhere;
+}
+
+.builder-follow-up-queue__loading,
+.builder-follow-up-queue__empty {
+  min-height: 180px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+
+.builder-follow-up-queue__status-cell {
+  min-width: 150px;
+  vertical-align: top;
+}
+
+.builder-follow-up-preview-dialog {
+  height: min(920px, calc(100dvh - 48px));
+}
+
+.builder-follow-up-preview-dialog__content {
+  background: color-mix(in srgb, var(--mui-palette-background-default) 72%, #e8edf4);
+}
+
+.builder-follow-up-preview-dialog__metadata {
+  overflow: hidden;
+}
+
+.builder-follow-up-preview-dialog__metadata-row {
+  display: grid;
+  grid-template-columns: 88px minmax(0, 1fr);
+  gap: 16px;
+  padding: 11px 16px;
+}
+
+.builder-follow-up-preview-dialog__metadata-row + .builder-follow-up-preview-dialog__metadata-row {
+  border-top: 1px solid var(--mui-palette-divider);
+}
+
+.builder-follow-up-preview-dialog__metadata-row p {
+  overflow-wrap: anywhere;
+}
+
+.builder-follow-up-preview-dialog__message {
+  overflow: hidden;
+  background: #f4f7fb;
+}
+
+.builder-follow-up-preview-dialog__message-bar {
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--mui-palette-divider);
+  color: var(--mui-palette-text-secondary);
+  background: var(--mui-palette-background-paper);
+}
+
+.builder-follow-up-preview-dialog__frame {
+  width: 100%;
+  height: clamp(430px, 58vh, 660px);
+  display: block;
+  border: 0;
+  background: #f4f7fb;
+}
+
+.builder-follow-up-preview-dialog__text-fallback {
+  min-height: 360px;
+  padding: 18px;
+  color: var(--mui-palette-text-primary);
+  background: var(--mui-palette-background-paper);
+}
+
+.builder-follow-up-preview-dialog__text-fallback pre {
+  margin: 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  font: inherit;
+}
+
+@media (max-width: 760px) {
+  .builder-follow-up-queue__toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .builder-follow-up-responses__header {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .builder-follow-up-responses__summary {
+    justify-content: flex-start;
+  }
+
+  .builder-follow-up-responses__list {
+    max-height: 360px;
+  }
+
+  .builder-follow-up-preview-dialog {
+    width: calc(100% - 24px);
+    max-height: calc(100dvh - 24px);
+    margin: 12px;
+  }
+
+  .builder-follow-up-preview-dialog__metadata-row {
+    grid-template-columns: 1fr;
+    gap: 2px;
+  }
+
+  .builder-follow-up-preview-dialog__message-bar {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 0;
+    padding-block: 7px;
+  }
+
+  .builder-follow-up-preview-dialog__frame {
+    height: 56vh;
+    min-height: 380px;
+  }
 }
 
 .builder-date-settings__intro {
@@ -333,6 +562,18 @@
   padding: 0 26px 14px;
 }
 
+.calendar-scope-filters {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.calendar-scope-filters .MuiTextField-root {
+  min-width: 170px;
+}
+
 .calendar-type-filters {
   display: flex;
   align-items: center;
@@ -421,7 +662,9 @@
   border-radius: 12px;
   background: var(--calendar-shell-surface);
   box-shadow: 0 10px 30px rgba(15, 23, 42, 0.04);
-  backdrop-filter: blur(14px);
+  /* No backdrop-filter/transform here: an ancestor with one becomes the
+     reference for position: fixed, and the event being dragged (a fixed
+     mirror) would show offset from the pointer. */
 }
 
 .calendar-period {
@@ -703,7 +946,6 @@
 .calendar-canvas .fc .fc-multimonth .work-event {
   min-height: 23px;
   padding: 4px 5px;
-  border-left-width: 2px;
 }
 
 .calendar-canvas .fc .fc-multimonth .work-event__community,
@@ -731,6 +973,72 @@
   color: inherit;
 }
 
+.calendar-canvas .fc .fc-dayGridMonth-view .fc-event,
+.calendar-canvas .fc .fc-popover .fc-event {
+  margin: 1px 4px;
+}
+
+.month-event {
+  display: block;
+  padding: 1px 6px;
+  overflow: hidden;
+  border-radius: 6px;
+  color: var(--activity-on-solid);
+  background: var(--activity-solid);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 20px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.calendar-canvas .fc .fc-daygrid-more-link,
+.calendar-canvas .fc .fc-more-link {
+  display: block;
+  margin: 2px 6px 0;
+  color: var(--calendar-ui-text);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 18px;
+}
+
+.calendar-canvas .fc .fc-more-link:hover {
+  text-decoration: underline;
+}
+
+.calendar-canvas .fc .fc-popover {
+  min-width: 270px;
+  max-width: 340px;
+  overflow: hidden;
+  border: 1px solid var(--calendar-shell-border);
+  border-radius: 16px;
+  color: var(--calendar-ui-text);
+  background: var(--calendar-shell-surface);
+  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.28);
+}
+
+.calendar-canvas .fc .fc-popover-header {
+  padding: 10px 12px 6px;
+  color: var(--calendar-ui-muted);
+  background: transparent;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.calendar-canvas .fc .fc-popover-close {
+  color: var(--calendar-ui-muted);
+  cursor: pointer;
+  opacity: 1;
+}
+
+.calendar-canvas .fc .fc-popover-body {
+  max-height: 320px;
+  padding: 2px 6px 10px;
+  overflow-y: auto;
+}
+
+.calendar-canvas .fc .fc-event.is-selected .month-event,
 .calendar-canvas .fc .fc-event.is-selected .work-event {
   outline: 2px solid var(--activity-color);
   outline-offset: 1px;
@@ -886,12 +1194,11 @@
   flex-direction: column;
   padding: 7px 8px;
   overflow: hidden;
-  border: 1px solid var(--activity-color);
-  border-left: 4px solid var(--activity-strong);
+  border: 0;
   border-radius: 7px;
-  color: var(--activity-strong);
-  background: var(--activity-background);
-  box-shadow: 0 2px 5px rgba(15, 23, 42, 0.08);
+  color: var(--activity-on-solid);
+  background: var(--activity-solid);
+  box-shadow: none;
   box-sizing: border-box;
 }
 
@@ -914,11 +1221,47 @@
 .work-event__tag {
   flex: 0 0 auto;
   padding: 1px 4px;
-  border: 1px solid color-mix(in srgb, var(--activity-color) 65%, transparent);
+  border: 1px solid currentColor;
   border-radius: 4px;
   font-size: 8px;
   font-weight: 800;
   text-transform: uppercase;
+}
+
+/* A status tag keeps its own colors, on white so it reads over a solid event. */
+.work-event .work-event__tag.follow-up-status {
+  background: #ffffff;
+}
+
+.follow-up-status.follow-up-status--confirmed {
+  border-color: rgba(22, 128, 60, 0.55);
+  color: #166534;
+  background: rgba(34, 197, 94, 0.14);
+}
+
+.follow-up-status.follow-up-status--rescheduled,
+.follow-up-status.follow-up-status--on-hold {
+  border-color: rgba(181, 71, 8, 0.55);
+  color: #9a3412;
+  background: rgba(249, 115, 22, 0.14);
+}
+
+.follow-up-status.follow-up-status--no-response {
+  border-color: rgba(180, 35, 24, 0.55);
+  color: #991b1b;
+  background: rgba(239, 68, 68, 0.14);
+}
+
+.follow-up-status.follow-up-status--scheduled {
+  border-color: rgba(37, 99, 235, 0.45);
+  color: #1d4ed8;
+  background: rgba(59, 130, 246, 0.12);
+}
+
+.follow-up-status.follow-up-status--cancelled {
+  border-color: rgba(100, 116, 139, 0.4);
+  color: #475569;
+  background: rgba(148, 163, 184, 0.12);
 }
 
 .work-event__community,
@@ -941,21 +1284,23 @@
 
 .work-event__community {
   margin-top: 4px;
-  color: var(--mui-palette-text-primary);
+  color: inherit;
   font-size: 11px;
   font-weight: 700;
 }
 
 .work-event__phase-building {
   margin-top: 2px;
-  color: var(--mui-palette-text-secondary);
+  color: inherit;
   font-size: 10px;
   font-weight: 650;
+  opacity: 0.9;
 }
 
 .work-event__lots {
   min-width: 0;
-  color: var(--mui-palette-text-secondary);
+  color: inherit;
+  opacity: 0.9;
   font-size: 10px;
   font-weight: 600;
 }
@@ -964,8 +1309,8 @@
   flex: 0 0 auto;
   padding: 1px 4px;
   border-radius: 4px;
-  color: var(--activity-strong);
-  background: color-mix(in srgb, var(--activity-color) 12%, transparent);
+  color: inherit;
+  background: rgba(255, 255, 255, 0.22);
   font-size: 8px;
   font-weight: 800;
   text-transform: uppercase;
@@ -1049,6 +1394,14 @@
   padding-inline: 18px;
   text-transform: none;
   font-weight: 750;
+}
+
+.activity-drawer__footer--detail {
+  flex-wrap: wrap;
+}
+
+.activity-drawer__delete-action {
+  margin-right: auto !important;
 }
 
 .activity-detail__hero {
@@ -1734,6 +2087,14 @@
     flex-direction: column;
   }
 
+  .google-calendar-sync-action {
+    align-items: stretch;
+  }
+
+  .google-calendar-sync-action__timestamp {
+    text-align: center;
+  }
+
   .calendar-mode-tabs,
   .calendar-mode-tabs .MuiTabs-root {
     width: 100%;
@@ -1932,5 +2293,483 @@
     grid-column: 1;
     grid-row: auto;
     margin-top: 4px;
+  }
+}
+
+/* Search results: a list by day that replaces the calendar grid. */
+.calendar-search {
+  flex: 1;
+  min-height: 520px;
+  padding: 8px 16px 16px;
+  overflow-y: auto;
+  background: var(--calendar-shell-surface);
+}
+
+.calendar-search__summary {
+  padding: 8px 0 4px;
+}
+
+.calendar-search__day {
+  margin-top: 12px;
+}
+
+.calendar-search__date {
+  position: sticky;
+  top: -8px;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  color: var(--calendar-ui-muted);
+  background: var(--calendar-shell-surface);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.calendar-search__today {
+  padding: 1px 6px;
+  border-radius: 999px;
+  color: #ffffff;
+  background: var(--mui-palette-primary-main);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+}
+
+.calendar-search__row {
+  width: 100%;
+  display: grid !important;
+  grid-template-columns: 64px minmax(0, 1fr) auto;
+  align-items: center !important;
+  justify-content: stretch !important;
+  gap: 12px;
+  margin-bottom: 4px;
+  padding: 6px 10px;
+  border: 1px solid var(--calendar-shell-border);
+  border-radius: 8px;
+  color: var(--calendar-ui-text);
+  text-align: left !important;
+}
+
+.calendar-search__row:hover,
+.calendar-search__row.is-selected {
+  background: var(--calendar-ui-selected);
+}
+
+.calendar-search__type {
+  padding: 2px 0;
+  border-radius: 6px;
+  color: var(--activity-on-solid);
+  background: var(--activity-solid);
+  font-size: 12px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.calendar-search__copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.calendar-search__copy strong,
+.calendar-search__copy span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.calendar-search__copy strong {
+  font-size: 13px;
+}
+
+.calendar-search__copy span {
+  color: var(--calendar-ui-muted);
+  font-size: 12px;
+}
+
+.calendar-search__people {
+  max-width: 280px;
+  overflow: hidden;
+  color: var(--calendar-ui-muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 720px) {
+  .calendar-search__row {
+    grid-template-columns: 56px minmax(0, 1fr);
+  }
+
+  .calendar-search__people {
+    display: none;
+  }
+}
+
+/* Events can be dragged to another day; the drag only opens the confirmation. */
+.calendar-canvas .fc .fc-event.fc-event-draggable {
+  cursor: grab;
+}
+
+.calendar-canvas .fc .fc-event.fc-event-dragging {
+  cursor: grabbing;
+  opacity: 0.85;
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.35);
+}
+
+/* ------------------------------------------------------------------------
+   Compact calendar: a short header so the whole month fits the screen.
+   Visual layer only; these rules override the roomier ones above.
+   ------------------------------------------------------------------------ */
+
+.calendar-page {
+  min-height: 560px;
+}
+
+/* Row 1: title, subtitle and actions on one line. */
+.calendar-page__header {
+  align-items: center;
+  gap: 16px;
+  min-height: 52px;
+  padding: 8px 20px 4px;
+}
+
+.calendar-page__title {
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.calendar-page__title h1 {
+  flex: 0 0 auto;
+  line-height: 1.2;
+}
+
+.calendar-page__subtitle {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.calendar-page__header .MuiButton-root {
+  min-height: 32px;
+  padding-inline: 12px;
+  font-size: 13px;
+}
+
+.calendar-page__actions {
+  flex: 0 0 auto;
+  flex-wrap: nowrap;
+  gap: 8px;
+}
+
+.google-connect-button {
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--calendar-shell-border);
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.google-connect-button:hover {
+  background: #f1f5f9;
+}
+
+.google-connect-button.Mui-disabled {
+  opacity: 0.6;
+}
+
+.google-connect-button svg {
+  display: block;
+}
+
+/* Green dot at the corner: the calendar is connected. */
+.google-connect-button__badge .MuiBadge-badge {
+  min-width: 9px;
+  height: 9px;
+  padding: 0;
+  right: -3px;
+  top: -3px;
+  border: 2px solid #ffffff;
+  border-radius: 999px;
+  background: #22c55e;
+  box-sizing: content-box;
+}
+
+/* Row 2: thin tabs. */
+.calendar-primary-tabs {
+  padding: 0 20px;
+}
+
+.calendar-primary-tabs .MuiTabs-root {
+  min-height: 36px;
+}
+
+.calendar-primary-tabs .MuiTab-root {
+  min-height: 36px;
+  padding: 0 12px;
+  font-size: 13px;
+}
+
+.calendar-primary-tabs .MuiTab-icon {
+  font-size: 16px;
+}
+
+/* Row 3: type chips, search, filters and the count on one line. */
+.calendar-toolbar {
+  flex: 0 0 auto;
+  gap: 6px 8px;
+  padding: 8px 20px;
+}
+
+.calendar-type-filters {
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.calendar-type-filter {
+  min-height: 30px;
+  padding: 0 8px 0 0;
+  border-radius: 6px;
+}
+
+.calendar-type-filter .MuiCheckbox-root {
+  padding: 4px 4px 4px 6px;
+}
+
+.calendar-type-filter .MuiCheckbox-root svg {
+  font-size: 18px;
+}
+
+.calendar-type-filter .MuiFormControlLabel-label {
+  font-size: 11.5px;
+}
+
+.calendar-color-key {
+  min-height: 30px;
+  padding: 0 6px;
+  font-size: 11px;
+}
+
+.calendar-scope-filters {
+  width: auto;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.calendar-scope-filters .MuiTextField-root {
+  min-width: 0;
+}
+
+.calendar-scope-filters .calendar-filter-search {
+  width: 210px;
+}
+
+.calendar-scope-filters .calendar-filter-select {
+  width: 148px;
+}
+
+.calendar-scope-filters .MuiOutlinedInput-root {
+  height: 32px;
+  font-size: 13px;
+}
+
+.calendar-scope-filters .MuiOutlinedInput-input {
+  padding-block: 0;
+}
+
+.calendar-scope-filters .MuiSelect-select {
+  min-height: 0;
+  padding-block: 0;
+}
+
+.calendar-scope-filters .MuiButton-root {
+  min-height: 28px;
+  font-size: 12px;
+}
+
+.calendar-scope-filters .MuiTypography-caption {
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+/* The calendar takes whatever height is left. */
+.calendar-workspace {
+  padding: 0 12px 10px;
+}
+
+.calendar-period {
+  min-height: 40px;
+  padding: 4px 12px;
+}
+
+.calendar-period .MuiButton-root {
+  min-height: 28px;
+  padding-block: 0;
+  font-size: 13px;
+}
+
+.calendar-period .MuiButtonGroup-root .MuiIconButton-root {
+  width: 28px;
+  height: 28px;
+}
+
+.calendar-period__title-group {
+  min-width: 0;
+  align-items: center;
+  justify-content: center;
+}
+
+.calendar-period__title-group .calendar-period__title {
+  font-size: 16px;
+  line-height: 1.2;
+}
+
+.calendar-period__info {
+  color: var(--calendar-ui-muted);
+  cursor: help;
+}
+
+.calendar-canvas {
+  min-height: 0;
+}
+
+.calendar-search {
+  min-height: 0;
+}
+
+/* Month grid: low header, small day numbers, rows share the height. */
+.calendar-canvas .fc .fc-col-header-cell {
+  height: 28px;
+  border-bottom-width: 1px !important;
+}
+
+.calendar-canvas .fc .fc-col-header-cell-cushion {
+  padding: 4px 4px;
+  font-size: 11px;
+}
+
+.calendar-canvas .fc .fc-daygrid-day-frame {
+  min-height: 0;
+}
+
+.calendar-canvas .fc .fc-daygrid-day-top {
+  padding: 2px 4px 0;
+}
+
+.calendar-canvas .fc .fc-daygrid-day-number {
+  width: 22px;
+  height: 22px;
+  font-size: 11.5px;
+  font-weight: 650;
+}
+
+.calendar-canvas .fc .fc-day-today .fc-daygrid-day-number {
+  background: color-mix(in srgb, var(--calendar-primary) 85%, transparent);
+}
+
+.calendar-canvas .fc .fc-day-other .fc-daygrid-day-number {
+  opacity: 0.4;
+}
+
+.calendar-canvas .fc .fc-daygrid-event-harness {
+  margin-bottom: 0;
+}
+
+/* Month events: slim pills, as many as fit. */
+.calendar-canvas .fc .fc-dayGridMonth-view .fc-event,
+.calendar-canvas .fc .fc-popover .fc-event {
+  margin: 1px 3px;
+}
+
+.month-event {
+  padding: 0 6px;
+  font-size: 11.5px;
+  line-height: 20px;
+  border-radius: 5px;
+}
+
+.calendar-canvas .fc .fc-daygrid-more-link,
+.calendar-canvas .fc .fc-more-link {
+  margin: 1px 5px 0;
+  font-size: 11.5px;
+  line-height: 16px;
+}
+
+/* ------------------------------------------------------------------------
+   Phones. Kept last so it wins over the compact desktop layout above.
+   ------------------------------------------------------------------------ */
+
+/* The header must never shrink below its content: with a short page its
+   min-height used to let the actions spill over the tabs and filters. */
+.calendar-page__header {
+  flex: 0 0 auto;
+}
+
+@media (max-width: 700px) {
+  .calendar-page__header {
+    align-items: stretch;
+    gap: 8px;
+    padding: 12px 16px 8px;
+  }
+
+  /* The subtitle repeats what the tabs already say. */
+  .calendar-page__subtitle {
+    display: none;
+  }
+
+  .calendar-page__actions {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-start;
+  }
+
+  /* "New activity" takes the rest of the row. */
+  .calendar-page__actions > span:last-child {
+    flex: 1 1 140px;
+    display: block;
+  }
+
+  .calendar-page__actions > span:last-child .MuiButton-root {
+    width: 100%;
+  }
+
+  .calendar-primary-tabs,
+  .calendar-toolbar {
+    padding-inline: 16px;
+  }
+
+  /* One scrolling row of type chips instead of two wrapped rows. */
+  .calendar-type-filters {
+    flex-wrap: nowrap;
+    width: 100%;
+    overflow-x: auto;
+    padding-bottom: 2px;
+  }
+
+  .calendar-type-filter,
+  .calendar-color-key {
+    flex: 0 0 auto;
+  }
+
+  .calendar-scope-filters .calendar-filter-search {
+    width: 100%;
+  }
+
+  .calendar-scope-filters .calendar-filter-select {
+    width: auto;
+    flex: 1 1 calc(50% - 3px);
+  }
+
+  .calendar-scope-filters .MuiTypography-caption {
+    margin-left: 0;
+    flex: 1 0 100%;
   }
 }

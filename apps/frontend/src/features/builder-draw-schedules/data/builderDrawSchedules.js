@@ -1,9 +1,32 @@
 export const MIN_DRAW_COUNT = 2
 export const MAX_DRAW_COUNT = 5
 
+export const drawEventTypeOptions = [
+  { value: 'EXT', label: 'EXT' },
+  { value: 'DM', label: 'DM' },
+  { value: 'HW', label: 'HW' },
+]
+
+export const utilityBillingModeOptions = [
+  { value: 'FULL', label: 'Charge 100% in one package' },
+  { value: 'BY_EVENT', label: 'Split by Draw events' },
+]
+
+export const emptyUtilityEventPercentages = {
+  EXT: 0,
+  DM: 0,
+  HW: 0,
+}
+
+export const emptyHardwareEventPercentages = {
+  EXT: 0,
+  DM: 0,
+  HW: 0,
+}
+
 export const defaultDraws = [
-  { name: '', percentage: 0 },
-  { name: '', percentage: 0 },
+  { name: '', percentage: 0, eventType: '', lag: null },
+  { name: '', percentage: 0, eventType: '', lag: null },
 ]
 
 export const frequencyOptions = [
@@ -26,50 +49,74 @@ export const weekdayOptions = [
   { value: 6, label: 'Saturday' },
 ]
 
-export const workAcceptedOptions = [
-  { value: 'CUTOFF', label: 'Cutoff date' },
-  { value: 'SUBMISSION', label: 'Submission date' },
-]
-
-export const invoiceDateOptions = [
-  { value: 'SUBMISSION', label: 'Submission date' },
-  { value: 'CUTOFF', label: 'Cutoff date' },
-  { value: 'MONTH_END', label: 'End of month' },
-]
-
+// Building scope is listed first and is the default for a new setup.
 export const invoiceLineFormatOptions = [
+  { value: 'BUILDING_SCOPE', label: 'One line per building and scope' },
   { value: 'LOT_SCOPE', label: 'One line per lot and scope' },
-  { value: 'LOT', label: 'One line per lot' },
-  { value: 'SCOPE', label: 'One line per scope' },
-  { value: 'SINGLE', label: 'Single summary line' },
 ]
 
 export const invoiceLineFormatLabels = Object.fromEntries(
   invoiceLineFormatOptions.map(({ value, label }) => [value, label]),
 )
 
+export const submissionMethodOptions = [
+  { value: 'PORTAL', label: 'Portal' },
+  { value: 'EMAIL', label: 'Email' },
+  { value: 'MAIL', label: 'Mail' },
+]
+
+export const submissionMethodLabels = Object.fromEntries(
+  submissionMethodOptions.map(({ value, label }) => [value, label]),
+)
+
+export const retentionReleaseScopeOptions = [
+  { value: 'JOB', label: 'Per Job' },
+  { value: 'BUILDING', label: 'Per Building' },
+]
+
+export const retentionReleaseScopeLabels = Object.fromEntries(
+  retentionReleaseScopeOptions.map(({ value, label }) => [value, label]),
+)
+
+// Where the Conditional Final Release applies: the last Package that leaves
+// nothing to bill in the Phase, the Building or the whole Project.
+export const finalReleaseScopeOptions = [
+  { value: 'PHASE', label: 'Per Phase' },
+  { value: 'BUILDING', label: 'Per Building' },
+  { value: 'PROJECT', label: 'Per Project' },
+]
+
+export const finalReleaseScopeLabels = Object.fromEntries(
+  finalReleaseScopeOptions.map(({ value, label }) => [value, label]),
+)
+
 export const defaultBillingSettings = {
   separateHardwarePrice: false,
+  hardwareBillingMode: 'FULL',
+  hardwareEventPercentages: { ...emptyHardwareEventPercentages },
+  utilityBuilding: false,
+  utilityBillingMode: 'FULL',
+  utilityEventPercentages: { ...emptyUtilityEventPercentages },
   optionsBillingDrawIndex: null,
   frequency: 'MONTHLY',
+  anyDate: false,
   cutoffDay: 20,
-  submissionDay: 25,
   cutoffDays: [10, 25],
   cutoffWeekday: 0,
-  submissionOffsetDays: 2,
-  workAcceptedThrough: 'CUTOFF',
-  invoiceDateRule: 'SUBMISSION',
   paymentTermsDays: 30,
   retentionEnabled: false,
   retentionPercentage: 0,
+  retentionReleaseScope: 'JOB',
   ocipWrapEnabled: false,
   ocipWrapPercentage: 0,
   requiresPo: false,
   requiresPaymentSchedule: false,
   requiresRelease: false,
+  finalReleaseScope: '',
   requiresBackup: false,
-  invoiceLineFormat: 'LOT_SCOPE',
-  portalName: '',
+  invoiceLineFormat: 'BUILDING_SCOPE',
+  submissionMethod: 'PORTAL',
+  submissionDestination: '',
   notes: '',
 }
 
@@ -80,14 +127,13 @@ export const initialBuilderDrawSchedules = [
     id: 1,
     builderId: 2,
     draws: [
-      { name: 'Trim Complete', percentage: 10 },
-      { name: '', percentage: 75 },
-      { name: '', percentage: 15 },
+      { name: 'Trim Complete', percentage: 10, eventType: 'EXT' },
+      { name: '', percentage: 75, eventType: 'DM' },
+      { name: '', percentage: 15, eventType: 'HW' },
     ],
     ...defaultBillingSettings,
     frequency: 'WEEKLY',
     cutoffWeekday: 0,
-    submissionOffsetDays: 2,
     paymentTermsDays: 21,
     retentionEnabled: true,
     retentionPercentage: 5,
@@ -95,22 +141,23 @@ export const initialBuilderDrawSchedules = [
     ocipWrapPercentage: 2.5,
     requiresPo: true,
     requiresRelease: true,
-    invoiceLineFormat: 'LOT',
-    portalName: 'BuilderPortal',
+    finalReleaseScope: 'PROJECT',
+    invoiceLineFormat: 'LOT_SCOPE',
+    submissionMethod: 'PORTAL',
+    submissionDestination: 'BuilderPortal',
     optionsBillingDrawIndex: 2,
   },
   {
     id: 2,
     builderId: 4,
     draws: [
-      { name: '', percentage: 25 },
-      { name: '', percentage: 50 },
-      { name: '', percentage: 25 },
+      { name: '', percentage: 25, eventType: 'EXT' },
+      { name: '', percentage: 50, eventType: 'DM' },
+      { name: '', percentage: 25, eventType: 'HW' },
     ],
     ...defaultBillingSettings,
     frequency: 'MONTHLY',
     cutoffDay: 20,
-    submissionDay: 25,
     paymentTermsDays: 30,
     retentionEnabled: true,
     retentionPercentage: 10,
@@ -119,21 +166,21 @@ export const initialBuilderDrawSchedules = [
     requiresPo: true,
     requiresPaymentSchedule: true,
     requiresRelease: true,
-    portalName: 'Textura',
+    finalReleaseScope: 'PROJECT',
+    submissionMethod: 'PORTAL',
+    submissionDestination: 'Textura',
     notes: 'Lien releases must be notarized before submission.',
   },
   {
     id: 3,
     builderId: 1,
     draws: [
-      { name: '', percentage: 85 },
-      { name: '', percentage: 15 },
+      { name: '', percentage: 85, eventType: 'EXT' },
+      { name: '', percentage: 15, eventType: 'DM' },
     ],
     ...defaultBillingSettings,
     frequency: 'SEMIMONTHLY',
     cutoffDays: [10, 25],
-    submissionOffsetDays: 3,
-    invoiceDateRule: 'CUTOFF',
     paymentTermsDays: 45,
     retentionEnabled: true,
     retentionPercentage: 5,
@@ -141,6 +188,7 @@ export const initialBuilderDrawSchedules = [
     ocipWrapPercentage: 2,
     requiresPaymentSchedule: true,
     requiresRelease: true,
+    finalReleaseScope: 'PROJECT',
     requiresBackup: true,
     notes: 'Uses their own release form, sent by the PM each month.',
   },

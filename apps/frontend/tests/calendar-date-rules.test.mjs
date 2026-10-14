@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import {
   defaultBuilderDateConfiguration,
   getBuilderDateConfiguration,
+  toBuilderDateConfigurationRpc,
   withDefaultBuilderDateConfiguration,
 } from '../src/features/builders/data/builders.js'
 import {
@@ -35,6 +36,19 @@ test('custom builder date spacing is normalized to whole weeks', () => {
   assert.deepEqual(getBuilderDateConfiguration({
     calendarDateConfiguration: { extToDmWeeks: -1, shutterBeforeDmWeeks: 0, dmToHwWeeks: 1.5 },
   }), defaultBuilderDateConfiguration)
+})
+
+test('Builder date configuration maps to the focused persistence RPC', () => {
+  assert.deepEqual(toBuilderDateConfigurationRpc('50', {
+    extToDmWeeks: 6,
+    shutterBeforeDmWeeks: 2,
+    dmToHwWeeks: 3,
+  }), {
+    p_builder_id: 50,
+    p_ext_to_dm_weeks: 6,
+    p_shutter_before_dm_weeks: 2,
+    p_dm_to_hw_weeks: 3,
+  })
 })
 
 test('the configured U.S. holiday calendar contains only the seven requested holidays', () => {

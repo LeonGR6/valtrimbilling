@@ -2,25 +2,15 @@
 // work, punch list items and callbacks. A row carries the property, the
 // homeowner contact and the appointment next to the request itself, which is
 // what the coordinator needs on screen before picking up the phone.
-// Reaches the data files directly rather than the barrels: barrels re-export
-// .jsx components, which the plain Node test runner cannot load. The existing
-// tests import feature data the same way.
-import { builderOptions } from '../../builder-contacts/data/builderContacts.js'
 import { initialPeople } from '../../people/data/people.js'
 import { initialUsers } from '../../users/data/users.js'
 import { toIsoDate } from '../utils/dates.js'
-
-export { builderOptions }
 
 // Four of the visits below are anchored to the day the app is opened, so the
 // dashboard always has a plausible day of work to show instead of going empty
 // as these fixtures age. Every other date here is literal — only the tiles and
 // the appointment column care about today.
 const today = toIsoDate(new Date())
-
-export const builderLabelsById = Object.fromEntries(
-  builderOptions.map(({ value, label }) => [value, label]),
-)
 
 // The technician who works the call is Valtrim field staff and the coordinator
 // who logged it is an app user. Both are references, not names typed into the
@@ -177,7 +167,7 @@ export const initialRequests = [
     tag: 'NEW',
     reportedAt: '2026-08-26',
     createdById: 4,
-    builder: 'KB_HOME',
+    builder: 'KB',
     community: 'Andara',
     lotNumber: '24',
     street: '123 Main Street',
@@ -235,7 +225,7 @@ export const initialRequests = [
     tag: 'FOLLOW_UP',
     reportedAt: '2026-08-25',
     createdById: 4,
-    builder: 'CITY_VENTURES',
+    builder: 'CV',
     community: 'Astaire',
     lotNumber: '7',
     street: '789 Pine Street',
@@ -264,7 +254,7 @@ export const initialRequests = [
     tag: 'COMPLETED',
     reportedAt: '2026-08-24',
     createdById: 1,
-    builder: 'KB_HOME',
+    builder: 'KB',
     community: 'Andara',
     lotNumber: '15',
     street: '321 Maple Drive',
@@ -322,7 +312,7 @@ export const initialRequests = [
     tag: 'OVERDUE',
     reportedAt: '2026-08-20',
     createdById: 3,
-    builder: 'KB_HOME',
+    builder: 'KB',
     community: 'Cielo',
     lotNumber: '33',
     street: '987 Sunflower Court',
@@ -380,7 +370,7 @@ export const initialRequests = [
     tag: '',
     reportedAt: '2026-08-18',
     createdById: 1,
-    builder: 'CITY_VENTURES',
+    builder: 'CV',
     community: 'Astaire',
     lotNumber: '14',
     street: '212 Willow Bend',
@@ -438,7 +428,7 @@ export const initialRequests = [
     tag: 'FOLLOW_UP',
     reportedAt: '2026-08-15',
     createdById: 4,
-    builder: 'KB_HOME',
+    builder: 'KB',
     community: 'Andara',
     lotNumber: '2',
     street: '880 Harvest Circle',
@@ -496,7 +486,7 @@ export const initialRequests = [
     tag: 'OVERDUE',
     reportedAt: '2026-08-10',
     createdById: 3,
-    builder: 'CITY_VENTURES',
+    builder: 'CV',
     community: 'Cedar Grove',
     lotNumber: '11',
     street: '605 Amberwood Road',

@@ -98,8 +98,8 @@ select is(
 );
 
 select ok(
-  not has_table_privilege('authenticated', 'valtrim.jobs', 'select'),
-  'Jobs remain closed after the Builders phase'
+  not has_table_privilege('authenticated', 'valtrim.plans', 'select'),
+  'Unopened Plans remain closed after the Builders phase'
 );
 
 select * from finish();

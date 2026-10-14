@@ -3,13 +3,26 @@ import {
   activityTypeMap,
   getActivityTone,
   getDateOwnerLabel,
+  getFollowUpStatusMeta,
   getLotsLabel,
+  getMonthEventLabel,
 } from '../data/calendarEvents.js'
 
-export default function CalendarEventCard({ event, isList = false }) {
+export default function CalendarEventCard({ event, isList = false, isMonth = false }) {
   const props = event.extendedProps
   const type = activityTypeMap[props.activityType]
   const tone = getActivityTone(props.activityType, props.orderMaterial)
+  const followUp = getFollowUpStatusMeta(props.followUp)
+
+  // Month view: one line per event, like a Google Calendar chip.
+  if (isMonth) {
+    const label = getMonthEventLabel(props)
+    return (
+      <Box className={`month-event activity-tone--${tone}`} title={label}>
+        {label}
+      </Box>
+    )
+  }
 
   if (isList) {
     return (
@@ -28,6 +41,11 @@ export default function CalendarEventCard({ event, isList = false }) {
           {props.orderMaterial && <span>Order material</span>}
           {props.variant === 'install-only' && <span>Install only</span>}
           {props.variant === 'lock-up' && <span>Lock up</span>}
+          {followUp && (
+            <span className={`follow-up-status follow-up-status--${followUp.tone}`}>
+              {followUp.label}
+            </span>
+          )}
         </Box>
       </Box>
     )
@@ -40,6 +58,11 @@ export default function CalendarEventCard({ event, isList = false }) {
         {props.orderMaterial && <span className="work-event__tag">Order material</span>}
         {props.variant === 'install-only' && <span className="work-event__tag">Install only</span>}
         {props.variant === 'lock-up' && <span className="work-event__tag">Lock up</span>}
+        {followUp && (
+          <span className={`work-event__tag follow-up-status follow-up-status--${followUp.tone}`}>
+            {followUp.label}
+          </span>
+        )}
       </Box>
       <span className="work-event__community">Job #{props.jobCode} · {props.community}</span>
       <span className="work-event__phase-building">{props.phase} · {props.building}</span>

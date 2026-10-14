@@ -17,11 +17,14 @@ import {
   Divider,
   FormControl,
   FormControlLabel,
+  FormHelperText,
   IconButton,
   InputAdornment,
   InputLabel,
   LinearProgress,
   MenuItem,
+  Radio,
+  RadioGroup,
   Select,
   Snackbar,
   Stack,
@@ -35,19 +38,29 @@ import ConstructionRoundedIcon from '@mui/icons-material/ConstructionRounded'
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined'
 import ResponsiveCreateButton from '../../../components/common/ResponsiveCreateButton'
-import { initialBuilders } from '../../builders/data/builders.js'
+import { useBuilders } from '../../builders/context/useBuilders.js'
+import { drawSharesEvent, formatLagShort } from '../utils/drawLag.js'
+import DrawLagControl from './DrawLagControl.jsx'
 import {
   defaultDraws,
   defaultBillingSettings,
+  drawEventTypeOptions,
+  emptyHardwareEventPercentages,
+  emptyUtilityEventPercentages,
+  finalReleaseScopeLabels,
+  finalReleaseScopeOptions,
   frequencyLabels,
   frequencyOptions,
-  invoiceDateOptions,
   invoiceLineFormatLabels,
   invoiceLineFormatOptions,
   MAX_DRAW_COUNT,
   MIN_DRAW_COUNT,
+  retentionReleaseScopeLabels,
+  retentionReleaseScopeOptions,
+  submissionMethodLabels,
+  submissionMethodOptions,
+  utilityBillingModeOptions,
   weekdayOptions,
-  workAcceptedOptions,
 } from '../data/builderDrawSchedules.js'
 import { createBuilderDrawScheduleSchema } from '../schemas/builderDrawScheduleSchema.js'
 import {
@@ -90,9 +103,19 @@ function requiredDocuments(setup) {
   return [
     setup.requiresPo && 'PO',
     setup.requiresPaymentSchedule && 'Payment schedule',
-    setup.requiresRelease && 'Release',
+    setup.requiresRelease
+      && (setup.finalReleaseScope
+        ? `Release · Final ${finalReleaseScopeLabels[setup.finalReleaseScope].toLowerCase()}`
+        : 'Release'),
     setup.requiresBackup && 'Backup',
   ].filter(Boolean)
+}
+
+function describeSubmission(setup) {
+  const method = submissionMethodLabels[setup.submissionMethod] ?? 'Portal'
+  const destination = setup.submissionDestination?.trim()
+
+  return destination ? `${method} · ${destination}` : `${method} · Not specified`
 }
 
 function SchedulePreview({ control }) {
@@ -102,16 +125,33 @@ function SchedulePreview({ control }) {
       {
         ...values,
         cutoffDay: Number(values.cutoffDay) || 1,
-        submissionDay: Number(values.submissionDay) || 1,
         cutoffWeekday: Number(values.cutoffWeekday) || 0,
         cutoffDays: (values.cutoffDays ?? []).map(Number).filter(Boolean),
-        submissionOffsetDays: Number(values.submissionOffsetDays) || 0,
         paymentTermsDays: Number(values.paymentTermsDays) || 0,
       },
       3,
     ),
     [values],
   )
+
+  if (values.anyDate) {
+    return (
+      <Box sx={{ bgcolor: 'primary.light', borderRadius: 2, p: 2 }}>
+        <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+          <CalendarMonthRoundedIcon fontSize="small" sx={{ color: 'primary.main' }} />
+          <Box>
+            <Typography variant="body2" fontWeight={700} color="primary.main">
+              Any date suggestions
+            </Typography>
+            <Typography variant="caption" color="text.secondary">
+              Create Package will preselect the highest-value rolling 14-day
+              window of open Calendar work through today.
+            </Typography>
+          </Box>
+        </Stack>
+      </Box>
+    )
+  }
 
   return (
     <Box sx={{ bgcolor: 'primary.light', borderRadius: 2, p: 2 }}>
@@ -133,9 +173,6 @@ function SchedulePreview({ control }) {
               Cutoff {formatPeriodDate(period.cutoffDate)}
             </Typography>
             <Typography variant="caption" color="text.secondary">
-              Due {formatPeriodDate(period.submissionDate)}
-            </Typography>
-            <Typography variant="caption" color="text.secondary">
               Invoice {formatPeriodDate(period.invoiceDate)}
             </Typography>
             <Typography variant="caption" color="text.secondary">
@@ -154,6 +191,7 @@ function BuilderDrawScheduleDialog({
   builders,
   onClose,
   onSave,
+  submitting,
 }) {
   const schema = useMemo(
     () => createBuilderDrawScheduleSchema(schedules, schedule?.id),
@@ -170,14 +208,25 @@ function BuilderDrawScheduleDialog({
     defaultValues: schedule
       ? {
           ...schedule,
+          hardwareBillingMode: schedule.separateHardwarePrice ? 'BY_EVENT' : 'FULL',
           optionsBillingDrawIndex: schedule.optionsBillingDrawIndex ?? null,
           draws: schedule.draws.map((draw) => ({ ...draw })),
+          hardwareEventPercentages: {
+            ...emptyHardwareEventPercentages,
+            ...schedule.hardwareEventPercentages,
+          },
+          utilityEventPercentages: {
+            ...emptyUtilityEventPercentages,
+            ...schedule.utilityEventPercentages,
+          },
           cutoffDays: [...schedule.cutoffDays],
         }
       : {
           builderId: '',
           draws: defaultDraws.map((draw) => ({ ...draw })),
           ...defaultBillingSettings,
+          hardwareEventPercentages: { ...emptyHardwareEventPercentages },
+          utilityEventPercentages: { ...emptyUtilityEventPercentages },
           cutoffDays: [...defaultBillingSettings.cutoffDays],
         },
     mode: 'onTouched',
@@ -194,13 +243,27 @@ function BuilderDrawScheduleDialog({
     control,
     name: 'separateHardwarePrice',
   })
+  const hardwareEventPercentages = useWatch({
+    control,
+    name: 'hardwareEventPercentages',
+  }) ?? emptyHardwareEventPercentages
+  const utilityBuilding = useWatch({ control, name: 'utilityBuilding' })
+  const utilityBillingMode = useWatch({ control, name: 'utilityBillingMode' })
+  const utilityEventPercentages = useWatch({
+    control,
+    name: 'utilityEventPercentages',
+  }) ?? emptyUtilityEventPercentages
   const optionsBillingDrawIndex = useWatch({
     control,
     name: 'optionsBillingDrawIndex',
   })
   const frequency = useWatch({ control, name: 'frequency' })
+  const anyDate = useWatch({ control, name: 'anyDate' })
+  const cutoffDay = useWatch({ control, name: 'cutoffDay' })
   const retentionEnabled = useWatch({ control, name: 'retentionEnabled' })
   const ocipWrapEnabled = useWatch({ control, name: 'ocipWrapEnabled' })
+  const requiresRelease = useWatch({ control, name: 'requiresRelease' })
+  const submissionMethod = useWatch({ control, name: 'submissionMethod' })
   const total = getDrawTotal(watchedDraws)
   const totalIsValid = Math.abs(total - 100) <= 0.001
   const percentagesAreValid =
@@ -210,7 +273,37 @@ function BuilderDrawScheduleDialog({
       const percentage = Number(draw.percentage)
       return percentage > 0 && percentage <= 100
     })
-  const canSave = Boolean(selectedBuilderId) && totalIsValid && percentagesAreValid
+  const eventTypesAreValid = watchedDraws.every((draw) =>
+    drawEventTypeOptions.some(({ value }) => value === draw.eventType))
+  const configuredUtilityEvents = new Set(
+    watchedDraws.map((draw) => draw.eventType).filter(Boolean),
+  )
+  const hardwareTotal = Object.values(hardwareEventPercentages).reduce(
+    (sum, percentage) => sum + (Number(percentage) || 0),
+    0,
+  )
+  const hardwareAllocationIsValid = !separateHardwarePrice
+    || Math.abs(hardwareTotal - 100) <= 0.001
+  const utilityTotal = Object.values(utilityEventPercentages).reduce(
+    (sum, percentage) => sum + (Number(percentage) || 0),
+    0,
+  )
+  const utilityAllocationIsValid = !utilityBuilding
+    || utilityBillingMode === 'FULL'
+    || (
+      Math.abs(utilityTotal - 100) <= 0.001
+      && Object.entries(utilityEventPercentages).every(
+        ([eventType, percentage]) => (
+          (Number(percentage) || 0) === 0 || configuredUtilityEvents.has(eventType)
+        ),
+      )
+    )
+  const canSave = Boolean(selectedBuilderId)
+    && totalIsValid
+    && percentagesAreValid
+    && eventTypesAreValid
+    && hardwareAllocationIsValid
+    && utilityAllocationIsValid
   const availableBuilders = builders.filter(
     (builder) =>
       builder.id === schedule?.builderId ||
@@ -223,17 +316,32 @@ function BuilderDrawScheduleDialog({
   const drawsError = errors.draws?.message ?? errors.draws?.root?.message
 
   const handleRemoveDraw = (drawIndex) => {
-    const configuredDrawIndex = optionsBillingDrawIndex == null
-      ? null
-      : Number(optionsBillingDrawIndex)
+    const adjustConfiguredDraw = (fieldName, configuredValue) => {
+      const configuredDrawIndex = configuredValue == null
+        ? null
+        : Number(configuredValue)
 
-    if (configuredDrawIndex === drawIndex) {
-      setValue('optionsBillingDrawIndex', null, {
-        shouldDirty: true,
-        shouldValidate: true,
-      })
-    } else if (configuredDrawIndex > drawIndex) {
-      setValue('optionsBillingDrawIndex', configuredDrawIndex - 1, {
+      if (configuredDrawIndex === drawIndex) {
+        setValue(fieldName, null, {
+          shouldDirty: true,
+          shouldValidate: true,
+        })
+      } else if (configuredDrawIndex > drawIndex) {
+        setValue(fieldName, configuredDrawIndex - 1, {
+          shouldDirty: true,
+          shouldValidate: true,
+        })
+      }
+    }
+
+    adjustConfiguredDraw('optionsBillingDrawIndex', optionsBillingDrawIndex)
+
+    const removedEventType = watchedDraws[drawIndex]?.eventType
+    const eventStillExists = watchedDraws.some(
+      (draw, index) => index !== drawIndex && draw.eventType === removedEventType,
+    )
+    if (removedEventType && !eventStillExists) {
+      setValue(`utilityEventPercentages.${removedEventType}`, 0, {
         shouldDirty: true,
         shouldValidate: true,
       })
@@ -245,7 +353,7 @@ function BuilderDrawScheduleDialog({
   return (
     <Dialog
       open
-      onClose={onClose}
+      onClose={submitting ? undefined : onClose}
       fullWidth
       maxWidth="md"
       component="form"
@@ -315,7 +423,8 @@ function BuilderDrawScheduleDialog({
                   Draw allocation
                 </Typography>
                 <Typography variant="caption" color="text.secondary">
-                  Draw numbers follow their order. Add an optional name for each one.
+                  Draw numbers follow their order. Add a name and select the event
+                  that enables each one, then choose which Draw charges Options.
                 </Typography>
               </Box>
               <Chip
@@ -331,7 +440,24 @@ function BuilderDrawScheduleDialog({
                   key={field.fieldKey}
                   direction="row"
                   spacing={1.25}
-                  sx={{ alignItems: 'flex-start' }}
+                  sx={{
+                    alignItems: 'flex-start',
+                    p: 1,
+                    border: 1,
+                    borderColor: optionsBillingDrawIndex != null
+                      && Number(optionsBillingDrawIndex) === index
+                      ? 'primary.main'
+                      : 'transparent',
+                    borderRadius: 2,
+                    bgcolor: optionsBillingDrawIndex != null
+                      && Number(optionsBillingDrawIndex) === index
+                      ? 'primary.light'
+                      : 'transparent',
+                    transition: (theme) => theme.transitions.create([
+                      'background-color',
+                      'border-color',
+                    ]),
+                  }}
                 >
                   <Avatar
                     sx={{
@@ -346,10 +472,11 @@ function BuilderDrawScheduleDialog({
                   >
                     {index + 1}
                   </Avatar>
+                  <Box sx={{ flex: 1, minWidth: 0 }}>
                   <Stack
                     direction={{ xs: 'column', sm: 'row' }}
                     spacing={1.25}
-                    sx={{ flex: 1, minWidth: 0 }}
+                    sx={{ minWidth: 0 }}
                   >
                     <TextField
                       label={`Draw ${index + 1} name`}
@@ -381,7 +508,85 @@ function BuilderDrawScheduleDialog({
                         },
                       }}
                     />
+                    <Controller
+                      name={`draws.${index}.eventType`}
+                      control={control}
+                      render={({ field: eventTypeField }) => (
+                        <TextField
+                          {...eventTypeField}
+                          select
+                          label="Event type"
+                          error={Boolean(errors.draws?.[index]?.eventType)}
+                          helperText={errors.draws?.[index]?.eventType?.message ?? ' '}
+                          sx={{ width: { xs: '100%', sm: 150 }, flexShrink: 0 }}
+                        >
+                          <MenuItem value="">Select event</MenuItem>
+                          {drawEventTypeOptions.map((eventType) => (
+                            <MenuItem key={eventType.value} value={eventType.value}>
+                              {eventType.label}
+                            </MenuItem>
+                          ))}
+                        </TextField>
+                      )}
+                    />
+                    <FormControlLabel
+                      label={(
+                        <Stack
+                          direction="row"
+                          spacing={0.75}
+                          sx={{ alignItems: 'center' }}
+                        >
+                          <Typography variant="body2">Charge Options</Typography>
+                          {optionsBillingDrawIndex != null
+                            && Number(optionsBillingDrawIndex) === index && (
+                              <Chip
+                                size="small"
+                                color="primary"
+                                label="Selected"
+                                sx={{ height: 22 }}
+                              />
+                          )}
+                        </Stack>
+                      )}
+                      control={(
+                        // Only one Draw charges the Options: clicking it selects it,
+                        // clicking it again goes back to "Do not bill Options".
+                        <Checkbox
+                          checked={optionsBillingDrawIndex != null
+                            && Number(optionsBillingDrawIndex) === index}
+                          onChange={(_, checked) => setValue(
+                            'optionsBillingDrawIndex',
+                            checked ? index : null,
+                            { shouldDirty: true, shouldValidate: true },
+                          )}
+                          inputProps={{
+                            'aria-label': `Charge Options in Draw ${index + 1}`,
+                          }}
+                        />
+                      )}
+                      sx={{
+                        m: 0,
+                        minHeight: 56,
+                        width: { xs: '100%', sm: 190 },
+                        flexShrink: 0,
+                      }}
+                    />
                   </Stack>
+                  {(drawSharesEvent(watchedDraws, index) || watchedDraws[index]?.lag) && (
+                    <Box sx={{ mt: 0.25 }}>
+                      <DrawLagControl
+                        drawNumber={index + 1}
+                        eventType={watchedDraws[index]?.eventType}
+                        lag={watchedDraws[index]?.lag}
+                        error={errors.draws?.[index]?.lag?.message}
+                        onChange={(next) => setValue(`draws.${index}.lag`, next, {
+                          shouldDirty: true,
+                          shouldValidate: true,
+                        })}
+                      />
+                    </Box>
+                  )}
+                  </Box>
                   {fields.length > MIN_DRAW_COUNT && (
                     <IconButton
                       aria-label={`Remove Draw ${index + 1}`}
@@ -396,6 +601,29 @@ function BuilderDrawScheduleDialog({
               ))}
             </Stack>
 
+            <Box sx={{ mt: 0.5 }}>
+              <FormControlLabel
+                label="Do not bill Options"
+                control={(
+                  <Radio
+                    name="optionsBillingDrawIndex"
+                    checked={optionsBillingDrawIndex == null}
+                    onChange={() => setValue('optionsBillingDrawIndex', null, {
+                      shouldDirty: true,
+                      shouldValidate: true,
+                    })}
+                    inputProps={{ 'aria-label': 'Do not bill Options in a Draw' }}
+                  />
+                )}
+                sx={{ m: 0 }}
+              />
+              {errors.optionsBillingDrawIndex && (
+                <Typography variant="caption" color="error" sx={{ display: 'block' }}>
+                  {errors.optionsBillingDrawIndex.message}
+                </Typography>
+              )}
+            </Box>
+
             <Stack
               direction={{ xs: 'column', sm: 'row' }}
               spacing={1}
@@ -406,111 +634,315 @@ function BuilderDrawScheduleDialog({
                 variant="outlined"
                 startIcon={<AddRoundedIcon />}
                 disabled={fields.length >= MAX_DRAW_COUNT}
-                onClick={() => append({ name: '', percentage: 0 })}
+                onClick={() => append({ name: '', percentage: 0, eventType: '', lag: null })}
               >
                 Add draw
               </Button>
-              <Button
-                type="button"
-                variant={separateHardwarePrice ? 'contained' : 'outlined'}
-                color={separateHardwarePrice ? 'primary' : 'inherit'}
-                startIcon={<ConstructionRoundedIcon />}
-                onClick={() => setValue(
-                  'separateHardwarePrice',
-                  !separateHardwarePrice,
-                  { shouldDirty: true, shouldValidate: true },
+              <Controller
+                name="separateHardwarePrice"
+                control={control}
+                render={({ field }) => (
+                  <FormControlLabel
+                    label="Separate Hardware Price"
+                    control={(
+                      <Checkbox
+                        checked={Boolean(field.value)}
+                        onChange={(_, checked) => {
+                          field.onChange(checked)
+                          setValue('hardwareBillingMode', checked ? 'BY_EVENT' : 'FULL', {
+                            shouldDirty: true,
+                            shouldValidate: true,
+                          })
+                          setValue('hardwareEventPercentages', checked
+                            ? { EXT: 0, DM: 0, HW: 100 }
+                            : { ...emptyHardwareEventPercentages }, {
+                            shouldDirty: true,
+                            shouldValidate: true,
+                          })
+                        }}
+                      />
+                    )}
+                  />
                 )}
-                disableElevation
-              >
-                Separate Hardware Price
-              </Button>
+              />
+              <Controller
+                name="utilityBuilding"
+                control={control}
+                render={({ field }) => (
+                  <FormControlLabel
+                    label="Utility Building"
+                    control={(
+                      <Checkbox
+                        checked={Boolean(field.value)}
+                        onChange={(_, checked) => {
+                          field.onChange(checked)
+                          if (!checked) {
+                            setValue('utilityBillingMode', 'FULL', {
+                              shouldDirty: true,
+                              shouldValidate: true,
+                            })
+                            setValue('utilityEventPercentages', {
+                              ...emptyUtilityEventPercentages,
+                            }, {
+                              shouldDirty: true,
+                              shouldValidate: true,
+                            })
+                          }
+                        }}
+                      />
+                    )}
+                  />
+                )}
+              />
             </Stack>
+
+            <Box
+              sx={{
+                p: 2,
+                mt: 1.5,
+                border: 1,
+                borderColor: totalIsValid ? 'success.main' : 'error.main',
+                borderRadius: 2,
+                bgcolor: 'background.default',
+              }}
+            >
+              <Stack
+                direction="row"
+                spacing={2}
+                sx={{ alignItems: 'center', justifyContent: 'space-between', mb: 1 }}
+              >
+                <Box>
+                  <Typography variant="subtitle2" fontWeight={750}>
+                    Total allocation
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    {totalIsValid
+                      ? 'Ready to save'
+                      : total < 100
+                        ? `${formatPercentage(100 - total)}% remaining`
+                        : `${formatPercentage(total - 100)}% over the limit`}
+                  </Typography>
+                </Box>
+                <Typography
+                  variant="h6"
+                  color={totalIsValid ? 'success.main' : 'error.main'}
+                  fontWeight={800}
+                >
+                  {formatPercentage(total)}%
+                </Typography>
+              </Stack>
+              <LinearProgress
+                variant="determinate"
+                value={Math.min(Math.max(total, 0), 100)}
+                color={totalIsValid ? 'success' : 'error'}
+                sx={{ height: 7, borderRadius: 999 }}
+              />
+              {drawsError && (
+                <Typography variant="caption" color="error" sx={{ display: 'block', mt: 1 }}>
+                  {drawsError}
+                </Typography>
+              )}
+            </Box>
 
             {separateHardwarePrice && (
-              <Alert severity="info" sx={{ mt: 1.25 }}>
-                Draws will allocate 100% of the plan price excluding hardware.
-                Hardware will be billed separately at 100%.
-              </Alert>
-            )}
-
-            <Controller
-              name="optionsBillingDrawIndex"
-              control={control}
-              render={({ field }) => (
-                <TextField
-                  select
-                  label="Options billing draw"
-                  value={field.value ?? ''}
-                  onChange={(event) => field.onChange(
-                    event.target.value === '' ? null : Number(event.target.value),
-                  )}
-                  onBlur={field.onBlur}
-                  inputRef={field.ref}
-                  error={Boolean(errors.optionsBillingDrawIndex)}
-                  helperText={
-                    errors.optionsBillingDrawIndex?.message
-                    ?? 'Selected lot options are added when this draw is included in a package.'
-                  }
-                  fullWidth
-                  sx={{ mt: 1.5 }}
-                >
-                  <MenuItem value="">Do not bill options in a draw</MenuItem>
-                  {watchedDraws.map((draw, index) => (
-                    <MenuItem key={`options-draw-${index + 1}`} value={index}>
-                      Draw {index + 1}
-                      {draw.name?.trim() ? ` · ${draw.name.trim()}` : ''}
-                    </MenuItem>
-                  ))}
-                </TextField>
-              )}
-            />
-          </Box>
-
-          <Box  
-            sx={{
-              p: 2,
-              border: 1,
-              borderColor: totalIsValid ? 'success.main' : 'warning.main',
-              borderRadius: 2,
-              bgcolor: 'background.default',
-            }}
-          >
-            <Stack
-              direction="row"
-              spacing={2}
-              sx={{ alignItems: 'center', justifyContent: 'space-between', mb: 1 }}
-            >
-              <Box>
-                <Typography variant="subtitle2" fontWeight={750}>
-                  Total allocation
+              <Card variant="outlined" sx={{ mt: 1.5, p: 2 }}>
+                <Typography variant="subtitle2" fontWeight={800}>
+                  Separate Hardware billing
                 </Typography>
                 <Typography variant="caption" color="text.secondary">
-                  {totalIsValid
-                    ? 'Ready to save'
-                    : total < 100
-                      ? `${formatPercentage(100 - total)}% remaining`
-                      : `${formatPercentage(total - 100)}% over the limit`}
+                  Allocate 100% of each Lot's Hardware Price across Calendar events.
+                  These events do not need to exist as Draws. HW starts at 100%.
                 </Typography>
-              </Box>
-              <Typography
-                variant="h6"
-                color={totalIsValid ? 'success.main' : 'warning.main'}
-                fontWeight={800}
-              >
-                {formatPercentage(total)}%
-              </Typography>
-            </Stack>
-            <LinearProgress
-              variant="determinate"
-              value={Math.min(Math.max(total, 0), 100)}
-              color={totalIsValid ? 'success' : 'warning'}
-              sx={{ height: 7, borderRadius: 999 }}
-            />
-            {drawsError && (
-              <Typography variant="caption" color="error" sx={{ display: 'block', mt: 1 }}>
-                {drawsError}
-              </Typography>
+
+                <Box sx={{ mt: 1.5 }}>
+                  <Stack
+                    direction={{ xs: 'column', sm: 'row' }}
+                    spacing={1.25}
+                  >
+                    {drawEventTypeOptions.map((eventType) => (
+                        <TextField
+                          key={eventType.value}
+                          label={`${eventType.label} Hardware`}
+                          type="number"
+                          {...register(`hardwareEventPercentages.${eventType.value}`)}
+                          error={Boolean(
+                            errors.hardwareEventPercentages?.[eventType.value],
+                          )}
+                          helperText={
+                            errors.hardwareEventPercentages?.[eventType.value]?.message
+                            ?? `${eventType.label} Calendar event`
+                          }
+                          fullWidth
+                          slotProps={{
+                            input: {
+                              endAdornment: (
+                                <InputAdornment position="end">%</InputAdornment>
+                              ),
+                            },
+                            htmlInput: {
+                              min: 0,
+                              max: 100,
+                              step: 0.01,
+                              inputMode: 'decimal',
+                            },
+                          }}
+                        />
+                      ))}
+                  </Stack>
+                  <Stack
+                    direction="row"
+                    spacing={1}
+                    sx={{ mt: 1.25, justifyContent: 'space-between' }}
+                  >
+                    <Typography
+                      variant="caption"
+                      color={hardwareAllocationIsValid ? 'success.main' : 'error.main'}
+                    >
+                      {errors.hardwareEventPercentages?.message
+                        ?? (hardwareAllocationIsValid
+                          ? 'Hardware allocation ready'
+                          : 'Hardware event percentages must total 100%.')}
+                    </Typography>
+                    <Typography
+                      variant="caption"
+                      fontWeight={850}
+                      color={hardwareAllocationIsValid ? 'success.main' : 'error.main'}
+                    >
+                      {formatPercentage(hardwareTotal)}%
+                    </Typography>
+                  </Stack>
+                  <LinearProgress
+                    variant="determinate"
+                    value={Math.min(Math.max(hardwareTotal, 0), 100)}
+                    color={hardwareAllocationIsValid ? 'success' : 'error'}
+                    sx={{ height: 6, borderRadius: 999, mt: 0.5 }}
+                  />
+                </Box>
+              </Card>
             )}
+
+            {utilityBuilding && (
+              <Card variant="outlined" sx={{ mt: 1.5, p: 2 }}>
+                <Typography variant="subtitle2" fontWeight={800}>
+                  Utility billing
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  Charge each Utility Plan Price once, or distribute it across
+                  the configured Draw events.
+                </Typography>
+
+                <Controller
+                  name="utilityBillingMode"
+                  control={control}
+                  render={({ field }) => (
+                    <RadioGroup
+                      {...field}
+                      row
+                      sx={{ mt: 1 }}
+                      onChange={(event) => {
+                        field.onChange(event.target.value)
+                        if (event.target.value === 'FULL') {
+                          setValue('utilityEventPercentages', {
+                            ...emptyUtilityEventPercentages,
+                          }, {
+                            shouldDirty: true,
+                            shouldValidate: true,
+                          })
+                        }
+                      }}
+                    >
+                      {utilityBillingModeOptions.map((option) => (
+                        <FormControlLabel
+                          key={option.value}
+                          value={option.value}
+                          control={<Radio size="small" />}
+                          label={option.label}
+                        />
+                      ))}
+                    </RadioGroup>
+                  )}
+                />
+
+                {utilityBillingMode === 'FULL' ? (
+                  <Alert severity="info" sx={{ mt: 1 }}>
+                    Create Draw Package will show one Charge checkbox per Utility
+                    row. Checking it adds 100% of that row's Plan Price.
+                  </Alert>
+                ) : (
+                  <Box sx={{ mt: 1.5 }}>
+                    <Stack
+                      direction={{ xs: 'column', sm: 'row' }}
+                      spacing={1.25}
+                    >
+                      {drawEventTypeOptions
+                        .filter(({ value }) => configuredUtilityEvents.has(value))
+                        .map((eventType) => (
+                          <TextField
+                            key={eventType.value}
+                            label={`${eventType.label} Utility`}
+                            type="number"
+                            {...register(`utilityEventPercentages.${eventType.value}`)}
+                            error={Boolean(
+                              errors.utilityEventPercentages?.[eventType.value],
+                            )}
+                            helperText={
+                              errors.utilityEventPercentages?.[eventType.value]?.message
+                              ?? watchedDraws.flatMap((draw, index) => (
+                                draw.eventType === eventType.value
+                                  ? [`Draw ${index + 1}`]
+                                  : []
+                              )).join(', ')
+                            }
+                            fullWidth
+                            slotProps={{
+                              input: {
+                                endAdornment: (
+                                  <InputAdornment position="end">%</InputAdornment>
+                                ),
+                              },
+                              htmlInput: {
+                                min: 0,
+                                max: 100,
+                                step: 0.01,
+                                inputMode: 'decimal',
+                              },
+                            }}
+                          />
+                        ))}
+                    </Stack>
+                    <Stack
+                      direction="row"
+                      spacing={1}
+                      sx={{ mt: 1.25, justifyContent: 'space-between' }}
+                    >
+                      <Typography
+                        variant="caption"
+                        color={utilityAllocationIsValid ? 'success.main' : 'error.main'}
+                      >
+                        {errors.utilityEventPercentages?.message
+                          ?? (utilityAllocationIsValid
+                            ? 'Utility allocation ready'
+                            : 'Utility event percentages must total 100%.')}
+                      </Typography>
+                      <Typography
+                        variant="caption"
+                        fontWeight={850}
+                        color={utilityAllocationIsValid ? 'success.main' : 'error.main'}
+                      >
+                        {formatPercentage(utilityTotal)}%
+                      </Typography>
+                    </Stack>
+                    <LinearProgress
+                      variant="determinate"
+                      value={Math.min(Math.max(utilityTotal, 0), 100)}
+                      color={utilityAllocationIsValid ? 'success' : 'error'}
+                      sx={{ height: 6, borderRadius: 999, mt: 0.5 }}
+                    />
+                  </Box>
+                )}
+              </Card>
+            )}
+
           </Box>
 
           <Divider textAlign="left">
@@ -527,6 +959,15 @@ function BuilderDrawScheduleDialog({
                   {...field}
                   labelId="setup-frequency-label"
                   label="Frequency"
+                  onChange={(event) => {
+                    field.onChange(event)
+                    if (event.target.value !== 'MONTHLY') {
+                      setValue('anyDate', false, {
+                        shouldDirty: true,
+                        shouldValidate: true,
+                      })
+                    }
+                  }}
                 >
                   {frequencyOptions.map((option) => (
                     <MenuItem key={option.value} value={option.value}>
@@ -539,24 +980,41 @@ function BuilderDrawScheduleDialog({
           />
 
           {frequency === 'MONTHLY' && (
-            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
+            <Stack
+              direction={{ xs: 'column', sm: 'row' }}
+              spacing={2}
+              sx={{ alignItems: { xs: 'stretch', sm: 'center' } }}
+            >
               <TextField
-                label="Cutoff day"
+                label="Cutoff date"
                 type="number"
                 {...register('cutoffDay')}
+                disabled={anyDate}
                 error={Boolean(errors.cutoffDay)}
                 helperText={errors.cutoffDay?.message ?? 'Day of the month'}
                 fullWidth
                 slotProps={{ htmlInput: { min: 1, max: 31, step: 1 } }}
               />
-              <TextField
-                label="Submission due day"
-                type="number"
-                {...register('submissionDay')}
-                error={Boolean(errors.submissionDay)}
-                helperText={errors.submissionDay?.message ?? 'Day of the month'}
-                fullWidth
-                slotProps={{ htmlInput: { min: 1, max: 31, step: 1 } }}
+              <FormControlLabel
+                label="Any date"
+                sx={{ minWidth: { sm: 180 } }}
+                control={(
+                  <Checkbox
+                    checked={Boolean(anyDate)}
+                    onChange={(_, checked) => {
+                      setValue('anyDate', checked, {
+                        shouldDirty: true,
+                        shouldValidate: true,
+                      })
+                      if (!checked && !Number.isInteger(Number(cutoffDay))) {
+                        setValue('cutoffDay', 1, {
+                          shouldDirty: true,
+                          shouldValidate: true,
+                        })
+                      }
+                    }}
+                  />
+                )}
               />
             </Stack>
           )}
@@ -564,7 +1022,7 @@ function BuilderDrawScheduleDialog({
           {frequency === 'SEMIMONTHLY' && (
             <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
               <TextField
-                label="First cutoff day"
+                label="First cutoff date"
                 type="number"
                 {...register('cutoffDays.0')}
                 error={Boolean(errors.cutoffDays)}
@@ -573,7 +1031,7 @@ function BuilderDrawScheduleDialog({
                 slotProps={{ htmlInput: { min: 1, max: 31, step: 1 } }}
               />
               <TextField
-                label="Second cutoff day"
+                label="Second cutoff date"
                 type="number"
                 {...register('cutoffDays.1')}
                 error={Boolean(errors.cutoffDays)}
@@ -611,45 +1069,17 @@ function BuilderDrawScheduleDialog({
           )}
 
           <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
-            <Controller
-              name="workAcceptedThrough"
-              control={control}
-              render={({ field }) => (
-                <FormControl fullWidth>
-                  <InputLabel id="setup-accepted-label">Work accepted through</InputLabel>
-                  <Select
-                    {...field}
-                    labelId="setup-accepted-label"
-                    label="Work accepted through"
-                  >
-                    {workAcceptedOptions.map((option) => (
-                      <MenuItem key={option.value} value={option.value}>
-                        {option.label}
-                      </MenuItem>
-                    ))}
-                  </Select>
-                </FormControl>
-              )}
+            <TextField
+              label="Work accepted through"
+              value="Cutoff date"
+              disabled
+              fullWidth
             />
-            <Controller
-              name="invoiceDateRule"
-              control={control}
-              render={({ field }) => (
-                <FormControl fullWidth>
-                  <InputLabel id="setup-invoice-date-label">Invoice date</InputLabel>
-                  <Select
-                    {...field}
-                    labelId="setup-invoice-date-label"
-                    label="Invoice date"
-                  >
-                    {invoiceDateOptions.map((option) => (
-                      <MenuItem key={option.value} value={option.value}>
-                        {option.label}
-                      </MenuItem>
-                    ))}
-                  </Select>
-                </FormControl>
-              )}
+            <TextField
+              label="Invoice date"
+              value="Cutoff date"
+              disabled
+              fullWidth
             />
           </Stack>
 
@@ -690,23 +1120,49 @@ function BuilderDrawScheduleDialog({
                 )}
               />
               {retentionEnabled && (
-                <TextField
-                  label="Retention percentage"
-                  type="number"
-                  {...register('retentionPercentage')}
-                  error={Boolean(errors.retentionPercentage)}
-                  helperText={
-                    errors.retentionPercentage?.message
-                    ?? 'Percentage deducted after draws total 100%.'
-                  }
-                  fullWidth
-                  required
-                  sx={{ mt: 1 }}
-                  slotProps={{
-                    input: { endAdornment: <InputAdornment position="end">%</InputAdornment> },
-                    htmlInput: { min: 1, max: 100, step: 0.01, inputMode: 'decimal' },
-                  }}
-                />
+                <Stack spacing={1.5} sx={{ mt: 1 }}>
+                  <TextField
+                    label="Retention percentage"
+                    type="number"
+                    {...register('retentionPercentage')}
+                    error={Boolean(errors.retentionPercentage)}
+                    helperText={
+                      errors.retentionPercentage?.message
+                      ?? 'Percentage deducted from every Package line.'
+                    }
+                    fullWidth
+                    required
+                    slotProps={{
+                      input: { endAdornment: <InputAdornment position="end">%</InputAdornment> },
+                      htmlInput: { min: 1, max: 100, step: 0.01, inputMode: 'decimal' },
+                    }}
+                  />
+                  <Controller
+                    name="retentionReleaseScope"
+                    control={control}
+                    render={({ field }) => (
+                      <FormControl fullWidth>
+                        <InputLabel id="retention-release-scope-label">
+                          Release retention
+                        </InputLabel>
+                        <Select
+                          {...field}
+                          labelId="retention-release-scope-label"
+                          label="Release retention"
+                        >
+                          {retentionReleaseScopeOptions.map((option) => (
+                            <MenuItem key={option.value} value={option.value}>
+                              {option.label}
+                            </MenuItem>
+                          ))}
+                        </Select>
+                      </FormControl>
+                    )}
+                  />
+                  <Typography variant="caption" color="text.secondary">
+                    Available one month after the cutoff that completes Hardware.
+                  </Typography>
+                </Stack>
               )}
             </Box>
 
@@ -774,7 +1230,16 @@ function BuilderDrawScheduleDialog({
                     control={(
                       <Checkbox
                         checked={Boolean(field.value)}
-                        onChange={(_, checked) => field.onChange(checked)}
+                        onChange={(_, checked) => {
+                          field.onChange(checked)
+                          // The Conditional Final choice only exists with a Release.
+                          if (name === 'requiresRelease' && !checked) {
+                            setValue('finalReleaseScope', '', {
+                              shouldDirty: true,
+                              shouldValidate: true,
+                            })
+                          }
+                        }}
                       />
                     )}
                   />
@@ -783,17 +1248,63 @@ function BuilderDrawScheduleDialog({
             ))}
           </Box>
 
+          {requiresRelease && (
+            <Controller
+              name="finalReleaseScope"
+              control={control}
+              render={({ field }) => (
+                <FormControl
+                  fullWidth
+                  required
+                  error={Boolean(errors.finalReleaseScope)}
+                >
+                  <InputLabel id="final-release-scope-label">
+                    Conditional Final Release
+                  </InputLabel>
+                  <Select
+                    {...field}
+                    labelId="final-release-scope-label"
+                    label="Conditional Final Release"
+                  >
+                    {finalReleaseScopeOptions.map((option) => (
+                      <MenuItem key={option.value} value={option.value}>
+                        {option.label}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                  <FormHelperText>
+                    {errors.finalReleaseScope?.message
+                      ?? 'The last Package of each Phase, Building or Project uses the Conditional Final Release; the others use Conditional Progress.'}
+                  </FormHelperText>
+                </FormControl>
+              )}
+            />
+          )}
+
           <Divider textAlign="left">
             <Typography sx={sectionSx}>Submission</Typography>
           </Divider>
 
           <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
-            <TextField
-              label="Portal"
-              {...register('portalName')}
-              error={Boolean(errors.portalName)}
-              helperText={errors.portalName?.message ?? 'Optional'}
-              fullWidth
+            <Controller
+              name="submissionMethod"
+              control={control}
+              render={({ field }) => (
+                <TextField
+                  {...field}
+                  select
+                  label="Submission method"
+                  error={Boolean(errors.submissionMethod)}
+                  helperText={errors.submissionMethod?.message ?? 'How billing is submitted'}
+                  fullWidth
+                >
+                  {submissionMethodOptions.map((option) => (
+                    <MenuItem key={option.value} value={option.value}>
+                      {option.label}
+                    </MenuItem>
+                  ))}
+                </TextField>
+              )}
             />
             <Controller
               name="invoiceLineFormat"
@@ -818,6 +1329,33 @@ function BuilderDrawScheduleDialog({
           </Stack>
 
           <TextField
+            key={submissionMethod}
+            label={submissionMethod === 'EMAIL'
+              ? 'Submission email'
+              : submissionMethod === 'MAIL'
+                ? 'Mailing address'
+                : 'Portal'}
+            type={submissionMethod === 'EMAIL' ? 'email' : 'text'}
+            placeholder={submissionMethod === 'EMAIL'
+              ? 'billing@example.com'
+              : submissionMethod === 'MAIL'
+                ? 'Street, city, state and ZIP code'
+                : 'Example: Textura'}
+            {...register('submissionDestination')}
+            error={Boolean(errors.submissionDestination)}
+            helperText={errors.submissionDestination?.message
+              ?? (submissionMethod === 'PORTAL'
+                ? 'Optional'
+                : submissionMethod === 'EMAIL'
+                  ? 'Email used to submit billing.'
+                  : 'Address used to mail billing.')}
+            required={submissionMethod !== 'PORTAL'}
+            multiline={submissionMethod === 'MAIL'}
+            minRows={submissionMethod === 'MAIL' ? 2 : undefined}
+            fullWidth
+          />
+
+          <TextField
             label="Notes"
             {...register('notes')}
             error={Boolean(errors.notes)}
@@ -831,18 +1369,29 @@ function BuilderDrawScheduleDialog({
       </DialogContent>
 
       <DialogActions sx={{ px: 3, pb: 2.5, pt: 1.5 }}>
-        <Button color="inherit" onClick={onClose}>
+        <Button color="inherit" onClick={onClose} disabled={submitting}>
           Cancel
         </Button>
-        <Button type="submit" variant="contained" disableElevation disabled={!canSave}>
-          {schedule ? 'Save changes' : 'Create setup'}
+        <Button
+          type="submit"
+          variant="contained"
+          disableElevation
+          disabled={!canSave || submitting}
+        >
+          {submitting ? 'Saving...' : schedule ? 'Save changes' : 'Create setup'}
         </Button>
       </DialogActions>
     </Dialog>
   )
 }
 
-function BuilderDrawScheduleCard({ schedule, builder, onEdit, onDelete }) {
+function BuilderDrawScheduleCard({
+  schedule,
+  builder,
+  canManage,
+  onEdit,
+  onDeactivate,
+}) {
   const total = getDrawTotal(schedule.draws)
 
   return (
@@ -921,6 +1470,11 @@ function BuilderDrawScheduleCard({ schedule, builder, onEdit, onDelete }) {
               Draw {index + 1}
               {draw.name?.trim() ? ` (${draw.name.trim()})` : ''}
             </Typography>
+            <Chip
+              size="small"
+              variant="outlined"
+              label={draw.lag ? `${draw.eventType} ${formatLagShort(draw.lag)}` : draw.eventType}
+            />
             {schedule.optionsBillingDrawIndex != null
               && Number(schedule.optionsBillingDrawIndex) === index && (
               <Chip size="small" color="primary" label="Options billed" />
@@ -935,12 +1489,31 @@ function BuilderDrawScheduleCard({ schedule, builder, onEdit, onDelete }) {
       <Divider />
 
       <Stack spacing={1.25} sx={{ flex: 1, p: 2 }}>
+        <Chip
+          size="small"
+          color={schedule.utilityBuilding ? 'success' : 'default'}
+          variant={schedule.utilityBuilding ? 'filled' : 'outlined'}
+          label={schedule.utilityBuilding
+            ? schedule.utilityBillingMode === 'BY_EVENT'
+              ? `Utility · ${drawEventTypeOptions
+                  .filter(({ value }) => Number(
+                    schedule.utilityEventPercentages?.[value],
+                  ) > 0)
+                  .map(({ value }) => (
+                    `${value} ${formatPercentage(Number(
+                      schedule.utilityEventPercentages[value],
+                    ))}%`
+                  )).join(' / ')}`
+              : 'Utility · 100% selectable'
+            : 'Utility Building · Inactive'}
+          sx={{ alignSelf: 'flex-start', fontWeight: 750 }}
+        />
         {schedule.separateHardwarePrice && (
           <Chip
             size="small"
             color="primary"
             icon={<ConstructionRoundedIcon />}
-            label="Hardware separated · 100%"
+            label="Hardware separated"
             sx={{ alignSelf: 'flex-start', fontWeight: 750 }}
           />
         )}
@@ -958,7 +1531,7 @@ function BuilderDrawScheduleCard({ schedule, builder, onEdit, onDelete }) {
         <Typography variant="body2" color="text.secondary">
           Net {schedule.paymentTermsDays}
           {schedule.retentionEnabled
-            ? ` · ${formatPercentage(schedule.retentionPercentage)}% retention`
+            ? ` · ${formatPercentage(schedule.retentionPercentage)}% retention · ${retentionReleaseScopeLabels[schedule.retentionReleaseScope] ?? 'Per Job'}`
             : ''}
           {schedule.ocipWrapEnabled
             ? ` · ${formatPercentage(schedule.ocipWrapPercentage)}% OCIP / WRAP`
@@ -978,57 +1551,76 @@ function BuilderDrawScheduleCard({ schedule, builder, onEdit, onDelete }) {
         </Stack>
 
         <Typography variant="caption" color="text.secondary">
-          {schedule.portalName || 'No portal'} ·{' '}
+          {describeSubmission(schedule)} ·{' '}
           {invoiceLineFormatLabels[schedule.invoiceLineFormat]}
         </Typography>
       </Stack>
 
-      <CardActions
-        sx={{
-          px: 2,
-          py: 1.25,
-          borderTop: 1,
-          borderColor: 'divider',
-          justifyContent: 'flex-end',
-        }}
-      >
-        <Button
-          size="small"
-          startIcon={<EditOutlinedIcon />}
-          onClick={() => onEdit(schedule)}
+      {canManage && (
+        <CardActions
+          sx={{
+            px: 2,
+            py: 1.25,
+            borderTop: 1,
+            borderColor: 'divider',
+            justifyContent: 'flex-end',
+          }}
         >
-          Edit
-        </Button>
-        <Button
-          size="small"
-          color="error"
-          startIcon={<DeleteOutlineRoundedIcon />}
-          onClick={() => onDelete(schedule)}
-        >
-          Delete
-        </Button>
-      </CardActions>
+          <Button
+            size="small"
+            startIcon={<EditOutlinedIcon />}
+            onClick={() => onEdit(schedule)}
+          >
+            Edit
+          </Button>
+          <Button
+            size="small"
+            color="error"
+            startIcon={<DeleteOutlineRoundedIcon />}
+            onClick={() => onDeactivate(schedule)}
+          >
+            Deactivate
+          </Button>
+        </CardActions>
+      )}
     </Card>
   )
 }
 
-function DeleteScheduleDialog({ schedule, builder, onClose, onDelete }) {
+function DeactivateScheduleDialog({
+  schedule,
+  builder,
+  onClose,
+  onDeactivate,
+  submitting,
+}) {
   return (
-    <Dialog open={Boolean(schedule)} onClose={onClose} fullWidth maxWidth="xs">
-      <DialogTitle>Delete builder setup?</DialogTitle>
+    <Dialog
+      open={Boolean(schedule)}
+      onClose={submitting ? undefined : onClose}
+      fullWidth
+      maxWidth="xs"
+    >
+      <DialogTitle>Deactivate builder setup?</DialogTitle>
       <DialogContent>
         <Alert severity="warning">
           {builder
-            ? `${builder.name}'s draw allocation and complete billing configuration will be permanently removed.`
-            : 'This draw and billing configuration will be permanently removed.'}
+            ? `${builder.name}'s current setup will stop being available for new Jobs. Its version and financial history will be preserved.`
+            : 'The current setup will be deactivated without deleting its financial history.'}
         </Alert>
       </DialogContent>
       <DialogActions sx={{ px: 3, pb: 2.5 }}>
-        <Button color="inherit" onClick={onClose}>
+        <Button color="inherit" onClick={onClose} disabled={submitting}>
           Cancel
         </Button>
-        <Button color="error" variant="contained" onClick={onDelete} disableElevation>
-          Delete setup
+        <Button
+          color="error"
+          variant="contained"
+          onClick={onDeactivate}
+          disabled={submitting}
+          disableElevation
+        >
+          {submitting ? 'Deactivating...' : 'Deactivate setup'}
         </Button>
       </DialogActions>
     </Dialog>
@@ -1038,44 +1630,66 @@ function DeleteScheduleDialog({ schedule, builder, onClose, onDelete }) {
 export default function BuilderDrawSchedules() {
   const {
     builderDrawSchedules: schedules,
-    setBuilderDrawSchedules: setSchedules,
+    loading: schedulesLoading,
+    error: schedulesError,
+    canManageBuilderBillingSetups,
+    refreshBuilderBillingSetups,
+    saveBuilderBillingSetup,
+    deactivateBuilderBillingSetup,
   } = useBuilderDrawSchedules()
+  const {
+    builders,
+    loading: buildersLoading,
+    error: buildersError,
+    refreshBuilders,
+  } = useBuilders()
   const [dialogState, setDialogState] = useState(null)
-  const [deleteTarget, setDeleteTarget] = useState(null)
+  const [deactivateTarget, setDeactivateTarget] = useState(null)
   const [notice, setNotice] = useState(null)
+  const [submitting, setSubmitting] = useState(false)
   const buildersById = useMemo(
-    () => new Map(initialBuilders.map((builder) => [builder.id, builder])),
-    [],
+    () => new Map(builders.map((builder) => [builder.id, builder])),
+    [builders],
   )
 
-  const handleSave = (form) => {
-    if (dialogState?.mode === 'edit') {
-      setSchedules((current) =>
-        current.map((schedule) =>
-          schedule.id === dialogState.schedule.id
-            ? { ...schedule, ...form }
-            : schedule,
-        ),
-      )
-      setNotice({ severity: 'success', message: 'Builder setup updated.' })
-    } else {
-      setSchedules((current) => [
-        ...current,
-        { ...form, id: Date.now() },
-      ])
-      setNotice({ severity: 'success', message: 'Builder setup created.' })
+  const handleSave = async (form) => {
+    setSubmitting(true)
+    try {
+      await saveBuilderBillingSetup(form)
+      setNotice({
+        severity: 'success',
+        message: dialogState?.mode === 'edit'
+          ? 'Builder setup updated with a new active version.'
+          : 'Builder setup created and activated.',
+      })
+      setDialogState(null)
+    } catch (saveError) {
+      setNotice({ severity: 'error', message: saveError.message })
+    } finally {
+      setSubmitting(false)
     }
-
-    setDialogState(null)
   }
 
-  const handleDelete = () => {
-    setSchedules((current) =>
-      current.filter((schedule) => schedule.id !== deleteTarget.id),
-    )
-    setDeleteTarget(null)
-    setNotice({ severity: 'success', message: 'Builder setup deleted.' })
+  const handleDeactivate = async () => {
+    if (!deactivateTarget) return
+
+    setSubmitting(true)
+    try {
+      await deactivateBuilderBillingSetup(deactivateTarget.builderId)
+      setDeactivateTarget(null)
+      setNotice({
+        severity: 'success',
+        message: 'Builder setup deactivated. Its history was preserved.',
+      })
+    } catch (deactivateError) {
+      setNotice({ severity: 'error', message: deactivateError.message })
+    } finally {
+      setSubmitting(false)
+    }
   }
+
+  const loading = schedulesLoading || buildersLoading
+  const loadError = schedulesError || buildersError
 
   return (
     <Box sx={{ minHeight: '100%', bgcolor: 'background.default' }}>
@@ -1095,22 +1709,46 @@ export default function BuilderDrawSchedules() {
         >
           <Box>
             <Typography variant="h5" fontWeight={750} color="text.primary">
-              Builder Draw Schedules
+              Builder Setups
             </Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, maxWidth: 720 }}>
               One complete setup per builder: draw allocation, cutoff rules,
               payment deductions and required submission documents.
             </Typography>
           </Box>
-          <ResponsiveCreateButton
-            label="New builder setup"
-            mobileLabel="New setup"
-            onClick={() => setDialogState({ mode: 'create' })}
-          />
+          {canManageBuilderBillingSetups && (
+            <ResponsiveCreateButton
+              label="New builder setup"
+              mobileLabel="New setup"
+              disabled={loading || builders.length === 0}
+              onClick={() => setDialogState({ mode: 'create' })}
+            />
+          )}
         </Stack>
       </Box>
 
       <Box sx={{ p: { xs: 2.5, md: 4 } }}>
+        {loadError && (
+          <Alert
+            severity="error"
+            action={(
+              <Button
+                color="inherit"
+                size="small"
+                onClick={() => {
+                  refreshBuilderBillingSetups().catch(() => {})
+                  refreshBuilders().catch(() => {})
+                }}
+              >
+                Retry
+              </Button>
+            )}
+            sx={{ mb: 2 }}
+          >
+            {loadError}
+          </Alert>
+        )}
+
         <Stack
           direction={{ xs: 'column', sm: 'row' }}
           spacing={1.5}
@@ -1153,10 +1791,11 @@ export default function BuilderDrawSchedules() {
                   key={schedule.id}
                   schedule={schedule}
                   builder={builder}
+                  canManage={canManageBuilderBillingSetups}
                   onEdit={(target) =>
                     setDialogState({ mode: 'edit', schedule: target })
                   }
-                  onDelete={setDeleteTarget}
+                  onDeactivate={setDeactivateTarget}
                 />
               )
             })}
@@ -1165,19 +1804,24 @@ export default function BuilderDrawSchedules() {
           <Card variant="outlined" sx={{ p: 6, textAlign: 'center' }}>
             <BusinessRoundedIcon color="action" sx={{ fontSize: 44 }} />
             <Typography fontWeight={750} sx={{ mt: 1 }}>
-              No builder setups yet
+              {loading ? 'Loading builder setups...' : 'No builder setups yet'}
             </Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, mb: 2 }}>
-              Create the first setup with draw and billing configuration.
+              {loading
+                ? 'Loading billing configuration from Supabase.'
+                : 'Create the first setup with draw and billing configuration.'}
             </Typography>
-            <Button
-              variant="contained"
-              startIcon={<AddRoundedIcon />}
-              onClick={() => setDialogState({ mode: 'create' })}
-              disableElevation
-            >
-              New builder setup
-            </Button>
+            {!loading && canManageBuilderBillingSetups && (
+              <Button
+                variant="contained"
+                startIcon={<AddRoundedIcon />}
+                disabled={builders.length === 0}
+                onClick={() => setDialogState({ mode: 'create' })}
+                disableElevation
+              >
+                New builder setup
+              </Button>
+            )}
           </Card>
         )}
       </Box>
@@ -1186,17 +1830,21 @@ export default function BuilderDrawSchedules() {
         <BuilderDrawScheduleDialog
           schedule={dialogState.schedule}
           schedules={schedules}
-          builders={initialBuilders}
-          onClose={() => setDialogState(null)}
+          builders={builders}
+          onClose={submitting ? undefined : () => setDialogState(null)}
           onSave={handleSave}
+          submitting={submitting}
         />
       )}
 
-      <DeleteScheduleDialog
-        schedule={deleteTarget}
-        builder={deleteTarget ? buildersById.get(deleteTarget.builderId) : null}
-        onClose={() => setDeleteTarget(null)}
-        onDelete={handleDelete}
+      <DeactivateScheduleDialog
+        schedule={deactivateTarget}
+        builder={deactivateTarget
+          ? buildersById.get(deactivateTarget.builderId)
+          : null}
+        onClose={() => setDeactivateTarget(null)}
+        onDeactivate={handleDeactivate}
+        submitting={submitting}
       />
 
       <Snackbar

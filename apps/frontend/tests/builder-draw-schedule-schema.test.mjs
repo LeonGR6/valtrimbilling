@@ -1,10 +1,14 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { defaultBillingSettings } from '../src/features/builder-draw-schedules/data/builderDrawSchedules.js'
+import {
+  defaultBillingSettings,
+  invoiceLineFormatOptions,
+  submissionMethodOptions,
+} from '../src/features/builder-draw-schedules/data/builderDrawSchedules.js'
 import { createBuilderDrawScheduleSchema } from '../src/features/builder-draw-schedules/schemas/builderDrawScheduleSchema.js'
 
 function validSetup(overrides = {}) {
-  return {
+  const setup = {
     ...defaultBillingSettings,
     cutoffDays: [...defaultBillingSettings.cutoffDays],
     builderId: 2,
@@ -15,6 +19,14 @@ function validSetup(overrides = {}) {
     ],
     ...overrides,
   }
+
+  return {
+    ...setup,
+    draws: setup.draws.map((draw, index) => ({
+      ...draw,
+      eventType: draw.eventType ?? ['EXT', 'DM', 'HW'][Math.min(index, 2)],
+    })),
+  }
 }
 
 test('Builder Draw Schedule accepts 3 draws totaling 100 percent', () => {
@@ -22,15 +34,202 @@ test('Builder Draw Schedule accepts 3 draws totaling 100 percent', () => {
 
   assert.equal(result.builderId, 2)
   assert.equal(result.draws.length, 3)
+  assert.deepEqual(result.draws.map((draw) => draw.eventType), ['EXT', 'DM', 'HW'])
   assert.equal(result.separateHardwarePrice, false)
+  assert.equal(result.utilityBuilding, false)
 })
 
-test('Builder Draw Schedule can separate hardware at 100 percent', () => {
+test('Utility Building defaults to one selectable 100 percent charge', () => {
+  const result = createBuilderDrawScheduleSchema([], null).parse(validSetup({
+    utilityBuilding: true,
+  }))
+
+  assert.equal(result.utilityBuilding, true)
+  assert.equal(result.utilityBillingMode, 'FULL')
+  assert.deepEqual(result.utilityEventPercentages, { EXT: 0, DM: 0, HW: 0 })
+})
+
+test('Utility Building can split 100 percent across configured Draw events', () => {
+  const result = createBuilderDrawScheduleSchema([], null).parse(validSetup({
+    utilityBuilding: true,
+    utilityBillingMode: 'BY_EVENT',
+    utilityEventPercentages: { EXT: 25, DM: 50, HW: 25 },
+  }))
+
+  assert.equal(result.utilityBillingMode, 'BY_EVENT')
+  assert.deepEqual(result.utilityEventPercentages, { EXT: 25, DM: 50, HW: 25 })
+})
+
+test('Utility event split supports two events and rejects missing or incomplete allocation', () => {
+  const schema = createBuilderDrawScheduleSchema([], null)
+  const twoEvents = schema.safeParse(validSetup({
+    draws: [
+      { percentage: 50, eventType: 'EXT' },
+      { percentage: 50, eventType: 'DM' },
+    ],
+    utilityBuilding: true,
+    utilityBillingMode: 'BY_EVENT',
+    utilityEventPercentages: { EXT: 50, DM: 50, HW: 0 },
+  }))
+  const missingEvent = schema.safeParse(validSetup({
+    draws: [
+      { percentage: 50, eventType: 'EXT' },
+      { percentage: 50, eventType: 'DM' },
+    ],
+    utilityBuilding: true,
+    utilityBillingMode: 'BY_EVENT',
+    utilityEventPercentages: { EXT: 25, DM: 50, HW: 25 },
+  }))
+  const incomplete = schema.safeParse(validSetup({
+    utilityBuilding: true,
+    utilityBillingMode: 'BY_EVENT',
+    utilityEventPercentages: { EXT: 25, DM: 50, HW: 0 },
+  }))
+
+  assert.equal(twoEvents.success, true)
+  assert.equal(missingEvent.success, false)
+  assert.equal(incomplete.success, false)
+})
+
+test('Builder Draw Schedule supports only the two invoice line formats', () => {
+  assert.deepEqual(invoiceLineFormatOptions, [
+    { value: 'BUILDING_SCOPE', label: 'One line per building and scope' },
+    { value: 'LOT_SCOPE', label: 'One line per lot and scope' },
+  ])
+
+  for (const invoiceLineFormat of ['LOT_SCOPE', 'BUILDING_SCOPE']) {
+    const result = createBuilderDrawScheduleSchema([], null).safeParse(
+      validSetup({ invoiceLineFormat }),
+    )
+
+    assert.equal(result.success, true)
+  }
+
+  for (const invoiceLineFormat of ['LOT', 'SCOPE', 'SINGLE']) {
+    const result = createBuilderDrawScheduleSchema([], null).safeParse(
+      validSetup({ invoiceLineFormat }),
+    )
+
+    assert.equal(result.success, false)
+  }
+})
+
+test('Builder Draw Schedule supports Portal, Email and Mail submission', () => {
+  assert.deepEqual(submissionMethodOptions, [
+    { value: 'PORTAL', label: 'Portal' },
+    { value: 'EMAIL', label: 'Email' },
+    { value: 'MAIL', label: 'Mail' },
+  ])
+
+  const portal = createBuilderDrawScheduleSchema([], null).parse(validSetup({
+    submissionMethod: 'PORTAL',
+    submissionDestination: ' Textura ',
+  }))
+  const email = createBuilderDrawScheduleSchema([], null).parse(validSetup({
+    submissionMethod: 'EMAIL',
+    submissionDestination: ' billing@example.com ',
+  }))
+  const mail = createBuilderDrawScheduleSchema([], null).parse(validSetup({
+    submissionMethod: 'MAIL',
+    submissionDestination: ' 100 Main St, Austin, TX 78701 ',
+  }))
+
+  assert.equal(portal.submissionDestination, 'Textura')
+  assert.equal(email.submissionDestination, 'billing@example.com')
+  assert.equal(mail.submissionDestination, '100 Main St, Austin, TX 78701')
+})
+
+test('Email and Mail submissions require a valid destination', () => {
+  const missingEmail = createBuilderDrawScheduleSchema([], null).safeParse(validSetup({
+    submissionMethod: 'EMAIL',
+    submissionDestination: '',
+  }))
+  const invalidEmail = createBuilderDrawScheduleSchema([], null).safeParse(validSetup({
+    submissionMethod: 'EMAIL',
+    submissionDestination: 'not-an-email',
+  }))
+  const missingAddress = createBuilderDrawScheduleSchema([], null).safeParse(validSetup({
+    submissionMethod: 'MAIL',
+    submissionDestination: '   ',
+  }))
+  const optionalPortal = createBuilderDrawScheduleSchema([], null).safeParse(validSetup({
+    submissionMethod: 'PORTAL',
+    submissionDestination: '',
+  }))
+
+  assert.equal(missingEmail.success, false)
+  assert.equal(invalidEmail.success, false)
+  assert.equal(missingAddress.success, false)
+  assert.equal(optionalPortal.success, true)
+})
+
+test('Builder Draw Schedule requires EXT, DM or HW for every Draw', () => {
+  const missing = createBuilderDrawScheduleSchema([], null).safeParse({
+    ...validSetup(),
+    draws: [
+      { percentage: 25, eventType: 'EXT' },
+      { percentage: 75, eventType: '' },
+    ],
+  })
+  const unsupported = createBuilderDrawScheduleSchema([], null).safeParse({
+    ...validSetup(),
+    draws: [
+      { percentage: 25, eventType: 'SHUTTER' },
+      { percentage: 75, eventType: 'DM' },
+    ],
+  })
+
+  assert.equal(missing.success, false)
+  assert.equal(unsupported.success, false)
+})
+
+test('Builder Draw Schedule allows the same event on multiple Draws', () => {
+  const result = createBuilderDrawScheduleSchema([], null).parse(validSetup({
+    draws: [
+      { percentage: 25, eventType: 'EXT' },
+      { percentage: 25, eventType: 'DM' },
+      { percentage: 25, eventType: 'HW' },
+      { percentage: 25, eventType: 'HW' },
+    ],
+  }))
+
+  assert.deepEqual(result.draws.map((draw) => draw.eventType), [
+    'EXT', 'DM', 'HW', 'HW',
+  ])
+})
+
+test('Builder Draw Schedule allocates Separate Hardware across Draw events', () => {
   const result = createBuilderDrawScheduleSchema([], null).parse(validSetup({
     separateHardwarePrice: true,
+    hardwareBillingMode: 'BY_EVENT',
+    hardwareEventPercentages: { EXT: 20, DM: 30, HW: 50 },
   }))
 
   assert.equal(result.separateHardwarePrice, true)
+  assert.equal(result.hardwareBillingMode, 'BY_EVENT')
+  assert.deepEqual(result.hardwareEventPercentages, { EXT: 20, DM: 30, HW: 50 })
+  assert.equal('hardwareBillingDrawIndex' in result, false)
+})
+
+test('Separate Hardware requires 100 percent but does not require matching Draw events', () => {
+  const schema = createBuilderDrawScheduleSchema([], null)
+  const incomplete = schema.safeParse(validSetup({
+    separateHardwarePrice: true,
+    hardwareBillingMode: 'BY_EVENT',
+    hardwareEventPercentages: { EXT: 20, DM: 30, HW: 40 },
+  }))
+  const missingEvent = schema.safeParse(validSetup({
+    draws: [
+      { percentage: 50, eventType: 'EXT' },
+      { percentage: 50, eventType: 'DM' },
+    ],
+    separateHardwarePrice: true,
+    hardwareBillingMode: 'BY_EVENT',
+    hardwareEventPercentages: { EXT: 50, DM: 25, HW: 25 },
+  }))
+
+  assert.equal(incomplete.success, false)
+  assert.equal(missingEvent.success, true)
 })
 
 test('Builder Draw Schedule stores the draw used to bill selected options', () => {
@@ -144,16 +343,20 @@ test('Builder Draw Schedule stores billing deductions and submission requirement
     requiresPo: true,
     requiresPaymentSchedule: true,
     requiresRelease: true,
+    finalReleaseScope: 'PHASE',
     requiresBackup: false,
-    portalName: ' Textura ',
+    submissionMethod: 'PORTAL',
+    submissionDestination: ' Textura ',
   }))
 
   assert.equal(result.retentionPercentage, 10.5)
+  assert.equal(result.retentionReleaseScope, 'JOB')
   assert.equal(result.ocipWrapPercentage, 1.25)
   assert.equal(result.requiresPo, true)
   assert.equal(result.requiresPaymentSchedule, true)
   assert.equal(result.requiresRelease, true)
-  assert.equal(result.portalName, 'Textura')
+  assert.equal(result.submissionMethod, 'PORTAL')
+  assert.equal(result.submissionDestination, 'Textura')
 })
 
 test('disabled retention and OCIP options clear hidden percentages', () => {
@@ -203,4 +406,46 @@ test('twice-monthly billing requires two different cutoff days', () => {
   assert.deepEqual(result.error.flatten().fieldErrors.cutoffDays, [
     'The two cutoff days must be different.',
   ])
+})
+
+test('monthly Any date does not require a fixed cutoff day', () => {
+  const result = createBuilderDrawScheduleSchema([], null).parse(validSetup({
+    frequency: 'MONTHLY',
+    anyDate: true,
+    cutoffDay: null,
+  }))
+
+  assert.equal(result.anyDate, true)
+  assert.equal(result.cutoffDay, null)
+})
+
+test('monthly fixed cutoff still requires a cutoff day', () => {
+  const result = createBuilderDrawScheduleSchema([], null).safeParse(validSetup({
+    frequency: 'MONTHLY',
+    anyDate: false,
+    cutoffDay: null,
+  }))
+
+  assert.equal(result.success, false)
+  assert.deepEqual(result.error.flatten().fieldErrors.cutoffDay, [
+    'Enter the monthly cutoff date.',
+  ])
+})
+
+test('A required Release needs the Conditional Final scope', () => {
+  const schema = createBuilderDrawScheduleSchema([], null)
+
+  const missing = schema.safeParse(validSetup({ requiresRelease: true }))
+  assert.equal(missing.success, false)
+  assert.deepEqual(missing.error.issues[0].path, ['finalReleaseScope'])
+
+  for (const scope of ['PHASE', 'BUILDING', 'PROJECT']) {
+    const result = schema.parse(validSetup({
+      requiresRelease: true,
+      finalReleaseScope: scope,
+    }))
+    assert.equal(result.finalReleaseScope, scope)
+  }
+
+  assert.equal(schema.safeParse(validSetup()).success, true)
 })

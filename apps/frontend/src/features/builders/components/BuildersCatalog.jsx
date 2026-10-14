@@ -8,14 +8,10 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
-  FormControl,
   FormControlLabel,
   IconButton,
   InputAdornment,
-  InputLabel,
-  Menu,
   MenuItem,
-  Select,
   Snackbar,
   Stack,
   Switch,
@@ -27,6 +23,7 @@ import {
   TablePagination,
   TableRow,
   TextField,
+  Link,
   Typography,
 } from '@mui/material'
 import BusinessRoundedIcon from '@mui/icons-material/BusinessRounded'
@@ -35,11 +32,21 @@ import AddRoundedIcon from '@mui/icons-material/AddRounded'
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
 import BlockRoundedIcon from '@mui/icons-material/BlockRounded'
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined'
-import FilterListRoundedIcon from '@mui/icons-material/FilterListRounded'
 import MailOutlineRoundedIcon from '@mui/icons-material/MailOutlineRounded'
-import MoreHorizRoundedIcon from '@mui/icons-material/MoreHorizRounded'
+import ClearRoundedIcon from '@mui/icons-material/ClearRounded'
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
 import ResponsiveCreateButton from '../../../components/common/ResponsiveCreateButton'
+import {
+  CatalogEmptyState,
+  CatalogPageHeader,
+  CatalogSkeletonRows,
+  RowActionsMenu,
+  StatusChip,
+  StatusTabs,
+  catalogTableSx,
+  focusRingSx,
+  visuallyHiddenSx,
+} from '../../../components/common/CatalogPage'
 import { FormPhoneInput } from '../../../components/common/InternationalPhoneInput.jsx'
 import {
   formatPhoneNumber,
@@ -437,6 +444,7 @@ function BuilderDialog({
 }
 
 export default function BuildersCatalog({
+  banner,
   getBuilderJobCount,
   onBuilderRenamed,
   onSelectBuilder,
@@ -459,38 +467,49 @@ export default function BuildersCatalog({
   const [status, setStatus] = useState('all')
   const [page, setPage] = useState(0)
   const [rowsPerPage, setRowsPerPage] = useState(5)
-  const [menuAnchor, setMenuAnchor] = useState(null)
-  const [selectedBuilder, setSelectedBuilder] = useState(null)
   const [dialogState, setDialogState] = useState(null)
   const [deactivateTarget, setDeactivateTarget] = useState(null)
   const [submitting, setSubmitting] = useState(false)
   const [notice, setNotice] = useState(null)
 
-  const filteredBuilders = useMemo(() => {
+  const searchedBuilders = useMemo(() => {
     const query = search.trim().toLowerCase()
 
-    return builders.filter((builder) => {
-      const matchesSearch =
-        !query ||
-        [
-          builder.code,
-          builder.name,
-          builder.description,
-          formatBuilderAddress(builder),
-          builder.contactName,
-          builder.contactEmail,
-          builder.contactPhone,
-        ]
-          .join(' ')
-          .toLowerCase()
-          .includes(query)
-      const matchesStatus =
-        status === 'all' ||
-        (status === 'active' ? builder.isActive : !builder.isActive)
-
-      return matchesSearch && matchesStatus
-    })
-  }, [builders, search, status])
+    return builders.filter((builder) =>
+      !query ||
+      [
+        builder.code,
+        builder.name,
+        builder.description,
+        formatBuilderAddress(builder),
+        builder.contactName,
+        builder.contactEmail,
+        builder.contactPhone,
+      ]
+        .join(' ')
+        .toLowerCase()
+        .includes(query),
+    )
+  }, [builders, search])
+  const statusOptions = useMemo(() => [
+    { value: 'all', label: 'All', count: searchedBuilders.length },
+    {
+      value: 'active',
+      label: 'Active',
+      count: searchedBuilders.filter((builder) => builder.isActive).length,
+    },
+    {
+      value: 'inactive',
+      label: 'Inactive',
+      count: searchedBuilders.filter((builder) => !builder.isActive).length,
+    },
+  ], [searchedBuilders])
+  const filteredBuilders = useMemo(
+    () => searchedBuilders.filter((builder) =>
+      status === 'all' || (status === 'active' ? builder.isActive : !builder.isActive),
+    ),
+    [searchedBuilders, status],
+  )
 
   const visibleBuilders = filteredBuilders.slice(
     page * rowsPerPage,
@@ -499,27 +518,6 @@ export default function BuildersCatalog({
   const deactivateTargetJobCount = deactivateTarget
     ? getBuilderJobCount?.(deactivateTarget) ?? 0
     : 0
-
-  const handleMenuOpen = (event, builder) => {
-    event.stopPropagation()
-    setMenuAnchor(event.currentTarget)
-    setSelectedBuilder(builder)
-  }
-
-  const handleMenuClose = () => {
-    setMenuAnchor(null)
-    setSelectedBuilder(null)
-  }
-
-  const openEditDialog = () => {
-    setDialogState({ mode: 'edit', builder: selectedBuilder })
-    handleMenuClose()
-  }
-
-  const openDeactivateDialog = () => {
-    setDeactivateTarget(selectedBuilder)
-    handleMenuClose()
-  }
 
   const handleSave = async (form) => {
     setSubmitting(true)
@@ -588,56 +586,39 @@ export default function BuildersCatalog({
     setPage(0)
   }
 
-  const changeStatus = (event) => {
-    setStatus(event.target.value)
+  const changeStatus = (nextStatus) => {
+    setStatus(nextStatus)
     setPage(0)
   }
 
+  const clearFilters = () => {
+    setSearch('')
+    setStatus('all')
+    setPage(0)
+  }
+
+  const columnCount = 4 + Number(Boolean(getBuilderJobCount)) + Number(canManageBuilders)
+  const hasFilters = Boolean(search.trim()) || status !== 'all'
+
   return (
     <Box sx={{ minHeight: '100%', bgcolor: 'background.default' }}>
-      <Box
-        sx={{
-          px: { xs: 2.5, md: 4 },
-          py: 3,
-          bgcolor: 'background.paper',
-          borderBottom: 1,
-          borderColor: 'divider',
-          display: 'flex',
-          alignItems: { xs: 'flex-start', sm: 'center' },
-          justifyContent: 'space-between',
-          gap: 2,
-          flexDirection: { xs: 'column', sm: 'row' },
-        }}
-      >
-        <Box>
-          {isJobsEntry && (
-            <Typography
-              variant="caption"
-              color="primary.main"
-              fontWeight={700}
-              sx={{ display: 'block', mb: 0.5, letterSpacing: '0.04em' }}
-            >
-              JOBS / BUILDERS
-            </Typography>
-          )}
-          <Typography variant="h5" fontWeight={700} color="text.primary">
-            {isJobsEntry ? 'Choose a builder' : 'Builders'}
-          </Typography>
-          <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-            {isJobsEntry
-              ? 'You are in Jobs. Jobs are grouped by builder, so select one to continue.'
-              : 'Manage builder companies and their primary contact information.'}
-          </Typography>
-        </Box>
-        {canManageBuilders && (
+      <CatalogPageHeader
+        breadcrumbs={isJobsEntry ? [{ label: 'Jobs' }] : undefined}
+        title={isJobsEntry ? 'Jobs by builder' : 'Builders'}
+        subtitle={isJobsEntry
+          ? 'Pick a builder to see its jobs.'
+          : 'Manage builder companies and their primary contact information.'}
+        actions={canManageBuilders && (
           <ResponsiveCreateButton
             label="New builder"
             onClick={() => setDialogState({ mode: 'create' })}
           />
         )}
-      </Box>
+      />
 
       <Box sx={{ p: { xs: 2.5, md: 4 } }}>
+        {banner}
+
         <Box
           sx={{
             bgcolor: 'background.paper',
@@ -647,55 +628,57 @@ export default function BuildersCatalog({
             overflow: 'hidden',
           }}
         >
-          {isJobsEntry && (
-            <Box sx={{ px: 2.5, py: 2, borderBottom: 1, borderColor: 'divider' }}>
-              <Typography variant="subtitle1" fontWeight={700}>
-                Builders
-              </Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ mt: 0.25 }}>
-                Select a builder below to see the jobs assigned to it.
-              </Typography>
-            </Box>
-          )}
           <Stack
-            direction={{ xs: 'column', md: 'row' }}
-            spacing={1.5}
-            sx={{ p: 2.5, borderBottom: 1, borderColor: 'divider' }}
+            direction={{ xs: 'column', lg: 'row' }}
+            sx={{
+              alignItems: { lg: 'center' },
+              justifyContent: 'space-between',
+              borderBottom: 1,
+              borderColor: 'divider',
+            }}
           >
-            <TextField
-              value={search}
-              onChange={changeSearch}
-              size="small"
-              placeholder="Search builders or contacts..."
-              sx={{ width: { xs: '100%', md: 360 } }}
-              slotProps={{
-                input: {
-                  startAdornment: (
-                    <InputAdornment position="start">
-                      <SearchRoundedIcon fontSize="small" color="action" />
-                    </InputAdornment>
-                  ),
-                },
-              }}
-            />
-            <FormControl size="small" sx={{ minWidth: 170 }}>
-              <InputLabel id="builder-status-filter-label">Status</InputLabel>
-              <Select
-                labelId="builder-status-filter-label"
-                label="Status"
+            <Box sx={{ px: 1, borderBottom: { xs: 1, lg: 0 }, borderColor: 'divider' }}>
+              <StatusTabs
+                label="Filter builders by status"
                 value={status}
                 onChange={changeStatus}
-                startAdornment={
-                  <InputAdornment position="start">
-                    <FilterListRoundedIcon fontSize="small" color="action" />
-                  </InputAdornment>
-                }
-              >
-                <MenuItem value="all">All builders</MenuItem>
-                <MenuItem value="active">Active</MenuItem>
-                <MenuItem value="inactive">Inactive</MenuItem>
-              </Select>
-            </FormControl>
+                options={statusOptions}
+              />
+            </Box>
+            <Box sx={{ p: 1.25 }}>
+              <TextField
+                value={search}
+                onChange={changeSearch}
+                size="small"
+                placeholder="Search builders or contacts"
+                sx={{ width: { xs: '100%', lg: 340 } }}
+                slotProps={{
+                  htmlInput: { 'aria-label': 'Search builders or contacts' },
+                  input: {
+                    startAdornment: (
+                      <InputAdornment position="start">
+                        <SearchRoundedIcon fontSize="small" color="action" />
+                      </InputAdornment>
+                    ),
+                    endAdornment: search ? (
+                      <InputAdornment position="end">
+                        <IconButton
+                          size="small"
+                          edge="end"
+                          aria-label="Clear search"
+                          onClick={() => {
+                            setSearch('')
+                            setPage(0)
+                          }}
+                        >
+                          <ClearRoundedIcon fontSize="small" />
+                        </IconButton>
+                      </InputAdornment>
+                    ) : null,
+                  },
+                }}
+              />
+            </Box>
           </Stack>
 
           {error && (
@@ -713,28 +696,24 @@ export default function BuildersCatalog({
           )}
 
           <TableContainer>
-            <Table sx={{ minWidth: 1000 }}>
+            <Table
+              size="small"
+              aria-label="Builders"
+              aria-busy={loading}
+              sx={[{ minWidth: isJobsEntry ? 860 : 1000 }, catalogTableSx]}
+            >
               <TableHead>
-                <TableRow
-                  sx={{
-                    bgcolor: 'sidebar.bg',
-                    '& .MuiTableCell-root': {
-                      color: 'text.secondary',
-                      fontSize: 12,
-                      fontWeight: 700,
-                      letterSpacing: '0.04em',
-                      textTransform: 'uppercase',
-                    },
-                  }}
-                >
+                <TableRow>
                   <TableCell>Builder</TableCell>
                   <TableCell>Primary contact</TableCell>
                   <TableCell>Phone</TableCell>
                   <TableCell>Address</TableCell>
-                  {getBuilderJobCount && <TableCell width={100}>Jobs</TableCell>}
+                  {getBuilderJobCount && <TableCell align="right" width={110}>Jobs</TableCell>}
                   <TableCell>Status</TableCell>
                   {canManageBuilders && (
-                    <TableCell align="right" width={72}>Actions</TableCell>
+                    <TableCell align="right" width={64}>
+                      <Box component="span" sx={visuallyHiddenSx}>Actions</Box>
+                    </TableCell>
                   )}
                 </TableRow>
               </TableHead>
@@ -743,35 +722,15 @@ export default function BuildersCatalog({
                   <TableRow
                     key={builder.id}
                     hover
-                    {...(onSelectBuilder && {
-                      role: 'link',
-                      tabIndex: 0,
-                      'aria-label': `View jobs for ${builder.name}`,
-                      onClick: () => onSelectBuilder(builder),
-                      onKeyDown: (event) => {
-                        if (event.target === event.currentTarget && event.key === 'Enter') {
-                          onSelectBuilder(builder)
-                        }
-                      },
-                    })}
-                    sx={{
-                      cursor: onSelectBuilder ? 'pointer' : 'default',
-                      '&:last-child td': { borderBottom: 0 },
-                      ...(onSelectBuilder && {
-                        '&:focus-visible': {
-                          outline: '2px solid',
-                          outlineColor: 'primary.main',
-                          outlineOffset: -2,
-                        },
-                      }),
-                    }}
+                    {...(onSelectBuilder && { onClick: () => onSelectBuilder(builder) })}
+                    sx={{ cursor: onSelectBuilder ? 'pointer' : 'default' }}
                   >
                     <TableCell>
                       <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center' }}>
                         <Box
                           sx={{
-                            width: 36,
-                            height: 36,
+                            width: 32,
+                            height: 32,
                             borderRadius: 1.5,
                             display: 'grid',
                             placeItems: 'center',
@@ -783,41 +742,78 @@ export default function BuildersCatalog({
                           <BusinessRoundedIcon fontSize="small" />
                         </Box>
                         <Box sx={{ minWidth: 0 }}>
-                          <Typography variant="body2" fontWeight={600} noWrap>
-                            {builder.name}
-                          </Typography>
-                          <Typography variant="caption" color="text.secondary">
+                          {onSelectBuilder ? (
+                            <Link
+                              component="button"
+                              type="button"
+                              underline="hover"
+                              variant="body2"
+                              fontWeight={700}
+                              color="text.primary"
+                              aria-label={`View jobs for ${builder.name}`}
+                              onClick={(event) => {
+                                event.stopPropagation()
+                                onSelectBuilder(builder)
+                              }}
+                              sx={[{ textAlign: 'left' }, focusRingSx]}
+                            >
+                              {builder.name}
+                            </Link>
+                          ) : (
+                            <Typography variant="body2" fontWeight={700} noWrap>
+                              {builder.name}
+                            </Typography>
+                          )}
+                          <Typography variant="caption" color="text.secondary" component="div">
                             {builder.code}
                           </Typography>
                         </Box>
                       </Stack>
                     </TableCell>
                     <TableCell sx={{ maxWidth: 250 }}>
-                      <Typography variant="body2" fontWeight={500} noWrap>
+                      <Typography
+                        variant="body2"
+                        fontWeight={500}
+                        noWrap
+                        color={builder.contactName ? 'text.primary' : 'text.disabled'}
+                      >
                         {builder.contactName || 'No contact'}
                       </Typography>
-                      <Typography variant="caption" color="text.secondary" noWrap component="div">
+                      <Typography
+                        variant="caption"
+                        color={builder.contactEmail ? 'text.secondary' : 'text.disabled'}
+                        noWrap
+                        component="div"
+                      >
                         {builder.contactEmail || 'No email'}
                       </Typography>
                     </TableCell>
                     <TableCell>
-                      <Typography variant="body2" color="text.secondary" noWrap>
+                      <Typography
+                        variant="body2"
+                        color={builder.contactPhone ? 'text.secondary' : 'text.disabled'}
+                        noWrap
+                      >
                         {builder.contactPhone ? formatPhoneNumber(builder.contactPhone) : 'No phone'}
                       </Typography>
                     </TableCell>
                     <TableCell sx={{ maxWidth: 300 }}>
                       <Typography
                         variant="body2"
-                        color="text.secondary"
+                        color={formatBuilderAddress(builder) ? 'text.secondary' : 'text.disabled'}
                         sx={{ whiteSpace: 'pre-line' }}
                       >
                         {formatBuilderAddress(builder) || 'No address'}
                       </Typography>
                     </TableCell>
                     {getBuilderJobCount && (
-                      <TableCell>
-                        <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
-                          <Typography variant="body2" fontWeight={600}>
+                      <TableCell align="right">
+                        <Stack
+                          direction="row"
+                          spacing={0.5}
+                          sx={{ alignItems: 'center', justifyContent: 'flex-end' }}
+                        >
+                          <Typography variant="body2" fontWeight={700}>
                             {getBuilderJobCount(builder)}
                           </Typography>
                           {isJobsEntry && (
@@ -831,78 +827,52 @@ export default function BuildersCatalog({
                       </TableCell>
                     )}
                     <TableCell>
-                      <Chip
-                        label={builder.isActive ? 'Active' : 'Inactive'}
-                        size="small"
-                        color={builder.isActive ? 'success' : 'default'}
-                        variant={builder.isActive ? 'filled' : 'outlined'}
-                        sx={{
-                          fontWeight: 600,
-                          ...(builder.isActive && {
-                            bgcolor: 'success.light',
-                            color: 'success.dark',
-                          }),
-                        }}
-                      />
+                      <StatusChip active={builder.isActive} />
                     </TableCell>
                     {canManageBuilders && (
                       <TableCell align="right">
-                        <IconButton
-                          size="small"
-                          aria-label={`Actions for ${builder.name}`}
-                          onClick={(event) => handleMenuOpen(event, builder)}
-                        >
-                          <MoreHorizRoundedIcon />
-                        </IconButton>
+                        <RowActionsMenu
+                          label={`Actions for ${builder.name}`}
+                          items={[
+                            {
+                              label: 'Edit',
+                              icon: <EditOutlinedIcon fontSize="small" />,
+                              onClick: () => setDialogState({ mode: 'edit', builder }),
+                            },
+                            {
+                              label: 'Deactivate',
+                              icon: <BlockRoundedIcon fontSize="small" />,
+                              color: 'error.main',
+                              disabled: !builder.isActive,
+                              onClick: () => setDeactivateTarget(builder),
+                            },
+                          ]}
+                        />
                       </TableCell>
                     )}
                   </TableRow>
                 ))}
 
                 {loading && visibleBuilders.length === 0 && (
-                  <TableRow>
-                    <TableCell
-                      colSpan={5 + Number(Boolean(getBuilderJobCount)) + Number(canManageBuilders)}
-                      sx={{ py: 8, textAlign: 'center' }}
-                    >
-                      <Typography color="text.secondary">Loading builders...</Typography>
-                    </TableCell>
-                  </TableRow>
-                )}
-
-                {!loading && visibleBuilders.length === 0 && (
-                  <TableRow>
-                    <TableCell
-                      colSpan={5 + Number(Boolean(getBuilderJobCount)) + Number(canManageBuilders)}
-                      sx={{ py: 8, textAlign: 'center' }}
-                    >
-                      <Box
-                        sx={{
-                          width: 48,
-                          height: 48,
-                          borderRadius: '50%',
-                          bgcolor: 'sidebar.bg',
-                          color: 'text.secondary',
-                          display: 'grid',
-                          placeItems: 'center',
-                          mx: 'auto',
-                          mb: 1.5,
-                        }}
-                      >
-                        <SearchRoundedIcon />
-                      </Box>
-                      <Typography fontWeight={600}>No builders found</Typography>
-                      <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-                        {builders.length === 0
-                          ? 'Create the first builder to start the catalog.'
-                          : 'Try changing your search or status filter.'}
-                      </Typography>
-                    </TableCell>
-                  </TableRow>
+                  <CatalogSkeletonRows columns={columnCount} />
                 )}
               </TableBody>
             </Table>
           </TableContainer>
+
+          {!loading && visibleBuilders.length === 0 && (
+            <CatalogEmptyState
+              title="No builders found"
+              description={builders.length === 0
+                ? 'Create the first builder to start the catalog.'
+                : 'No builder matches your search or status filter.'}
+              action={hasFilters && builders.length > 0 && (
+                <Button size="small" variant="outlined" onClick={clearFilters}>
+                  Clear filters
+                </Button>
+              )}
+            />
+          )}
 
           <TablePagination
             component="div"
@@ -915,30 +885,10 @@ export default function BuildersCatalog({
               setPage(0)
             }}
             rowsPerPageOptions={[5, 10, 25]}
+            labelRowsPerPage="Rows"
           />
         </Box>
       </Box>
-
-      <Menu
-        anchorEl={menuAnchor}
-        open={Boolean(menuAnchor)}
-        onClose={handleMenuClose}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-        transformOrigin={{ vertical: 'top', horizontal: 'right' }}
-      >
-        <MenuItem onClick={openEditDialog}>
-          <EditOutlinedIcon fontSize="small" sx={{ mr: 1.25 }} />
-          Edit
-        </MenuItem>
-        <MenuItem
-          onClick={openDeactivateDialog}
-          disabled={!selectedBuilder?.isActive}
-          sx={{ color: 'error.main' }}
-        >
-          <BlockRoundedIcon fontSize="small" sx={{ mr: 1.25 }} />
-          Deactivate
-        </MenuItem>
-      </Menu>
 
       {dialogState && (
         <BuilderDialog

@@ -6,8 +6,6 @@ import {
   Alert,
   Box,
   Button,
-  Card,
-  CardContent,
   Chip,
   Dialog,
   DialogActions,
@@ -17,7 +15,7 @@ import {
   IconButton,
   InputAdornment,
   InputLabel,
-  Menu,
+  Link,
   MenuItem,
   Select,
   Snackbar,
@@ -32,16 +30,24 @@ import {
   TextField,
   Typography,
 } from '@mui/material'
-import ApartmentRoundedIcon from '@mui/icons-material/ApartmentRounded'
-import BackupTableRoundedIcon from '@mui/icons-material/BackupTableRounded'
-import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded'
+import ArrowForwardRoundedIcon from '@mui/icons-material/ArrowForwardRounded'
 import BlockRoundedIcon from '@mui/icons-material/BlockRounded'
+import ClearRoundedIcon from '@mui/icons-material/ClearRounded'
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined'
-import HomeWorkRoundedIcon from '@mui/icons-material/HomeWorkRounded'
-import LayersRoundedIcon from '@mui/icons-material/LayersRounded'
-import MoreHorizRoundedIcon from '@mui/icons-material/MoreHorizRounded'
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
 import ResponsiveCreateButton from '../../../components/common/ResponsiveCreateButton'
+import {
+  CatalogEmptyState,
+  CatalogPageHeader,
+  CatalogSkeletonRows,
+  FigureStrip,
+  RowActionsMenu,
+  StatusChip,
+  StatusTabs,
+  catalogTableSx,
+  focusRingSx,
+  visuallyHiddenSx,
+} from '../../../components/common/CatalogPage'
 import { usePersistentState, isStoredString } from '../../../hooks/usePersistentState.js'
 import { BuildersCatalog } from '../../builders/index.js'
 import { useBuilders } from '../../builders/context/useBuilders.js'
@@ -308,36 +314,6 @@ function JobDialog({
   )
 }
 
-function SummaryCard({ icon, label, value }) {
-  return (
-    <Card variant="outlined" sx={{ flex: 1, minWidth: 180 }}>
-      <CardContent sx={{ display: 'flex', alignItems: 'center', gap: 1.5, p: '16px !important' }}>
-        <Box
-          sx={{
-            width: 40,
-            height: 40,
-            borderRadius: 1.5,
-            display: 'grid',
-            placeItems: 'center',
-            bgcolor: 'primary.light',
-            color: 'primary.main',
-          }}
-        >
-          {icon}
-        </Box>
-        <Box>
-          <Typography variant="h6" fontWeight={700} sx={{ lineHeight: 1.2 }}>
-            {value}
-          </Typography>
-          <Typography variant="caption" color="text.secondary">
-            {label}
-          </Typography>
-        </Box>
-      </CardContent>
-    </Card>
-  )
-}
-
 const JOB_ROWS_PER_PAGE_OPTIONS = [5, 10, 25]
 
 export default function JobsCatalog() {
@@ -374,8 +350,7 @@ export default function JobsCatalog() {
     JOB_ROWS_PER_PAGE_OPTIONS[0],
     (value) => JOB_ROWS_PER_PAGE_OPTIONS.includes(value),
   )
-  const [menuAnchor, setMenuAnchor] = useState(null)
-  const [selectedJob, setSelectedJob] = useState(null)
+  const [statusFilter, setStatusFilter] = useState('all')
   const [editTarget, setEditTarget] = useState(null)
   const [deactivateTarget, setDeactivateTarget] = useState(null)
   const [submitting, setSubmitting] = useState(false)
@@ -408,7 +383,7 @@ export default function JobsCatalog() {
     [jobs, selectedBuilder],
   )
 
-  const filteredJobs = useMemo(() => {
+  const searchedJobs = useMemo(() => {
     const query = search.trim().toLowerCase()
 
     return builderJobs.filter((job) =>
@@ -424,6 +399,17 @@ export default function JobsCatalog() {
         .includes(query),
     )
   }, [builderJobs, contacts, people, search])
+  const statusOptions = useMemo(() => [
+    { value: 'all', label: 'All', count: searchedJobs.length },
+    { value: 'active', label: 'Active', count: searchedJobs.filter((job) => job.isActive).length },
+    { value: 'inactive', label: 'Inactive', count: searchedJobs.filter((job) => !job.isActive).length },
+  ], [searchedJobs])
+  const filteredJobs = useMemo(
+    () => searchedJobs.filter((job) =>
+      statusFilter === 'all' || (statusFilter === 'active' ? job.isActive : !job.isActive),
+    ),
+    [searchedJobs, statusFilter],
+  )
 
   const visibleJobs = filteredJobs.slice(
     page * rowsPerPage,
@@ -485,14 +471,14 @@ export default function JobsCatalog() {
 
   const openBuilderJobs = (builder) => {
     setSearch('')
+    setStatusFilter('all')
     setPage(0)
-    navigate(builderJobsPath(builder.id))
-  }
-
-  const showBuilders = () => {
-    setSearch('')
-    setPage(0)
-    navigate('/jobs')
+    // Arriving from the sidebar's Create button: carry the intent to the Job form.
+    navigate(
+      createRequested && builder.isActive
+        ? `${builderJobsPath(builder.id)}?create=1`
+        : builderJobsPath(builder.id),
+    )
   }
 
   const openCreateDialog = () => {
@@ -507,35 +493,14 @@ export default function JobsCatalog() {
     }
   }
 
-  const handleMenuOpen = (event, job) => {
-    event.stopPropagation()
-    setMenuAnchor(event.currentTarget)
-    setSelectedJob(job)
-  }
-
-  const handleMenuClose = () => {
-    setMenuAnchor(null)
-    setSelectedJob(null)
-  }
-
-  const openEditDialog = () => {
-    setEditTarget(selectedJob)
-    handleMenuClose()
-  }
-
-  const openDeactivateDialog = () => {
-    setDeactivateTarget(selectedJob)
-    handleMenuClose()
-  }
-
   const openJobDetails = (job) => {
     navigate(jobPlansOptionsPath(selectedBuilder.id, job.id))
   }
 
-  const openSelectedJobDetails = () => {
-    const job = selectedJob
-    handleMenuClose()
-    if (job) openJobDetails(job)
+  const clearFilters = () => {
+    setSearch('')
+    setStatusFilter('all')
+    setPage(0)
   }
 
   const handleCreateContact = async (draft, builderName, type) => {
@@ -622,6 +587,11 @@ export default function JobsCatalog() {
   if (!selectedBuilder) {
     return (
       <BuildersCatalog
+        banner={createRequested && (
+          <Alert severity="info" sx={{ mb: 2.5 }}>
+            Pick a builder to create the new job for. Jobs always belong to a builder.
+          </Alert>
+        )}
         getBuilderJobCount={(builder) =>
           jobs.filter((job) => String(job.builderId) === String(builder.id)).length
         }
@@ -636,77 +606,42 @@ export default function JobsCatalog() {
         job={detailJob}
         builderId={selectedBuilder.id}
         contacts={resolveJobContacts(detailJob, people, contacts)}
-        onBack={() => navigate(builderJobsPath(selectedBuilder.id))}
       />
     )
   }
 
+  const columnCount = 5 + Number(canManageJobs)
+  const hasFilters = Boolean(search.trim()) || statusFilter !== 'all'
+
   return (
     <Box sx={{ minHeight: '100%', bgcolor: 'background.default' }}>
-      <Box
-        sx={{
-          px: { xs: 2.5, md: 4 },
-          py: 3,
-          bgcolor: 'background.paper',
-          borderBottom: 1,
-          borderColor: 'divider',
-          display: 'flex',
-          alignItems: { xs: 'flex-start', sm: 'center' },
-          justifyContent: 'space-between',
-          gap: 2,
-          flexDirection: { xs: 'column', sm: 'row' },
-        }}
-      >
-        <Stack spacing={1.25} sx={{ alignItems: 'flex-start' }}>
-          <Button
-            color="inherit"
-            size="small"
-            startIcon={<ArrowBackRoundedIcon />}
-            onClick={showBuilders}
-            sx={{ ml: -1, color: 'text.secondary' }}
-          >
-            All builders
-          </Button>
-          <Box>
-            <Typography
-              variant="caption"
-              color="primary.main"
-              fontWeight={700}
-              sx={{ display: 'block', mb: 0.5, letterSpacing: '0.04em' }}
-            >
-              JOBS / BUILDERS / {selectedBuilder.name.toUpperCase()}
-            </Typography>
-            <Typography variant="h5" fontWeight={700} color="text.primary">
-              {selectedBuilder.name} jobs
-            </Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-              Viewing jobs assigned to this builder. Select one to manage its Plans &amp; Options.
-            </Typography>
-          </Box>
-        </Stack>
-        {canManageJobs && selectedBuilder.isActive && (
+      <CatalogPageHeader
+        breadcrumbs={[
+          { label: 'Jobs', to: '/jobs' },
+          { label: selectedBuilder.name },
+        ]}
+        title={selectedBuilder.name}
+        titleAdornment={<StatusChip active={selectedBuilder.isActive} />}
+        subtitle={`Builder ${selectedBuilder.code} · select a job to manage its Plans & options.`}
+        meta={(
+          <FigureStrip
+            label={`${selectedBuilder.name} summary`}
+            figures={[
+              { label: builderJobs.length === 1 ? 'job' : 'jobs', value: builderJobs.length },
+              { label: totalPlans === 1 ? 'plan' : 'plans', value: totalPlans },
+              { label: 'lots from phases', value: totalUnits },
+            ]}
+          />
+        )}
+        actions={canManageJobs && selectedBuilder.isActive && (
           <ResponsiveCreateButton
             label="New job"
             onClick={openCreateDialog}
           />
         )}
-      </Box>
+      />
 
       <Box sx={{ p: { xs: 2.5, md: 4 } }}>
-        <Box sx={{ mb: 2.5 }}>
-          <Typography variant="subtitle1" fontWeight={700}>
-            Jobs for {selectedBuilder.name}
-          </Typography>
-          <Typography variant="body2" color="text.secondary" sx={{ mt: 0.25 }}>
-            This list only includes jobs belonging to the selected builder.
-          </Typography>
-        </Box>
-        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} sx={{ mb: 3 }}>
-          <SummaryCard icon={<HomeWorkRoundedIcon />} label="Jobs" value={builderJobs.length} />
-          <SummaryCard icon={<LayersRoundedIcon />} label="Plans" value={totalPlans} />
-          <SummaryCard icon={<ApartmentRoundedIcon />} label="Lots from phases" value={totalUnits} />
-        </Stack>
-
         {error && (
           <Alert
             severity="error"
@@ -721,6 +656,12 @@ export default function JobsCatalog() {
           </Alert>
         )}
 
+        {createRequested && !selectedBuilder.isActive && (
+          <Alert severity="info" sx={{ mb: 2.5 }}>
+            {selectedBuilder.name} is inactive, so it cannot receive new jobs. Pick another builder to create one.
+          </Alert>
+        )}
+
         <Box
           sx={{
             bgcolor: 'background.paper',
@@ -731,50 +672,81 @@ export default function JobsCatalog() {
           }}
         >
           <Stack
-            direction={{ xs: 'column', md: 'row' }}
-            spacing={1.5}
-            sx={{ p: 2.5, borderBottom: 1, borderColor: 'divider' }}
+            direction={{ xs: 'column', lg: 'row' }}
+            sx={{
+              alignItems: { lg: 'center' },
+              justifyContent: 'space-between',
+              borderBottom: 1,
+              borderColor: 'divider',
+            }}
           >
-            <TextField
-              value={search}
-              onChange={(event) => {
-                setSearch(event.target.value)
-                setPage(0)
-              }}
-              size="small"
-              placeholder="Search jobs, communities or team members..."
-              sx={{ width: { xs: '100%', md: 380 } }}
-              slotProps={{
-                input: {
-                  startAdornment: (
-                    <InputAdornment position="start">
-                      <SearchRoundedIcon fontSize="small" color="action" />
-                    </InputAdornment>
-                  ),
-                },
-              }}
-            />
+            <Box sx={{ px: 1, borderBottom: { xs: 1, lg: 0 }, borderColor: 'divider' }}>
+              <StatusTabs
+                label="Filter jobs by status"
+                value={statusFilter}
+                onChange={(next) => {
+                  setStatusFilter(next)
+                  setPage(0)
+                }}
+                options={statusOptions}
+              />
+            </Box>
+            <Box sx={{ p: 1.25 }}>
+              <TextField
+                value={search}
+                onChange={(event) => {
+                  setSearch(event.target.value)
+                  setPage(0)
+                }}
+                size="small"
+                placeholder="Search jobs, communities or team members"
+                sx={{ width: { xs: '100%', lg: 380 } }}
+                slotProps={{
+                  htmlInput: { 'aria-label': 'Search jobs, communities or team members' },
+                  input: {
+                    startAdornment: (
+                      <InputAdornment position="start">
+                        <SearchRoundedIcon fontSize="small" color="action" />
+                      </InputAdornment>
+                    ),
+                    endAdornment: search ? (
+                      <InputAdornment position="end">
+                        <IconButton
+                          size="small"
+                          edge="end"
+                          aria-label="Clear search"
+                          onClick={() => {
+                            setSearch('')
+                            setPage(0)
+                          }}
+                        >
+                          <ClearRoundedIcon fontSize="small" />
+                        </IconButton>
+                      </InputAdornment>
+                    ) : null,
+                  },
+                }}
+              />
+            </Box>
           </Stack>
 
           <TableContainer>
-            <Table sx={{ minWidth: 840 }}>
+            <Table
+              size="small"
+              aria-label={`Jobs for ${selectedBuilder.name}`}
+              aria-busy={loading}
+              sx={[{ minWidth: 820 }, catalogTableSx]}
+            >
               <TableHead>
-                <TableRow
-                  sx={{
-                    bgcolor: 'sidebar.bg',
-                    '& .MuiTableCell-root': {
-                      color: 'text.secondary',
-                      fontSize: 12,
-                      fontWeight: 700,
-                      letterSpacing: '0.04em',
-                      textTransform: 'uppercase',
-                    },
-                  }}
-                >
+                <TableRow>
                   <TableCell>Job#</TableCell>
-                  <TableCell>Community / Builder</TableCell>
+                  <TableCell>Community</TableCell>
                   <TableCell>Contacts</TableCell>
-                  <TableCell width={150}>Lots from Phases</TableCell>
+                  <TableCell align="right" width={80}>Plans</TableCell>
+                  <TableCell align="right" width={130}>Lots from phases</TableCell>
+                  <TableCell align="right" width={canManageJobs ? 120 : 64}>
+                    <Box component="span" sx={visuallyHiddenSx}>Actions</Box>
+                  </TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
@@ -782,63 +754,34 @@ export default function JobsCatalog() {
                   <TableRow
                     key={job.id}
                     hover
-                    role="link"
-                    tabIndex={0}
-                    aria-label={`Open Job ${job.code}`}
                     onClick={() => openJobDetails(job)}
-                    onKeyDown={(event) => {
-                      if (event.target === event.currentTarget && event.key === 'Enter') {
-                        openJobDetails(job)
-                      }
-                    }}
-                    sx={{
-                      cursor: 'pointer',
-                      '&:last-child td': { borderBottom: 0 },
-                      '&:focus-visible': {
-                        outline: '2px solid',
-                        outlineColor: 'primary.main',
-                        outlineOffset: -2,
-                      },
-                    }}
+                    sx={{ cursor: 'pointer' }}
                   >
                     <TableCell>
-                      <Stack direction="row" spacing={1.25} sx={{ alignItems: 'center' }}>
-                        <Box
-                          sx={{
-                            width: 36,
-                            height: 36,
-                            borderRadius: 1.5,
-                            display: 'grid',
-                            placeItems: 'center',
-                            bgcolor: 'primary.light',
-                            color: 'primary.main',
-                            flexShrink: 0,
+                      <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+                        <Link
+                          component="button"
+                          type="button"
+                          underline="hover"
+                          variant="body2"
+                          fontWeight={700}
+                          aria-label={`Open Job ${job.code}`}
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            openJobDetails(job)
                           }}
+                          sx={[{ textAlign: 'left' }, focusRingSx]}
                         >
-                          <BackupTableRoundedIcon fontSize="small" />
-                        </Box>
-                        <Box>
-                          <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
-                            <Typography variant="body2" fontWeight={700} noWrap color="primary.main">
-                              {job.code}
-                            </Typography>
-                            {!job.isActive && (
-                              <Chip label="Inactive" size="small" variant="outlined" />
-                            )}
-                          </Stack>
-                          <Typography variant="caption" color="text.secondary">
-                            {getJobPlanCount(job)}{' '}
-                            {getJobPlanCount(job) === 1 ? 'plan' : 'plans'}
-                          </Typography>
-                        </Box>
+                          {job.code}
+                        </Link>
+                        {!job.isActive && (
+                          <Chip label="Inactive" size="small" variant="outlined" />
+                        )}
                       </Stack>
                     </TableCell>
                     <TableCell>
                       <Typography variant="body2" fontWeight={600} noWrap>
                         {job.community}
-                      </Typography>
-                      <Typography variant="caption" color="text.secondary" noWrap component="div">
-                        {job.builder}
                       </Typography>
                     </TableCell>
                     <TableCell sx={{ minWidth: 260 }}>
@@ -846,23 +789,59 @@ export default function JobsCatalog() {
                         contacts={resolveJobContacts(job, people, contacts)}
                       />
                     </TableCell>
-                    <TableCell>
+                    <TableCell align="right">
+                      <Typography
+                        variant="body2"
+                        color={getJobPlanCount(job) ? 'text.primary' : 'text.disabled'}
+                      >
+                        {getJobPlanCount(job)}
+                      </Typography>
+                    </TableCell>
+                    <TableCell align="right">
+                      <Typography
+                        variant="body2"
+                        color={getJobUnitCount(job) ? 'text.primary' : 'text.disabled'}
+                      >
+                        {getJobUnitCount(job)}
+                      </Typography>
+                    </TableCell>
+                    <TableCell align="right">
                       <Stack
                         direction="row"
-                        spacing={1}
-                        sx={{ alignItems: 'center', justifyContent: 'space-between' }}
+                        spacing={0.5}
+                        sx={{ alignItems: 'center', justifyContent: 'flex-end' }}
                       >
-                        <Typography variant="body2" fontWeight={600}>
-                          {getJobUnitCount(job)}
-                        </Typography>
+                        <Button
+                          size="small"
+                          color="inherit"
+                          endIcon={<ArrowForwardRoundedIcon />}
+                          aria-label={`Open Plans & options for Job ${job.code}`}
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            openJobDetails(job)
+                          }}
+                          sx={{ color: 'primary.main' }}
+                        >
+                          Open
+                        </Button>
                         {canManageJobs && (
-                          <IconButton
-                            size="small"
-                            aria-label={`Actions for ${job.code}`}
-                            onClick={(event) => handleMenuOpen(event, job)}
-                          >
-                            <MoreHorizRoundedIcon />
-                          </IconButton>
+                          <RowActionsMenu
+                            label={`Actions for ${job.code}`}
+                            items={[
+                              {
+                                label: 'Edit',
+                                icon: <EditOutlinedIcon fontSize="small" />,
+                                onClick: () => setEditTarget(job),
+                              },
+                              {
+                                label: 'Deactivate',
+                                icon: <BlockRoundedIcon fontSize="small" />,
+                                color: 'error.main',
+                                disabled: !job.isActive,
+                                onClick: () => setDeactivateTarget(job),
+                              },
+                            ]}
+                          />
                         )}
                       </Stack>
                     </TableCell>
@@ -870,29 +849,33 @@ export default function JobsCatalog() {
                 ))}
 
                 {loading && visibleJobs.length === 0 && (
-                  <TableRow>
-                    <TableCell colSpan={4} sx={{ py: 8, textAlign: 'center' }}>
-                      <Typography color="text.secondary">Loading Jobs...</Typography>
-                    </TableCell>
-                  </TableRow>
-                )}
-
-                {!loading && visibleJobs.length === 0 && (
-                  <TableRow>
-                    <TableCell colSpan={4} sx={{ py: 8, textAlign: 'center' }}>
-                      <SearchRoundedIcon color="action" sx={{ fontSize: 40, mb: 1 }} />
-                      <Typography fontWeight={600}>No jobs found</Typography>
-                      <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-                        {search
-                          ? 'Try changing your search.'
-                          : `Create the first job for ${selectedBuilder.name}.`}
-                      </Typography>
-                    </TableCell>
-                  </TableRow>
+                  <CatalogSkeletonRows columns={columnCount} />
                 )}
               </TableBody>
             </Table>
           </TableContainer>
+
+          {!loading && visibleJobs.length === 0 && (
+            <CatalogEmptyState
+              title={builderJobs.length === 0 ? 'No jobs yet' : 'No jobs found'}
+              description={builderJobs.length === 0
+                ? `Create the first job for ${selectedBuilder.name}.`
+                : 'No job matches your search or status filter.'}
+              action={hasFilters && builderJobs.length > 0
+                ? (
+                  <Button size="small" variant="outlined" onClick={clearFilters}>
+                    Clear filters
+                  </Button>
+                )
+                : builderJobs.length === 0 && canManageJobs && selectedBuilder.isActive
+                  ? (
+                    <Button size="small" variant="outlined" onClick={openCreateDialog}>
+                      New job
+                    </Button>
+                  )
+                  : undefined}
+            />
+          )}
 
           <TablePagination
             component="div"
@@ -905,34 +888,10 @@ export default function JobsCatalog() {
               setPage(0)
             }}
             rowsPerPageOptions={JOB_ROWS_PER_PAGE_OPTIONS}
+            labelRowsPerPage="Rows"
           />
         </Box>
       </Box>
-
-      <Menu
-        anchorEl={menuAnchor}
-        open={Boolean(menuAnchor)}
-        onClose={handleMenuClose}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-        transformOrigin={{ vertical: 'top', horizontal: 'right' }}
-      >
-        <MenuItem onClick={openSelectedJobDetails}>
-          <BackupTableRoundedIcon fontSize="small" sx={{ mr: 1.25 }} />
-          View Plans & Options for job #{selectedJob?.code}
-        </MenuItem>
-        <MenuItem onClick={openEditDialog}>
-          <EditOutlinedIcon fontSize="small" sx={{ mr: 1.25 }} />
-          Edit
-        </MenuItem>
-        <MenuItem
-          onClick={openDeactivateDialog}
-          disabled={!selectedJob?.isActive}
-          sx={{ color: 'error.main' }}
-        >
-          <BlockRoundedIcon fontSize="small" sx={{ mr: 1.25 }} />
-          Deactivate
-        </MenuItem>
-      </Menu>
 
       {dialogOpen && (
         <JobDialog

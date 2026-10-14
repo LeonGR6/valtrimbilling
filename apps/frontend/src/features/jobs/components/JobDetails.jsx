@@ -14,6 +14,7 @@ import {
   DialogTitle,
   Divider,
   IconButton,
+  InputAdornment,
   Paper,
   Snackbar,
   Stack,
@@ -24,17 +25,23 @@ import {
   TableHead,
   TableRow,
   TextField,
-  Tooltip,
   Typography,
 } from '@mui/material'
 import AddRoundedIcon from '@mui/icons-material/AddRounded'
-import ApartmentRoundedIcon from '@mui/icons-material/ApartmentRounded'
-import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded'
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
+import ClearRoundedIcon from '@mui/icons-material/ClearRounded'
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined'
 import LayersRoundedIcon from '@mui/icons-material/LayersRounded'
-import LocationCityRoundedIcon from '@mui/icons-material/LocationCityRounded'
-import ReceiptLongRoundedIcon from '@mui/icons-material/ReceiptLongRounded'
+import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
+import {
+  CatalogEmptyState,
+  CatalogPageHeader,
+  FigureStrip,
+  RowActionsMenu,
+  StatusChip,
+  catalogTableSx,
+  visuallyHiddenSx,
+} from '../../../components/common/CatalogPage'
 import {
   emptyJobPlan,
   emptyPlanOption,
@@ -49,6 +56,7 @@ import {
   planOptionSchema,
 } from '../schemas/jobSequenceSheetSchema.js'
 import { useJobs } from '../context/useJobs.js'
+import { builderJobsPath } from '../utils/jobRoutes.js'
 import JobModuleNavigation from './JobModuleNavigation.jsx'
 import { JobContactsGrid } from './JobContacts.jsx'
 
@@ -268,52 +276,40 @@ function OptionDialog({ plan, option, onClose, onSave, submitting }) {
   )
 }
 
-function DetailMetric({ icon, label, value }) {
-  return (
-    <Card variant="outlined" sx={{ flex: 1, minWidth: 170 }}>
-      <CardContent sx={{ display: 'flex', alignItems: 'center', gap: 1.5, p: '16px !important' }}>
-        <Box
-          sx={{
-            width: 40,
-            height: 40,
-            borderRadius: 1.5,
-            display: 'grid',
-            placeItems: 'center',
-            bgcolor: 'primary.light',
-            color: 'primary.main',
-          }}
-        >
-          {icon}
-        </Box>
-        <Box>
-          <Typography variant="h6" fontWeight={700} sx={{ lineHeight: 1.2 }}>
-            {value}
-          </Typography>
-          <Typography variant="caption" color="text.secondary">
-            {label}
-          </Typography>
-        </Box>
-      </CardContent>
-    </Card>
-  )
+function planActions({ onEditPlan, onDeletePlan }) {
+  return [
+    {
+      label: 'Edit plan',
+      icon: <EditOutlinedIcon fontSize="small" />,
+      onClick: onEditPlan,
+    },
+    {
+      label: 'Delete plan',
+      icon: <DeleteOutlineRoundedIcon fontSize="small" />,
+      color: 'error.main',
+      onClick: onDeletePlan,
+    },
+  ]
 }
 
-function JobField({ label, value }) {
-  return (
-    <Box sx={{ minWidth: 170 }}>
-      <Typography variant="caption" color="text.secondary" component="div">
-        {label}
-      </Typography>
-      <Typography variant="body2" fontWeight={600} sx={{ mt: 0.25 }}>
-        {value || 'Unassigned'}
-      </Typography>
-    </Box>
-  )
+function optionActions({ onEditOption, onDeleteOption }) {
+  return [
+    {
+      label: 'Edit option',
+      icon: <EditOutlinedIcon fontSize="small" />,
+      onClick: onEditOption,
+    },
+    {
+      label: 'Delete option',
+      icon: <DeleteOutlineRoundedIcon fontSize="small" />,
+      color: 'error.main',
+      onClick: onDeleteOption,
+    },
+  ]
 }
 
 function PlanCard({
   plan,
-  position,
   canManage,
   onAddOption,
   onEditPlan,
@@ -327,49 +323,27 @@ function PlanCard({
     <Card component="article" variant="outlined" sx={{ overflow: 'hidden' }}>
       <Box
         sx={{
-          px: { xs: 2, sm: 2.5 },
-          py: 2,
+          px: 2,
+          py: 1.5,
           bgcolor: 'primary.light',
           borderBottom: 1,
           borderColor: 'divider',
         }}
       >
-        <Stack
-          direction={{ xs: 'column', md: 'row' }}
-          spacing={2}
-          sx={{ alignItems: { md: 'center' }, justifyContent: 'space-between' }}
-        >
-          <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center', minWidth: 0 }}>
-            <Box
-              sx={{
-                width: 42,
-                height: 42,
-                flexShrink: 0,
-                borderRadius: 1.5,
-                display: 'grid',
-                placeItems: 'center',
-                bgcolor: 'primary.main',
-                color: 'primary.contrastText',
-                fontWeight: 800,
-              }}
-            >
-              {position}
-            </Box>
-            <Box sx={{ minWidth: 0 }}>
-              <Typography variant="overline" color="text.secondary" fontWeight={700}>
-                Plan code:{' '}
-                <Box component="span" sx={{ color: 'text.primary', fontWeight: 900 }}>
-                  {plan.code}
-                </Box>
-              </Typography>
-              <Typography variant="h6" fontWeight={800} sx={{ overflowWrap: 'anywhere' }}>
-                {plan.name || `Plan ${plan.code}`}
-              </Typography>
-            </Box>
-          </Stack>
-
+        <Stack direction="row" spacing={1} sx={{ alignItems: 'center', justifyContent: 'space-between' }}>
+          <Box sx={{ minWidth: 0 }}>
+            <Typography variant="body2" color="text.secondary">
+              Plan{' '}
+              <Box component="span" sx={{ color: 'text.primary', fontWeight: 800 }}>
+                {plan.code}
+              </Box>
+            </Typography>
+            <Typography variant="subtitle1" fontWeight={800} sx={{ overflowWrap: 'anywhere' }}>
+              {plan.name || `Plan ${plan.code}`}
+            </Typography>
+          </Box>
           {canManage && (
-            <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: 'wrap' }}>
+            <Stack direction="row" spacing={0.5} sx={{ flexShrink: 0, alignItems: 'center' }}>
               <Button
                 size="small"
                 variant="contained"
@@ -379,177 +353,71 @@ function PlanCard({
               >
                 Add option
               </Button>
-              <Button
-                size="small"
-                variant="outlined"
-                color="inherit"
-                startIcon={<EditOutlinedIcon />}
-                onClick={onEditPlan}
-              >
-                Edit plan
-              </Button>
-              <Tooltip title="Delete plan">
-                <IconButton
-                  size="small"
-                  color="error"
-                  aria-label={`Delete Plan ${plan.code}`}
-                  onClick={onDeletePlan}
-                >
-                  <DeleteOutlineRoundedIcon fontSize="small" />
-                </IconButton>
-              </Tooltip>
+              <RowActionsMenu
+                label={`Actions for Plan ${plan.code}`}
+                items={planActions({ onEditPlan, onDeletePlan })}
+              />
             </Stack>
           )}
         </Stack>
       </Box>
 
-      <Box sx={{ p: { xs: 2, sm: 2.5 } }}>
-        <Stack
-          direction="row"
-          spacing={1}
-          sx={{ mb: 1.5, alignItems: 'center', justifyContent: 'space-between' }}
-        >
-          <Box>
-            <Typography variant="subtitle1" fontWeight={750}>
-              Options
-            </Typography>
-            <Typography variant="caption" color="text.secondary">
-              Option code and description for this plan.
-            </Typography>
-          </Box>
-          <Chip
-            size="small"
-            variant="outlined"
-            label={`${options.length} ${options.length === 1 ? 'option' : 'options'}`}
-          />
-        </Stack>
+      <Box sx={{ p: 2 }}>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+          {plan.optionCount ?? options.length}{' '}
+          {(plan.optionCount ?? options.length) === 1 ? 'option' : 'options'}
+          {plan.optionCount != null && plan.optionCount !== options.length
+            ? ` (${options.length} shown)`
+            : ''}
+        </Typography>
 
         {options.length > 0 ? (
-          <Box
-            sx={{
-              border: 1,
-              borderColor: 'divider',
-              borderRadius: 1.5,
-              overflow: 'hidden',
-            }}
-          >
-            <Box
-              sx={{
-                display: { xs: 'none', md: 'grid' },
-                gridTemplateColumns: 'minmax(170px, 0.32fr) minmax(260px, 1fr) auto',
-                gap: 2,
-                px: 2,
-                py: 1,
-                bgcolor: 'action.hover',
-                borderBottom: 1,
-                borderColor: 'divider',
-              }}
-            >
-              <Typography variant="caption" color="text.secondary" fontWeight={750}>
-                OPT #
-              </Typography>
-              <Typography variant="caption" color="text.secondary" fontWeight={750}>
-                Description
-              </Typography>
-              <Typography variant="caption" color="text.secondary" fontWeight={750}>
-                Actions
-              </Typography>
-            </Box>
-
-            {options.map((option, optionIndex) => (
-              <Box
+          <Stack divider={<Divider flexItem />} sx={{ border: 1, borderColor: 'divider', borderRadius: 1.5 }}>
+            {options.map((option) => (
+              <Stack
                 key={option.id}
-                sx={{
-                  display: 'grid',
-                  gridTemplateColumns: {
-                    xs: '1fr',
-                    md: 'minmax(170px, 0.32fr) minmax(260px, 1fr) auto',
-                  },
-                  alignItems: { md: 'center' },
-                  gap: { xs: 1.25, md: 2 },
-                  px: 2,
-                  py: 1.5,
-                  borderTop: optionIndex === 0 ? 0 : 1,
-                  borderColor: 'divider',
-                  bgcolor: optionIndex % 2 === 0 ? 'background.paper' : 'action.hover',
-                }}
+                direction="row"
+                spacing={1}
+                sx={{ px: 1.5, py: 1.25, alignItems: 'flex-start', justifyContent: 'space-between' }}
               >
-                <Box>
-                  <Typography
-                    variant="caption"
-                    color="text.secondary"
-                    sx={{ display: { xs: 'block', md: 'none' }, mb: 0.5 }}
-                  >
-                    OPT #
-                  </Typography>
+                <Box sx={{ minWidth: 0 }}>
                   <Chip
                     size="small"
                     color="primary"
                     variant="outlined"
                     label={option.code}
-                    sx={{ fontWeight: 750, maxWidth: '100%' }}
+                    sx={{ fontWeight: 700, maxWidth: '100%', mb: 0.5 }}
                   />
-                </Box>
-                <Box sx={{ minWidth: 0 }}>
-                  <Typography
-                    variant="caption"
-                    color="text.secondary"
-                    sx={{ display: { xs: 'block', md: 'none' }, mb: 0.25 }}
-                  >
-                    Description
-                  </Typography>
                   <Typography variant="body2" sx={{ overflowWrap: 'anywhere' }}>
                     {option.description}
                   </Typography>
                 </Box>
                 {canManage && (
-                  <Stack
-                    direction="row"
-                    spacing={0.5}
-                    sx={{ justifyContent: { xs: 'flex-start', md: 'flex-end' } }}
-                  >
-                    <Button
-                      size="small"
-                      color="inherit"
-                      startIcon={<EditOutlinedIcon />}
-                      onClick={() => onEditOption(option)}
-                    >
-                      Edit
-                    </Button>
-                    <Tooltip title="Delete option">
-                      <IconButton
-                        size="small"
-                        color="error"
-                        aria-label={`Delete option ${option.code} for Plan ${plan.code}`}
-                        onClick={() => onDeleteOption(option)}
-                      >
-                        <DeleteOutlineRoundedIcon fontSize="small" />
-                      </IconButton>
-                    </Tooltip>
-                  </Stack>
+                  <RowActionsMenu
+                    label={`Actions for option ${option.code} in Plan ${plan.code}`}
+                    items={optionActions({
+                      onEditOption: () => onEditOption(option),
+                      onDeleteOption: () => onDeleteOption(option),
+                    })}
+                  />
                 )}
-              </Box>
+              </Stack>
             ))}
-          </Box>
+          </Stack>
         ) : (
           <Box
             sx={{
-              py: 3,
+              py: 2.5,
               px: 2,
               textAlign: 'center',
               border: 1,
               borderStyle: 'dashed',
               borderColor: 'divider',
               borderRadius: 1.5,
-              bgcolor: 'action.hover',
             }}
           >
-            <ReceiptLongRoundedIcon color="disabled" sx={{ mb: 0.5 }} />
-            <Typography variant="body2" fontWeight={700}>
-              No options added to this plan
-            </Typography>
-            <Typography variant="caption" color="text.secondary" component="div" sx={{ mb: 1.5 }}>
-              Add the first option to complete this plan.
+            <Typography variant="body2" color="text.secondary" sx={{ mb: canManage ? 1.5 : 0 }}>
+              No options in this plan yet.
             </Typography>
             {canManage && (
               <Button size="small" variant="outlined" startIcon={<AddRoundedIcon />} onClick={onAddOption}>
@@ -576,11 +444,10 @@ function PlansOptionsSheet({
   return (
     <>
       <Stack spacing={2} sx={{ display: { xs: 'flex', md: 'none' }, p: 2 }}>
-        {plans.map((plan, index) => (
+        {plans.map((plan) => (
           <PlanCard
             key={plan.id}
             plan={plan}
-            position={index + 1}
             canManage={canManage}
             onAddOption={() => onAddOption(plan)}
             onEditPlan={() => onEditPlan(plan)}
@@ -597,27 +464,20 @@ function PlansOptionsSheet({
       </Stack>
 
       <TableContainer sx={{ display: { xs: 'none', md: 'block' }, overflowX: 'auto' }}>
-        <Table size="small" aria-label="Plans and options worksheet" sx={{ minWidth: 900 }}>
+        <Table
+          size="small"
+          aria-label="Plans and options worksheet"
+          sx={[{ minWidth: 820 }, catalogTableSx]}
+        >
           <TableHead>
-            <TableRow
-              sx={{
-                bgcolor: 'action.hover',
-                '& th': {
-                  py: 1.25,
-                  color: 'text.secondary',
-                  fontSize: 12,
-                  fontWeight: 800,
-                  letterSpacing: '0.03em',
-                  textTransform: 'uppercase',
-                  whiteSpace: 'nowrap',
-                },
-              }}
-            >
-              <TableCell sx={{ width: 125 }}>Item</TableCell>
+            <TableRow>
+              <TableCell sx={{ width: 110 }}>Item</TableCell>
               <TableCell sx={{ width: 180 }}>Code</TableCell>
               <TableCell>Name / description</TableCell>
-              <TableCell align="center" sx={{ width: 100 }}>Options</TableCell>
-              <TableCell align="right" sx={{ width: 220 }}>Actions</TableCell>
+              <TableCell align="center" sx={{ width: 90 }}>Options</TableCell>
+              <TableCell align="right" sx={{ width: 190 }}>
+                <Box component="span" sx={visuallyHiddenSx}>Actions</Box>
+              </TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
@@ -626,23 +486,14 @@ function PlansOptionsSheet({
 
               return (
                 <Fragment key={plan.id}>
-                  <TableRow sx={{ bgcolor: 'primary.light', '& td': { py: 1.25 } }}>
+                  <TableRow sx={{ bgcolor: 'primary.light' }}>
                     <TableCell>
-                      <Typography variant="body2" fontWeight={800} color="primary.main">
+                      <Typography variant="body2" fontWeight={700} color="primary.main">
                         Plan
                       </Typography>
                     </TableCell>
                     <TableCell>
-                      <Typography
-                        component="strong"
-                        variant="body1"
-                        sx={{
-                          display: 'inline-block',
-                          color: 'text.primary',
-                          fontWeight: '900 !important',
-                          letterSpacing: '0.01em',
-                        }}
-                      >
+                      <Typography variant="body1" fontWeight={800}>
                         {plan.code}
                       </Typography>
                     </TableCell>
@@ -656,13 +507,17 @@ function PlansOptionsSheet({
                         size="small"
                         color="primary"
                         variant="outlined"
-                        label={options.length}
-                        sx={{ minWidth: 34, fontWeight: 800 }}
+                        label={plan.optionCount ?? options.length}
+                        sx={{ minWidth: 34, fontWeight: 700 }}
                       />
                     </TableCell>
                     <TableCell align="right">
                       {canManage ? (
-                        <Stack direction="row" spacing={0.25} sx={{ justifyContent: 'flex-end' }}>
+                        <Stack
+                          direction="row"
+                          spacing={0.5}
+                          sx={{ alignItems: 'center', justifyContent: 'flex-end' }}
+                        >
                           <Button
                             size="small"
                             variant="contained"
@@ -670,47 +525,31 @@ function PlansOptionsSheet({
                             onClick={() => onAddOption(plan)}
                             disableElevation
                           >
-                            Option
+                            Add option
                           </Button>
-                          <Tooltip title={`Edit Plan ${plan.code}`}>
-                            <IconButton
-                              size="small"
-                              aria-label={`Edit Plan ${plan.code}`}
-                              onClick={() => onEditPlan(plan)}
-                            >
-                              <EditOutlinedIcon fontSize="small" />
-                            </IconButton>
-                          </Tooltip>
-                          <Tooltip title={`Delete Plan ${plan.code}`}>
-                            <IconButton
-                              size="small"
-                              color="error"
-                              aria-label={`Delete Plan ${plan.code}`}
-                              onClick={() => onDeletePlan(plan)}
-                            >
-                              <DeleteOutlineRoundedIcon fontSize="small" />
-                            </IconButton>
-                          </Tooltip>
+                          <RowActionsMenu
+                            label={`Actions for Plan ${plan.code}`}
+                            items={planActions({
+                              onEditPlan: () => onEditPlan(plan),
+                              onDeletePlan: () => onDeletePlan(plan),
+                            })}
+                          />
                         </Stack>
                       ) : (
-                        <Typography variant="caption" color="text.disabled">Read only</Typography>
+                        <Typography variant="caption" color="text.secondary">Read only</Typography>
                       )}
                     </TableCell>
                   </TableRow>
 
-                  {options.length > 0 ? options.map((option, optionIndex) => (
-                    <TableRow
-                      key={option.id}
-                      hover
-                      sx={{
-                        bgcolor: optionIndex % 2 === 0 ? 'background.paper' : 'action.hover',
-                        '& td': { py: 1.15 },
-                      }}
-                    >
+                  {options.length > 0 ? options.map((option) => (
+                    <TableRow key={option.id} hover>
                       <TableCell>
-                        <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
-                          <Box sx={{ width: 14, borderTop: 1, borderColor: 'divider' }} />
-                          <Typography variant="body2" color="text.secondary" fontWeight={650}>
+                        <Stack direction="row" spacing={1} sx={{ alignItems: 'center', pl: 0.5 }}>
+                          <Box
+                            aria-hidden="true"
+                            sx={{ width: 14, height: 14, borderLeft: 1, borderBottom: 1, borderColor: 'divider', mt: -0.5 }}
+                          />
+                          <Typography variant="body2" color="text.secondary">
                             Option
                           </Typography>
                         </Stack>
@@ -729,47 +568,31 @@ function PlansOptionsSheet({
                           {option.description}
                         </Typography>
                       </TableCell>
-                      <TableCell align="center">
-                        <Typography color="text.disabled">—</Typography>
-                      </TableCell>
+                      <TableCell />
                       <TableCell align="right">
                         {canManage ? (
-                          <Stack direction="row" spacing={0.25} sx={{ justifyContent: 'flex-end' }}>
-                            <Tooltip title={`Edit option ${option.code}`}>
-                              <IconButton
-                                size="small"
-                                aria-label={`Edit option ${option.code} for Plan ${plan.code}`}
-                                onClick={() => onEditOption(plan, option)}
-                              >
-                                <EditOutlinedIcon fontSize="small" />
-                              </IconButton>
-                            </Tooltip>
-                            <Tooltip title={`Delete option ${option.code}`}>
-                              <IconButton
-                                size="small"
-                                color="error"
-                                aria-label={`Delete option ${option.code} for Plan ${plan.code}`}
-                                onClick={() => onDeleteOption(plan, option)}
-                              >
-                                <DeleteOutlineRoundedIcon fontSize="small" />
-                              </IconButton>
-                            </Tooltip>
-                          </Stack>
+                          <RowActionsMenu
+                            label={`Actions for option ${option.code} in Plan ${plan.code}`}
+                            items={optionActions({
+                              onEditOption: () => onEditOption(plan, option),
+                              onDeleteOption: () => onDeleteOption(plan, option),
+                            })}
+                          />
                         ) : (
-                          <Typography variant="caption" color="text.disabled">Read only</Typography>
+                          <Typography variant="caption" color="text.secondary">Read only</Typography>
                         )}
                       </TableCell>
                     </TableRow>
                   )) : (
-                    <TableRow key={`${plan.id}-empty-options`}>
-                      <TableCell colSpan={5} sx={{ py: 1.5, bgcolor: 'background.default' }}>
+                    <TableRow>
+                      <TableCell colSpan={5} sx={{ bgcolor: 'background.default' }}>
                         <Stack
                           direction="row"
                           spacing={1}
                           sx={{ alignItems: 'center', justifyContent: 'space-between' }}
                         >
                           <Typography variant="body2" color="text.secondary">
-                            No Options in this Plan yet.
+                            No options in this plan yet.
                           </Typography>
                           {canManage && (
                             <Button
@@ -809,7 +632,6 @@ export default function JobDetails({
   builderId,
   job,
   contacts,
-  onBack,
 }) {
   const {
     canManageJobs,
@@ -825,12 +647,28 @@ export default function JobDetails({
   const [deleteTarget, setDeleteTarget] = useState(null)
   const [submitting, setSubmitting] = useState(false)
   const [notice, setNotice] = useState(null)
+  const [query, setQuery] = useState('')
   const canManagePlans = canManageJobs && job.isActive
-  const sequenceSheet = job.sequenceSheet ?? {
-    name: 'Options Sequence Sheet',
-    plans: [],
-  }
-  const plans = sequenceSheet.plans ?? []
+  const jobPlans = job.sequenceSheet?.plans
+  const plans = useMemo(() => jobPlans ?? [], [jobPlans])
+  // While searching, a plan shows when it matches or when some of its options
+  // do; then only the matching options are listed under it.
+  const visiblePlans = useMemo(() => {
+    const needle = query.trim().toLowerCase()
+    if (!needle) return plans
+
+    const matches = (...values) => values.join(' ').toLowerCase().includes(needle)
+
+    return plans.flatMap((plan) => {
+      const allOptions = plan.options ?? []
+      if (matches(plan.code, plan.name ?? '')) return [plan]
+
+      const options = allOptions.filter((option) => matches(option.code, option.description))
+      return options.length > 0
+        ? [{ ...plan, options, optionCount: allOptions.length }]
+        : []
+    })
+  }, [plans, query])
   const deleteDependencies = deleteTarget
     ? deleteTarget.type === 'plan'
       ? getPlanLotDependencies(job, deleteTarget.plan.id)
@@ -912,45 +750,27 @@ export default function JobDetails({
 
   return (
     <Box sx={{ minHeight: '100%', bgcolor: 'background.default' }}>
-      <Box
-        sx={{
-          px: { xs: 2.5, md: 4 },
-          py: 3,
-          bgcolor: 'background.paper',
-          borderBottom: 1,
-          borderColor: 'divider',
-          display: 'flex',
-          alignItems: { xs: 'flex-start', sm: 'center' },
-          justifyContent: 'space-between',
-          gap: 2,
-          flexDirection: { xs: 'column', sm: 'row' },
-        }}
-      >
-        <Stack direction="row" spacing={1.5} sx={{ alignItems: 'flex-start' }}>
-          <IconButton aria-label="Back to jobs" onClick={onBack} sx={{ mt: -0.5, ml: -1 }}>
-            <ArrowBackRoundedIcon />
-          </IconButton>
-          <Box>
-            <Typography variant="caption" color="primary.main" fontWeight={700}>
-              Builders / {job.builder} / Jobs / Job {job.code} / Plans &amp; Options
-            </Typography>
-            <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
-              <Typography variant="h5" fontWeight={700} color="text.primary">
-                Job {job.code} · Plans &amp; options
-              </Typography>
-              <Chip
-                label={job.isActive ? 'Active' : 'Inactive'}
-                size="small"
-                color={job.isActive ? 'success' : 'default'}
-                variant="outlined"
-              />
-            </Stack>
-            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-              {job.builder} · {job.community}
-            </Typography>
-          </Box>
-        </Stack>
-        {canManagePlans && (
+      <CatalogPageHeader
+        borderless
+        breadcrumbs={[
+          { label: 'Jobs', to: '/jobs' },
+          { label: job.builder, to: builderJobsPath(builderId) },
+          { label: `Job ${job.code}` },
+        ]}
+        title={`Job ${job.code}`}
+        titleAdornment={<StatusChip active={job.isActive} />}
+        subtitle={`${job.community} · ${job.builder}`}
+        meta={(
+          <FigureStrip
+            label={`Job ${job.code} summary`}
+            figures={[
+              { label: 'lots', value: getJobUnitCount(job) },
+              { label: getJobPlanCount(job) === 1 ? 'plan' : 'plans', value: getJobPlanCount(job) },
+              { label: getJobOptionCount(job) === 1 ? 'option' : 'options', value: getJobOptionCount(job) },
+            ]}
+          />
+        )}
+        actions={canManagePlans && (
           <Button
             variant="contained"
             startIcon={<AddRoundedIcon />}
@@ -960,12 +780,13 @@ export default function JobDetails({
             New plan
           </Button>
         )}
-      </Box>
+      />
 
       <JobModuleNavigation
         active="plans-options"
         builderId={builderId}
         jobId={job.id}
+        showBack={false}
       />
 
       <Box sx={{ p: { xs: 2.5, md: 4 } }}>
@@ -977,44 +798,10 @@ export default function JobDetails({
           </Alert>
         )}
 
-        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} sx={{ mb: 3 }}>
-          <DetailMetric
-            icon={<ApartmentRoundedIcon />}
-            label="Total lots"
-            value={getJobUnitCount(job)}
-          />
-          <DetailMetric
-            icon={<LayersRoundedIcon />}
-            label="Plans"
-            value={getJobPlanCount(job)}
-          />
-          <DetailMetric
-            icon={<ReceiptLongRoundedIcon />}
-            label="Options"
-            value={getJobOptionCount(job)}
-          />
-        </Stack>
-
-        <Card variant="outlined" sx={{ mb: 3 }}>
-          <CardContent sx={{ p: '20px !important' }}>
-            <Stack direction="row" spacing={1} sx={{ alignItems: 'center', mb: 2 }}>
-              <LocationCityRoundedIcon color="primary" fontSize="small" />
-              <Typography variant="subtitle1" fontWeight={700}>
-                Job information
-              </Typography>
-            </Stack>
-            <Divider sx={{ mb: 2 }} />
-            <Stack
-              direction={{ xs: 'column', sm: 'row' }}
-              spacing={{ xs: 2, sm: 4 }}
-              useFlexGap
-              sx={{ flexWrap: 'wrap' }}
-            >
-              <JobField label="Builder" value={job.builder} />
-              <JobField label="Community / Project" value={job.community} />
-            </Stack>
-            <Typography variant="subtitle2" fontWeight={700} sx={{ mt: 2.5, mb: 0.5 }}>
-              Contacts
+        <Card variant="outlined" sx={{ mb: 2.5 }}>
+          <CardContent sx={{ p: '16px 20px !important' }}>
+            <Typography component="h2" variant="subtitle1" fontWeight={700} sx={{ mb: 1.25 }}>
+              Job team
             </Typography>
             <JobContactsGrid contacts={contacts} />
           </CardContent>
@@ -1029,52 +816,65 @@ export default function JobDetails({
             overflow: 'hidden',
           }}
         >
-          <Box
+          <Stack
+            direction={{ xs: 'column', md: 'row' }}
+            spacing={1.5}
             sx={{
               px: 2.5,
-              py: 2,
+              py: 1.5,
               borderBottom: 1,
               borderColor: 'divider',
-              display: 'flex',
-              alignItems: { xs: 'flex-start', sm: 'center' },
+              alignItems: { md: 'center' },
               justifyContent: 'space-between',
-              gap: 1.5,
-              flexDirection: { xs: 'column', sm: 'row' },
             }}
           >
-            <Box>
-              <Typography variant="subtitle1" fontWeight={700}>
+            <Stack direction="row" spacing={1.25} sx={{ alignItems: 'center' }}>
+              <Typography component="h2" variant="subtitle1" fontWeight={700}>
                 Plans &amp; options
               </Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ mt: 0.25 }}>
-                Review each plan and manage its options directly underneath it.
-              </Typography>
-            </Box>
-            <Chip
-              label={`${plans.length} ${plans.length === 1 ? 'plan' : 'plans'}`}
-              color="primary"
-              variant="outlined"
-              size="small"
-            />
-          </Box>
+              <Chip
+                label={`${plans.length} ${plans.length === 1 ? 'plan' : 'plans'}`}
+                size="small"
+                variant="outlined"
+              />
+            </Stack>
+            {plans.length > 0 && (
+              <TextField
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                size="small"
+                placeholder="Search plans or options"
+                sx={{ width: { xs: '100%', md: 320 } }}
+                slotProps={{
+                  htmlInput: { 'aria-label': 'Search plans or options' },
+                  input: {
+                    startAdornment: (
+                      <InputAdornment position="start">
+                        <SearchRoundedIcon fontSize="small" color="action" />
+                      </InputAdornment>
+                    ),
+                    endAdornment: query ? (
+                      <InputAdornment position="end">
+                        <IconButton
+                          size="small"
+                          edge="end"
+                          aria-label="Clear search"
+                          onClick={() => setQuery('')}
+                        >
+                          <ClearRoundedIcon fontSize="small" />
+                        </IconButton>
+                      </InputAdornment>
+                    ) : null,
+                  },
+                }}
+              />
+            )}
+          </Stack>
 
-          {plans.length > 0 ? (
-            <PlansOptionsSheet
-              plans={plans}
-              canManage={canManagePlans}
-              onAddPlan={() => setPlanDialog({ plan: null })}
-              onAddOption={(plan) => setOptionDialog({ plan, option: null })}
-              onEditPlan={(plan) => setPlanDialog({ plan })}
-              onDeletePlan={(plan) => setDeleteTarget({ type: 'plan', plan })}
-              onEditOption={(plan, option) => setOptionDialog({ plan, option })}
-              onDeleteOption={(plan, option) =>
-                setDeleteTarget({ type: 'option', plan, option })
-              }
-            />
-          ) : (
-            <Box sx={{ py: 8, px: 3, textAlign: 'center' }}>
-              <LayersRoundedIcon color="action" sx={{ fontSize: 42, mb: 1 }} />
-              <Typography fontWeight={700}>No plans configured for this Job</Typography>
+          {plans.length === 0 ? (
+            <Box sx={{ py: 6, px: 3, textAlign: 'center' }}>
+              <LayersRoundedIcon color="disabled" sx={{ fontSize: 36, mb: 1 }} aria-hidden="true" />
+              <Typography fontWeight={700}>No plans in this job yet</Typography>
               <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, mb: 2 }}>
                 Add the first plan, then organize its options underneath it.
               </Typography>
@@ -1088,6 +888,29 @@ export default function JobDetails({
                 </Button>
               )}
             </Box>
+          ) : visiblePlans.length === 0 ? (
+            <CatalogEmptyState
+              title="No plans or options found"
+              description={`Nothing in Job ${job.code} matches “${query.trim()}”.`}
+              action={(
+                <Button size="small" variant="outlined" onClick={() => setQuery('')}>
+                  Clear search
+                </Button>
+              )}
+            />
+          ) : (
+            <PlansOptionsSheet
+              plans={visiblePlans}
+              canManage={canManagePlans}
+              onAddPlan={() => setPlanDialog({ plan: null })}
+              onAddOption={(plan) => setOptionDialog({ plan, option: null })}
+              onEditPlan={(plan) => setPlanDialog({ plan })}
+              onDeletePlan={(plan) => setDeleteTarget({ type: 'plan', plan })}
+              onEditOption={(plan, option) => setOptionDialog({ plan, option })}
+              onDeleteOption={(plan, option) =>
+                setDeleteTarget({ type: 'option', plan, option })
+              }
+            />
           )}
         </Box>
       </Box>

@@ -76,6 +76,15 @@ const initialCalendarTitle = new Intl.DateTimeFormat('en-US', {
   year: 'numeric',
 }).format(new Date())
 
+// First visit on a phone: the month grid is too narrow to read an event, so
+// open on the weekly list. Anyone who picked a view keeps it.
+function defaultCalendarView() {
+  const isPhone = typeof window !== 'undefined'
+    && window.matchMedia?.('(max-width: 700px)').matches
+
+  return isPhone ? 'listWeek' : 'dayGridMonth'
+}
+
 export default function CalendarScheduler() {
   const calendarRef = useRef(null)
   const { profile } = useAuth()
@@ -124,7 +133,7 @@ export default function CalendarScheduler() {
   const [viewTitle, setViewTitle] = useState(initialCalendarTitle)
   const [viewType, setViewType] = usePersistentState(
     'calendar:view',
-    'dayGridMonth',
+    defaultCalendarView(),
     (value) => CALENDAR_VIEWS.includes(value),
   )
   // The filters and the search are not remembered between visits: a filter

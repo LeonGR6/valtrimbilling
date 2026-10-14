@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { Link as RouterLink, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { zodResolver } from '@hookform/resolvers/zod'
 import {
   Controller,
@@ -14,9 +14,6 @@ import {
   Alert,
   Box,
   Button,
-  ButtonBase,
-  Card,
-  CardContent,
   Checkbox,
   Chip,
   CircularProgress,
@@ -31,6 +28,7 @@ import {
   InputAdornment,
   MenuItem,
   Snackbar,
+  Skeleton,
   Stack,
   Table,
   TableBody,
@@ -43,14 +41,10 @@ import {
   Typography,
 } from '@mui/material'
 import AddRoundedIcon from '@mui/icons-material/AddRounded'
-import ApartmentRoundedIcon from '@mui/icons-material/ApartmentRounded'
-import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded'
-import ArrowForwardIosRoundedIcon from '@mui/icons-material/ArrowForwardIosRounded'
+import ArrowForwardRoundedIcon from '@mui/icons-material/ArrowForwardRounded'
+import ClearRoundedIcon from '@mui/icons-material/ClearRounded'
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded'
 import ExpandMoreRoundedIcon from '@mui/icons-material/ExpandMoreRounded'
-import FolderRoundedIcon from '@mui/icons-material/FolderRounded'
-import FormatListNumberedRoundedIcon from '@mui/icons-material/FormatListNumberedRounded'
-import HomeWorkRoundedIcon from '@mui/icons-material/HomeWorkRounded'
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined'
 import EmailRoundedIcon from '@mui/icons-material/EmailRounded'
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
@@ -58,6 +52,15 @@ import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded'
 import TableChartRoundedIcon from '@mui/icons-material/TableChartRounded'
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
 import EventBusyRoundedIcon from '@mui/icons-material/EventBusyRounded'
+import ResponsiveCreateButton from '../../../components/common/ResponsiveCreateButton'
+import {
+  CatalogEmptyState,
+  CatalogPageHeader,
+  FigureStrip,
+  RowActionsMenu,
+  StatusChip,
+  catalogTableSx,
+} from '../../../components/common/CatalogPage'
 import { useBuilderDrawSchedules } from '../../builder-draw-schedules/context/useBuilderDrawSchedules.js'
 import { isStoredString, usePersistentState } from '../../../hooks/usePersistentState.js'
 import {
@@ -76,8 +79,10 @@ import {
   getJobPlanCount,
 } from '../../jobs/data/jobs.js'
 import {
+  builderJobsPath,
   getJobBuilderId,
   jobBelongsToBuilder,
+  jobPlansOptionsPath,
   jobSequenceSheetPath,
 } from '../../jobs/utils/jobRoutes.js'
 import { createPhaseByLotSchema } from '../schemas/phaseByLotSchema.js'
@@ -86,6 +91,8 @@ import {
   formatPhase,
 } from '../utils/phaseBuildingCodes.js'
 import { parseLotRange } from '../utils/lotRange.js'
+import PhasesTable from './PhasesTable.jsx'
+import { getPhaseRowCounts, getSelectedOptionCount } from '../utils/phaseCounts.js'
 import SequenceSheetEmailDialog from './SequenceSheetEmailDialog.jsx'
 import { describeSequenceSheetEmailsSent } from '../services/sequenceSheetEmailRecord.js'
 
@@ -103,154 +110,9 @@ const emptyUtilityRow = {
   isUtilityBuilding: true,
 }
 
-function getPhaseRowCounts(phase) {
-  return (phase?.lots ?? []).reduce((counts, row) => {
-    if (row.isUtilityBuilding) counts.utility += 1
-    else counts.lots += 1
-    return counts
-  }, { lots: 0, utility: 0 })
-}
-
-function SummaryCard({ icon, value, label }) {
-  return (
-    <Card variant="outlined" sx={{ flex: 1, minWidth: 180 }}>
-      <CardContent
-        sx={{
-          p: '16px !important',
-          display: 'flex',
-          alignItems: 'center',
-          gap: 1.5,
-        }}
-      >
-        <Box
-          sx={{
-            width: 40,
-            height: 40,
-            borderRadius: 1.5,
-            display: 'grid',
-            placeItems: 'center',
-            bgcolor: 'primary.light',
-            color: 'primary.main',
-          }}
-        >
-          {icon}
-        </Box>
-        <Box>
-          <Typography variant="h6" fontWeight={750} sx={{ lineHeight: 1.2 }}>
-            {value}
-          </Typography>
-          <Typography variant="caption" color="text.secondary">
-            {label}
-          </Typography>
-        </Box>
-      </CardContent>
-    </Card>
-  )
-}
-
 function getPlan(job, planId) {
   return (job.sequenceSheet?.plans ?? []).find(
     (plan) => plan.id === Number(planId),
-  )
-}
-
-function PhaseCard({ calendarStatus, canManage, phase, onDelete, onEdit, onEmail, onOpen }) {
-  const phaseLabel = formatPhase(phase.name)
-  const buildingLabel = formatBuilding(phase.building)
-  const selectedOptionCount = (phase.lots ?? []).reduce(
-    (total, lot) => total + (lot.optionIds?.length ?? 0),
-    0,
-  )
-  const rowCounts = getPhaseRowCounts(phase)
-
-  return (
-    <Card
-      variant="outlined"
-      sx={{
-        '& + &': { mt: 1.5 },
-        overflow: 'hidden',
-      }}
-    >
-      <ButtonBase
-        onClick={onOpen}
-        aria-label={`View details for ${phaseLabel}`}
-        sx={{
-          width: '100%',
-          px: { xs: 2, sm: 2.5 },
-          py: 2,
-          textAlign: 'left',
-          justifyContent: 'stretch',
-          '&:hover': { bgcolor: 'action.hover' },
-        }}
-      >
-        <Stack
-          direction={{ xs: 'column', sm: 'row' }}
-          spacing={1.5}
-          sx={{
-            width: '100%',
-            alignItems: { xs: 'flex-start', sm: 'center' },
-            justifyContent: 'space-between',
-          }}
-        >
-          <Box>
-            <Typography fontWeight={750}>{phaseLabel}</Typography>
-            <Typography variant="caption" color="text.secondary">
-              {buildingLabel} · Created {phase.createdAt}
-            </Typography>
-          </Box>
-          <Stack
-            direction="row"
-            spacing={1}
-            useFlexGap
-            sx={{ alignItems: 'center', flexWrap: 'wrap' }}
-          >
-            <PhaseCalendarChip status={calendarStatus} />
-            <Chip size="small" variant="outlined" label={formatBuilding(phase.building, 'short')} />
-            <Chip size="small" label={`${rowCounts.lots} lots`} />
-            {rowCounts.utility > 0 && (
-              <Chip size="small" color="primary" label={`${rowCounts.utility} Utility`} />
-            )}
-            <Chip size="small" variant="outlined" label={`${selectedOptionCount} selected options`} />
-            <ArrowForwardIosRoundedIcon fontSize="small" color="action" />
-          </Stack>
-        </Stack>
-      </ButtonBase>
-      {canManage && (
-        <>
-          <Divider />
-          <Stack
-            direction="row"
-            spacing={1}
-            sx={{ px: 1.5, py: 1, justifyContent: 'flex-end' }}
-          >
-            <Button
-              size="small"
-              color="primary"
-              startIcon={<EmailRoundedIcon />}
-              onClick={onEmail}
-            >
-              Email Sequence Sheet
-            </Button>
-            <Button
-              size="small"
-              color="inherit"
-              startIcon={<EditOutlinedIcon />}
-              onClick={onEdit}
-            >
-              Edit phase
-            </Button>
-            <Button
-              size="small"
-              color="error"
-              startIcon={<DeleteOutlineRoundedIcon />}
-              onClick={onDelete}
-            >
-              Delete phase
-            </Button>
-          </Stack>
-        </>
-      )}
-    </Card>
   )
 }
 
@@ -261,7 +123,6 @@ function PhaseDetails({
   canSchedule,
   job,
   phase,
-  onBack,
   onDelete,
   onEdit,
   onEmail,
@@ -269,99 +130,79 @@ function PhaseDetails({
 }) {
   const phaseLabel = formatPhase(phase.name)
   const buildingLabel = formatBuilding(phase.building)
-  const selectedOptionCount = (phase.lots ?? []).reduce(
-    (total, lot) => total + (lot.optionIds?.length ?? 0),
-    0,
-  )
+  const selectedOptionCount = getSelectedOptionCount(phase)
   const rowCounts = getPhaseRowCounts(phase)
 
   return (
     <Box sx={{ minHeight: '100%', bgcolor: 'background.default' }}>
-      <Box
-        sx={{
-          px: { xs: 2.5, md: 4 },
-          py: 2.5,
-          bgcolor: 'background.paper',
-          borderBottom: 1,
-          borderColor: 'divider',
-        }}
-      >
-        <Button
-          color="inherit"
-          startIcon={<ArrowBackRoundedIcon />}
-          onClick={onBack}
-          sx={{ mb: 1.5 }}
-        >
-          Job phases
-        </Button>
-        <Stack
-          direction={{ xs: 'column', sm: 'row' }}
-          spacing={2}
-          sx={{
-            alignItems: { xs: 'flex-start', sm: 'center' },
-            justifyContent: 'space-between',
-          }}
-        >
-          <Box>
-            <Typography variant="overline" color="text.secondary" fontWeight={700}>
-              Job #{job.code} · {job.community}
-            </Typography>
-            <Typography variant="h5" fontWeight={800} color="text.primary">
-              {phaseLabel}
-            </Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-              {buildingLabel} · {job.builder}
-            </Typography>
-          </Box>
-          <Stack spacing={1.25} sx={{ alignItems: { xs: 'flex-start', sm: 'flex-end' } }}>
-            <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: 'wrap' }}>
-              <PhaseCalendarChip status={calendarStatus} size="medium" />
-              <Chip color="primary" variant="outlined" label={formatBuilding(phase.building, 'short')} />
-              <Chip label={`${rowCounts.lots} lots`} />
-              {rowCounts.utility > 0 && (
-                <Chip color="primary" label={`${rowCounts.utility} Utility rows`} />
-              )}
-              <Chip variant="outlined" label={`${selectedOptionCount} selected options`} />
-            </Stack>
-            {canManage && (
-              <Stack direction="row" spacing={1}>
-                <Button
-                  size="small"
-                  variant="contained"
-                  startIcon={<EmailRoundedIcon />}
-                  onClick={onEmail}
-                  disableElevation
-                >
-                  Email Sequence Sheet
-                </Button>
-                <Button
-                  size="small"
-                  variant="outlined"
-                  color="inherit"
-                  startIcon={<EditOutlinedIcon />}
-                  onClick={onEdit}
-                >
-                  Edit phase
-                </Button>
-                <Button
-                  size="small"
-                  variant="outlined"
-                  color="error"
-                  startIcon={<DeleteOutlineRoundedIcon />}
-                  onClick={onDelete}
-                >
-                  Delete phase
-                </Button>
-              </Stack>
-            )}
-          </Stack>
-        </Stack>
-      </Box>
+      <CatalogPageHeader
+        borderless
+        breadcrumbs={[
+          { label: 'Jobs', to: '/jobs' },
+          { label: job.builder, to: builderJobsPath(builderId) },
+          { label: `Job ${job.code}`, to: jobPlansOptionsPath(builderId, job.id) },
+          { label: 'Sequence sheet', to: jobSequenceSheetPath(builderId, job.id) },
+          { label: phaseLabel },
+        ]}
+        title={phaseLabel}
+        titleAdornment={<PhaseCalendarChip status={calendarStatus} size="medium" />}
+        subtitle={`${buildingLabel} · ${job.community} · ${job.builder}`}
+        meta={(
+          <FigureStrip
+            label={`${phaseLabel} summary`}
+            figures={[
+              { label: rowCounts.lots === 1 ? 'lot' : 'lots', value: rowCounts.lots },
+              ...(rowCounts.utility > 0
+                ? [{
+                  label: rowCounts.utility === 1 ? 'utility row' : 'utility rows',
+                  value: rowCounts.utility,
+                }]
+                : []),
+              {
+                label: selectedOptionCount === 1 ? 'selected option' : 'selected options',
+                value: selectedOptionCount,
+              },
+            ]}
+          />
+        )}
+        actions={canManage && (
+          <>
+            <Button
+              variant="contained"
+              startIcon={<EmailRoundedIcon />}
+              onClick={onEmail}
+              disableElevation
+            >
+              Email sequence sheet
+            </Button>
+            <Button
+              variant="outlined"
+              color="inherit"
+              startIcon={<EditOutlinedIcon />}
+              onClick={onEdit}
+            >
+              Edit phase
+            </Button>
+            <RowActionsMenu
+              label={`More actions for ${phaseLabel}`}
+              items={[
+                {
+                  label: 'Delete phase',
+                  icon: <DeleteOutlineRoundedIcon fontSize="small" />,
+                  color: 'error.main',
+                  onClick: onDelete,
+                },
+              ]}
+            />
+          </>
+        )}
+      />
 
       <JobModuleNavigation
         active="sequence-sheet"
         builderId={builderId}
         jobId={job.id}
+        showBack={false}
       />
 
       <Box sx={{ p: { xs: 2.5, md: 4 } }}>
@@ -379,18 +220,28 @@ function PhaseDetails({
             Suggestions only appear for Phases with Calendar work.
           </Alert>
         )}
-        <Card variant="outlined" sx={{ overflow: 'hidden' }}>
-          <Box sx={{ px: 2.5, py: 2, bgcolor: 'action.hover' }}>
-            <Typography fontWeight={750}>Phase assignments</Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.25 }}>
+        <Box
+          sx={{
+            bgcolor: 'background.paper',
+            border: 1,
+            borderColor: 'divider',
+            borderRadius: 2,
+            overflow: 'hidden',
+          }}
+        >
+          <Box sx={{ px: 2.5, py: 1.5, borderBottom: 1, borderColor: 'divider' }}>
+            <Typography component="h2" variant="subtitle1" fontWeight={700}>
+              Phase assignments
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
               Lots and Utility rows keep their orientation. Utility rows use only one Plan Price.
             </Typography>
           </Box>
-          <Divider />
           <TableContainer>
             <Table
+              size="small"
               aria-label={`${phaseLabel} lot and Utility assignments`}
-              sx={{ minWidth: 760 }}
+              sx={[{ minWidth: 700 }, catalogTableSx]}
             >
               <TableHead>
                 <TableRow>
@@ -409,23 +260,26 @@ function PhaseDetails({
 
                   return (
                     <TableRow key={lot.id} hover>
-                      <TableCell sx={{ width: 100 }}>
-                        <Typography fontWeight={750}>
+                      <TableCell sx={{ width: 110 }}>
+                        <Typography variant="body2" fontWeight={700}>
                           {lot.isUtilityBuilding
                             ? lot.utilityName
                             : lot.lotNumber}
                         </Typography>
                       </TableCell>
-                      <TableCell sx={{ minWidth: 180 }}>
-                        {plan ? `${plan.code}` : 'Plan unavailable'}
+                      <TableCell sx={{ minWidth: 160 }}>
+                        {plan ? (
+                          <Typography variant="body2">{plan.code}</Typography>
+                        ) : (
+                          <Typography variant="body2" color="error">Plan unavailable</Typography>
+                        )}
                       </TableCell>
-                      <TableCell align="center" sx={{ width: 120 }}>
-                        <Chip
-                          size="small"
-                          color={lot.reverse ? 'primary' : 'default'}
-                          variant={lot.reverse ? 'filled' : 'outlined'}
-                          label={lot.reverse ? 'Yes' : 'No'}
-                        />
+                      <TableCell align="center" sx={{ width: 100 }}>
+                        {lot.reverse ? (
+                          <Chip size="small" color="primary" label="Reverse" />
+                        ) : (
+                          <Typography variant="body2" color="text.disabled">No</Typography>
+                        )}
                       </TableCell>
                       <TableCell sx={{ minWidth: 320 }}>
                         {lot.isUtilityBuilding ? (
@@ -442,7 +296,7 @@ function PhaseDetails({
                             ))}
                           </Stack>
                         ) : (
-                          <Typography variant="body2" color="text.secondary">
+                          <Typography variant="body2" color="text.disabled">
                             No options selected
                           </Typography>
                         )}
@@ -453,7 +307,7 @@ function PhaseDetails({
               </TableBody>
             </Table>
           </TableContainer>
-        </Card>
+        </Box>
       </Box>
     </Box>
   )
@@ -1403,9 +1257,6 @@ export default function SequenceSheets() {
           canManage={canManageFocusedJob}
           job={focusedJob}
           phase={detailPhase}
-          onBack={() =>
-            navigate(jobSequenceSheetPath(focusedBuilderId, focusedJob.id))
-          }
           onEdit={() => openEdit(focusedJob, detailPhase)}
           onDelete={() => setDeleteTarget({ jobId: focusedJob.id, phase: detailPhase })}
           onEmail={() => openEmail(focusedJob, detailPhase)}
@@ -1449,52 +1300,100 @@ export default function SequenceSheets() {
     )
   }
 
-  return (
-    <Box sx={{ minHeight: '100%', bgcolor: 'background.default' }}>
-      <Box
-        sx={{
-          px: { xs: 2.5, md: 4 },
-          py: 3,
-          bgcolor: 'background.paper',
-          borderBottom: 1,
-          borderColor: 'divider',
-        }}
-      >
-        <Stack
-          direction={{ xs: 'column', sm: 'row' }}
-          spacing={2}
-          sx={{ alignItems: { sm: 'center' }, justifyContent: 'space-between' }}
-        >
-          <Box>
-            {focusedJob && (
-              <Typography variant="caption" color="primary.main" fontWeight={700}>
-                {focusedJob.builder} / Job {focusedJob.code} / Sequence Sheet
-              </Typography>
-            )}
-            <Typography variant="h5" fontWeight={750} color="text.primary">
-              {focusedJob ? `Job ${focusedJob.code} · Sequence Sheet` : 'Sequence Sheets'}
-            </Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-              Expand a Job to review its phases or create a new Phase by Lot.
-            </Typography>
-          </Box>
-          {focusedJob && (
+  const jobPhasesContent = (job) => {
+    const phases = job.sequenceSheet?.phases ?? []
+    const canManageJob = canManageJobs && job.isActive
+
+    if (phases.length === 0) {
+      return (
+        <CatalogEmptyState
+          icon={<TableChartRoundedIcon color="disabled" sx={{ fontSize: 36 }} aria-hidden="true" />}
+          title="No phases yet"
+          description="Create the first phase and assign its lots to this Job's plans."
+          action={canManageJob && (
             <Button
-              color="inherit"
-              startIcon={<ArrowBackRoundedIcon />}
-              onClick={() => navigate('/sequence-sheets')}
+              variant="outlined"
+              size="small"
+              startIcon={<AddRoundedIcon />}
+              onClick={(event) => openCreate(event, job)}
             >
-              All Sequence Sheets
+              Create phase
             </Button>
           )}
-        </Stack>
-      </Box>
+        />
+      )
+    }
+
+    return (
+      <PhasesTable
+        job={job}
+        phases={phases}
+        canManage={canManageJob}
+        calendarCoverage={calendarCoverage}
+        onOpen={(phase) => openPhaseDetails(job, phase)}
+        onEmail={(phase) => openEmail(job, phase)}
+        onEdit={(phase) => openEdit(job, phase)}
+        onDelete={(phase) => setDeleteTarget({ jobId: job.id, phase })}
+      />
+    )
+  }
+
+  const breadcrumbs = focusedJob
+    ? [
+        { label: 'Jobs', to: '/jobs' },
+        { label: focusedJob.builder, to: builderJobsPath(focusedBuilderId) },
+        { label: `Job ${focusedJob.code}`, to: jobPlansOptionsPath(focusedBuilderId, focusedJob.id) },
+        { label: 'Sequence sheet' },
+      ]
+    : jobId
+      ? [{ label: 'Jobs', to: '/jobs' }, { label: 'Sequence sheet' }]
+      : [{ label: 'Sequence sheets' }]
+  const focusedPhaseCount = focusedJob ? getJobPhaseCount(focusedJob) : 0
+
+  return (
+    <Box sx={{ minHeight: '100%', bgcolor: 'background.default' }}>
+      <CatalogPageHeader
+        borderless={Boolean(focusedJob)}
+        breadcrumbs={breadcrumbs}
+        title={focusedJob ? `Job ${focusedJob.code}` : 'Sequence sheets'}
+        titleAdornment={focusedJob && <StatusChip active={focusedJob.isActive} />}
+        subtitle={focusedJob
+          ? `${focusedJob.community} · ${focusedJob.builder}`
+          : 'Phases and lot assignments for every job. Expand a job to review its phases.'}
+        meta={(
+          <FigureStrip
+            label="Sequence sheet summary"
+            figures={focusedJob
+              ? [
+                  { label: focusedPhaseCount === 1 ? 'phase' : 'phases', value: totalPhases },
+                  { label: 'assigned lots', value: totalAssignedLots },
+                  {
+                    label: getJobPlanCount(focusedJob) === 1 ? 'plan' : 'plans',
+                    value: getJobPlanCount(focusedJob),
+                  },
+                ]
+              : [
+                  { label: filteredJobs.length === 1 ? 'job' : 'jobs', value: filteredJobs.length },
+                  { label: totalPhases === 1 ? 'phase' : 'phases', value: totalPhases },
+                  { label: 'assigned lots', value: totalAssignedLots },
+                ]}
+          />
+        )}
+        actions={canManageFocusedJob && (
+          <ResponsiveCreateButton
+            label="Create phase"
+            mobileLabel="Create"
+            onClick={(event) => openCreate(event, focusedJob)}
+          />
+        )}
+      />
 
       {focusedJob && (
         <JobModuleNavigation
           active="sequence-sheet"
           builderId={focusedBuilderId}
           jobId={focusedJob.id}
+          showBack={false}
         />
       )}
 
@@ -1518,263 +1417,308 @@ export default function SequenceSheets() {
           </Alert>
         )}
 
+        {focusedJob && !focusedJob.isActive && (
+          <Alert severity="info" sx={{ mb: 2.5 }}>
+            This Job is inactive. Its phases are read-only.
+          </Alert>
+        )}
+
         {loading && jobs.length === 0 && (
-          <Box sx={{ py: 8, display: 'grid', placeItems: 'center' }}>
-            <Stack spacing={1.5} sx={{ alignItems: 'center' }}>
-              <CircularProgress size={30} />
-              <Typography variant="body2" color="text.secondary">
-                Loading Sequence Sheets…
-              </Typography>
-            </Stack>
+          <Box
+            role="status"
+            aria-label="Loading sequence sheets"
+            sx={{
+              mb: 2,
+              p: 2.5,
+              bgcolor: 'background.paper',
+              border: 1,
+              borderColor: 'divider',
+              borderRadius: 2,
+            }}
+          >
+            <Skeleton variant="text" width="30%" />
+            <Skeleton variant="text" width="55%" />
+            <Skeleton variant="text" width="45%" />
           </Box>
         )}
 
-        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} sx={{ mb: 3 }}>
-          <SummaryCard icon={<FolderRoundedIcon />} value={filteredJobs.length} label="Jobs" />
-          <SummaryCard icon={<TableChartRoundedIcon />} value={totalPhases} label="Phases" />
-          <SummaryCard icon={<ApartmentRoundedIcon />} value={totalAssignedLots} label="Assigned lots" />
-        </Stack>
-
         {filtersApply && (
-          <>
-            <Stack
-              direction={{ xs: 'column', md: 'row' }}
-              spacing={1.5}
-              sx={{ mb: 1, alignItems: { md: 'center' } }}
+          <Stack
+            direction={{ xs: 'column', md: 'row' }}
+            spacing={1.25}
+            sx={{
+              mb: 2,
+              p: 1.25,
+              bgcolor: 'background.paper',
+              border: 1,
+              borderColor: 'divider',
+              borderRadius: 2,
+              alignItems: { md: 'center' },
+            }}
+          >
+            <TextField
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              size="small"
+              placeholder="Search by Job#, builder or community"
+              sx={{ flex: 2, minWidth: { md: 260 } }}
+              slotProps={{
+                htmlInput: { 'aria-label': 'Search Sequence Sheets' },
+                input: {
+                  startAdornment: (
+                    <InputAdornment position="start">
+                      <SearchRoundedIcon fontSize="small" color="action" />
+                    </InputAdornment>
+                  ),
+                  endAdornment: search ? (
+                    <InputAdornment position="end">
+                      <IconButton
+                        size="small"
+                        edge="end"
+                        aria-label="Clear search"
+                        onClick={() => setSearch('')}
+                      >
+                        <ClearRoundedIcon fontSize="small" />
+                      </IconButton>
+                    </InputAdornment>
+                  ) : null,
+                },
+              }}
+            />
+            <TextField
+              select
+              size="small"
+              label="Builder"
+              value={scope.builderId}
+              onChange={(event) => {
+                setStoredBuilderId(event.target.value)
+                setStoredCommunity('ALL')
+              }}
+              sx={{ flex: 1, minWidth: { md: 180 } }}
             >
-              <TextField
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                placeholder="Search by Job#, builder or community"
-                aria-label="Search Sequence Sheets"
-                sx={{ flex: 2, minWidth: { md: 260 } }}
-                slotProps={{
-                  input: {
-                    startAdornment: (
-                      <InputAdornment position="start">
-                        <SearchRoundedIcon color="action" />
-                      </InputAdornment>
-                    ),
-                  },
-                }}
-              />
-              <TextField
-                select
-                label="Builder"
-                value={scope.builderId}
-                onChange={(event) => {
-                  setStoredBuilderId(event.target.value)
-                  setStoredCommunity('ALL')
-                }}
-                sx={{ flex: 1, minWidth: { md: 190 } }}
-              >
-                <MenuItem value="ALL">All builders</MenuItem>
-                {scope.builderOptions.map(({ id, name }) => (
-                  <MenuItem key={id} value={id}>{name}</MenuItem>
-                ))}
-              </TextField>
-              <TextField
-                select
-                label="Community"
-                value={scope.community}
-                onChange={(event) => setStoredCommunity(event.target.value)}
-                sx={{ flex: 1, minWidth: { md: 190 } }}
-              >
-                <MenuItem value="ALL">All communities</MenuItem>
-                {scope.communityOptions.map((community) => (
-                  <MenuItem key={community} value={community}>{community}</MenuItem>
-                ))}
-              </TextField>
-              <Button
-                color="inherit"
-                onClick={clearFilters}
-                disabled={!hasActiveFilters}
-                sx={{ flexShrink: 0 }}
-              >
-                Clear filters
-              </Button>
-            </Stack>
-            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
-              Showing {filteredJobs.length} of {scopedJobs.length} {scopedJobs.length === 1 ? 'Job' : 'Jobs'}.
+              <MenuItem value="ALL">All builders</MenuItem>
+              {scope.builderOptions.map(({ id, name }) => (
+                <MenuItem key={id} value={id}>{name}</MenuItem>
+              ))}
+            </TextField>
+            <TextField
+              select
+              size="small"
+              label="Community"
+              value={scope.community}
+              onChange={(event) => setStoredCommunity(event.target.value)}
+              sx={{ flex: 1, minWidth: { md: 180 } }}
+            >
+              <MenuItem value="ALL">All communities</MenuItem>
+              {scope.communityOptions.map((community) => (
+                <MenuItem key={community} value={community}>{community}</MenuItem>
+              ))}
+            </TextField>
+            <Button
+              color="inherit"
+              size="small"
+              onClick={clearFilters}
+              disabled={!hasActiveFilters}
+              sx={{ flexShrink: 0 }}
+            >
+              Clear filters
+            </Button>
+            <Typography
+              variant="body2"
+              color="text.secondary"
+              role="status"
+              sx={{ flexShrink: 0, px: { md: 1 } }}
+            >
+              {filteredJobs.length} of {scopedJobs.length} {scopedJobs.length === 1 ? 'job' : 'jobs'}
             </Typography>
-          </>
+          </Stack>
         )}
 
-        <Stack spacing={1.5}>
-          {filteredJobs.map((job) => {
-            const phases = job.sequenceSheet?.phases ?? []
-            const isExpanded = visibleExpandedJobId === job.id
-            const unscheduledCount = calendarCoverage.ready
-              ? calendarCoverage.unscheduledCountByJob.get(String(job.id)) ?? 0
-              : 0
+        {focusedJob && (
+          <Box
+            sx={{
+              bgcolor: 'background.paper',
+              border: 1,
+              borderColor: 'divider',
+              borderRadius: 2,
+              overflow: 'hidden',
+            }}
+          >
+            <Stack
+              direction="row"
+              spacing={1.25}
+              sx={{ px: 2.5, py: 1.5, borderBottom: 1, borderColor: 'divider', alignItems: 'center' }}
+            >
+              <Typography component="h2" variant="subtitle1" fontWeight={700}>
+                Phases
+              </Typography>
+              <Chip size="small" variant="outlined" label={focusedPhaseCount} />
+              {calendarCoverage.ready
+                && (calendarCoverage.unscheduledCountByJob.get(String(focusedJob.id)) ?? 0) > 0 && (
+                <Chip
+                  size="small"
+                  color="warning"
+                  icon={<EventBusyRoundedIcon />}
+                  label={`${calendarCoverage.unscheduledCountByJob.get(String(focusedJob.id))} without Calendar`}
+                />
+              )}
+            </Stack>
+            {jobPhasesContent(focusedJob)}
+          </Box>
+        )}
 
-            return (
-              <Accordion
-                key={job.id}
-                expanded={isExpanded}
-                onChange={(_, expanded) => setExpandedJobId(expanded ? job.id : null)}
-                disableGutters
-                elevation={0}
-                sx={{
-                  border: 1,
-                  borderColor: isExpanded ? 'primary.main' : 'divider',
-                  borderRadius: '10px !important',
-                  overflow: 'hidden',
-                  bgcolor: 'background.paper',
-                  '&::before': { display: 'none' },
-                }}
-              >
-                <Stack
-                  direction={{ xs: 'column', md: 'row' }}
-                  sx={{ alignItems: { md: 'center' } }}
+        {!focusedJob && (
+          <Stack spacing={1.25}>
+            {filteredJobs.map((job) => {
+              const phases = job.sequenceSheet?.phases ?? []
+              const isExpanded = visibleExpandedJobId === job.id
+              const jobBuilderId = getJobBuilderId(job)
+              const unscheduledCount = calendarCoverage.ready
+                ? calendarCoverage.unscheduledCountByJob.get(String(job.id)) ?? 0
+                : 0
+
+              return (
+                <Accordion
+                  key={job.id}
+                  expanded={isExpanded}
+                  onChange={(_, expanded) => setExpandedJobId(expanded ? job.id : null)}
+                  disableGutters
+                  elevation={0}
+                  slotProps={{ transition: { unmountOnExit: true } }}
+                  sx={{
+                    border: 1,
+                    borderColor: isExpanded ? 'primary.main' : 'divider',
+                    borderRadius: '8px !important',
+                    overflow: 'hidden',
+                    bgcolor: 'background.paper',
+                    '&::before': { display: 'none' },
+                  }}
                 >
-                  <AccordionSummary
-                    expandIcon={<ExpandMoreRoundedIcon />}
-                    aria-controls={`job-${job.id}-phases`}
-                    id={`job-${job.id}-header`}
-                    sx={{
-                      minHeight: 84,
-                      flex: 1,
-                      minWidth: 0,
-                      '& .MuiAccordionSummary-content': { my: 1.5, minWidth: 0 },
-                    }}
+                  <Stack
+                    direction={{ xs: 'column', md: 'row' }}
+                    sx={{ alignItems: { md: 'center' } }}
                   >
-                    <Stack
-                      direction={{ xs: 'column', sm: 'row' }}
-                      spacing={1.5}
+                    <AccordionSummary
+                      expandIcon={<ExpandMoreRoundedIcon />}
+                      aria-controls={`job-${job.id}-phases`}
+                      id={`job-${job.id}-header`}
                       sx={{
-                        width: '100%',
-                        pr: 1,
+                        minHeight: 60,
+                        flex: 1,
                         minWidth: 0,
-                        alignItems: { xs: 'flex-start', sm: 'center' },
-                        justifyContent: 'space-between',
+                        '& .MuiAccordionSummary-content': { my: 1, minWidth: 0 },
                       }}
                     >
                       <Stack
-                        direction="row"
-                        spacing={1.5}
-                        sx={{ alignItems: 'center', minWidth: 0 }}
+                        direction={{ xs: 'column', sm: 'row' }}
+                        spacing={{ xs: 0.5, sm: 2 }}
+                        sx={{
+                          width: '100%',
+                          pr: 1,
+                          minWidth: 0,
+                          alignItems: { xs: 'flex-start', sm: 'center' },
+                          justifyContent: 'space-between',
+                        }}
                       >
-                        <Box
-                          sx={{
-                            width: 44,
-                            height: 44,
-                            flexShrink: 0,
-                            borderRadius: 1.5,
-                            display: 'grid',
-                            placeItems: 'center',
-                            bgcolor: 'primary.light',
-                            color: 'primary.main',
-                          }}
-                        >
-                          <HomeWorkRoundedIcon />
-                        </Box>
                         <Box sx={{ minWidth: 0 }}>
                           <Typography fontWeight={800}>Job #{job.code}</Typography>
                           <Typography variant="body2" color="text.secondary" noWrap>
                             {job.community} · {job.builder}
                           </Typography>
                         </Box>
-                      </Stack>
-
-                      <Stack
-                        direction="row"
-                        spacing={1}
-                        useFlexGap
-                        sx={{ alignItems: 'center', flexWrap: 'wrap' }}
-                      >
-                        <Chip size="small" icon={<FormatListNumberedRoundedIcon />} label={`${getJobPlanCount(job)} plans`} />
-                        <Chip size="small" variant="outlined" label={`${phases.length} phases`} />
-                        {unscheduledCount > 0 && (
-                          <Chip
-                            size="small"
-                            color="warning"
-                            icon={<EventBusyRoundedIcon />}
-                            label={`${unscheduledCount} without Calendar`}
-                          />
-                        )}
-                      </Stack>
-                    </Stack>
-                  </AccordionSummary>
-                  {canManageJobs && job.isActive && (
-                    <Box sx={{ px: { xs: 2, md: 2.5 }, pb: { xs: 2, md: 0 } }}>
-                      <Button
-                        variant="contained"
-                        size="small"
-                        startIcon={<AddRoundedIcon />}
-                        onClick={(event) => openCreate(event, job)}
-                        disableElevation
-                        fullWidth
-                      >
-                        Create Phase
-                      </Button>
-                    </Box>
-                  )}
-                </Stack>
-                <Divider />
-                <AccordionDetails id={`job-${job.id}-phases`} sx={{ p: { xs: 2, md: 2.5 } }}>
-                  {phases.length > 0 ? (
-                    phases.map((phase) => (
-                      <PhaseCard
-                        calendarStatus={calendarCoverage.ready
-                          ? calendarCoverage.statusOf(job, phase)
-                          : null}
-                        canManage={canManageJobs && job.isActive}
-                        key={phase.id}
-                        phase={phase}
-                        onEdit={() => openEdit(job, phase)}
-                        onEmail={() => openEmail(job, phase)}
-                        onDelete={() => setDeleteTarget({ jobId: job.id, phase })}
-                        onOpen={() => openPhaseDetails(job, phase)}
-                      />
-                    ))
-                  ) : (
-                    <Box
-                      sx={{
-                        py: 4,
-                        px: 2,
-                        textAlign: 'center',
-                        border: 1,
-                        borderStyle: 'dashed',
-                        borderColor: 'divider',
-                        borderRadius: 2,
-                      }}
-                    >
-                      <TableChartRoundedIcon color="disabled" sx={{ fontSize: 38, mb: 1 }} />
-                      <Typography fontWeight={700}>No phases created yet</Typography>
-                      <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, mb: 2 }}>
-                        Create the first phase and assign its lots to this Job&apos;s plans.
-                      </Typography>
-                      {canManageJobs && job.isActive && (
-                        <Button
-                          variant="outlined"
-                          startIcon={<AddRoundedIcon />}
-                          onClick={(event) => openCreate(event, job)}
+                        <Stack
+                          direction="row"
+                          spacing={1.5}
+                          useFlexGap
+                          sx={{ alignItems: 'center', flexWrap: 'wrap' }}
                         >
-                          Create Phase
+                          <Typography variant="body2" color="text.secondary">
+                            {getJobPlanCount(job)} {getJobPlanCount(job) === 1 ? 'plan' : 'plans'}
+                            {' · '}
+                            {phases.length} {phases.length === 1 ? 'phase' : 'phases'}
+                          </Typography>
+                          {unscheduledCount > 0 && (
+                            <Chip
+                              size="small"
+                              color="warning"
+                              icon={<EventBusyRoundedIcon />}
+                              label={`${unscheduledCount} without Calendar`}
+                            />
+                          )}
+                        </Stack>
+                      </Stack>
+                    </AccordionSummary>
+                    <Stack
+                      direction="row"
+                      spacing={1}
+                      sx={{ px: { xs: 2, md: 2 }, pb: { xs: 1.5, md: 0 }, alignItems: 'center' }}
+                    >
+                      {jobBuilderId != null && (
+                        <Button
+                          component={RouterLink}
+                          to={jobSequenceSheetPath(jobBuilderId, job.id)}
+                          size="small"
+                          color="inherit"
+                          endIcon={<ArrowForwardRoundedIcon />}
+                          aria-label={`Open Job ${job.code}`}
+                          sx={{ color: 'primary.main' }}
+                        >
+                          Open job
                         </Button>
                       )}
-                    </Box>
-                  )}
-                </AccordionDetails>
-              </Accordion>
-            )
-          })}
-        </Stack>
+                      {canManageJobs && job.isActive && (
+                        <Button
+                          variant="contained"
+                          size="small"
+                          startIcon={<AddRoundedIcon />}
+                          onClick={(event) => openCreate(event, job)}
+                          disableElevation
+                        >
+                          Create phase
+                        </Button>
+                      )}
+                    </Stack>
+                  </Stack>
+                  <AccordionDetails
+                    id={`job-${job.id}-phases`}
+                    sx={{ p: 0, borderTop: 1, borderColor: 'divider' }}
+                  >
+                    {jobPhasesContent(job)}
+                  </AccordionDetails>
+                </Accordion>
+              )
+            })}
+          </Stack>
+        )}
 
         {!loading && filteredJobs.length === 0 && (
-          <Box sx={{ py: 8, textAlign: 'center' }}>
-            <Typography fontWeight={700}>
-              {jobId ? 'The selected Job is unavailable.' : 'No Jobs match these filters.'}
-            </Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-              {jobId
+          <Box
+            sx={{
+              bgcolor: 'background.paper',
+              border: 1,
+              borderColor: 'divider',
+              borderRadius: 2,
+            }}
+          >
+            <CatalogEmptyState
+              title={jobId ? 'The selected Job is unavailable' : 'No jobs match these filters'}
+              description={jobId
                 ? 'Return to Jobs and choose a Job that belongs to this builder.'
                 : 'Try another Job number, builder or community, or clear the filters.'}
-            </Typography>
-            {!jobId && hasActiveFilters && (
-              <Button onClick={clearFilters} sx={{ mt: 1.5 }}>Clear filters</Button>
-            )}
+              action={jobId
+                ? (
+                  <Button component={RouterLink} to="/jobs" size="small" variant="outlined">
+                    Go to Jobs
+                  </Button>
+                )
+                : hasActiveFilters
+                  ? (
+                    <Button size="small" variant="outlined" onClick={clearFilters}>
+                      Clear filters
+                    </Button>
+                  )
+                  : undefined}
+            />
           </Box>
         )}
       </Box>

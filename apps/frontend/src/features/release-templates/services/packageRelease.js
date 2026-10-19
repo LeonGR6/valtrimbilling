@@ -172,6 +172,40 @@ export function buildPackageFillValues(values, pending = values.pendingPackages 
 }
 
 /**
+ * The editable Exceptions lines a Package starts with: one per unpaid earlier
+ * Package (included, with its cut-off date and net amount as input text). A
+ * person can edit them, leave one out or add lines by hand before generating.
+ */
+export function buildExceptionRows(values) {
+  return (values.pendingPackages ?? []).map((item) => ({
+    key: `package-${item.id}`,
+    packageId: item.id,
+    include: true,
+    date: item.cutoffDate ?? '',
+    amount: item.netAmount === null ? '' : String(item.netAmount),
+  }))
+}
+
+/** An empty line the person fills in by hand. `key` must be unique among the rows. */
+export function newManualExceptionRow(key) {
+  return { key, packageId: null, include: true, date: '', amount: '' }
+}
+
+/**
+ * The two Exceptions lists to print from the rows: a date and an amount per
+ * included row. A blank date or amount adds nothing to its own list.
+ */
+export function buildExceptionFillValues(rows) {
+  const included = rows.filter((row) => row.include)
+  return {
+    waiver_release_dates: included.map((row) => row.date).filter(Boolean),
+    unpaid_progress_amount: included
+      .map((row) => String(row.amount ?? '').trim())
+      .filter((amount) => amount !== ''),
+  }
+}
+
+/**
  * What a template will do for this Package: the variables it maps that a
  * Package fills, and those it maps that stay blank for now.
  */

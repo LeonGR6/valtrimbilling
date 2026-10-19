@@ -1,12 +1,15 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
+  buildExceptionFillValues,
+  buildExceptionRows,
   buildPackageDocumentStoragePath,
   buildPackageFillValues,
   buildPackageReleaseFileName,
   describeFillPlan,
   chooseRelease,
   isFromPastCutoff,
+  newManualExceptionRow,
   CONDITIONAL_FINAL_TYPE,
   CONDITIONAL_PROGRESS_TYPE,
   describePendingPackage,
@@ -430,4 +433,24 @@ test('the list shows the stage of an unpaid Package', () => {
   assert.equal(describePendingPackage({ workflowStatus: 'AWAITING_PAYMENT' }).workflowLabel, 'Awaiting payment')
   assert.equal(describePendingPackage({ workflowStatus: 'DRAFT' }).workflowLabel, 'Draft')
   assert.equal(describePendingPackage({ workflowStatus: 'OTHER' }).workflowLabel, 'OTHER')
+})
+
+test('the Exceptions rows start from the unpaid earlier Packages and can be edited', () => {
+  const values = toPackageReleaseValues(row)
+  const rows = buildExceptionRows(values)
+  assert.deepEqual(rows.map(({ date, amount, include }) => ({ date, amount, include })), [
+    { date: '2026-09-20', amount: '1200', include: true },
+    { date: '2026-10-05', amount: '845.5', include: true },
+  ])
+
+  const edited = [
+    { ...rows[0], amount: '1,250.00' },
+    { ...rows[1], include: false },
+    { ...newManualExceptionRow('manual-1'), date: '2026-08-01', amount: '300' },
+    { ...newManualExceptionRow('manual-2'), date: '', amount: '  ' },
+  ]
+  assert.deepEqual(buildExceptionFillValues(edited), {
+    waiver_release_dates: ['2026-09-20', '2026-08-01'],
+    unpaid_progress_amount: ['1,250.00', '300'],
+  })
 })

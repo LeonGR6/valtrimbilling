@@ -12,21 +12,25 @@ import {
   DialogContent,
   DialogTitle,
   Divider,
-  FormControlLabel,
   IconButton,
   InputAdornment,
   Stack,
   TextField,
   Typography,
 } from '@mui/material'
+import AddRoundedIcon from '@mui/icons-material/AddRounded'
+import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
 import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded'
 import VisibilityRoundedIcon from '@mui/icons-material/VisibilityRounded'
 import TaskAltRoundedIcon from '@mui/icons-material/TaskAltRounded'
 import PdfPreviewDialog from './PdfPreviewDialog.jsx'
 import { formatCurrency } from '../../draw-invoice/utils/drawInvoiceFormatters.js'
 import {
+  buildExceptionFillValues,
+  buildExceptionRows,
   buildPackageFillValues,
   buildPackageReleaseFileName,
+  newManualExceptionRow,
   describeFillPlan,
   chooseRelease,
   describePendingPackage,
@@ -42,7 +46,7 @@ import { getReleaseVariable, releaseTypeLabel } from '../services/releaseTemplat
 import { formatReleaseValue, formatReleaseValues } from '../services/releaseValueFormat.js'
 
 // The three values a person can correct before generating. The two Exceptions
-// lines come from the unpaid earlier Packages instead.
+// lines are edited as rows (one per unpaid earlier Package, or added by hand).
 const EDITABLE_VARIABLES = ['through_date', 'check_amount', 'signature_date']
 
 const HELPER_TEXT = {
@@ -102,8 +106,9 @@ export default function GeneratePackageReleaseDialog({
   const [loadError, setLoadError] = useState(null)
   const [form, setForm] = useState({ through_date: '', check_amount: '', signature_date: '' })
   const [signatureFollows, setSignatureFollows] = useState(true)
-  // Unpaid earlier Packages the person took out of the Exceptions lines.
-  const [leftOut, setLeftOut] = useState(() => new Set())
+  // The Exceptions lines: one per unpaid earlier Package, plus any added by hand.
+  const [exceptionRows, setExceptionRows] = useState([])
+  const manualCount = useRef(0)
   const [status, setStatus] = useState('idle')
   const [error, setError] = useState(null)
   const [saved, setSaved] = useState(null)
@@ -133,6 +138,7 @@ export default function GeneratePackageReleaseDialog({
         if (!active) return
         setData(loaded)
         setForm(startingForm(loaded.values))
+        setExceptionRows(buildExceptionRows(loaded.values))
       },
       (loadingError) => {
         if (active) setLoadError(loadingError.message)
@@ -162,9 +168,10 @@ export default function GeneratePackageReleaseDialog({
   const usesExceptions = plan.filled.some(({ key }) => (
     key === 'waiver_release_dates' || key === 'unpaid_progress_amount'
   ))
-  const pending = (data?.values.pendingPackages ?? []).filter(({ id }) => !leftOut.has(id))
   const formatOf = (key) => template?.mapping.fields.find((field) => field.variable === key)?.format
-  const exceptionLines = buildPackageFillValues(data?.values ?? {}, pending)
+  const exceptionLines = buildExceptionFillValues(exceptionRows)
+  const hasExceptionLines = exceptionLines.waiver_release_dates.length > 0
+    || exceptionLines.unpaid_progress_amount.length > 0
 
   // An earlier Package is named by its invoice number once it has one.
   const labelOfEarlier = (item) => {
@@ -172,13 +179,26 @@ export default function GeneratePackageReleaseDialog({
     return record ? packageDocumentNumber(record) : item.number
   }
 
-  const toggleLeftOut = (id) => {
-    setLeftOut((current) => {
-      const next = new Set(current)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
+  const updateExceptionRow = (key, changes) => {
+    setExceptionRows((current) => current.map((row) => (
+      row.key === key ? { ...row, ...changes } : row
+    )))
+  }
+
+  const addExceptionRow = () => {
+    manualCount.current += 1
+    setExceptionRows((current) => [
+      ...current,
+      newManualExceptionRow(`manual-${manualCount.current}`),
+    ])
+  }
+
+  const removeExceptionRow = (key) => {
+    setExceptionRows((current) => current.filter((row) => row.key !== key))
+  }
+
+  const resetExceptionRows = () => {
+    setExceptionRows(buildExceptionRows(data.values))
   }
 
   const setValue = (key, value) => {
@@ -281,9 +301,9 @@ export default function GeneratePackageReleaseDialog({
           ? choice.state
           : null,
       // Changes whenever the generated file would change.
-      signature: JSON.stringify([form, [...leftOut]]),
+      signature: JSON.stringify([form, exceptionRows]),
     })
-  }, [canGenerate, choice?.state, data, form, generating, leftOut, loadError, onReadyChange, status])
+  }, [canGenerate, choice?.state, data, exceptionRows, form, generating, loadError, onReadyChange, status])
 
   const body = (
     <>
@@ -363,57 +383,103 @@ export default function GeneratePackageReleaseDialog({
             {usesExceptions && (
               <Box>
                 <Typography variant="subtitle2" fontWeight={850}>
-                  Unpaid earlier Packages of this Job
+                  Exceptions: unpaid earlier invoices
                 </Typography>
-                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
-                  Their cut-off dates and net amounts fill the Exceptions lines of the form.
-                  Only Packages from an earlier cut-off count. Uncheck a Package to leave it out.
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
+                  One line per unpaid Package of this Job from an earlier cut-off, filled with
+                  its cut-off date and net amount. Edit any value, uncheck a line to leave it
+                  out, or add a line by hand.
                 </Typography>
 
-                {values.pendingPackages.length === 0 ? (
-                  <Typography variant="body2" color="text.secondary">
-                    There are none from an earlier cut-off, so those two lines stay blank.
+                {exceptionRows.length === 0 && (
+                  <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                    There are no unpaid Packages from an earlier cut-off, so these lines stay
+                    blank unless you add one.
                   </Typography>
-                ) : (
-                  <Stack>
-                    {values.pendingPackages.map((item) => (
-                      <FormControlLabel
-                        key={item.id}
-                        disabled={generating}
-                        control={(
-                          <Checkbox
-                            size="small"
-                            checked={!leftOut.has(item.id)}
-                            onChange={() => toggleLeftOut(item.id)}
-                          />
-                        )}
-                        label={(
-                          <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexWrap: 'wrap' }} useFlexGap>
-                            <Typography variant="body2" fontWeight={700}>
-                              {labelOfEarlier(item)}
-                            </Typography>
-                            <Typography variant="body2" color="text.secondary">
-                              Cut-off {formatReleaseValue('through_date', 'MM/DD/YYYY', item.cutoffDate)}
-                              {' · '}
-                              {item.netAmount === null ? 'no amount' : formatCurrency(item.netAmount)}
-                            </Typography>
-                            <Chip size="small" variant="outlined" label={describePendingPackage(item).workflowLabel} />
-                          </Stack>
-                        )}
-                      />
-                    ))}
-                  </Stack>
                 )}
+
+                <Stack spacing={1.25}>
+                  {exceptionRows.map((row) => {
+                    const item = row.packageId === null
+                      ? null
+                      : values.pendingPackages.find(({ id }) => id === row.packageId)
+                    return (
+                      <Stack
+                        key={row.key}
+                        direction="row"
+                        spacing={1}
+                        useFlexGap
+                        sx={{ alignItems: 'center', flexWrap: 'wrap' }}
+                      >
+                        <Checkbox
+                          size="small"
+                          checked={row.include}
+                          disabled={generating}
+                          onChange={(event) => updateExceptionRow(row.key, { include: event.target.checked })}
+                          slotProps={{ input: { 'aria-label': 'Include this line' } }}
+                        />
+                        <Box sx={{ minWidth: 96 }}>
+                          <Typography variant="body2" fontWeight={700}>
+                            {item ? labelOfEarlier(item) : 'Added by hand'}
+                          </Typography>
+                          {item && (
+                            <Chip size="small" variant="outlined" label={describePendingPackage(item).workflowLabel} />
+                          )}
+                        </Box>
+                        <TextField
+                          size="small"
+                          type="date"
+                          label="Date of Waiver and Release"
+                          value={row.date}
+                          disabled={generating || !row.include}
+                          onChange={(event) => updateExceptionRow(row.key, { date: event.target.value })}
+                          slotProps={{ inputLabel: { shrink: true } }}
+                          sx={{ width: 190 }}
+                        />
+                        <TextField
+                          size="small"
+                          label="Unpaid amount"
+                          value={row.amount}
+                          disabled={generating || !row.include}
+                          onChange={(event) => updateExceptionRow(row.key, { amount: event.target.value })}
+                          slotProps={{
+                            input: { startAdornment: <InputAdornment position="start">$</InputAdornment> },
+                          }}
+                          sx={{ width: 150 }}
+                        />
+                        {!item && (
+                          <IconButton
+                            size="small"
+                            aria-label="Remove this line"
+                            disabled={generating}
+                            onClick={() => removeExceptionRow(row.key)}
+                          >
+                            <DeleteOutlineRoundedIcon fontSize="small" />
+                          </IconButton>
+                        )}
+                      </Stack>
+                    )
+                  })}
+                </Stack>
+
+                <Stack direction="row" spacing={1} sx={{ mt: 1 }}>
+                  <Button size="small" startIcon={<AddRoundedIcon />} disabled={generating} onClick={addExceptionRow}>
+                    Add line
+                  </Button>
+                  <Button size="small" color="inherit" disabled={generating} onClick={resetExceptionRows}>
+                    Restore from Packages
+                  </Button>
+                </Stack>
 
                 {values.sameCutoffPackages.length > 0 && (
                   <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
-                    Not counted, because they share this Package's cut-off date (
+                    Not listed, because they share this Package's cut-off date (
                     {formatReleaseValue('through_date', 'MM/DD/YYYY', values.cutoffDate)}
                     ): {values.sameCutoffPackages.map(({ number }) => number).join(', ')}.
                   </Typography>
                 )}
 
-                {pending.length > 0 && (
+                {hasExceptionLines && (
                   <Stack spacing={0.25} sx={{ mt: 1 }}>
                     {plan.filled.some(({ key }) => key === 'waiver_release_dates') && (
                       <Typography variant="body2">

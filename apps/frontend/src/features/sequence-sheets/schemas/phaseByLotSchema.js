@@ -16,13 +16,12 @@ const phaseCodeSchema = z
   .transform(normalizePhaseCode)
   .refine((value) => value.length > 0, 'Enter a phase number or code.')
 
+// A Phase does not need a Building: empty stays empty.
 const buildingCodeSchema = z
   .string()
   .trim()
-  .min(1, 'Enter a building number or code.')
   .max(50, 'Use 50 characters or fewer.')
   .transform(normalizeBuildingCode)
-  .refine((value) => value.length > 0, 'Enter a building number or code.')
 
 const lotAssignmentSchema = z.object({
   id: z.union([z.string(), z.number()]).optional(),
@@ -72,7 +71,28 @@ export function createPhaseByLotSchema(
         context.addIssue({
           code: 'custom',
           path: ['building'],
-          message: 'This phase and building already exist for the selected Job.',
+          message: data.building
+            ? 'This phase and building already exist for the selected Job.'
+            : 'This phase already exists for the selected Job.',
+        })
+      }
+
+      // One Phase code is used with Buildings or without them in a Job, never both.
+      const usesBuilding = (phase) => normalizeBuildingCode(phase.building).length > 0
+      if (
+        phases.some(
+          (phase) =>
+            phase.id !== currentPhaseId &&
+            normalizePhaseCode(phase.name) === normalizePhaseCode(data.phaseName) &&
+            usesBuilding(phase) !== (data.building.length > 0),
+        )
+      ) {
+        context.addIssue({
+          code: 'custom',
+          path: ['building'],
+          message: data.building
+            ? 'This phase is already used without a building in this Job. Use no building for every row of it.'
+            : 'This phase is already used with a building in this Job. Enter the building.',
         })
       }
 

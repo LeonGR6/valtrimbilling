@@ -18,12 +18,10 @@ import {
   isRequiredField,
   linkedFieldIds,
   missingRequiredFields,
+  noticeSaveBlocker,
 } from '../src/features/draw-invoice/services/preliminaryNoticeRules.js'
 import { detectFieldsInPage } from '../src/features/draw-invoice/services/preliminaryNoticeFields.js'
-import {
-  isFirstPackageOfJob,
-  preliminaryNoticeGate,
-} from '../src/features/draw-invoice/utils/preliminaryNotice.js'
+import { preliminaryNoticeGate } from '../src/features/draw-invoice/utils/preliminaryNotice.js'
 
 async function blankPdf({ rotation = 0 } = {}) {
   const doc = await PDFDocument.create()
@@ -64,34 +62,78 @@ const entry = (extra = {}) => ({
   ...extra,
 })
 
-test('the first Package of a Job needs its Preliminary Notice', () => {
-  const packages = [{ jobId: 7 }]
-
-  assert.equal(isFirstPackageOfJob(packages, 8), true)
-  assert.equal(isFirstPackageOfJob(packages, '7'), false)
-
+test('every Package of a Job needs its Preliminary Notice, not only the first', () => {
   assert.deepEqual(
-    preliminaryNoticeGate({ jobId: 8, packages, hasNotice: false }),
+    preliminaryNoticeGate({ jobId: 8, hasNotice: false }),
     { required: true, status: 'missing', blocked: true },
   )
   assert.deepEqual(
-    preliminaryNoticeGate({ jobId: 8, packages, hasNotice: null }),
+    preliminaryNoticeGate({ jobId: 8, hasNotice: null }),
     { required: true, status: 'loading', blocked: true },
   )
   assert.deepEqual(
-    preliminaryNoticeGate({ jobId: 8, packages, hasNotice: true }),
+    preliminaryNoticeGate({ jobId: 8, hasNotice: true }),
     { required: true, status: 'present', blocked: false },
+  )
+  // Having Packages already (a notice deleted afterwards) does not lift it: only
+  // the notice does.
+  assert.equal(preliminaryNoticeGate({ jobId: 7, packages: [{ jobId: 7 }], hasNotice: false }).blocked, true)
+  // Nothing is asked before a Job is chosen.
+  assert.deepEqual(
+    preliminaryNoticeGate({ jobId: '', hasNotice: false }),
+    { required: false, status: 'not-needed', blocked: false },
+  )
+  assert.deepEqual(
+    preliminaryNoticeGate({ jobId: null, hasNotice: null }),
+    { required: false, status: 'not-needed', blocked: false },
   )
 })
 
-test('a Job that already has a Package is never blocked again', () => {
-  const packages = [{ jobId: 7 }]
+test('the notice cannot be saved blank or half filled', () => {
+  const fields = [
+    { id: 'name', kind: 'text', label: 'Name' },
+    { id: 'owner', kind: 'text', label: 'Owner name' },
+    { id: 'sig', kind: 'text', label: 'Signature' },
+    { id: 'addr2', kind: 'text', label: 'Address (cont.)' },
+    { id: 'certified', kind: 'check', label: 'Certified' },
+  ]
 
-  assert.deepEqual(
-    preliminaryNoticeGate({ jobId: 7, packages, hasNotice: false }),
-    { required: false, status: 'not-needed', blocked: false },
+  // Opened and saved without typing anything.
+  assert.match(
+    noticeSaveBlocker({ fields, fieldValues: initialFieldValues(fields), entries: [] }),
+    /Fill in the 2 highlighted blanks/,
   )
-  assert.equal(preliminaryNoticeGate({ jobId: '', packages, hasNotice: false }).blocked, false)
+  // One of the two required blanks.
+  assert.match(
+    noticeSaveBlocker({ fields, fieldValues: { name: 'Acme' }, entries: [] }),
+    /Fill in the 1 highlighted blank to save/,
+  )
+  // A blank with only spaces is not filled.
+  assert.notEqual(
+    noticeSaveBlocker({ fields, fieldValues: { name: 'Acme', owner: '   ' }, entries: [] }),
+    null,
+  )
+  // Required blanks filled; the signature, the second address line and the check
+  // boxes are optional.
+  assert.equal(
+    noticeSaveBlocker({ fields, fieldValues: { name: 'Acme', owner: 'Jo' }, entries: [] }),
+    null,
+  )
+})
+
+test('a PDF without detected blanks needs some text placed by hand to be saved', () => {
+  assert.match(
+    noticeSaveBlocker({ fields: [], fieldValues: {}, entries: [] }),
+    /Fill in the Preliminary Notice before saving/,
+  )
+  assert.notEqual(
+    noticeSaveBlocker({ fields: [], fieldValues: {}, entries: [{ text: '   ' }] }),
+    null,
+  )
+  assert.equal(
+    noticeSaveBlocker({ fields: [], fieldValues: {}, entries: [{ text: 'Job 1318' }] }),
+    null,
+  )
 })
 
 test('the editor lays out the pages of the PDF with their rotation', async () => {

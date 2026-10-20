@@ -18,6 +18,8 @@ export const PACKAGE_RELEASE_VARIABLES = [
   'signature_date',
   'waiver_release_dates',
   'unpaid_progress_amount',
+  // Conditional Final form: the unpaid earlier invoices added up.
+  'disputed_claims_amount',
 ]
 
 const WORKFLOW_LABELS = {
@@ -29,6 +31,26 @@ function toNumberOrNull(value) {
   if (value === null || value === undefined || value === '') return null
   const number = Number(value)
   return Number.isFinite(number) ? number : null
+}
+
+/**
+ * Adds up amounts that may be numbers or typed text ("1,250.50", "$300"). Items
+ * that are not numbers are ignored. Returns '' when none could be added, so the
+ * blank on the form stays empty instead of printing 0.
+ */
+export function sumAmounts(amounts) {
+  let total = 0
+  let found = false
+  for (const amount of amounts) {
+    const number = typeof amount === 'number'
+      ? amount
+      : Number(String(amount ?? '').replace(/[$,\s]/g, '') || Number.NaN)
+    if (Number.isFinite(number)) {
+      total += number
+      found = true
+    }
+  }
+  return found ? Math.round(total * 100) / 100 : ''
 }
 
 function toPendingPackage(row) {
@@ -140,6 +162,23 @@ export function chooseRelease(values, templates) {
   }
 }
 
+/**
+ * The line printed under the signature of a Conditional Final Release, saying
+ * what the Release is final for, from the Builder setup: per Phase, per
+ * Building or per Project. `closing` names the Phases / Buildings this Package
+ * finishes. Null when the setup does not say (or for anything but a Final).
+ */
+export function buildFinalReleaseNote({ scope, closing = [], jobCode = '' }) {
+  const names = closing.filter(Boolean).join(', ')
+
+  if (scope === 'PHASE') return names ? `Final release per Phase: ${names}` : 'Final release per Phase'
+  if (scope === 'BUILDING') return names ? `Final release per Building: ${names}` : 'Final release per Building'
+  if (scope === 'PROJECT') {
+    return jobCode ? `Final release per Project (Job #${jobCode})` : 'Final release per Project'
+  }
+  return null
+}
+
 /** Short description of an unpaid earlier Package for the list. */
 export function describePendingPackage(pending) {
   return {
@@ -155,6 +194,8 @@ export function describePendingPackage(pending) {
  *  - Date(s) of waiver and release: the cut-off date of each unpaid earlier
  *    Package of the Job.
  *  - Amount(s) of unpaid progress payment(s): the net amount of each of them.
+ *  - Disputed claims for extras (Conditional Final form): their net amounts
+ *    added up.
  *
  * `pending` is the part of `values.pendingPackages` to include, in order. Dates
  * and amounts are lists; a Package without an invoice amount adds only its date.
@@ -168,6 +209,7 @@ export function buildPackageFillValues(values, pending = values.pendingPackages 
     unpaid_progress_amount: pending
       .map((item) => item.netAmount)
       .filter((amount) => amount !== null),
+    disputed_claims_amount: sumAmounts(pending.map((item) => item.netAmount)),
   }
 }
 
@@ -192,8 +234,9 @@ export function newManualExceptionRow(key) {
 }
 
 /**
- * The two Exceptions lists to print from the rows: a date and an amount per
- * included row. A blank date or amount adds nothing to its own list.
+ * What the Exceptions blanks print, from the rows: a date and an amount per
+ * included row for the Progress form, and the amounts added up for the Final
+ * form. A blank date or amount adds nothing.
  */
 export function buildExceptionFillValues(rows) {
   const included = rows.filter((row) => row.include)
@@ -202,6 +245,7 @@ export function buildExceptionFillValues(rows) {
     unpaid_progress_amount: included
       .map((row) => String(row.amount ?? '').trim())
       .filter((amount) => amount !== ''),
+    disputed_claims_amount: sumAmounts(included.map((row) => row.amount)),
   }
 }
 

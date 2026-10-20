@@ -18,6 +18,7 @@ import {
 import ApartmentRoundedIcon from '@mui/icons-material/ApartmentRounded'
 import BusinessRoundedIcon from '@mui/icons-material/BusinessRounded'
 import CalendarMonthRoundedIcon from '@mui/icons-material/CalendarMonthRounded'
+import { extraEventLabel } from '../utils/calendarExtraEvents.js'
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined'
 import EngineeringRoundedIcon from '@mui/icons-material/EngineeringRounded'
@@ -251,6 +252,7 @@ function StageScheduleDetail({ activityType, schedule, lotStart, lotEnd, lotNumb
   const optionLabels = [
     schedule.orderMaterial && 'Order material',
     schedule.installOnly && 'Install only',
+    schedule.baseboardInstall && 'Baseboard install',
     schedule.splitPhase && 'Split phase',
     schedule.shutters && 'Shutter',
     schedule.lockUp && 'Lock up',
@@ -293,6 +295,18 @@ function StageScheduleDetail({ activityType, schedule, lotStart, lotEnd, lotNumb
             tone={tone}
           />
         )}
+        {schedule.baseboardInstall && (
+          <ScheduleRow
+            label="Baseboard install"
+            lotStart={lotStart}
+            lotEnd={lotEnd}
+            lotNumbers={lotNumbers}
+            date={schedule.baseboardInstallDate}
+            dateOwner={schedule.baseboardInstallDateOwner}
+            note={schedule.baseboardInstallDateNote}
+            tone={tone}
+          />
+        )}
         {schedule.lockUp && (
           <ScheduleRow
             label="Lock up"
@@ -318,6 +332,7 @@ export default function ActivityDetail({
   onClose,
   onEdit,
   onDelete,
+  onRemoveExtra,
   canEdit = true,
   deleting = false,
 }) {
@@ -329,6 +344,9 @@ export default function ActivityDetail({
   if (!event) return null
 
   const props = event.extendedProps
+  // An extra event (install only, baseboard install, lock up) is taken off on
+  // its own; any other event belongs to an activity that is deleted as a whole.
+  const extraLabel = extraEventLabel(props.variant)
   const type = activityTypeMap[props.activityType]
   const tone = getActivityTone(props.activityType, props.orderMaterial)
   const phaseLotNumbers = props.phaseLotNumbers ?? props.lotNumbers ?? []
@@ -351,7 +369,7 @@ export default function ActivityDetail({
   const confirmDelete = async () => {
     setDeleteError('')
     try {
-      await onDelete()
+      await (extraLabel ? onRemoveExtra() : onDelete())
     } catch (error) {
       setDeleteError(error.message)
     }
@@ -395,7 +413,9 @@ export default function ActivityDetail({
           <DetailRow icon={<BusinessRoundedIcon />} label="Builder">{props.builder}</DetailRow>
           <DetailRow icon={<LocationOnOutlinedIcon />} label="Community">{props.community}</DetailRow>
           <DetailRow icon={<LayersOutlinedIcon />} label="Phase">{props.phase}</DetailRow>
-          <DetailRow icon={<ApartmentRoundedIcon />} label="Building">{props.building}</DetailRow>
+          {props.building && (
+            <DetailRow icon={<ApartmentRoundedIcon />} label="Building">{props.building}</DetailRow>
+          )}
           <ContactDetailRow contact={eventContacts.supervisor} onClick={openContact} />
           <ContactDetailRow contact={eventContacts.superintendent} onClick={openContact} />
         </Box>
@@ -438,7 +458,7 @@ export default function ActivityDetail({
           disabled={!canEdit || deleting}
           className="activity-drawer__delete-action"
         >
-          Delete
+          {extraLabel ? `Remove ${extraLabel.toLowerCase()}` : 'Delete activity'}
         </Button>
         <Button variant="outlined" color="inherit" onClick={onClose}>Close</Button>
         <Button
@@ -453,13 +473,15 @@ export default function ActivityDetail({
       </Box>
 
       <Dialog open={deleteDialogOpen} onClose={closeDeleteDialog} fullWidth maxWidth="xs">
-        <DialogTitle>Delete Production activity?</DialogTitle>
+        <DialogTitle>
+          {extraLabel ? `Remove ${extraLabel.toLowerCase()}?` : 'Delete Production activity?'}
+        </DialogTitle>
         <DialogContent>
           <Stack spacing={2} sx={{ pt: 0.5 }}>
             <Typography variant="body2" color="text.secondary">
-              This removes every calendar event in this activity, including EXT, Shutter,
-              DM, HW and their variants. The persisted activity and its audit history will
-              be retained.
+              {extraLabel
+                ? `Only this ${extraLabel.toLowerCase()} event is removed. The EXT, DM and HW events and the rest of the activity stay as they are, and the date history is kept.`
+                : 'This deletes the whole activity: every calendar event in it, including EXT, Shutter, DM, HW and any extra events (install only, baseboard install, lock up). The persisted activity and its audit history will be retained.'}
             </Typography>
             {deleteError && <Alert severity="error">{deleteError}</Alert>}
           </Stack>
@@ -474,7 +496,9 @@ export default function ActivityDetail({
             disabled={deleting}
             disableElevation
           >
-            {deleting ? 'Deleting…' : 'Delete activity'}
+            {extraLabel
+              ? (deleting ? 'Removing…' : 'Remove event')
+              : (deleting ? 'Deleting…' : 'Delete activity')}
           </Button>
         </DialogActions>
       </Dialog>

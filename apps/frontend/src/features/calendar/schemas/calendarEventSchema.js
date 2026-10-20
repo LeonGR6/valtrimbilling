@@ -80,7 +80,8 @@ export const productionActivitySchema = z.object({
   builder: requiredText('The selected job needs a builder.'),
   community: requiredText('The selected job needs a community.'),
   phase: requiredText('Select a phase.', 40),
-  building: requiredText('The selected phase needs a building.', 40),
+  // A Phase can have no Building.
+  building: z.string().trim().max(40, 'Use 40 characters or fewer.').optional().default(''),
   lotStart: lotField,
   lotEnd: lotField,
   lotNumbers: z.array(requiredText('Every lot needs a number.', 40)).min(1, 'The selected phase has no lots.'),
@@ -117,6 +118,12 @@ export const productionActivitySchema = z.object({
   dmInstallDateNote: dateNoteField,
   dmInstallDateHistory: dateHistoryField,
   dmInstallScheduleId: persistedIdField.optional().default(null),
+  dmBaseboardInstall: z.boolean().default(false),
+  dmBaseboardInstallDate: z.string().default(''),
+  dmBaseboardInstallDateOwner: dateOwnerField,
+  dmBaseboardInstallDateNote: dateNoteField,
+  dmBaseboardInstallDateHistory: dateHistoryField,
+  dmBaseboardInstallScheduleId: persistedIdField.optional().default(null),
   dmSplitPhase: z.boolean().default(false),
   dmSplitParts: z.array(splitPartSchema).default([]),
   hwDate: dateField,
@@ -187,6 +194,22 @@ export const productionActivitySchema = z.object({
       code: z.ZodIssueCode.custom,
       path: ['dmInstallDateOwner'],
       message: 'Select who owns the DM install-only date.',
+    })
+  }
+
+  if (value.dmBaseboardInstall && !/^\d{4}-\d{2}-\d{2}$/.test(value.dmBaseboardInstallDate)) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['dmBaseboardInstallDate'],
+      message: 'Select the DM baseboard install date.',
+    })
+  }
+
+  if (value.dmBaseboardInstall && !isDateOwner(value.dmBaseboardInstallDateOwner)) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['dmBaseboardInstallDateOwner'],
+      message: 'Select who owns the DM baseboard install date.',
     })
   }
 

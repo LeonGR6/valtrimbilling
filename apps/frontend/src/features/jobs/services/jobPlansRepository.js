@@ -39,6 +39,7 @@ const OPTION_PRICE_COLUMNS = [
   'id',
   'option_id',
   'price',
+  'is_not_applicable',
   'effective_from',
   'effective_to',
 ].join(', ')
@@ -72,6 +73,10 @@ function throwRepositoryError(error) {
   }
 
   if (error.code === '23514') {
+    if (error.message?.includes('Plans changed')) {
+      throw new Error(error.message, { cause: error })
+    }
+
     throw new Error('Review the price and enter a valid amount.', { cause: error })
   }
 
@@ -99,6 +104,7 @@ export async function listJobPlans(jobIds) {
     .select(PLAN_COLUMNS)
     .in('job_id', normalizedJobIds)
     .eq('is_active', true)
+    .order('display_order', { ascending: true })
     .order('id', { ascending: true })
 
   throwRepositoryError(plansError)
@@ -218,6 +224,16 @@ export async function updateJobPlan(planId, plan) {
   return toJobPlan(data)
 }
 
+export async function reorderJobPlans(jobId, planIds) {
+  const client = await requireSupabase()
+  const { error } = await client.rpc('reorder_job_plans', {
+    p_job_id: Number(jobId),
+    p_plan_ids: planIds.map(Number),
+  })
+
+  throwRepositoryError(error)
+}
+
 export async function deactivateJobPlan(planId) {
   const client = await requireSupabase()
   const { error } = await client.rpc('deactivate_job_plan', {
@@ -237,6 +253,21 @@ export async function createPlanOption(planId, option) {
 
   throwRepositoryError(error)
   return toPlanOption(data)
+}
+
+/** Creates several Options of a Plan at once (used when copying from another Plan). */
+export async function createPlanOptions(planId, options) {
+  if (options.length === 0) return []
+
+  const client = await requireSupabase()
+  const { data, error } = await client
+    .from('plan_options')
+    .insert(options.map((option) => toPlanOptionMutation(planId, option)))
+    .select(OPTION_COLUMNS)
+    .order('id', { ascending: true })
+
+  throwRepositoryError(error)
+  return (data ?? []).map((row) => toPlanOption(row))
 }
 
 export async function updatePlanOption(optionId, option) {
@@ -280,13 +311,17 @@ export async function saveJobPlanPrice(planId, basePrice, hardwarePrice) {
   }
 }
 
-export async function savePlanOptionPrice(optionId, price) {
+/** Sets an Option price, or NA (`notApplicable`): then it is $0 and adds and subtracts nothing. */
+export async function savePlanOptionPrice(optionId, price, notApplicable = false) {
   const client = await requireSupabase()
   const { error } = await client.rpc(
     'set_option_price',
-    toOptionPriceRpc(optionId, price),
+    toOptionPriceRpc(optionId, price, notApplicable),
   )
 
   throwRepositoryError(error)
-  return { price: Number(price) }
+  return {
+    price: notApplicable ? 0 : Number(price),
+    priceNotApplicable: Boolean(notApplicable),
+  }
 }

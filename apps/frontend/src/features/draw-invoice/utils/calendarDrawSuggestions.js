@@ -95,6 +95,12 @@ function estimateInvoiceAmount(
   return Number(summary.invoiceAmount) || 0
 }
 
+// Baseboard install is a calendar event of its own after DM: it never makes
+// anything billable (and, dated earlier by mistake, it cannot bring billing forward).
+function countsForBilling(productionSchedule) {
+  return productionSchedule.variant !== 'BASEBOARD_INSTALL'
+}
+
 function emptySuggestion(mode, cutoffDate = null) {
   return {
     mode,
@@ -108,6 +114,7 @@ function emptySuggestion(mode, cutoffDate = null) {
     eligibleHardwareSelections: [],
     suggestedHardwareSelections: [],
     estimatedInvoiceAmount: 0,
+    overdueCount: 0,
     eventTypes: [],
   }
 }
@@ -181,6 +188,7 @@ export function buildDrawCalendarHeadings({
         for (const productionSchedule of stage.schedules ?? []) {
           if (
             productionSchedule.isActive === false
+            || !countsForBilling(productionSchedule)
             || !parseDateKey(productionSchedule.date)
             || !(productionSchedule.lotIds ?? []).some(
               (lotId) => phaseLotIds.has(String(lotId)),
@@ -256,7 +264,11 @@ export function buildCalendarDrawSuggestion({
         : 0
 
       for (const productionSchedule of stage.schedules ?? []) {
-        if (productionSchedule.isActive === false || !parseDateKey(productionSchedule.date)) {
+        if (
+          productionSchedule.isActive === false
+          || !countsForBilling(productionSchedule)
+          || !parseDateKey(productionSchedule.date)
+        ) {
           continue
         }
 
@@ -369,6 +381,7 @@ export function buildCalendarDrawSuggestion({
         schedule,
         packages,
       ),
+      overdueCount: 0,
       eventTypes,
     }
   }
@@ -429,6 +442,29 @@ export function buildCalendarDrawSuggestion({
     }
   }
 
+  // Work that was ready before the window and is still unbilled is overdue: it is
+  // suggested too, so nothing is left behind. (Work after the window stays
+  // available to pick by hand.) Like a cut-off builder, which suggests everything
+  // up to its cut-off date.
+  const overdueSelections = bestWindow
+    ? eligibleCandidates
+      .filter(({ billableDate }) => billableDate < bestWindow.windowStart)
+      .map(({ phaseId, lotId, drawIndex }) => ({ phaseId, lotId, drawIndex }))
+    : []
+  const overdueHardwareSelections = bestWindow
+    ? eligibleHardwareCandidates
+      .filter(({ billableDate }) => billableDate < bestWindow.windowStart)
+      .map(({ phaseId, lotId, eventType }) => ({ phaseId, lotId, eventType }))
+    : []
+  const suggestedSelections = [
+    ...overdueSelections,
+    ...(bestWindow?.selections ?? []),
+  ].sort(compareSelections)
+  const suggestedHardwareSelections = [
+    ...overdueHardwareSelections,
+    ...(bestWindow?.hardwareSelections ?? []),
+  ].sort(compareHardwareSelections)
+
   return {
     mode,
     cutoffDate: null,
@@ -438,9 +474,19 @@ export function buildCalendarDrawSuggestion({
     eligibleSelections,
     eligibleHardwareCandidates,
     eligibleHardwareSelections,
-    suggestedSelections: bestWindow?.selections ?? [],
-    suggestedHardwareSelections: bestWindow?.hardwareSelections ?? [],
-    estimatedInvoiceAmount: bestWindow?.estimatedInvoiceAmount ?? 0,
+    suggestedSelections,
+    suggestedHardwareSelections,
+    estimatedInvoiceAmount: overdueSelections.length + overdueHardwareSelections.length > 0
+      ? estimateInvoiceAmount(
+        suggestedSelections,
+        suggestedHardwareSelections,
+        job,
+        phases,
+        schedule,
+        packages,
+      )
+      : bestWindow?.estimatedInvoiceAmount ?? 0,
+    overdueCount: overdueSelections.length + overdueHardwareSelections.length,
     eventTypes,
   }
 }

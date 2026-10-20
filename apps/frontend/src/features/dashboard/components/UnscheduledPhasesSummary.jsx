@@ -11,10 +11,7 @@ import {
   Stack,
   Typography,
 } from '@mui/material'
-import {
-  formatBuilding,
-  formatPhase,
-} from '../../calendar/components/calendarSchedulerUtils.js'
+import { formatPhaseBuilding } from '../../calendar/components/calendarSchedulerUtils.js'
 import { CALENDAR_UNSCHEDULED_PATH } from '../../calendar/utils/calendarRoutes.js'
 
 export const UNSCHEDULED_PHASES_PREVIEW_LIMIT = 5
@@ -67,7 +64,7 @@ export default function UnscheduledPhasesSummary({ coverage }) {
                 />
                 <Box sx={{ flexGrow: 1, minWidth: 0 }}>
                   <Typography variant="body2" fontWeight={750} noWrap>
-                    Job #{job.code} · {formatPhase(phase.name)} · {formatBuilding(phase.building)}
+                    Job #{job.code} · {formatPhaseBuilding(phase.name, phase.building)}
                   </Typography>
                   <Typography variant="caption" color="text.secondary" noWrap component="div">
                     {job.builder} · {job.community}

@@ -5,7 +5,7 @@ import {
   getHardwareEventPercentage,
   getUtilityBillingMode,
   getUtilityEventPercentage,
-  hasPlanPrice,
+  hasOptionPrice,
 } from './drawWorksheet.js'
 
 export function drawSelectionKey(jobId, phaseId, lotId, drawIndex) {
@@ -138,6 +138,7 @@ export function buildOptionChargeContext(
         packageId: record.id,
         packageNumber: record.packageNumber,
         price: option.price,
+        priceNotApplicable: option.priceNotApplicable === true,
         billingDrawIndex: option.billingDrawIndex,
       })
     }
@@ -455,7 +456,8 @@ function getSelectedOptionRows(selectedRows) {
       optionCode: option.code,
       description: option.description,
       price: option.price,
-      issue: hasPlanPrice(option.price) ? null : 'PRICE_MISSING',
+      priceNotApplicable: option.priceNotApplicable === true,
+      issue: hasOptionPrice(option.price) ? null : 'PRICE_MISSING',
     })),
   )
 }
@@ -643,6 +645,7 @@ export function summarizeDrawPackage(record, job, phaseOrPhases, schedule) {
       billedPackageId: billed.packageId,
       billedPackageNumber: billed.packageNumber,
       billedPrice: billed.price,
+      billedPriceNotApplicable: billed.priceNotApplicable === true,
       billingDrawIndex: billed.billingDrawIndex,
     }
   })

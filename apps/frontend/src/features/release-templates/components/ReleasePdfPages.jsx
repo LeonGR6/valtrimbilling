@@ -24,6 +24,7 @@ const VARIABLE_COLOR = {
   signature_date: 'warning',
   waiver_release_dates: 'info',
   unpaid_progress_amount: 'secondary',
+  disputed_claims_amount: 'error',
 }
 
 function PdfLoading({ children }) {

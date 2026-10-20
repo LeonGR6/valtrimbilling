@@ -62,7 +62,10 @@ import {
   utilityBillingModeOptions,
   weekdayOptions,
 } from '../data/builderDrawSchedules.js'
-import { createBuilderDrawScheduleSchema } from '../schemas/builderDrawScheduleSchema.js'
+import {
+  createBuilderDrawScheduleSchema,
+  percentageFromFraction,
+} from '../schemas/builderDrawScheduleSchema.js'
 import {
   computeDrawPeriods,
   describeSchedule,
@@ -145,7 +148,8 @@ function SchedulePreview({ control }) {
             </Typography>
             <Typography variant="caption" color="text.secondary">
               Create Package will preselect the highest-value rolling 14-day
-              window of open Calendar work through today.
+              window of open Calendar work through today, plus any older work
+              that is still unbilled.
             </Typography>
           </Box>
         </Stack>
@@ -262,6 +266,28 @@ function BuilderDrawScheduleDialog({
   const cutoffDay = useWatch({ control, name: 'cutoffDay' })
   const retentionEnabled = useWatch({ control, name: 'retentionEnabled' })
   const ocipWrapEnabled = useWatch({ control, name: 'ocipWrapEnabled' })
+  const retentionTyped = useWatch({ control, name: 'retentionPercentage' })
+  const ocipWrapTyped = useWatch({ control, name: 'ocipWrapPercentage' })
+
+  // 0.0833 means 8.33%: it is read that way when saved and rewritten once the
+  // field loses focus, with a hint while it is typed.
+  const percentageInputProps = (name) => {
+    const field = register(name)
+    return {
+      ...field,
+      onBlur: (event) => {
+        field.onBlur(event)
+        const percentage = percentageFromFraction(event.target.value)
+        if (percentage !== null) {
+          setValue(name, percentage, { shouldValidate: true, shouldDirty: true })
+        }
+      },
+    }
+  }
+  const fractionHint = (typed) => {
+    const percentage = percentageFromFraction(typed)
+    return percentage === null ? null : `${typed} is read as ${percentage}%.`
+  }
   const requiresRelease = useWatch({ control, name: 'requiresRelease' })
   const submissionMethod = useWatch({ control, name: 'submissionMethod' })
   const total = getDrawTotal(watchedDraws)
@@ -1124,10 +1150,11 @@ function BuilderDrawScheduleDialog({
                   <TextField
                     label="Retention percentage"
                     type="number"
-                    {...register('retentionPercentage')}
+                    {...percentageInputProps('retentionPercentage')}
                     error={Boolean(errors.retentionPercentage)}
                     helperText={
                       errors.retentionPercentage?.message
+                      ?? fractionHint(retentionTyped)
                       ?? 'Percentage deducted from every Package line.'
                     }
                     fullWidth
@@ -1186,10 +1213,11 @@ function BuilderDrawScheduleDialog({
                 <TextField
                   label="OCIP / WRAP insurance percentage"
                   type="number"
-                  {...register('ocipWrapPercentage')}
+                  {...percentageInputProps('ocipWrapPercentage')}
                   error={Boolean(errors.ocipWrapPercentage)}
                   helperText={
                     errors.ocipWrapPercentage?.message
+                    ?? fractionHint(ocipWrapTyped)
                     ?? 'Insurance percentage deducted by the builder.'
                   }
                   fullWidth

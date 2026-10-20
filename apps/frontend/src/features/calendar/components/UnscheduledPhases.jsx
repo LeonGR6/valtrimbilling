@@ -12,7 +12,7 @@ import {
 } from '@mui/material'
 import EventAvailableRoundedIcon from '@mui/icons-material/EventAvailableRounded'
 import EventBusyRoundedIcon from '@mui/icons-material/EventBusyRounded'
-import { formatBuilding, formatPhase } from './calendarSchedulerUtils.js'
+import { formatPhaseBuilding } from './calendarSchedulerUtils.js'
 
 function groupByJob(unscheduled) {
   const groups = new Map()
@@ -113,7 +113,7 @@ export default function UnscheduledPhases({
                     >
                       <Box sx={{ flex: 1, minWidth: 0 }}>
                         <Typography fontWeight={750}>
-                          {formatPhase(phase.name)} · {formatBuilding(phase.building)}
+                          {formatPhaseBuilding(phase.name, phase.building)}
                         </Typography>
                         <Typography variant="caption" color="text.secondary">
                           {lotCount} {lotCount === 1 ? 'lot' : 'lots'}

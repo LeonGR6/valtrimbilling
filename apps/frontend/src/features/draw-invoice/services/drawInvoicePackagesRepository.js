@@ -112,6 +112,7 @@ const OPTION_COLUMNS = [
   'option_code',
   'option_name',
   'option_price',
+  'option_not_applicable',
   'phase_id',
   'phase_code',
   'building',

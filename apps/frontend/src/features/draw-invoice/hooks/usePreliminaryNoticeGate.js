@@ -5,13 +5,13 @@ import { onJobDocumentsChanged } from '../services/jobDocumentEvents.js'
 
 /**
  * Whether creating a Package for this Job must wait for its Preliminary Notice:
- * only the first Package of a Job needs it. The answer follows uploads made
- * while the dialog is open.
+ * every Package needs it. The answer follows notices filled in or deleted while
+ * the dialog is open.
  */
-export function usePreliminaryNoticeGate(jobId, packages) {
+export function usePreliminaryNoticeGate(jobId) {
   const [lookup, setLookup] = useState({ jobId: null, hasNotice: null, error: null })
   const [reloads, setReloads] = useState(0)
-  const needsLookup = preliminaryNoticeGate({ jobId, packages, hasNotice: false }).required
+  const needsLookup = preliminaryNoticeGate({ jobId, hasNotice: false }).required
 
   useEffect(() => onJobDocumentsChanged(() => setReloads((count) => count + 1)), [])
 
@@ -35,7 +35,6 @@ export function usePreliminaryNoticeGate(jobId, packages) {
   const failed = current && lookup.error != null
   const gate = preliminaryNoticeGate({
     jobId,
-    packages,
     hasNotice: current ? lookup.hasNotice : null,
   })
   const recheck = useCallback(() => setReloads((count) => count + 1), [])

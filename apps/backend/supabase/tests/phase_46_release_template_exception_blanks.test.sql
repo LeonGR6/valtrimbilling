@@ -10,9 +10,10 @@ select ok(
     'check_amount',
     'signature_date',
     'waiver_release_dates',
-    'unpaid_progress_amount'
+    'unpaid_progress_amount',
+    'disputed_claims_amount'
   ]::text[],
-  'The catalog has the five Release variables in a stable order'
+  'The catalog has the six Release variables in a stable order'
 );
 
 select lives_ok(

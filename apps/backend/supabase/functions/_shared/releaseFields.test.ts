@@ -79,7 +79,7 @@ Deno.test("a fillable form matches labels to the field beside them", () => {
   assertEquals(amount.length, 1);
   assertEquals(amount[0].fieldName, "amount");
   // This synthetic page has no "Date of Signature" label.
-  assertEquals(result.missing, ["signature_date"]);
+  assertEquals(result.missing, ["signature_date", "disputed_claims_amount"]);
   assertEquals(result.hasWidgets, true);
 });
 
@@ -97,9 +97,9 @@ Deno.test("a second amount field is not mistaken for the check amount", () => {
   assertEquals(amount.map(({ fieldName }) => fieldName), ["amount"]);
 });
 
-Deno.test("a field that is only named 'amount' is not suggested without its label", () => {
-  // In the unconditional final form the field called "amount" holds the
-  // disputed-claims amount, and there is no check amount at all.
+Deno.test("a field that is only named 'amount' is not taken for the check amount", () => {
+  // In the final forms the field called "amount" holds the disputed-claims
+  // amount, and the unconditional one has no check amount at all.
   const result = detectReleaseFields([
     page([
       run("Exceptions", 278, 338, 53),
@@ -110,10 +110,11 @@ Deno.test("a field that is only named 'amount' is not suggested without its labe
       widget("date", [161, 204, 352, 220]),
     ]),
   ]);
-  // Only the signature date exists in this form; the others are absent.
-  assertEquals(result.suggestions.map(({ variable }) => variable), [
+  assertEquals(result.suggestions.map(({ variable }) => variable).sort(), [
+    "disputed_claims_amount",
     "signature_date",
   ]);
+  assertEquals(find(result, "disputed_claims_amount")[0].fieldName, "amount");
   assertEquals(result.missing, [
     "through_date",
     "check_amount",
@@ -221,6 +222,7 @@ Deno.test("a page without text yields no suggestions and lists both variables as
     "signature_date",
     "waiver_release_dates",
     "unpaid_progress_amount",
+    "disputed_claims_amount",
   ]);
 });
 
@@ -356,11 +358,14 @@ Deno.test("an exception line that already has a value is reported as filled", ()
   assertEquals(dates.rect, null);
 });
 
-Deno.test("'Disputed claims' amounts are not the unpaid progress payment", () => {
+Deno.test("the Disputed claims amount is its own variable, not the unpaid progress payment", () => {
   const result = detectReleaseFields([
     page([run("Disputed claims for extras in the amount of: $", 72, 260, 200)], [
       widget("amount_2", [274, 255, 459, 271]),
     ]),
   ]);
-  assertEquals(result.suggestions, []);
+  assertEquals(result.suggestions.map(({ variable }) => variable), [
+    "disputed_claims_amount",
+  ]);
+  assertEquals(result.suggestions[0].fieldName, "amount_2");
 });

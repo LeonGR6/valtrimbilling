@@ -23,7 +23,6 @@ import {
   DialogTitle,
   Divider,
   FormControlLabel,
-  FormGroup,
   IconButton,
   InputAdornment,
   MenuItem,
@@ -89,9 +88,11 @@ import { createPhaseByLotSchema } from '../schemas/phaseByLotSchema.js'
 import {
   formatBuilding,
   formatPhase,
+  formatPhaseBuilding,
 } from '../utils/phaseBuildingCodes.js'
 import { parseLotRange } from '../utils/lotRange.js'
 import PhasesTable from './PhasesTable.jsx'
+import LotOptionPicker from './LotOptionPicker.jsx'
 import { getPhaseRowCounts, getSelectedOptionCount } from '../utils/phaseCounts.js'
 import SequenceSheetEmailDialog from './SequenceSheetEmailDialog.jsx'
 import { describeSequenceSheetEmailsSent } from '../services/sequenceSheetEmailRecord.js'
@@ -146,7 +147,7 @@ function PhaseDetails({
         ]}
         title={phaseLabel}
         titleAdornment={<PhaseCalendarChip status={calendarStatus} size="medium" />}
-        subtitle={`${buildingLabel} · ${job.community} · ${job.builder}`}
+        subtitle={[buildingLabel, job.community, job.builder].filter(Boolean).join(' · ')}
         meta={(
           <FigureStrip
             label={`${phaseLabel} summary`}
@@ -441,76 +442,43 @@ function LotEditor({ index, fieldId, job, control, register, errors, setValue, r
         </Stack>
 
         <Box>
-          <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1 }}>
-            Options for selected plan
-          </Typography>
-          <Box
-            sx={{
-              border: 1,
-              borderColor: optionError ? 'error.main' : 'divider',
-              borderRadius: 1.5,
-              p: 1.5,
-              minHeight: 58,
-              bgcolor: 'action.hover',
-            }}
-          >
-            {!selectedPlan ? (
-              <Typography variant="body2" color="text.secondary">
-                Choose a plan first.
+          {!selectedPlan || planOptions.length === 0 ? (
+            <>
+              <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1 }}>
+                Options for selected plan
               </Typography>
-            ) : planOptions.length === 0 ? (
-              <Typography variant="body2" color="text.secondary">
-                This plan does not have options configured yet.
-              </Typography>
-            ) : (
-              <Controller
-                key={`${fieldId}-${selectedPlan.id}`}
-                name={`lots.${index}.optionIds`}
-                control={control}
-                render={({ field }) => (
-                  <FormGroup row sx={{ gap: 0.5 }}>
-                    {planOptions.map((option) => {
-                      const isChecked = field.value?.includes(option.id) ?? false
-                      return (
-                        <FormControlLabel
-                          key={option.id}
-                          sx={{
-                            mr: 1.5,
-                            alignItems: 'flex-start',
-                            '& .MuiFormControlLabel-label': { pt: 0.75 },
-                          }}
-                          control={
-                            <Checkbox
-                              size="small"
-                              checked={isChecked}
-                              onChange={(_, checked) => {
-                                const current = field.value ?? []
-                                field.onChange(
-                                  checked
-                                    ? [...current, option.id]
-                                    : current.filter((id) => id !== option.id),
-                                )
-                              }}
-                            />
-                          }
-                          label={
-                            <Box>
-                              <Typography variant="body2" fontWeight={700}>
-                                {option.code}
-                              </Typography>
-                              <Typography variant="caption" color="text.secondary">
-                                {option.description}
-                              </Typography>
-                            </Box>
-                          }
-                        />
-                      )
-                    })}
-                  </FormGroup>
-                )}
-              />
-            )}
-          </Box>
+              <Box
+                sx={{
+                  border: 1,
+                  borderColor: optionError ? 'error.main' : 'divider',
+                  borderRadius: 1.5,
+                  p: 1.5,
+                  minHeight: 58,
+                  bgcolor: 'action.hover',
+                }}
+              >
+                <Typography variant="body2" color="text.secondary">
+                  {!selectedPlan
+                    ? 'Choose a plan first.'
+                    : 'This plan does not have options configured yet.'}
+                </Typography>
+              </Box>
+            </>
+          ) : (
+            <Controller
+              key={`${fieldId}-${selectedPlan.id}`}
+              name={`lots.${index}.optionIds`}
+              control={control}
+              render={({ field }) => (
+                <LotOptionPicker
+                  options={planOptions}
+                  value={field.value ?? []}
+                  onChange={field.onChange}
+                  error={Boolean(optionError)}
+                />
+              )}
+            />
+          )}
           {optionError && (
             <Typography variant="caption" color="error" sx={{ ml: 1.75, mt: 0.5, display: 'block' }}>
               {optionError}
@@ -823,11 +791,11 @@ function PhaseDialog({
                   }}
                 />
                 <TextField
-                  label="Building number / code"
+                  label="Building number / code (optional)"
                   placeholder="Example: 3 or C5"
                   {...register('building')}
                   error={Boolean(errors.building)}
-                  helperText={errors.building?.message ?? 'Enter only the number or code'}
+                  helperText={errors.building?.message ?? 'Only the number or code. Leave empty if this phase has no building.'}
                   sx={{ minWidth: { sm: 190 } }}
                   slotProps={{
                     input: {
@@ -995,7 +963,7 @@ function PhaseDeleteDialog({ busy, target, onClose, onDelete }) {
       maxWidth="xs"
     >
       <DialogTitle>
-        Delete {target ? `${formatPhase(target.phase.name)} · ${formatBuilding(target.phase.building)}` : 'phase'}?
+        Delete {target ? formatPhaseBuilding(target.phase.name, target.phase.building) : 'phase'}?
       </DialogTitle>
       <DialogContent>
         <Stack spacing={2}>
@@ -1203,7 +1171,7 @@ export default function SequenceSheets() {
       }, { lots: 0, utility: 0 })
       setNotice({
         severity: 'success',
-        message: `${formatPhase(form.phaseName)} · ${formatBuilding(form.building)} ${isEditing ? 'updated' : 'created'} with ${rowCounts.lots} lot${rowCounts.lots === 1 ? '' : 's'}${rowCounts.utility > 0 ? ` and ${rowCounts.utility} Utility ${rowCounts.utility === 1 ? 'row' : 'rows'}` : ''}. Total Lots updated.`,
+        message: `${formatPhaseBuilding(form.phaseName, form.building)} ${isEditing ? 'updated' : 'created'} with ${rowCounts.lots} lot${rowCounts.lots === 1 ? '' : 's'}${rowCounts.utility > 0 ? ` and ${rowCounts.utility} Utility ${rowCounts.utility === 1 ? 'row' : 'rows'}` : ''}. Total Lots updated.`,
       })
       if (!isEditing && savedJob) {
         setEmailTarget({ job: savedJob, phase: savedPhase })
@@ -1234,7 +1202,7 @@ export default function SequenceSheets() {
       }
       setNotice({
         severity: 'success',
-        message: `${formatPhase(deleteTarget.phase.name)} · ${formatBuilding(deleteTarget.phase.building)} deleted. Total Lots updated.`,
+        message: `${formatPhaseBuilding(deleteTarget.phase.name, deleteTarget.phase.building)} deleted. Total Lots updated.`,
       })
       setDeleteTarget(null)
     } catch (deleteError) {

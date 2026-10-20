@@ -11,8 +11,7 @@ import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded'
 import HourglassBottomRoundedIcon from '@mui/icons-material/HourglassBottomRounded'
 import SuggestionsCard from './SuggestionsCard.jsx'
 import {
-  formatBuilding,
-  formatPhase,
+  formatPhaseBuilding,
 } from '../../../sequence-sheets/utils/phaseBuildingCodes.js'
 import {
   formatCurrency,
@@ -29,10 +28,10 @@ const statusContent = {
 
 function scopeLabel(suggestion) {
   if (suggestion.scopeType === 'JOB') return 'Per Job'
-  return [
-    formatPhase(suggestion.phase?.name, 'short'),
-    formatBuilding(suggestion.phase?.building, 'short'),
-  ].filter(Boolean).join(' / ')
+  return formatPhaseBuilding(suggestion.phase?.name, suggestion.phase?.building, {
+    variant: 'short',
+    separator: ' / ',
+  })
 }
 
 function eligibilityMessage(suggestion) {

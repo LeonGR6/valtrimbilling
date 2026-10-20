@@ -14,10 +14,7 @@ import {
   TableRow,
   Typography,
 } from '@mui/material'
-import {
-  formatBuilding,
-  formatPhase,
-} from '../../../sequence-sheets/utils/phaseBuildingCodes.js'
+import { formatPhaseBuilding } from '../../../sequence-sheets/utils/phaseBuildingCodes.js'
 import { formatCurrency } from '../../utils/drawInvoiceFormatters.js'
 import { hardwareChargeKey } from '../../utils/drawPackages.js'
 
@@ -107,7 +104,7 @@ export default function CreatePackageHardwareTable({
                       />
                     </TableCell>
                     <TableCell>
-                      {formatPhase(hardware.phaseCode)} / {formatBuilding(hardware.building)}
+                      {formatPhaseBuilding(hardware.phaseCode, hardware.building, { separator: ' / ' })}
                     </TableCell>
                     <TableCell>
                       <Typography color="error.main" fontWeight={850}>

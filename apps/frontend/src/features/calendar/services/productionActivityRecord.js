@@ -118,6 +118,16 @@ export function toProductionActivityRpc(values) {
       allLotIds,
     ))
   }
+  if (values.dmBaseboardInstall) {
+    dmSchedules.push(toSchedule(
+      values.dmBaseboardInstallScheduleId,
+      'BASEBOARD_INSTALL',
+      values.dmBaseboardInstallDate,
+      values.dmBaseboardInstallDateOwner,
+      values.dmBaseboardInstallDateNote,
+      allLotIds,
+    ))
+  }
   stages.push({ type: 'DM', orderMaterial: false, schedules: dmSchedules })
 
   const hwSchedules = toPrimarySchedules(values, 'hw', 'DIVISION')
@@ -158,9 +168,9 @@ function formatPhase(value) {
 }
 
 function formatBuilding(value) {
-  return String(value).toLowerCase().startsWith('building')
-    ? String(value)
-    : `Building ${value}`
+  const text = String(value ?? '').trim()
+  if (!text) return ''
+  return text.toLowerCase().startsWith('building') ? text : `Building ${text}`
 }
 
 function scheduleHistory(schedule) {
@@ -236,6 +246,7 @@ export function toProductionActivityDraft(activity, jobs) {
 
   const extInstall = findSchedule(extStage, 'INSTALL_ONLY')
   const dmInstall = findSchedule(dmStage, 'INSTALL_ONLY')
+  const dmBaseboardInstall = findSchedule(dmStage, 'BASEBOARD_INSTALL')
   const shutter = findSchedule(shutterStage, 'BASE')
   const lockUp = findSchedule(hwStage, 'LOCK_UP')
   const lotNumbers = selectedLots.map((lot) => String(lot.lotNumber))
@@ -292,6 +303,12 @@ export function toProductionActivityDraft(activity, jobs) {
     dmInstallDateNote: dmInstall?.note ?? '',
     dmInstallDateHistory: scheduleHistory(dmInstall),
     dmInstallScheduleId: dmInstall?.id ?? null,
+    dmBaseboardInstall: Boolean(dmBaseboardInstall),
+    dmBaseboardInstallDate: dmBaseboardInstall?.date ?? '',
+    dmBaseboardInstallDateOwner: dmBaseboardInstall?.dateOwner ?? '',
+    dmBaseboardInstallDateNote: dmBaseboardInstall?.note ?? '',
+    dmBaseboardInstallDateHistory: scheduleHistory(dmBaseboardInstall),
+    dmBaseboardInstallScheduleId: dmBaseboardInstall?.id ?? null,
     dmSplitPhase: dmPrimary.some((schedule) => schedule.variant === 'DIVISION'),
     dmSplitParts: toSplitParts(
       dmPrimary.filter((schedule) => schedule.variant === 'DIVISION'),

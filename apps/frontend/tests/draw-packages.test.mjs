@@ -1186,3 +1186,107 @@ test('Package estimates expose unselected Separate Hardware portions for manual 
   assert.equal(summary.lotCount, 1)
   assert.equal(summary.hardwareTotal, 600)
 })
+
+test('a negative Option price is a credit subtracted from the Draw it is billed with', () => {
+  const job = {
+    sequenceSheet: {
+      plans: [{
+        id: 1,
+        code: 'A',
+        price: 1000,
+        options: [
+          { id: 10, code: 'OPT-10', description: 'Door upgrade', price: 300 },
+          { id: 11, code: 'OPT-11', description: 'Builder credit', price: -120.5 },
+        ],
+      }],
+    },
+  }
+  const phase = {
+    id: 3,
+    lots: [{ id: 1, lotNumber: '19', planId: 1, optionIds: [10, 11] }],
+  }
+  const schedule = {
+    draws: [{ percentage: 50 }, { percentage: 50 }],
+    optionsBillingDrawIndex: 0,
+    retentionEnabled: true,
+    retentionPercentage: 10,
+    ocipWrapEnabled: true,
+    ocipWrapPercentage: 5,
+  }
+  const summary = summarizeDrawPackage({
+    selections: [{ phaseId: 3, lotId: 1, drawIndex: 0 }],
+  }, job, phase, schedule)
+
+  assert.equal(summary.unpricedOptionCount, 0)
+  assert.equal(summary.selectedOptionRows.every(({ issue }) => issue === null), true)
+  // 300 - 120.50
+  assert.equal(summary.optionsTotal, 179.5)
+  // Draw 500 + options 179.50
+  assert.equal(summary.grossAmount, 679.5)
+  // Retention and WRAP come out of the reduced amount, not the full one.
+  assert.equal(summary.retention, 67.95)
+  assert.equal(summary.wrapInsurance, 33.98)
+  assert.equal(summary.invoiceAmount, 577.57)
+})
+
+test('an Option priced NA stays on the Lot but adds and subtracts nothing', () => {
+  const job = {
+    sequenceSheet: {
+      plans: [{
+        id: 1,
+        code: 'A',
+        price: 1000,
+        options: [
+          { id: 10, code: 'OPT-10', description: 'Door upgrade', price: 300, priceNotApplicable: false },
+          { id: 11, code: 'OPT-11', description: 'Included at no charge', price: 0, priceNotApplicable: true },
+        ],
+      }],
+    },
+  }
+  const phase = {
+    id: 3,
+    lots: [{ id: 1, lotNumber: '19', planId: 1, optionIds: [10, 11] }],
+  }
+  const schedule = {
+    draws: [{ percentage: 50 }, { percentage: 50 }],
+    optionsBillingDrawIndex: 0,
+    retentionEnabled: true,
+    retentionPercentage: 10,
+  }
+  const summary = summarizeDrawPackage({
+    selections: [{ phaseId: 3, lotId: 1, drawIndex: 0 }],
+  }, job, phase, schedule)
+
+  // Both Options are listed and billable; the NA one is not "price missing".
+  assert.equal(summary.selectedOptionRows.length, 2)
+  assert.equal(summary.unpricedOptionCount, 0)
+  const na = summary.selectedOptionRows.find(({ optionId }) => optionId === 11)
+  assert.equal(na.priceNotApplicable, true)
+  assert.equal(na.issue, null)
+  assert.equal(summary.selectedOptionRows.find(({ optionId }) => optionId === 10).priceNotApplicable, false)
+  // Only the priced Option counts, so the totals are as if the NA one were not there.
+  assert.equal(summary.optionsTotal, 300)
+  assert.equal(summary.grossAmount, 800)
+  assert.equal(summary.retention, 80)
+  assert.equal(summary.invoiceAmount, 720)
+})
+
+test('an Option that was never priced still blocks billing, unlike NA', () => {
+  const job = {
+    sequenceSheet: {
+      plans: [{
+        id: 1,
+        code: 'A',
+        price: 1000,
+        options: [{ id: 12, code: 'OPT-12', description: 'No price yet', price: null }],
+      }],
+    },
+  }
+  const phase = { id: 3, lots: [{ id: 1, lotNumber: '19', planId: 1, optionIds: [12] }] }
+  const summary = summarizeDrawPackage({
+    selections: [{ phaseId: 3, lotId: 1, drawIndex: 0 }],
+  }, job, phase, { draws: [{ percentage: 50 }, { percentage: 50 }], optionsBillingDrawIndex: 0 })
+
+  assert.equal(summary.unpricedOptionCount, 1)
+  assert.equal(summary.selectedOptionRows[0].issue, 'PRICE_MISSING')
+})

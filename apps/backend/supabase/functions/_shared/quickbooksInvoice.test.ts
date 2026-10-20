@@ -145,7 +145,7 @@ Deno.test('sums in cents so floating point noise cannot break the total', () => 
   assertEquals(payload.Line[0].Amount, 0.3)
 })
 
-Deno.test('BUILDING_SCOPE groups by building, names its lots and requires a building', () => {
+Deno.test('BUILDING_SCOPE groups by building and names its lots', () => {
   const payload = buildQuickbooksInvoicePayload({
     ...base,
     invoiceLineFormat: 'BUILDING_SCOPE',
@@ -164,18 +164,29 @@ Deno.test('BUILDING_SCOPE groups by building, names its lots and requires a buil
       ['PHASE 1 BUILDING B LOT #3\nDRAW 3', 50],
     ],
   )
+})
 
-  const error = assertThrows(
-    () =>
-      buildQuickbooksInvoicePayload({
-        ...base,
-        invoiceLineFormat: 'BUILDING_SCOPE',
-        charges: [draw('1', 100)],
-        expectedNetAmount: 100,
-      }),
-    QuickbooksInvoiceError,
+Deno.test('BUILDING_SCOPE groups a Phase without a building by Phase', () => {
+  const payload = buildQuickbooksInvoicePayload({
+    ...base,
+    invoiceLineFormat: 'BUILDING_SCOPE',
+    charges: [
+      draw('1', 100),
+      draw('2', 100),
+      draw('8', 25, 3, '2'),
+      { ...draw('7', 50), phaseCode: '3', building: 'C' },
+    ],
+    expectedNetAmount: 275,
+  })
+
+  assertEquals(
+    payload.Line.map((row) => [row.Description, row.Amount]),
+    [
+      ['PHASE 1 LOTS #1-2\nDRAW 3', 200],
+      ['PHASE 2 LOT #8\nDRAW 3', 25],
+      ['PHASE 3 BUILDING C LOT #7\nDRAW 3', 50],
+    ],
   )
-  assertEquals(error.code, 'MISSING_BUILDING')
 })
 
 Deno.test('hardware and utility each get their own row, also per building', () => {
@@ -274,4 +285,37 @@ Deno.test('adds payment terms days to the invoice date without timezone drift', 
   assertEquals(dueDateFor('2026-10-09', null), undefined)
   assertThrows(() => dueDateFor('2026-10-09', -1), QuickbooksInvoiceError)
   assertThrows(() => dueDateFor('10/09/2026', 30), QuickbooksInvoiceError)
+})
+
+Deno.test('an Options credit is a negative invoice line that still adds up to the net amount', () => {
+  const payload = buildQuickbooksInvoicePayload({
+    ...base,
+    charges: [
+      draw('98', 1000),
+      options('98', -120.5),
+    ],
+    retentionAmount: 88.15,
+    expectedNetAmount: 791.35,
+  })
+
+  assertEquals(payload.Line, [
+    line('PHASE 1 LOT #98\nDRAW 3', 1000),
+    line('PHASE 1 LOT #98\nOPTIONS', -120.5),
+    line('RETENTION', -88.15),
+  ])
+})
+
+Deno.test('Options and credits of the same scope are added into one line', () => {
+  const payload = buildQuickbooksInvoicePayload({
+    ...base,
+    charges: [
+      draw('97', 500),
+      options('97', 300),
+      draw('98', 500),
+      options('98', -120.5),
+    ],
+    expectedNetAmount: 1179.5,
+  })
+
+  assertEquals(payload.Line.map((item) => item.Amount), [1000, 179.5])
 })

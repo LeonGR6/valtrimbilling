@@ -28,7 +28,7 @@ import { initialContacts } from '../src/features/builder-contacts/data/builderCo
 import { createBuilderContactSchema } from '../src/features/builder-contacts/schemas/builderContactSchema.js'
 import { initialPeople } from '../src/features/people/data/people.js'
 import { personSchema } from '../src/features/people/schemas/personSchema.js'
-import { priceSchema } from '../src/features/plan-pricing/schemas/priceSchema.js'
+import { isNotApplicablePrice, optionPriceSchema, priceSchema } from '../src/features/plan-pricing/schemas/priceSchema.js'
 
 test('builder schema normalizes values before saving', () => {
   const result = createBuilderSchema([], null).parse({
@@ -637,18 +637,87 @@ test('phase by lot schema rejects options from another plan', () => {
   )
 })
 
-test('phase by lot schema requires a building', () => {
+const lot = { lotNumber: '4', planId: 1101, reverse: false, optionIds: [] }
+
+test('a phase can be saved without a building', () => {
   const job = testJobs.find((item) => item.code === '1307')
   const result = createPhaseByLotSchema(job).safeParse({
     phaseName: 'Phase 13',
     building: ' ',
-    lots: [
-      { lotNumber: '4', planId: 1101, reverse: false, optionIds: [] },
-    ],
+    lots: [lot],
+  })
+
+  assert.equal(result.success, true)
+  assert.equal(result.data.building, '')
+})
+
+test('a phase code cannot be used with and without a building in the same job', () => {
+  const job = testJobs.find((item) => item.code === '1307')
+  // Phase 2 already exists with building 15.
+  const withoutBuilding = createPhaseByLotSchema(job).safeParse({
+    phaseName: '2',
+    building: '',
+    lots: [lot],
+  })
+  assert.equal(withoutBuilding.success, false)
+  assert.match(
+    withoutBuilding.error.flatten().fieldErrors.building[0],
+    /already used with a building/,
+  )
+
+  // A building for a phase code that is used without one is refused the same way.
+  const noBuildingJob = {
+    ...job,
+    sequenceSheet: {
+      ...job.sequenceSheet,
+      phases: [{ id: 1, name: '9', building: '', lots: [] }],
+    },
+  }
+  const withBuilding = createPhaseByLotSchema(noBuildingJob).safeParse({
+    phaseName: '9',
+    building: 'A',
+    lots: [lot],
+  })
+  assert.equal(withBuilding.success, false)
+  assert.match(
+    withBuilding.error.flatten().fieldErrors.building[0],
+    /already used without a building/,
+  )
+
+  // Editing the only row of a phase may add or remove its building.
+  assert.equal(createPhaseByLotSchema(noBuildingJob, 1).safeParse({
+    phaseName: '9',
+    building: 'A',
+    lots: [lot],
+  }).success, true)
+
+  // A different code is free to do either.
+  assert.equal(createPhaseByLotSchema(noBuildingJob).safeParse({
+    phaseName: '10',
+    building: '',
+    lots: [lot],
+  }).success, true)
+})
+
+test('the same phase twice without a building is a duplicate', () => {
+  const job = testJobs.find((item) => item.code === '1307')
+  const noBuildingJob = {
+    ...job,
+    sequenceSheet: {
+      ...job.sequenceSheet,
+      phases: [{ id: 1, name: '9', building: '', lots: [] }],
+    },
+  }
+  const result = createPhaseByLotSchema(noBuildingJob).safeParse({
+    phaseName: 'Phase 9',
+    building: '',
+    lots: [lot],
   })
 
   assert.equal(result.success, false)
-  assert.ok(result.error.flatten().fieldErrors.building)
+  assert.ok(result.error.flatten().fieldErrors.building.includes(
+    'This phase already exists for the selected Job.',
+  ))
 })
 
 test('person schema normalizes contact information', () => {
@@ -845,4 +914,29 @@ test('a builder address is shown as street lines and then city, state and ZIP', 
   )
   assert.equal(formatBuilderAddress({ city: 'Austin' }), 'Austin')
   assert.equal(formatBuilderAddress({}), '')
+})
+
+test('an Option price can be negative, a Plan price still cannot', () => {
+  assert.deepEqual(optionPriceSchema.parse({ amount: ' -120.50 ' }), { amount: -120.5, notApplicable: false })
+  assert.deepEqual(optionPriceSchema.parse({ amount: '75' }), { amount: 75, notApplicable: false })
+  assert.deepEqual(optionPriceSchema.parse({ amount: '-0' }), { amount: 0, notApplicable: false })
+  assert.equal(Object.is(optionPriceSchema.parse({ amount: '-0' }).amount, -0), false)
+  assert.equal(optionPriceSchema.safeParse({ amount: '-10.999' }).success, false)
+  assert.equal(optionPriceSchema.safeParse({ amount: '--5' }).success, false)
+  assert.equal(optionPriceSchema.safeParse({ amount: '' }).success, false)
+  assert.equal(optionPriceSchema.safeParse({ amount: '-1000000000000' }).success, false)
+  assert.equal(priceSchema.safeParse({ amount: '-1' }).success, false)
+})
+
+test('an Option price can be NA, written in any of the usual ways', () => {
+  for (const typed of ['NA', 'na', ' N/A ', 'n/a', 'Na']) {
+    assert.deepEqual(optionPriceSchema.parse({ amount: typed }), { amount: 0, notApplicable: true })
+    assert.equal(isNotApplicablePrice(typed), true)
+  }
+  for (const typed of ['', 'N', 'none', 'NAN', '0', 'N/A!']) {
+    assert.equal(isNotApplicablePrice(typed), false)
+  }
+  assert.equal(optionPriceSchema.safeParse({ amount: 'none' }).success, false)
+  // Plan and Hardware prices have no NA.
+  assert.equal(priceSchema.safeParse({ amount: 'NA' }).success, false)
 })

@@ -50,7 +50,20 @@ export function findJobDocuments(documentsByJob, jobId, ids) {
     .filter(Boolean)
 }
 
-export function buildJobDocumentLibrary(jobs, documentRows, requirementRows) {
+/**
+ * The documents of each Job and the document types it must have.
+ *
+ * A Job keeps the Billing Setup version it was created with for everything that
+ * is billed, but its document checklist is not billing: `requirementVersionByJob`
+ * (Job id -> setup version id) says which version each Job's checklist is read
+ * from, usually its Builder's current one. A Job without an entry uses its own.
+ */
+export function buildJobDocumentLibrary(
+  jobs,
+  documentRows,
+  requirementRows,
+  requirementVersionByJob = {},
+) {
   const documentsByJob = Object.fromEntries(
     jobs.map((job) => [String(job.id), []]),
   )
@@ -60,7 +73,9 @@ export function buildJobDocumentLibrary(jobs, documentRows, requirementRows) {
   const jobIdsByVersion = new Map()
 
   jobs.forEach((job) => {
-    const versionKey = String(job.billingSetupVersionId)
+    const versionKey = String(
+      requirementVersionByJob[String(job.id)] ?? job.billingSetupVersionId,
+    )
     const jobIds = jobIdsByVersion.get(versionKey) ?? []
     jobIds.push(String(job.id))
     jobIdsByVersion.set(versionKey, jobIds)
@@ -87,6 +102,19 @@ export function buildJobDocumentLibrary(jobs, documentRows, requirementRows) {
   })
 
   return { documentsByJob, requiredTypeKeysByJob }
+}
+
+/**
+ * Which setup version each Job's document checklist is read from: the current
+ * (ACTIVE) version of its Builder, so a change to the documents a Builder
+ * requires reaches the Jobs it already has; the Job's own version when its
+ * Builder has no current one.
+ */
+export function pickRequirementVersions(jobs, activeVersionByBuilder) {
+  return Object.fromEntries(jobs.map((job) => [
+    String(job.id),
+    activeVersionByBuilder.get(String(job.builderId)) ?? job.billingSetupVersionId,
+  ]))
 }
 
 export function summarizeJobDocumentRequirements(requiredTypeKeys, documents) {

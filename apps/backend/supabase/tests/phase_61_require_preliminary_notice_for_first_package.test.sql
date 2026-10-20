@@ -25,14 +25,14 @@ select ok(
   (
     select prosecdef and array_to_string(proconfig, ',') = 'search_path=""'
     from pg_proc
-    where oid = 'private.require_preliminary_notice_for_first_package()'::regprocedure
+    where oid = 'private.require_preliminary_notice_for_package()'::regprocedure
   ),
   'The check uses definer rights with an empty search path'
 );
 
 select ok(
-  not has_function_privilege('authenticated', 'private.require_preliminary_notice_for_first_package()', 'execute')
-  and not has_function_privilege('anon', 'private.require_preliminary_notice_for_first_package()', 'execute'),
+  not has_function_privilege('authenticated', 'private.require_preliminary_notice_for_package()', 'execute')
+  and not has_function_privilege('anon', 'private.require_preliminary_notice_for_package()', 'execute'),
   'Signed-in users cannot call the check directly'
 );
 

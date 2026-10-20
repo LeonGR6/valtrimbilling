@@ -168,6 +168,12 @@ export function createEmptyProductionDraft(date = new Date().toISOString().split
     dmInstallDateNote: '',
     dmInstallDateHistory: [],
     dmInstallScheduleId: null,
+    dmBaseboardInstall: false,
+    dmBaseboardInstallDate: '',
+    dmBaseboardInstallDateOwner: '',
+    dmBaseboardInstallDateNote: '',
+    dmBaseboardInstallDateHistory: [],
+    dmBaseboardInstallScheduleId: null,
     dmSplitPhase: false,
     dmSplitParts: [],
     hwDate: date,
@@ -232,6 +238,12 @@ function buildProductionSchedule(values) {
       installDateNote: values.dmInstallDateNote,
       installDateHistory: values.dmInstallDateHistory,
       installScheduleId: values.dmInstallScheduleId,
+      baseboardInstall: values.dmBaseboardInstall,
+      baseboardInstallDate: values.dmBaseboardInstallDate,
+      baseboardInstallDateOwner: values.dmBaseboardInstallDateOwner,
+      baseboardInstallDateNote: values.dmBaseboardInstallDateNote,
+      baseboardInstallDateHistory: values.dmBaseboardInstallDateHistory,
+      baseboardInstallScheduleId: values.dmBaseboardInstallScheduleId,
       splitPhase: values.dmSplitPhase,
       splitParts: values.dmSplitParts,
       shutters: values.dmShutters,
@@ -294,6 +306,11 @@ const stageFieldMap = {
     installDateOwner: 'dmInstallDateOwner',
     installDateNote: 'dmInstallDateNote',
     installDateHistory: 'dmInstallDateHistory',
+    baseboardInstall: 'dmBaseboardInstall',
+    baseboardInstallDate: 'dmBaseboardInstallDate',
+    baseboardInstallDateOwner: 'dmBaseboardInstallDateOwner',
+    baseboardInstallDateNote: 'dmBaseboardInstallDateNote',
+    baseboardInstallDateHistory: 'dmBaseboardInstallDateHistory',
     splitPhase: 'dmSplitPhase',
     splitParts: 'dmSplitParts',
   },
@@ -375,6 +392,22 @@ export function recordProductionDateHistory(values, previousEvent, changedAt = n
         {
           date: values[fields.installDate],
           dateOwner: values[fields.installDateOwner],
+        },
+        changedAt,
+      )
+    }
+
+    if (fields.baseboardInstall && previousStage.baseboardInstall && values[fields.baseboardInstall]) {
+      nextValues[fields.baseboardInstallDateHistory] = appendPreviousDate(
+        values[fields.baseboardInstallDateHistory],
+        {
+          date: previousStage.baseboardInstallDate,
+          dateOwner: previousStage.baseboardInstallDateOwner,
+          note: previousStage.baseboardInstallDateNote,
+        },
+        {
+          date: values[fields.baseboardInstallDate],
+          dateOwner: values[fields.baseboardInstallDateOwner],
         },
         changedAt,
       )
@@ -485,6 +518,8 @@ export function createProductionCalendarEvents(values, groupId, stamp = Date.now
           orderMaterial: Boolean(stage.orderMaterial),
           installOnly: Boolean(stage.installOnly),
           installDate: stage.installDate ?? '',
+          baseboardInstall: Boolean(stage.baseboardInstall),
+          baseboardInstallDate: stage.baseboardInstallDate ?? '',
           splitPhase: Boolean(stage.splitPhase),
           splitParts: stage.splitParts ?? [],
           lockUp: Boolean(stage.lockUp),
@@ -521,6 +556,39 @@ export function createProductionCalendarEvents(values, groupId, stamp = Date.now
           splitParts: stage.splitParts ?? [],
           lockUp: Boolean(stage.lockUp),
           variant: 'install-only',
+        },
+      })
+    }
+
+    if (type.value === 'DM' && stage.baseboardInstall) {
+      stageEvents.push({
+        id: stage.baseboardInstallScheduleId
+          ? `production-schedule-${stage.baseboardInstallScheduleId}`
+          : `${groupId}-${type.value.toLowerCase()}-baseboard-install-${stamp}`,
+        groupId,
+        title: `${type.label} BASEBOARD INSTALL • ${getLotsLabel(values.lotStart, values.lotEnd, values.lotNumbers)}`,
+        start: stage.baseboardInstallDate,
+        allDay: true,
+        extendedProps: {
+          ...commonProps,
+          activityType: type.value,
+          scheduleId: stage.baseboardInstallScheduleId ?? null,
+          followUp: values.followUpStates?.[String(stage.baseboardInstallScheduleId)] ?? null,
+          dateOwner: stage.baseboardInstallDateOwner,
+          dateNote: stage.baseboardInstallDateNote ?? '',
+          dateHistory: stage.baseboardInstallDateHistory ?? [],
+          lotStart: values.lotStart,
+          lotEnd: values.lotEnd,
+          lotNumbers: values.lotNumbers,
+          orderMaterial: false,
+          installOnly: false,
+          installDate: '',
+          baseboardInstall: true,
+          baseboardInstallDate: stage.baseboardInstallDate,
+          splitPhase: Boolean(stage.splitPhase),
+          splitParts: stage.splitParts ?? [],
+          lockUp: false,
+          variant: 'baseboard-install',
         },
       })
     }
@@ -614,6 +682,12 @@ export function createDraftFromProductionEvent(event) {
     dmInstallDateNote: schedule.DM.installDateNote ?? '',
     dmInstallDateHistory: (schedule.DM.installDateHistory ?? []).map((entry) => ({ ...entry })),
     dmInstallScheduleId: schedule.DM.installScheduleId ?? null,
+    dmBaseboardInstall: Boolean(schedule.DM.baseboardInstall),
+    dmBaseboardInstallDate: schedule.DM.baseboardInstallDate ?? '',
+    dmBaseboardInstallDateOwner: schedule.DM.baseboardInstallDateOwner ?? '',
+    dmBaseboardInstallDateNote: schedule.DM.baseboardInstallDateNote ?? '',
+    dmBaseboardInstallDateHistory: (schedule.DM.baseboardInstallDateHistory ?? []).map((entry) => ({ ...entry })),
+    dmBaseboardInstallScheduleId: schedule.DM.baseboardInstallScheduleId ?? null,
     dmSplitPhase: Boolean(schedule.DM.splitPhase),
     dmSplitParts: (schedule.DM.splitParts ?? []).map((part) => ({
       ...part,
@@ -655,7 +729,9 @@ export function getMonthEventLabel(props) {
   const type = activityTypeMap[props.activityType]
   const extra = props.variant === 'install-only'
     ? 'INSTALL ONLY'
-    : props.variant === 'lock-up' ? 'LOCK UP' : ''
+    : props.variant === 'baseboard-install'
+      ? 'BASEBOARD INSTALL'
+      : props.variant === 'lock-up' ? 'LOCK UP' : ''
   const phaseBuilding = [
     shortPhaseOrBuilding('P', props.phase),
     shortPhaseOrBuilding('B', props.building),

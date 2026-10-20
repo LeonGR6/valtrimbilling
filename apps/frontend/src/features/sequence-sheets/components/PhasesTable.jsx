@@ -92,7 +92,7 @@ export default function PhasesTable({
                     {phaseLabel}
                   </Link>
                   <Typography variant="caption" color="text.secondary" component="div">
-                    {formatBuilding(phase.building)}
+                    {formatBuilding(phase.building) || 'No building'}
                   </Typography>
                 </TableCell>
                 <TableCell>

@@ -31,9 +31,8 @@ import {
 import {
   createDefaultSplitParts,
   findJobBuilder,
-  formatBuilding,
-  formatPhase,
   getPhasePatch,
+  formatPhaseBuilding,
 } from './calendarSchedulerUtils.js'
 import {
   existingPhaseEvents,
@@ -68,7 +67,7 @@ function ProductionSummary({ draft }) {
       <Box className="production-summary__grid">
         <AutoField label="Builder" value={draft.builder} />
         <AutoField label="Community" value={draft.community} />
-        <AutoField label="Building" value={draft.building} />
+        {draft.building && <AutoField label="Building" value={draft.building} />}
         <AutoField label="Lot range" value={getLotsLabel(draft.lotStart, draft.lotEnd, draft.lotNumbers)} />
         <AutoField label="Foreman / Supervisor" value={draft.foreman} />
         <AutoField label="Jobsite Superintendent" value={draft.superintendent} />
@@ -118,7 +117,7 @@ export default function ActivityForm({
   )
   const totalLots = draft.lotNumbers.length
   const phaseLabel = (phase) => (
-    `${formatPhase(phase.name)} · ${formatBuilding(phase.building)} · ${
+    `${formatPhaseBuilding(phase.name, phase.building)} · ${
       (phase.lots ?? []).filter((lot) => !lot.isUtilityBuilding).length
     } lots`
   )
@@ -469,6 +468,50 @@ export default function ActivityForm({
                             onChange={(event) => onChange({ dmInstallDateNote: event.target.value })}
                             slotProps={{ htmlInput: { maxLength: 100 } }}
                             helperText={`${draft.dmInstallDateNote.length}/100`}
+                            multiline
+                            minRows={2}
+                            fullWidth
+                            size="small"
+                            className="date-note-field"
+                          />
+                        </Box>
+                      )}
+                      <OptionCheckbox
+                        checked={draft.dmBaseboardInstall}
+                        label="Baseboard install"
+                        description="Add a separate DM baseboard install event."
+                        onChange={(checked) => onChange({
+                          dmBaseboardInstall: checked,
+                          dmBaseboardInstallDate: checked ? draft.dmBaseboardInstallDate : '',
+                          dmBaseboardInstallDateOwner: checked
+                            ? (draft.dmBaseboardInstallDateOwner || draft.dmDateOwner)
+                            : '',
+                          dmBaseboardInstallDateNote: checked ? draft.dmBaseboardInstallDateNote : '',
+                        })}
+                      />
+                      {draft.dmBaseboardInstall && (
+                        <Box className="activity-option-date-group">
+                          <DateField
+                            label="DM baseboard install date"
+                            value={draft.dmBaseboardInstallDate}
+                            onChange={(date) => onChange({ dmBaseboardInstallDate: date })}
+                            fullWidth
+                            required
+                            size="small"
+                            className="activity-option-date"
+                          />
+                          <DateOwnerSelector
+                            value={draft.dmBaseboardInstallDateOwner}
+                            onChange={(value) => onChange({ dmBaseboardInstallDateOwner: value })}
+                            label="DM baseboard install date ownership"
+                            compact
+                          />
+                          <TextField
+                            label="DM baseboard install date note (optional)"
+                            value={draft.dmBaseboardInstallDateNote}
+                            onChange={(event) => onChange({ dmBaseboardInstallDateNote: event.target.value })}
+                            slotProps={{ htmlInput: { maxLength: 100 } }}
+                            helperText={`${draft.dmBaseboardInstallDateNote.length}/100`}
                             multiline
                             minRows={2}
                             fullWidth

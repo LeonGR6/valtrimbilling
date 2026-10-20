@@ -11,6 +11,7 @@ const DATE_FIELDS = [
   ['hwDate', 'HW'],
   ['extInstallDate', 'EXT install only'],
   ['dmInstallDate', 'DM install only'],
+  ['dmBaseboardInstallDate', 'DM baseboard install'],
   ['hwLockUpDate', 'HW lock up'],
 ]
 
@@ -33,6 +34,10 @@ export function moveEventInDraft({ draft, props, newDate, configuration }) {
 
   if (props.variant === 'install-only') {
     return { ...draft, [`${key}InstallDate`]: newDate }
+  }
+
+  if (props.variant === 'baseboard-install') {
+    return { ...draft, dmBaseboardInstallDate: newDate }
   }
 
   if (props.variant === 'lock-up') {

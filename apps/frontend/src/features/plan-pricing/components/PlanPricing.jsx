@@ -13,6 +13,7 @@ import {
   Card,
   CardContent,
   Chip,
+  Collapse,
   Dialog,
   DialogActions,
   DialogContent,
@@ -38,11 +39,14 @@ import EditOutlinedIcon from '@mui/icons-material/EditOutlined'
 import LayersRoundedIcon from '@mui/icons-material/LayersRounded'
 import LocationCityRoundedIcon from '@mui/icons-material/LocationCityRounded'
 import ReceiptLongRoundedIcon from '@mui/icons-material/ReceiptLongRounded'
+import WarningAmberRoundedIcon from '@mui/icons-material/WarningAmberRounded'
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
 import ConstructionRoundedIcon from '@mui/icons-material/ConstructionRounded'
 import { useBuilderDrawSchedules } from '../../builder-draw-schedules/context/useBuilderDrawSchedules.js'
 import { useBuilderContacts } from '../../builder-contacts/context/useBuilderContacts.js'
 import JobModuleNavigation from '../../jobs/components/JobModuleNavigation.jsx'
+import PlanToggle from '../../jobs/components/PlanToggle.jsx'
+import { optionPricingSummary } from '../utils/optionPricing.js'
 import {
   getJobOptionCount,
   getJobPlanCount,
@@ -60,6 +64,7 @@ import {
 import { usePeople } from '../../people/context/usePeople.js'
 import {
   createHardwarePriceSchema,
+  optionPriceSchema,
   priceSchema,
 } from '../schemas/priceSchema.js'
 
@@ -77,6 +82,11 @@ function formatPrice(value) {
   return hasPrice(value) ? currencyFormatter.format(value) : 'Not priced'
 }
 
+// An Option priced NA adds and subtracts nothing, and reads "NA", not "$0.00".
+function formatOptionPrice(option) {
+  return option.priceNotApplicable ? 'NA' : formatPrice(option.price)
+}
+
 function PriceDialog({ target, onClose, onSave, submitting }) {
   const isPlan = target.type === 'plan'
   const isHardware = target.type === 'hardware'
@@ -88,8 +98,8 @@ function PriceDialog({ target, onClose, onSave, submitting }) {
   const schema = useMemo(
     () => isHardware
       ? createHardwarePriceSchema(target.plan.price)
-      : priceSchema,
-    [isHardware, target.plan.price],
+      : isPlan ? priceSchema : optionPriceSchema,
+    [isHardware, isPlan, target.plan.price],
   )
   const {
     register,
@@ -98,7 +108,9 @@ function PriceDialog({ target, onClose, onSave, submitting }) {
   } = useForm({
     resolver: zodResolver(schema),
     defaultValues: {
-      amount: hasPrice(currentPrice) ? String(currentPrice) : '',
+      amount: !isPlan && !isHardware && target.option.priceNotApplicable
+        ? 'NA'
+        : hasPrice(currentPrice) ? String(currentPrice) : '',
     },
     mode: 'onTouched',
     reValidateMode: 'onChange',
@@ -176,24 +188,30 @@ function PriceDialog({ target, onClose, onSave, submitting }) {
                 <TableCell>
                   <TextField
                     autoFocus
-                    placeholder="0.00"
-                    type="number"
+                    placeholder={isPlan || isHardware ? '0.00' : '0.00 or NA'}
+                    type={isPlan || isHardware ? 'number' : 'text'}
                     {...register('amount')}
                     error={Boolean(errors.amount)}
                     helperText={
                       errors.amount?.message
-                      ?? 'USD · Up to 2 decimal places.'
+                      ?? (isPlan || isHardware
+                        ? 'USD · Up to 2 decimal places.'
+                        : 'USD · Up to 2 decimal places. A negative price is a credit and is subtracted when the option is billed. Type NA if no price applies: it adds and subtracts nothing.')
                     }
                     fullWidth
                     size="small"
                     slotProps={{
                       input: {
-                        startAdornment: <InputAdornment position="start">$</InputAdornment>,
+                        startAdornment: isPlan || isHardware
+                          ? <InputAdornment position="start">$</InputAdornment>
+                          : undefined,
                       },
                       htmlInput: {
-                        min: 0,
+                        ...(isPlan || isHardware ? { min: 0 } : {}),
                         step: 0.01,
-                        inputMode: 'decimal',
+                        // An Option price can be negative or "NA", which a numeric
+                        // keypad cannot type.
+                        inputMode: isPlan || isHardware ? 'decimal' : 'text',
                         'aria-label': priceLabel,
                       },
                     }}
@@ -257,6 +275,45 @@ function JobField({ label, value }) {
   )
 }
 
+// Warns that some options of a Plan have no price yet (NA counts as priced), open
+// or closed, so a missing price is never hidden behind a collapsed Plan.
+function MissingPricesChip({ summary }) {
+  const { missing } = summary
+  if (missing === 0) return null
+
+  return (
+    <Chip
+      size="small"
+      color="warning"
+      variant="outlined"
+      icon={<WarningAmberRoundedIcon />}
+      label={`${missing} ${missing === 1 ? 'option' : 'options'} without price`}
+      sx={{ fontWeight: 700 }}
+    />
+  )
+}
+
+// What an Option costs: its price, "NA", or a warning when it has none yet.
+function OptionPriceValue({ option }) {
+  if (!hasPrice(option.price)) {
+    return (
+      <Chip
+        size="small"
+        color="warning"
+        variant="outlined"
+        label="Not priced"
+        sx={{ fontWeight: 700 }}
+      />
+    )
+  }
+
+  return (
+    <Typography variant="body2" fontWeight={750}>
+      {formatOptionPrice(option)}
+    </Typography>
+  )
+}
+
 function PlanPriceCard({
   builderId,
   plan,
@@ -265,12 +322,15 @@ function PlanPriceCard({
   canManage,
   submitting,
   separateHardwarePrice,
+  expanded = true,
+  onToggle = null,
   onEditPlan,
   onEditHardware,
   onEditOption,
 }) {
   const options = plan.options ?? []
   const hardwareIsPriced = hasPrice(plan.hardwarePrice)
+  const summary = optionPricingSummary(options)
 
   return (
     <Card component="article" variant="outlined" sx={{ overflow: 'hidden' }}>
@@ -279,7 +339,7 @@ function PlanPriceCard({
           px: { xs: 2, sm: 2.5 },
           py: 2,
           bgcolor: 'primary.light',
-          borderBottom: 1,
+          borderBottom: expanded ? 1 : 0,
           borderColor: 'divider',
         }}
       >
@@ -289,6 +349,14 @@ function PlanPriceCard({
           sx={{ alignItems: { md: 'center' }, justifyContent: 'space-between' }}
         >
           <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center', minWidth: 0 }}>
+            {onToggle && (
+              <PlanToggle
+                plan={plan}
+                expanded={expanded}
+                onToggle={onToggle}
+                controls={`plan-pricing-${plan.id}`}
+              />
+            )}
             <Box
               sx={{
                 width: 42,
@@ -304,13 +372,27 @@ function PlanPriceCard({
             >
               {position}
             </Box>
-            <Box sx={{ minWidth: 0 }}>
+            <Box
+              onClick={onToggle ?? undefined}
+              sx={{ minWidth: 0, cursor: onToggle ? 'pointer' : 'default' }}
+            >
               <Typography variant="overline" color="text.secondary" fontWeight={700}>
                 Plan code {plan.code}
               </Typography>
               <Typography variant="h6" fontWeight={800} sx={{ overflowWrap: 'anywhere' }}>
                 {plan.name || `Plan ${plan.code}`}
               </Typography>
+              {summary.complete ? (
+                !expanded && (
+                  <Typography variant="caption" color="text.secondary" fontWeight={650}>
+                    {summary.label}
+                  </Typography>
+                )
+              ) : (
+                <Box sx={{ mt: 0.5 }}>
+                  <MissingPricesChip summary={summary} />
+                </Box>
+              )}
             </Box>
           </Stack>
 
@@ -374,169 +456,165 @@ function PlanPriceCard({
         </Stack>
       </Box>
 
-      <Box sx={{ p: { xs: 2, sm: 2.5 } }}>
-        <Stack
-          direction="row"
-          spacing={1}
-          sx={{ mb: 1.5, alignItems: 'center', justifyContent: 'space-between' }}
-        >
-          <Box>
-            <Typography variant="subtitle1" fontWeight={750}>
-              Pricing options
-            </Typography>
-            <Typography variant="caption" color="text.secondary">
-              Price for every OPT # configured under this plan.
-            </Typography>
-          </Box>
-          <Chip
-            size="small"
-            variant="outlined"
-            label={`${options.length} ${options.length === 1 ? 'option' : 'options'}`}
-          />
-        </Stack>
-
-        {options.length > 0 ? (
-          <Box
-            sx={{
-              border: 1,
-              borderColor: 'divider',
-              borderRadius: 1.5,
-              overflow: 'hidden',
-            }}
+      <Collapse in={expanded} unmountOnExit>
+        <Box id={`plan-pricing-${plan.id}`} sx={{ p: { xs: 2, sm: 2.5 } }}>
+          <Stack
+            direction="row"
+            spacing={1}
+            sx={{ mb: 1.5, alignItems: 'center', justifyContent: 'space-between' }}
           >
-            <Box
-              sx={{
-                display: { xs: 'none', md: 'grid' },
-                gridTemplateColumns:
-                  'minmax(150px, 0.28fr) minmax(220px, 1fr) minmax(140px, 0.24fr) auto',
-                gap: 2,
-                px: 2,
-                py: 1,
-                bgcolor: 'action.hover',
-                borderBottom: 1,
-                borderColor: 'divider',
-              }}
-            >
-              <Typography variant="caption" color="text.secondary" fontWeight={750}>
-                OPT #
+            <Box>
+              <Typography variant="subtitle1" fontWeight={750}>
+                Pricing options
               </Typography>
-              <Typography variant="caption" color="text.secondary" fontWeight={750}>
-                Description
-              </Typography>
-              <Typography variant="caption" color="text.secondary" fontWeight={750}>
-                Option price
-              </Typography>
-              <Typography variant="caption" color="text.secondary" fontWeight={750}>
-                Actions
+              <Typography variant="caption" color="text.secondary">
+                Price for every OPT # configured under this plan.
               </Typography>
             </Box>
-
-            {options.map((option, optionIndex) => (
-              <Box
-                key={option.id}
-                sx={{
-                  display: 'grid',
-                  gridTemplateColumns: {
-                    xs: '1fr',
-                    md: 'minmax(150px, 0.28fr) minmax(220px, 1fr) minmax(140px, 0.24fr) auto',
-                  },
-                  alignItems: { md: 'center' },
-                  gap: { xs: 1.25, md: 2 },
-                  px: 2,
-                  py: 1.5,
-                  borderTop: optionIndex === 0 ? 0 : 1,
-                  borderColor: 'divider',
-                  bgcolor: optionIndex % 2 === 0 ? 'background.paper' : 'action.hover',
-                }}
-              >
-                <Box>
-                  <Typography
-                    variant="caption"
-                    color="text.secondary"
-                    sx={{ display: { xs: 'block', md: 'none' }, mb: 0.5 }}
-                  >
-                    OPT #
-                  </Typography>
-                  <Chip
-                    size="small"
-                    color="primary"
-                    variant="outlined"
-                    label={option.code}
-                    sx={{ fontWeight: 750, maxWidth: '100%' }}
-                  />
-                </Box>
-                <Box sx={{ minWidth: 0 }}>
-                  <Typography
-                    variant="caption"
-                    color="text.secondary"
-                    sx={{ display: { xs: 'block', md: 'none' }, mb: 0.25 }}
-                  >
-                    Description
-                  </Typography>
-                  <Typography variant="body2" sx={{ overflowWrap: 'anywhere' }}>
-                    {option.description}
-                  </Typography>
-                </Box>
-                <Box>
-                  <Typography
-                    variant="caption"
-                    color="text.secondary"
-                    sx={{ display: { xs: 'block', md: 'none' }, mb: 0.25 }}
-                  >
-                    Option price
-                  </Typography>
-                  <Typography
-                    variant="body2"
-                    fontWeight={750}
-                    color={hasPrice(option.price) ? 'text.primary' : 'text.secondary'}
-                  >
-                    {formatPrice(option.price)}
-                  </Typography>
-                </Box>
-                <Button
-                  size="small"
-                  color="inherit"
-                  startIcon={<EditOutlinedIcon />}
-                  onClick={() => onEditOption(option)}
-                  disabled={!canManage || submitting}
-                  sx={{ justifySelf: { xs: 'start', md: 'end' } }}
-                >
-                  Edit price
-                </Button>
-              </Box>
-            ))}
-          </Box>
-        ) : (
-          <Box
-            sx={{
-              py: 3,
-              px: 2,
-              textAlign: 'center',
-              border: 1,
-              borderStyle: 'dashed',
-              borderColor: 'divider',
-              borderRadius: 1.5,
-              bgcolor: 'action.hover',
-            }}
-          >
-            <ReceiptLongRoundedIcon color="disabled" sx={{ mb: 0.5 }} />
-            <Typography variant="body2" fontWeight={700}>
-              No options added to this plan
-            </Typography>
-            <Typography variant="caption" color="text.secondary" component="div" sx={{ mb: 1.5 }}>
-              Add options from the Job view before assigning their prices.
-            </Typography>
-            <Button
-              component={RouterLink}
-              to={jobPlansOptionsPath(builderId, jobId)}
+            <Chip
               size="small"
               variant="outlined"
+              label={`${options.length} ${options.length === 1 ? 'option' : 'options'}`}
+            />
+          </Stack>
+
+          {options.length > 0 ? (
+            <Box
+              sx={{
+                border: 1,
+                borderColor: 'divider',
+                borderRadius: 1.5,
+                overflow: 'hidden',
+              }}
             >
-              Manage job options
-            </Button>
-          </Box>
-        )}
-      </Box>
+              <Box
+                sx={{
+                  display: { xs: 'none', md: 'grid' },
+                  gridTemplateColumns:
+                    'minmax(150px, 0.28fr) minmax(220px, 1fr) minmax(140px, 0.24fr) auto',
+                  gap: 2,
+                  px: 2,
+                  py: 1,
+                  bgcolor: 'action.hover',
+                  borderBottom: 1,
+                  borderColor: 'divider',
+                }}
+              >
+                <Typography variant="caption" color="text.secondary" fontWeight={750}>
+                  OPT #
+                </Typography>
+                <Typography variant="caption" color="text.secondary" fontWeight={750}>
+                  Description
+                </Typography>
+                <Typography variant="caption" color="text.secondary" fontWeight={750}>
+                  Option price
+                </Typography>
+                <Typography variant="caption" color="text.secondary" fontWeight={750}>
+                  Actions
+                </Typography>
+              </Box>
+
+              {options.map((option, optionIndex) => (
+                <Box
+                  key={option.id}
+                  sx={{
+                    display: 'grid',
+                    gridTemplateColumns: {
+                      xs: '1fr',
+                      md: 'minmax(150px, 0.28fr) minmax(220px, 1fr) minmax(140px, 0.24fr) auto',
+                    },
+                    alignItems: { md: 'center' },
+                    gap: { xs: 1.25, md: 2 },
+                    px: 2,
+                    py: 1.5,
+                    borderTop: optionIndex === 0 ? 0 : 1,
+                    borderColor: 'divider',
+                    bgcolor: optionIndex % 2 === 0 ? 'background.paper' : 'action.hover',
+                  }}
+                >
+                  <Box>
+                    <Typography
+                      variant="caption"
+                      color="text.secondary"
+                      sx={{ display: { xs: 'block', md: 'none' }, mb: 0.5 }}
+                    >
+                      OPT #
+                    </Typography>
+                    <Chip
+                      size="small"
+                      color="primary"
+                      variant="outlined"
+                      label={option.code}
+                      sx={{ fontWeight: 750, maxWidth: '100%' }}
+                    />
+                  </Box>
+                  <Box sx={{ minWidth: 0 }}>
+                    <Typography
+                      variant="caption"
+                      color="text.secondary"
+                      sx={{ display: { xs: 'block', md: 'none' }, mb: 0.25 }}
+                    >
+                      Description
+                    </Typography>
+                    <Typography variant="body2" sx={{ overflowWrap: 'anywhere' }}>
+                      {option.description}
+                    </Typography>
+                  </Box>
+                  <Box>
+                    <Typography
+                      variant="caption"
+                      color="text.secondary"
+                      sx={{ display: { xs: 'block', md: 'none' }, mb: 0.25 }}
+                    >
+                      Option price
+                    </Typography>
+                    <OptionPriceValue option={option} />
+                  </Box>
+                  <Button
+                    size="small"
+                    color="inherit"
+                    startIcon={<EditOutlinedIcon />}
+                    onClick={() => onEditOption(option)}
+                    disabled={!canManage || submitting}
+                    sx={{ justifySelf: { xs: 'start', md: 'end' } }}
+                  >
+                    Edit price
+                  </Button>
+                </Box>
+              ))}
+            </Box>
+          ) : (
+            <Box
+              sx={{
+                py: 3,
+                px: 2,
+                textAlign: 'center',
+                border: 1,
+                borderStyle: 'dashed',
+                borderColor: 'divider',
+                borderRadius: 1.5,
+                bgcolor: 'action.hover',
+              }}
+            >
+              <ReceiptLongRoundedIcon color="disabled" sx={{ mb: 0.5 }} />
+              <Typography variant="body2" fontWeight={700}>
+                No options added to this plan
+              </Typography>
+              <Typography variant="caption" color="text.secondary" component="div" sx={{ mb: 1.5 }}>
+                Add options from the Job view before assigning their prices.
+              </Typography>
+              <Button
+                component={RouterLink}
+                to={jobPlansOptionsPath(builderId, jobId)}
+                size="small"
+                variant="outlined"
+              >
+                Manage job options
+              </Button>
+            </Box>
+          )}
+        </Box>
+      </Collapse>
     </Card>
   )
 }
@@ -553,9 +631,29 @@ function PlanPricingSheet({
   onEditOption,
 }) {
   const columnCount = separateHardwarePrice ? 6 : 5
+  // Every Plan starts closed, as in Plans & options; the person opens the ones
+  // they are pricing and they stay open while prices are saved.
+  const [openIds, setOpenIds] = useState(() => new Set())
+  const isOpen = (plan) => openIds.has(plan.id)
+  const allOpen = plans.length > 0 && plans.every(isOpen)
+  const toggle = (plan) => setOpenIds((current) => {
+    const next = new Set(current)
+    if (next.has(plan.id)) next.delete(plan.id)
+    else next.add(plan.id)
+    return next
+  })
+  const toggleAll = () => setOpenIds(allOpen ? new Set() : new Set(plans.map(({ id }) => id)))
 
   return (
     <>
+      {plans.length > 1 && (
+        <Stack direction="row" sx={{ justifyContent: 'flex-end', px: { xs: 2, md: 1.5 }, pt: 1 }}>
+          <Button size="small" color="inherit" onClick={toggleAll}>
+            {allOpen ? 'Collapse all' : 'Expand all'}
+          </Button>
+        </Stack>
+      )}
+
       <Stack spacing={2} sx={{ display: { xs: 'flex', md: 'none' }, p: 2 }}>
         {plans.map((plan, index) => (
           <PlanPriceCard
@@ -567,6 +665,8 @@ function PlanPricingSheet({
             canManage={canManage}
             submitting={submitting}
             separateHardwarePrice={separateHardwarePrice}
+            expanded={isOpen(plan)}
+            onToggle={() => toggle(plan)}
             onEditPlan={() => onEditPlan(plan)}
             onEditHardware={() => onEditHardware(plan)}
             onEditOption={(option) => onEditOption(plan, option)}
@@ -611,14 +711,23 @@ function PlanPricingSheet({
             {plans.map((plan) => {
               const planOptions = plan.options ?? []
               const hardwareIsPriced = hasPrice(plan.hardwarePrice)
+              const expanded = isOpen(plan)
+              const summary = optionPricingSummary(planOptions)
 
               return (
                 <Fragment key={plan.id}>
                   <TableRow sx={{ bgcolor: 'primary.light', '& td': { py: 1.25 } }}>
                     <TableCell>
-                      <Typography variant="body2" fontWeight={800} color="primary.main">
-                        Plan
-                      </Typography>
+                      <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center', ml: -1 }}>
+                        <PlanToggle
+                          plan={plan}
+                          expanded={expanded}
+                          onToggle={() => toggle(plan)}
+                        />
+                        <Typography variant="body2" fontWeight={800} color="primary.main">
+                          Plan
+                        </Typography>
+                      </Stack>
                     </TableCell>
                     <TableCell>
                       <Typography
@@ -639,6 +748,17 @@ function PlanPricingSheet({
                       <Typography variant="body2" fontWeight={700} sx={{ overflowWrap: 'anywhere' }}>
                         {plan.name || `Plan ${plan.code}`}
                       </Typography>
+                      {summary.complete ? (
+                        !expanded && (
+                          <Typography variant="caption" color="text.secondary" fontWeight={650}>
+                            {summary.label}
+                          </Typography>
+                        )
+                      ) : (
+                        <Box sx={{ mt: 0.5 }}>
+                          <MissingPricesChip summary={summary} />
+                        </Box>
+                      )}
                     </TableCell>
                     <TableCell>
                       <Typography
@@ -697,7 +817,7 @@ function PlanPricingSheet({
                     </TableCell>
                   </TableRow>
 
-                  {planOptions.length > 0 ? planOptions.map((option, optionIndex) => (
+                  {!expanded ? null : planOptions.length > 0 ? planOptions.map((option, optionIndex) => (
                     <TableRow
                       key={option.id}
                       hover
@@ -732,14 +852,8 @@ function PlanPricingSheet({
                         </Typography>
                       </TableCell>
                       <TableCell>
-                        <Typography
-                          variant="body2"
-                          fontWeight={750}
-                          color={hasPrice(option.price) ? 'text.primary' : 'text.secondary'}
-                        >
-                          {formatPrice(option.price)}
-                        </Typography>
-                        <Typography variant="caption" color="text.secondary">
+                        <OptionPriceValue option={option} />
+                        <Typography variant="caption" color="text.secondary" component="div">
                           Option price
                         </Typography>
                       </TableCell>
@@ -1045,7 +1159,7 @@ export default function PlanPricing() {
     navigate(jobPlanPricingPath(selectedBuilderId, selectedJob.id))
   }
 
-  const handlePriceSave = async ({ amount }) => {
+  const handlePriceSave = async ({ amount, notApplicable = false }) => {
     setSubmitting(true)
     try {
       if (priceTarget.type === 'option') {
@@ -1054,6 +1168,7 @@ export default function PlanPricing() {
           priceTarget.plan.id,
           priceTarget.option.id,
           amount,
+          notApplicable,
         )
       } else {
         const hardwarePrice = priceTarget.type === 'hardware'

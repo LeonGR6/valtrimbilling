@@ -32,6 +32,8 @@ export function toPlanOption(row, currentPrice = null) {
     code: row.code,
     description: row.description ?? row.name,
     price: moneyValue(currentPrice?.price),
+    // NA: the price is $0 and shown as "NA"; it adds and subtracts nothing.
+    priceNotApplicable: Boolean(currentPrice?.is_not_applicable),
     isActive: row.is_active,
   }
 }
@@ -57,10 +59,11 @@ export function toPlanPriceRpc(planId, basePrice, hardwarePrice) {
   }
 }
 
-export function toOptionPriceRpc(optionId, price) {
+export function toOptionPriceRpc(optionId, price, notApplicable = false) {
   return {
     p_option_id: Number(optionId),
-    p_price: Number(price),
+    p_price: notApplicable ? 0 : Number(price),
+    p_not_applicable: Boolean(notApplicable),
   }
 }
 
@@ -79,5 +82,8 @@ export function mergePlanOptionRecord(currentOption, updatedOption) {
     ...currentOption,
     ...updatedOption,
     price: currentOption.price,
+    ...('priceNotApplicable' in currentOption
+      ? { priceNotApplicable: currentOption.priceNotApplicable }
+      : {}),
   }
 }

@@ -17,10 +17,7 @@ import {
 import AddRoundedIcon from '@mui/icons-material/AddRounded'
 import CheckRoundedIcon from '@mui/icons-material/CheckRounded'
 import LayersRoundedIcon from '@mui/icons-material/LayersRounded'
-import {
-  formatBuilding,
-  formatPhase,
-} from '../../sequence-sheets/utils/phaseBuildingCodes.js'
+import { formatPhaseBuilding } from '../../sequence-sheets/utils/phaseBuildingCodes.js'
 import { canCorrectDrawPackage } from '../services/drawInvoicePackageRecord.js'
 import { buildDrawCalendarHeadings } from '../utils/calendarDrawSuggestions.js'
 import DrawSelectionGrid from './dialogs/DrawSelectionGrid.jsx'
@@ -372,7 +369,7 @@ export function EditDrawPackageDialog({
                   >
                     <Chip size="small" color="primary" label={`${index + 1} of ${phaseModels.length}`} />
                     <Typography variant="subtitle1" fontWeight={850}>
-                      {formatPhase(sectionPhase.name)} · {formatBuilding(sectionPhase.building)}
+                      {formatPhaseBuilding(sectionPhase.name, sectionPhase.building)}
                     </Typography>
                   </Stack>
                 )}
@@ -566,7 +563,7 @@ export function TransferDrawPackageCellsDialog({
                         }}
                       />
                       <Typography variant="body2">
-                        Phase {line.phaseCode} / Building {line.building} ·{' '}
+                        {formatPhaseBuilding(line.phaseCode, line.building, { separator: ' / ' })} ·{' '}
                         {rowLabel} · Draw #{line.drawIndex + 1} · {line.planCode}
                       </Typography>
                     </Stack>

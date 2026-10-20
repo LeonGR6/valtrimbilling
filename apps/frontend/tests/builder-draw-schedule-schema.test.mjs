@@ -5,7 +5,10 @@ import {
   invoiceLineFormatOptions,
   submissionMethodOptions,
 } from '../src/features/builder-draw-schedules/data/builderDrawSchedules.js'
-import { createBuilderDrawScheduleSchema } from '../src/features/builder-draw-schedules/schemas/builderDrawScheduleSchema.js'
+import {
+  createBuilderDrawScheduleSchema,
+  percentageFromFraction,
+} from '../src/features/builder-draw-schedules/schemas/builderDrawScheduleSchema.js'
 
 function validSetup(overrides = {}) {
   const setup = {
@@ -448,4 +451,42 @@ test('A required Release needs the Conditional Final scope', () => {
   }
 
   assert.equal(schema.safeParse(validSetup()).success, true)
+})
+
+test('retention and OCIP / WRAP read a fraction as the same percentage', () => {
+  const schema = createBuilderDrawScheduleSchema([], null)
+  const parse = (retention, wrap) => schema.parse(validSetup({
+    retentionEnabled: true,
+    retentionPercentage: retention,
+    ocipWrapEnabled: true,
+    ocipWrapPercentage: wrap,
+  }))
+
+  assert.equal(parse('0.0833', '0.05').retentionPercentage, 8.33)
+  assert.equal(parse('0.0833', '0.05').ocipWrapPercentage, 5)
+  assert.equal(parse('8.33', '5').retentionPercentage, 8.33)
+  // More decimals than the database keeps are rounded, not rejected.
+  assert.equal(parse('0.08333', '0.0125').retentionPercentage, 8.33)
+  assert.equal(parse('0.08333', '0.0125').ocipWrapPercentage, 1.25)
+  // 1 is one percent, not a whole; typing a number over 1 is never a fraction.
+  assert.equal(parse('1', '10').retentionPercentage, 1)
+  assert.equal(parse(0.1, 2).retentionPercentage, 10)
+})
+
+test('a fraction too small to be a percentage of at least 1 is still rejected', () => {
+  const result = createBuilderDrawScheduleSchema([], null).safeParse(validSetup({
+    retentionEnabled: true,
+    retentionPercentage: '0.005',
+  }))
+
+  assert.equal(result.success, false)
+  assert.equal(result.error.flatten().fieldErrors.retentionPercentage.length > 0, true)
+})
+
+test('percentageFromFraction only answers for values above 0 and under 1', () => {
+  assert.equal(percentageFromFraction('0.0833'), 8.33)
+  assert.equal(percentageFromFraction(0.5), 50)
+  for (const value of ['', null, undefined, 0, '0', 1, '8.33', 100, -0.2, 'abc']) {
+    assert.equal(percentageFromFraction(value), null)
+  }
 })

@@ -16,6 +16,7 @@ import {
 import {
   formatBillingPeriod,
   formatLongDate,
+  formatOptionPrice,
 } from '../src/features/draw-invoice/utils/drawInvoiceFormatters.js'
 
 test('Retention Release RPC keeps Job scope nullable and normalizes notes', () => {
@@ -238,6 +239,7 @@ test('maps persisted package, invoice and calculated snapshots to the UI model',
     optionCode: 'OPT-1',
     description: 'Door upgrade',
     price: 125,
+    priceNotApplicable: false,
     billingDrawIndex: 1,
     issue: null,
   })
@@ -595,9 +597,30 @@ test('maps a deferred Option from its own immutable Lot snapshot', () => {
     optionCode: 'OPT-1',
     description: 'Door upgrade',
     price: 125,
+    priceNotApplicable: false,
     billingDrawIndex: 2,
     issue: null,
   })
+})
+
+test('a billed Option that was priced NA keeps the flag in the Package', () => {
+  const record = toDrawInvoicePackage(
+    { ...packageRow },
+    { id: 101, status: 'DRAFT', paid_amount: '0' },
+    [{
+      phase_id: 20, phase_code: 'A', building: 'Building 9',
+      lot_id: 41, draw_id: 52, lot_number: '19', plan_code: '2A', draw_number: 3,
+    }],
+    [{
+      lot_id: 41, billing_lot_id: 41, option_id: 61, draw_id: 52,
+      option_code: 'OPT-1', option_name: 'Door upgrade',
+      option_price: '0.00', option_not_applicable: true,
+      phase_id: 20, phase_code: 'A', building: 'Building 9', lot_number: '19', plan_code: '2A',
+    }],
+  )
+
+  assert.equal(record.persistedOptionLines[0].price, 0)
+  assert.equal(record.persistedOptionLines[0].priceNotApplicable, true)
 })
 
 test('derives a multi-Phase Package scope from its immutable draw lines', () => {
@@ -713,4 +736,11 @@ test('builds edit, transfer and cancel RPC payloads with exact Lot / Draw cells'
     p_reason: 'Wrong job',
   })
   assert.throws(() => toEditDrawPackageRpc({ selections: [] }), /Select at least one/)
+})
+
+test('an Option price reads as dollars, a credit with its sign, or NA', () => {
+  assert.equal(formatOptionPrice(125), '$125.00')
+  assert.equal(formatOptionPrice(-120.5), '-$120.50')
+  assert.equal(formatOptionPrice(0, true), 'NA')
+  assert.equal(formatOptionPrice(0), '$0.00')
 })

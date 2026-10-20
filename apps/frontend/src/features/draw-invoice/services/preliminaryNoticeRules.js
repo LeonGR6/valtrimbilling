@@ -72,6 +72,26 @@ export function missingRequiredFields(fields, values) {
 }
 
 /**
+ * Why the notice cannot be saved yet, or null when it can. A saved notice is
+ * what lets a Job's Packages be created, so it must be filled in: every required
+ * blank has text. On a PDF whose blanks were not found there is nothing to check
+ * them against, so some text has to be placed by hand.
+ */
+export function noticeSaveBlocker({ fields, fieldValues, entries }) {
+  const missing = missingRequiredFields(fields, fieldValues)
+  if (missing.length > 0) {
+    return `Fill in the ${missing.length} highlighted ${missing.length === 1 ? 'blank' : 'blanks'} to save the Preliminary Notice.`
+  }
+
+  const hasText = entries.some((entry) => String(entry.text ?? '').trim() !== '')
+  if (fields.length === 0 && !hasText) {
+    return 'Fill in the Preliminary Notice before saving it.'
+  }
+
+  return null
+}
+
+/**
  * For every blank that shares its text with others, the ids of the whole group
  * (itself included). A group is only formed when every label of it is on the
  * form, so an unfamiliar PDF is never linked by accident.

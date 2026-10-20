@@ -28,6 +28,7 @@ Deleting the PDF (existing `delete_job_document` flow) deletes its template.
 | `signature_date` | Date of Signature | same as `through_date` |
 | `waiver_release_dates` | Date(s) of waiver and release (Exceptions, Conditional Progress form only) | same as `through_date` |
 | `unpaid_progress_amount` | Amount(s) of unpaid progress payment(s) (Exceptions, Conditional Progress form only) | same as `check_amount` |
+| `disputed_claims_amount` | Disputed claims for extras in the amount of (Exceptions, Conditional Final form only). A Package fills it with the net amounts of the unpaid earlier invoices added up | same as `check_amount` |
 
 Not every form has every variable (the final-payment forms have no Through
 Date; the Unconditional Final form has no check amount). A mapping needs at

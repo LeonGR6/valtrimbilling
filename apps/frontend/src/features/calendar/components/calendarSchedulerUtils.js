@@ -18,8 +18,16 @@ export function formatPhase(value) {
   return String(value).toLowerCase().startsWith('phase') ? String(value) : `Phase ${value}`
 }
 
+// A Phase can have no Building: it reads as an empty text, not "Building null".
 export function formatBuilding(value) {
-  return String(value).toLowerCase().startsWith('building') ? String(value) : `Building ${value}`
+  const text = String(value ?? '').trim()
+  if (!text) return ''
+  return text.toLowerCase().startsWith('building') ? text : `Building ${text}`
+}
+
+/** "Phase 2 · Building A", or just "Phase 2" when the Phase has no Building. */
+export function formatPhaseBuilding(phase, building, separator = ' · ') {
+  return [formatPhase(phase), formatBuilding(building)].filter(Boolean).join(separator)
 }
 
 export function findJobBuilder(job, builders = []) {

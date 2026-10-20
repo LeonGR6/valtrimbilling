@@ -17,6 +17,10 @@ const MIN_OVERFLOW_FONT_SHARE = 0.5
 const PAGE_MARGIN = 36
 // Height of a capital letter relative to the font size (Helvetica).
 const CAP_HEIGHT_EM = 0.72
+// The note under the signature: its size and its distance below the last line of
+// the form (the Date of Signature).
+const NOTE_FONT_SIZE = 9
+const NOTE_GAP = 14
 
 async function loadLibrary() {
   // Loaded on demand: the library is only needed when a PDF is filled.
@@ -115,14 +119,53 @@ function drawInBox(page, font, text, field, library) {
 }
 
 /**
+ * A short line centered under the signature block, at the bottom of the form:
+ * under the Date of Signature when the mapping has it, else near the foot of the
+ * last page. It shrinks, never wraps, to stay inside the page margins.
+ */
+function drawFooterNote(doc, font, text, mapping, library) {
+  const { degrees, rgb } = library
+  const pages = doc.getPages()
+  const signature = mapping.fields.find((field) => (
+    field.variable === 'signature_date' && field.target.kind === 'rect'
+  ))
+  const target = signature?.target
+    ?? { kind: 'rect', page: pages.length, x: 0, y: 0.88, w: 1, h: 0.02 }
+  const page = pages[target.page - 1]
+  if (!page) return false
+
+  const box = boxOnPage(pageGeometry(page), target)
+  // A little less than the room: viewers measure the text a touch wider than pdf-lib.
+  const available = Math.max(1, (box.displayWidth - PAGE_MARGIN * 2) * 0.98)
+  const needed = font.widthOfTextAtSize(text, NOTE_FONT_SIZE)
+  const size = needed <= available ? NOTE_FONT_SIZE : NOTE_FONT_SIZE * (available / needed)
+  const width = font.widthOfTextAtSize(text, size)
+  const anchor = box.at(
+    box.displayWidth / 2 - box.left - width / 2,
+    -(NOTE_GAP + size * CAP_HEIGHT_EM),
+  )
+
+  page.drawText(text, {
+    x: anchor.x,
+    y: anchor.y,
+    size,
+    font,
+    color: rgb(0, 0, 0),
+    rotate: degrees(box.rotation),
+  })
+  return true
+}
+
+/**
  * @param pdfBytes {Uint8Array}
  * @param mapping a confirmed version 1 mapping
+ * @param footerNote optional text printed under the signature block
  * @param values raw values by variable key: dates as 'YYYY-MM-DD', amounts as
  *   numbers or numeric text, or a list of them (printed separated by commas).
  *   A missing or unusable value leaves its blank empty.
  * @returns {{ bytes: Uint8Array, filled: string[], skipped: string[] }}
  */
-export async function fillReleasePdf({ pdfBytes, mapping, values }) {
+export async function fillReleasePdf({ pdfBytes, mapping, values, footerNote = null }) {
   const library = await loadLibrary()
   const { PDFDocument, StandardFonts } = library
   const doc = await PDFDocument.load(pdfBytes, { ignoreEncryption: true })
@@ -158,6 +201,12 @@ export async function fillReleasePdf({ pdfBytes, mapping, values }) {
 
     drawInBox(page, font, text, { ...field, target: field.target }, library)
     filled.push(field.variable)
+  }
+
+  const note = String(footerNote ?? '').trim()
+  if (note) {
+    const noteFont = await doc.embedFont(StandardFonts.HelveticaBold)
+    drawFooterNote(doc, noteFont, note, mapping, library)
   }
 
   // The form is already flattened or removed. Letting pdf-lib refresh field

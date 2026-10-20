@@ -44,6 +44,7 @@ import {
   initialFieldValues,
   linkedFieldIds,
   missingRequiredFields,
+  noticeSaveBlocker,
 } from '../../services/preliminaryNoticeRules.js'
 import {
   loadNoticeTemplate,
@@ -129,13 +130,14 @@ export default function PreliminaryNoticeEditorDialog({ job, canManage = true, o
   const selected = entries.find((entry) => entry.id === selectedId) ?? null
   const allEntries = [...entries, ...buildFieldEntries(fields, fieldValues)]
   const problem = describeEntriesProblem(allEntries)
-  const canSave = canManage && !saving && !problem
+  const missingFields = missingRequiredFields(fields, fieldValues)
+  const saveBlocker = noticeSaveBlocker({ fields, fieldValues, entries: allEntries })
+  const canSave = canManage && !saving && !problem && !saveBlocker
   const links = useMemo(() => linkedFieldIds(fields), [fields])
   const startingValues = useMemo(() => initialFieldValues(fields), [fields])
   // The boxes that start marked do not count as something typed.
   const dirty = entries.some((entry) => entry.text.trim() !== '')
     || fieldValuesChanged(fieldValues, startingValues)
-  const missingFields = missingRequiredFields(fields, fieldValues)
   const missingFieldIds = new Set(missingFields.map(({ id }) => id))
   const canPrint = Boolean(source) && !saving && !printing && !problem && missingFields.length === 0
 
@@ -282,15 +284,27 @@ export default function PreliminaryNoticeEditorDialog({ job, canManage = true, o
                   </Button>
                 </span>
               </Tooltip>
-              <Button
-                variant="contained"
-                disableElevation
-                startIcon={saving ? <CircularProgress size={18} color="inherit" /> : <SaveRoundedIcon />}
-                disabled={!canSave}
-                onClick={save}
+              <Tooltip
+                title={saveBlocker
+                  ? `${saveBlocker} The signature, the current demand, the attachments, the personal delivery lines and the second address lines are optional.`
+                  : 'Save the Preliminary Notice for this Job'}
               >
-                {saving ? 'Saving…' : 'Save Preliminary Notice'}
-              </Button>
+                <span>
+                  <Button
+                    variant="contained"
+                    disableElevation
+                    startIcon={saving ? <CircularProgress size={18} color="inherit" /> : <SaveRoundedIcon />}
+                    disabled={!canSave}
+                    onClick={save}
+                  >
+                    {saving
+                      ? 'Saving…'
+                      : missingFields.length > 0
+                        ? `Save (${missingFields.length} to fill)`
+                        : 'Save Preliminary Notice'}
+                  </Button>
+                </span>
+              </Tooltip>
             </>
           )}
         </Toolbar>

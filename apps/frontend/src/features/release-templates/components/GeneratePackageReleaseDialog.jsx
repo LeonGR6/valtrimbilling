@@ -28,6 +28,7 @@ import { formatCurrency } from '../../draw-invoice/utils/drawInvoiceFormatters.j
 import {
   buildExceptionFillValues,
   buildExceptionRows,
+  buildFinalReleaseNote,
   buildPackageFillValues,
   buildPackageReleaseFileName,
   newManualExceptionRow,
@@ -165,13 +166,18 @@ export default function GeneratePackageReleaseDialog({
   // True while anything is being built, so the controls stay still.
   const generating = status !== 'idle'
   const buildingFile = status === 'generating'
-  const usesExceptions = plan.filled.some(({ key }) => (
-    key === 'waiver_release_dates' || key === 'unpaid_progress_amount'
-  ))
+  const isFilled = (variable) => plan.filled.some(({ key }) => key === variable)
+  const usesExceptions = isFilled('waiver_release_dates')
+    || isFilled('unpaid_progress_amount')
+    || isFilled('disputed_claims_amount')
+  // The Progress form lists a date and an amount per invoice; the Final form
+  // has one total, so only the amounts are asked for.
+  const showExceptionDates = isFilled('waiver_release_dates')
   const formatOf = (key) => template?.mapping.fields.find((field) => field.variable === key)?.format
   const exceptionLines = buildExceptionFillValues(exceptionRows)
   const hasExceptionLines = exceptionLines.waiver_release_dates.length > 0
     || exceptionLines.unpaid_progress_amount.length > 0
+    || exceptionLines.disputed_claims_amount !== ''
 
   // An earlier Package is named by its invoice number once it has one.
   const labelOfEarlier = (item) => {
@@ -222,7 +228,16 @@ export default function GeneratePackageReleaseDialog({
         // One date and one amount per unpaid earlier Package that is included.
         waiver_release_dates: exceptionLines.waiver_release_dates,
         unpaid_progress_amount: exceptionLines.unpaid_progress_amount,
+        disputed_claims_amount: exceptionLines.disputed_claims_amount,
       },
+      // A Final says what it is final for, from the Builder setup.
+      footerNote: choice.isFinal
+        ? buildFinalReleaseNote({
+          scope: data.values.finalRelease.scope,
+          closing: choice.closing,
+          jobCode: job.code,
+        })
+        : null,
     })
 
     const fileName = buildPackageReleaseFileName({
@@ -387,8 +402,11 @@ export default function GeneratePackageReleaseDialog({
                 </Typography>
                 <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
                   One line per unpaid Package of this Job from an earlier cut-off, filled with
-                  its cut-off date and net amount. Edit any value, uncheck a line to leave it
-                  out, or add a line by hand.
+                  its {showExceptionDates ? 'cut-off date and ' : ''}net amount.
+                  {isFilled('disputed_claims_amount')
+                    ? ' Their total goes in "Disputed claims for extras".'
+                    : ''}{' '}
+                  Edit any value, uncheck a line to leave it out, or add a line by hand.
                 </Typography>
 
                 {exceptionRows.length === 0 && (
@@ -426,16 +444,18 @@ export default function GeneratePackageReleaseDialog({
                             <Chip size="small" variant="outlined" label={describePendingPackage(item).workflowLabel} />
                           )}
                         </Box>
-                        <TextField
-                          size="small"
-                          type="date"
-                          label="Date of Waiver and Release"
-                          value={row.date}
-                          disabled={generating || !row.include}
-                          onChange={(event) => updateExceptionRow(row.key, { date: event.target.value })}
-                          slotProps={{ inputLabel: { shrink: true } }}
-                          sx={{ width: 190 }}
-                        />
+                        {showExceptionDates && (
+                          <TextField
+                            size="small"
+                            type="date"
+                            label="Date of Waiver and Release"
+                            value={row.date}
+                            disabled={generating || !row.include}
+                            onChange={(event) => updateExceptionRow(row.key, { date: event.target.value })}
+                            slotProps={{ inputLabel: { shrink: true } }}
+                            sx={{ width: 190 }}
+                          />
+                        )}
                         <TextField
                           size="small"
                           label="Unpaid amount"
@@ -491,6 +511,12 @@ export default function GeneratePackageReleaseDialog({
                       <Typography variant="body2">
                         <strong>Amount(s) of Unpaid Progress Payment(s):</strong>{' '}
                         {formatReleaseValues('unpaid_progress_amount', formatOf('unpaid_progress_amount'), exceptionLines.unpaid_progress_amount) || '—'}
+                      </Typography>
+                    )}
+                    {isFilled('disputed_claims_amount') && (
+                      <Typography variant="body2">
+                        <strong>Disputed claims for extras:</strong>{' '}
+                        {formatReleaseValue('disputed_claims_amount', formatOf('disputed_claims_amount'), exceptionLines.disputed_claims_amount) || '—'}
                       </Typography>
                     )}
                   </Stack>

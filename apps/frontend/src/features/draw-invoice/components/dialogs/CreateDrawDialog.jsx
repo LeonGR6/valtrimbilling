@@ -33,10 +33,7 @@ import {
   getJobBuilderId,
   jobPlanPricingPath,
 } from '../../../jobs/utils/jobRoutes.js'
-import {
-  formatBuilding,
-  formatPhase,
-} from '../../../sequence-sheets/utils/phaseBuildingCodes.js'
+import { formatPhaseBuilding } from '../../../sequence-sheets/utils/phaseBuildingCodes.js'
 import {
   buildBilledHardwareCharges,
   buildBilledUtilityCharges,
@@ -551,8 +548,8 @@ export default function CreateDrawDialog({
   const selectedPhasesAreReady = phaseModels
     .filter((model) => selectedPhaseIds.has(String(model.phase.id)))
     .every((model) => model.worksheet.isReady)
-  // The first Package of a Job needs the Job's Preliminary Notice uploaded.
-  const noticeGate = usePreliminaryNoticeGate(job?.id, packages)
+  // A Package needs the Job's Preliminary Notice filled in.
+  const noticeGate = usePreliminaryNoticeGate(job?.id)
   const canCreate =
     !noticeGate.blocked &&
     hasScope &&
@@ -617,7 +614,7 @@ export default function CreateDrawDialog({
           ? 'Remove this Phase and its selected cells from the Package'
           : 'Add this Phase to the Package'}
         label={[
-          `${formatPhase(candidate.name)} · ${formatBuilding(candidate.building)}`,
+          formatPhaseBuilding(candidate.name, candidate.building),
           `${counts.lots} lots`,
           counts.utility > 0 ? `${counts.utility} Utility` : null,
           cellCount > 0 ? `${cellCount} ${cellCount === 1 ? 'cell' : 'cells'}` : null,
@@ -701,9 +698,8 @@ export default function CreateDrawDialog({
                 </Button>
               )}
             >
-              <strong>This is the first Package of Job #{job.code}.</strong> Upload its
-              Preliminary Notice before creating it. You can also add it from the
-              Documents tab.
+              <strong>Job #{job.code} has no Preliminary Notice.</strong> Fill it in
+              before creating a Package. You can also do it from the Documents tab.
             </Alert>
           )}
           {job && noticeGate.status === 'error' && (
@@ -779,7 +775,7 @@ export default function CreateDrawDialog({
                           }}
                         >
                           <Typography variant="body2" fontWeight={800} sx={{ minWidth: 200 }}>
-                            {formatPhase(candidate.name)} · {formatBuilding(candidate.building)}
+                            {formatPhaseBuilding(candidate.name, candidate.building)}
                           </Typography>
                           <Typography variant="body2" color="text.secondary">
                             {[
@@ -881,7 +877,11 @@ export default function CreateDrawDialog({
                       + calendarSuggestion.suggestedHardwareSelections.length}</strong>{' '}
                     billing items are suggested for an estimated{' '}
                     <strong>{formatCurrency(calendarSuggestion.estimatedInvoiceAmount)}</strong>
-                    {' '}invoice.
+                    {' '}invoice
+                    {calendarSuggestion.overdueCount > 0
+                      ? `, including ${calendarSuggestion.overdueCount} overdue ${calendarSuggestion.overdueCount === 1 ? 'item' : 'items'} from before that window`
+                      : ''}
+                    {'.'}
                     {calendarSuggestion.eligibleSelections.length
                       + calendarSuggestion.eligibleHardwareSelections.length
                       > calendarSuggestion.suggestedSelections.length
@@ -946,7 +946,7 @@ export default function CreateDrawDialog({
                   >
                     <Chip size="small" color="primary" label={`${index + 1} of ${phaseModels.length}`} />
                     <Typography variant="subtitle1" fontWeight={850}>
-                      {formatPhase(phase.name)} · {formatBuilding(phase.building)}
+                      {formatPhaseBuilding(phase.name, phase.building)}
                     </Typography>
                     <Typography variant="body2" color="text.secondary">
                       {model.lotRows.length} lots
@@ -959,7 +959,7 @@ export default function CreateDrawDialog({
 
                 {!model.worksheet.isReady && (
                   <Alert severity="warning">
-                    {formatPhase(phase.name)} · {formatBuilding(phase.building)}:{' '}
+                    {formatPhaseBuilding(phase.name, phase.building)}:{' '}
                     {readinessLabel(model.worksheet)}. Complete the worksheet
                     prerequisites before creating a package.
                   </Alert>
@@ -1069,8 +1069,7 @@ export default function CreateDrawDialog({
                   {summary.phaseSummaries.map((phaseSummary) => (
                     <Box key={phaseSummary.phaseId}>
                       <Typography variant="body2" fontWeight={800}>
-                        {formatPhase(phaseSummary.phaseCode)} ·{' '}
-                        {formatBuilding(phaseSummary.building)}
+                        {formatPhaseBuilding(phaseSummary.phaseCode, phaseSummary.building)}
                       </Typography>
                       {phaseSummary.draws.map((draw) => (
                         <Typography

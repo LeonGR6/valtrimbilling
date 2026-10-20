@@ -135,6 +135,116 @@ test('Any date chooses the highest-value rolling 14-day window through today', (
   assert.equal(suggestion.estimatedInvoiceAmount, 1600)
 })
 
+test('Any date also suggests overdue work from before the window, not work after it', () => {
+  const job = jobWithLots([101, 102, 103])
+  const schedule = {
+    frequency: 'MONTHLY',
+    anyDate: true,
+    cutoffDay: null,
+    cutoffDays: [],
+    cutoffWeekday: null,
+    draws: [
+      { percentage: 80, eventType: 'EXT' },
+      { percentage: 20, eventType: 'HW' },
+    ],
+  }
+  const activities = [activity([
+    stage('EXT', [
+      // Ready since July and still unbilled: overdue.
+      productionSchedule(1, '2026-07-01', [101]),
+      productionSchedule(2, '2026-09-01', [102]),
+      productionSchedule(3, '2026-09-02', [103]),
+    ]),
+    // The newest work, after the best window.
+    stage('HW', [productionSchedule(4, '2026-09-29', [102])]),
+  ])]
+
+  const suggestion = buildCalendarDrawSuggestion({
+    activities,
+    job,
+    schedule,
+    packages: [],
+    asOfDate: '2026-09-30',
+  })
+
+  assert.equal(suggestion.windowStart, '2026-08-20')
+  assert.equal(suggestion.windowEnd, '2026-09-02')
+  assert.deepEqual(suggestion.suggestedSelections, [
+    { phaseId: 21, lotId: 101, drawIndex: 0 },
+    { phaseId: 21, lotId: 102, drawIndex: 0 },
+    { phaseId: 21, lotId: 103, drawIndex: 0 },
+  ])
+  assert.equal(suggestion.overdueCount, 1)
+  // The HW cell stays available to pick by hand, outside the suggestion.
+  assert.equal(suggestion.eligibleSelections.length, 4)
+  // The estimate covers what is suggested: three EXT cells.
+  assert.equal(suggestion.estimatedInvoiceAmount, 2400)
+})
+
+test('Any date has nothing overdue when everything fits in the window', () => {
+  const job = jobWithLots([101, 102])
+  const schedule = {
+    frequency: 'MONTHLY',
+    anyDate: true,
+    cutoffDay: null,
+    cutoffDays: [],
+    cutoffWeekday: null,
+    draws: [
+      { percentage: 80, eventType: 'EXT' },
+      { percentage: 20, eventType: 'HW' },
+    ],
+  }
+  const activities = [activity([
+    stage('EXT', [
+      productionSchedule(1, '2026-09-01', [101]),
+      productionSchedule(2, '2026-09-05', [102]),
+    ]),
+  ])]
+
+  const suggestion = buildCalendarDrawSuggestion({
+    activities,
+    job,
+    schedule,
+    packages: [],
+    asOfDate: '2026-09-30',
+  })
+
+  assert.equal(suggestion.overdueCount, 0)
+  assert.equal(suggestion.suggestedSelections.length, 2)
+})
+
+test('a cut-off builder already suggests everything up to its cut-off, however old', () => {
+  const job = jobWithLots([101, 102])
+  const schedule = {
+    frequency: 'WEEKLY',
+    anyDate: false,
+    cutoffWeekday: 3,
+    draws: [
+      { percentage: 50, eventType: 'EXT' },
+      { percentage: 50, eventType: 'DM' },
+    ],
+  }
+  const activities = [activity([
+    stage('EXT', [
+      productionSchedule(1, '2026-06-02', [101]),
+      productionSchedule(2, '2026-09-28', [102]),
+    ]),
+  ])]
+
+  const suggestion = buildCalendarDrawSuggestion({
+    activities,
+    job,
+    schedule,
+    packages: [],
+    asOfDate: '2026-09-29',
+  })
+
+  assert.equal(suggestion.mode, 'CUTOFF')
+  assert.deepEqual(suggestion.suggestedSelections, suggestion.eligibleSelections)
+  assert.equal(suggestion.suggestedSelections.length, 2)
+  assert.equal(suggestion.overdueCount, 0)
+})
+
 test('cancelled Packages do not close Calendar Lot and Draw cells', () => {
   const job = jobWithLots([101])
   const schedule = {
@@ -283,4 +393,48 @@ test('Separate Hardware keeps every configured Lot available without Calendar wo
     { phaseId: 21, lotId: 102, eventType: 'EXT' },
     { phaseId: 21, lotId: 102, eventType: 'HW' },
   ])
+})
+
+test('a baseboard install never makes anything billable, even if it is dated before DM', () => {
+  const job = jobWithLots([101])
+  const schedule = {
+    frequency: 'MONTHLY',
+    anyDate: true,
+    cutoffDay: null,
+    cutoffDays: [],
+    cutoffWeekday: null,
+    draws: [
+      { percentage: 50, eventType: 'EXT' },
+      { percentage: 50, eventType: 'DM' },
+    ],
+  }
+  const withBaseboard = (baseboardDate) => [activity([
+    stage('EXT', [productionSchedule(1, '2026-09-01', [101])]),
+    stage('DM', [
+      productionSchedule(2, '2026-09-20', [101]),
+      { ...productionSchedule(3, baseboardDate, [101]), variant: 'BASEBOARD_INSTALL' },
+    ]),
+  ])]
+
+  // DM is not ready on 09-10; a baseboard dated 09-05 must not make it so.
+  const early = buildCalendarDrawSuggestion({
+    activities: withBaseboard('2026-09-05'),
+    job,
+    schedule,
+    packages: [],
+    asOfDate: '2026-09-10',
+  })
+  assert.deepEqual(early.eligibleSelections, [
+    { phaseId: 21, lotId: 101, drawIndex: 0 },
+  ])
+
+  // On the DM date both draws are ready, with or without the baseboard event.
+  const later = buildCalendarDrawSuggestion({
+    activities: withBaseboard('2026-09-25'),
+    job,
+    schedule,
+    packages: [],
+    asOfDate: '2026-09-30',
+  })
+  assert.equal(later.eligibleSelections.length, 2)
 })

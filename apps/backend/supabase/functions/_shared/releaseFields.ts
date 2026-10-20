@@ -83,6 +83,13 @@ const INLINE_LABELS: Record<ReleaseVariable, LabelSpec[]> = {
       reason: "Amount(s) of unpaid progress payment(s) label",
     },
   ],
+  // The one blank of the "Exceptions" part of the Conditional Final form.
+  disputed_claims_amount: [
+    {
+      pattern: /^disputed\s+claims\s+for\s+extras\s+in\s+the\s+amount\s+of\s*:/iu,
+      reason: "Disputed claims for extras label",
+    },
+  ],
 };
 
 // Sentence that introduces the value on the line BELOW it, as in the

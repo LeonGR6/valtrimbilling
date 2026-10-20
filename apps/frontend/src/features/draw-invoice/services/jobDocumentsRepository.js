@@ -2,6 +2,7 @@ import { requireSupabase } from '../../../services/api.js'
 import {
   buildJobDocumentLibrary,
   buildJobDocumentStoragePath,
+  pickRequirementVersions,
   toJobDocument,
   JOB_DOCUMENT_BUCKET,
   MAX_JOB_DOCUMENT_SIZE,
@@ -88,38 +89,60 @@ export async function listJobDocumentLibrary(jobs) {
 
   const client = await requireSupabase()
   const jobIds = [...new Set(jobs.map(({ id }) => Number(id)))]
-  const versionIds = [
-    ...new Set(
-      jobs
-        .map(({ billingSetupVersionId }) => Number(billingSetupVersionId))
-        .filter(Number.isFinite),
-    ),
+
+  // A Job's document checklist follows its Builder's current Billing Setup, not
+  // the version the Job was created with (that one still decides billing). The
+  // documents and the Builders' current versions are read together.
+  const builderIds = [
+    ...new Set(jobs.map(({ builderId }) => Number(builderId)).filter(Number.isFinite)),
   ]
   const documentRequest = client
     .from('job_documents')
     .select(DOCUMENT_COLUMNS)
     .in('job_id', jobIds)
     .order('created_at', { ascending: false })
-  const requirementRequest = versionIds.length > 0
+  const activeVersionRequest = builderIds.length > 0
     ? client
+        .from('billing_setup_versions')
+        .select('id, builder_id')
+        .in('builder_id', builderIds)
+        .eq('status', 'ACTIVE')
+    : Promise.resolve({ data: [], error: null })
+  const [documentResult, activeVersionResult] = await Promise.all([
+    documentRequest,
+    activeVersionRequest,
+  ])
+
+  throwDocumentError(documentResult.error, 'Job documents could not be loaded.')
+  throwDocumentError(activeVersionResult.error, 'Document requirements could not be loaded.')
+
+  const activeVersionByBuilder = new Map(
+    (activeVersionResult.data ?? []).map((row) => [String(row.builder_id), row.id]),
+  )
+  const requirementVersionByJob = pickRequirementVersions(jobs, activeVersionByBuilder)
+  const versionIds = [
+    ...new Set(
+      Object.values(requirementVersionByJob)
+        .map((versionId) => Number(versionId))
+        .filter(Number.isFinite),
+    ),
+  ]
+  const requirementResult = versionIds.length > 0
+    ? await client
         .from('billing_required_documents')
         .select(REQUIREMENT_COLUMNS)
         .in('setup_version_id', versionIds)
         .eq('is_required', true)
         .order('display_order', { ascending: true })
-    : Promise.resolve({ data: [], error: null })
-  const [documentResult, requirementResult] = await Promise.all([
-    documentRequest,
-    requirementRequest,
-  ])
+    : { data: [], error: null }
 
-  throwDocumentError(documentResult.error, 'Job documents could not be loaded.')
   throwDocumentError(requirementResult.error, 'Document requirements could not be loaded.')
 
   return buildJobDocumentLibrary(
     jobs,
     documentResult.data ?? [],
     requirementResult.data ?? [],
+    requirementVersionByJob,
   )
 }
 

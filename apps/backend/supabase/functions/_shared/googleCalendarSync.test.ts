@@ -185,3 +185,14 @@ Deno.test('recreates an event when its previous Google ID no longer exists', asy
   assertEquals(outcome.created, 1)
   assertEquals(outcome.results[0].googleEventId, 'replacement-google-event')
 })
+
+Deno.test('a baseboard install is named in its Google Calendar event', () => {
+  const event = buildGoogleCalendarEvent({
+    ...schedule,
+    stageType: 'DM',
+    variant: 'BASEBOARD_INSTALL',
+    orderMaterial: false,
+  })
+
+  assertMatch(event.summary, /^DM BASEBOARD INSTALL • /u)
+})

@@ -77,6 +77,14 @@ export const RELEASE_VARIABLES = [
     formats: AMOUNT_FORMATS,
     defaultFormat: 'plain',
   },
+  // The one blank of the "Exceptions" part of the Conditional Final form.
+  {
+    key: 'disputed_claims_amount',
+    kind: 'amount',
+    label: 'Disputed Claims for Extras',
+    formats: AMOUNT_FORMATS,
+    defaultFormat: 'plain',
+  },
 ]
 
 export const DEFAULT_FONT_SIZE = 10
@@ -282,7 +290,7 @@ function pad(value) {
 
 /** Example of how a value looks with a format, shown inside the placed box. */
 export function sampleValue(variableKey, format, now = new Date()) {
-  if (variableKey === 'check_amount' || variableKey === 'unpaid_progress_amount') {
+  if (getReleaseVariable(variableKey)?.kind === 'amount') {
     return format === 'plain' ? '1,250.00' : '$1,250.00'
   }
 

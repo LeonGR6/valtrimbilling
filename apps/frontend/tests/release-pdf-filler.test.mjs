@@ -318,3 +318,66 @@ test('the partly filled flat template keeps what was already printed', { skip: !
   assert.ok(texts.includes('09/30/2026'))
   assert.ok(texts.some((text) => text.includes('FILLED PREVIOUSLY')))
 })
+
+const signatureDate = rectField('signature_date', 'MM/DD/YYYY', { x: 0.25, y: 0.78, w: 0.32, h: 0.02 })
+
+for (const rotation of [0, 90, 180, 270]) {
+  test(`the footer note sits centered under the Date of Signature, upright, on a page rotated ${rotation}`, async () => {
+    const { bytes } = await fillReleasePdf({
+      pdfBytes: await blankPdf({ rotation }),
+      mapping: mappingFor(signatureDate),
+      values: { signature_date: '2026-09-30' },
+      footerNote: 'Final release per Phase: Phase 5',
+    })
+
+    const { items, viewport } = await readBack(bytes)
+    const date = items.find((item) => item.text === '09/30/2026')
+    const note = items.find((item) => item.text === 'Final release per Phase: Phase 5')
+
+    assert.ok(date && note, 'the date and the note are present')
+    assert.equal(note.upright, true)
+    // Below the signature date line, not beside it.
+    assert.ok(note.y > date.y + 8, `note ${note.y} is under the date ${date.y}`)
+    // Centered on the displayed page.
+    const centre = note.x + note.width / 2
+    assert.ok(Math.abs(centre - viewport.width / 2) < 3, `centered: ${centre} vs ${viewport.width / 2}`)
+    // And inside the page.
+    assert.ok(note.x >= 36 && note.x + note.width <= viewport.width - 36)
+  })
+}
+
+test('the footer note goes near the foot of the last page when there is no signature date box', async () => {
+  const { bytes } = await fillReleasePdf({
+    pdfBytes: await blankPdf(),
+    mapping: mappingFor(rectField('through_date', 'MM/DD/YYYY', { x: 0.25, y: 0.3, w: 0.3, h: 0.03 })),
+    values: { through_date: '2026-09-30' },
+    footerNote: 'Final release per Project (Job #1307)',
+  })
+  const { items, viewport } = await readBack(bytes)
+  const note = items.find((item) => item.text.startsWith('Final release per Project'))
+
+  assert.ok(note)
+  assert.ok(note.y > viewport.height * 0.85 && note.y < viewport.height * 0.95)
+})
+
+test('a long footer note shrinks to fit between the margins and nothing is added without one', async () => {
+  const long = `Final release per Building: ${'Phase 12 - Building 45, '.repeat(8)}`.trim()
+  const { items, viewport } = await readBack((await fillReleasePdf({
+    pdfBytes: await blankPdf(),
+    mapping: mappingFor(signatureDate),
+    values: { signature_date: '2026-09-30' },
+    footerNote: long,
+  })).bytes)
+  const note = items.find((item) => item.text.startsWith('Final release per Building'))
+  assert.ok(note.x >= 35.5 && note.x + note.width <= viewport.width - 35.5)
+
+  for (const footerNote of [undefined, null, '', '   ']) {
+    const { items: plain } = await readBack((await fillReleasePdf({
+      pdfBytes: await blankPdf(),
+      mapping: mappingFor(signatureDate),
+      values: { signature_date: '2026-09-30' },
+      footerNote,
+    })).bytes)
+    assert.equal(plain.some((item) => item.text.includes('Final release')), false)
+  }
+})

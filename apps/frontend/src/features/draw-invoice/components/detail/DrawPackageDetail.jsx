@@ -33,10 +33,7 @@ import {
   jobPlanPricingPath,
   jobSequenceSheetPath,
 } from '../../../jobs/utils/jobRoutes.js'
-import {
-  formatBuilding,
-  formatPhase,
-} from '../../../sequence-sheets/utils/phaseBuildingCodes.js'
+import { formatBuilding, formatPhase, formatPhaseBuilding } from '../../../sequence-sheets/utils/phaseBuildingCodes.js'
 import { useDrawInvoicePackages } from '../../context/useDrawInvoicePackages.js'
 import { useQuickbooksInvoiceSync } from '../../hooks/useQuickbooksInvoiceSync.js'
 import { refreshQuickbooksPayment } from '../../services/quickbooksRepository.js'
@@ -300,11 +297,11 @@ export default function DrawPackageDetail() {
   const packageContext = isRetentionRelease
     ? `Job #${focusedJob.code} · ${focusedPackage.retentionRelease?.scopeType === 'JOB'
       ? 'Per Job'
-      : `${formatPhase(focusedPackage.retentionRelease?.phaseCode)} · ${formatBuilding(focusedPackage.retentionRelease?.building)}`}`
+      : formatPhaseBuilding(focusedPackage.retentionRelease?.phaseCode, focusedPackage.retentionRelease?.building)}`
     : selectedPhase
       ? `Job #${focusedJob.code} · ${isMultiPhase
         ? packagePhaseLabels(packageSummary.phaseSummaries).join(' · ')
-        : `${formatPhase(selectedPhase.name)} · ${formatBuilding(selectedPhase.building)}`}`
+        : formatPhaseBuilding(selectedPhase.name, selectedPhase.building)}`
       : null
   const canCreatePackage = canManageDrawInvoicePackages
     && !billingSetupsLoading
@@ -533,7 +530,7 @@ export default function DrawPackageDetail() {
                     label: 'Release scope',
                     value: focusedPackage.retentionRelease?.scopeType === 'JOB'
                       ? 'Per Job'
-                      : formatBuilding(focusedPackage.retentionRelease?.building),
+                      : formatBuilding(focusedPackage.retentionRelease?.building) || 'No building',
                     detail: focusedPackage.retentionRelease?.scopeType === 'BUILDING'
                       ? formatPhase(focusedPackage.retentionRelease?.phaseCode)
                       : `Job #${focusedJob.code}`,
@@ -668,7 +665,7 @@ export default function DrawPackageDetail() {
                 >
                   {phases.map((phase) => (
                     <MenuItem key={phase.id} value={phase.id}>
-                      {formatPhase(phase.name)} · {formatBuilding(phase.building)} ·{' '}
+                      {formatPhaseBuilding(phase.name, phase.building)} ·{' '}
                       {(phase.lots ?? []).filter((row) => !row.isUtilityBuilding).length} lots
                       {(phase.lots ?? []).some((row) => row.isUtilityBuilding)
                         ? ` · ${(phase.lots ?? []).filter((row) => row.isUtilityBuilding).length} Utility`

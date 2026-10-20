@@ -84,9 +84,10 @@ function phaseLabel(value: string) {
   return `Phase ${normalized}`;
 }
 
+// A Phase can have no Building: then there is no label at all.
 function buildingLabel(value: string) {
   const normalized = value.trim().replace(/^BUILDING[\s#:\-.]*/iu, "").replace(/^B(?=[A-Z0-9])/iu, "");
-  return `Building ${normalized}`;
+  return normalized ? `Building ${normalized}` : "";
 }
 
 function optionLabel(option: SequenceSheetEmailOption) {
@@ -205,7 +206,7 @@ export function renderSequenceSheetEmail(
     `Community: ${snapshot.community}`,
     `Job: #${snapshot.jobCode}`,
     `Phase: ${phase}`,
-    `Building: ${building}`,
+    ...(building ? [`Building: ${building}`] : []),
     "",
     "Lot / Utility\tPlan\tReverse\tOptions for selected plan",
     ...textRows,
@@ -232,8 +233,8 @@ export function renderSequenceSheetEmail(
               <tr>
                 <td style="padding:0 18px 0 0;color:#64748b;font-size:12px;text-transform:uppercase;letter-spacing:0.4px;">Job</td>
                 <td style="padding:0;color:#1e293b;font-size:14px;font-weight:700;">#${escapeHtml(snapshot.jobCode)}</td>
-                <td style="padding:0 18px 0 28px;color:#64748b;font-size:12px;text-transform:uppercase;letter-spacing:0.4px;">Phase / Building</td>
-                <td style="padding:0;color:#1e293b;font-size:14px;font-weight:700;">${escapeHtml(phase)} · ${escapeHtml(building)}</td>
+                <td style="padding:0 18px 0 28px;color:#64748b;font-size:12px;text-transform:uppercase;letter-spacing:0.4px;">${building ? "Phase / Building" : "Phase"}</td>
+                <td style="padding:0;color:#1e293b;font-size:14px;font-weight:700;">${escapeHtml([phase, building].filter(Boolean).join(" · "))}</td>
               </tr>
             </table>
           </td>

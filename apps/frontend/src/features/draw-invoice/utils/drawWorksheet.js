@@ -5,6 +5,11 @@ export function hasPlanPrice(value) {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0
 }
 
+// An Option can be a credit, so its price may be negative.
+export function hasOptionPrice(value) {
+  return typeof value === 'number' && Number.isFinite(value)
+}
+
 export function hasHardwarePrice(value) {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0
 }
@@ -132,8 +137,15 @@ export function getRetentionMode(schedule) {
   return 'NONE'
 }
 
+// Cents round half away from zero, like the database, so a credit (negative)
+// rounds to the mirror image of the same charge.
+function roundCents(value) {
+  return Math.sign(value) * Math.round(Math.abs(value))
+}
+
+// `currentDraw` can be negative when it is the total of Options with credits.
 export function calculateInvoiceAmounts(currentDraw, schedule) {
-  if (!hasPlanPrice(currentDraw)) {
+  if (!hasOptionPrice(currentDraw)) {
     return {
       currentDraw: null,
       retention: null,
@@ -142,7 +154,7 @@ export function calculateInvoiceAmounts(currentDraw, schedule) {
     }
   }
 
-  const currentDrawCents = Math.round(currentDraw * 100)
+  const currentDrawCents = roundCents(currentDraw * 100)
   const retentionMode = getRetentionMode(schedule)
   const retentionPercentage = Number(schedule?.retentionPercentage) || 0
   const wrapInsurancePercentage = Number(schedule?.ocipWrapPercentage) || 0
@@ -153,10 +165,10 @@ export function calculateInvoiceAmounts(currentDraw, schedule) {
     && wrapInsurancePercentage > 0
     && wrapInsurancePercentage <= 100
   const retentionCents = shouldApplyRetention
-    ? Math.round(currentDrawCents * retentionPercentage / 100)
+    ? roundCents(currentDrawCents * retentionPercentage / 100)
     : 0
   const wrapInsuranceCents = shouldApplyWrapInsurance
-    ? Math.round(currentDrawCents * wrapInsurancePercentage / 100)
+    ? roundCents(currentDrawCents * wrapInsurancePercentage / 100)
     : 0
 
   return {
@@ -202,7 +214,7 @@ export function buildDrawWorksheet(job, phase, schedule) {
       .filter((option) => selectedOptionIds.has(String(option.id)))
       .map((option) => ({
         ...option,
-        price: hasPlanPrice(option.price) ? option.price : null,
+        price: hasOptionPrice(option.price) ? option.price : null,
       }))
     const basePrice = plan?.price
     const priceIsAvailable = hasPlanPrice(basePrice)

@@ -15,7 +15,7 @@ export interface GoogleCalendarSchedule {
   scheduleId: string
   activityId: string
   stageType: 'EXT' | 'SHUTTER' | 'DM' | 'HW'
-  variant: 'BASE' | 'DIVISION' | 'INSTALL_ONLY' | 'LOCK_UP'
+  variant: 'BASE' | 'DIVISION' | 'INSTALL_ONLY' | 'BASEBOARD_INSTALL' | 'LOCK_UP'
   scheduledDate: string
   dateOwner: 'SUPERVISOR' | 'JOBSITE_SUPERINTENDENT' | 'TENTATIVE'
   scheduleNote: string
@@ -274,6 +274,7 @@ function variantSuffix(variant: GoogleCalendarSchedule['variant']) {
     BASE: '',
     DIVISION: '',
     INSTALL_ONLY: ' INSTALL ONLY',
+    BASEBOARD_INSTALL: ' BASEBOARD INSTALL',
     LOCK_UP: ' LOCK UP',
   }[variant]
 }

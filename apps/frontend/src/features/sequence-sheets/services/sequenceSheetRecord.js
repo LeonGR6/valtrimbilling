@@ -29,7 +29,8 @@ export function toSequenceSheetPhaseRpc(jobId, phaseId, phase) {
     p_job_id: requiredId(jobId),
     p_phase_id: phaseId == null ? null : requiredId(phaseId),
     p_code: phase.phaseName.trim().toUpperCase(),
-    p_building: phase.building.trim().toUpperCase(),
+    // A Phase can have no Building: an empty one is sent as nothing.
+    p_building: phase.building.trim().toUpperCase() || null,
     p_lots: phase.lots.map((lot) => ({
       id: lot.id == null ? null : requiredId(lot.id),
       lot_number: lot.isUtilityBuilding ? '' : lot.lotNumber.trim().toUpperCase(),

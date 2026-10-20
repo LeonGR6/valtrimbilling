@@ -10,6 +10,11 @@ export function formatCurrency(value) {
     : '—'
 }
 
+/** An Option price: "NA" when it does not apply (it adds and subtracts nothing), else dollars. */
+export function formatOptionPrice(price, notApplicable = false) {
+  return notApplicable ? 'NA' : formatCurrency(price)
+}
+
 export function formatPercentage(value) {
   const percentage = Number(value) || 0
   return Number.isInteger(percentage)

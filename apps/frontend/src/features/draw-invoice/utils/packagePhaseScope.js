@@ -1,4 +1,4 @@
-import { formatBuilding, formatPhase } from '../../sequence-sheets/utils/phaseBuildingCodes.js'
+import { formatPhaseBuilding } from '../../sequence-sheets/utils/phaseBuildingCodes.js'
 import {
   buildAvailableSeparateHardwareSelections,
   buildCalendarDrawSuggestion,
@@ -55,7 +55,7 @@ export function initialShownPhaseIds({
 }
 
 export function phaseScopeLabel(phaseName, building) {
-  return `${formatPhase(phaseName)} / ${formatBuilding(building)}`
+  return formatPhaseBuilding(phaseName, building, { separator: ' / ' })
 }
 
 /** "Phase 1 / Building A" for each Phase of a package summary. */

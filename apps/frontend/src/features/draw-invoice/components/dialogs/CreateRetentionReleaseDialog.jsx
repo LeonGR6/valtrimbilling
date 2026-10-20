@@ -11,8 +11,7 @@ import {
   Typography,
 } from '@mui/material'
 import {
-  formatBuilding,
-  formatPhase,
+  formatPhaseBuilding,
 } from '../../../sequence-sheets/utils/phaseBuildingCodes.js'
 import {
   formatCurrency,
@@ -21,10 +20,7 @@ import {
 
 function scopeLabel(suggestion) {
   if (suggestion.scopeType === 'JOB') return 'Per Job'
-  return [
-    formatPhase(suggestion.phase?.name),
-    formatBuilding(suggestion.phase?.building),
-  ].filter(Boolean).join(' / ')
+  return formatPhaseBuilding(suggestion.phase?.name, suggestion.phase?.building, { separator: ' / ' })
 }
 
 export default function CreateRetentionReleaseDialog({

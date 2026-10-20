@@ -47,7 +47,9 @@ function searchableText(event) {
   const building = bare('building', props.building)
   const variant = props.variant === 'install-only'
     ? 'install only'
-    : props.variant === 'lock-up' ? 'lock up' : ''
+    : props.variant === 'baseboard-install'
+      ? 'baseboard install'
+      : props.variant === 'lock-up' ? 'lock up' : ''
 
   return [
     type?.label,

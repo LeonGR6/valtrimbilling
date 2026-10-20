@@ -10,9 +10,11 @@ import {
 import {
   createJobPlan as createJobPlanRecord,
   createPlanOption as createPlanOptionRecord,
+  createPlanOptions as createPlanOptionsRecord,
   deactivateJobPlan as deactivateJobPlanRecord,
   deactivatePlanOption as deactivatePlanOptionRecord,
   listJobPlans,
+  reorderJobPlans as reorderJobPlansRecord,
   saveJobPlanPrice as saveJobPlanPriceRecord,
   savePlanOptionPrice as savePlanOptionPriceRecord,
   updateJobPlan as updateJobPlanRecord,
@@ -188,6 +190,34 @@ export function JobsProvider({ children }) {
     setError(null)
   }, [])
 
+  // Moves the list on screen first and puts it back if saving fails.
+  const reorderJobPlans = useCallback(async (jobId, planIds) => {
+    const byId = (plans) => planIds.map((id) => plans.find((plan) => plan.id === id))
+    let previousPlans = null
+
+    setJobRecords((current) => current.map((job) => {
+      if (job.id !== jobId) return job
+      previousPlans = job.sequenceSheet?.plans ?? []
+      return updateJobPlans(job, (plans) => (
+        plans.length === planIds.length && planIds.every((id) => plans.some((plan) => plan.id === id))
+          ? byId(plans)
+          : plans
+      ))
+    }))
+
+    try {
+      await reorderJobPlansRecord(jobId, planIds)
+      setError(null)
+    } catch (reorderError) {
+      setJobRecords((current) => current.map((job) => (
+        job.id === jobId && previousPlans
+          ? updateJobPlans(job, () => previousPlans)
+          : job
+      )))
+      throw reorderError
+    }
+  }, [])
+
   const createPlanOption = useCallback(async (jobId, planId, option) => {
     const created = await createPlanOptionRecord(planId, option)
     setJobRecords((current) => current.map((job) => (
@@ -195,6 +225,21 @@ export function JobsProvider({ children }) {
         ? updateJobPlans(job, (plans) => plans.map((plan) => (
             plan.id === planId
               ? { ...plan, options: [...(plan.options ?? []), created] }
+              : plan
+          )))
+        : job
+    )))
+    setError(null)
+    return created
+  }, [])
+
+  const createPlanOptions = useCallback(async (jobId, planId, options) => {
+    const created = await createPlanOptionsRecord(planId, options)
+    setJobRecords((current) => current.map((job) => (
+      job.id === jobId
+        ? updateJobPlans(job, (plans) => plans.map((plan) => (
+            plan.id === planId
+              ? { ...plan, options: [...(plan.options ?? []), ...created] }
               : plan
           )))
         : job
@@ -280,8 +325,9 @@ export function JobsProvider({ children }) {
     planId,
     optionId,
     price,
+    notApplicable = false,
   ) => {
-    const saved = await savePlanOptionPriceRecord(optionId, price)
+    const saved = await savePlanOptionPriceRecord(optionId, price, notApplicable)
     setJobRecords((current) => current.map((job) => (
       job.id === jobId
         ? updateJobPlans(job, (plans) => plans.map((plan) => (
@@ -347,7 +393,9 @@ export function JobsProvider({ children }) {
     createJobPlan,
     updateJobPlan,
     deactivateJobPlan,
+    reorderJobPlans,
     createPlanOption,
+    createPlanOptions,
     updatePlanOption,
     deactivatePlanOption,
     saveJobPlanPrice,
@@ -358,6 +406,7 @@ export function JobsProvider({ children }) {
     canManageJobs,
     createJobPlan,
     createPlanOption,
+    createPlanOptions,
     createJob,
     deactivateJobPlan,
     deactivatePlanOption,
@@ -366,6 +415,7 @@ export function JobsProvider({ children }) {
     jobs,
     loading,
     refreshJobs,
+    reorderJobPlans,
     saveJobPlanPrice,
     savePlanOptionPrice,
     saveSequenceSheetPhase,

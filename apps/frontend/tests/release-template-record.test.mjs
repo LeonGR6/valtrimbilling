@@ -234,6 +234,7 @@ test('the exception blanks are in the catalog with their own formats and samples
     'signature_date',
     'waiver_release_dates',
     'unpaid_progress_amount',
+    'disputed_claims_amount',
   ])
 
   const day = new Date(2026, 8, 30)

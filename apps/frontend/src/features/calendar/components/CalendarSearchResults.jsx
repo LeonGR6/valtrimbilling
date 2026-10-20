@@ -20,7 +20,9 @@ function ResultRow({ event, selected, onOpen }) {
   const tone = getActivityTone(props.activityType, props.orderMaterial)
   const extra = props.variant === 'install-only'
     ? 'Install only'
-    : props.variant === 'lock-up' ? 'Lock up' : ''
+    : props.variant === 'baseboard-install'
+      ? 'Baseboard install'
+      : props.variant === 'lock-up' ? 'Lock up' : ''
 
   return (
     <ButtonBase

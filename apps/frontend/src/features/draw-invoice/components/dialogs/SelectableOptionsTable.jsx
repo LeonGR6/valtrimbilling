@@ -15,11 +15,8 @@ import {
   TableRow,
   Typography,
 } from '@mui/material'
-import {
-  formatBuilding,
-  formatPhase,
-} from '../../../sequence-sheets/utils/phaseBuildingCodes.js'
-import { formatCurrency } from '../../utils/drawInvoiceFormatters.js'
+import { formatPhaseBuilding } from '../../../sequence-sheets/utils/phaseBuildingCodes.js'
+import { formatCurrency, formatOptionPrice } from '../../utils/drawInvoiceFormatters.js'
 
 export default function SelectableOptionsTable({ summary, onToggle }) {
   const availableFromDrawLabel = `Draw #${summary.optionsBillingDrawIndex + 1}`
@@ -124,7 +121,7 @@ export default function SelectableOptionsTable({ summary, onToggle }) {
                       />
                     </TableCell>
                     <TableCell>
-                      {formatPhase(option.phaseCode)} / {formatBuilding(option.building)}
+                      {formatPhaseBuilding(option.phaseCode, option.building, { separator: ' / ' })}
                     </TableCell>
                     <TableCell>
                       <Typography color="error.main" fontWeight={850}>
@@ -151,8 +148,10 @@ export default function SelectableOptionsTable({ summary, onToggle }) {
                         fontWeight={750}
                       >
                         {billed
-                          ? formatCurrency(option.billedPrice)
-                          : (priceMissing ? 'Price missing' : formatCurrency(option.price))}
+                          ? formatOptionPrice(option.billedPrice, option.billedPriceNotApplicable)
+                          : (priceMissing
+                            ? 'Price missing'
+                            : formatOptionPrice(option.price, option.priceNotApplicable))}
                       </Typography>
                     </TableCell>
                     <TableCell>

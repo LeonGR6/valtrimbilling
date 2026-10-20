@@ -13,8 +13,7 @@ import EventRoundedIcon from '@mui/icons-material/EventRounded'
 import WarningAmberRoundedIcon from '@mui/icons-material/WarningAmberRounded'
 import SuggestionsCard from './SuggestionsCard.jsx'
 import {
-  formatBuilding,
-  formatPhase,
+  formatPhaseBuilding,
 } from '../../../sequence-sheets/utils/phaseBuildingCodes.js'
 import {
   formatCurrency,
@@ -44,10 +43,11 @@ function groupSuggestions(suggestions) {
 }
 
 function SuggestionRow({ suggestion, disabled, onReview }) {
-  const phaseScope = suggestion.phases.map((phase) => [
-    formatPhase(phase.name, 'short'),
-    formatBuilding(phase.building, 'short'),
-  ].filter(Boolean).join(' / ')).join(' · ')
+  const phaseScope = suggestion.phases.map((phase) => formatPhaseBuilding(
+    phase.name,
+    phase.building,
+    { variant: 'short', separator: ' / ' },
+  )).join(' · ')
   const needsAttention = !suggestion.isReady
   const items = `${suggestion.selectionCount} billing ${suggestion.selectionCount === 1 ? 'item' : 'items'}`
   const warnings = [

@@ -25,8 +25,8 @@ import LayersRoundedIcon from '@mui/icons-material/LayersRounded'
 import MoveToInboxRoundedIcon from '@mui/icons-material/MoveToInboxRounded'
 import ReceiptLongRoundedIcon from '@mui/icons-material/ReceiptLongRounded'
 import {
-  formatBuilding,
   formatPhase,
+  formatPhaseBuilding,
 } from '../../../sequence-sheets/utils/phaseBuildingCodes.js'
 import { canCorrectDrawPackage } from '../../services/drawInvoicePackageRecord.js'
 import { describeJobDocumentProgress } from '../../services/jobDocumentRecord.js'
@@ -306,9 +306,9 @@ export default function PackageTable({
                       Job #{job.code} · {record.packageType === 'RETENTION_RELEASE'
                         ? record.retentionRelease?.scopeType === 'JOB'
                           ? 'Per Job'
-                          : `${formatPhase(record.retentionRelease?.phaseCode)} / ${formatBuilding(record.retentionRelease?.building)}`
+                          : formatPhaseBuilding(record.retentionRelease?.phaseCode, record.retentionRelease?.building, { separator: ' / ' })
                         : summary.phaseCount === 1
-                          ? `${formatPhase(phase.name)} / ${formatBuilding(phase.building)}`
+                          ? formatPhaseBuilding(phase.name, phase.building, { separator: ' / ' })
                           : `${summary.phaseCount} Phases`}
                     </Typography>
                     {record.packageType !== 'RETENTION_RELEASE' && isMultiPhasePackage(summary.phaseCount) && (

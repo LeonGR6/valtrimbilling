@@ -3,6 +3,7 @@ import test from 'node:test'
 import {
   buildExceptionFillValues,
   buildExceptionRows,
+  buildFinalReleaseNote,
   buildPackageDocumentStoragePath,
   buildPackageFillValues,
   buildPackageReleaseFileName,
@@ -14,6 +15,7 @@ import {
   CONDITIONAL_PROGRESS_TYPE,
   describePendingPackage,
   sha256Hex,
+  sumAmounts,
   toPackageReleaseValues,
 } from '../src/features/release-templates/services/packageRelease.js'
 import { formatReleaseValue, formatReleaseValues } from '../src/features/release-templates/services/releaseValueFormat.js'
@@ -198,6 +200,7 @@ test('Through Date and Date of Signature are the cut-off and Amount of Check is 
     signature_date: '2026-10-10',
     waiver_release_dates: ['2026-09-20', '2026-10-05'],
     unpaid_progress_amount: [1200, 845.5],
+    disputed_claims_amount: 2045.5,
   })
 
   // What ends up printed on the form.
@@ -452,5 +455,54 @@ test('the Exceptions rows start from the unpaid earlier Packages and can be edit
   assert.deepEqual(buildExceptionFillValues(edited), {
     waiver_release_dates: ['2026-09-20', '2026-08-01'],
     unpaid_progress_amount: ['1,250.00', '300'],
+    disputed_claims_amount: 1550,
   })
+})
+
+test('the Final form gets the unpaid earlier amounts added up for Disputed claims', () => {
+  const values = toPackageReleaseValues(row)
+  assert.equal(sumAmounts([1200, '845.50', '$1,000', 'nope', null]), 3045.5)
+  assert.equal(sumAmounts([]), '')
+  assert.equal(sumAmounts([null, '']), '')
+  assert.equal(sumAmounts([0.1, 0.2]), 0.3)
+
+  assert.equal(buildPackageFillValues(values).disputed_claims_amount, 2045.5)
+  assert.equal(buildPackageFillValues(values, []).disputed_claims_amount, '')
+  assert.equal(
+    buildExceptionFillValues([{ ...buildExceptionRows(values)[0], include: false }]).disputed_claims_amount,
+    '',
+  )
+  assert.equal(formatReleaseValue('disputed_claims_amount', 'currency', 2045.5), '$2,045.50')
+  assert.equal(describeFillPlan({
+    fields: [{ variable: 'disputed_claims_amount' }],
+  }).filled[0].label, 'Disputed Claims for Extras')
+})
+
+test('a Final Release says what it is final for, from the Builder setup', () => {
+  assert.equal(
+    buildFinalReleaseNote({ scope: 'PHASE', closing: ['Phase 5'], jobCode: '1307' }),
+    'Final release per Phase: Phase 5',
+  )
+  assert.equal(
+    buildFinalReleaseNote({ scope: 'PHASE', closing: ['Phase 5', 'Phase 6'] }),
+    'Final release per Phase: Phase 5, Phase 6',
+  )
+  assert.equal(
+    buildFinalReleaseNote({ scope: 'BUILDING', closing: ['Phase 2 - Building 15'] }),
+    'Final release per Building: Phase 2 - Building 15',
+  )
+  // A Phase without a Building is named by the Phase alone.
+  assert.equal(
+    buildFinalReleaseNote({ scope: 'BUILDING', closing: ['Phase 2'] }),
+    'Final release per Building: Phase 2',
+  )
+  assert.equal(
+    buildFinalReleaseNote({ scope: 'PROJECT', closing: ['the Job'], jobCode: '1307' }),
+    'Final release per Project (Job #1307)',
+  )
+  assert.equal(buildFinalReleaseNote({ scope: 'PROJECT', closing: [] }), 'Final release per Project')
+  assert.equal(buildFinalReleaseNote({ scope: 'PHASE', closing: [] }), 'Final release per Phase')
+  // Nothing to say when the setup does not choose a scope.
+  assert.equal(buildFinalReleaseNote({ scope: null, closing: ['Phase 1'] }), null)
+  assert.equal(buildFinalReleaseNote({ scope: undefined }), null)
 })

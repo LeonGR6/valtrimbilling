@@ -1,4 +1,4 @@
-import { Fragment, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useForm } from 'react-hook-form'
 import {
@@ -8,6 +8,7 @@ import {
   Card,
   CardContent,
   Chip,
+  Collapse,
   Dialog,
   DialogActions,
   DialogContent,
@@ -30,6 +31,10 @@ import {
 import AddRoundedIcon from '@mui/icons-material/AddRounded'
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
 import ClearRoundedIcon from '@mui/icons-material/ClearRounded'
+import ContentCopyRoundedIcon from '@mui/icons-material/ContentCopyRounded'
+import ArrowDownwardRoundedIcon from '@mui/icons-material/ArrowDownwardRounded'
+import ArrowUpwardRoundedIcon from '@mui/icons-material/ArrowUpwardRounded'
+import DragIndicatorRoundedIcon from '@mui/icons-material/DragIndicatorRounded'
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined'
 import LayersRoundedIcon from '@mui/icons-material/LayersRounded'
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
@@ -58,9 +63,20 @@ import {
 import { useJobs } from '../context/useJobs.js'
 import { builderJobsPath } from '../utils/jobRoutes.js'
 import JobModuleNavigation from './JobModuleNavigation.jsx'
+import { CopyOptionsDialog, CopyOptionsPicker } from './CopyPlanOptions.jsx'
+import {
+  emptyCopySelection,
+  plansToCopyFrom,
+  selectedCopyOptions,
+} from '../services/planOptionCopy.js'
+import PlanToggle from './PlanToggle.jsx'
+import { PlanSortableList, SortablePlan } from './PlanSortable.jsx'
 import { JobContactsGrid } from './JobContacts.jsx'
 
 function PlanDialog({ plans, plan, onClose, onSave, submitting }) {
+  // A new Plan can start with Options copied from another Plan of the Job.
+  const copySources = useMemo(() => (plan ? [] : plansToCopyFrom(plans)), [plan, plans])
+  const [copyValue, setCopyValue] = useState(emptyCopySelection)
   const schema = useMemo(
     () => createJobPlanSchema(plans, plan?.id),
     [plan?.id, plans],
@@ -87,7 +103,7 @@ function PlanDialog({ plans, plan, onClose, onSave, submitting }) {
       fullWidth
       maxWidth="md"
       component="form"
-      onSubmit={handleSubmit(onSave)}
+      onSubmit={handleSubmit((form) => onSave(form, selectedCopyOptions(copySources, copyValue)))}
       noValidate
     >
       <DialogTitle sx={{ pb: 1.5 }}>
@@ -149,6 +165,24 @@ function PlanDialog({ plans, plan, onClose, onSave, submitting }) {
             </TableBody>
           </Table>
         </TableContainer>
+
+        {copySources.length > 0 && (
+          <Box sx={{ mt: 2.5 }}>
+            <Typography variant="subtitle2" fontWeight={800} sx={{ mb: 0.25 }}>
+              Options
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 1.25 }}>
+              If this plan has the same options as another one, copy them instead of
+              typing them again. You can choose which ones.
+            </Typography>
+            <CopyOptionsPicker
+              sources={copySources}
+              value={copyValue}
+              onChange={setCopyValue}
+              disabled={submitting}
+            />
+          </Box>
+        )}
       </DialogContent>
       <DialogActions sx={{ px: 3, pb: 2.5 }}>
         <Button color="inherit" onClick={onClose} disabled={submitting}>Cancel</Button>
@@ -276,8 +310,38 @@ function OptionDialog({ plan, option, onClose, onSave, submitting }) {
   )
 }
 
-function planActions({ onEditPlan, onDeletePlan }) {
+// `onMoveUp` / `onMoveDown` are null when the Plans cannot be reordered (a
+// search is active) and the matching one is disabled at the top / bottom.
+function planActions({
+  onEditPlan,
+  onDeletePlan,
+  onCopyOptions = null,
+  onMoveUp = null,
+  onMoveDown = null,
+  isFirst,
+  isLast,
+}) {
+  const canMove = onMoveUp !== null && onMoveDown !== null
   return [
+    ...(canMove ? [
+      {
+        label: 'Move up',
+        icon: <ArrowUpwardRoundedIcon fontSize="small" />,
+        onClick: onMoveUp,
+        disabled: isFirst,
+      },
+      {
+        label: 'Move down',
+        icon: <ArrowDownwardRoundedIcon fontSize="small" />,
+        onClick: onMoveDown,
+        disabled: isLast,
+      },
+    ] : []),
+    ...(onCopyOptions ? [{
+      label: 'Copy options from another plan',
+      icon: <ContentCopyRoundedIcon fontSize="small" />,
+      onClick: onCopyOptions,
+    }] : []),
     {
       label: 'Edit plan',
       icon: <EditOutlinedIcon fontSize="small" />,
@@ -308,12 +372,55 @@ function optionActions({ onEditOption, onDeleteOption }) {
   ]
 }
 
+// What follows the pointer while a Plan is dragged.
+function PlanDragPreview({ plan }) {
+  const count = plan.options?.length ?? 0
+
+  return (
+    <Paper
+      elevation={6}
+      sx={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 1,
+        px: 1.5,
+        py: 1,
+        width: 'min(340px, 90vw)',
+        bgcolor: 'primary.light',
+        border: 1,
+        borderColor: 'primary.main',
+        cursor: 'grabbing',
+      }}
+    >
+      <DragIndicatorRoundedIcon fontSize="small" color="action" />
+      <Typography variant="body2" fontWeight={800}>Plan {plan.code}</Typography>
+      <Typography variant="body2" noWrap sx={{ flex: 1, minWidth: 0 }}>
+        {plan.name || `Plan ${plan.code}`}
+      </Typography>
+      <Chip
+        size="small"
+        color="primary"
+        variant="outlined"
+        label={count}
+        sx={{ minWidth: 34, fontWeight: 700 }}
+      />
+    </Paper>
+  )
+}
+
 function PlanCard({
   plan,
   canManage,
+  dragHandle = null,
+  expanded = true,
+  // False while a Plan is dragged: the Plans fold at once so the list can be measured.
+  animate = true,
+  onToggle = null,
   onAddOption,
   onEditPlan,
   onDeletePlan,
+  planMoves = {},
+  onCopyOptions = null,
   onEditOption,
   onDeleteOption,
 }) {
@@ -326,12 +433,24 @@ function PlanCard({
           px: 2,
           py: 1.5,
           bgcolor: 'primary.light',
-          borderBottom: 1,
+          borderBottom: expanded ? 1 : 0,
           borderColor: 'divider',
         }}
       >
-        <Stack direction="row" spacing={1} sx={{ alignItems: 'center', justifyContent: 'space-between' }}>
-          <Box sx={{ minWidth: 0 }}>
+        <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center' }}>
+          {dragHandle}
+          {onToggle && (
+            <PlanToggle
+              plan={plan}
+              expanded={expanded}
+              onToggle={onToggle}
+              controls={`plan-card-${plan.id}`}
+            />
+          )}
+          <Box
+            onClick={onToggle ?? undefined}
+            sx={{ minWidth: 0, flex: 1, pl: 0.5, cursor: onToggle ? 'pointer' : 'default' }}
+          >
             <Typography variant="body2" color="text.secondary">
               Plan{' '}
               <Box component="span" sx={{ color: 'text.primary', fontWeight: 800 }}>
@@ -342,91 +461,115 @@ function PlanCard({
               {plan.name || `Plan ${plan.code}`}
             </Typography>
           </Box>
+          <Chip
+            size="small"
+            color="primary"
+            variant="outlined"
+            label={plan.optionCount ?? options.length}
+            aria-label={`${plan.optionCount ?? options.length} options`}
+            sx={{ minWidth: 34, fontWeight: 700, flexShrink: 0 }}
+          />
           {canManage && (
-            <Stack direction="row" spacing={0.5} sx={{ flexShrink: 0, alignItems: 'center' }}>
+            <RowActionsMenu
+              label={`Actions for Plan ${plan.code}`}
+              items={planActions({ onEditPlan, onDeletePlan, onCopyOptions, ...planMoves })}
+            />
+          )}
+        </Stack>
+      </Box>
+
+      <Collapse in={expanded} timeout={animate ? 'auto' : 0} unmountOnExit>
+        <Box id={`plan-card-${plan.id}`} sx={{ p: 2 }}>
+          <Stack
+            direction="row"
+            spacing={1}
+            sx={{ alignItems: 'center', justifyContent: 'space-between', mb: 1 }}
+          >
+            <Typography variant="body2" color="text.secondary">
+              {plan.optionCount ?? options.length}{' '}
+              {(plan.optionCount ?? options.length) === 1 ? 'option' : 'options'}
+              {plan.optionCount != null && plan.optionCount !== options.length
+                ? ` (${options.length} shown)`
+                : ''}
+            </Typography>
+            {canManage && options.length > 0 && (
               <Button
                 size="small"
                 variant="contained"
                 startIcon={<AddRoundedIcon />}
                 onClick={onAddOption}
                 disableElevation
+                sx={{ whiteSpace: 'nowrap' }}
               >
                 Add option
               </Button>
-              <RowActionsMenu
-                label={`Actions for Plan ${plan.code}`}
-                items={planActions({ onEditPlan, onDeletePlan })}
-              />
-            </Stack>
-          )}
-        </Stack>
-      </Box>
-
-      <Box sx={{ p: 2 }}>
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-          {plan.optionCount ?? options.length}{' '}
-          {(plan.optionCount ?? options.length) === 1 ? 'option' : 'options'}
-          {plan.optionCount != null && plan.optionCount !== options.length
-            ? ` (${options.length} shown)`
-            : ''}
-        </Typography>
-
-        {options.length > 0 ? (
-          <Stack divider={<Divider flexItem />} sx={{ border: 1, borderColor: 'divider', borderRadius: 1.5 }}>
-            {options.map((option) => (
-              <Stack
-                key={option.id}
-                direction="row"
-                spacing={1}
-                sx={{ px: 1.5, py: 1.25, alignItems: 'flex-start', justifyContent: 'space-between' }}
-              >
-                <Box sx={{ minWidth: 0 }}>
-                  <Chip
-                    size="small"
-                    color="primary"
-                    variant="outlined"
-                    label={option.code}
-                    sx={{ fontWeight: 700, maxWidth: '100%', mb: 0.5 }}
-                  />
-                  <Typography variant="body2" sx={{ overflowWrap: 'anywhere' }}>
-                    {option.description}
-                  </Typography>
-                </Box>
-                {canManage && (
-                  <RowActionsMenu
-                    label={`Actions for option ${option.code} in Plan ${plan.code}`}
-                    items={optionActions({
-                      onEditOption: () => onEditOption(option),
-                      onDeleteOption: () => onDeleteOption(option),
-                    })}
-                  />
-                )}
-              </Stack>
-            ))}
-          </Stack>
-        ) : (
-          <Box
-            sx={{
-              py: 2.5,
-              px: 2,
-              textAlign: 'center',
-              border: 1,
-              borderStyle: 'dashed',
-              borderColor: 'divider',
-              borderRadius: 1.5,
-            }}
-          >
-            <Typography variant="body2" color="text.secondary" sx={{ mb: canManage ? 1.5 : 0 }}>
-              No options in this plan yet.
-            </Typography>
-            {canManage && (
-              <Button size="small" variant="outlined" startIcon={<AddRoundedIcon />} onClick={onAddOption}>
-                Add first option
-              </Button>
             )}
-          </Box>
-        )}
-      </Box>
+          </Stack>
+
+          {options.length > 0 ? (
+            <Stack divider={<Divider flexItem />} sx={{ border: 1, borderColor: 'divider', borderRadius: 1.5 }}>
+              {options.map((option) => (
+                <Stack
+                  key={option.id}
+                  direction="row"
+                  spacing={1}
+                  sx={{ px: 1.5, py: 1.25, alignItems: 'flex-start', justifyContent: 'space-between' }}
+                >
+                  <Box sx={{ minWidth: 0 }}>
+                    <Chip
+                      size="small"
+                      color="primary"
+                      variant="outlined"
+                      label={option.code}
+                      sx={{ fontWeight: 700, maxWidth: '100%', mb: 0.5 }}
+                    />
+                    <Typography variant="body2" sx={{ overflowWrap: 'anywhere' }}>
+                      {option.description}
+                    </Typography>
+                  </Box>
+                  {canManage && (
+                    <RowActionsMenu
+                      label={`Actions for option ${option.code} in Plan ${plan.code}`}
+                      items={optionActions({
+                        onEditOption: () => onEditOption(option),
+                        onDeleteOption: () => onDeleteOption(option),
+                      })}
+                    />
+                  )}
+                </Stack>
+              ))}
+            </Stack>
+          ) : (
+            <Box
+              sx={{
+                py: 2.5,
+                px: 2,
+                textAlign: 'center',
+                border: 1,
+                borderStyle: 'dashed',
+                borderColor: 'divider',
+                borderRadius: 1.5,
+              }}
+            >
+              <Typography variant="body2" color="text.secondary" sx={{ mb: canManage ? 1.5 : 0 }}>
+                No options in this plan yet.
+              </Typography>
+              {canManage && (
+                <Stack direction="row" spacing={1} sx={{ justifyContent: 'center', flexWrap: 'wrap' }} useFlexGap>
+                  <Button size="small" variant="outlined" startIcon={<AddRoundedIcon />} onClick={onAddOption}>
+                    Add first option
+                  </Button>
+                  {onCopyOptions && (
+                    <Button size="small" variant="text" startIcon={<ContentCopyRoundedIcon />} onClick={onCopyOptions}>
+                      Copy from another plan
+                    </Button>
+                  )}
+                </Stack>
+              )}
+            </Box>
+          )}
+        </Box>
+      </Collapse>
     </Card>
   )
 }
@@ -434,28 +577,127 @@ function PlanCard({
 function PlansOptionsSheet({
   plans,
   canManage,
+  reorderable,
+  onReorder,
+  openPlanIds,
+  onOpenPlanIdsChange,
+  searching,
   onAddPlan,
   onAddOption,
+  copySourcePlans,
+  onCopyOptions,
   onEditPlan,
   onDeletePlan,
   onEditOption,
   onDeleteOption,
 }) {
+  // Copying Options needs another Plan that has some.
+  const copyHandlerOf = (plan) => (
+    canManage && plansToCopyFrom(copySourcePlans, plan.id).length > 0
+      ? () => onCopyOptions(plan)
+      : null
+  )
+
+  // Plans the person closed, kept apart from the drag: every Plan folds while
+  // one is dragged (so the whole list fits on screen) and goes back afterwards.
+  const [draggingId, setDraggingId] = useState(null)
+  // Plans start closed; the person opens the ones they need. While searching they
+  // all open, so the options that matched can be seen.
+  const isExpanded = (plan) => draggingId === null
+    && (searching || openPlanIds.has(plan.id))
+
+  // A Plan that was dragged somewhere else stays closed: the person opens it
+  // again on purpose, once it is where they wanted it.
+  const reorderAfterDrag = (planIds, movedId) => {
+    onOpenPlanIdsChange((current) => {
+      const next = new Set(current)
+      next.delete(movedId)
+      return next
+    })
+    onReorder(planIds)
+  }
+
+  // Move up / Move down in the Plan's menu: the same reorder without dragging.
+  const movesOf = (plan) => {
+    if (!reorderable) return {}
+    const index = plans.findIndex(({ id }) => id === plan.id)
+    const moveTo = (target) => {
+      const ids = plans.map(({ id }) => id)
+      ids.splice(target, 0, ids.splice(index, 1)[0])
+      onReorder(ids)
+    }
+    return {
+      onMoveUp: () => moveTo(index - 1),
+      onMoveDown: () => moveTo(index + 1),
+      isFirst: index === 0,
+      isLast: index === plans.length - 1,
+    }
+  }
+
+  const toggle = (plan) => {
+    onOpenPlanIdsChange((current) => {
+      const next = new Set(current)
+      if (next.has(plan.id)) next.delete(plan.id)
+      else next.add(plan.id)
+      return next
+    })
+  }
+
+  // After a drop the list unfolds again; bring the moved Plan back into view.
+  const lastDraggedId = useRef(null)
+  const handleDragChange = useCallback((id) => setDraggingId(id), [])
+  useEffect(() => {
+    if (draggingId !== null) {
+      lastDraggedId.current = draggingId
+      return undefined
+    }
+
+    const movedId = lastDraggedId.current
+    if (movedId === null) return undefined
+
+    lastDraggedId.current = null
+    const timer = setTimeout(() => {
+      const moved = [...document.querySelectorAll(`[data-plan-id="${movedId}"]`)]
+        .find((element) => element.offsetParent !== null)
+      moved?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+    }, 0)
+    return () => clearTimeout(timer)
+  }, [draggingId])
+
   return (
     <>
       <Stack spacing={2} sx={{ display: { xs: 'flex', md: 'none' }, p: 2 }}>
-        {plans.map((plan) => (
-          <PlanCard
-            key={plan.id}
-            plan={plan}
-            canManage={canManage}
-            onAddOption={() => onAddOption(plan)}
-            onEditPlan={() => onEditPlan(plan)}
-            onDeletePlan={() => onDeletePlan(plan)}
-            onEditOption={(option) => onEditOption(plan, option)}
-            onDeleteOption={(option) => onDeleteOption(plan, option)}
-          />
-        ))}
+        <PlanSortableList
+          plans={plans}
+          onReorder={reorderAfterDrag}
+          onDragChange={handleDragChange}
+          renderPreview={(plan) => <PlanDragPreview plan={plan} />}
+          contextId="plans-mobile"
+        >
+          {plans.map((plan) => (
+            <SortablePlan key={plan.id} plan={plan} disabled={!reorderable}>
+              {({ rootProps, handle }) => (
+                <Box {...rootProps}>
+                  <PlanCard
+                    plan={plan}
+                    canManage={canManage}
+                    dragHandle={handle}
+                    expanded={isExpanded(plan)}
+                    animate={draggingId === null}
+                    onToggle={() => toggle(plan)}
+                    onAddOption={() => onAddOption(plan)}
+                    onEditPlan={() => onEditPlan(plan)}
+                    onDeletePlan={() => onDeletePlan(plan)}
+                    planMoves={movesOf(plan)}
+                    onCopyOptions={copyHandlerOf(plan)}
+                    onEditOption={(option) => onEditOption(plan, option)}
+                    onDeleteOption={(option) => onDeleteOption(plan, option)}
+                  />
+                </Box>
+              )}
+            </SortablePlan>
+          ))}
+        </PlanSortableList>
         {canManage && (
           <Button variant="outlined" startIcon={<AddRoundedIcon />} onClick={onAddPlan}>
             Add another plan
@@ -463,6 +705,14 @@ function PlansOptionsSheet({
         )}
       </Stack>
 
+      {/* Outside the table: the drag library adds <div>s next to its children. */}
+      <PlanSortableList
+        plans={plans}
+        onReorder={reorderAfterDrag}
+        onDragChange={handleDragChange}
+        renderPreview={(plan) => <PlanDragPreview plan={plan} />}
+        contextId="plans-desktop"
+      >
       <TableContainer sx={{ display: { xs: 'none', md: 'block' }, overflowX: 'auto' }}>
         <Table
           size="small"
@@ -475,22 +725,31 @@ function PlansOptionsSheet({
               <TableCell sx={{ width: 180 }}>Code</TableCell>
               <TableCell>Name / description</TableCell>
               <TableCell align="center" sx={{ width: 90 }}>Options</TableCell>
-              <TableCell align="right" sx={{ width: 190 }}>
+              <TableCell align="right" sx={{ width: 210 }}>
                 <Box component="span" sx={visuallyHiddenSx}>Actions</Box>
               </TableCell>
             </TableRow>
           </TableHead>
-          <TableBody>
             {plans.map((plan) => {
               const options = plan.options ?? []
 
               return (
-                <Fragment key={plan.id}>
+                <SortablePlan key={plan.id} plan={plan} disabled={!reorderable}>
+                  {({ rootProps, handle }) => (
+                <TableBody {...rootProps}>
                   <TableRow sx={{ bgcolor: 'primary.light' }}>
                     <TableCell>
-                      <Typography variant="body2" fontWeight={700} color="primary.main">
-                        Plan
-                      </Typography>
+                      <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center', ml: -1 }}>
+                        {handle}
+                        <PlanToggle
+                          plan={plan}
+                          expanded={isExpanded(plan)}
+                          onToggle={() => toggle(plan)}
+                        />
+                        <Typography variant="body2" fontWeight={700} color="primary.main">
+                          Plan
+                        </Typography>
+                      </Stack>
                     </TableCell>
                     <TableCell>
                       <Typography variant="body1" fontWeight={800}>
@@ -524,6 +783,7 @@ function PlansOptionsSheet({
                             startIcon={<AddRoundedIcon />}
                             onClick={() => onAddOption(plan)}
                             disableElevation
+                            sx={{ whiteSpace: 'nowrap', flexShrink: 0 }}
                           >
                             Add option
                           </Button>
@@ -532,6 +792,8 @@ function PlansOptionsSheet({
                             items={planActions({
                               onEditPlan: () => onEditPlan(plan),
                               onDeletePlan: () => onDeletePlan(plan),
+                              onCopyOptions: copyHandlerOf(plan),
+                              ...movesOf(plan),
                             })}
                           />
                         </Stack>
@@ -541,7 +803,7 @@ function PlansOptionsSheet({
                     </TableCell>
                   </TableRow>
 
-                  {options.length > 0 ? options.map((option) => (
+                  {!isExpanded(plan) ? null : options.length > 0 ? options.map((option) => (
                     <TableRow key={option.id} hover>
                       <TableCell>
                         <Stack direction="row" spacing={1} sx={{ alignItems: 'center', pl: 0.5 }}>
@@ -595,24 +857,38 @@ function PlansOptionsSheet({
                             No options in this plan yet.
                           </Typography>
                           {canManage && (
-                            <Button
-                              size="small"
-                              variant="text"
-                              startIcon={<AddRoundedIcon />}
-                              onClick={() => onAddOption(plan)}
-                            >
-                              Add first option
-                            </Button>
+                            <Stack direction="row" spacing={0.5}>
+                              {copyHandlerOf(plan) && (
+                                <Button
+                                  size="small"
+                                  variant="text"
+                                  startIcon={<ContentCopyRoundedIcon />}
+                                  onClick={copyHandlerOf(plan)}
+                                >
+                                  Copy from another plan
+                                </Button>
+                              )}
+                              <Button
+                                size="small"
+                                variant="text"
+                                startIcon={<AddRoundedIcon />}
+                                onClick={() => onAddOption(plan)}
+                              >
+                                Add first option
+                              </Button>
+                            </Stack>
                           )}
                         </Stack>
                       </TableCell>
                     </TableRow>
                   )}
-                </Fragment>
+                </TableBody>
+                  )}
+                </SortablePlan>
               )
             })}
-
-            {canManage && (
+          {canManage && (
+            <TableBody>
               <TableRow>
                 <TableCell colSpan={5} sx={{ bgcolor: 'background.default' }}>
                   <Button size="small" startIcon={<AddRoundedIcon />} onClick={onAddPlan}>
@@ -620,10 +896,11 @@ function PlansOptionsSheet({
                   </Button>
                 </TableCell>
               </TableRow>
-            )}
-          </TableBody>
+            </TableBody>
+          )}
         </Table>
       </TableContainer>
+      </PlanSortableList>
     </>
   )
 }
@@ -638,12 +915,20 @@ export default function JobDetails({
     createJobPlan,
     updateJobPlan,
     deactivateJobPlan,
+    reorderJobPlans,
     createPlanOption,
+    createPlanOptions,
     updatePlanOption,
     deactivatePlanOption,
   } = useJobs()
   const [planDialog, setPlanDialog] = useState(null)
   const [optionDialog, setOptionDialog] = useState(null)
+  const [copyDialog, setCopyDialog] = useState(null)
+  // Plans the person has opened; every Plan starts closed.
+  const [openPlanIds, setOpenPlanIds] = useState(() => new Set())
+  const revealPlan = (planId) => {
+    setOpenPlanIds((current) => new Set(current).add(planId))
+  }
   const [deleteTarget, setDeleteTarget] = useState(null)
   const [submitting, setSubmitting] = useState(false)
   const [notice, setNotice] = useState(null)
@@ -679,21 +964,63 @@ export default function JobDetails({
   ).size
   const deletionBlocked = deleteDependencies.length > 0
 
-  const handlePlanSave = async (form) => {
+  const handlePlanSave = async (form, copiedOptions = []) => {
     setSubmitting(true)
     try {
       if (planDialog?.plan) {
         await updateJobPlan(job.id, planDialog.plan.id, form)
         setNotice({ severity: 'success', message: 'Plan updated.' })
       } else {
-        await createJobPlan(job.id, form)
-        setNotice({ severity: 'success', message: 'Plan added.' })
+        const created = await createJobPlan(job.id, form)
+        if (copiedOptions.length === 0) {
+          setNotice({ severity: 'success', message: 'Plan added.' })
+        } else {
+          // The Plan exists by now: a failure here must not look like the Plan was not saved.
+          try {
+            await createPlanOptions(job.id, created.id, copiedOptions)
+            revealPlan(created.id)
+            setNotice({
+              severity: 'success',
+              message: `Plan added with ${copiedOptions.length} ${copiedOptions.length === 1 ? 'option' : 'options'}.`,
+            })
+          } catch (copyError) {
+            setNotice({
+              severity: 'warning',
+              message: `Plan added, but its options could not be copied: ${copyError.message}`,
+            })
+          }
+        }
       }
       setPlanDialog(null)
     } catch (saveError) {
       setNotice({ severity: 'error', message: saveError.message })
     } finally {
       setSubmitting(false)
+    }
+  }
+
+  const handleCopyOptions = async (options) => {
+    setSubmitting(true)
+    try {
+      await createPlanOptions(job.id, copyDialog.plan.id, options)
+      revealPlan(copyDialog.plan.id)
+      setNotice({
+        severity: 'success',
+        message: `${options.length} ${options.length === 1 ? 'option' : 'options'} copied into Plan ${copyDialog.plan.code}.`,
+      })
+      setCopyDialog(null)
+    } catch (copyError) {
+      setNotice({ severity: 'error', message: copyError.message })
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const handleReorder = async (planIds) => {
+    try {
+      await reorderJobPlans(job.id, planIds)
+    } catch (reorderError) {
+      setNotice({ severity: 'error', message: reorderError.message })
     }
   }
 
@@ -706,6 +1033,7 @@ export default function JobDetails({
       } else {
         await createPlanOption(job.id, plan.id, form)
       }
+      revealPlan(plan.id)
       setNotice({
         severity: 'success',
         message: option ? 'Option updated.' : 'Option added.',
@@ -902,8 +1230,16 @@ export default function JobDetails({
             <PlansOptionsSheet
               plans={visiblePlans}
               canManage={canManagePlans}
+              // A filtered list hides Plans, so the order only changes without a search.
+              reorderable={canManagePlans && !query.trim() && plans.length > 1}
+              onReorder={handleReorder}
+              openPlanIds={openPlanIds}
+              onOpenPlanIdsChange={setOpenPlanIds}
+              searching={Boolean(query.trim())}
               onAddPlan={() => setPlanDialog({ plan: null })}
               onAddOption={(plan) => setOptionDialog({ plan, option: null })}
+              copySourcePlans={plans}
+              onCopyOptions={(plan) => setCopyDialog({ plan })}
               onEditPlan={(plan) => setPlanDialog({ plan })}
               onDeletePlan={(plan) => setDeleteTarget({ type: 'plan', plan })}
               onEditOption={(plan, option) => setOptionDialog({ plan, option })}
@@ -922,6 +1258,17 @@ export default function JobDetails({
           plan={planDialog.plan}
           onClose={() => setPlanDialog(null)}
           onSave={handlePlanSave}
+          submitting={submitting}
+        />
+      )}
+
+      {copyDialog && (
+        <CopyOptionsDialog
+          key={`copy-${copyDialog.plan.id}`}
+          plan={plans.find(({ id }) => id === copyDialog.plan.id) ?? copyDialog.plan}
+          sources={plansToCopyFrom(plans, copyDialog.plan.id)}
+          onClose={() => setCopyDialog(null)}
+          onCopy={handleCopyOptions}
           submitting={submitting}
         />
       )}

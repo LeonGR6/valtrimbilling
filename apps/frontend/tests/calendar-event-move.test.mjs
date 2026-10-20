@@ -15,6 +15,7 @@ const draft = {
   dmShutters: false,
   extInstallDate: '2026-05-05',
   dmInstallDate: '',
+  dmBaseboardInstallDate: '2026-06-03',
   hwLockUpDate: '2026-06-15',
   dmSplitParts: [],
   hwSplitParts: [
@@ -108,4 +109,20 @@ test('a drop that matches nothing leaves the draft as it was', () => {
   })
   assert.equal(same, draft)
   assert.deepEqual(describeDateChanges(draft, same), [])
+})
+
+test('a baseboard install event moves only its own date', () => {
+  const moved = moveEventInDraft({
+    draft,
+    props: { activityType: 'DM', variant: 'baseboard-install' },
+    newDate: '2026-06-05',
+    configuration,
+  })
+
+  assert.equal(moved.dmBaseboardInstallDate, '2026-06-05')
+  assert.equal(moved.dmDate, draft.dmDate)
+  assert.deepEqual(
+    describeDateChanges(draft, moved).map(({ label }) => label),
+    ['DM baseboard install'],
+  )
 })

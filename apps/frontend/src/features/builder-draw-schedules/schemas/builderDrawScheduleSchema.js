@@ -21,9 +21,27 @@ const drawPercentageSchema = z.preprocess(
     ),
 )
 
+/**
+ * The percentage a typed value stands for when it was entered as a fraction
+ * (0.0833 for 8.33%), or null when it is not one. A percentage here is never
+ * below 1, so anything above 0 and under 1 can only be a fraction. The result
+ * keeps the two decimals the database stores (0.08333 gives 8.33).
+ */
+export function percentageFromFraction(value) {
+  if (value === '' || value === null || value === undefined) return null
+
+  const number = Number(value)
+  if (!Number.isFinite(number) || number <= 0 || number >= 1) return null
+
+  return Math.round(number * 10000) / 100
+}
+
 const optionalPercentageSchema = z
   .preprocess(
-    (value) => (value === '' || value === null || value === undefined ? 0 : value),
+    (value) => {
+      if (value === '' || value === null || value === undefined) return 0
+      return percentageFromFraction(value) ?? value
+    },
     z.coerce.number({ invalid_type_error: 'Enter a number.' }),
   )
   .refine(

@@ -8,6 +8,7 @@ import {
   allocateHardwareEventAmounts,
   buildDrawWorksheet,
   calculateInvoiceAmounts,
+  hasOptionPrice,
   getDrawPercentageTotal,
   isDrawScheduleValid,
 } from '../src/features/draw-invoice/utils/drawWorksheet.js'
@@ -422,4 +423,34 @@ test('apply retention deducts 5 percent after regular draws total 100 percent', 
   assert.deepEqual(worksheet.drawTotals, [8500, 1500])
   assert.deepEqual(worksheet.drawRetentionTotals, [425, 75])
   assert.deepEqual(worksheet.drawInvoiceTotals, [8075, 1425])
+})
+
+test('a credit takes retention and WRAP off by the same rule as a charge, mirrored', () => {
+  const schedule = {
+    retentionEnabled: true,
+    retentionPercentage: 5,
+    ocipWrapEnabled: true,
+    ocipWrapPercentage: 2,
+  }
+
+  assert.deepEqual(calculateInvoiceAmounts(-10000, schedule), {
+    currentDraw: -10000,
+    retention: -500,
+    wrapInsurance: -200,
+    invoiceAmount: -9300,
+  })
+
+  // A half cent rounds away from zero on both sides, as the database does.
+  const half = { retentionEnabled: true, retentionPercentage: 50 }
+  assert.equal(calculateInvoiceAmounts(0.05, half).retention, 0.03)
+  assert.equal(calculateInvoiceAmounts(-0.05, half).retention, -0.03)
+})
+
+test('an Option price is any number, including a credit, but not a missing one', () => {
+  assert.equal(hasOptionPrice(-25), true)
+  assert.equal(hasOptionPrice(0), true)
+  assert.equal(hasOptionPrice(120), true)
+  assert.equal(hasOptionPrice(null), false)
+  assert.equal(hasOptionPrice(undefined), false)
+  assert.equal(hasOptionPrice(Number.NaN), false)
 })

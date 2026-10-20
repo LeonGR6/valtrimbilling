@@ -55,12 +55,16 @@ import {
 import { parseCalendarSchedule } from '../utils/calendarRoutes.js'
 import { describeDateChanges, moveEventInDraft } from '../utils/calendarEventMove.js'
 import { searchCalendarEvents } from '../utils/calendarEventSearch.js'
+import {
+  extraEventLabel,
+  isExtraEventVariant,
+  removeExtraEventFromDraft,
+} from '../utils/calendarExtraEvents.js'
 import { existingPhaseEvents } from '../utils/phaseCalendarCoverage.js'
 import {
   findJobBuilder,
-  formatBuilding,
-  formatPhase,
   getPhasePatch,
+  formatPhaseBuilding,
 } from './calendarSchedulerUtils.js'
 import './CalendarScheduler.css'
 
@@ -370,7 +374,7 @@ export default function CalendarScheduler() {
       && phaseCoverage.statusOf(job, phase) === 'scheduled'
     ) {
       setDuplicateWarning({
-        label: `${formatPhase(phase.name)} · ${formatBuilding(phase.building)} of Job #${job.code}`,
+        label: `${formatPhaseBuilding(phase.name, phase.building)} of Job #${job.code}`,
         eventId: existingPhaseEvents(events, job.id, phase.id)[0]?.eventId ?? null,
         result,
       })
@@ -397,7 +401,7 @@ export default function CalendarScheduler() {
         && Number(item.extendedProps.lotEnd) === Number(previousProps?.lotEnd)
       )) ?? savedEvents.find((item) => (
         item.extendedProps.activityType === savedActivityType
-        && !['install-only', 'lock-up'].includes(item.extendedProps.variant)
+        && !isExtraEventVariant(item.extendedProps.variant)
       )) ?? savedEvents[0]
 
       setSelectedId(nextSelectedEvent?.id ?? null)
@@ -411,6 +415,42 @@ export default function CalendarScheduler() {
       setFormError(saveError.message)
     } finally {
       setSaving(false)
+    }
+  }
+
+  // Takes one extra event (install only, baseboard install, lock up) off the
+  // activity, like unchecking it in the form, and leaves everything else.
+  const removeExtraEvent = async () => {
+    const props = selectedEvent?.extendedProps
+    if (!props?.activityId || !canManageProductionActivities) {
+      throw new Error('Select a persisted Production event to remove.')
+    }
+
+    const label = extraEventLabel(props.variant)
+    if (!label) throw new Error('Only an extra event can be removed on its own.')
+
+    const result = calendarEventSchema.safeParse(removeExtraEventFromDraft(
+      createDraftFromProductionEvent(selectedEvent),
+      props.variant,
+      props.activityType,
+    ))
+    if (!result.success) {
+      throw new Error(result.error.issues[0]?.message ?? 'Review the production details.')
+    }
+
+    setDeleting(true)
+    try {
+      const { events: savedEvents } = await saveProductionActivity(result.data)
+      const mainEvent = savedEvents.find((item) => (
+        item.extendedProps.activityType === props.activityType
+        && !isExtraEventVariant(item.extendedProps.variant)
+      )) ?? savedEvents[0]
+
+      setSelectedId(mainEvent?.id ?? null)
+      setDrawerMode(mainEvent ? 'detail' : null)
+      setNotice(`${label} removed.`)
+    } finally {
+      setDeleting(false)
     }
   }
 
@@ -612,6 +652,7 @@ export default function CalendarScheduler() {
             onClose={closeDrawer}
             onEdit={openEditDrawer}
             onDelete={deleteActivity}
+            onRemoveExtra={removeExtraEvent}
             canEdit={canManageProductionActivities}
             deleting={deleting}
           />

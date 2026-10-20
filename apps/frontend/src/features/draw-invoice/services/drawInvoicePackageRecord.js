@@ -367,6 +367,7 @@ export function toDrawInvoicePackage(
         optionCode: row.option_code,
         description: row.option_name,
         price: toNumber(row.option_price),
+        priceNotApplicable: row.option_not_applicable === true,
         billingDrawIndex: billingDrawRow == null
           ? null
           : Number(billingDrawRow.draw_number) - 1,

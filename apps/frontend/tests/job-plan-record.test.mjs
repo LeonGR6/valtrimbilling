@@ -72,6 +72,7 @@ test('Plan and Option rows map current nullable prices', () => {
     code: '2-OPT',
     description: 'Door at Primary Bath',
     price: 250.5,
+    priceNotApplicable: false,
     isActive: true,
   })
   assert.deepEqual(plan, {
@@ -95,7 +96,29 @@ test('Price RPC payloads expose only ids and normalized amounts', () => {
   assert.deepEqual(toOptionPriceRpc('61', '250.50'), {
     p_option_id: 61,
     p_price: 250.5,
+    p_not_applicable: false,
   })
+})
+
+test('an Option priced NA is $0 with the flag, and goes to the database as NA', () => {
+  const option = toPlanOption({
+    id: 62, plan_id: 31, code: '2-OPT2', name: 'Window', description: null, is_active: true,
+  }, { price: '0.00', is_not_applicable: true })
+
+  assert.equal(option.price, 0)
+  assert.equal(option.priceNotApplicable, true)
+  // Whatever number was typed is ignored: NA is always sent as 0.
+  assert.deepEqual(toOptionPriceRpc('62', 99, true), {
+    p_option_id: 62,
+    p_price: 0,
+    p_not_applicable: true,
+  })
+  // An Option that was never priced has no price and is not NA.
+  const unpriced = toPlanOption({
+    id: 63, plan_id: 31, code: 'X', name: 'X', description: null, is_active: true,
+  })
+  assert.equal(unpriced.price, null)
+  assert.equal(unpriced.priceNotApplicable, false)
 })
 
 test('Catalog edits retain prices and nested Options already in state', () => {

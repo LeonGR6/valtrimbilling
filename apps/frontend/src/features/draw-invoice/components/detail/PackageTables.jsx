@@ -16,10 +16,7 @@ import {
 } from '@mui/material'
 import LockRoundedIcon from '@mui/icons-material/LockRounded'
 import { worksheetCellLabels } from '../../utils/packageInvoiceLabel.js'
-import {
-  formatBuilding,
-  formatPhase,
-} from '../../../sequence-sheets/utils/phaseBuildingCodes.js'
+import { formatPhaseBuilding } from '../../../sequence-sheets/utils/phaseBuildingCodes.js'
 import {
   buildBilledUtilityCharges,
   buildUsedDrawSelections,
@@ -28,6 +25,7 @@ import {
 } from '../../utils/drawPackages.js'
 import {
   formatCurrency,
+  formatOptionPrice,
   formatPercentage,
 } from '../../utils/drawInvoiceFormatters.js'
 import { formatLagShort } from '../../../builder-draw-schedules/utils/drawLag.js'
@@ -107,7 +105,7 @@ export function DrawWorksheetTable({
       <TableContainer>
         <Table
           size="medium"
-          aria-label={`${formatPhase(phase.name)} ${formatBuilding(phase.building)} draw worksheet`}
+          aria-label={`${formatPhaseBuilding(phase.name, phase.building, { separator: ' ' })} draw worksheet`}
           sx={{
             ...packageTableSx,
             minWidth: minimumWidth,
@@ -320,7 +318,7 @@ export function PackageUtilityTable({ summary }) {
             {utilityRows.map((row) => (
               <TableRow key={`${row.phaseId}:${row.lotId}:${row.drawIndex}`} hover>
                 <TableCell>
-                  {formatPhase(row.phaseCode)} / {formatBuilding(row.building)}
+                  {formatPhaseBuilding(row.phaseCode, row.building, { separator: ' / ' })}
                 </TableCell>
                 <TableCell><Typography fontWeight={850}>{row.utilityLabel}</Typography></TableCell>
                 <TableCell>{row.planCode ?? '—'}</TableCell>
@@ -409,7 +407,7 @@ export function PackageOptionsTable({ summary }) {
                 return (
                   <TableRow key={option.id} hover>
                     <TableCell>
-                      {formatPhase(option.phaseCode)} / {formatBuilding(option.building)}
+                      {formatPhaseBuilding(option.phaseCode, option.building, { separator: ' / ' })}
                     </TableCell>
                     <TableCell>
                       <Typography color="error.main" fontWeight={850}>
@@ -426,7 +424,7 @@ export function PackageOptionsTable({ summary }) {
                     </TableCell>
                     <TableCell align="right">
                       <Typography color={priceMissing ? 'error' : 'text.primary'} fontWeight={750}>
-                        {priceMissing ? 'Price missing' : formatCurrency(option.price)}
+                        {priceMissing ? 'Price missing' : formatOptionPrice(option.price, option.priceNotApplicable)}
                       </Typography>
                     </TableCell>
                     <TableCell>
@@ -502,7 +500,7 @@ export function PackageHardwareTable({ summary }) {
                 hover
               >
                 <TableCell>
-                  {formatPhase(hardware.phaseCode)} / {formatBuilding(hardware.building)}
+                  {formatPhaseBuilding(hardware.phaseCode, hardware.building, { separator: ' / ' })}
                 </TableCell>
                 <TableCell>
                   <Typography color="error.main" fontWeight={850}>

@@ -78,7 +78,6 @@ export interface QuickbooksInvoicePayload {
 
 export type QuickbooksInvoiceErrorCode =
   | 'INVALID_INPUT'
-  | 'MISSING_BUILDING'
   | 'NO_LINES'
   | 'TOTAL_MISMATCH'
   | 'UNSUPPORTED_PACKAGE'
@@ -189,14 +188,10 @@ function groupCharges(charges: PackageCharge[], format: InvoiceLineFormat) {
     if (cents === 0) continue
 
     // Utility rows are not lots in a building: they always get a line of their own.
-    const byBuilding = format === 'BUILDING_SCOPE' && charge.kind !== 'UTILITY'
+    // A Phase without a building has nothing to split by, so its lots are grouped by
+    // Phase, like the other Phases of a Builder that bills one line per Phase.
     const building = charge.building?.trim() || null
-    if (byBuilding && !building) {
-      throw new QuickbooksInvoiceError(
-        'MISSING_BUILDING',
-        `Lot ${charge.lotNumber} has no building, but this Builder bills one line per building.`,
-      )
-    }
+    const byBuilding = format === 'BUILDING_SCOPE' && charge.kind !== 'UTILITY' && building !== null
 
     const scope = scopeText(charge)
     const key = [

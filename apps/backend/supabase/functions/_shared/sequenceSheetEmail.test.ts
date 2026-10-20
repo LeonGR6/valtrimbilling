@@ -189,3 +189,17 @@ Deno.test("sends only the HTML table email without attachments", async () => {
   assertEquals(body.attachments, undefined);
   assertEquals(body.html, rendered.html);
 });
+
+Deno.test("a Phase without a Building has no Building line in the email", () => {
+  const rendered = renderSequenceSheetEmail({ ...snapshot, building: "" });
+
+  assertNotMatch(rendered.text, /Building:/u);
+  assertNotMatch(rendered.html, /Phase \/ Building/u);
+  assertNotMatch(rendered.html, /Phase 2 · </u);
+  assertMatch(rendered.text, /Phase: Phase 2/u);
+  assertMatch(rendered.html, />Phase 2</u);
+
+  const withBuilding = renderSequenceSheetEmail(snapshot);
+  assertMatch(withBuilding.text, /Building: Building 15/u);
+  assertMatch(withBuilding.html, /Phase \/ Building/u);
+});

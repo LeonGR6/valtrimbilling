@@ -131,3 +131,39 @@ export function differenceComponents(line) {
     ['Options', line.options],
   ].filter(([, amount]) => amount !== 0)
 }
+
+/** The totals of the chosen Packages, which is what a Price Adjustment would invoice. */
+export function selectedDifferenceTotals(packages = [], selectedPackageIds = []) {
+  const selected = new Set(selectedPackageIds)
+
+  return packages
+    .filter((item) => selected.has(item.packageId))
+    .reduce(
+      (total, item) => ({
+        gross: addMoney(total.gross, item.totals.gross),
+        retention: addMoney(total.retention, item.totals.retention),
+        wrap: addMoney(total.wrap, item.totals.wrap),
+        net: addMoney(total.net, item.totals.net),
+        lineCount: total.lineCount + item.totals.lineCount,
+      }),
+      emptyTotals(),
+    )
+}
+
+/**
+ * Why the chosen differences cannot be invoiced, or null when they can. An invoice
+ * cannot be negative: the total, and the gross, Retention and WRAP on their own,
+ * must each be positive once credits and charges are added up.
+ */
+export function adjustmentIssue(totals) {
+  if (totals.lineCount === 0) return 'Choose at least one Package.'
+  if (totals.net <= 0) {
+    return totals.net === 0
+      ? 'The chosen differences add up to nothing, so there is nothing to invoice.'
+      : 'The chosen differences add up to a credit, so there is nothing to invoice. Choose Packages with charges too, or leave this credit pending.'
+  }
+  if (totals.gross < 0 || totals.retention < 0 || totals.wrap < 0) {
+    return 'The chosen differences cannot be invoiced as one amount: their gross, Retention or WRAP add up to a negative amount.'
+  }
+  return null
+}

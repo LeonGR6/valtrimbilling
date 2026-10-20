@@ -358,3 +358,122 @@ test('cutoff and release dates clamp short months', () => {
   )
   assert.equal(addOneMonthClamped('2027-01-31'), '2027-02-28')
 })
+
+function adjustment({ id, status, lines }) {
+  return {
+    id,
+    packageType: 'PRICE_ADJUSTMENT',
+    jobId: 11,
+    status,
+    packageDate: '2026-10-01',
+    priceAdjustment: { lines },
+  }
+}
+
+function releasePackage({ id, adjustmentLineIds }) {
+  return {
+    id,
+    packageType: 'RETENTION_RELEASE',
+    jobId: 11,
+    status: 'DRAFT',
+    retentionRelease: {
+      sourceLines: [],
+      sourceHardwareLines: [],
+      sourceAdjustmentLines: adjustmentLineIds.map((sourceAdjustmentLineId) => ({
+        sourceAdjustmentLineId,
+      })),
+    },
+  }
+}
+
+const hardwareReadyPackages = () => [
+  drawPackage({
+    id: 1,
+    status: 'AWAITING_PAYMENT',
+    packageDate: '2026-09-15',
+    lines: [line({ lotId: 101, drawId: 1, retentionAmount: 55 })],
+  }),
+  drawPackage({
+    id: 2,
+    status: 'AWAITING_PAYMENT',
+    packageDate: '2026-09-16',
+    lines: [line({ lotId: 102, drawId: 2, retentionAmount: 30 })],
+  }),
+]
+
+function suggestionFor(packages) {
+  return buildRetentionSuggestions({
+    jobs: [job()],
+    jobBillingSetupVersions: [schedule()],
+    packages,
+    asOfDate: '2026-10-20',
+  }).find(({ phaseId }) => phaseId === 21)
+}
+
+test('what Price Adjustments retained is released with the rest, credits taking away', () => {
+  const base = suggestionFor(hardwareReadyPackages())
+  assert.equal(base.releasableRetention, 85)
+
+  const withAdjustment = suggestionFor([
+    ...hardwareReadyPackages(),
+    adjustment({
+      id: 301,
+      status: 'AWAITING_PAYMENT',
+      lines: [
+        { id: 1, phaseId: 21, retention: 40 },
+        // A credit: the Builder retained too much on this one.
+        { id: 2, phaseId: 21, retention: -5 },
+        // Another Building: not part of this scope.
+        { id: 3, phaseId: 22, retention: 99 },
+      ],
+    }),
+  ])
+
+  assert.equal(withAdjustment.releasableRetention, 120)
+  assert.equal(withAdjustment.projectedRetention, 120)
+  assert.equal(withAdjustment.status, 'READY')
+})
+
+test('an adjustment still in Draft is projected, never releasable', () => {
+  const suggestion = suggestionFor([
+    ...hardwareReadyPackages(),
+    adjustment({ id: 301, status: 'DRAFT', lines: [{ id: 1, phaseId: 21, retention: 40 }] }),
+  ])
+
+  assert.equal(suggestion.releasableRetention, 85)
+  assert.equal(suggestion.projectedRetention, 125)
+  assert.equal(suggestion.draftRetention, 40)
+})
+
+test('a cancelled adjustment, and lines a release already holds, are not counted again', () => {
+  const adjusted = adjustment({
+    id: 301,
+    status: 'AWAITING_PAYMENT',
+    lines: [{ id: 1, phaseId: 21, retention: 40 }, { id: 2, phaseId: 21, retention: 10 }],
+  })
+
+  assert.equal(
+    suggestionFor([...hardwareReadyPackages(), { ...adjusted, status: 'CANCELLED' }]).releasableRetention,
+    85,
+  )
+  assert.equal(
+    suggestionFor([...hardwareReadyPackages(), adjusted, releasePackage({ id: 400, adjustmentLineIds: [1] })])
+      .releasableRetention,
+    95,
+  )
+})
+
+test('adjustments never satisfy the Hardware gate', () => {
+  const suggestion = suggestionFor([
+    drawPackage({
+      id: 1,
+      status: 'AWAITING_PAYMENT',
+      packageDate: '2026-09-15',
+      lines: [line({ lotId: 101, drawId: 1, retentionAmount: 55 })],
+    }),
+    adjustment({ id: 301, status: 'AWAITING_PAYMENT', lines: [{ id: 1, phaseId: 21, retention: 40 }] }),
+  ])
+
+  assert.equal(suggestion.remainingHardwareLots, 1)
+  assert.equal(suggestion.status, 'WAITING_FOR_HARDWARE')
+})

@@ -3,6 +3,10 @@ import test from 'node:test'
 import {
   DRAW_PACKAGE_STATUSES,
   canCorrectDrawPackage,
+  canDeleteVoidedQuickbooksPackage,
+  canManageDraftDrawPackage,
+  draftLockReason,
+  toCreatePriceAdjustmentPackageRpc,
   toCreateRetentionReleasePackageRpc,
   resolveBillingCutoffDate,
   toCancelDrawPackageRpc,
@@ -743,4 +747,193 @@ test('an Option price reads as dollars, a credit with its sign, or NA', () => {
   assert.equal(formatOptionPrice(-120.5), '-$120.50')
   assert.equal(formatOptionPrice(0, true), 'NA')
   assert.equal(formatOptionPrice(0), '$0.00')
+})
+
+const adjustmentRow = {
+  id: 301,
+  package_number: 'PA-00000301',
+  package_type: 'PRICE_ADJUSTMENT',
+  builder_id: 2,
+  job_id: 11,
+  phase_id: null,
+  setup_version_id: 31,
+  package_date: '2026-10-23',
+  invoice_line_format: 'LOT_SCOPE',
+  workflow_status: 'DRAFT',
+  status: 'DRAFT',
+  created_at: '2026-10-23T12:00:00Z',
+  updated_at: '2026-10-23T12:00:00Z',
+  status_changed_at: '2026-10-23T12:00:00Z',
+}
+
+function adjustmentRecord() {
+  return toDrawInvoicePackage(
+    adjustmentRow,
+    {
+      id: 401,
+      package_id: 301,
+      gross_amount: '400.00',
+      retention_amount: '20.00',
+      wrap_amount: '8.00',
+      net_amount: '372.00',
+      paid_amount: '0',
+      status: 'DRAFT',
+    },
+    [], [], null, [], null, [], [], [],
+    {
+      package_id: 301,
+      source_package_count: 2,
+      line_count: 2,
+      gross_amount: '400.00',
+      retention_amount: '20.00',
+      wrap_amount: '8.00',
+      net_amount: '372.00',
+    },
+    [
+      {
+        id: 1,
+        package_id: 301,
+        source_package_id: 35,
+        source_package_number: 'DP-00000035',
+        line_kind: 'DRAW',
+        lot_id: 71,
+        draw_number: 2,
+        hardware_event_type: null,
+        phase_id: 21,
+        phase_code: '1',
+        building: null,
+        lot_number: '12',
+        plan_code: 'A',
+        delta_base: '100.00',
+        delta_hardware: '0.00',
+        delta_utility: '0.00',
+        delta_options: '-30.00',
+        gross: '70.00',
+        retention: '3.50',
+        wrap: '1.40',
+        net: '65.10',
+      },
+      {
+        id: 2,
+        package_id: 301,
+        source_package_id: 36,
+        source_package_number: 'DP-00000036',
+        line_kind: 'HARDWARE_EVENT',
+        lot_id: 72,
+        draw_number: null,
+        hardware_event_type: 'EXT',
+        phase_id: 21,
+        phase_code: '1',
+        building: 'C5',
+        lot_number: '13',
+        plan_code: 'A',
+        delta_base: '0.00',
+        delta_hardware: '120.00',
+        delta_utility: '0.00',
+        delta_options: '0.00',
+        gross: '120.00',
+        retention: '6.00',
+        wrap: '2.40',
+        net: '111.60',
+      },
+    ],
+    [],
+  )
+}
+
+test('Price Adjustment RPC takes the Job and the source Packages, once each, and normalizes notes', () => {
+  assert.deepEqual(toCreatePriceAdjustmentPackageRpc({
+    jobId: '11',
+    sourcePackageIds: ['35', 36, 35],
+    notes: ' Builder agreed ',
+  }), {
+    p_job_id: 11,
+    p_source_package_ids: [35, 36],
+    p_notes: 'Builder agreed',
+  })
+  assert.equal(toCreatePriceAdjustmentPackageRpc({
+    jobId: 11,
+    sourcePackageIds: [35],
+  }).p_notes, null)
+  assert.throws(
+    () => toCreatePriceAdjustmentPackageRpc({ jobId: 11, sourcePackageIds: [] }),
+    /at least one Package/,
+  )
+})
+
+test('maps a Price Adjustment Package with its lines, credits included', () => {
+  const record = adjustmentRecord()
+
+  assert.equal(record.packageType, 'PRICE_ADJUSTMENT')
+  assert.equal(record.priceAdjustment.sourcePackageCount, 2)
+  assert.equal(record.priceAdjustment.netAmount, 372)
+  assert.equal(record.persistedInvoice.netAmount, 372)
+  assert.equal(record.retentionRelease, null)
+  assert.deepEqual(record.selections, [])
+  assert.deepEqual(record.lotIds, [])
+  assert.equal(record.priceAdjustment.lines.length, 2)
+  assert.equal(record.priceAdjustment.lines[0].options, -30)
+  assert.equal(record.priceAdjustment.lines[0].drawNumber, 2)
+  assert.equal(record.priceAdjustment.lines[1].hardwareEventType, 'EXT')
+  assert.equal(record.priceAdjustment.lines[1].drawNumber, null)
+  assert.equal(record.priceAdjustment.lines[1].building, 'C5')
+})
+
+test('a Price Adjustment is never edited or moved, and says why', () => {
+  const record = adjustmentRecord()
+
+  assert.equal(canManageDraftDrawPackage(record), false)
+  assert.equal(canCorrectDrawPackage(record), false)
+  assert.equal(canDeleteVoidedQuickbooksPackage(record), false)
+  assert.match(draftLockReason(record), /Price Adjustment cannot be edited/)
+})
+
+test('a Retention Release Package has no Price Adjustment, and an unknown type is a Draw', () => {
+  assert.equal(
+    toDrawInvoicePackage({ ...adjustmentRow, package_type: 'SOMETHING_ELSE' }, null).packageType,
+    'DRAW',
+  )
+  assert.equal(
+    toDrawInvoicePackage({ ...adjustmentRow, package_type: 'DRAW' }, null).priceAdjustment,
+    null,
+  )
+})
+
+test('a Retention Release records what Price Adjustments retained, signed', () => {
+  const record = toDrawInvoicePackage(
+    { ...adjustmentRow, id: 99, package_type: 'RETENTION_RELEASE' },
+    null, [], [], null, [],
+    {
+      package_id: 99,
+      scope_type: 'JOB',
+      phase_id: null,
+      phase_code: null,
+      building: null,
+      source_cutoff_date: '2026-09-20',
+      available_date: '2026-10-20',
+      retained_amount: '450.00',
+    },
+    [], [], [], null, [],
+    [
+      {
+        package_id: 99,
+        source_adjustment_line_id: 1,
+        source_package_id: 301,
+        phase_id: 21,
+        retention_amount: '40.00',
+      },
+      {
+        package_id: 99,
+        source_adjustment_line_id: 2,
+        source_package_id: 301,
+        phase_id: 21,
+        retention_amount: '-5.00',
+      },
+    ],
+  )
+
+  assert.deepEqual(record.retentionRelease.sourceAdjustmentLines, [
+    { sourceAdjustmentLineId: 1, sourcePackageId: 301, phaseId: 21, retentionAmount: 40 },
+    { sourceAdjustmentLineId: 2, sourcePackageId: 301, phaseId: 21, retentionAmount: -5 },
+  ])
 })

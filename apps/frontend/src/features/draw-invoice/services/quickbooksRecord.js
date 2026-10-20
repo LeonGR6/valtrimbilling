@@ -109,6 +109,15 @@ export function quickbooksOAuthReturnMessage(reason) {
   }
 }
 
+/**
+ * Only a Draw Package is invoiced through QuickBooks. A Retention Release and a
+ * Price Adjustment are not (yet): the Edge Functions refuse them, so the app does
+ * not offer to send or void them. A record without a type is a Draw.
+ */
+export function isInvoicedThroughQuickbooks(record) {
+  return (record?.packageType ?? 'DRAW') === 'DRAW'
+}
+
 // ADMIN and ACCOUNTING may create QuickBooks invoices; the Edge Function
 // re-checks the role, this only decides whether to offer the action.
 const INVOICE_ROLES = ['ADMIN', 'ACCOUNTING']
@@ -116,7 +125,7 @@ const INVOICE_ROLES = ['ADMIN', 'ACCOUNTING']
 export function canCreateQuickbooksInvoice(record, role) {
   return INVOICE_ROLES.includes(role)
     && record != null
-    && record.packageType !== 'RETENTION_RELEASE'
+    && isInvoicedThroughQuickbooks(record)
     && record.status !== 'CANCELLED'
     && ['NOT_CREATED', 'SYNC_ERROR'].includes(record.quickbooksStatus)
 }
@@ -265,7 +274,7 @@ export function quickbooksInvoiceUrl(environment, invoiceId) {
  * the card can be used to send it. Returns null when there is nothing to show.
  */
 export function quickbooksPackageStatusView({ record, sync, canSend }) {
-  if (!record || record.packageType === 'RETENTION_RELEASE') return null
+  if (!record || !isInvoicedThroughQuickbooks(record)) return null
 
   switch (record.quickbooksStatus) {
     case 'CREATED': {
@@ -320,7 +329,7 @@ export function quickbooksPackageStatusView({ record, sync, canSend }) {
  * Returns null for packages that are never invoiced (Retention Releases).
  */
 export function quickbooksTableStatusView(record) {
-  if (!record || record.packageType === 'RETENTION_RELEASE') return null
+  if (!record || !isInvoicedThroughQuickbooks(record)) return null
 
   switch (record.quickbooksStatus) {
     case 'CREATED':
@@ -388,7 +397,7 @@ export function quickbooksCustomerRows(builders, links, environment) {
 export function canVoidQuickbooksInvoice(record, role) {
   return INVOICE_ROLES.includes(role)
     && record != null
-    && record.packageType !== 'RETENTION_RELEASE'
+    && isInvoicedThroughQuickbooks(record)
     && record.quickbooksStatus === 'CREATED'
     // An open invoice puts the Package in Awaiting payment; it can be voided
     // there as long as it was not sent to the Builder and nothing was paid.

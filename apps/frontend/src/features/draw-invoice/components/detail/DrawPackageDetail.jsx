@@ -76,6 +76,7 @@ import {
   ReadinessChip,
 } from '../shared/PackageUi.jsx'
 import PackageCorrectionHistory from './PackageCorrectionHistory.jsx'
+import PackagePriceAdjustmentTable from './PackagePriceAdjustmentTable.jsx'
 import PackagePriceDifferenceNotice from './PackagePriceDifferenceNotice.jsx'
 import PackageHeaderActions from './PackageHeaderActions.jsx'
 import {
@@ -257,6 +258,9 @@ export default function DrawPackageDetail() {
       .map(String),
   )
   const isRetentionRelease = focusedPackage?.packageType === 'RETENTION_RELEASE'
+  const isPriceAdjustment = focusedPackage?.packageType === 'PRICE_ADJUSTMENT'
+  // Neither has Lot / Draw cells: the Draw worksheet and its tables do not apply.
+  const hasNoDrawCells = isRetentionRelease || isPriceAdjustment
   const focusedPackagePhases = focusedPackage?.retentionRelease?.scopeType === 'JOB'
     ? phases
     : phases.filter((phase) => focusedPackagePhaseIds.has(String(phase.id)))
@@ -273,7 +277,7 @@ export default function DrawPackageDetail() {
       )
     : null
   const isMultiPhase = Boolean(focusedPackage)
-    && !isRetentionRelease
+    && !hasNoDrawCells
     && isMultiPhasePackage(packageSummary?.phaseCount)
   const canCorrectFocusedPackage = canManageDrawInvoicePackages
     && canCorrectDrawPackage(focusedPackage)
@@ -295,7 +299,9 @@ export default function DrawPackageDetail() {
       .catch(() => {})
   }
 
-  const packageContext = isRetentionRelease
+  const packageContext = isPriceAdjustment
+    ? `Job #${focusedJob.code} · Price adjustment`
+    : isRetentionRelease
     ? `Job #${focusedJob.code} · ${focusedPackage.retentionRelease?.scopeType === 'JOB'
       ? 'Per Job'
       : formatPhaseBuilding(focusedPackage.retentionRelease?.phaseCode, focusedPackage.retentionRelease?.building)}`
@@ -341,7 +347,9 @@ export default function DrawPackageDetail() {
         >
           <Box sx={{ minWidth: 0 }}>
             <Typography variant="body2" color="text.secondary">
-              {isRetentionRelease
+              {isPriceAdjustment
+                ? `Price Adjustment · ${focusedJob.builder} / ${focusedJob.community}`
+                : isRetentionRelease
                 ? `Retention Release · ${focusedJob.builder} / ${focusedJob.community}`
                 : `${focusedJob.builder} / ${focusedJob.community}`}
             </Typography>
@@ -490,7 +498,9 @@ export default function DrawPackageDetail() {
         {focusedPackage?.status === 'CANCELLED' && (
           <Alert severity="info">
             This Package was cancelled on {formatDate(focusedPackage.cancelledAt?.slice(0, 10))}.
-            {isRetentionRelease
+            {isPriceAdjustment
+              ? ' Its price differences are pending again; the Package number remains for history.'
+              : isRetentionRelease
               ? ' Its retained source amounts are available for a new release; the Package number remains for history.'
               : ' Its Lot / Draw cells were released; the Package number remains for history.'}
             {focusedPackage.cancellationReason && ` Reason: ${focusedPackage.cancellationReason}`}
@@ -531,7 +541,49 @@ export default function DrawPackageDetail() {
               </Alert>
             )}
 
-            {isRetentionRelease ? (
+            {isPriceAdjustment && focusedPackage.status !== 'CANCELLED' && (
+              <Alert severity="info">
+                This Package invoices price differences of Packages that could not change. Retention
+                and WRAP are deducted like in any Package, and the Retention Release includes what was
+                retained here. It is not sent to QuickBooks from this Package yet.
+              </Alert>
+            )}
+
+            {isPriceAdjustment ? (
+              <PackageSummaryPanel
+                facts={[
+                  {
+                    label: 'Source Packages',
+                    value: focusedPackage.priceAdjustment?.sourcePackageCount ?? 0,
+                  },
+                  {
+                    label: 'Difference lines',
+                    value: focusedPackage.priceAdjustment?.lineCount ?? 0,
+                  },
+                ]}
+                lines={[
+                  {
+                    label: 'Price difference',
+                    value: formatCurrency(focusedPackage.priceAdjustment?.grossAmount ?? 0),
+                  },
+                  {
+                    label: 'Retention',
+                    value: formatCurrency(focusedPackage.priceAdjustment?.retentionAmount ?? 0),
+                    tone: (focusedPackage.priceAdjustment?.retentionAmount ?? 0) > 0 ? 'deduction' : 'muted',
+                  },
+                  {
+                    label: 'WRAP',
+                    value: formatCurrency(focusedPackage.priceAdjustment?.wrapAmount ?? 0),
+                    tone: (focusedPackage.priceAdjustment?.wrapAmount ?? 0) > 0 ? 'deduction' : 'muted',
+                  },
+                ]}
+                total={{
+                  label: 'Invoice Amount',
+                  value: formatCurrency(packageSummary.invoiceAmount),
+                  detail: focusedInvoiceNumber ? `Invoice ${focusedInvoiceNumber}` : 'Invoice pending',
+                }}
+              />
+            ) : isRetentionRelease ? (
               <PackageSummaryPanel
                 facts={[
                   {
@@ -637,7 +689,7 @@ export default function DrawPackageDetail() {
               </Stack>
             )}
 
-            {!isRetentionRelease && !worksheet.hasSchedule && (
+            {!hasNoDrawCells && !worksheet.hasSchedule && (
               <Alert
                 severity="warning"
                 action={<Button component={RouterLink} to="/builder-draw-schedules" color="inherit">Configure schedule</Button>}
@@ -645,7 +697,7 @@ export default function DrawPackageDetail() {
                 {focusedJob.builder} does not have a Builder Setup.
               </Alert>
             )}
-            {!isRetentionRelease && (worksheet.missingPlanCount > 0 || worksheet.unpricedLotCount > 0) && (
+            {!hasNoDrawCells && (worksheet.missingPlanCount > 0 || worksheet.unpricedLotCount > 0) && (
               <Alert
                 severity="warning"
                 action={<Button component={RouterLink} to={jobPlanPricingPath(focusedBuilderId, focusedJob.id)} color="inherit">Open pricing</Button>}
@@ -654,7 +706,7 @@ export default function DrawPackageDetail() {
               </Alert>
             )}
 
-            {!isRetentionRelease && !isMultiPhase && (
+            {!hasNoDrawCells && !isMultiPhase && (
               <Stack
                 direction={{ xs: 'column', sm: 'row' }}
                 spacing={1.5}
@@ -684,7 +736,7 @@ export default function DrawPackageDetail() {
               </Stack>
             )}
 
-            {!isRetentionRelease && !isMultiPhase && <DrawWorksheetTable
+            {!hasNoDrawCells && !isMultiPhase && <DrawWorksheetTable
               job={focusedJob}
               phase={selectedPhase}
               worksheet={worksheet}
@@ -704,10 +756,13 @@ export default function DrawPackageDetail() {
               </Box>
             ))}
 
-            {focusedPackage && !isRetentionRelease && <PackageHardwareTable summary={packageSummary} />}
-            {focusedPackage && !isRetentionRelease && <PackageUtilityTable summary={packageSummary} />}
-            {focusedPackage && !isRetentionRelease && packageSummary.lotCount > 0 && (
+            {focusedPackage && !hasNoDrawCells && <PackageHardwareTable summary={packageSummary} />}
+            {focusedPackage && !hasNoDrawCells && <PackageUtilityTable summary={packageSummary} />}
+            {focusedPackage && !hasNoDrawCells && packageSummary.lotCount > 0 && (
               <PackageOptionsTable summary={packageSummary} />
+            )}
+            {focusedPackage && isPriceAdjustment && (
+              <PackagePriceAdjustmentTable adjustment={focusedPackage.priceAdjustment} />
             )}
             {focusedPackage?.corrections?.length > 0 && (
               <PackageCorrectionHistory package={focusedPackage} />

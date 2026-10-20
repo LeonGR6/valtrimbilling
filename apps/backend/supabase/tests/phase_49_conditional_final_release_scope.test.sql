@@ -130,14 +130,14 @@ select ok(
 select ok(
   coalesce((
     select procedure.prosrc like '%package_type <> ''DRAW''%'
-      and procedure.prosrc like '%RETENTION_RELEASE%'
+      and procedure.prosrc like '%''reason'', v_package.package_type%'
       and procedure.prosrc like '%NOT_CONFIGURED%'
       and procedure.prosrc like '%package.status <> ''VOIDED''%'
       and procedure.prosrc like '%current_setup%'
     from pg_proc procedure
     where procedure.oid = 'private.get_final_release_status(bigint)'::regprocedure
   ), false),
-  'Retention Releases and unconfigured setups are not evaluated, voided Packages never count, and the Builder current setup is the fallback'
+  'Retention Releases, Price Adjustments and unconfigured setups are not evaluated (the reason names the type), voided Packages never count, and the Builder current setup is the fallback'
 );
 
 select ok(

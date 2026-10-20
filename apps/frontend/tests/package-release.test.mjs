@@ -506,3 +506,15 @@ test('a Final Release says what it is final for, from the Builder setup', () => 
   assert.equal(buildFinalReleaseNote({ scope: null, closing: ['Phase 1'] }), null)
   assert.equal(buildFinalReleaseNote({ scope: undefined }), null)
 })
+
+test('a Price Adjustment Package has no Release to generate', () => {
+  const choice = chooseRelease(
+    valuesWith(
+      { applicable: false, reason: 'PRICE_ADJUSTMENT', scope: null, is_final: false, scopes: [] },
+      'PRICE_ADJUSTMENT',
+    ),
+    [progressTemplate, finalTemplate],
+  )
+  assert.equal(choice.state, 'price_adjustment')
+  assert.equal(choice.template, null)
+})

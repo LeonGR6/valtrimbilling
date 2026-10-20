@@ -134,6 +134,8 @@ export function toPackageReleaseValues(row) {
 /**
  * Which Release a Package needs and whether it can be generated.
  *  - `retention`: a Retention Release Package; its Release is not defined yet.
+ *  - `price_adjustment`: a Price Adjustment Package; it bills no Lot or Draw, so
+ *    there is no Release to fill.
  *  - `missing_template`: the Job has no confirmed template of the type needed.
  *    A last Package is never filled with the Progress form instead.
  *  - `ready`: `template` is the one to fill.
@@ -144,6 +146,9 @@ export function chooseRelease(values, templates) {
   const { finalRelease } = values
   if (finalRelease.reason === 'RETENTION_RELEASE' || values.packageType === 'RETENTION_RELEASE') {
     return { state: 'retention', releaseType: null, template: null, isFinal: false, closing: [] }
+  }
+  if (finalRelease.reason === 'PRICE_ADJUSTMENT' || values.packageType === 'PRICE_ADJUSTMENT') {
+    return { state: 'price_adjustment', releaseType: null, template: null, isFinal: false, closing: [] }
   }
 
   const isFinal = finalRelease.applicable && finalRelease.isFinal

@@ -131,6 +131,9 @@ export function toDrawInvoicePackage(
   retentionReleaseLineRows = [],
   hardwareRows = [],
   retentionReleaseHardwareLineRows = [],
+  priceAdjustmentRow = null,
+  priceAdjustmentLineRows = [],
+  retentionReleaseAdjustmentLineRows = [],
 ) {
   const sortedDrawRows = [...drawRows].sort(
     (left, right) => String(left.phase_code ?? '').localeCompare(
@@ -179,8 +182,8 @@ export function toDrawInvoicePackage(
   return {
     id: packageRow.id,
     packageNumber: packageRow.package_number,
-    packageType: packageRow.package_type === 'RETENTION_RELEASE'
-      ? 'RETENTION_RELEASE'
+    packageType: ['RETENTION_RELEASE', 'PRICE_ADJUSTMENT'].includes(packageRow.package_type)
+      ? packageRow.package_type
       : 'DRAW',
     builderId: packageRow.builder_id,
     jobId: packageRow.job_id,
@@ -232,6 +235,13 @@ export function toDrawInvoicePackage(
             phaseId: row.phase_id,
             retentionAmount: toNumber(row.retention_amount),
           })),
+          // What Price Adjustments retained; a credit makes it negative.
+          sourceAdjustmentLines: retentionReleaseAdjustmentLineRows.map((row) => ({
+            sourceAdjustmentLineId: row.source_adjustment_line_id,
+            sourcePackageId: row.source_package_id,
+            phaseId: row.phase_id,
+            retentionAmount: toNumber(row.retention_amount),
+          })),
           sourceHardwareLines: retentionReleaseHardwareLineRows.map((row) => ({
             sourceHardwareLineId: row.source_hardware_line_id,
             sourcePackageId: row.source_package_id,
@@ -239,6 +249,39 @@ export function toDrawInvoicePackage(
             hardwareEventType: row.hardware_event_type,
             phaseId: row.phase_id,
             retentionAmount: toNumber(row.retention_amount),
+          })),
+        }
+      : null,
+    // The price differences of issued Packages that this Package invoices.
+    priceAdjustment: priceAdjustmentRow
+      ? {
+          sourcePackageCount: Number(priceAdjustmentRow.source_package_count),
+          lineCount: Number(priceAdjustmentRow.line_count),
+          grossAmount: toNumber(priceAdjustmentRow.gross_amount),
+          retentionAmount: toNumber(priceAdjustmentRow.retention_amount),
+          wrapAmount: toNumber(priceAdjustmentRow.wrap_amount),
+          netAmount: toNumber(priceAdjustmentRow.net_amount),
+          lines: priceAdjustmentLineRows.map((row) => ({
+            id: row.id,
+            sourcePackageId: row.source_package_id,
+            sourcePackageNumber: row.source_package_number,
+            kind: row.line_kind,
+            lotId: row.lot_id,
+            lotNumber: row.lot_number,
+            phaseId: row.phase_id,
+            phaseCode: row.phase_code,
+            building: row.building ?? '',
+            planCode: row.plan_code,
+            drawNumber: row.draw_number == null ? null : Number(row.draw_number),
+            hardwareEventType: row.hardware_event_type ?? null,
+            base: toNumber(row.delta_base),
+            hardware: toNumber(row.delta_hardware),
+            utility: toNumber(row.delta_utility),
+            options: toNumber(row.delta_options),
+            gross: toNumber(row.gross),
+            retention: toNumber(row.retention),
+            wrap: toNumber(row.wrap),
+            net: toNumber(row.net),
           })),
         }
       : null,
@@ -484,6 +527,22 @@ export function toCreateRetentionReleasePackageRpc({
   }
 }
 
+export function toCreatePriceAdjustmentPackageRpc({
+  jobId,
+  sourcePackageIds,
+  notes = null,
+}) {
+  const ids = [...new Set((sourcePackageIds ?? []).map(Number).filter(Number.isFinite))]
+  if (ids.length === 0) {
+    throw new Error('Select at least one Package with a pending price difference.')
+  }
+  return {
+    p_job_id: Number(jobId),
+    p_source_package_ids: ids,
+    p_notes: String(notes ?? '').trim() || null,
+  }
+}
+
 function toSelectionRecords(selections) {
   if (!Array.isArray(selections) || selections.length === 0) {
     throw new Error('Select at least one Lot / Draw cell.')
@@ -497,7 +556,7 @@ function toSelectionRecords(selections) {
 
 export function canManageDraftDrawPackage(record) {
   return record != null
-    && record.packageType !== 'RETENTION_RELEASE'
+    && record.packageType === 'DRAW'
     && record.status === 'DRAFT'
     && record.persistedInvoice?.status === 'DRAFT'
     && !record.invoiceNumber
@@ -515,7 +574,7 @@ export function canManageDraftDrawPackage(record) {
  */
 export function canDeleteVoidedQuickbooksPackage(record) {
   return record != null
-    && record.packageType !== 'RETENTION_RELEASE'
+    && record.packageType === 'DRAW'
     && record.status === 'DRAFT'
     && record.quickbooksStatus === 'VOIDED'
     && record.persistedInvoice?.status === 'DRAFT'
@@ -536,6 +595,9 @@ export function draftLockReason(record) {
   }
   if (record.packageType === 'RETENTION_RELEASE') {
     return 'A Retention Release cannot be edited. Cancel it from the Packages list if it was created by mistake.'
+  }
+  if (record.packageType === 'PRICE_ADJUSTMENT') {
+    return 'A Price Adjustment cannot be edited. Cancel it from the Packages list to give its differences back.'
   }
   if (record.submissionStatus !== 'NOT_SUBMITTED' || record.submittedAt) {
     return 'This Package was already sent to the Builder, so its cells are locked.'

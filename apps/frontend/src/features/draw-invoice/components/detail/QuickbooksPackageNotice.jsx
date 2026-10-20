@@ -1,7 +1,10 @@
 import { useState } from 'react'
 import { Alert, Box, Button, Stack } from '@mui/material'
 import { useQuickbooksInvoicePdf } from '../../hooks/useQuickbooksInvoicePdf.js'
-import { canVoidQuickbooksInvoice } from '../../services/quickbooksRecord.js'
+import {
+  canVoidQuickbooksInvoice,
+  isInvoicedThroughQuickbooks,
+} from '../../services/quickbooksRecord.js'
 import { saveQuickbooksInvoicePdf } from '../../services/quickbooksRepository.js'
 import { formatCurrency } from '../../utils/drawInvoiceFormatters.js'
 import QuickbooksVoidDialog from './QuickbooksVoidDialog.jsx'
@@ -27,7 +30,7 @@ export default function QuickbooksPackageNotice({
   const [pdfError, setPdfError] = useState('')
   const [voidOpen, setVoidOpen] = useState(false)
 
-  if (!record || record.packageType === 'RETENTION_RELEASE') return null
+  if (!record || !isInvoicedThroughQuickbooks(record)) return null
 
   const canVoid = canVoidQuickbooksInvoice(record, role)
 

@@ -112,6 +112,7 @@ test('turns each OAuth return reason into a readable message', () => {
 
 import {
   canCreateQuickbooksInvoice,
+  isInvoicedThroughQuickbooks,
   quickbooksInvoiceUrl,
   quickbooksPaymentView,
   quickbooksPackageStatusView,
@@ -478,4 +479,18 @@ test('maps the saved QuickBooks PDF of a Package', () => {
       },
     },
   )
+})
+
+test('a Price Adjustment is not sent, shown or voided in QuickBooks yet', () => {
+  const adjustment = { ...draftPackage, packageType: 'PRICE_ADJUSTMENT' }
+
+  assert.equal(isInvoicedThroughQuickbooks(adjustment), false)
+  assert.equal(isInvoicedThroughQuickbooks({ packageType: 'RETENTION_RELEASE' }), false)
+  assert.equal(isInvoicedThroughQuickbooks(draftPackage), true)
+  // A record with no type is a Draw, as every record before the types existed.
+  assert.equal(isInvoicedThroughQuickbooks({ status: 'DRAFT' }), true)
+  assert.equal(canCreateQuickbooksInvoice(adjustment, 'ADMIN'), false)
+  assert.equal(canVoidQuickbooksInvoice({ ...adjustment, quickbooksStatus: 'CREATED' }, 'ADMIN'), false)
+  assert.equal(quickbooksPackageStatusView({ record: adjustment, sync: null, canSend: true }), null)
+  assert.equal(quickbooksTableStatusView(adjustment), null)
 })

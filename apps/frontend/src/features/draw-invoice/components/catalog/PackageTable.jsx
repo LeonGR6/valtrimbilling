@@ -303,7 +303,9 @@ export default function PackageTable({
                       {record.packageNumber}
                     </Button>
                     <Typography variant="body2" color="text.secondary">
-                      Job #{job.code} · {record.packageType === 'RETENTION_RELEASE'
+                      Job #{job.code} · {record.packageType === 'PRICE_ADJUSTMENT'
+                        ? 'Price adjustment'
+                        : record.packageType === 'RETENTION_RELEASE'
                         ? record.retentionRelease?.scopeType === 'JOB'
                           ? 'Per Job'
                           : formatPhaseBuilding(record.retentionRelease?.phaseCode, record.retentionRelease?.building, { separator: ' / ' })
@@ -311,7 +313,7 @@ export default function PackageTable({
                           ? formatPhaseBuilding(phase.name, phase.building, { separator: ' / ' })
                           : `${summary.phaseCount} Phases`}
                     </Typography>
-                    {record.packageType !== 'RETENTION_RELEASE' && isMultiPhasePackage(summary.phaseCount) && (
+                    {record.packageType === 'DRAW' && isMultiPhasePackage(summary.phaseCount) && (
                       <Chip
                         size="small"
                         color="warning"
@@ -330,7 +332,16 @@ export default function PackageTable({
                         sx={{ mt: 0.75, fontWeight: 750 }}
                       />
                     )}
-                    {record.packageType !== 'RETENTION_RELEASE' && summary.phaseSummaries.map((scope) => (
+                    {record.packageType === 'PRICE_ADJUSTMENT' && (
+                      <Chip
+                        size="small"
+                        color="info"
+                        variant="outlined"
+                        label="Price Adjustment"
+                        sx={{ mt: 0.75, fontWeight: 750 }}
+                      />
+                    )}
+                    {record.packageType === 'DRAW' && summary.phaseSummaries.map((scope) => (
                       <Typography
                         key={scope.phaseId}
                         variant="caption"
@@ -363,21 +374,27 @@ export default function PackageTable({
                   <TableCell>
                     {record.packageType === 'RETENTION_RELEASE'
                       ? `Available ${formatLongDate(record.retentionRelease?.availableDate)}`
-                      : formatBillingPeriod(record)}
+                      : record.packageType === 'PRICE_ADJUSTMENT'
+                        ? `Dated ${formatLongDate(record.packageDate)}`
+                        : formatBillingPeriod(record)}
                   </TableCell>
                   <TableCell>
                     <Typography fontWeight={750}>
-                      {record.packageType === 'RETENTION_RELEASE'
+                      {record.packageType === 'PRICE_ADJUSTMENT'
+                        ? `${record.priceAdjustment?.lineCount ?? 0} ${record.priceAdjustment?.lineCount === 1 ? 'line' : 'lines'}`
+                        : record.packageType === 'RETENTION_RELEASE'
                         ? `${record.retentionRelease?.sourceLines?.length ?? 0} source lines`
                         : summary.lotCount > 0 ? summary.lotRange : 'No Lots'}
                     </Typography>
-                    {record.packageType !== 'RETENTION_RELEASE' && summary.utilityCount > 0 && (
+                    {record.packageType === 'DRAW' && summary.utilityCount > 0 && (
                       <Typography variant="caption" color="primary.main" component="div">
                         {summary.utilityCount} Utility {summary.utilityCount === 1 ? 'row' : 'rows'}
                       </Typography>
                     )}
                     <Typography variant="caption" color="text.secondary">
-                      {record.packageType === 'RETENTION_RELEASE'
+                      {record.packageType === 'PRICE_ADJUSTMENT'
+                        ? `From ${record.priceAdjustment?.sourcePackageCount ?? 0} ${record.priceAdjustment?.sourcePackageCount === 1 ? 'Package' : 'Packages'}`
+                        : record.packageType === 'RETENTION_RELEASE'
                         ? `Cutoff ${formatLongDate(record.retentionRelease?.sourceCutoffDate)}`
                         : formatPackageScopeEventTypes(summary.scopeEventTypes)}
                     </Typography>

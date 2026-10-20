@@ -14,9 +14,15 @@ export const PACKAGE_CATALOG_TABS = [
   })),
 ]
 
+const PACKAGE_TYPE_SEARCH_TERMS = {
+  RETENTION_RELEASE: 'retention release',
+  PRICE_ADJUSTMENT: 'price adjustment',
+  DRAW: 'draw',
+}
+
 export function canDeleteDraftPackage(record) {
   if (record?.status !== 'DRAFT') return false
-  if (record.packageType !== 'RETENTION_RELEASE') {
+  if (record.packageType === 'DRAW') {
     return canManageDraftDrawPackage(record) || canDeleteVoidedQuickbooksPackage(record)
   }
   return record.persistedInvoice?.status === 'DRAFT'
@@ -49,7 +55,7 @@ export function filterPackageCatalogContexts(contexts, {
       record.packageNumber,
       record.invoiceNumber,
       displayInvoiceNumber(record),
-      record.packageType === 'RETENTION_RELEASE' ? 'retention release' : 'draw',
+      PACKAGE_TYPE_SEARCH_TERMS[record.packageType] ?? 'draw',
       record.retentionRelease?.scopeType,
       record.retentionRelease?.phaseCode,
       record.retentionRelease?.building,
@@ -134,6 +140,8 @@ export function packageBillingPeriodDate(record) {
   if (record?.packageType === 'RETENTION_RELEASE') {
     return record.retentionRelease?.availableDate ?? null
   }
+  // An adjustment has no cutoff of its own: it is dated when it was created.
+  if (record?.packageType === 'PRICE_ADJUSTMENT') return record.packageDate ?? null
   if (record?.billingCutoffAnyDate) return null
   return record?.billingCutoffDate ?? null
 }

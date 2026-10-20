@@ -312,7 +312,7 @@ export default function GeneratePackageReleaseDialog({
       // Why it cannot be generated, so the parent can offer a way to fix it.
       blocker: loadError
         ? 'error'
-        : choice?.state === 'missing_template' || choice?.state === 'retention'
+        : ['missing_template', 'retention', 'price_adjustment'].includes(choice?.state)
           ? choice.state
           : null,
       // Changes whenever the generated file would change.
@@ -341,6 +341,13 @@ export default function GeneratePackageReleaseDialog({
           <Alert severity="info">
             This Package is a Retention Release. Its Release is not set up yet, so it
             cannot be generated here.
+          </Alert>
+        )}
+
+        {choice?.state === 'price_adjustment' && (
+          <Alert severity="info">
+            This Package is a Price Adjustment. It bills no Lot or Draw, so it has no Release
+            to generate.
           </Alert>
         )}
 

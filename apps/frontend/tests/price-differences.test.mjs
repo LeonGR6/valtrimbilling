@@ -1,9 +1,11 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
+  adjustmentIssue,
   differenceComponents,
   formatSignedMoney,
   groupPriceDifferences,
+  selectedDifferenceTotals,
   toPriceDifference,
   workflowStatusLabel,
 } from '../src/features/plan-pricing/utils/priceDifferences.js'
@@ -115,4 +117,40 @@ test('the Package status reads as people say it', () => {
   assert.equal(workflowStatusLabel('PAID_CLOSED'), 'Paid')
   assert.equal(workflowStatusLabel('DRAFT'), 'Draft')
   assert.equal(workflowStatusLabel(null), 'Package')
+})
+
+test('the chosen Packages add up, credits against charges', () => {
+  const { packages } = groupPriceDifferences([
+    row({ id: 1, delta_gross: '400.00', delta_retention: '20.00', delta_wrap: '8.00', delta_net: '372.00' }),
+    row({ id: 2, package_id: 36, package_number: 'DP-00000036', delta_gross: '-250.00', delta_retention: '-12.50', delta_wrap: '-5.00', delta_net: '-232.50' }),
+    row({ id: 3, package_id: 37, package_number: 'DP-00000037', delta_gross: '10.00', delta_retention: '0.50', delta_wrap: '0.20', delta_net: '9.30' }),
+  ])
+
+  assert.deepEqual(selectedDifferenceTotals(packages, [35, 36]), {
+    gross: 150, retention: 7.5, wrap: 3, net: 139.5, lineCount: 2,
+  })
+  assert.deepEqual(selectedDifferenceTotals(packages, [37]).net, 9.3)
+  assert.deepEqual(selectedDifferenceTotals(packages, []), {
+    gross: 0, retention: 0, wrap: 0, net: 0, lineCount: 0,
+  })
+})
+
+test('only a positive total can be invoiced', () => {
+  const ok = { gross: 150, retention: 7.5, wrap: 3, net: 139.5, lineCount: 2 }
+
+  assert.equal(adjustmentIssue(ok), null)
+  assert.match(adjustmentIssue({ ...ok, lineCount: 0 }), /at least one Package/)
+  assert.match(
+    adjustmentIssue({ gross: -100, retention: -5, wrap: -2, net: -93, lineCount: 1 }),
+    /add up to a credit/,
+  )
+  assert.match(
+    adjustmentIssue({ gross: 0, retention: 0, wrap: 0, net: 0, lineCount: 1 }),
+    /add up to nothing/,
+  )
+  // A positive net with a negative part cannot be one invoice.
+  assert.match(
+    adjustmentIssue({ gross: 100, retention: -3, wrap: 1, net: 102, lineCount: 1 }),
+    /negative amount/,
+  )
 })

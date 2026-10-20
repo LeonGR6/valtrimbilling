@@ -189,3 +189,41 @@ test('Packages sort by Billing Period and keep undated ones last in both directi
   assert.deepEqual(nextPackageSort(null, 'period'), { key: 'period', direction: 'desc' })
   assert.equal(isValidPackageSort({ key: 'period', direction: 'asc' }), true)
 })
+
+const draftAdjustment = {
+  id: 301,
+  packageType: 'PRICE_ADJUSTMENT',
+  status: 'DRAFT',
+  packageNumber: 'PA-00000301',
+  packageDate: '2026-10-23',
+  persistedInvoice: { status: 'DRAFT', paidAmount: 0 },
+  quickbooksStatus: 'NOT_CREATED',
+  submissionStatus: 'NOT_SUBMITTED',
+}
+
+test('a Draft Price Adjustment can be cancelled until it is sent, and no later', () => {
+  assert.equal(canDeleteDraftPackage(draftAdjustment), true)
+  assert.equal(canDeleteDraftPackage({ ...draftAdjustment, status: 'AWAITING_PAYMENT' }), false)
+  assert.equal(
+    canDeleteDraftPackage({ ...draftAdjustment, submissionStatus: 'SUBMITTED', submittedAt: '2026-10-24' }),
+    false,
+  )
+  assert.equal(
+    canDeleteDraftPackage({ ...draftAdjustment, persistedInvoice: { status: 'DRAFT', paidAmount: 10 } }),
+    false,
+  )
+})
+
+test('a Price Adjustment is dated by its creation and found by "price adjustment"', () => {
+  assert.equal(packageBillingPeriodDate(draftAdjustment), '2026-10-23')
+
+  const found = filterPackageCatalogContexts([
+    {
+      record: draftAdjustment,
+      job: { code: '1306', builder: 'Acme', community: 'Deerfield' },
+      phase: { name: 'Phase 1', building: 'P1' },
+    },
+    ...contexts,
+  ], { search: 'price adjustment' })
+  assert.deepEqual(found.map(({ record }) => record.id), [301])
+})

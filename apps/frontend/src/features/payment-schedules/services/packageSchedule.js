@@ -134,7 +134,7 @@ export function listEarlierPackages(record, packages) {
     .filter((candidate) => (
       candidate.id !== record.id
       && candidate.jobId === record.jobId
-      && candidate.packageType !== 'RETENTION_RELEASE'
+      && (candidate.packageType ?? 'DRAW') === 'DRAW'
       && candidate.status !== 'CANCELLED'
       && isEarlier(candidate, record)
     ))

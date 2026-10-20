@@ -152,6 +152,7 @@ export function buildRetentionSuggestions({
 
   const activeReleaseLines = new Set()
   const activeReleaseHardwareLines = new Set()
+  const activeReleaseAdjustmentLines = new Set()
   for (const record of packages) {
     if (record.packageType !== 'RETENTION_RELEASE' || record.status === 'CANCELLED') {
       continue
@@ -167,6 +168,9 @@ export function buildRetentionSuggestions({
       activeReleaseHardwareLines.add(sourceHardwareLineKey(
         line.sourceHardwareLineId,
       ))
+    }
+    for (const line of record.retentionRelease?.sourceAdjustmentLines ?? []) {
+      activeReleaseAdjustmentLines.add(String(line.sourceAdjustmentLineId))
     }
   }
 
@@ -187,6 +191,13 @@ export function buildRetentionSuggestions({
       : [{ phase: null, phaseIds: new Set(phases.map(({ id }) => String(id))) }]
     const jobPackages = packages.filter((record) => (
       String(record.jobId) === String(job.id) && isDrawPackage(record)
+    ))
+    // Price Adjustments retain money too. Their lines are signed: a credit gives back
+    // less, which is what the Retention Release does with them.
+    const jobAdjustments = packages.filter((record) => (
+      String(record.jobId) === String(job.id)
+      && record.packageType === 'PRICE_ADJUSTMENT'
+      && record.status !== 'CANCELLED'
     ))
 
     return scopes.flatMap(({ phase, phaseIds }) => {
@@ -213,16 +224,33 @@ export function buildRetentionSuggestions({
           sourceLineKey(record.id, line.lotId, line.drawId),
         )
       })
-      const projectedRetention = outstanding.reduce(
-        (total, { line }) => total + Number(line.retentionAmount),
+      const outstandingAdjustments = jobAdjustments.flatMap((record) => (
+        (record.priceAdjustment?.lines ?? [])
+          .filter((line) => (
+            phaseIds.has(String(line.phaseId))
+            && Number(line.retention) !== 0
+            && !activeReleaseAdjustmentLines.has(String(line.id))
+          ))
+          .map((line) => ({ record, amount: Number(line.retention) }))
+      ))
+      const outstandingAmounts = [
+        ...outstanding.map(({ record, line }) => ({
+          record,
+          amount: Number(line.retentionAmount),
+        })),
+        ...outstandingAdjustments,
+      ]
+      const roundCents = (value) => Math.round(value * 100) / 100
+      const projectedRetention = roundCents(outstandingAmounts.reduce(
+        (total, { amount }) => total + amount,
         0,
-      )
-      const releasableRetention = outstanding
+      ))
+      const releasableRetention = roundCents(outstandingAmounts
         .filter(({ record }) => QUALIFYING_STATUSES.has(record.status))
-        .reduce((total, { line }) => total + Number(line.retentionAmount), 0)
-      const draftRetention = outstanding
+        .reduce((total, { amount }) => total + amount, 0))
+      const draftRetention = roundCents(outstandingAmounts
         .filter(({ record }) => record.status === 'DRAFT')
-        .reduce((total, { line }) => total + Number(line.retentionAmount), 0)
+        .reduce((total, { amount }) => total + amount, 0))
 
       if (projectedRetention <= 0 && releasableRetention <= 0) return []
 

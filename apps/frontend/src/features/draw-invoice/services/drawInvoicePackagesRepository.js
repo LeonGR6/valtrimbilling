@@ -2,6 +2,7 @@ import { requireSupabase } from '../../../services/api.js'
 import {
   toCancelDrawPackageRpc,
   toCreateDrawPackageRpc,
+  toCreatePriceAdjustmentPackageRpc,
   toCreateRetentionReleasePackageRpc,
   toDrawInvoicePackage,
   toEditDrawPackageRpc,
@@ -190,6 +191,49 @@ const RETENTION_RELEASE_HARDWARE_LINE_COLUMNS = [
   'retention_amount',
 ].join(', ')
 
+const RETENTION_RELEASE_ADJUSTMENT_LINE_COLUMNS = [
+  'package_id',
+  'source_adjustment_line_id',
+  'source_package_id',
+  'phase_id',
+  'retention_amount',
+].join(', ')
+
+const PRICE_ADJUSTMENT_COLUMNS = [
+  'package_id',
+  'job_id',
+  'source_package_count',
+  'line_count',
+  'gross_amount',
+  'retention_amount',
+  'wrap_amount',
+  'net_amount',
+].join(', ')
+
+const PRICE_ADJUSTMENT_LINE_COLUMNS = [
+  'id',
+  'package_id',
+  'source_package_id',
+  'source_package_number',
+  'line_kind',
+  'lot_id',
+  'draw_number',
+  'hardware_event_type',
+  'phase_id',
+  'phase_code',
+  'building',
+  'lot_number',
+  'plan_code',
+  'delta_base',
+  'delta_hardware',
+  'delta_utility',
+  'delta_options',
+  'gross',
+  'retention',
+  'wrap',
+  'net',
+].join(', ')
+
 const PAGE_SIZE = 1000
 const FILTER_BATCH_SIZE = 200
 
@@ -320,6 +364,9 @@ export async function listDrawInvoicePackages() {
     retentionReleases,
     retentionReleaseLines,
     retentionReleaseHardwareLines,
+    priceAdjustments,
+    priceAdjustmentLines,
+    retentionReleaseAdjustmentLines,
   ] = await Promise.all([
     listRowsInBatches(
       client,
@@ -389,6 +436,27 @@ export async function listDrawInvoicePackages() {
       RETENTION_RELEASE_HARDWARE_LINE_COLUMNS,
       [['package_id', true], ['source_package_id', true]],
     ),
+    listRowsInBatches(
+      client,
+      packageIds,
+      'price_adjustments',
+      PRICE_ADJUSTMENT_COLUMNS,
+      [['package_id', true]],
+    ),
+    listRowsInBatches(
+      client,
+      packageIds,
+      'price_adjustment_lines',
+      PRICE_ADJUSTMENT_LINE_COLUMNS,
+      [['package_id', true], ['source_package_id', true], ['id', true]],
+    ),
+    listRowsInBatches(
+      client,
+      packageIds,
+      'retention_release_adjustment_lines',
+      RETENTION_RELEASE_ADJUSTMENT_LINE_COLUMNS,
+      [['package_id', true], ['source_adjustment_line_id', true]],
+    ),
   ])
 
   const invoicesByPackage = new Map(
@@ -419,6 +487,13 @@ export async function listDrawInvoicePackages() {
   const retentionReleaseHardwareLinesByPackage = groupByPackage(
     retentionReleaseHardwareLines,
   )
+  const priceAdjustmentsByPackage = new Map(
+    priceAdjustments.map((adjustment) => [adjustment.package_id, adjustment]),
+  )
+  const priceAdjustmentLinesByPackage = groupByPackage(priceAdjustmentLines)
+  const retentionReleaseAdjustmentLinesByPackage = groupByPackage(
+    retentionReleaseAdjustmentLines,
+  )
 
   return packages.map((packageRow) => toDrawInvoicePackage(
     packageRow,
@@ -437,6 +512,9 @@ export async function listDrawInvoicePackages() {
     retentionReleaseLinesByPackage.get(packageRow.id) ?? [],
     hardwareLinesByPackage.get(packageRow.id) ?? [],
     retentionReleaseHardwareLinesByPackage.get(packageRow.id) ?? [],
+    priceAdjustmentsByPackage.get(packageRow.id),
+    priceAdjustmentLinesByPackage.get(packageRow.id) ?? [],
+    retentionReleaseAdjustmentLinesByPackage.get(packageRow.id) ?? [],
   ))
 }
 
@@ -475,6 +553,26 @@ export async function createRetentionReleasePackage(input) {
   )
   if (!created) {
     throw new Error('The created Retention Package could not be reloaded.')
+  }
+
+  return { created, packages }
+}
+
+export async function createPriceAdjustmentPackage(input) {
+  const client = await requireSupabase()
+  const { data: packageId, error } = await client.rpc(
+    'create_price_adjustment_package',
+    toCreatePriceAdjustmentPackageRpc(input),
+  )
+
+  throwRepositoryError(error)
+
+  const packages = await listDrawInvoicePackages()
+  const created = packages.find(
+    (record) => String(record.id) === String(packageId),
+  )
+  if (!created) {
+    throw new Error('The created Price Adjustment Package could not be reloaded.')
   }
 
   return { created, packages }

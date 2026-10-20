@@ -188,6 +188,7 @@ test('only earlier, uncancelled draw Packages of the same Job count as invoiced'
     pkg(10, '2026-10-10T10:00:00Z', []),
     pkg(8, '2026-10-02T10:00:00Z', [], { status: 'CANCELLED' }),
     pkg(6, '2026-10-02T10:00:00Z', [], { packageType: 'RETENTION_RELEASE' }),
+    pkg(4, '2026-10-02T10:00:00Z', [], { packageType: 'PRICE_ADJUSTMENT' }),
     pkg(5, '2026-10-02T10:00:00Z', [], { jobId: 2 }),
     pkg(12, '2026-10-10T10:00:00Z', []),
   ])

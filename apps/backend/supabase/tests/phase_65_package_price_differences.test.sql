@@ -25,7 +25,7 @@ select ok(
       and cmd = 'SELECT'
       and qual like '%has_app_role%ADMIN%PROJECT_MANAGEMENT%'
   ),
-  'Only administrators and project management can read the differences'
+  'Administrators, project management and accounting can read the differences'
 );
 
 select ok(
@@ -72,7 +72,7 @@ select ok(
 );
 
 select ok(
-  not has_function_privilege('authenticated', 'private.record_package_price_differences(bigint,bigint[])', 'execute')
+  not has_function_privilege('authenticated', 'private.record_package_price_differences(bigint,bigint[],uuid)', 'execute')
   and not has_function_privilege('authenticated', 'private.package_line_new_amounts(valtrim.package_draws)', 'execute')
   and not has_function_privilege('authenticated', 'private.package_hardware_line_new_amounts(valtrim.package_hardware_lines)', 'execute')
   and not has_function_privilege('authenticated', 'private.event_allocation(numeric,text,numeric,numeric,numeric)', 'execute')
@@ -121,9 +121,9 @@ select ok(
 );
 
 select ok(
-  pg_get_functiondef('private.record_package_price_differences(bigint,bigint[])'::regprocedure)
+  pg_get_functiondef('private.record_package_price_differences(bigint,bigint[],uuid)'::regprocedure)
     like '%delete from valtrim.package_price_differences%'
-  and pg_get_functiondef('private.record_package_price_differences(bigint,bigint[])'::regprocedure)
+  and pg_get_functiondef('private.record_package_price_differences(bigint,bigint[],uuid)'::regprocedure)
     like '%status = ''PENDING''%',
   'A new calculation replaces what was pending instead of adding to it'
 );

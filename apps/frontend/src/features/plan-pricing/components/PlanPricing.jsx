@@ -62,6 +62,7 @@ import {
   getJobUnitCount,
 } from '../../jobs/data/jobs.js'
 import { useJobs } from '../../jobs/context/useJobs.js'
+import { useDrawInvoicePackages } from '../../draw-invoice/context/useDrawInvoicePackages.js'
 import { resolveJobContacts } from '../../jobs/utils/jobAssignments.js'
 import { JobContactsGrid } from '../../jobs/components/JobContacts.jsx'
 import {
@@ -1122,6 +1123,7 @@ export default function PlanPricing() {
     saveJobPlanPrice,
     savePlanOptionPrice,
   } = useJobs()
+  const { refreshDrawInvoicePackages } = useDrawInvoicePackages()
   const { builderDrawSchedules } = useBuilderDrawSchedules()
   const { people } = usePeople()
   const { contacts: builderContacts } = useBuilderContacts()
@@ -1169,6 +1171,8 @@ export default function PlanPricing() {
 
   const closeDifferences = () => {
     setDifferencesOpen(false)
+    // An adjustment may have collected differences: the badge must not keep showing them.
+    setDifferenceRefresh((count) => count + 1)
     if (searchParams.has('differences')) {
       const next = new URLSearchParams(searchParams)
       next.delete('differences')
@@ -1529,7 +1533,13 @@ export default function PlanPricing() {
           filter={phasePriceDialog}
           onClose={() => setPhasePriceDialog(null)}
           onApplied={async (result) => {
-            await refreshJobs().catch(() => {})
+            // The Phases (their prices) and the Packages (their amounts, totals and
+            // status) changed: reload both so no screen shows the old numbers until
+            // the user refreshes the page.
+            await Promise.all([
+              refreshJobs().catch(() => {}),
+              refreshDrawInvoicePackages().catch(() => {}),
+            ])
             setDifferenceRefresh((count) => count + 1)
             const recalculated = result.packages ?? []
             const owed = result.differences ?? []

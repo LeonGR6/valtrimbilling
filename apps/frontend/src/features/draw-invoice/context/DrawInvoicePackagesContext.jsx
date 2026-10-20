@@ -3,6 +3,7 @@ import { useAuth } from '../../auth/context/useAuth.js'
 import {
   cancelDrawInvoicePackage as cancelDrawInvoicePackageRecord,
   createDrawInvoicePackage as createDrawInvoicePackageRecord,
+  createPriceAdjustmentPackage as createPriceAdjustmentPackageRecord,
   createRetentionReleasePackage as createRetentionReleasePackageRecord,
   editDrawInvoicePackage as editDrawInvoicePackageRecord,
   listDrawInvoicePackages,
@@ -87,6 +88,21 @@ export function DrawInvoicePackagesProvider({ children }) {
     }
   }, [])
 
+  const createPriceAdjustmentPackage = useCallback(async (input) => {
+    setSaving(true)
+    try {
+      const { created, packages } = await createPriceAdjustmentPackageRecord(input)
+      setDrawInvoicePackages(packages)
+      setError(null)
+      return created
+    } catch (saveError) {
+      setError(saveError.message)
+      throw saveError
+    } finally {
+      setSaving(false)
+    }
+  }, [])
+
   const updateDrawInvoicePackageStatus = useCallback(async (
     packageId,
     status,
@@ -148,6 +164,7 @@ export function DrawInvoicePackagesProvider({ children }) {
       refreshDrawInvoicePackages,
       createDrawInvoicePackage,
       createRetentionReleasePackage,
+      createPriceAdjustmentPackage,
       updateDrawInvoicePackageStatus,
       editDrawInvoicePackage,
       transferDrawPackageCells,
@@ -157,6 +174,7 @@ export function DrawInvoicePackagesProvider({ children }) {
       canManageDrawInvoicePackages,
       createDrawInvoicePackage,
       createRetentionReleasePackage,
+      createPriceAdjustmentPackage,
       editDrawInvoicePackage,
       drawInvoicePackages,
       error,

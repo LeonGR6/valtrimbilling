@@ -299,8 +299,8 @@ export default function PriceDifferencesDialog({ job, onClose }) {
                   ) : (
                     <Alert severity="info">
                       Retention and WRAP are deducted like in any Package. The Retention Release will
-                      include what is retained here. The Package is created as a Draft and is not sent to
-                      QuickBooks from here.
+                      include what is retained here. The Package is created as a Draft; send it to
+                      QuickBooks from the Package.
                     </Alert>
                   )}
                   <TextField

@@ -23,6 +23,8 @@ export function parseRecipients(value: unknown) {
 
 export interface PackageSubmissionContext {
   packageNumber: string;
+  /** DRAW (default), RETENTION_RELEASE or PRICE_ADJUSTMENT: only names the document. */
+  packageType?: string | null;
   /** The serial invoice number (15001...), once the Package has an invoice. */
   invoiceNumber?: string | null;
   jobCode: string;
@@ -50,9 +52,14 @@ function escapeHtml(value: string) {
 // What the email calls the document: the invoice by its number, or the Package
 // by its own number while it has no invoice yet.
 function documentName(context: PackageSubmissionContext) {
-  return context.invoiceNumber
-    ? `Invoice ${context.invoiceNumber}`
-    : `Draw Package ${context.packageNumber}`;
+  if (context.invoiceNumber) return `Invoice ${context.invoiceNumber}`;
+  if (context.packageType === "PRICE_ADJUSTMENT") {
+    return `Price Adjustment ${context.packageNumber}`;
+  }
+  if (context.packageType === "RETENTION_RELEASE") {
+    return `Retention Release ${context.packageNumber}`;
+  }
+  return `Draw Package ${context.packageNumber}`;
 }
 
 export function defaultSubmissionSubject(context: PackageSubmissionContext) {

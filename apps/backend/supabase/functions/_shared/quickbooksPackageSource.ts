@@ -42,7 +42,9 @@ export async function loadPackageSource(admin: Admin, packageId: number): Promis
   )
   if (!header) throw new PackageNotFoundError()
 
-  const [draws, hardwareLines, invoice, builder, job, setup] = await Promise.all([
+  const isAdjustment = header.package_type === 'PRICE_ADJUSTMENT'
+
+  const [draws, hardwareLines, adjustmentLines, invoice, builder, job, setup] = await Promise.all([
     admin
       .from('package_draws')
       .select(
@@ -58,6 +60,16 @@ export async function loadPackageSource(admin: Admin, packageId: number): Promis
       )
       .eq('package_id', packageId)
       .order('id'),
+    // Only a Price Adjustment Package has difference lines.
+    isAdjustment
+      ? admin
+        .from('price_adjustment_lines')
+        .select(
+          'lot_id, source_package_number, line_kind, lot_number, phase_code, building, draw_number, hardware_event_type, gross, retention, wrap',
+        )
+        .eq('package_id', packageId)
+        .order('id')
+      : Promise.resolve({ data: [], error: null }),
     admin.from('invoices').select('net_amount').eq('package_id', packageId).maybeSingle(),
     admin.from('builders').select('id, name').eq('id', header.builder_id).single(),
     admin.from('jobs').select('code, community').eq('id', header.job_id).single(),
@@ -74,6 +86,17 @@ export async function loadPackageSource(admin: Admin, packageId: number): Promis
   if (!jobRow) throw new Error('The Package Job no longer exists.')
   const setupRow = orThrow(setup)
 
+  // A Utility row is named, not numbered, on the invoice; the adjustment line only
+  // keeps the lot id, so the name is read from the Lot.
+  const adjustmentRows = orThrow(adjustmentLines) ?? []
+  const lotIds = [...new Set(adjustmentRows.map((row) => row.lot_id))]
+  const lots = lotIds.length === 0
+    ? []
+    : orThrow(
+      await admin.from('lots').select('id, is_utility_building, utility_name').in('id', lotIds),
+    ) ?? []
+  const lotsById = new Map(lots.map((lot) => [lot.id, lot]))
+
   return {
     packageId,
     packageNumber: header.package_number,
@@ -85,6 +108,11 @@ export async function loadPackageSource(admin: Admin, packageId: number): Promis
       package: header,
       draws: orThrow(draws) ?? [],
       hardwareLines: orThrow(hardwareLines) ?? [],
+      adjustmentLines: adjustmentRows.map(({ lot_id: lotId, ...row }) => ({
+        ...row,
+        is_utility_building: Boolean(lotsById.get(lotId)?.is_utility_building),
+        utility_name: lotsById.get(lotId)?.utility_name ?? null,
+      })),
       invoice: orThrow(invoice),
     },
   }

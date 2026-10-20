@@ -110,12 +110,12 @@ export function quickbooksOAuthReturnMessage(reason) {
 }
 
 /**
- * Only a Draw Package is invoiced through QuickBooks. A Retention Release and a
- * Price Adjustment are not (yet): the Edge Functions refuse them, so the app does
- * not offer to send or void them. A record without a type is a Draw.
+ * A Draw Package and a Price Adjustment are invoiced through QuickBooks. A
+ * Retention Release is not (yet): the Edge Functions refuse it, so the app does
+ * not offer to send or void it. A record without a type is a Draw.
  */
 export function isInvoicedThroughQuickbooks(record) {
-  return (record?.packageType ?? 'DRAW') === 'DRAW'
+  return ['DRAW', 'PRICE_ADJUSTMENT'].includes(record?.packageType ?? 'DRAW')
 }
 
 // ADMIN and ACCOUNTING may create QuickBooks invoices; the Edge Function

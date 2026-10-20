@@ -884,7 +884,12 @@ test('a Price Adjustment is never edited or moved, and says why', () => {
 
   assert.equal(canManageDraftDrawPackage(record), false)
   assert.equal(canCorrectDrawPackage(record), false)
+  // Only once QuickBooks voided its invoice can it be deleted; it is never edited.
   assert.equal(canDeleteVoidedQuickbooksPackage(record), false)
+  assert.equal(
+    canDeleteVoidedQuickbooksPackage({ ...record, quickbooksStatus: 'VOIDED', status: 'DRAFT' }),
+    true,
+  )
   assert.match(draftLockReason(record), /Price Adjustment cannot be edited/)
 })
 

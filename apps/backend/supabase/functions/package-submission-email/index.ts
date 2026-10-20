@@ -74,7 +74,7 @@ async function authorizeUser(req: Request) {
 async function loadPackage(caller: ReturnType<typeof userClient>, packageId: string) {
   const { data: record, error } = await caller
     .from('draw_packages')
-    .select('id, package_number, status, job_id, builder_id, setup_version_id, quickbooks_status, quickbooks_reference')
+    .select('id, package_number, package_type, status, job_id, builder_id, setup_version_id, quickbooks_status, quickbooks_reference')
     .eq('id', packageId)
     .maybeSingle()
   if (error) throw error
@@ -103,6 +103,7 @@ async function loadPackage(caller: ReturnType<typeof userClient>, packageId: str
 
   const context: PackageSubmissionContext = {
     packageNumber: String(record.package_number),
+    packageType: String(record.package_type ?? 'DRAW'),
     // The invoice number the Builder knows it by: the saved one, else QuickBooks'.
     invoiceNumber: invoice.data?.invoice_number
       ?? (record.quickbooks_status === 'CREATED' ? record.quickbooks_reference : null)

@@ -545,7 +545,8 @@ export default function DrawPackageDetail() {
               <Alert severity="info">
                 This Package invoices price differences of Packages that could not change. Retention
                 and WRAP are deducted like in any Package, and the Retention Release includes what was
-                retained here. It is not sent to QuickBooks from this Package yet.
+                retained here. It is sent to QuickBooks from the QuickBooks card, like any other
+                Package.
               </Alert>
             )}
 

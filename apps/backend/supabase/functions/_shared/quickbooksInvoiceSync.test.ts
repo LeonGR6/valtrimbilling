@@ -370,3 +370,69 @@ Deno.test('a preview shows the number the invoice would get and takes none', asy
   assertEquals(result.dryRun && result.invoice.DocNumber, '15002')
   assertEquals(calls.includes('claim'), false)
 })
+
+Deno.test('a Price Adjustment is previewed and sent like any other Package', async () => {
+  const adjustment: LoadedPackage = {
+    ...loaded({ package_type: 'PRICE_ADJUSTMENT' }),
+    packageId: 301,
+    packageNumber: 'PA-00000301',
+    source: {
+      package: { package_type: 'PRICE_ADJUSTMENT', status: 'DRAFT', invoice_line_format: 'LOT_SCOPE' },
+      draws: [],
+      hardwareLines: [],
+      adjustmentLines: [
+        {
+          source_package_number: 'DP-00000035',
+          line_kind: 'DRAW',
+          lot_number: '12',
+          phase_code: '1',
+          building: '1',
+          draw_number: 2,
+          hardware_event_type: null,
+          gross: '400.00',
+          retention: '20.00',
+          wrap: '8.00',
+        },
+      ],
+      invoice: { net_amount: '372.00' },
+    },
+  }
+
+  const preview = await run(harness({}, adjustment).deps, true)
+  assertEquals(preview.dryRun, true)
+  if (!preview.dryRun) return
+  assertEquals(preview.invoice.PrivateNote, 'ValtrimBilling PA-00000301')
+  assertEquals(preview.invoice.Line.map((row) => [row.Description, row.Amount]), [
+    ['PHASE 1 LOT #12\nPRICE ADJUSTMENT DP-00000035 · DRAW 2', 400],
+    ['RETENTION', -20],
+    ['WRAP', -8],
+  ])
+
+  const { deps, calls, sent } = harness({}, adjustment)
+  const result = await run(deps)
+
+  assertEquals(calls.includes('claim'), true)
+  assertEquals(calls.includes('createInvoice'), true)
+  assertEquals(calls.at(-1), 'saveInvoicePdf')
+  assertEquals(sent.length, 1)
+  assertEquals(result.dryRun, false)
+})
+
+Deno.test('an adjustment whose lines do not match its invoice never reaches QuickBooks', async () => {
+  const broken: LoadedPackage = {
+    ...loaded({ package_type: 'PRICE_ADJUSTMENT' }),
+    source: {
+      package: { package_type: 'PRICE_ADJUSTMENT', status: 'DRAFT', invoice_line_format: 'LOT_SCOPE' },
+      draws: [],
+      hardwareLines: [],
+      adjustmentLines: [],
+      invoice: { net_amount: '372.00' },
+    },
+  }
+  const { deps, calls } = harness({}, broken)
+
+  const error = await assertRejects(() => run(deps), QuickbooksInvoiceError)
+
+  assertEquals(error.code, 'INVALID_INPUT')
+  assertEquals(calls, [])
+})

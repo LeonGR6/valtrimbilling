@@ -481,16 +481,27 @@ test('maps the saved QuickBooks PDF of a Package', () => {
   )
 })
 
-test('a Price Adjustment is not sent, shown or voided in QuickBooks yet', () => {
+test('a Price Adjustment is sent, shown and voided in QuickBooks like a Draw; a Retention Release is not', () => {
   const adjustment = { ...draftPackage, packageType: 'PRICE_ADJUSTMENT' }
+  const release = { ...draftPackage, packageType: 'RETENTION_RELEASE' }
 
-  assert.equal(isInvoicedThroughQuickbooks(adjustment), false)
-  assert.equal(isInvoicedThroughQuickbooks({ packageType: 'RETENTION_RELEASE' }), false)
+  assert.equal(isInvoicedThroughQuickbooks(adjustment), true)
+  assert.equal(isInvoicedThroughQuickbooks(release), false)
   assert.equal(isInvoicedThroughQuickbooks(draftPackage), true)
   // A record with no type is a Draw, as every record before the types existed.
   assert.equal(isInvoicedThroughQuickbooks({ status: 'DRAFT' }), true)
-  assert.equal(canCreateQuickbooksInvoice(adjustment, 'ADMIN'), false)
-  assert.equal(canVoidQuickbooksInvoice({ ...adjustment, quickbooksStatus: 'CREATED' }, 'ADMIN'), false)
-  assert.equal(quickbooksPackageStatusView({ record: adjustment, sync: null, canSend: true }), null)
-  assert.equal(quickbooksTableStatusView(adjustment), null)
+
+  assert.equal(canCreateQuickbooksInvoice(adjustment, 'ADMIN'), true)
+  assert.equal(canCreateQuickbooksInvoice(adjustment, 'ACCOUNTING'), true)
+  assert.equal(canCreateQuickbooksInvoice(adjustment, 'PROJECT_MANAGEMENT'), false)
+  assert.equal(canCreateQuickbooksInvoice({ ...adjustment, quickbooksStatus: 'CREATED' }, 'ADMIN'), false)
+  assert.equal(canCreateQuickbooksInvoice(release, 'ADMIN'), false)
+
+  const invoiced = { ...adjustment, quickbooksStatus: 'CREATED', status: 'AWAITING_PAYMENT' }
+  assert.equal(canVoidQuickbooksInvoice(invoiced, 'ADMIN'), true)
+  assert.equal(canVoidQuickbooksInvoice({ ...release, quickbooksStatus: 'CREATED' }, 'ADMIN'), false)
+  assert.notEqual(quickbooksPackageStatusView({ record: adjustment, sync: null, canSend: true }), null)
+  assert.equal(quickbooksPackageStatusView({ record: release, sync: null, canSend: true }), null)
+  assert.notEqual(quickbooksTableStatusView(adjustment), null)
+  assert.equal(quickbooksTableStatusView(release), null)
 })

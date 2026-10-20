@@ -1,8 +1,8 @@
-// Maps the database rows of a Draw Package to the normalised charges consumed
-// by `buildQuickbooksInvoicePayload`.
+// Maps the database rows of a Draw Package, or of a Price Adjustment Package, to
+// the normalised charges consumed by `buildQuickbooksInvoicePayload`.
 //
-// Pure: callers fetch the rows (package_draws, package_hardware_lines, invoice)
-// and pass them in. PostgREST returns `numeric` columns as numbers, but SQL
+// Pure: callers fetch the rows (package_draws, package_hardware_lines,
+// price_adjustment_lines, invoice) and pass them in. PostgREST returns `numeric` columns as numbers, but SQL
 // clients may return strings, so amounts are accepted as either.
 
 import {
@@ -46,6 +46,23 @@ export interface PackageHardwareLineRow {
   wrap_amount: Numeric
 }
 
+/** One price difference collected by a Price Adjustment Package. Amounts are signed. */
+export interface PackageAdjustmentLineRow {
+  /** The Package that billed the difference, e.g. DP-00000035. */
+  source_package_number: string
+  line_kind: string
+  lot_number: string
+  is_utility_building?: boolean
+  utility_name?: string | null
+  phase_code: string
+  building: string | null
+  draw_number: number | null
+  hardware_event_type: string | null
+  gross: Numeric
+  retention: Numeric
+  wrap: Numeric
+}
+
 export interface PackageInvoiceRow {
   net_amount: Numeric
 }
@@ -54,6 +71,8 @@ export interface PackageInvoiceSource {
   package: PackageHeaderRow
   draws: PackageDrawRow[]
   hardwareLines: PackageHardwareLineRow[]
+  /** Only a Price Adjustment Package has them. */
+  adjustmentLines?: PackageAdjustmentLineRow[]
   invoice: PackageInvoiceRow | null
 }
 
@@ -80,8 +99,10 @@ function eventScope(base: string, eventType: string | null) {
 
 export function mapPackageToCharges(source: PackageInvoiceSource): PackageInvoiceCharges {
   const { package: header, draws, hardwareLines, invoice } = source
+  const adjustmentLines = source.adjustmentLines ?? []
 
-  if (header.package_type !== 'DRAW') {
+  // A Retention Release is not sent to QuickBooks yet.
+  if (header.package_type !== 'DRAW' && header.package_type !== 'PRICE_ADJUSTMENT') {
     throw new QuickbooksInvoiceError(
       'UNSUPPORTED_PACKAGE',
       `${header.package_type} packages cannot be sent to QuickBooks yet.`,
@@ -103,6 +124,68 @@ export function mapPackageToCharges(source: PackageInvoiceSource): PackageInvoic
   const charges: PackageCharge[] = []
   let retentionCents = 0
   let wrapCents = 0
+
+  if (header.package_type === 'PRICE_ADJUSTMENT') {
+    if (adjustmentLines.length === 0) {
+      throw new QuickbooksInvoiceError(
+        'INVALID_INPUT',
+        'The Price Adjustment has no difference lines.',
+      )
+    }
+    if (draws.length > 0 || hardwareLines.length > 0) {
+      throw new QuickbooksInvoiceError(
+        'INVALID_INPUT',
+        'A Price Adjustment cannot have Draw or Hardware lines.',
+      )
+    }
+
+    for (const row of adjustmentLines) {
+      retentionCents += cents(row.retention, 'retention')
+      wrapCents += cents(row.wrap, 'wrap')
+
+      const place = { phaseCode: row.phase_code, building: row.building }
+      const where = row.line_kind === 'HARDWARE_EVENT'
+        ? `HARDWARE${row.hardware_event_type ? ` ${row.hardware_event_type}` : ''}`
+        : `DRAW ${row.draw_number}`
+      const scopeLabel = `PRICE ADJUSTMENT ${row.source_package_number} · ${where}`
+
+      if (row.is_utility_building) {
+        const label = row.utility_name?.trim()
+        if (!label) {
+          throw new QuickbooksInvoiceError(
+            'INVALID_INPUT',
+            `Utility row ${row.lot_number} has no utility name.`,
+          )
+        }
+        charges.push({ ...place, lotNumber: label, kind: 'UTILITY', scopeLabel, amount: Number(row.gross) })
+        continue
+      }
+      charges.push({
+        ...place,
+        lotNumber: row.lot_number,
+        kind: 'PRICE_ADJUSTMENT',
+        scopeLabel,
+        amount: Number(row.gross),
+      })
+    }
+
+    // The invoice shows Retention and WRAP as negative lines, so each must add up
+    // to a positive amount: credits only ever reduce what the charges retained.
+    if (retentionCents < 0 || wrapCents < 0) {
+      throw new QuickbooksInvoiceError(
+        'INVALID_INPUT',
+        'The Price Adjustment retention or WRAP adds up to a negative amount.',
+      )
+    }
+
+    return {
+      invoiceLineFormat: header.invoice_line_format,
+      charges,
+      retentionAmount: retentionCents / 100,
+      wrapAmount: wrapCents / 100,
+      expectedNetAmount: cents(invoice.net_amount, 'net_amount') / 100,
+    }
+  }
 
   for (const row of draws) {
     retentionCents += cents(row.retention_amount, 'retention_amount')

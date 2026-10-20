@@ -25,6 +25,8 @@ export function canDeleteDraftPackage(record) {
   if (record.packageType === 'DRAW') {
     return canManageDraftDrawPackage(record) || canDeleteVoidedQuickbooksPackage(record)
   }
+  // An adjustment whose QuickBooks invoice was voided can be cancelled like a Draw.
+  if (canDeleteVoidedQuickbooksPackage(record)) return true
   return record.persistedInvoice?.status === 'DRAFT'
     && !record.invoiceNumber
     && !record.invoiceDate

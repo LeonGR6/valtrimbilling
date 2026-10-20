@@ -81,3 +81,19 @@ Deno.test("recipients are cleaned, limited and checked", () => {
     parseRecipients(Array.from({ length: 11 }, (_, index) => `a${index}@builder.com`))
   );
 });
+
+Deno.test("a Price Adjustment without an invoice number is named as one, and by invoice once it has it", () => {
+  const adjustment = { ...context, packageNumber: "PA-00000301", packageType: "PRICE_ADJUSTMENT" };
+
+  assertEquals(
+    defaultSubmissionSubject(adjustment),
+    "Price Adjustment PA-00000301 · Job #1319 · El Monte",
+  );
+  assertEquals(
+    defaultSubmissionSubject({ ...adjustment, invoiceNumber: "15042" }),
+    "Invoice 15042 · Job #1319 · El Monte",
+  );
+  // A Draw Package, and a record with no type, keep the original wording.
+  assertEquals(defaultSubmissionSubject({ ...context, packageType: "DRAW" }).startsWith("Draw Package"), true);
+  assertEquals(defaultSubmissionSubject(context).startsWith("Draw Package"), true);
+});

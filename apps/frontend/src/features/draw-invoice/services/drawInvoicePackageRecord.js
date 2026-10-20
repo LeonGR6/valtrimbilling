@@ -574,7 +574,7 @@ export function canManageDraftDrawPackage(record) {
  */
 export function canDeleteVoidedQuickbooksPackage(record) {
   return record != null
-    && record.packageType === 'DRAW'
+    && ['DRAW', 'PRICE_ADJUSTMENT'].includes(record.packageType)
     && record.status === 'DRAFT'
     && record.quickbooksStatus === 'VOIDED'
     && record.persistedInvoice?.status === 'DRAFT'

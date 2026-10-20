@@ -227,3 +227,12 @@ test('a Price Adjustment is dated by its creation and found by "price adjustment
   ], { search: 'price adjustment' })
   assert.deepEqual(found.map(({ record }) => record.id), [301])
 })
+
+test('an adjustment whose QuickBooks invoice was voided can still be cancelled', () => {
+  const voided = { ...draftAdjustment, quickbooksStatus: 'VOIDED' }
+
+  assert.equal(canDeleteDraftPackage(voided), true)
+  // One with a live QuickBooks invoice, or a reference, cannot.
+  assert.equal(canDeleteDraftPackage({ ...draftAdjustment, quickbooksStatus: 'CREATED' }), false)
+  assert.equal(canDeleteDraftPackage({ ...draftAdjustment, quickbooksReference: '15042' }), false)
+})

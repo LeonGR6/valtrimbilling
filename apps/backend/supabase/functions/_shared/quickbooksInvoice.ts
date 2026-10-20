@@ -5,13 +5,15 @@
 // same Product/Service (Material Installation & Supply), Qty 1 and Rate equal to
 // Amount. Draw/Options/Hardware/Utility lines carry the GROSS amount; Retention
 // and Wrap are separate negative lines so the invoice total equals the Package
-// net amount.
+// net amount. A Price Adjustment Package has PRICE_ADJUSTMENT lines instead: the
+// gross price difference of the Package it comes from, which may be negative (a
+// credit that the other lines of the same invoice outweigh).
 
 import type { InvoiceCustomField } from './quickbooksCustomFields.ts'
 
 export type InvoiceLineFormat = 'LOT_SCOPE' | 'BUILDING_SCOPE'
 
-export type PackageChargeKind = 'DRAW' | 'HARDWARE' | 'OPTIONS' | 'UTILITY'
+export type PackageChargeKind = 'DRAW' | 'HARDWARE' | 'OPTIONS' | 'UTILITY' | 'PRICE_ADJUSTMENT'
 
 export interface PackageCharge {
   phaseCode: string
@@ -23,7 +25,7 @@ export interface PackageCharge {
   drawNumber?: number
   /** Overrides the default scope text (e.g. a utility or hardware event). */
   scopeLabel?: string
-  /** Gross amount in dollars. */
+  /** Gross amount in dollars. Negative only for a credit in a Price Adjustment. */
   amount: number
 }
 
@@ -101,6 +103,7 @@ const KIND_RANK: Record<PackageChargeKind, number> = {
   HARDWARE: 1,
   OPTIONS: 2,
   UTILITY: 3,
+  PRICE_ADJUSTMENT: 4,
 }
 
 const naturalCompare = (left: string, right: string) =>
@@ -167,7 +170,7 @@ function scopeText(charge: PackageCharge) {
     }
     return `DRAW ${charge.drawNumber}`
   }
-  return charge.kind
+  return charge.kind.replaceAll('_', ' ')
 }
 
 interface LineGroup {
@@ -215,7 +218,8 @@ function groupCharges(charges: PackageCharge[], format: InvoiceLineFormat) {
     groups.set(key, group)
   }
 
-  return [...groups.values()].sort(
+  // A group whose charges cancel out has nothing to invoice.
+  return [...groups.values()].filter((group) => group.cents !== 0).sort(
     (left, right) =>
       naturalCompare(left.phaseCode, right.phaseCode)
       || Number(left.kind === 'UTILITY') - Number(right.kind === 'UTILITY')

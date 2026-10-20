@@ -319,3 +319,37 @@ Deno.test('Options and credits of the same scope are added into one line', () =>
 
   assertEquals(payload.Line.map((item) => item.Amount), [1000, 179.5])
 })
+
+Deno.test('a Price Adjustment charge reads "PRICE ADJUSTMENT" and goes after the other kinds', () => {
+  const payload = buildQuickbooksInvoicePayload({
+    ...base,
+    charges: [
+      { phaseCode: '1', lotNumber: '12', kind: 'PRICE_ADJUSTMENT', amount: 30 },
+      draw('12', 100),
+    ],
+    expectedNetAmount: 130,
+  })
+
+  assertEquals(payload.Line.map((row) => row.Description), [
+    'PHASE 1 LOT #12\nDRAW 3',
+    'PHASE 1 LOT #12\nPRICE ADJUSTMENT',
+  ])
+})
+
+Deno.test('a negative charge is allowed and a group that cancels out is dropped', () => {
+  const payload = buildQuickbooksInvoicePayload({
+    ...base,
+    charges: [
+      { phaseCode: '1', lotNumber: '12', kind: 'PRICE_ADJUSTMENT', scopeLabel: 'PRICE ADJUSTMENT DP-1 · DRAW 2', amount: 100 },
+      { phaseCode: '1', lotNumber: '13', kind: 'PRICE_ADJUSTMENT', scopeLabel: 'PRICE ADJUSTMENT DP-1 · DRAW 2', amount: -100 },
+      { phaseCode: '1', lotNumber: '14', kind: 'PRICE_ADJUSTMENT', scopeLabel: 'PRICE ADJUSTMENT DP-1 · DRAW 3', amount: -40 },
+      { phaseCode: '1', lotNumber: '15', kind: 'PRICE_ADJUSTMENT', scopeLabel: 'PRICE ADJUSTMENT DP-1 · DRAW 4', amount: 90 },
+    ],
+    expectedNetAmount: 50,
+  })
+
+  assertEquals(payload.Line.map((row) => [row.Description, row.Amount]), [
+    ['PHASE 1 LOT #14\nPRICE ADJUSTMENT DP-1 · DRAW 3', -40],
+    ['PHASE 1 LOT #15\nPRICE ADJUSTMENT DP-1 · DRAW 4', 90],
+  ])
+})

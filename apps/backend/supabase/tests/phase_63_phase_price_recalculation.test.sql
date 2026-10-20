@@ -74,7 +74,7 @@ select ok(
   )
   and has_function_privilege(
     'authenticated',
-    'valtrim.apply_phase_price_changes(bigint,bigint[],jsonb,text)',
+    'valtrim.apply_phase_price_changes(bigint,bigint[],jsonb,text,boolean)',
     'execute'
   ),
   'Authenticated users can call the role-checked Phase price RPCs'
@@ -88,7 +88,7 @@ select ok(
   )
   and not has_function_privilege(
     'anon',
-    'valtrim.apply_phase_price_changes(bigint,bigint[],jsonb,text)',
+    'valtrim.apply_phase_price_changes(bigint,bigint[],jsonb,text,boolean)',
     'execute'
   ),
   'Anonymous clients cannot call the Phase price RPCs'
@@ -97,7 +97,7 @@ select ok(
 select ok(
   (
     select prosecdef from pg_proc
-    where oid = 'valtrim.apply_phase_price_changes(bigint,bigint[],jsonb,text)'::regprocedure
+    where oid = 'valtrim.apply_phase_price_changes(bigint,bigint[],jsonb,text,boolean)'::regprocedure
   )
   and (
     select prosecdef from pg_proc
@@ -107,7 +107,7 @@ select ok(
 );
 
 select ok(
-  pg_get_functiondef('valtrim.apply_phase_price_changes(bigint,bigint[],jsonb,text)'::regprocedure)
+  pg_get_functiondef('valtrim.apply_phase_price_changes(bigint,bigint[],jsonb,text,boolean)'::regprocedure)
     like '%has_app_role(''ADMIN'', ''PROJECT_MANAGEMENT'')%'
   and pg_get_functiondef('valtrim.preview_phase_price_changes(bigint,bigint,bigint,text)'::regprocedure)
     like '%has_app_role(''ADMIN'', ''PROJECT_MANAGEMENT'')%',
@@ -115,17 +115,17 @@ select ok(
 );
 
 select ok(
-  pg_get_functiondef('valtrim.apply_phase_price_changes(bigint,bigint[],jsonb,text)'::regprocedure)
-    like '%not exists (select 1 from valtrim.package_draws line where line.lot_id = lot.id)%'
-  and pg_get_functiondef('valtrim.apply_phase_price_changes(bigint,bigint[],jsonb,text)'::regprocedure)
+  pg_get_functiondef('valtrim.apply_phase_price_changes(bigint,bigint[],jsonb,text,boolean)'::regprocedure)
+    like '%not private.draw_package_can_be_recalculated(billed.package_id)%'
+  and pg_get_functiondef('valtrim.apply_phase_price_changes(bigint,bigint[],jsonb,text,boolean)'::regprocedure)
     like '%from valtrim.package_options billed%',
-  'A Lot or Option already billed in a Package is never moved'
+  'A Lot or Option billed in a Package that cannot be recalculated is never moved'
 );
 
 select ok(
-  pg_get_functiondef('valtrim.apply_phase_price_changes(bigint,bigint[],jsonb,text)'::regprocedure)
+  pg_get_functiondef('valtrim.apply_phase_price_changes(bigint,bigint[],jsonb,text,boolean)'::regprocedure)
     like '%for update%'
-  and pg_get_functiondef('valtrim.apply_phase_price_changes(bigint,bigint[],jsonb,text)'::regprocedure)
+  and pg_get_functiondef('valtrim.apply_phase_price_changes(bigint,bigint[],jsonb,text,boolean)'::regprocedure)
     like '%Prices or Packages changed since this list was loaded%',
   'An update locks the Job and changes nothing when the list is out of date'
 );

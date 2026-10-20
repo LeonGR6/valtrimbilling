@@ -4,6 +4,7 @@ import { TableCardHeader } from '../shared/PackageUi.jsx'
 const ACTION_LABELS = {
   EDIT: 'Edited',
   CANCEL: 'Cancelled',
+  RECALCULATE: 'Prices updated',
 }
 
 function describeCorrection(correction, packageId) {

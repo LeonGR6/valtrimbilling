@@ -1,10 +1,21 @@
 // Updating the price of Phases that already exist. A Phase keeps the price it was
 // created with; these helpers turn what the server reports into the list an
 // administrator picks from, and the picked list into what the server is asked to
-// change. Only what no Package has billed can move; the server enforces it too.
+// change. What a Draft Package bills can change too (the Package is calculated
+// again); what a Package with a QuickBooks invoice, sent or paid bills cannot. The
+// server enforces the same rules.
 
 function money(value) {
   return value == null ? null : Number(value)
+}
+
+function toPackages(packages = []) {
+  return packages.map((item) => ({
+    packageId: Number(item.package_id),
+    packageNumber: item.package_number,
+    recalculable: Boolean(item.recalculable),
+    hasDocuments: Boolean(item.has_documents),
+  }))
 }
 
 function toPlanChange(change) {
@@ -17,6 +28,9 @@ function toPlanChange(change) {
 
   return {
     billed: Boolean(change.billed),
+    // Billed in a Package that cannot be recalculated: it never changes here.
+    locked: Boolean(change.locked),
+    packages: toPackages(change.packages),
     fromBase,
     toBase,
     fromHardware,
@@ -32,6 +46,8 @@ function toOptionChange(change) {
     code: change.code,
     description: change.description ?? '',
     billed: Boolean(change.billed),
+    locked: Boolean(change.locked),
+    packages: toPackages(change.packages),
     fromPrice: money(change.from_price),
     fromNotApplicable: Boolean(change.from_na),
     toPrice: money(change.to_price),
@@ -66,27 +82,48 @@ export function toPhasePriceChanges(rows = []) {
 
 /**
  * What picking a Phase would change for the chosen components: the Lots whose
- * Plan price moves and the Options whose price moves. Billed ones are left out.
+ * Plan price moves and the Options whose price moves. Anything billed in a
+ * Package that cannot be recalculated is left out and counted as blocked. What
+ * is billed in a Draft Package is offered: that Package is recalculated.
  */
 export function phaseEligibleChanges(phase, { includePlan = true, includeOptions = true } = {}) {
   const lots = []
   const options = []
+  const packages = new Map()
   let blocked = 0
+
+  const addPackages = (items) => {
+    items.forEach((item) => packages.set(item.packageId, item))
+  }
 
   phase.lots.forEach((lot) => {
     if (includePlan && lot.plan) {
-      if (lot.plan.billed) blocked += 1
-      else lots.push(lot)
+      if (lot.plan.locked) {
+        blocked += 1
+      } else {
+        lots.push(lot)
+        addPackages(lot.plan.packages)
+      }
     }
     if (includeOptions) {
       lot.options.forEach((option) => {
-        if (option.billed) blocked += 1
-        else options.push({ lot, option })
+        if (option.locked) {
+          blocked += 1
+        } else {
+          options.push({ lot, option })
+          addPackages(option.packages)
+        }
       })
     }
   })
 
-  return { lots, options, blocked, count: lots.length + options.length }
+  return {
+    lots,
+    options,
+    blocked,
+    packages: [...packages.values()],
+    count: lots.length + options.length,
+  }
 }
 
 /** The request for the picked Phases: only what can still change. */
@@ -106,6 +143,20 @@ export function buildPhasePriceRequest(phases, selectedPhaseIds, components) {
   return { lotIds, options }
 }
 
+/** The Draft Packages that picking these Phases would recalculate, each once. */
+export function affectedDraftPackages(phases, selectedPhaseIds, components) {
+  const selected = new Set(selectedPhaseIds)
+  const packages = new Map()
+
+  phases.filter((phase) => selected.has(phase.phaseId)).forEach((phase) => {
+    phaseEligibleChanges(phase, components).packages.forEach((item) => {
+      packages.set(item.packageId, item)
+    })
+  })
+
+  return [...packages.values()].sort((left, right) => left.packageId - right.packageId)
+}
+
 /** Totals for the confirmation line and the button. */
 export function summarizePhasePriceRequest(phases, selectedPhaseIds, components) {
   const { lotIds, options } = buildPhasePriceRequest(phases, selectedPhaseIds, components)
@@ -113,8 +164,15 @@ export function summarizePhasePriceRequest(phases, selectedPhaseIds, components)
   const phaseCount = phases.filter((phase) => (
     selected.has(phase.phaseId) && phaseEligibleChanges(phase, components).count > 0
   )).length
+  const packages = affectedDraftPackages(phases, selectedPhaseIds, components)
 
-  return { phaseCount, lotCount: lotIds.length, optionCount: options.length }
+  return {
+    phaseCount,
+    lotCount: lotIds.length,
+    optionCount: options.length,
+    packageCount: packages.length,
+    packagesWithDocuments: packages.filter((item) => item.hasDocuments).length,
+  }
 }
 
 /** Plan price changes of a Phase grouped by Plan, so equal changes read once. */
@@ -125,7 +183,7 @@ export function groupPlanChanges(phase) {
     if (!lot.plan) return
     const key = [
       lot.planId, lot.plan.fromBase, lot.plan.toBase,
-      lot.plan.fromHardware, lot.plan.toHardware, lot.plan.billed,
+      lot.plan.fromHardware, lot.plan.toHardware, lot.plan.locked,
     ].join('|')
     const group = groups.get(key) ?? { planCode: lot.planCode, ...lot.plan, lotCount: 0 }
     group.lotCount += 1

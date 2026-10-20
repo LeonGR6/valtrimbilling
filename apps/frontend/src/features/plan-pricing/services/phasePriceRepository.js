@@ -1,4 +1,5 @@
 import { requireSupabase } from '../../../services/api.js'
+import { PACKAGE_DOCUMENT_BUCKET } from '../../release-templates/services/packageRelease.js'
 
 function throwRepositoryError(error) {
   if (!error) return
@@ -9,6 +10,12 @@ function throwRepositoryError(error) {
   if (error.code === '40001') {
     throw new Error(
       'Prices or Packages changed since this list was loaded. Reload it and try again.',
+      { cause: error },
+    )
+  }
+  if (error.code === 'P0003') {
+    throw new Error(
+      'A Package has a generated Release or Payment Schedule. Confirm that they can be removed and try again.',
       { cause: error },
     )
   }
@@ -40,16 +47,33 @@ export async function previewPhasePriceChanges(jobId, {
   return data ?? []
 }
 
-/** Moves the chosen Lots and Options to today's price. A reason is required. */
-export async function applyPhasePriceChanges(jobId, { lotIds, options, reason }) {
+/**
+ * Moves the chosen Lots and Options to today's price and calculates again the Draft
+ * Packages that bill them. A reason is required. `removeDocuments` allows removing
+ * the Release / Payment Schedule of those Packages, which no longer match.
+ */
+export async function applyPhasePriceChanges(jobId, {
+  lotIds,
+  options,
+  reason,
+  removeDocuments = false,
+}) {
   const client = await requireSupabase()
   const { data, error } = await client.rpc('apply_phase_price_changes', {
     p_job_id: Number(jobId),
     p_lot_ids: lotIds.map(Number),
     p_options: options,
     p_reason: reason.trim(),
+    p_remove_documents: Boolean(removeDocuments),
   })
 
   throwRepositoryError(error)
+
+  // Storage objects cannot be deleted from SQL: the removed PDFs go here, best effort.
+  const paths = data?.removed_storage_paths ?? []
+  if (paths.length > 0) {
+    await client.storage.from(PACKAGE_DOCUMENT_BUCKET).remove(paths).catch(() => {})
+  }
+
   return data
 }

@@ -1476,9 +1476,22 @@ export default function PlanPricing() {
           onClose={() => setPhasePriceDialog(null)}
           onApplied={async (result) => {
             await refreshJobs().catch(() => {})
+            const recalculated = result.packages ?? []
+            const regenerate = recalculated
+              .filter((item) => item.documents_removed > 0)
+              .map((item) => item.package_number)
             setNotice({
               severity: 'success',
-              message: `Updated ${result.lots} Plan ${result.lots === 1 ? 'price' : 'prices'} and ${result.options} Option ${result.options === 1 ? 'price' : 'prices'} in existing Phases.`,
+              message: [
+                `Updated ${result.lots} Plan ${result.lots === 1 ? 'price' : 'prices'} and ${result.options} Option ${result.options === 1 ? 'price' : 'prices'} in existing Phases.`,
+                recalculated.length > 0
+                  ? `Recalculated ${recalculated.map((item) => item.package_number).join(', ')}.`
+                  : null,
+                regenerate.length > 0
+                  ? `Generate the Release and Payment Schedule again for ${regenerate.join(', ')}.`
+                  : null,
+              ].filter(Boolean).join(' '),
+              persist: regenerate.length > 0,
             })
           }}
         />
@@ -1486,7 +1499,7 @@ export default function PlanPricing() {
 
       <Snackbar
         open={Boolean(notice)}
-        autoHideDuration={3000}
+        autoHideDuration={notice?.persist ? null : 3000}
         onClose={() => setNotice(null)}
         anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
       >

@@ -1,12 +1,26 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
+  affectedDraftPackages,
   buildPhasePriceRequest,
   groupPlanChanges,
   phaseEligibleChanges,
   summarizePhasePriceRequest,
   toPhasePriceChanges,
 } from '../src/features/plan-pricing/utils/phasePriceChanges.js'
+
+const draftPackage = {
+  package_id: 5,
+  package_number: 'DP-00000005',
+  recalculable: true,
+  has_documents: true,
+}
+const issuedPackage = {
+  package_id: 6,
+  package_number: 'DP-00000006',
+  recalculable: false,
+  has_documents: false,
+}
 
 const serverRows = [
   {
@@ -21,8 +35,11 @@ const serverRows = [
         is_utility_building: false,
         plan_id: 3,
         plan_code: 'A',
+        // Billed only in a Draft Package: it can be recalculated.
         plan_change: {
-          billed: false,
+          billed: true,
+          locked: false,
+          packages: [draftPackage],
           from_base: '2000.00',
           to_base: '2500.00',
           from_hardware: null,
@@ -33,6 +50,8 @@ const serverRows = [
           code: 'OPT1',
           description: 'Door',
           billed: false,
+          locked: false,
+          packages: [],
           from_price: '100.00',
           from_na: false,
           to_price: '150.00',
@@ -46,9 +65,11 @@ const serverRows = [
         is_utility_building: false,
         plan_id: 3,
         plan_code: 'A',
-        // Already billed in a Package: it cannot change here.
+        // Billed in a Package with a QuickBooks invoice: it cannot change here.
         plan_change: {
           billed: true,
+          locked: true,
+          packages: [issuedPackage],
           from_base: 2000,
           to_base: 2500,
           from_hardware: null,
@@ -69,6 +90,8 @@ const serverRows = [
           code: 'OPT2',
           description: null,
           billed: true,
+          locked: true,
+          packages: [issuedPackage],
           from_price: 50,
           from_na: false,
           to_price: 0,
@@ -89,7 +112,10 @@ const serverRows = [
       plan_id: 4,
       plan_code: 'B',
       plan_change: {
-        billed: false,
+        billed: true,
+        locked: false,
+        // The same Draft Package also bills this Lot.
+        packages: [draftPackage],
         from_base: 3000,
         to_base: 3000,
         from_hardware: 200,
@@ -109,7 +135,14 @@ test('the server list becomes Phases with money as numbers and readable labels',
   assert.equal(phases[0].lots[0].label, 'Lot 1')
   assert.equal(phases[0].lots[2].label, 'Clubhouse')
   assert.deepEqual(phases[0].lots[0].plan, {
-    billed: false,
+    billed: true,
+    locked: false,
+    packages: [{
+      packageId: 5,
+      packageNumber: 'DP-00000005',
+      recalculable: true,
+      hasDocuments: true,
+    }],
     fromBase: 2000,
     toBase: 2500,
     fromHardware: null,
@@ -125,6 +158,13 @@ test('the server list becomes Phases with money as numbers and readable labels',
     code: 'OPT2',
     description: '',
     billed: true,
+    locked: true,
+    packages: [{
+      packageId: 6,
+      packageNumber: 'DP-00000006',
+      recalculable: false,
+      hasDocuments: false,
+    }],
     fromPrice: 50,
     fromNotApplicable: false,
     toPrice: 0,
@@ -132,7 +172,7 @@ test('the server list becomes Phases with money as numbers and readable labels',
   })
 })
 
-test('billed Lots and Options are never offered, only counted as blocked', () => {
+test('what a Draft Package bills is offered; what an issued Package bills is blocked', () => {
   const [first] = toPhasePriceChanges(serverRows)
 
   const everything = phaseEligibleChanges(first)
@@ -140,6 +180,7 @@ test('billed Lots and Options are never offered, only counted as blocked', () =>
   assert.deepEqual(everything.options.map(({ option }) => option.optionId), [41])
   assert.equal(everything.blocked, 2)
   assert.equal(everything.count, 2)
+  assert.deepEqual(everything.packages.map((item) => item.packageNumber), ['DP-00000005'])
 
   const planOnly = phaseEligibleChanges(first, { includeOptions: false })
   assert.equal(planOnly.options.length, 0)
@@ -148,6 +189,9 @@ test('billed Lots and Options are never offered, only counted as blocked', () =>
   const optionsOnly = phaseEligibleChanges(first, { includePlan: false })
   assert.equal(optionsOnly.lots.length, 0)
   assert.equal(optionsOnly.options.length, 1)
+  // That Option is billed nowhere, so no Package is recalculated for it.
+  assert.equal(optionsOnly.packages.length, 0)
+  assert.equal(optionsOnly.blocked, 1)
 })
 
 test('the request carries only the picked Phases and the chosen components', () => {
@@ -174,17 +218,44 @@ test('the request carries only the picked Phases and the chosen components', () 
   )
 })
 
-test('the summary counts Phases, Lots and Options that would really change', () => {
+test('a Draft Package billing several picked Lots is recalculated once', () => {
+  const phases = toPhasePriceChanges(serverRows)
+  const both = { includePlan: true, includeOptions: true }
+
+  assert.deepEqual(
+    affectedDraftPackages(phases, [21, 22], both).map((item) => item.packageNumber),
+    ['DP-00000005'],
+  )
+  assert.deepEqual(affectedDraftPackages(phases, [], both), [])
+  assert.deepEqual(
+    affectedDraftPackages(phases, [21], { includePlan: false, includeOptions: true }),
+    [],
+  )
+})
+
+test('the summary counts Phases, prices, Draft Packages and the ones with documents', () => {
   const phases = toPhasePriceChanges(serverRows)
 
   assert.deepEqual(
     summarizePhasePriceRequest(phases, [21, 22], { includePlan: true, includeOptions: true }),
-    { phaseCount: 2, lotCount: 2, optionCount: 1 },
+    {
+      phaseCount: 2,
+      lotCount: 2,
+      optionCount: 1,
+      packageCount: 1,
+      packagesWithDocuments: 1,
+    },
   )
   // Phase 22 has nothing to change among Options, so it does not count.
   assert.deepEqual(
     summarizePhasePriceRequest(phases, [21, 22], { includePlan: false, includeOptions: true }),
-    { phaseCount: 1, lotCount: 0, optionCount: 1 },
+    {
+      phaseCount: 1,
+      lotCount: 0,
+      optionCount: 1,
+      packageCount: 0,
+      packagesWithDocuments: 0,
+    },
   )
 })
 
@@ -201,6 +272,8 @@ test('equal Plan price changes of a Phase read once with how many Lots they cove
       plan_code: 'A',
       plan_change: {
         billed: number === 3,
+        locked: number === 3,
+        packages: number === 3 ? [issuedPackage] : [],
         from_base: 2000,
         to_base: 2500,
         from_hardware: null,
@@ -213,7 +286,7 @@ test('equal Plan price changes of a Phase read once with how many Lots they cove
   const groups = groupPlanChanges(phases[0])
   assert.equal(groups.length, 2)
   assert.deepEqual(
-    groups.map(({ lotCount, billed }) => [lotCount, billed]),
+    groups.map(({ lotCount, locked }) => [lotCount, locked]),
     [[2, false], [1, true]],
   )
 })

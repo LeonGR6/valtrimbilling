@@ -23,10 +23,11 @@ import {
   previewPhasePriceChanges,
 } from '../services/phasePriceRepository.js'
 import {
+  affectedDraftPackages,
+  buildPhasePriceRequest,
   groupPlanChanges,
   phaseEligibleChanges,
   summarizePhasePriceRequest,
-  buildPhasePriceRequest,
   toPhasePriceChanges,
 } from '../utils/phasePriceChanges.js'
 
@@ -50,6 +51,33 @@ function plural(count, singular, pluralForm = `${singular}s`) {
   return `${count} ${count === 1 ? singular : pluralForm}`
 }
 
+function packageNumbers(packages) {
+  return packages.map((item) => item.packageNumber).join(', ')
+}
+
+// Where a price is billed: a Draft Package is calculated again; any other is final.
+function PackageNote({ locked, packages }) {
+  if (packages.length === 0) return null
+
+  return locked ? (
+    <Chip
+      size="small"
+      color="warning"
+      variant="outlined"
+      label={`${packageNumbers(packages)} can't be changed`}
+      sx={{ ml: 1 }}
+    />
+  ) : (
+    <Chip
+      size="small"
+      color="info"
+      variant="outlined"
+      label={`Recalculates ${packageNumbers(packages)}`}
+      sx={{ ml: 1 }}
+    />
+  )
+}
+
 function PhaseChangeDetails({ phase, components }) {
   const planGroups = components.includePlan ? groupPlanChanges(phase) : []
   const optionLines = components.includeOptions
@@ -66,9 +94,7 @@ function PhaseChangeDetails({ phase, components }) {
             <> · Hardware {formatMoney(group.fromHardware)} → {formatMoney(group.toHardware)}</>
           )}
           {' '}· {plural(group.lotCount, 'lot')}
-          {group.billed && (
-            <Chip size="small" color="warning" variant="outlined" label="In a Package" sx={{ ml: 1 }} />
-          )}
+          <PackageNote locked={group.locked} packages={group.packages} />
         </Typography>
       ))}
       {optionLines.map(({ lot, option }) => (
@@ -77,9 +103,7 @@ function PhaseChangeDetails({ phase, components }) {
           {option.description ? ` · ${option.description}` : ''}:{' '}
           {formatOption(option.fromPrice, option.fromNotApplicable)} →{' '}
           {formatOption(option.toPrice, option.toNotApplicable)}
-          {option.billed && (
-            <Chip size="small" color="warning" variant="outlined" label="In a Package" sx={{ ml: 1 }} />
-          )}
+          <PackageNote locked={option.locked} packages={option.packages} />
         </Typography>
       ))}
     </Stack>
@@ -109,6 +133,7 @@ export default function UpdatePhasePricesDialog({ job, filter = {}, onClose, onA
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState(null)
   const [reloadKey, setReloadKey] = useState(0)
+  const [removeDocuments, setRemoveDocuments] = useState(false)
 
   const components = useMemo(
     () => ({ includePlan, includeOptions }),
@@ -152,11 +177,14 @@ export default function UpdatePhasePricesDialog({ job, filter = {}, onClose, onA
     (total, phase) => total + eligibleByPhase.get(phase.phaseId).blocked,
     0,
   )
+  const draftPackages = affectedDraftPackages(phases, activeSelected, components)
+  const documentsNeedRemoval = summary.packagesWithDocuments > 0
   const reasonValid = reason.trim().length >= 3 && reason.trim().length <= 500
   const canSubmit = !submitting
     && status === 'ready'
     && summary.lotCount + summary.optionCount > 0
     && reasonValid
+    && (!documentsNeedRemoval || removeDocuments)
 
   const togglePhase = (phaseId) => {
     setSelected((current) => (
@@ -179,7 +207,11 @@ export default function UpdatePhasePricesDialog({ job, filter = {}, onClose, onA
     setSubmitError(null)
     try {
       const request = buildPhasePriceRequest(phases, activeSelected, components)
-      const result = await applyPhasePriceChanges(job.id, { ...request, reason })
+      const result = await applyPhasePriceChanges(job.id, {
+        ...request,
+        reason,
+        removeDocuments: documentsNeedRemoval && removeDocuments,
+      })
       await onApplied?.(result)
       onClose()
     } catch (error) {
@@ -264,8 +296,9 @@ export default function UpdatePhasePricesDialog({ job, filter = {}, onClose, onA
 
               {blockedCount > 0 && (
                 <Alert severity="warning">
-                  {plural(blockedCount, 'price')} already {blockedCount === 1 ? 'belongs' : 'belong'} to a
-                  Package and cannot be changed here.
+                  {plural(blockedCount, 'price')} {blockedCount === 1 ? 'is' : 'are'} billed in a Package that
+                  already has a QuickBooks invoice, was sent or is paid, so {blockedCount === 1 ? 'it' : 'they'} cannot be
+                  changed here.
                 </Alert>
               )}
 
@@ -301,8 +334,11 @@ export default function UpdatePhasePricesDialog({ job, filter = {}, onClose, onA
                             <Typography variant="body2" fontWeight={700}>Phase {phase.label}</Typography>
                             <Typography variant="caption" color="text.secondary">
                               {disabled
-                                ? 'Everything that changed is already in a Package'
-                                : `${plural(eligible.lots.length, 'Plan price')} · ${plural(eligible.options.length, 'Option price')} to update`}
+                                ? 'Everything that changed is billed in a Package that cannot be changed'
+                                : `${plural(eligible.lots.length, 'Plan price')} · ${plural(eligible.options.length, 'Option price')} to update${
+                                  eligible.packages.length > 0
+                                    ? ` · recalculates ${plural(eligible.packages.length, 'Draft Package')}`
+                                    : ''}`}
                             </Typography>
                           </Box>
                           <IconButton
@@ -324,6 +360,34 @@ export default function UpdatePhasePricesDialog({ job, filter = {}, onClose, onA
                   })}
                 </Stack>
               </Box>
+
+              {draftPackages.length > 0 && (
+                <Alert severity="info">
+                  These Draft Packages will be calculated again with the new prices:{' '}
+                  <strong>{packageNumbers(draftPackages)}</strong>. Their number, Lots and Draws stay the same.
+                </Alert>
+              )}
+
+              {documentsNeedRemoval && (
+                <Alert severity="warning">
+                  <Stack spacing={0.5}>
+                    <Typography variant="body2">
+                      {plural(summary.packagesWithDocuments, 'of these Package')} has a generated Release or
+                      Payment Schedule. It no longer matches the new amounts, so it is removed and has to be
+                      generated again from the Package.
+                    </Typography>
+                    <FormControlLabel
+                      control={(
+                        <Checkbox
+                          checked={removeDocuments}
+                          onChange={(_, checked) => setRemoveDocuments(checked)}
+                        />
+                      )}
+                      label="Remove them and recalculate"
+                    />
+                  </Stack>
+                </Alert>
+              )}
 
               <TextField
                 label="Reason for the change"
@@ -353,6 +417,7 @@ export default function UpdatePhasePricesDialog({ job, filter = {}, onClose, onA
           <Typography variant="body2" color="text.secondary" sx={{ mr: 'auto' }}>
             {plural(summary.phaseCount, 'Phase')} · {plural(summary.lotCount, 'Plan price')} ·{' '}
             {plural(summary.optionCount, 'Option price')}
+            {summary.packageCount > 0 ? ` · ${plural(summary.packageCount, 'Draft Package')}` : ''}
           </Typography>
         )}
         <Button onClick={onClose} disabled={submitting} color="inherit">

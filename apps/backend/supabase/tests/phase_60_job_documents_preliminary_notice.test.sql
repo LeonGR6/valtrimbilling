@@ -34,7 +34,7 @@ select ok(
 );
 
 select ok(
-  pg_get_functiondef('private.register_job_document(bigint,valtrim.billing_document_type,text,text,bigint)'::regprocedure)
+  pg_get_functiondef('private.register_job_document(bigint,valtrim.billing_document_type,text,text,bigint,boolean)'::regprocedure)
     like '%preliminary_notice%',
   'The registration function knows the preliminary_notice folder'
 );

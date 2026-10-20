@@ -55,7 +55,9 @@ export default function DocumentCategoryCard({
   // A Payment Schedule PDF can be used as the Job's schedule.
   const supportsSchedules = isPaymentScheduleDocumentType(type.documentType)
     && Boolean(onReviewSchedule)
-  const missingRequiredDocument = required && documents.length === 0
+  // A Preliminary Notice saved with blanks still empty does not count.
+  const missingRequiredDocument = required
+    && !documents.some(({ isComplete }) => isComplete !== false)
   // The Preliminary Notice is never uploaded: it is the form that ships with
   // the app, filled in for each Job.
   const isNotice = type.documentType === 'PRELIMINARY_NOTICE'
@@ -117,7 +119,9 @@ export default function DocumentCategoryCard({
             <Chip
               size="small"
               color={missingRequiredDocument ? 'warning' : 'success'}
-              label={missingRequiredDocument ? 'Missing' : 'Uploaded'}
+              label={missingRequiredDocument
+                ? (documents.length > 0 ? 'Incomplete' : 'Missing')
+                : 'Uploaded'}
             />
           )}
         </Stack>
@@ -168,6 +172,14 @@ export default function DocumentCategoryCard({
                     <Typography variant="caption" color="text.secondary">
                       {formatUploadDate(document.createdAt)} · {formatFileSize(document.sizeBytes)}
                     </Typography>
+                    {document.isComplete === false && (
+                      <Chip
+                        size="small"
+                        color="warning"
+                        label="Incomplete"
+                        sx={{ ml: 0.75, height: 20 }}
+                      />
+                    )}
                   </Box>
                 </Stack>
 
@@ -336,7 +348,9 @@ export default function DocumentCategoryCard({
             disabled={!canManage}
             sx={{ mt: 1.75 }}
           >
-            {documents.length === 0 ? 'Fill in Preliminary Notice' : 'Fill in another copy'}
+            {missingRequiredDocument || documents.length === 0
+              ? 'Fill in Preliminary Notice'
+              : 'Fill in another copy'}
           </Button>
         )}
         {!isNotice && (

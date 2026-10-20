@@ -35,6 +35,7 @@ test('Job document rows map persisted Storage metadata to the UI model', () => {
     sizeBytes: 2048,
     uploadedBy: '1646e53a-c8eb-4db6-a25d-15c4ed2ba80f',
     createdAt: '2026-09-24T18:00:00Z',
+    isComplete: true,
   })
 })
 
@@ -285,4 +286,44 @@ test('a Job follows its Builder\'s current document requirements, not the versio
   // Without the mapping a Job reads its own version, as before.
   const own = buildJobDocumentLibrary(jobs, [], requirements)
   assert.deepEqual(own.requiredTypeKeysByJob['1326'], ['preliminary-notice'])
+})
+
+test('a Preliminary Notice saved incomplete does not satisfy its requirement', () => {
+  const incomplete = toJobDocument({
+    id: 'a',
+    job_id: 1500,
+    document_type: 'PRELIMINARY_NOTICE',
+    size_bytes: 1,
+    is_complete: false,
+  })
+  const complete = toJobDocument({
+    id: 'b',
+    job_id: 1500,
+    document_type: 'PRELIMINARY_NOTICE',
+    size_bytes: 1,
+    is_complete: true,
+  })
+
+  assert.equal(incomplete.isComplete, false)
+  assert.equal(complete.isComplete, true)
+  assert.deepEqual(
+    summarizeJobDocumentRequirements(['preliminary-notice'], [incomplete]).missingTypeKeys,
+    ['preliminary-notice'],
+  )
+  assert.equal(
+    summarizeJobDocumentRequirements(['preliminary-notice'], [incomplete, complete]).isComplete,
+    true,
+  )
+})
+
+test('documents without the flag count as complete', () => {
+  const document = toJobDocument({
+    id: 'c',
+    job_id: 1500,
+    document_type: 'RELEASE',
+    size_bytes: 1,
+  })
+
+  assert.equal(document.isComplete, true)
+  assert.equal(summarizeJobDocumentRequirements(['release'], [document]).isComplete, true)
 })

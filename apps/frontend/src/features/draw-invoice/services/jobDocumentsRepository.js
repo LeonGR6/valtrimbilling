@@ -19,6 +19,7 @@ const DOCUMENT_COLUMNS = [
   'size_bytes',
   'uploaded_by',
   'created_at',
+  'is_complete',
 ].join(', ')
 
 const REQUIREMENT_COLUMNS = [
@@ -162,10 +163,14 @@ export async function listJobPreliminaryNotices(jobId) {
 
 export async function hasPreliminaryNotice(jobId) {
   const documents = await listJobPreliminaryNotices(jobId)
-  return documents.length > 0
+  return documents.some(({ isComplete }) => isComplete)
 }
 
-export async function uploadJobDocument({ jobId, documentType, file }) {
+/**
+ * `isComplete` only matters for a Preliminary Notice: the editor passes true once
+ * every required blank has text, and the database then lets Packages be created.
+ */
+export async function uploadJobDocument({ jobId, documentType, file, isComplete = false }) {
   await validatePdfFile(file)
   const client = await requireSupabase()
   const documentId = crypto.randomUUID()
@@ -186,6 +191,7 @@ export async function uploadJobDocument({ jobId, documentType, file }) {
     p_storage_path: storagePath,
     p_original_name: file.name,
     p_size_bytes: file.size,
+    p_is_complete: isComplete,
   })
 
   if (registrationError) {

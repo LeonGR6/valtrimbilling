@@ -186,6 +186,8 @@ export default function PreliminaryNoticeEditorDialog({ job, canManage = true, o
         jobId: job.id,
         documentType: 'PRELIMINARY_NOTICE',
         file,
+        // The save button is only enabled once every required blank has text.
+        isComplete: true,
       })
       notifyJobDocumentsChanged()
       onSaved?.()

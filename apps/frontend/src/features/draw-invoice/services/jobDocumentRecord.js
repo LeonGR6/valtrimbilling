@@ -33,6 +33,8 @@ export function toJobDocument(row) {
     sizeBytes: Number(row.size_bytes),
     uploadedBy: row.uploaded_by,
     createdAt: row.created_at,
+    // Only a Preliminary Notice can be saved with blanks still empty.
+    isComplete: row.is_complete !== false,
   }
 }
 
@@ -119,7 +121,10 @@ export function pickRequirementVersions(jobs, activeVersionByBuilder) {
 
 export function summarizeJobDocumentRequirements(requiredTypeKeys, documents) {
   const required = [...new Set(requiredTypeKeys)]
-  const uploadedTypeKeys = new Set(documents.map(({ typeKey }) => typeKey))
+  // A Preliminary Notice saved with blanks still empty does not satisfy its requirement.
+  const uploadedTypeKeys = new Set(
+    documents.filter(({ isComplete }) => isComplete !== false).map(({ typeKey }) => typeKey),
+  )
   const missingTypeKeys = required.filter((typeKey) => !uploadedTypeKeys.has(typeKey))
 
   return {

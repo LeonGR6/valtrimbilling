@@ -56,14 +56,14 @@ select ok(
 select has_function(
   'valtrim',
   'register_job_document',
-  array['bigint', 'valtrim.billing_document_type', 'text', 'text', 'bigint'],
+  array['bigint', 'valtrim.billing_document_type', 'text', 'text', 'bigint', 'boolean'],
   'Role-checked document registration RPC is available'
 );
 
 select ok(
   has_function_privilege(
     'authenticated',
-    'valtrim.register_job_document(bigint,valtrim.billing_document_type,text,text,bigint)',
+    'valtrim.register_job_document(bigint,valtrim.billing_document_type,text,text,bigint,boolean)',
     'execute'
   ),
   'Authenticated users can call document registration subject to its role check'
@@ -72,7 +72,7 @@ select ok(
 select ok(
   not has_function_privilege(
     'anon',
-    'valtrim.register_job_document(bigint,valtrim.billing_document_type,text,text,bigint)',
+    'valtrim.register_job_document(bigint,valtrim.billing_document_type,text,text,bigint,boolean)',
     'execute'
   ),
   'Anonymous users cannot register Job documents'
@@ -83,7 +83,7 @@ select ok(
     select prosecdef
     from pg_proc
     where oid =
-      'private.register_job_document(bigint,valtrim.billing_document_type,text,text,bigint)'::regprocedure
+      'private.register_job_document(bigint,valtrim.billing_document_type,text,text,bigint,boolean)'::regprocedure
   ),
   'The private registration implementation uses definer rights after role checks'
 );
@@ -93,7 +93,7 @@ select ok(
     select prosecdef
     from pg_proc
     where oid =
-      'valtrim.register_job_document(bigint,valtrim.billing_document_type,text,text,bigint)'::regprocedure
+      'valtrim.register_job_document(bigint,valtrim.billing_document_type,text,text,bigint,boolean)'::regprocedure
   ),
   'The exposed document registration wrapper runs as the caller'
 );
@@ -103,7 +103,7 @@ select ok(
     select array_to_string(proconfig, ',') = 'search_path=""'
     from pg_proc
     where oid =
-      'private.register_job_document(bigint,valtrim.billing_document_type,text,text,bigint)'::regprocedure
+      'private.register_job_document(bigint,valtrim.billing_document_type,text,text,bigint,boolean)'::regprocedure
   ), false),
   'The private registration function pins an empty search path'
 );

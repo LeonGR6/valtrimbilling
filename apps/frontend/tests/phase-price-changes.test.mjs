@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   affectedDraftPackages,
+  affectedIssuedPackages,
   buildPhasePriceRequest,
   groupPlanChanges,
   phaseEligibleChanges,
@@ -20,6 +21,7 @@ const issuedPackage = {
   package_number: 'DP-00000006',
   recalculable: false,
   has_documents: false,
+  workflow_status: 'AWAITING_PAYMENT',
 }
 
 const serverRows = [
@@ -65,7 +67,7 @@ const serverRows = [
         is_utility_building: false,
         plan_id: 3,
         plan_code: 'A',
-        // Billed in a Package with a QuickBooks invoice: it cannot change here.
+        // Billed in a Package with a QuickBooks invoice: the Package keeps its amount.
         plan_change: {
           billed: true,
           locked: true,
@@ -142,6 +144,7 @@ test('the server list becomes Phases with money as numbers and readable labels',
       packageNumber: 'DP-00000005',
       recalculable: true,
       hasDocuments: true,
+      workflowStatus: null,
     }],
     fromBase: 2000,
     toBase: 2500,
@@ -164,6 +167,7 @@ test('the server list becomes Phases with money as numbers and readable labels',
       packageNumber: 'DP-00000006',
       recalculable: false,
       hasDocuments: false,
+      workflowStatus: 'AWAITING_PAYMENT',
     }],
     fromPrice: 50,
     fromNotApplicable: false,
@@ -172,26 +176,27 @@ test('the server list becomes Phases with money as numbers and readable labels',
   })
 })
 
-test('what a Draft Package bills is offered; what an issued Package bills is blocked', () => {
+test('everything that changed is offered: Draft Packages recalculate, issued ones keep their amount', () => {
   const [first] = toPhasePriceChanges(serverRows)
 
   const everything = phaseEligibleChanges(first)
-  assert.deepEqual(everything.lots.map((lot) => lot.lotId), [71])
-  assert.deepEqual(everything.options.map(({ option }) => option.optionId), [41])
-  assert.equal(everything.blocked, 2)
-  assert.equal(everything.count, 2)
-  assert.deepEqual(everything.packages.map((item) => item.packageNumber), ['DP-00000005'])
+  assert.deepEqual(everything.lots.map((lot) => lot.lotId), [71, 72])
+  assert.deepEqual(everything.options.map(({ option }) => option.optionId), [41, 42])
+  assert.equal(everything.count, 4)
+  assert.deepEqual(
+    everything.packages.map((item) => [item.packageNumber, item.recalculable]),
+    [['DP-00000005', true], ['DP-00000006', false]],
+  )
 
   const planOnly = phaseEligibleChanges(first, { includeOptions: false })
   assert.equal(planOnly.options.length, 0)
-  assert.equal(planOnly.blocked, 1)
+  assert.equal(planOnly.lots.length, 2)
 
   const optionsOnly = phaseEligibleChanges(first, { includePlan: false })
   assert.equal(optionsOnly.lots.length, 0)
-  assert.equal(optionsOnly.options.length, 1)
-  // That Option is billed nowhere, so no Package is recalculated for it.
-  assert.equal(optionsOnly.packages.length, 0)
-  assert.equal(optionsOnly.blocked, 1)
+  assert.equal(optionsOnly.options.length, 2)
+  // Only the issued Package bills one of those Options; the other is billed nowhere.
+  assert.deepEqual(optionsOnly.packages.map((item) => item.packageNumber), ['DP-00000006'])
 })
 
 test('the request carries only the picked Phases and the chosen components', () => {
@@ -200,8 +205,11 @@ test('the request carries only the picked Phases and the chosen components', () 
   assert.deepEqual(
     buildPhasePriceRequest(phases, [21, 22], { includePlan: true, includeOptions: true }),
     {
-      lotIds: [71, 81],
-      options: [{ lot_id: 71, option_id: 41 }],
+      lotIds: [71, 72, 81],
+      options: [
+        { lot_id: 71, option_id: 41 },
+        { lot_id: 73, option_id: 42 },
+      ],
     },
   )
   assert.deepEqual(
@@ -210,7 +218,13 @@ test('the request carries only the picked Phases and the chosen components', () 
   )
   assert.deepEqual(
     buildPhasePriceRequest(phases, [21], { includePlan: false, includeOptions: true }),
-    { lotIds: [], options: [{ lot_id: 71, option_id: 41 }] },
+    {
+      lotIds: [],
+      options: [
+        { lot_id: 71, option_id: 41 },
+        { lot_id: 73, option_id: 42 },
+      ],
+    },
   )
   assert.deepEqual(
     buildPhasePriceRequest(phases, [], { includePlan: true, includeOptions: true }),
@@ -233,17 +247,29 @@ test('a Draft Package billing several picked Lots is recalculated once', () => {
   )
 })
 
-test('the summary counts Phases, prices, Draft Packages and the ones with documents', () => {
+test('the Packages that keep their amount are told apart from the ones recalculated', () => {
+  const phases = toPhasePriceChanges(serverRows)
+  const both = { includePlan: true, includeOptions: true }
+
+  assert.deepEqual(
+    affectedIssuedPackages(phases, [21, 22], both).map((item) => [item.packageNumber, item.workflowStatus]),
+    [['DP-00000006', 'AWAITING_PAYMENT']],
+  )
+  assert.deepEqual(affectedIssuedPackages(phases, [22], both), [])
+})
+
+test('the summary counts Phases, prices, Draft Packages, documents and issued Packages', () => {
   const phases = toPhasePriceChanges(serverRows)
 
   assert.deepEqual(
     summarizePhasePriceRequest(phases, [21, 22], { includePlan: true, includeOptions: true }),
     {
       phaseCount: 2,
-      lotCount: 2,
-      optionCount: 1,
+      lotCount: 3,
+      optionCount: 2,
       packageCount: 1,
       packagesWithDocuments: 1,
+      issuedPackageCount: 1,
     },
   )
   // Phase 22 has nothing to change among Options, so it does not count.
@@ -252,9 +278,10 @@ test('the summary counts Phases, prices, Draft Packages and the ones with docume
     {
       phaseCount: 1,
       lotCount: 0,
-      optionCount: 1,
+      optionCount: 2,
       packageCount: 0,
       packagesWithDocuments: 0,
+      issuedPackageCount: 1,
     },
   )
 })

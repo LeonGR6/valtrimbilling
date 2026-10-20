@@ -22,8 +22,10 @@ import {
   applyPhasePriceChanges,
   previewPhasePriceChanges,
 } from '../services/phasePriceRepository.js'
+import { workflowStatusLabel } from '../utils/priceDifferences.js'
 import {
   affectedDraftPackages,
+  affectedIssuedPackages,
   buildPhasePriceRequest,
   groupPlanChanges,
   phaseEligibleChanges,
@@ -55,26 +57,33 @@ function packageNumbers(packages) {
   return packages.map((item) => item.packageNumber).join(', ')
 }
 
-// Where a price is billed: a Draft Package is calculated again; any other is final.
-function PackageNote({ locked, packages }) {
-  if (packages.length === 0) return null
+// Where a price is billed: a Draft Package is calculated again; any other keeps its
+// amount and the difference is recorded as pending to collect.
+function PackageNote({ packages }) {
+  const drafts = packages.filter((item) => item.recalculable)
+  const issued = packages.filter((item) => !item.recalculable)
 
-  return locked ? (
-    <Chip
-      size="small"
-      color="warning"
-      variant="outlined"
-      label={`${packageNumbers(packages)} can't be changed`}
-      sx={{ ml: 1 }}
-    />
-  ) : (
-    <Chip
-      size="small"
-      color="info"
-      variant="outlined"
-      label={`Recalculates ${packageNumbers(packages)}`}
-      sx={{ ml: 1 }}
-    />
+  return (
+    <>
+      {drafts.length > 0 && (
+        <Chip
+          size="small"
+          color="info"
+          variant="outlined"
+          label={`Recalculates ${packageNumbers(drafts)}`}
+          sx={{ ml: 1 }}
+        />
+      )}
+      {issued.length > 0 && (
+        <Chip
+          size="small"
+          color="warning"
+          variant="outlined"
+          label={`${packageNumbers(issued)} keeps its amount · difference pending`}
+          sx={{ ml: 1 }}
+        />
+      )}
+    </>
   )
 }
 
@@ -94,7 +103,7 @@ function PhaseChangeDetails({ phase, components }) {
             <> · Hardware {formatMoney(group.fromHardware)} → {formatMoney(group.toHardware)}</>
           )}
           {' '}· {plural(group.lotCount, 'lot')}
-          <PackageNote locked={group.locked} packages={group.packages} />
+          <PackageNote packages={group.packages} />
         </Typography>
       ))}
       {optionLines.map(({ lot, option }) => (
@@ -103,7 +112,7 @@ function PhaseChangeDetails({ phase, components }) {
           {option.description ? ` · ${option.description}` : ''}:{' '}
           {formatOption(option.fromPrice, option.fromNotApplicable)} →{' '}
           {formatOption(option.toPrice, option.toNotApplicable)}
-          <PackageNote locked={option.locked} packages={option.packages} />
+          <PackageNote packages={option.packages} />
         </Typography>
       ))}
     </Stack>
@@ -173,11 +182,8 @@ export default function UpdatePhasePricesDialog({ job, filter = {}, onClose, onA
     .map((phase) => phase.phaseId)
   const activeSelected = selected.filter((id) => selectablePhaseIds.includes(id))
   const summary = summarizePhasePriceRequest(phases, activeSelected, components)
-  const blockedCount = phases.reduce(
-    (total, phase) => total + eligibleByPhase.get(phase.phaseId).blocked,
-    0,
-  )
   const draftPackages = affectedDraftPackages(phases, activeSelected, components)
+  const issuedPackages = affectedIssuedPackages(phases, activeSelected, components)
   const documentsNeedRemoval = summary.packagesWithDocuments > 0
   const reasonValid = reason.trim().length >= 3 && reason.trim().length <= 500
   const canSubmit = !submitting
@@ -294,14 +300,6 @@ export default function UpdatePhasePricesDialog({ job, filter = {}, onClose, onA
                 </Stack>
               )}
 
-              {blockedCount > 0 && (
-                <Alert severity="warning">
-                  {plural(blockedCount, 'price')} {blockedCount === 1 ? 'is' : 'are'} billed in a Package that
-                  already has a QuickBooks invoice, was sent or is paid, so {blockedCount === 1 ? 'it' : 'they'} cannot be
-                  changed here.
-                </Alert>
-              )}
-
               <Box>
                 <FormControlLabel
                   control={(
@@ -334,11 +332,16 @@ export default function UpdatePhasePricesDialog({ job, filter = {}, onClose, onA
                             <Typography variant="body2" fontWeight={700}>Phase {phase.label}</Typography>
                             <Typography variant="caption" color="text.secondary">
                               {disabled
-                                ? 'Everything that changed is billed in a Package that cannot be changed'
-                                : `${plural(eligible.lots.length, 'Plan price')} · ${plural(eligible.options.length, 'Option price')} to update${
-                                  eligible.packages.length > 0
-                                    ? ` · recalculates ${plural(eligible.packages.length, 'Draft Package')}`
-                                    : ''}`}
+                                ? 'Nothing to update for the chosen components'
+                                : [
+                                  `${plural(eligible.lots.length, 'Plan price')} · ${plural(eligible.options.length, 'Option price')} to update`,
+                                  eligible.packages.some((item) => item.recalculable)
+                                    ? `recalculates ${plural(eligible.packages.filter((item) => item.recalculable).length, 'Draft Package')}`
+                                    : null,
+                                  eligible.packages.some((item) => !item.recalculable)
+                                    ? `${plural(eligible.packages.filter((item) => !item.recalculable).length, 'Package')} keep their amount`
+                                    : null,
+                                ].filter(Boolean).join(' · ')}
                             </Typography>
                           </Box>
                           <IconButton
@@ -365,6 +368,19 @@ export default function UpdatePhasePricesDialog({ job, filter = {}, onClose, onA
                 <Alert severity="info">
                   These Draft Packages will be calculated again with the new prices:{' '}
                   <strong>{packageNumbers(draftPackages)}</strong>. Their number, Lots and Draws stay the same.
+                </Alert>
+              )}
+
+              {issuedPackages.length > 0 && (
+                <Alert severity="warning">
+                  These Packages already have a QuickBooks invoice, were sent or are paid, so they keep
+                  the amount they billed. The difference with the new price is recorded as pending to
+                  collect (nothing is invoiced now):{' '}
+                  <strong>
+                    {issuedPackages
+                      .map((item) => `${item.packageNumber} (${workflowStatusLabel(item.workflowStatus)})`)
+                      .join(', ')}
+                  </strong>.
                 </Alert>
               )}
 
@@ -418,6 +434,7 @@ export default function UpdatePhasePricesDialog({ job, filter = {}, onClose, onA
             {plural(summary.phaseCount, 'Phase')} · {plural(summary.lotCount, 'Plan price')} ·{' '}
             {plural(summary.optionCount, 'Option price')}
             {summary.packageCount > 0 ? ` · ${plural(summary.packageCount, 'Draft Package')}` : ''}
+            {summary.issuedPackageCount > 0 ? ` · ${plural(summary.issuedPackageCount, 'issued Package')}` : ''}
           </Typography>
         )}
         <Button onClick={onClose} disabled={submitting} color="inherit">

@@ -10,7 +10,7 @@ select has_table('valtrim', 'phase_price_recalculation_packages',
 select ok(
   (select relrowsecurity from pg_class
    where oid = 'valtrim.phase_price_recalculation_packages'::regclass)
-  and has_table_privilege('authenticated', 'valtrim.phase_price_recalculation_packages', 'select')
+  and has_any_column_privilege('authenticated', 'valtrim.phase_price_recalculation_packages', 'select')
   and not has_table_privilege('authenticated', 'valtrim.phase_price_recalculation_packages', 'insert')
   and not has_table_privilege('authenticated', 'valtrim.phase_price_recalculation_packages', 'update')
   and not has_table_privilege('authenticated', 'valtrim.phase_price_recalculation_packages', 'delete')

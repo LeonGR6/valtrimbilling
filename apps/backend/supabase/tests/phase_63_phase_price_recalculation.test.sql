@@ -16,8 +16,8 @@ select ok(
 );
 
 select ok(
-  has_table_privilege('authenticated', 'valtrim.phase_price_recalculations', 'select')
-  and has_table_privilege('authenticated', 'valtrim.phase_price_recalculation_lines', 'select'),
+  has_any_column_privilege('authenticated', 'valtrim.phase_price_recalculations', 'select')
+  and has_any_column_privilege('authenticated', 'valtrim.phase_price_recalculation_lines', 'select'),
   'Authenticated users can read Phase price update records subject to RLS'
 );
 
@@ -116,10 +116,10 @@ select ok(
 
 select ok(
   pg_get_functiondef('valtrim.apply_phase_price_changes(bigint,bigint[],jsonb,text,boolean)'::regprocedure)
-    like '%not private.draw_package_can_be_recalculated(billed.package_id)%'
+    like '%private.record_package_price_differences%'
   and pg_get_functiondef('valtrim.apply_phase_price_changes(bigint,bigint[],jsonb,text,boolean)'::regprocedure)
-    like '%from valtrim.package_options billed%',
-  'A Lot or Option billed in a Package that cannot be recalculated is never moved'
+    like '%private.recalculate_draft_package%',
+  'A Package that cannot change keeps its amount: its difference is recorded, never rewritten'
 );
 
 select ok(

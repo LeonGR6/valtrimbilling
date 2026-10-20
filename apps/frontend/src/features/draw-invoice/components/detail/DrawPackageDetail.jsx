@@ -76,6 +76,7 @@ import {
   ReadinessChip,
 } from '../shared/PackageUi.jsx'
 import PackageCorrectionHistory from './PackageCorrectionHistory.jsx'
+import PackagePriceDifferenceNotice from './PackagePriceDifferenceNotice.jsx'
 import PackageHeaderActions from './PackageHeaderActions.jsx'
 import {
   DrawWorksheetTable,
@@ -494,6 +495,13 @@ export default function DrawPackageDetail() {
               : ' Its Lot / Draw cells were released; the Package number remains for history.'}
             {focusedPackage.cancellationReason && ` Reason: ${focusedPackage.cancellationReason}`}
           </Alert>
+        )}
+        {focusedPackage?.id != null && (
+          <PackagePriceDifferenceNotice
+            packageId={focusedPackage.id}
+            builderId={focusedBuilderId}
+            jobId={focusedJob?.id}
+          />
         )}
         <QuickbooksPackageNotice
           record={focusedPackage}

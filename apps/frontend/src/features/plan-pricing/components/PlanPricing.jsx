@@ -1,8 +1,9 @@
-import { Fragment, useMemo, useState } from 'react'
+import { Fragment, useEffect, useMemo, useState } from 'react'
 import {
   Link as RouterLink,
   useNavigate,
   useParams,
+  useSearchParams,
 } from 'react-router-dom'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useForm } from 'react-hook-form'
@@ -48,6 +49,12 @@ import JobModuleNavigation from '../../jobs/components/JobModuleNavigation.jsx'
 import PlanToggle from '../../jobs/components/PlanToggle.jsx'
 import { optionPricingSummary } from '../utils/optionPricing.js'
 import { previewPhasePriceChanges } from '../services/phasePriceRepository.js'
+import { listPendingPriceDifferences } from '../services/priceDifferencesRepository.js'
+import {
+  formatSignedMoney,
+  groupPriceDifferences,
+} from '../utils/priceDifferences.js'
+import PriceDifferencesDialog from './PriceDifferencesDialog.jsx'
 import UpdatePhasePricesDialog from './UpdatePhasePricesDialog.jsx'
 import {
   getJobOptionCount,
@@ -1105,6 +1112,7 @@ function JobPricingSelector({
 export default function PlanPricing() {
   const navigate = useNavigate()
   const { builderId, jobId } = useParams()
+  const [searchParams, setSearchParams] = useSearchParams()
   const {
     jobs,
     loading,
@@ -1123,6 +1131,10 @@ export default function PlanPricing() {
   const [notice, setNotice] = useState(null)
   // Phases created before a price change keep their price until someone moves them.
   const [phasePriceDialog, setPhasePriceDialog] = useState(null)
+  // What Packages that cannot change would still bill at the new prices.
+  const [differencesOpen, setDifferencesOpen] = useState(searchParams.get('differences') === '1')
+  const [differenceTotals, setDifferenceTotals] = useState(null)
+  const [differenceRefresh, setDifferenceRefresh] = useState(0)
   const job = jobId
     ? jobs.find(
         (item) =>
@@ -1137,6 +1149,32 @@ export default function PlanPricing() {
   )
   const separateHardwarePrice = Boolean(builderSetup?.separateHardwarePrice)
   const canManagePricing = canManageJobs && job?.isActive
+  const jobIdForDifferences = job?.id
+  useEffect(() => {
+    if (!canManagePricing || jobIdForDifferences == null) return undefined
+
+    let cancelled = false
+    listPendingPriceDifferences({ jobId: jobIdForDifferences })
+      .then(({ rows, statuses }) => {
+        if (cancelled) return
+        const { totals } = groupPriceDifferences(rows, statuses)
+        setDifferenceTotals(totals.lineCount > 0 ? totals : null)
+      })
+      .catch(() => {
+        if (!cancelled) setDifferenceTotals(null)
+      })
+
+    return () => { cancelled = true }
+  }, [canManagePricing, jobIdForDifferences, differenceRefresh])
+
+  const closeDifferences = () => {
+    setDifferencesOpen(false)
+    if (searchParams.has('differences')) {
+      const next = new URLSearchParams(searchParams)
+      next.delete('differences')
+      setSearchParams(next, { replace: true })
+    }
+  }
   const plans = job?.sequenceSheet?.plans ?? []
   const options = plans.flatMap((plan) => plan.options ?? [])
   const pricedPlanCount = plans.filter((plan) => hasPrice(plan.price)).length
@@ -1306,6 +1344,18 @@ export default function PlanPricing() {
               Update existing Phases
             </Button>
           )}
+          {canManagePricing && (
+            <Button
+              variant="outlined"
+              color={differenceTotals ? 'warning' : 'primary'}
+              startIcon={<ReceiptLongRoundedIcon />}
+              onClick={() => setDifferencesOpen(true)}
+            >
+              {differenceTotals
+                ? `Price differences · ${formatSignedMoney(differenceTotals.net)}`
+                : 'Price differences'}
+            </Button>
+          )}
           <Button
             variant="outlined"
             startIcon={<SearchRoundedIcon />}
@@ -1468,6 +1518,10 @@ export default function PlanPricing() {
         />
       )}
 
+      {differencesOpen && canManagePricing && (
+        <PriceDifferencesDialog job={job} onClose={closeDifferences} />
+      )}
+
       {phasePriceDialog && (
         <UpdatePhasePricesDialog
           key={`${phasePriceDialog.planId ?? ''}-${phasePriceDialog.optionId ?? ''}-${phasePriceDialog.components ?? 'ALL'}`}
@@ -1476,7 +1530,10 @@ export default function PlanPricing() {
           onClose={() => setPhasePriceDialog(null)}
           onApplied={async (result) => {
             await refreshJobs().catch(() => {})
+            setDifferenceRefresh((count) => count + 1)
             const recalculated = result.packages ?? []
+            const owed = result.differences ?? []
+            const owedNet = owed.reduce((total, item) => total + Number(item.delta_net), 0)
             const regenerate = recalculated
               .filter((item) => item.documents_removed > 0)
               .map((item) => item.package_number)
@@ -1490,8 +1547,11 @@ export default function PlanPricing() {
                 regenerate.length > 0
                   ? `Generate the Release and Payment Schedule again for ${regenerate.join(', ')}.`
                   : null,
+                owed.length > 0
+                  ? `${owed.map((item) => item.package_number).join(', ')} keep their amount; pending to collect ${formatSignedMoney(Math.round(owedNet * 100) / 100)} net.`
+                  : null,
               ].filter(Boolean).join(' '),
-              persist: regenerate.length > 0,
+              persist: regenerate.length > 0 || owed.length > 0,
             })
           }}
         />

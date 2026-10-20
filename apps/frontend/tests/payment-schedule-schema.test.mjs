@@ -136,7 +136,7 @@ test('summary boxes follow the same rules as cells', () => {
 
 test('every summary message exists in the migration, word for word', () => {
   const sql = readFileSync(
-    new URL('../../backend/supabase/migrations/20261010180000_payment_schedule_summary_rows.sql', import.meta.url),
+    new URL('../../backend/supabase/migrations/20261010175004_payment_schedule_summary_rows.sql', import.meta.url),
     'utf8',
   )
   for (const message of [
@@ -154,7 +154,7 @@ test('every summary message exists in the migration, word for word', () => {
 
 test('every client message exists in the migration, word for word', () => {
   const sql = readFileSync(
-    new URL('../../backend/supabase/migrations/20261010120000_payment_schedule_templates.sql', import.meta.url),
+    new URL('../../backend/supabase/migrations/20261009204407_payment_schedule_templates.sql', import.meta.url),
     'utf8',
   )
   const messages = [

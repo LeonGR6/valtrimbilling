@@ -101,7 +101,7 @@ select ok(
 select ok(
   has_function_privilege(
     'authenticated',
-    'valtrim.set_option_price(bigint,numeric)',
+    'valtrim.set_option_price(bigint,numeric,boolean)',
     'execute'
   ),
   'Authenticated users can call the role-checked Option price RPC'
@@ -133,7 +133,7 @@ select ok(
   )
   and not has_function_privilege(
     'anon',
-    'valtrim.set_option_price(bigint,numeric)',
+    'valtrim.set_option_price(bigint,numeric,boolean)',
     'execute'
   )
   and not has_function_privilege(

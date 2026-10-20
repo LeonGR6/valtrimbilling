@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
+  toLotOptionPrice,
+  toLotPlanPrice,
   toSequenceSheetLot,
   toSequenceSheetPhase,
   toSequenceSheetPhaseRpc,
@@ -144,4 +146,44 @@ test('maps and saves a Utility Building row with Reverse but without Options', (
     }],
     p_is_utility_building: false,
   })
+})
+
+test('a Lot carries the Plan and Option prices it was created with', () => {
+  const lot = toSequenceSheetLot(
+    {
+      id: 71,
+      lot_number: '18',
+      utility_name: null,
+      plan_id: 31,
+      is_reverse: false,
+      is_utility_building: false,
+    },
+    [41],
+    {
+      planPrice: toLotPlanPrice({ id: 5, base_price: '2000.00', hardware_price: null }),
+      optionPrices: { 41: toLotOptionPrice({ id: 8, price: '-150.50', is_not_applicable: false }) },
+    },
+  )
+
+  assert.deepEqual(lot.planPrice, { id: 5, basePrice: 2000, hardwarePrice: null })
+  assert.deepEqual(lot.optionPrices, {
+    41: { id: 8, price: -150.5, priceNotApplicable: false },
+  })
+})
+
+test('a Lot with no pinned price leaves the price fields out', () => {
+  const lot = toSequenceSheetLot(
+    {
+      id: 71,
+      lot_number: '18',
+      utility_name: null,
+      plan_id: 31,
+      is_reverse: false,
+      is_utility_building: false,
+    },
+    [41],
+  )
+
+  assert.equal('planPrice' in lot, false)
+  assert.equal('optionPrices' in lot, false)
 })

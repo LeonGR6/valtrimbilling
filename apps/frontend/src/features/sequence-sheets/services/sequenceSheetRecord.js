@@ -2,7 +2,34 @@ function requiredId(value) {
   return Number(value)
 }
 
-export function toSequenceSheetLot(row, optionIds = []) {
+function moneyValue(value) {
+  return value == null ? null : Number(value)
+}
+
+export function toLotPlanPrice(row) {
+  return {
+    id: row.id,
+    basePrice: moneyValue(row.base_price),
+    hardwarePrice: moneyValue(row.hardware_price),
+  }
+}
+
+export function toLotOptionPrice(row) {
+  return {
+    id: row.id,
+    price: moneyValue(row.price),
+    priceNotApplicable: Boolean(row.is_not_applicable),
+  }
+}
+
+/**
+ * `prices` carries what the Lot was created with: its Plan price and, by Option
+ * id, the price of each selected Option. A Phase bills those, not today's price.
+ * Older rows pinned to nothing leave them out and use the Plan's current price.
+ */
+export function toSequenceSheetLot(row, optionIds = [], prices = {}) {
+  const optionPrices = prices.optionPrices ?? {}
+
   return {
     id: row.id,
     lotNumber: row.lot_number,
@@ -11,6 +38,8 @@ export function toSequenceSheetLot(row, optionIds = []) {
     reverse: row.is_reverse,
     optionIds: [...optionIds],
     isUtilityBuilding: Boolean(row.is_utility_building),
+    ...(prices.planPrice ? { planPrice: prices.planPrice } : {}),
+    ...(Object.keys(optionPrices).length > 0 ? { optionPrices } : {}),
   }
 }
 

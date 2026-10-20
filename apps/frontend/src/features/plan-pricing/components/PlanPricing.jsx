@@ -47,6 +47,8 @@ import { useBuilderContacts } from '../../builder-contacts/context/useBuilderCon
 import JobModuleNavigation from '../../jobs/components/JobModuleNavigation.jsx'
 import PlanToggle from '../../jobs/components/PlanToggle.jsx'
 import { optionPricingSummary } from '../utils/optionPricing.js'
+import { previewPhasePriceChanges } from '../services/phasePriceRepository.js'
+import UpdatePhasePricesDialog from './UpdatePhasePricesDialog.jsx'
 import {
   getJobOptionCount,
   getJobPlanCount,
@@ -1119,6 +1121,8 @@ export default function PlanPricing() {
   const [priceTarget, setPriceTarget] = useState(null)
   const [submitting, setSubmitting] = useState(false)
   const [notice, setNotice] = useState(null)
+  // Phases created before a price change keep their price until someone moves them.
+  const [phasePriceDialog, setPhasePriceDialog] = useState(null)
   const job = jobId
     ? jobs.find(
         (item) =>
@@ -1159,6 +1163,23 @@ export default function PlanPricing() {
     navigate(jobPlanPricingPath(selectedBuilderId, selectedJob.id))
   }
 
+  // The new price only reaches Phases created from now on. If older Phases still
+  // use the previous one, offer to move them; a failed look-up never blocks the save.
+  const offerExistingPhaseUpdate = async (savedTarget) => {
+    if (!canManagePricing) return
+
+    const filter = savedTarget.type === 'option'
+      ? { optionId: savedTarget.option.id, components: 'OPTIONS', fromSave: true }
+      : { planId: savedTarget.plan.id, components: 'PLAN', fromSave: true }
+
+    try {
+      const rows = await previewPhasePriceChanges(job.id, filter)
+      if (rows.length > 0) setPhasePriceDialog(filter)
+    } catch {
+      // The price is saved; the update can still be started from the button.
+    }
+  }
+
   const handlePriceSave = async ({ amount, notApplicable = false }) => {
     setSubmitting(true)
     try {
@@ -1188,7 +1209,9 @@ export default function PlanPricing() {
           ? 'Hardware price updated.'
           : 'Price updated.',
       })
+      const savedTarget = priceTarget
       setPriceTarget(null)
+      await offerExistingPhaseUpdate(savedTarget)
     } catch (saveError) {
       setNotice({ severity: 'error', message: saveError.message })
     } finally {
@@ -1273,14 +1296,24 @@ export default function PlanPricing() {
             {job.builder} · {job.community}
           </Typography>
         </Box>
-        <Button
-          variant="outlined"
-          startIcon={<SearchRoundedIcon />}
-          onClick={() => navigate('/pricing')}
-          sx={{ width: { xs: '100%', sm: 'auto' } }}
-        >
-          Change Job
-        </Button>
+        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} sx={{ width: { xs: '100%', sm: 'auto' } }}>
+          {canManagePricing && (
+            <Button
+              variant="outlined"
+              startIcon={<LayersRoundedIcon />}
+              onClick={() => setPhasePriceDialog({})}
+            >
+              Update existing Phases
+            </Button>
+          )}
+          <Button
+            variant="outlined"
+            startIcon={<SearchRoundedIcon />}
+            onClick={() => navigate('/pricing')}
+          >
+            Change Job
+          </Button>
+        </Stack>
       </Box>
 
       <JobModuleNavigation
@@ -1432,6 +1465,22 @@ export default function PlanPricing() {
           onClose={() => setPriceTarget(null)}
           onSave={handlePriceSave}
           submitting={submitting}
+        />
+      )}
+
+      {phasePriceDialog && (
+        <UpdatePhasePricesDialog
+          key={`${phasePriceDialog.planId ?? ''}-${phasePriceDialog.optionId ?? ''}-${phasePriceDialog.components ?? 'ALL'}`}
+          job={job}
+          filter={phasePriceDialog}
+          onClose={() => setPhasePriceDialog(null)}
+          onApplied={async (result) => {
+            await refreshJobs().catch(() => {})
+            setNotice({
+              severity: 'success',
+              message: `Updated ${result.lots} Plan ${result.lots === 1 ? 'price' : 'prices'} and ${result.options} Option ${result.options === 1 ? 'price' : 'prices'} in existing Phases.`,
+            })
+          }}
         />
       )}
 

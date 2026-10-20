@@ -2,6 +2,14 @@
 // the ones wanted and selecting or clearing many at once. Pure; the screen is in
 // LotOptionPicker.
 
+/**
+ * An Option with no price yet (a number or NA) cannot be added to a Phase: it
+ * would have nothing to bill. One already on the Lot stays, so it can be removed.
+ */
+export function isOptionMissingPrice(option) {
+  return 'price' in option && option.price == null
+}
+
 /** The Options whose code or description contains every word typed (any case). */
 export function filterPickerOptions(options, query) {
   const words = String(query ?? '').toLowerCase().split(/\s+/).filter(Boolean)
@@ -20,10 +28,12 @@ export function shownPickerOptions(options, { query = '', selectedOnly = false, 
   return selectedOnly ? found.filter((option) => selected.has(option.id)) : found
 }
 
-/** The selection after ticking every shown Option, keeping what was already picked. */
+/** The selection after ticking every shown Option that has a price, keeping what was already picked. */
 export function selectShown(selectedIds, shown) {
   const next = new Set(selectedIds)
-  shown.forEach((option) => next.add(option.id))
+  shown.forEach((option) => {
+    if (!isOptionMissingPrice(option)) next.add(option.id)
+  })
   return [...next]
 }
 

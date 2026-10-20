@@ -1,5 +1,7 @@
 import { requireSupabase } from '../../../services/api.js'
 import {
+  toLotOptionPrice,
+  toLotPlanPrice,
   toSequenceSheetLot,
   toSequenceSheetPhase,
   toSequenceSheetPhaseRpc,
@@ -23,12 +25,18 @@ const LOT_COLUMNS = [
   'is_reverse',
   'is_utility_building',
   'display_order',
+  'plan_price_id',
 ].join(', ')
 
 const LOT_OPTION_COLUMNS = [
   'lot_id',
   'option_id',
+  'option_price_id',
 ].join(', ')
+
+const PLAN_PRICE_COLUMNS = ['id', 'base_price', 'hardware_price'].join(', ')
+
+const OPTION_PRICE_COLUMNS = ['id', 'price', 'is_not_applicable'].join(', ')
 
 const PAGE_SIZE = 1000
 const FILTER_BATCH_SIZE = 200
@@ -83,6 +91,21 @@ function inBatches(values) {
     batches.push(values.slice(index, index + FILTER_BATCH_SIZE))
   }
   return batches
+}
+
+function distinctIds(values) {
+  return [...new Set(values.filter((value) => value != null))]
+}
+
+async function listPriceRows(client, table, columns, ids) {
+  if (ids.length === 0) return []
+
+  return (await Promise.all(inBatches(ids).map((batch) => listAllRows(() => client
+    .from(table)
+    .select(columns)
+    .in('id', batch)
+    .order('id', { ascending: true }))
+  ))).flat()
 }
 
 async function listAllRows(queryFactory) {
@@ -144,9 +167,27 @@ export async function listSequenceSheetPhases(jobIds) {
         .order('option_id', { ascending: true }))
       ))).flat()
 
+  // The prices each Lot and selected Option were created with.
+  const planPriceIds = distinctIds(lotRows.map((row) => row.plan_price_id))
+  const optionPriceIds = distinctIds(selectedOptionRows.map((row) => row.option_price_id))
+  const [planPriceRows, optionPriceRows] = await Promise.all([
+    listPriceRows(client, 'plan_prices', PLAN_PRICE_COLUMNS, planPriceIds),
+    listPriceRows(client, 'option_prices', OPTION_PRICE_COLUMNS, optionPriceIds),
+  ])
+  const planPrices = new Map(planPriceRows.map((row) => [row.id, toLotPlanPrice(row)]))
+  const optionPrices = new Map(optionPriceRows.map((row) => [row.id, toLotOptionPrice(row)]))
+
   const optionIdsByLot = new Map()
+  const optionPricesByLot = new Map()
   selectedOptionRows.forEach((row) => {
     appendToGroup(optionIdsByLot, row.lot_id, row.option_id)
+    const price = optionPrices.get(row.option_price_id)
+    if (price) {
+      optionPricesByLot.set(row.lot_id, {
+        ...(optionPricesByLot.get(row.lot_id) ?? {}),
+        [row.option_id]: price,
+      })
+    }
   })
 
   const lotsByPhase = new Map()
@@ -154,7 +195,10 @@ export async function listSequenceSheetPhases(jobIds) {
     appendToGroup(
       lotsByPhase,
       row.phase_id,
-      toSequenceSheetLot(row, optionIdsByLot.get(row.id) ?? []),
+      toSequenceSheetLot(row, optionIdsByLot.get(row.id) ?? [], {
+        planPrice: planPrices.get(row.plan_price_id),
+        optionPrices: optionPricesByLot.get(row.id),
+      }),
     )
   })
 

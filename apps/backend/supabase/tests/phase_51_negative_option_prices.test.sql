@@ -14,7 +14,7 @@ select col_type_is('valtrim', 'package_draws', 'gross_amount', 'valtrim.amount',
   'A Draw line gross is still never negative');
 
 select ok(
-  pg_get_functiondef('valtrim.set_option_price(bigint,numeric)'::regprocedure)
+  pg_get_functiondef('valtrim.set_option_price(bigint,numeric,boolean)'::regprocedure)
     not like '%p_price < 0%',
   'Setting an Option price no longer rejects negative amounts'
 );

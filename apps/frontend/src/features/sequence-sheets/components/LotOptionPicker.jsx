@@ -15,6 +15,7 @@ import ClearRoundedIcon from '@mui/icons-material/ClearRounded'
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
 import {
   clearShown,
+  isOptionMissingPrice,
   selectShown,
   shownPickerOptions,
   toggleOption,
@@ -43,7 +44,9 @@ export default function LotOptionPicker({
   const shown = shownPickerOptions(options, { query, selectedOnly, selectedIds: value })
   const searchable = options.length >= SEARCH_FROM
   const filtering = query.trim() !== '' || selectedOnly
-  const allShownSelected = shown.length > 0 && shown.every((option) => value.includes(option.id))
+  const addable = shown.filter((option) => !isOptionMissingPrice(option))
+  const allShownSelected = shown.length > 0 && addable.every((option) => value.includes(option.id))
+  const unpricedCount = options.filter(isOptionMissingPrice).length
 
   return (
     <Box>
@@ -129,6 +132,14 @@ export default function LotOptionPicker({
         />
       )}
 
+      {unpricedCount > 0 && (
+        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
+          {unpricedCount === 1
+            ? '1 option has no price yet and cannot be added. Set its price in Pricing first.'
+            : `${unpricedCount} options have no price yet and cannot be added. Set their prices in Pricing first.`}
+        </Typography>
+      )}
+
       <Box
         sx={{
           display: 'grid',
@@ -148,10 +159,11 @@ export default function LotOptionPicker({
       >
         {shown.map((option) => {
           const checked = value.includes(option.id)
+          const missingPrice = isOptionMissingPrice(option)
           return (
             <FormControlLabel
               key={option.id}
-              disabled={disabled}
+              disabled={disabled || (missingPrice && !checked)}
               sx={(theme) => ({
                 m: 0,
                 pr: 1.25,
@@ -198,6 +210,11 @@ export default function LotOptionPicker({
                   >
                     {option.description}
                   </Typography>
+                  {missingPrice && (
+                    <Typography variant="caption" color="warning.main" fontWeight={700}>
+                      No price yet
+                    </Typography>
+                  )}
                 </Box>
               )}
             />

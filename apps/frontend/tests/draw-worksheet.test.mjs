@@ -454,3 +454,87 @@ test('an Option price is any number, including a credit, but not a missing one',
   assert.equal(hasOptionPrice(undefined), false)
   assert.equal(hasOptionPrice(Number.NaN), false)
 })
+
+test('a Phase bills the Plan price it was created with, not the Plan current price', () => {
+  const job = {
+    sequenceSheet: {
+      plans: [{
+        id: 1,
+        code: '1',
+        price: 2500,
+        hardwarePrice: 400,
+        options: [{ id: 10, code: 'OPT', price: 600, priceNotApplicable: false }],
+      }],
+    },
+  }
+  const schedule = { draws: [{ percentage: 50 }, { percentage: 50 }] }
+
+  // Phase 1 was created when the price was $2,000; Phase 3 after it became $2,500.
+  const olderPhase = buildDrawWorksheet(job, {
+    lots: [{
+      id: 1,
+      lotNumber: '1',
+      planId: 1,
+      optionIds: [10],
+      planPrice: { id: 5, basePrice: 2000, hardwarePrice: 300 },
+      optionPrices: { 10: { id: 8, price: 500, priceNotApplicable: false } },
+    }],
+  }, schedule)
+  const newerPhase = buildDrawWorksheet(job, {
+    lots: [{ id: 2, lotNumber: '1', planId: 1, optionIds: [10] }],
+  }, schedule)
+
+  assert.equal(olderPhase.rows[0].basePrice, 2000)
+  assert.equal(olderPhase.rows[0].hardwarePrice, null)
+  assert.deepEqual(olderPhase.rows[0].drawAmounts, [1000, 1000])
+  assert.equal(olderPhase.rows[0].selectedOptions[0].price, 500)
+  assert.equal(newerPhase.rows[0].basePrice, 2500)
+  assert.deepEqual(newerPhase.rows[0].drawAmounts, [1250, 1250])
+  assert.equal(newerPhase.rows[0].selectedOptions[0].price, 600)
+})
+
+test('a pinned NA Option stays NA even if the Option is priced today', () => {
+  const worksheet = buildDrawWorksheet(
+    {
+      sequenceSheet: {
+        plans: [{
+          id: 1,
+          code: '1',
+          price: 2500,
+          options: [{ id: 10, code: 'OPT', price: 600, priceNotApplicable: false }],
+        }],
+      },
+    },
+    {
+      lots: [{
+        id: 1,
+        lotNumber: '1',
+        planId: 1,
+        optionIds: [10],
+        optionPrices: { 10: { id: 8, price: 0, priceNotApplicable: true } },
+      }],
+    },
+    { draws: [{ percentage: 100 }] },
+  )
+
+  assert.equal(worksheet.rows[0].selectedOptions[0].price, 0)
+  assert.equal(worksheet.rows[0].selectedOptions[0].priceNotApplicable, true)
+})
+
+test('a pinned Plan price keeps the Hardware price it was created with', () => {
+  const worksheet = buildDrawWorksheet(
+    { sequenceSheet: { plans: [{ id: 1, code: '1', price: 2500, hardwarePrice: 400 }] } },
+    {
+      lots: [{
+        id: 1,
+        lotNumber: '1',
+        planId: 1,
+        optionIds: [],
+        planPrice: { id: 5, basePrice: 2000, hardwarePrice: 300 },
+      }],
+    },
+    { separateHardwarePrice: true, draws: [{ percentage: 100 }] },
+  )
+
+  assert.equal(worksheet.rows[0].hardwarePrice, 300)
+})

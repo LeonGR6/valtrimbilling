@@ -210,15 +210,26 @@ export function buildDrawWorksheet(job, phase, schedule) {
     const selectedOptionIds = new Set(
       (lot.optionIds ?? []).map((optionId) => String(optionId)),
     )
+    // A Lot bills the prices it was created with; the Plan's current price is
+    // only for older rows that were never pinned to one.
+    const lotPlanPrice = lot.planPrice ?? null
     const selectedOptions = (isUtilityBuilding ? [] : (plan?.options ?? []))
       .filter((option) => selectedOptionIds.has(String(option.id)))
-      .map((option) => ({
-        ...option,
-        price: hasOptionPrice(option.price) ? option.price : null,
-      }))
-    const basePrice = plan?.price
+      .map((option) => {
+        const lotOptionPrice = lot.optionPrices?.[option.id] ?? null
+        const optionPrice = lotOptionPrice ? lotOptionPrice.price : option.price
+
+        return {
+          ...option,
+          price: hasOptionPrice(optionPrice) ? optionPrice : null,
+          ...(lotOptionPrice
+            ? { priceNotApplicable: lotOptionPrice.priceNotApplicable }
+            : {}),
+        }
+      })
+    const basePrice = lotPlanPrice ? lotPlanPrice.basePrice : plan?.price
     const priceIsAvailable = hasPlanPrice(basePrice)
-    const hardwarePrice = plan?.hardwarePrice
+    const hardwarePrice = lotPlanPrice ? lotPlanPrice.hardwarePrice : plan?.hardwarePrice
     const hardwarePriceIsAvailable = isUtilityBuilding
       || !separateHardwarePrice
       || hasHardwarePrice(hardwarePrice)

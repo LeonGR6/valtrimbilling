@@ -3,6 +3,7 @@ import test from 'node:test'
 import {
   clearShown,
   filterPickerOptions,
+  isOptionMissingPrice,
   selectShown,
   shownPickerOptions,
   toggleOption,
@@ -53,4 +54,19 @@ test('ticking an option adds it once, and unticking removes it', () => {
   assert.deepEqual(toggleOption([1, 2], 2, true), [1, 2])
   assert.deepEqual(toggleOption([1, 2], 1, false), [2])
   assert.deepEqual(toggleOption([], 3, false), [])
+})
+
+test('an Option with no price cannot be added, but a priced or NA one can', () => {
+  const priced = [
+    { id: 1, code: 'A', price: 100 },
+    { id: 2, code: 'B', price: null },
+    { id: 3, code: 'C', price: 0, priceNotApplicable: true },
+    { id: 4, code: 'D', price: -50 },
+  ]
+
+  assert.deepEqual(priced.map(isOptionMissingPrice), [false, true, false, false])
+  assert.equal(isOptionMissingPrice({ id: 5, code: 'E' }), false)
+  assert.deepEqual(selectShown([], priced).sort(), [1, 3, 4])
+  // One already on the Lot stays, so it can still be unticked.
+  assert.deepEqual(selectShown([2], priced).sort(), [1, 2, 3, 4])
 })

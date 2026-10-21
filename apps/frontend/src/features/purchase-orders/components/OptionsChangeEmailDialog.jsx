@@ -43,6 +43,10 @@ function newRequestId() {
 }
 
 const WORDING = {
+  added_manually: {
+    title: 'Tell Purchasing and the Job Coordinator?',
+    subtitle: 'The options were added to the Sequence Sheet. Review the email, and who gets it, before sending.',
+  },
   added: {
     title: 'Tell Purchasing and the Job Coordinator?',
     subtitle: 'The options were added to the Sequence Sheet. Review the email, and who gets it, before sending.',
@@ -55,7 +59,8 @@ const WORDING = {
 
 /**
  * Offers to tell Purchasing and the Job Coordinator how the options of a Sequence
- * Sheet just changed: `kind` 'added' (a Purchase Order added them) or 'removed'. It
+ * Sheet just changed: `kind` 'added' (a Purchase Order added them), 'added_manually'
+ * (someone added them by editing a Phase) or 'removed'. It
  * shows the exact email, starts with those two as recipients, and lets the user
  * remove them or add anyone else. Nothing is sent until "Send email"; "Don't send"
  * leaves the change as it is and tells no one.

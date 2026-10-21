@@ -97,7 +97,7 @@ import { getPhaseRowCounts, getSelectedOptionCount } from '../utils/phaseCounts.
 import SequenceSheetEmailDialog from './SequenceSheetEmailDialog.jsx'
 import OptionsChangeEmailDialog from '../../purchase-orders/components/OptionsChangeEmailDialog.jsx'
 import { describeSequenceSheetEmailsSent } from '../services/sequenceSheetEmailRecord.js'
-import { removedOptionChanges } from '../services/sequenceSheetRecord.js'
+import { addedOptionChanges, removedOptionChanges } from '../services/sequenceSheetRecord.js'
 
 const emptyLot = {
   lotNumber: '',
@@ -1044,9 +1044,10 @@ export default function SequenceSheets() {
   const [deleteTarget, setDeleteTarget] = useState(null)
   const [deleting, setDeleting] = useState(false)
   const [emailTarget, setEmailTarget] = useState(null)
-  // After an edit took options out of a Lot: the email that offers to tell Purchasing
-  // and the Job Coordinator (null = closed).
-  const [removalEmail, setRemovalEmail] = useState(null)
+  // After an edit changed the options of a Lot: the emails that offer to tell Purchasing
+  // and the Job Coordinator, one after the other (empty = none).
+  const [optionEmails, setOptionEmails] = useState([])
+  const optionEmail = optionEmails[0] ?? null
   const [notice, setNotice] = useState(null)
 
   const legacyJobId = searchParams.get('job')
@@ -1181,10 +1182,15 @@ export default function SequenceSheets() {
       if (!isEditing && savedJob) {
         setEmailTarget({ job: savedJob, phase: savedPhase })
       }
-      // The people who order and coordinate the options should know when one is taken out.
+      // The people who order and coordinate the options should know when one is put in
+      // or taken out of a Lot.
       if (isEditing && savedJob) {
-        const changes = removedOptionChanges(dialogPhase, form)
-        if (changes.length > 0) setRemovalEmail({ job: savedJob, changes })
+        const added = addedOptionChanges(dialogPhase, savedPhase)
+        const removed = removedOptionChanges(dialogPhase, form)
+        setOptionEmails([
+          ...(added.length > 0 ? [{ kind: 'added_manually', job: savedJob, changes: added }] : []),
+          ...(removed.length > 0 ? [{ kind: 'removed', job: savedJob, changes: removed }] : []),
+        ])
       }
     } catch (saveError) {
       setNotice({ severity: 'error', message: saveError.message })
@@ -1273,14 +1279,15 @@ export default function SequenceSheets() {
             }}
           />
         )}
-        {removalEmail && (
+        {optionEmail && (
           <OptionsChangeEmailDialog
-            kind="removed"
-            job={removalEmail.job}
-            changes={removalEmail.changes}
-            onClose={() => setRemovalEmail(null)}
+            key={optionEmail.kind}
+            kind={optionEmail.kind}
+            job={optionEmail.job}
+            changes={optionEmail.changes}
+            onClose={() => setOptionEmails((current) => current.slice(1))}
             onSent={(message) => {
-              setRemovalEmail(null)
+              setOptionEmails((current) => current.slice(1))
               setNotice({ severity: 'success', message })
             }}
           />
@@ -1748,14 +1755,15 @@ export default function SequenceSheets() {
           }}
         />
       )}
-      {removalEmail && (
+      {optionEmail && (
         <OptionsChangeEmailDialog
-          kind="removed"
-          job={removalEmail.job}
-          changes={removalEmail.changes}
-          onClose={() => setRemovalEmail(null)}
+          key={optionEmail.kind}
+          kind={optionEmail.kind}
+          job={optionEmail.job}
+          changes={optionEmail.changes}
+          onClose={() => setOptionEmails((current) => current.slice(1))}
           onSent={(message) => {
-            setRemovalEmail(null)
+            setOptionEmails((current) => current.slice(1))
             setNotice({ severity: 'success', message })
           }}
         />

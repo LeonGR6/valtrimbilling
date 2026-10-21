@@ -320,3 +320,20 @@ previa, los mismos destinatarios precargados (que se pueden quitar o ampliar) y 
   funciones y el frontend deben desplegarse juntos**.
 - El correo dice "Options removed from the Sequence Sheet", sin referencia a Purchase Order, y "If they were already
   ordered, the order may need to change."
+
+### 10.2 Aviso también al agregar una option editando un Phase
+
+Al guardar la edición de un Phase que ya existía y que **agrega options a un Lot** (marcarlas en el Phase, o
+cambiar el Plan del Lot, que trae las del Plan nuevo), se ofrece el mismo aviso que al agregarlas desde un PO:
+misma vista previa, mismos destinatarios precargados (Purchasing y Job Coordinator, editables) y mismo "Send email" /
+"Don't send".
+
+- La pantalla compara el Phase antes de editar con el que quedó guardado (`addedOptionChanges`); así también cuenta un
+  Lot nuevo creado en la misma edición, con todas sus options. Un Lot que se elimina no genera aviso.
+- Nueva edge function `sequence-sheet-options-added-email` (tipo `added_manually`). El correo dice "N options were
+  added to the Sequence Sheet of this Job." y, a diferencia del de un PO, **no** cita Purchase Order ni marca
+  "New option".
+- Si una edición agrega y quita options a la vez, salen dos avisos, uno tras otro: primero el de agregadas y luego el
+  de quitadas.
+- Resumen de los tres avisos: `added` (desde un PO), `added_manually` (editando un Phase) y `removed`; los tres
+  comparten `_shared/optionsEmailRequest.ts`, y hay que desplegar sus tres funciones juntas.

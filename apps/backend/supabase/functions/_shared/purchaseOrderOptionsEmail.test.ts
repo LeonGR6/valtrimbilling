@@ -249,3 +249,51 @@ Deno.test("a single removed option reads in the singular", () => {
     "1 option was removed from the Sequence Sheet of this Job. If it was already ordered",
   );
 });
+
+Deno.test("an option added by editing a Phase does not point to a Purchase Order", () => {
+  const snapshot = buildOptionsEmailSnapshot(source({
+    kind: "added_manually",
+    additions: [
+      // Even when the option also appears in a Purchase Order, this change is not from one.
+      addition({ createdInPlan: true }),
+      addition({ optionCode: "2FIN5006", workOrderNo: null }),
+    ],
+  }));
+  const rendered = renderOptionsEmail(snapshot);
+  const draft = buildOptionsEmailDraft(snapshot);
+
+  assertEquals(
+    draft.subject,
+    "Options added to the Sequence Sheet · Job #1326 · Lot 27",
+  );
+  assertEquals(draft.label, "Options added to the Sequence Sheet");
+  assertEquals(draft.recipients.map(({ role }) => role), [
+    "Purchasing",
+    "Job Coordinator",
+  ]);
+
+  assertStringIncludes(rendered.html, "Options added</th>");
+  assertStringIncludes(rendered.html, "Added by Andrés Pérez on Oct 21, 2026.");
+  assert(!rendered.html.includes("Purchase Order"));
+  assert(!rendered.html.includes("New option"));
+
+  assertStringIncludes(
+    rendered.text,
+    "2 options were added to the Sequence Sheet of this Job.",
+  );
+  assert(!rendered.text.includes("printed in the Purchase Order"));
+  assertStringIncludes(rendered.text, "Lot\tScope\tPlan\tOption\tPrice\n");
+  assert(!rendered.text.includes("Purchase Order"));
+});
+
+Deno.test("a single option added by editing reads in the singular", () => {
+  const rendered = renderOptionsEmail(buildOptionsEmailSnapshot(source({
+    kind: "added_manually",
+    additions: [addition()],
+  })));
+
+  assertStringIncludes(
+    rendered.text,
+    "1 option was added to the Sequence Sheet of this Job.",
+  );
+});

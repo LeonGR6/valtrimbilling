@@ -271,3 +271,41 @@ Deno.test("nothing removed means nothing to send", async () => {
     "still selected in the Sequence Sheet",
   );
 });
+
+Deno.test("an option added by editing is loaded like an added one, without a Purchase Order", async () => {
+  const { snapshot } = await loadOptionsEmailSnapshot(
+    fakeClient(tables()),
+    "added_manually",
+    "Ana",
+    "4",
+    [
+      { lotId: "27", optionId: "3", createdOption: true },
+      // Not selected: it was not added.
+      { lotId: "27", optionId: "99" },
+    ],
+  );
+
+  assertEquals(snapshot.kind, "added_manually");
+  const [lot] = snapshot.lots;
+  assertEquals(lot.options.map((option) => option.code), ["1STR0024"]);
+  // The Lot's price, as for any selected option.
+  assertEquals(lot.options[0].price, 1126);
+  // The fixture has a Purchase Order line for this option, and the email ignores it.
+  assertEquals(lot.options[0].source, "");
+  assertEquals(lot.options[0].createdInPlan, false);
+});
+
+Deno.test("nothing selected means nothing was added by editing", async () => {
+  await assertRejects(
+    () =>
+      loadOptionsEmailSnapshot(
+        fakeClientWith({ lot_options: [] }),
+        "added_manually",
+        "Ana",
+        "4",
+        [{ lotId: "27", optionId: "3" }],
+      ),
+    Error,
+    "no longer selected in the Sequence Sheet",
+  );
+});

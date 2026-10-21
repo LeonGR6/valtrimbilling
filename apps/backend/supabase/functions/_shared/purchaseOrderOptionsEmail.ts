@@ -6,8 +6,9 @@
 // the application, like the Sequence Sheet email. Sending it goes through the same
 // Resend helper (sendSequenceSheetWithResend), which only needs a rendered message.
 
-// What happened to the options: a Purchase Order added them, or they were removed.
-export type OptionsEmailKind = "added" | "removed";
+// What happened to the options: a Purchase Order added them (`added`), someone added
+// them while editing a Phase (`added_manually`), or they were removed.
+export type OptionsEmailKind = "added" | "added_manually" | "removed";
 
 export interface OptionsEmailRecipient {
   role: string;
@@ -107,6 +108,12 @@ const WORDING = {
     byline: "Added by",
     label: "Options added from a Purchase Order",
   },
+  added_manually: {
+    title: "Options added to the Sequence Sheet",
+    column: "Options added",
+    byline: "Added by",
+    label: "Options added to the Sequence Sheet",
+  },
   removed: {
     title: "Options removed from the Sequence Sheet",
     column: "Options removed",
@@ -202,6 +209,10 @@ export function renderOptionsEmail(
     } not in the Sequence Sheet. ${
       total === 1 ? "It has" : "They have"
     } been added.`
+    : snapshot.kind === "added_manually"
+    ? `${
+      plural(total, "option was", "options were")
+    } added to the Sequence Sheet of this Job.`
     : `${
       plural(total, "option was", "options were")
     } removed from the Sequence Sheet of this Job. If ${
@@ -390,8 +401,8 @@ export function buildOptionsEmailSnapshot(
         "Option unavailable",
       price: addition.price,
       priceNotApplicable: addition.priceNotApplicable,
-      // A removed option has no Purchase Order to point to.
-      source: source.kind === "removed"
+      // Only an option a Purchase Order added points to one.
+      source: source.kind !== "added"
         ? ""
         : addition.workOrderNo
         ? `Purchase Order · work order ${addition.workOrderNo}${

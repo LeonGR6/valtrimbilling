@@ -3,8 +3,8 @@
 // role). The browser only names the (Lot, option) pairs that changed; everything else
 // is read here, and a pair that does not match what the database says is left out:
 //
-//   added    the option really is selected for a Lot of the Job
-//   removed  the option exists and is no longer selected for a Lot of the Job
+//   added / added_manually  the option really is selected for a Lot of the Job
+//   removed                 the option exists and is no longer selected for a Lot
 //
 // A removed option's price is the one thing the database no longer has (it was pinned
 // to the deleted selection), so the browser may send the price the Lot was billing.
@@ -99,14 +99,15 @@ export async function loadOptionsEmailSnapshot(
   const lotsById = indexBy(lotRows, (lot) => String(lot.id));
 
   // The pair has to be in the state the email describes: selected when it says
-  // "added", not selected any more when it says "removed".
+  // "added" (either way), not selected any more when it says "removed".
+  const shouldBeSelected = kind !== "removed";
   const valid = requested.filter((item) =>
     lotsById.has(item.lotId) &&
-    selected.has(`${item.lotId}:${item.optionId}`) === (kind === "added")
+    selected.has(`${item.lotId}:${item.optionId}`) === shouldBeSelected
   );
   if (valid.length === 0) {
     throw new Error(
-      kind === "added"
+      shouldBeSelected
         ? "Those options are no longer selected in the Sequence Sheet."
         : "Those options are still selected in the Sequence Sheet.",
     );
@@ -129,7 +130,7 @@ export async function loadOptionsEmailSnapshot(
           .in("id", pinnedPriceIds),
       caller.from("option_prices").select("option_id, price, is_not_applicable")
         .in("option_id", optionIds).is("effective_to", null),
-      // A removed option has no Purchase Order to point to.
+      // Only an option a Purchase Order added points to one.
       kind === "added"
         ? caller.from("purchase_order_current_lines")
           .select("lot_id, option_code_key, work_order_no, reference_no")

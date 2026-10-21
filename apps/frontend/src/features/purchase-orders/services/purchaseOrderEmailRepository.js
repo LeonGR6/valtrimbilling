@@ -1,9 +1,11 @@
 import { requireSupabase } from '../../../services/api.js'
 
-// Two emails tell Purchasing and the Job Coordinator how the options of a Sequence
-// Sheet changed: the ones a Purchase Order added, and the ones someone removed.
+// Three emails tell Purchasing and the Job Coordinator how the options of a Sequence
+// Sheet changed: the ones a Purchase Order added, the ones someone added by editing a
+// Phase, and the ones someone removed.
 const FUNCTIONS = {
   added: 'purchase-order-options-email',
+  added_manually: 'sequence-sheet-options-added-email',
   removed: 'sequence-sheet-options-removed-email',
 }
 

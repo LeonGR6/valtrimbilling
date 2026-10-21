@@ -106,3 +106,25 @@ export function removedOptionChanges(previousPhase, form) {
 
   return changes
 }
+
+/**
+ * The options a saved edit put into Lots: the ones a Lot now has that it did not have
+ * before. Read from the Phase as it was saved, so the Lots the edit created are there too
+ * with their new ids, and all their options count. A Lot whose Plan changed gets the
+ * options of the new Plan. Utility rows carry no options.
+ */
+export function addedOptionChanges(previousPhase, savedPhase) {
+  const previousLots = new Map((previousPhase?.lots ?? []).map((lot) => [String(lot.id), lot]))
+  const changes = []
+
+  for (const lot of savedPhase?.lots ?? []) {
+    if (lot.isUtilityBuilding) continue
+    const had = new Set((previousLots.get(String(lot.id))?.optionIds ?? []).map(String))
+    for (const optionId of lot.optionIds ?? []) {
+      if (had.has(String(optionId))) continue
+      changes.push({ lotId: Number(lot.id), optionId: Number(optionId) })
+    }
+  }
+
+  return changes
+}

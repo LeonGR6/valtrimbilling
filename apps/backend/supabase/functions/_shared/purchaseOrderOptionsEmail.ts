@@ -1,10 +1,13 @@
-// The email that tells Purchasing and the Job Coordinator which options a Purchase
-// Order added to the Sequence Sheet. Pure: the Edge Function loads the data with the
+// The email that tells Purchasing and the Job Coordinator which options changed in the
+// Sequence Sheet: the ones a Purchase Order added, or the ones someone removed. Pure: the Edge Function loads the data with the
 // signed-in user's permissions and passes it in, so nothing here touches the network.
 //
 // The message is HTML with a plain-text twin, has no attachment and no link back to
 // the application, like the Sequence Sheet email. Sending it goes through the same
 // Resend helper (sendSequenceSheetWithResend), which only needs a rendered message.
+
+// What happened to the options: a Purchase Order added them, or they were removed.
+export type OptionsEmailKind = "added" | "removed";
 
 export interface OptionsEmailRecipient {
   role: string;
@@ -18,7 +21,8 @@ export interface OptionsEmailOption {
   description: string;
   price: number | null;
   priceNotApplicable: boolean;
-  // The Purchase Order that printed it, e.g. "Work order 0813MDLH27-13325-19".
+  // The Purchase Order that printed it, e.g. "Work order 0813MDLH27-13325-19". Empty
+  // when there is none (a removed option).
   source: string;
   // The option was created in the Plan by this import, not only selected for the Lot.
   createdInPlan: boolean;
@@ -33,12 +37,13 @@ export interface OptionsEmailLot {
 }
 
 export interface OptionsEmailSnapshot {
+  kind: OptionsEmailKind;
   jobCode: string;
   community: string;
   builderName: string;
-  // Who added them (the signed-in user), and when.
-  addedBy: string;
-  addedOn: string;
+  // Who made the change (the signed-in user), and when.
+  changedBy: string;
+  changedOn: string;
   purchasing: OptionsEmailRecipient | null;
   jobCoordinator: OptionsEmailRecipient | null;
   // The roles that should receive it but have no email on file.
@@ -95,8 +100,23 @@ function lotsLabel(snapshot: OptionsEmailSnapshot) {
     : plural(snapshot.lots.length, "Lot", "Lots");
 }
 
+const WORDING = {
+  added: {
+    title: "Options added to the Sequence Sheet",
+    column: "Options added",
+    byline: "Added by",
+    label: "Options added from a Purchase Order",
+  },
+  removed: {
+    title: "Options removed from the Sequence Sheet",
+    column: "Options removed",
+    byline: "Removed by",
+    label: "Options removed from the Sequence Sheet",
+  },
+} as const;
+
 export function optionsEmailSubject(snapshot: OptionsEmailSnapshot) {
-  return `Options added to the Sequence Sheet · Job #${snapshot.jobCode} · ${
+  return `${WORDING[snapshot.kind].title} · Job #${snapshot.jobCode} · ${
     lotsLabel(snapshot)
   }`;
 }
@@ -114,7 +134,7 @@ export function buildOptionsEmailDraft(
 ): OptionsEmailDraft {
   return {
     key: "purchase-order-options",
-    label: "Options added from a Purchase Order",
+    label: WORDING[snapshot.kind].label,
     subject: optionsEmailSubject(snapshot),
     recipients: present(snapshot.purchasing, snapshot.jobCoordinator),
   };
@@ -153,9 +173,13 @@ function lotRowsHtml(lot: OptionsEmailLot, index: number) {
         ? '<span style="display:inline-block;margin-left:6px;padding:1px 7px;border-radius:999px;background-color:#dcfce7;color:#166534;font-size:11px;font-weight:700;">New option</span>'
         : ""
     }
-        <div style="color:#64748b;font-size:12px;">${
-      escapeHtml(option.source)
-    }</div>
+        ${
+      option.source
+        ? `<div style="color:#64748b;font-size:12px;">${
+          escapeHtml(option.source)
+        }</div>`
+        : ""
+    }
       </td>
       <td align="right" style="width:110px;${CELL}${border}font-weight:700;white-space:nowrap;">${
       escapeHtml(priceLabel(option))
@@ -169,14 +193,20 @@ export function renderOptionsEmail(
 ): RenderedOptionsEmail {
   const subject = optionsEmailSubject(snapshot);
   const total = optionCount(snapshot);
-  const title = "Options added to the Sequence Sheet";
-  const intro = `${
-    plural(total, "option was", "options were")
-  } printed in the Purchase Order of this Job and ${
-    total === 1 ? "was" : "were"
-  } not in the Sequence Sheet. ${
-    total === 1 ? "It has" : "They have"
-  } been added.`;
+  const title = WORDING[snapshot.kind].title;
+  const intro = snapshot.kind === "added"
+    ? `${
+      plural(total, "option was", "options were")
+    } printed in the Purchase Order of this Job and ${
+      total === 1 ? "was" : "were"
+    } not in the Sequence Sheet. ${
+      total === 1 ? "It has" : "They have"
+    } been added.`
+    : `${
+      plural(total, "option was", "options were")
+    } removed from the Sequence Sheet of this Job. If ${
+      total === 1 ? "it was" : "they were"
+    } already ordered, the order may need to change.`;
 
   const textRows = snapshot.lots.flatMap((lot) =>
     lot.options.map((option) =>
@@ -187,7 +217,7 @@ export function renderOptionsEmail(
         `${option.code} · ${option.description}`,
         priceLabel(option),
         option.source,
-      ].join("\t")
+      ].filter((part, index) => index < 5 || part !== "").join("\t")
     )
   );
   const text = [
@@ -198,10 +228,14 @@ export function renderOptionsEmail(
     "",
     intro,
     "",
-    "Lot\tScope\tPlan\tOption\tPrice\tPurchase Order",
+    snapshot.kind === "added"
+      ? "Lot\tScope\tPlan\tOption\tPrice\tPurchase Order"
+      : "Lot\tScope\tPlan\tOption\tPrice",
     ...textRows,
     "",
-    `Added by ${snapshot.addedBy} on ${snapshot.addedOn}.`,
+    `${
+      WORDING[snapshot.kind].byline
+    } ${snapshot.changedBy} on ${snapshot.changedOn}.`,
   ].join("\n");
 
   const html = `
@@ -249,7 +283,9 @@ export function renderOptionsEmail(
                 <tr style="background-color:#f1f5f9;">
                   <th align="left" style="padding:11px 14px;border-bottom:1px solid #cbd5e1;color:#475569;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.35px;">Lot</th>
                   <th align="left" style="padding:11px 14px;border-bottom:1px solid #cbd5e1;color:#475569;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.35px;">Plan</th>
-                  <th align="left" style="padding:11px 14px;border-bottom:1px solid #cbd5e1;color:#475569;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.35px;">Options added</th>
+                  <th align="left" style="padding:11px 14px;border-bottom:1px solid #cbd5e1;color:#475569;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.35px;">${
+    WORDING[snapshot.kind].column
+  }</th>
                   <th align="right" style="padding:11px 14px;border-bottom:1px solid #cbd5e1;color:#475569;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.35px;">Price</th>
                 </tr>
               </thead>
@@ -261,9 +297,9 @@ export function renderOptionsEmail(
         </tr>
         <tr>
           <td style="padding:0 26px 22px;background-color:#ffffff;border:1px solid #e2e8f0;border-top:0;border-radius:0 0 10px 10px;">
-            <p style="margin:0;color:#64748b;font-size:12px;">Added by ${
-    escapeHtml(snapshot.addedBy)
-  } on ${escapeHtml(snapshot.addedOn)}.</p>
+            <p style="margin:0;color:#64748b;font-size:12px;">${
+    WORDING[snapshot.kind].byline
+  } ${escapeHtml(snapshot.changedBy)} on ${escapeHtml(snapshot.changedOn)}.</p>
           </td>
         </tr>
       </table>
@@ -297,11 +333,12 @@ export interface OptionsEmailAddition {
 }
 
 export interface OptionsEmailSource {
+  kind: OptionsEmailKind;
   jobCode: string;
   community: string;
   builderName: string;
-  addedBy: string;
-  addedOn: string;
+  changedBy: string;
+  changedOn: string;
   // Null when the Job has nobody in that role; an empty email means no email on file.
   purchasing: OptionsEmailContact | null;
   jobCoordinator: OptionsEmailContact | null;
@@ -353,12 +390,15 @@ export function buildOptionsEmailSnapshot(
         "Option unavailable",
       price: addition.price,
       priceNotApplicable: addition.priceNotApplicable,
-      source: addition.workOrderNo
+      // A removed option has no Purchase Order to point to.
+      source: source.kind === "removed"
+        ? ""
+        : addition.workOrderNo
         ? `Purchase Order · work order ${addition.workOrderNo}${
           addition.referenceNo ? ` · ref ${addition.referenceNo}` : ""
         }`
         : "Purchase Order",
-      createdInPlan: addition.createdInPlan,
+      createdInPlan: source.kind === "added" && addition.createdInPlan,
     });
     lots.set(addition.lotId, lot);
   }
@@ -367,11 +407,12 @@ export function buildOptionsEmailSnapshot(
   const jobCoordinator = recipientFor("Job Coordinator", source.jobCoordinator);
 
   return {
+    kind: source.kind,
     jobCode: source.jobCode,
     community: source.community,
     builderName: source.builderName,
-    addedBy: source.addedBy,
-    addedOn: source.addedOn,
+    changedBy: source.changedBy,
+    changedOn: source.changedOn,
     purchasing,
     jobCoordinator,
     missingRoles: [

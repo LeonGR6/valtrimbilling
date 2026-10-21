@@ -50,12 +50,14 @@ const tables = (): Record<string, Row[]> => ({
   plan_options: [
     {
       id: 3,
+      plan_id: 12,
       code: "1STR0024",
       name: "Office with French Door",
       description: null,
     },
     {
       id: 4,
+      plan_id: 12,
       code: "2FIN-5006",
       name: "Half Shelf",
       description: "Add Half Size Shelf",
@@ -87,6 +89,7 @@ const tables = (): Record<string, Row[]> => ({
 Deno.test("loads the options, prices and sources of the pairs that were added", async () => {
   const { jobId, snapshot } = await loadOptionsEmailSnapshot(
     fakeClient(tables()),
+    "added",
     "Andrés Pérez",
     "4",
     [
@@ -98,7 +101,7 @@ Deno.test("loads the options, prices and sources of the pairs that were added", 
   assertEquals(jobId, "4");
   assertEquals(snapshot.jobCode, "1326");
   assertEquals(snapshot.builderName, "The Olson Company");
-  assertEquals(snapshot.addedBy, "Andrés Pérez");
+  assertEquals(snapshot.changedBy, "Andrés Pérez");
 
   const [lot] = snapshot.lots;
   assertEquals([lot.lotNumber, lot.scope, lot.planCode], [
@@ -127,6 +130,7 @@ Deno.test("loads the options, prices and sources of the pairs that were added", 
 Deno.test("only Purchasing is addressed when the Job Coordinator has no email", async () => {
   const { snapshot } = await loadOptionsEmailSnapshot(
     fakeClient(tables()),
+    "added",
     "Ana",
     "4",
     [
@@ -142,6 +146,7 @@ Deno.test("only Purchasing is addressed when the Job Coordinator has no email", 
 Deno.test("a pair that is not selected for a Lot of the Job is left out", async () => {
   const { snapshot } = await loadOptionsEmailSnapshot(
     fakeClient(tables()),
+    "added",
     "Ana",
     "4",
     [
@@ -164,6 +169,7 @@ Deno.test("nothing selected in the Sequence Sheet means nothing to send", async 
     () =>
       loadOptionsEmailSnapshot(
         fakeClientWith({ lot_options: [] }),
+        "added",
         "Ana",
         "4",
         [
@@ -176,9 +182,15 @@ Deno.test("nothing selected in the Sequence Sheet means nothing to send", async 
 
   await assertRejects(
     () =>
-      loadOptionsEmailSnapshot(fakeClientWith({ jobs: [] }), "Ana", "4", [
-        { lotId: "27", optionId: "3", createdOption: false },
-      ]),
+      loadOptionsEmailSnapshot(
+        fakeClientWith({ jobs: [] }),
+        "added",
+        "Ana",
+        "4",
+        [
+          { lotId: "27", optionId: "3", createdOption: false },
+        ],
+      ),
     Error,
     "Job is no longer available",
   );
@@ -187,3 +199,75 @@ Deno.test("nothing selected in the Sequence Sheet means nothing to send", async 
 function fakeClientWith(over: Record<string, Row[]>) {
   return fakeClient({ ...tables(), ...over });
 }
+
+Deno.test("a removed option is loaded from what the database no longer has selected", async () => {
+  // Option 5 is not in lot_options any more (it was unchecked); option 3 still is.
+  const data = tables();
+  data.plan_options.push({
+    id: 5,
+    plan_id: 12,
+    code: "2CAB3033",
+    name: "Add Upper Laundry Cabinet",
+    description: null,
+  });
+  const { snapshot } = await loadOptionsEmailSnapshot(
+    fakeClient(data),
+    "removed",
+    "Ana",
+    "4",
+    [
+      // Gone from the Lot: it counts, with the price the Lot was billing.
+      { lotId: "27", optionId: "5", price: -14, priceNotApplicable: false },
+      // Still selected: it did not change, so it is not in the email.
+      { lotId: "27", optionId: "3", price: 1126 },
+    ],
+  );
+
+  assertEquals(snapshot.kind, "removed");
+  const [lot] = snapshot.lots;
+  assertEquals(lot.options.map((option) => option.code), ["2CAB3033"]);
+  assertEquals(lot.options[0].price, -14);
+  assertEquals(lot.planCode, "4B");
+  // A removed option points to no Purchase Order and was not created by anyone.
+  assertEquals(lot.options[0].source, "");
+  assertEquals(lot.options[0].createdInPlan, false);
+});
+
+Deno.test("without a price from the browser a removed option shows the Plan's price", async () => {
+  const data = tables();
+  data.plan_options.push({
+    id: 5,
+    plan_id: 12,
+    code: "2CAB3033",
+    name: "Add Upper Laundry Cabinet",
+    description: null,
+  });
+  data.option_prices.push({
+    id: 300,
+    option_id: 5,
+    price: "-14.00",
+    is_not_applicable: false,
+  });
+  const { snapshot } = await loadOptionsEmailSnapshot(
+    fakeClient(data),
+    "removed",
+    "Ana",
+    "4",
+    [{ lotId: "27", optionId: "5" }],
+  );
+
+  assertEquals(snapshot.lots[0].options[0].price, -14);
+});
+
+Deno.test("nothing removed means nothing to send", async () => {
+  // Both pairs are still selected.
+  await assertRejects(
+    () =>
+      loadOptionsEmailSnapshot(fakeClient(tables()), "removed", "Ana", "4", [
+        { lotId: "27", optionId: "3" },
+        { lotId: "27", optionId: "4" },
+      ]),
+    Error,
+    "still selected in the Sequence Sheet",
+  );
+});

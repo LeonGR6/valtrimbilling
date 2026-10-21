@@ -42,13 +42,26 @@ function newRequestId() {
   return `request-${Date.now()}-${Math.random().toString(36).slice(2)}`
 }
 
+const WORDING = {
+  added: {
+    title: 'Tell Purchasing and the Job Coordinator?',
+    subtitle: 'The options were added to the Sequence Sheet. Review the email, and who gets it, before sending.',
+  },
+  removed: {
+    title: 'Tell Purchasing and the Job Coordinator about the removed options?',
+    subtitle: 'The options were removed from the Sequence Sheet. Review the email, and who gets it, before sending.',
+  },
+}
+
 /**
- * Offers to tell Purchasing and the Job Coordinator which options a Purchase Order
- * just added to the Sequence Sheet. It shows the exact email, starts with those two
- * as recipients, and lets the user remove them or add anyone else. Nothing is sent
- * until "Send email"; "Don't send" leaves the options added and tells no one.
+ * Offers to tell Purchasing and the Job Coordinator how the options of a Sequence
+ * Sheet just changed: `kind` 'added' (a Purchase Order added them) or 'removed'. It
+ * shows the exact email, starts with those two as recipients, and lets the user
+ * remove them or add anyone else. Nothing is sent until "Send email"; "Don't send"
+ * leaves the change as it is and tells no one.
  */
-export default function PurchaseOrderEmailDialog({ job, additions, onClose, onSent }) {
+export default function OptionsChangeEmailDialog({ kind = 'added', job, changes, onClose, onSent }) {
+  const wording = WORDING[kind] ?? WORDING.added
   const [preview, setPreview] = useState(null)
   const [loading, setLoading] = useState(true)
   const [recipients, setRecipients] = useState([])
@@ -64,7 +77,7 @@ export default function PurchaseOrderEmailDialog({ job, additions, onClose, onSe
   useEffect(() => {
     let ignore = false
 
-    previewOptionsEmail({ jobId: job.id, additions })
+    previewOptionsEmail({ kind, jobId: job.id, changes })
       .then((result) => {
         if (ignore) return
         const draft = emailDraftFromPreview(result)
@@ -82,7 +95,7 @@ export default function PurchaseOrderEmailDialog({ job, additions, onClose, onSe
     return () => {
       ignore = true
     }
-  }, [job.id, additions])
+  }, [job.id, kind, changes])
 
   const roleByEmail = useMemo(
     () => new Map(recipients.map(({ email, role }) => [email, role])),
@@ -107,8 +120,9 @@ export default function PurchaseOrderEmailDialog({ job, additions, onClose, onSe
     setError('')
     try {
       const result = await sendOptionsEmail({
+        kind,
         jobId: job.id,
-        additions,
+        changes,
         recipientEmails: checkedRecipients.emails,
         subject: checkedSubject.subject,
         requestId: requestId.current,
@@ -127,12 +141,12 @@ export default function PurchaseOrderEmailDialog({ job, additions, onClose, onSe
       onClose={sending ? undefined : onClose}
       fullWidth
       maxWidth="lg"
-      aria-labelledby="purchase-order-email-title"
+      aria-labelledby="options-change-email-title"
       slotProps={{
         paper: { sx: { maxHeight: { xs: '100%', sm: 'calc(100% - 48px)' } } },
       }}
     >
-      <DialogTitle id="purchase-order-email-title">
+      <DialogTitle id="options-change-email-title">
         <Stack
           direction={{ xs: 'column', sm: 'row' }}
           spacing={1}
@@ -140,11 +154,10 @@ export default function PurchaseOrderEmailDialog({ job, additions, onClose, onSe
         >
           <Box>
             <Typography variant="h5" component="span" fontWeight={750} sx={{ display: 'block' }}>
-              Tell Purchasing and the Job Coordinator?
+              {wording.title}
             </Typography>
             <Typography variant="body2" color="text.secondary" component="span" sx={{ display: 'block' }}>
-              The options were added to the Sequence Sheet. Review the email, and who
-              gets it, before sending.
+              {wording.subtitle}
             </Typography>
           </Box>
           <Chip size="small" color="info" variant="outlined" label="HTML email · No attachments" />

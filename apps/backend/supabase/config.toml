@@ -490,6 +490,11 @@ verify_jwt = true
 [functions.purchase-order-options-email]
 verify_jwt = true
 
+# Emails Purchasing and the Job Coordinator the options removed from a Sequence Sheet.
+# Same trust model and sender as purchase-order-options-email.
+[functions.sequence-sheet-options-removed-email]
+verify_jwt = true
+
 [analytics]
 enabled = true
 port = 54327

@@ -1,22 +1,33 @@
-// Loads what the "options added from a Purchase Order" email says, with the signed-in
+// Loads what the "options changed in the Sequence Sheet" email says, with the signed-in
 // user's own permissions (RLS applies: `caller` is a user client, never the service
-// role). The browser only names the (Lot, option) pairs that were added; everything
-// else is read here, and a pair that is not really selected for a Lot of the Job is
-// left out. Kept apart from the Edge Function so it can be tested with a fake client.
+// role). The browser only names the (Lot, option) pairs that changed; everything else
+// is read here, and a pair that does not match what the database says is left out:
+//
+//   added    the option really is selected for a Lot of the Job
+//   removed  the option exists and is no longer selected for a Lot of the Job
+//
+// A removed option's price is the one thing the database no longer has (it was pinned
+// to the deleted selection), so the browser may send the price the Lot was billing.
+// Kept apart from the Edge Function so it can be tested with a fake client.
 
 import {
   buildOptionsEmailSnapshot,
   type OptionsEmailAddition,
+  type OptionsEmailKind,
 } from "./purchaseOrderOptionsEmail.ts";
 
 // Only what the loader uses of the Supabase client.
 // deno-lint-ignore no-explicit-any
 type Caller = { from(table: string): any };
 
-export interface RequestedAddition {
+export interface RequestedChange {
   lotId: string;
   optionId: string;
-  createdOption: boolean;
+  // Added only: the import created the option in its Plan, not just selected it.
+  createdOption?: boolean;
+  // Removed only: what the Lot was billing for the option.
+  price?: number | null;
+  priceNotApplicable?: boolean;
 }
 
 // The client is not typed with the database, so a row is read field by field.
@@ -39,11 +50,15 @@ function indexBy(rows: Row[], key: (row: Row) => string) {
   );
 }
 
+const codeKey = (code: unknown) =>
+  String(code ?? "").toUpperCase().replace(/[^A-Z0-9]/gu, "");
+
 export async function loadOptionsEmailSnapshot(
   caller: Caller,
-  addedBy: string,
+  kind: OptionsEmailKind,
+  changedBy: string,
   jobId: string,
-  requested: RequestedAddition[],
+  requested: RequestedChange[],
 ) {
   const job = one(
     await caller
@@ -73,7 +88,6 @@ export async function loadOptionsEmailSnapshot(
   ]);
 
   const lotRows = many(lots);
-  // Only options that really are selected for a Lot of this Job can be in the email.
   const selected = new Map<string, { optionPriceId: string | null }>();
   for (const row of many(lotOptions)) {
     selected.set(`${row.lot_id}:${row.option_id}`, {
@@ -83,43 +97,55 @@ export async function loadOptionsEmailSnapshot(
     });
   }
   const lotsById = indexBy(lotRows, (lot) => String(lot.id));
+
+  // The pair has to be in the state the email describes: selected when it says
+  // "added", not selected any more when it says "removed".
   const valid = requested.filter((item) =>
-    lotsById.has(item.lotId) && selected.has(`${item.lotId}:${item.optionId}`)
+    lotsById.has(item.lotId) &&
+    selected.has(`${item.lotId}:${item.optionId}`) === (kind === "added")
   );
   if (valid.length === 0) {
     throw new Error(
-      "Those options are no longer selected in the Sequence Sheet.",
+      kind === "added"
+        ? "Those options are no longer selected in the Sequence Sheet."
+        : "Those options are still selected in the Sequence Sheet.",
     );
   }
 
   const optionIds = [...new Set(valid.map((item) => item.optionId))];
   const phaseIds = [...new Set(lotRows.map((lot) => lot.phase_id))];
-  const planIds = [...new Set(lotRows.map((lot) => lot.plan_id))];
   const pinnedPriceIds = [...selected.values()]
     .map((item) => item.optionPriceId)
     .filter((id): id is string => id !== null);
-  const [options, phases, plans, pinnedPrices, openPrices, poLines] =
-    await Promise.all([
-      caller.from("plan_options").select("id, code, name, description").in(
-        "id",
-        optionIds,
-      ),
+  const [options, phases, pinnedPrices, openPrices, poLines] = await Promise
+    .all([
+      caller.from("plan_options").select(
+        "id, plan_id, code, name, description",
+      ).in("id", optionIds),
       caller.from("phases").select("id, code, building").in("id", phaseIds),
-      caller.from("plans").select("id, code").in("id", planIds),
       pinnedPriceIds.length === 0
         ? Promise.resolve({ data: [], error: null })
         : caller.from("option_prices").select("id, price, is_not_applicable")
           .in("id", pinnedPriceIds),
       caller.from("option_prices").select("option_id, price, is_not_applicable")
         .in("option_id", optionIds).is("effective_to", null),
-      caller.from("purchase_order_current_lines")
-        .select("lot_id, option_code_key, work_order_no, reference_no")
-        .eq("job_id", job.id).in("lot_id", lotIds),
+      // A removed option has no Purchase Order to point to.
+      kind === "added"
+        ? caller.from("purchase_order_current_lines")
+          .select("lot_id, option_code_key, work_order_no, reference_no")
+          .eq("job_id", job.id).in("lot_id", lotIds)
+        : Promise.resolve({ data: [], error: null }),
     ]);
 
   const optionsById = indexBy(many(options), (row) => String(row.id));
-  const phasesById = indexBy(many(phases), (row) => String(row.id));
+  // The Plan shown is the option's own: a Lot that changed Plan lost the options of
+  // its old one, and those are what the email is about.
+  const planIds = [...new Set(many(options).map((row) => row.plan_id))];
+  const plans = planIds.length === 0
+    ? { data: [], error: null }
+    : await caller.from("plans").select("id, code").in("id", planIds);
   const plansById = indexBy(many(plans), (row) => String(row.id));
+  const phasesById = indexBy(many(phases), (row) => String(row.id));
   const pinnedById = indexBy(many(pinnedPrices), (row) => String(row.id));
   const openByOption = indexBy(
     many(openPrices),
@@ -129,18 +155,27 @@ export async function loadOptionsEmailSnapshot(
     many(poLines),
     (row) => `${row.lot_id}:${row.option_code_key}`,
   );
-  const codeKey = (code: unknown) =>
-    String(code ?? "").toUpperCase().replace(/[^A-Z0-9]/gu, "");
 
   const additions: OptionsEmailAddition[] = valid.flatMap((item) => {
     const lot = lotsById.get(item.lotId);
     const option = optionsById.get(item.optionId);
     if (!lot || !option) return [];
     const phase = phasesById.get(String(lot.phase_id));
-    const pinned = pinnedById.get(
-      selected.get(`${item.lotId}:${item.optionId}`)!.optionPriceId ?? "",
-    );
-    const price = pinned ?? openByOption.get(item.optionId);
+
+    let price: number | null;
+    let priceNotApplicable: boolean;
+    if (kind === "removed" && item.price !== undefined) {
+      // What the Lot was billing: the pinned price died with the selection.
+      price = item.price === null ? null : Number(item.price);
+      priceNotApplicable = item.priceNotApplicable === true;
+    } else {
+      const pinned = pinnedById.get(
+        selected.get(`${item.lotId}:${item.optionId}`)?.optionPriceId ?? "",
+      );
+      const row = pinned ?? openByOption.get(item.optionId);
+      price = row ? Number(row.price) : null;
+      priceNotApplicable = row?.is_not_applicable === true;
+    }
     const poLine = poByLotAndCode.get(`${item.lotId}:${codeKey(option.code)}`);
 
     return [{
@@ -148,15 +183,17 @@ export async function loadOptionsEmailSnapshot(
       lotNumber: String(lot.lot_number ?? ""),
       phaseCode: String(phase?.code ?? ""),
       building: String(phase?.building ?? ""),
-      planCode: String(plansById.get(String(lot.plan_id))?.code ?? ""),
+      planCode: String(
+        plansById.get(String(option.plan_id))?.code ?? "",
+      ),
       optionCode: String(option.code ?? ""),
       optionName: String(option.name ?? ""),
       optionDescription: String(option.description ?? ""),
-      price: price ? Number(price.price) : null,
-      priceNotApplicable: price?.is_not_applicable === true,
+      price,
+      priceNotApplicable,
       workOrderNo: poLine ? String(poLine.work_order_no) : null,
       referenceNo: poLine ? String(poLine.reference_no) : null,
-      createdInPlan: item.createdOption,
+      createdInPlan: kind === "added" && item.createdOption === true,
     }];
   });
 
@@ -164,18 +201,22 @@ export async function loadOptionsEmailSnapshot(
   const contact = (id: unknown) => {
     const person = contacts.get(String(id));
     return person
-      ? { name: String(person.name ?? ""), email: String(person.email ?? "") }
+      ? {
+        name: String(person.name ?? ""),
+        email: String(person.email ?? ""),
+      }
       : null;
   };
 
   return {
     jobId: String(job.id),
     snapshot: buildOptionsEmailSnapshot({
+      kind,
       jobCode: String(job.code ?? ""),
       community: String(job.community ?? ""),
       builderName: String(one(builder)?.name ?? ""),
-      addedBy,
-      addedOn: new Date().toLocaleDateString("en-US", {
+      changedBy,
+      changedOn: new Date().toLocaleDateString("en-US", {
         timeZone: "America/Los_Angeles",
         month: "short",
         day: "numeric",

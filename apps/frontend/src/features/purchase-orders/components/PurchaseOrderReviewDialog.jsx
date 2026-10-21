@@ -51,7 +51,7 @@ import {
 
 const PurchaseOrderImportDialog = lazy(() => import('./PurchaseOrderImportDialog.jsx'))
 const PurchaseOrderPriceDialog = lazy(() => import('./PurchaseOrderPriceDialog.jsx'))
-const PurchaseOrderEmailDialog = lazy(() => import('./PurchaseOrderEmailDialog.jsx'))
+const OptionsChangeEmailDialog = lazy(() => import('./OptionsChangeEmailDialog.jsx'))
 
 // Only these roles can change the Job's options.
 const IMPORT_ROLES = ['ADMIN', 'PROJECT_MANAGEMENT']
@@ -686,9 +686,10 @@ export default function PurchaseOrderReviewDialog({
 
       {emailTarget && (
         <Suspense fallback={null}>
-          <PurchaseOrderEmailDialog
+          <OptionsChangeEmailDialog
+            kind="added"
             job={job}
-            additions={emailTarget.additions}
+            changes={emailTarget.additions}
             onClose={() => setEmailTarget(null)}
             onSent={(message) => {
               setEmailNotice(message)

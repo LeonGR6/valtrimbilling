@@ -31,11 +31,12 @@ const addition = (
 const source = (
   over: Partial<OptionsEmailSource> = {},
 ): OptionsEmailSource => ({
+  kind: "added",
   jobCode: "1326",
   community: "Heritage Walk",
   builderName: "The Olson Company",
-  addedBy: "Andrés Pérez",
-  addedOn: "Oct 21, 2026",
+  changedBy: "Andrés Pérez",
+  changedOn: "Oct 21, 2026",
   purchasing: { name: "Pat Purchasing", email: "Pat@Valtriminc.com" },
   jobCoordinator: { name: "Jo Coordinator", email: "jo@valtriminc.com" },
   additions: [addition()],
@@ -184,4 +185,67 @@ Deno.test("the intro and the badge follow the number of options", () => {
   );
   assertStringIncludes(rendered.text, "They have been added.");
   assert(!rendered.html.includes("New option"));
+});
+
+Deno.test("a removed-options email says what was removed, with no Purchase Order", () => {
+  const snapshot = buildOptionsEmailSnapshot(source({
+    kind: "removed",
+    additions: [
+      addition({ createdInPlan: false, price: -14, optionCode: "2CAB3033" }),
+      addition({
+        lotId: "28",
+        lotNumber: "28",
+        planCode: "2A",
+        optionCode: "2WRD0009",
+        price: 287,
+      }),
+    ],
+  }));
+  const draft = buildOptionsEmailDraft(snapshot);
+  const rendered = renderOptionsEmail(snapshot);
+
+  assertEquals(draft.recipients.map(({ role }) => role), [
+    "Purchasing",
+    "Job Coordinator",
+  ]);
+  assertEquals(
+    draft.subject,
+    "Options removed from the Sequence Sheet · Job #1326 · 2 Lots",
+  );
+  assertEquals(draft.label, "Options removed from the Sequence Sheet");
+
+  assertStringIncludes(
+    rendered.html,
+    "Options removed from the Sequence Sheet",
+  );
+  assertStringIncludes(rendered.html, "Options removed</th>");
+  assertStringIncludes(
+    rendered.html,
+    "Removed by Andrés Pérez on Oct 21, 2026.",
+  );
+  assertStringIncludes(rendered.html, "-$14.00");
+  assert(!rendered.html.includes("Purchase Order ·"));
+  assert(!rendered.html.includes("New option"));
+  assert(!rendered.html.includes("Added by"));
+
+  assertStringIncludes(
+    rendered.text,
+    "2 options were removed from the Sequence Sheet of this Job.",
+  );
+  assertStringIncludes(rendered.text, "the order may need to change.");
+  assertStringIncludes(rendered.text, "Lot\tScope\tPlan\tOption\tPrice\n");
+  // No Purchase Order column in the text either.
+  assert(!rendered.text.includes("Purchase Order"));
+});
+
+Deno.test("a single removed option reads in the singular", () => {
+  const rendered = renderOptionsEmail(buildOptionsEmailSnapshot(source({
+    kind: "removed",
+    additions: [addition({ createdInPlan: false })],
+  })));
+
+  assertStringIncludes(
+    rendered.text,
+    "1 option was removed from the Sequence Sheet of this Job. If it was already ordered",
+  );
 });

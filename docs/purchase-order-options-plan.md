@@ -304,3 +304,19 @@ Coordinator** (los de la tabla `people` del Job):
   que no esté realmente en el Sequence Sheet. Envía con Resend y reutiliza los secrets del correo del Sequence Sheet
   (`PURCHASE_ORDER_OPTIONS_FROM_EMAIL` / `_REPLY_TO` si existen; si no, `SEQUENCE_SHEET_*` y luego `FOLLOW_UP_*`).
   Usa una clave de idempotencia por apertura del diálogo: reintentar tras un fallo no duplica el correo.
+
+### 10.1 Aviso también al quitar una option del Sequence Sheet
+
+Al **editar un Phase** y quitar una o más options de un Lot (desmarcarlas, o cambiar el Plan del Lot, lo que
+suelta las del Plan anterior), se ofrece el mismo aviso a Purchasing y al Job Coordinator, con la misma vista
+previa, los mismos destinatarios precargados (que se pueden quitar o ampliar) y el mismo "Send email" / "Don't send":
+
+- La pantalla compara el Phase antes y después de guardar (`removedOptionChanges`) y manda solo los pares (Lot,
+  option) quitados, junto con el precio que el Lot facturaba: ese precio se borra con la selección y la base ya no lo
+  tiene. Todo lo demás lo lee el servidor; un par que siga seleccionado no entra en el correo.
+- Un Lot que se elimina por completo no genera aviso: el correo habla de options y el Lot ya no está para describirlo.
+- Nueva edge function `sequence-sheet-options-removed-email`. Las dos funciones de aviso (`added` y `removed`) comparten
+  `_shared/optionsEmailRequest.ts`; el cuerpo de la petición pasó de `additions` a `changes`, así que **las dos
+  funciones y el frontend deben desplegarse juntos**.
+- El correo dice "Options removed from the Sequence Sheet", sin referencia a Purchase Order, y "If they were already
+  ordered, the order may need to change."

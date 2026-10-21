@@ -4,6 +4,14 @@
 // done live by compare_purchase_orders, so it never goes stale.
 //
 // POST body: { job_document_id: uuid, force?: boolean }
+//   or       { job_document_id: uuid, action: 'rematch' }
+//   or       { job_document_id: uuid, action: 'confirm_header', work_order_no: string }
+//
+// `rematch` matches the stored lines of the document's Job with its Lots again,
+// without reading the PDF: a Lot added after the upload, or a name a reviewer
+// taught, can settle a header that was open. `confirm_header` accepts the
+// suggested match of one work order: it remembers the names the PDF used (MDL for
+// MODELS) as aliases of the Job and matches the Job again.
 //
 // A PDF that is not a Purchase Order of options (or whose layout is not supported
 // yet) ends as `not_option_po` with the reason: that is a result, not an error.
@@ -18,7 +26,13 @@
 import { handlePreflight, json } from '../_shared/cors.ts'
 import { parsePurchaseOrder } from '../_shared/purchaseOrder.ts'
 import { buildAnalysisRecord } from '../_shared/purchaseOrderRecord.ts'
-import type { JobContext, JobPlanOption } from '../_shared/purchaseOrderResolve.ts'
+import {
+  aliasesToLearn,
+  groupLinesByHeader,
+  type JobContext,
+  type JobPlanOption,
+  resolveHeader,
+} from '../_shared/purchaseOrderResolve.ts'
 import {
   decidePurchaseOrderAnalysis,
   type PurchaseOrderStatus,
@@ -181,6 +195,80 @@ async function loadJobContext(db: AdminClient, jobId: number) {
   return { context, aliases, options }
 }
 
+/**
+ * Matches every stored line of a Job with the Job's Lots again, from the header
+ * values kept with each line. One update per printed header.
+ */
+async function rematchJob(db: AdminClient, jobId: number) {
+  const job = await loadJobContext(db, jobId)
+  const lines = await fetchAll((from, to) =>
+    db.from('purchase_order_lines')
+      .select('id, lot_raw, phase_raw, plan_raw, elevation_raw')
+      .eq('job_id', jobId).order('id').range(from, to)
+  )
+
+  let updated = 0
+  for (const group of groupLinesByHeader(lines)) {
+    const resolution = resolveHeader(group.header, job.context, job.aliases)
+    for (let start = 0; start < group.ids.length; start += 200) {
+      const { error } = await db.from('purchase_order_lines')
+        .update({
+          lot_id: resolution.lotId,
+          phase_id: resolution.phaseId,
+          plan_id: resolution.planId,
+          header_status: resolution.status,
+          header_match: resolution.detail,
+        })
+        .in('id', group.ids.slice(start, start + 200))
+      if (error) throw error
+    }
+    updated += group.ids.length
+  }
+  return updated
+}
+
+/** Accepts the suggested match of one work order and remembers the names it used. */
+async function confirmHeader(
+  db: AdminClient,
+  analysisId: string,
+  workOrderNo: string,
+  jobId: number,
+  userId: string,
+) {
+  const { data: line, error } = await db.from('purchase_order_lines')
+    .select('lot_raw, phase_raw, plan_raw, elevation_raw, lot_id, header_status')
+    .eq('analysis_id', analysisId).eq('work_order_no', workOrderNo)
+    .order('id').limit(1).maybeSingle()
+  if (error) throw error
+  if (!line || line.lot_id === null || line.header_status !== 'suggested') return null
+
+  const job = await loadJobContext(db, jobId)
+  const lot = job.context.lots.find((candidate) => candidate.id === Number(line.lot_id))
+  if (!lot) return null
+
+  const learned = aliasesToLearn({
+    lotRaw: line.lot_raw,
+    phaseRaw: line.phase_raw,
+    planRaw: line.plan_raw,
+    elevationRaw: line.elevation_raw,
+  }, lot, job.context)
+  if (learned.length > 0) {
+    const { error: aliasError } = await db.from('purchase_order_aliases').upsert(
+      learned.map((alias) => ({
+        job_id: jobId,
+        kind: alias.kind,
+        raw_key: alias.rawKey,
+        target_key: alias.targetKey,
+        created_by: userId,
+      })),
+      { onConflict: 'job_id,kind,raw_key' },
+    )
+    if (aliasError) throw aliasError
+  }
+
+  return await rematchJob(db, jobId)
+}
+
 async function markFailed(db: AdminClient, analysisId: string, message: string) {
   const { data } = await db
     .from('purchase_order_analyses')
@@ -229,6 +317,39 @@ Deno.serve(async (req) => {
     }
 
     db = serviceClient()
+
+    if (body?.action === 'rematch' || body?.action === 'confirm_header') {
+      const { data: analysisRow, error: analysisError } = await db
+        .from('purchase_order_analyses')
+        .select('id, status')
+        .eq('job_document_id', document.id)
+        .maybeSingle()
+      if (analysisError) throw analysisError
+      if (!analysisRow || analysisRow.status === 'analyzing') {
+        return json({ error: 'Analyze this Purchase Order first.' }, 409)
+      }
+
+      if (body.action === 'rematch') {
+        return json({ updated: await rematchJob(db, document.job_id) })
+      }
+
+      const workOrderNo = body?.work_order_no
+      if (typeof workOrderNo !== 'string' || workOrderNo.trim() === '') {
+        return json({ error: 'Select a work order.' }, 400)
+      }
+      const updated = await confirmHeader(
+        db,
+        analysisRow.id,
+        workOrderNo,
+        document.job_id,
+        auth.userId,
+      )
+      if (updated === null) {
+        return json({ error: 'That work order has no suggested match to confirm.' }, 409)
+      }
+      return json({ updated })
+    }
+
     const { data: existingRow, error: existingError } = await db
       .from('purchase_order_analyses')
       .select(ANALYSIS_COLUMNS)

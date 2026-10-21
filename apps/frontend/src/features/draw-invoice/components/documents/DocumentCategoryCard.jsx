@@ -21,6 +21,7 @@ import {
   describePaymentScheduleDocument,
   isPaymentScheduleDocumentType,
 } from '../../../payment-schedules/services/paymentScheduleRecord.js'
+import { describePurchaseOrderDocument } from '../../../purchase-orders/services/purchaseOrderRecord.js'
 import { formatFileSize } from './jobDocumentTypes.js'
 
 function formatUploadDate(value) {
@@ -43,11 +44,15 @@ export default function DocumentCategoryCard({
   analyzingDocumentId = null,
   scheduleTemplatesByDocument = {},
   analyzingScheduleDocumentId = null,
+  purchaseOrderAnalyses = {},
+  analyzingPurchaseOrderId = null,
+  purchaseOrderSummaries = {},
   onAdd,
   onDelete,
   onOpen,
   onReviewTemplate,
   onReviewSchedule,
+  onReviewPurchaseOrder,
   onFillNotice,
 }) {
   const { Icon } = type
@@ -55,6 +60,10 @@ export default function DocumentCategoryCard({
   // A Payment Schedule PDF can be used as the Job's schedule.
   const supportsSchedules = isPaymentScheduleDocumentType(type.documentType)
     && Boolean(onReviewSchedule)
+  // A Purchase Order PDF is read for the options it prints and compared with the
+  // options of the Job.
+  const supportsPurchaseOrders = type.documentType === 'PURCHASE_ORDER'
+    && Boolean(onReviewPurchaseOrder)
   // A Preliminary Notice saved with blanks still empty does not count.
   const missingRequiredDocument = required
     && !documents.some(({ isComplete }) => isComplete !== false)
@@ -138,6 +147,16 @@ export default function DocumentCategoryCard({
             const analyzing = supportsSchedules
               ? analyzingScheduleDocumentId === document.id
               : analyzingDocumentId === document.id
+            const purchaseOrder = supportsPurchaseOrders
+              ? purchaseOrderAnalyses[document.id] ?? null
+              : null
+            const purchaseOrderInfo = supportsPurchaseOrders
+              ? describePurchaseOrderDocument(
+                purchaseOrder,
+                purchaseOrderSummaries[document.id] ?? null,
+                analyzingPurchaseOrderId === document.id,
+              )
+              : null
             const busy = openingDocumentId === document.id
               || deletingDocumentId === document.id
 
@@ -239,12 +258,53 @@ export default function DocumentCategoryCard({
                   </Stack>
                 )}
 
+                {purchaseOrderInfo && (
+                  <Stack
+                    direction="row"
+                    spacing={0.75}
+                    useFlexGap
+                    sx={{ mt: 1, flexWrap: 'wrap' }}
+                  >
+                    {purchaseOrderInfo.linesChip && (
+                      <Chip
+                        size="small"
+                        color="primary"
+                        variant="outlined"
+                        label={purchaseOrderInfo.linesChip.label}
+                      />
+                    )}
+                    {purchaseOrderInfo.status && (
+                      <Tooltip title={purchaseOrderInfo.title ?? ''}>
+                        <Chip
+                          size="small"
+                          color={purchaseOrderInfo.status.color}
+                          variant={purchaseOrderInfo.status.color === 'default' ? 'outlined' : 'filled'}
+                          label={purchaseOrderInfo.status.label}
+                        />
+                      </Tooltip>
+                    )}
+                  </Stack>
+                )}
+
                 <Stack
                   direction="row"
                   spacing={0.5}
                   useFlexGap
                   sx={{ mt: 1.25, flexWrap: 'wrap' }}
                 >
+                  {supportsPurchaseOrders && (canManage || purchaseOrder) && (
+                    <Button
+                      size="small"
+                      startIcon={analyzingPurchaseOrderId === document.id
+                        ? <CircularProgress size={16} />
+                        : <FactCheckRoundedIcon />}
+                      aria-label={`Compare ${document.name} with the system`}
+                      disabled={analyzingPurchaseOrderId === document.id || busy}
+                      onClick={() => onReviewPurchaseOrder(document)}
+                    >
+                      {purchaseOrder && purchaseOrder.status !== 'failed' ? 'Review' : 'Analyze'}
+                    </Button>
+                  )}
                   {supportsSchedules && (canManage || template) && (
                     <Button
                       size="small"

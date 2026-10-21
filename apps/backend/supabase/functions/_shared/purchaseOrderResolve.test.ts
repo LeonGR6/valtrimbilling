@@ -1,7 +1,9 @@
 import { assertEquals } from "@std/assert";
 import { buildAnalysisRecord, lineRow } from "./purchaseOrderRecord.ts";
 import {
+  aliasesToLearn,
   chooseOptionId,
+  groupLinesByHeader,
   type JobContext,
   resolveHeader,
 } from "./purchaseOrderResolve.ts";
@@ -310,4 +312,65 @@ Deno.test("what a request does depends on the analysis it finds", () => {
       "reanalyze",
     );
   }
+});
+
+Deno.test("confirming a suggested header teaches the names it was matched by", () => {
+  const lot = context.lots[0];
+  assertEquals(
+    aliasesToLearn(
+      { lotRaw: "27", phaseRaw: "MDL", planRaw: "4", elevationRaw: "B" },
+      lot,
+      context,
+    ),
+    [{ kind: "phase", rawKey: "MDL", targetKey: "MODELS" }],
+  );
+
+  // Nothing to learn when the names already matched.
+  assertEquals(
+    aliasesToLearn(
+      { lotRaw: "27", phaseRaw: "Models", planRaw: "4", elevationRaw: "B" },
+      lot,
+      context,
+    ),
+    [],
+  );
+
+  // The system names the Plan without its elevation: "4B" stands for "4".
+  const plain: JobContext = {
+    ...context,
+    plans: [{ id: 12, code: "4" }],
+  };
+  assertEquals(
+    aliasesToLearn(
+      { lotRaw: "27", phaseRaw: "MODELS", planRaw: "4", elevationRaw: "B" },
+      lot,
+      plain,
+    ),
+    [{ kind: "plan", rawKey: "4B", targetKey: "4" }],
+  );
+
+  // And the learned name settles the header next time.
+  const again = resolveHeader(
+    { lotRaw: "27", phaseRaw: "MODELS", planRaw: "4", elevationRaw: "B" },
+    plain,
+    { plan: new Map([["4B", "4"]]) },
+  );
+  assertEquals(again.status, "resolved");
+});
+
+Deno.test("lines of one work order are matched together", () => {
+  const line = (id: number, lot: string, plan: string) => ({
+    id,
+    lot_raw: lot,
+    phase_raw: "MDL",
+    plan_raw: plan,
+    elevation_raw: "B",
+  });
+  const groups = groupLinesByHeader([
+    line(1, "27", "4"),
+    line(2, "27", "4"),
+    line(3, "28", "2"),
+  ]);
+  assertEquals(groups.map((group) => group.ids), [[1, 2], [3]]);
+  assertEquals(groups[0].header.lotRaw, "27");
 });

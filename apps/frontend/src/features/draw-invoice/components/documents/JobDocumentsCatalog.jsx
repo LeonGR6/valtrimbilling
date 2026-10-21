@@ -29,6 +29,11 @@ import { usePersistentState, isStoredString } from '../../../../hooks/usePersist
 import { useReleaseTemplates } from '../../../release-templates/hooks/useReleaseTemplates.js'
 import { usePaymentScheduleTemplates } from '../../../payment-schedules/hooks/usePaymentScheduleTemplates.js'
 import { isPaymentScheduleDocumentType } from '../../../payment-schedules/services/paymentScheduleRecord.js'
+import {
+  usePurchaseOrderComparison,
+  usePurchaseOrders,
+} from '../../../purchase-orders/hooks/usePurchaseOrders.js'
+import { summarizeByDocument } from '../../../purchase-orders/services/purchaseOrderRecord.js'
 import { summarizeJobDocumentRequirements } from '../../services/jobDocumentRecord.js'
 import {
   filterJobsForDocuments,
@@ -48,6 +53,9 @@ const ReleaseTemplateReviewDialog = lazy(
 const PreliminaryNoticeEditorDialog = lazy(() => import('./PreliminaryNoticeEditorDialog.jsx'))
 const PaymentScheduleReviewDialog = lazy(
   () => import('../../../payment-schedules/components/PaymentScheduleReviewDialog.jsx'),
+)
+const PurchaseOrderReviewDialog = lazy(
+  () => import('../../../purchase-orders/components/PurchaseOrderReviewDialog.jsx'),
 )
 
 function jobRequirementStatus(requiredTypeKeys, documents) {
@@ -102,8 +110,8 @@ export default function JobDocumentsCatalog({ jobs, documentState }) {
   const [deleteTarget, setDeleteTarget] = useState(null)
   const [noticeEditorJob, setNoticeEditorJob] = useState(null)
   const [deleteError, setDeleteError] = useState(null)
-  // Documents waiting to be reviewed as templates, each a Release or a Payment
-  // Schedule (`kind`). The first one is open; `total` lets the dialog say
+  // Documents waiting to be reviewed, each a Release, a Payment Schedule or a
+  // Purchase Order (`kind`). The first one is open; `total` lets the dialog say
   // "Release 1 of 3".
   const [templateQueue, setTemplateQueue] = useState({ items: [], total: 0 })
   const templateTarget = templateQueue.items[0] ?? null
@@ -145,6 +153,15 @@ export default function JobDocumentsCatalog({ jobs, documentState }) {
     [documentsByJob],
   )
   const scheduleTemplates = usePaymentScheduleTemplates(scheduleDocumentIds)
+  const purchaseOrderDocumentIds = useMemo(
+    () => Object.values(documentsByJob)
+      .flat()
+      .filter((document) => document.documentType === 'PURCHASE_ORDER')
+      .map((document) => document.id)
+      .sort(),
+    [documentsByJob],
+  )
+  const purchaseOrders = usePurchaseOrders(purchaseOrderDocumentIds)
   const builderOptions = useMemo(() => jobDocumentBuilderOptions(jobs), [jobs])
   // A remembered Builder or Community that no longer exists falls back to "All".
   const builderFilter = storedBuilderFilter === 'ALL'
@@ -203,6 +220,20 @@ export default function JobDocumentsCatalog({ jobs, documentState }) {
   const openJobId = expandedJobId === undefined
     ? visibleJobs[0]?.id ?? null
     : expandedJobId
+  // The cards of the open Job say how many options of each Purchase Order need a
+  // look. Only that Job is compared, and only when it has a Purchase Order that
+  // was analyzed.
+  const openJobHasAnalyzedPurchaseOrder = openJobId !== null
+    && (documentsByJob[String(openJobId)] ?? []).some((document) =>
+      purchaseOrders.analysesByDocumentId[document.id]?.status === 'analyzed')
+  const purchaseOrderComparison = usePurchaseOrderComparison(
+    openJobHasAnalyzedPurchaseOrder ? openJobId : null,
+    purchaseOrders.revision,
+  )
+  const purchaseOrderSummaries = useMemo(
+    () => summarizeByDocument(purchaseOrderComparison.lines),
+    [purchaseOrderComparison.lines],
+  )
 
   const handleAddDocuments = async (files) => {
     if (!uploadTarget) return
@@ -219,6 +250,10 @@ export default function JobDocumentsCatalog({ jobs, documentState }) {
       // list); the review asks whether it will be used as the Job's schedule.
       if (type.documentType === 'PAYMENT_SCHEDULE' && uploaded?.length > 0) {
         openTemplateReview(uploaded.map((document) => ({ job, document, kind: 'schedule' })))
+      }
+      // A Purchase Order is read for its options and compared with the Job's.
+      if (type.documentType === 'PURCHASE_ORDER' && uploaded?.length > 0) {
+        openTemplateReview(uploaded.map((document) => ({ job, document, kind: 'purchase-order' })))
       }
     } catch {
       // The hook exposes the actionable error and refreshes any successful files.
@@ -499,6 +534,10 @@ export default function JobDocumentsCatalog({ jobs, documentState }) {
                         analyzingDocumentId={releaseTemplates.analyzingDocumentId}
                         scheduleTemplatesByDocument={scheduleTemplates.templatesByDocumentId}
                         analyzingScheduleDocumentId={scheduleTemplates.analyzingDocumentId}
+                        purchaseOrderAnalyses={purchaseOrders.analysesByDocumentId}
+                        analyzingPurchaseOrderId={purchaseOrders.analyzingDocumentId}
+                        purchaseOrderSummaries={isExpanded ? purchaseOrderSummaries : {}}
+                        onReviewPurchaseOrder={(document) => openTemplateReview([{ job, document, kind: 'purchase-order' }])}
                         onReviewTemplate={(document) => openTemplateReview([{ job, document, kind: 'release' }])}
                         onReviewSchedule={(document) => openTemplateReview([{ job, document, kind: 'schedule' }])}
                         onFillNotice={() => setNoticeEditorJob(job)}
@@ -564,7 +603,19 @@ export default function JobDocumentsCatalog({ jobs, documentState }) {
             </Backdrop>
           )}
         >
-          {templateTarget.kind === 'schedule' ? (
+          {templateTarget.kind === 'purchase-order' ? (
+            <PurchaseOrderReviewDialog
+              key={templateTarget.document.id}
+              job={templateTarget.job}
+              document={templateTarget.document}
+              purchaseOrders={purchaseOrders}
+              canManage={canManageJobDocuments && templateTarget.job.isActive !== false}
+              position={templateQueue.total > 1
+                ? { index: templateQueue.total - templateQueue.items.length + 1, total: templateQueue.total }
+                : null}
+              onClose={closeTemplateReview}
+            />
+          ) : templateTarget.kind === 'schedule' ? (
             <PaymentScheduleReviewDialog
               key={templateTarget.document.id}
               job={templateTarget.job}

@@ -205,7 +205,7 @@ cambiaría el precio de todo el Plan.
 |---|---|
 | 1. Parser Olson + normalización + emparejamiento + tests | **Hecha** (`_shared/purchaseOrder*.ts`, 17 tests) |
 | 2. Migración + edge function + RPC de comparación | **Hecha** (sin aplicar ni desplegar; ver notas) |
-| 3. UI de revisión en Documents | Pendiente |
+| 3. UI de revisión en Documents | **Hecha** (`features/purchase-orders`; la edge function necesita un nuevo despliegue) |
 | 4. Importar options faltantes | Pendiente |
 | 5. "Use PO price" | Pendiente |
 | 6. Insignias en Packages | Pendiente |
@@ -234,3 +234,15 @@ Notas de la etapa 2:
 - Una Phase repetida en varios buildings se distingue por el número de Lot y el Plan.
 - Pendiente para la etapa 3: la similitud de descripción (umbral 0.5) se calibrará con nombres reales del sistema,
   que suelen ser más largos que lo que imprime el PO.
+
+Notas de la etapa 3:
+
+- La tarjeta de Purchase Orders muestra por PDF su estado ("Analyzing…", "3 to review", "All match",
+  "Not a PO of options") y un botón Analyze / Review. Subir un PO abre la revisión de inmediato (en cola si son varios).
+- El diálogo compara cada opción del PDF con el sistema (tabla por work order) y lista las options que el sistema
+  tiene en esos Lots y ningún PO cubre. Solo informa.
+- "Confirm match" acepta un encabezado sugerido (MDL → MODELS) y lo recuerda como alias del Job; "Match again"
+  vuelve a emparejar las líneas con los Lots del Job sin leer el PDF. Ambas acciones viven en la edge function
+  (`action: 'confirm_header' | 'rematch'`) porque la normalización está ahí.
+- Fuera de esta etapa: elegir a mano el Lot de un encabezado sin resolver y elegir una option cuando varias
+  comparten el código (se muestran con su explicación).

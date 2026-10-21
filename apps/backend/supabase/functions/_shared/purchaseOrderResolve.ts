@@ -10,6 +10,8 @@ import {
   normalizeLotKey,
   normalizeOptionCode,
   normalizePhaseKey,
+  normalizePlanKey,
+  planKeyCandidates,
 } from "./purchaseOrderNormalize.ts";
 import type {
   PurchaseOrderLine,
@@ -250,4 +252,89 @@ export function lineKeys(
       : normalizePhaseKey(workOrder.phaseRaw),
     lotKey: workOrder.lotRaw === null ? "" : normalizeLotKey(workOrder.lotRaw),
   };
+}
+
+// A header as stored with a line, so the lines of a Job can be matched again when
+// the Job changes (a Lot added after the PDF was uploaded, a name a reviewer taught).
+export interface StoredHeader {
+  lotRaw: string | null;
+  phaseRaw: string | null;
+  planRaw: string | null;
+  elevationRaw: string | null;
+}
+
+/** Lines sharing a printed header (one work order), so each header is matched once. */
+export function groupLinesByHeader<
+  T extends {
+    id: number;
+    lot_raw: string | null;
+    phase_raw: string | null;
+    plan_raw: string | null;
+    elevation_raw: string | null;
+  },
+>(lines: T[]) {
+  const groups = new Map<string, { header: StoredHeader; ids: number[] }>();
+  for (const line of lines) {
+    const key = JSON.stringify([
+      line.lot_raw,
+      line.phase_raw,
+      line.plan_raw,
+      line.elevation_raw,
+    ]);
+    const group = groups.get(key);
+    if (group) group.ids.push(line.id);
+    else {
+      groups.set(key, {
+        header: {
+          lotRaw: line.lot_raw,
+          phaseRaw: line.phase_raw,
+          planRaw: line.plan_raw,
+          elevationRaw: line.elevation_raw,
+        },
+        ids: [line.id],
+      });
+    }
+  }
+  return [...groups.values()];
+}
+
+export interface LearnedAlias {
+  kind: "phase" | "plan";
+  rawKey: string;
+  targetKey: string;
+}
+
+/**
+ * What a reviewer confirms when they accept a suggested header: the printed Phase
+ * and Plan stand for the Phase and Plan of the Lot they were matched with. Nothing
+ * is learned for a part that already matched by name.
+ */
+export function aliasesToLearn(
+  header: StoredHeader,
+  lot: JobLot,
+  context: Pick<JobContext, "phases" | "plans">,
+): LearnedAlias[] {
+  const learned: LearnedAlias[] = [];
+
+  const phase = context.phases.find((candidate) =>
+    candidate.id === lot.phaseId
+  );
+  if (header.phaseRaw !== null && phase) {
+    const rawKey = normalizePhaseKey(header.phaseRaw);
+    const targetKey = normalizePhaseKey(phase.code);
+    if (rawKey !== "" && rawKey !== targetKey) {
+      learned.push({ kind: "phase", rawKey, targetKey });
+    }
+  }
+
+  const plan = context.plans.find((candidate) => candidate.id === lot.planId);
+  if (header.planRaw !== null && plan) {
+    const [rawKey] = planKeyCandidates(header.planRaw, header.elevationRaw);
+    const targetKey = normalizePlanKey(plan.code);
+    if (rawKey !== undefined && rawKey !== targetKey) {
+      learned.push({ kind: "plan", rawKey, targetKey });
+    }
+  }
+
+  return learned;
 }

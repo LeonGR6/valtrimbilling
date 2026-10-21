@@ -289,3 +289,91 @@ export function uncoveredByLot(uncovered, lotIds) {
   return [...lots.values()].sort((a, b) =>
     a.lotNumber.localeCompare(b.lotNumber, 'en', { numeric: true }))
 }
+
+// --- Importing options -------------------------------------------------------
+
+// Why a line was not imported, in words for the reviewer. Must match the reasons
+// of valtrim.import_purchase_order_options.
+export const IMPORT_SKIP_REASONS = {
+  header_not_confirmed: 'Confirm the Lot match first.',
+  not_importable: 'Already in the system.',
+  not_current: 'A newer Purchase Order replaced this line.',
+  utility_lot: 'Utility buildings have no options.',
+  inactive: 'The Job, Phase or Plan is inactive.',
+  phase_billed: 'A Package already billed this Phase.',
+  no_price: 'The option has no price.',
+}
+
+/**
+ * What importing a line would do: create the option in the Plan and select it for
+ * the Lot, or only select it for the Lot. Null when there is nothing to import, or
+ * the Lot was only suggested and has to be confirmed first.
+ */
+export function importAction(line) {
+  if (line.headerStatus !== 'resolved') return null
+  if (line.status === 'MISSING_OPTION') return 'create'
+  if (line.status === 'NOT_IN_LOT') return 'add'
+  return null
+}
+
+export function describeImportAction(line) {
+  const lot = `Lot ${line.lotNumber}`
+  switch (importAction(line)) {
+    case 'create': return `Create the option in Plan ${line.planCode} and add it to ${lot}`
+    case 'add': return `Add it to ${lot}`
+    default: return null
+  }
+}
+
+function optionKey(line) {
+  return `${line.planCode}|${String(line.optionCode).toUpperCase().replace(/[^A-Z0-9]/g, '')}`
+}
+
+/** What a set of lines would do: new options in Plans and options added to Lots. */
+export function summarizeImport(lines) {
+  const importable = lines.filter((line) => importAction(line) !== null)
+  const created = new Set(
+    importable.filter((line) => importAction(line) === 'create').map(optionKey),
+  )
+  return { newOptions: created.size, additions: importable.length }
+}
+
+export function toImportResult(data) {
+  const skipped = Array.isArray(data?.skipped) ? data.skipped : []
+  return {
+    createdOptions: Number(data?.created_options ?? 0),
+    addedToLots: Number(data?.added_to_lots ?? 0),
+    skipped: skipped.map((item) => ({
+      lineId: Number(item.line_id),
+      reason: item.reason,
+      message: IMPORT_SKIP_REASONS[item.reason] ?? 'It could not be imported.',
+    })),
+  }
+}
+
+function count(number, one, many) {
+  return `${number} ${number === 1 ? one : many}`
+}
+
+/** One sentence for what an import did, and how serious the skipped lines are. */
+export function describeImportResult(result) {
+  const done = result.addedToLots > 0 || result.createdOptions > 0
+  const parts = []
+  if (result.createdOptions > 0) parts.push(`created ${count(result.createdOptions, 'option', 'options')}`)
+  if (result.addedToLots > 0) parts.push(`added ${count(result.addedToLots, 'option', 'options')} to Lots`)
+  const skipped = result.skipped.length > 0
+    ? ` ${count(result.skipped.length, 'line was', 'lines were')} skipped.`
+    : ''
+
+  if (!done) {
+    return {
+      severity: 'warning',
+      message: `Nothing was imported.${skipped}`.trim(),
+    }
+  }
+  const text = parts.join(' and ')
+  return {
+    severity: result.skipped.length > 0 ? 'warning' : 'success',
+    message: `${text.charAt(0).toUpperCase()}${text.slice(1)}.${skipped}`,
+  }
+}

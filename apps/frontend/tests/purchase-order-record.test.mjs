@@ -176,3 +176,63 @@ test('lists uncovered options only for the Lots of the document', () => {
   assert.equal(result[0].lotNumber, '27')
   assert.equal(result[0].options[0].optionCode, '9XXX0001')
 })
+
+test('a line can be imported only when its Lot is confirmed and it is missing', async () => {
+  const { importAction, describeImportAction, summarizeImport } = await import(
+    '../src/features/purchase-orders/services/purchaseOrderRecord.js'
+  )
+  const line = (overrides) => toComparisonLine(row(overrides))
+
+  assert.equal(importAction(line({ status: 'MISSING_OPTION', header_status: 'resolved' })), 'create')
+  assert.equal(importAction(line({ status: 'NOT_IN_LOT', header_status: 'resolved' })), 'add')
+  // A Lot that was only suggested is confirmed before anything is created.
+  assert.equal(importAction(line({ status: 'MISSING_OPTION', header_status: 'suggested' })), null)
+  assert.equal(importAction(line({ status: 'PRICE_DIFF', header_status: 'resolved' })), null)
+  assert.equal(importAction(line({ status: 'MATCH', header_status: 'resolved' })), null)
+
+  assert.match(
+    describeImportAction(line({ status: 'MISSING_OPTION', header_status: 'resolved' })),
+    /Create the option in Plan 4B and add it to Lot 27/,
+  )
+  assert.equal(
+    describeImportAction(line({ status: 'NOT_IN_LOT', header_status: 'resolved' })),
+    'Add it to Lot 27',
+  )
+
+  // The same option missing in two Lots of one Plan is created once.
+  const summary = summarizeImport([
+    line({ line_id: 1, status: 'MISSING_OPTION', header_status: 'resolved', option_code_raw: '1STR0024', lot_number: '27' }),
+    line({ line_id: 2, status: 'MISSING_OPTION', header_status: 'resolved', option_code_raw: '1STR-0024', lot_number: '31' }),
+    line({ line_id: 3, status: 'NOT_IN_LOT', header_status: 'resolved' }),
+    line({ line_id: 4, status: 'MATCH', header_status: 'resolved' }),
+  ])
+  assert.deepEqual(summary, { newOptions: 1, additions: 3 })
+})
+
+test('describes what an import did and why lines were skipped', async () => {
+  const { toImportResult, describeImportResult } = await import(
+    '../src/features/purchase-orders/services/purchaseOrderRecord.js'
+  )
+
+  const result = toImportResult({
+    created_options: 1,
+    added_to_lots: 2,
+    skipped: [{ line_id: 4, reason: 'header_not_confirmed' }, { line_id: 5, reason: 'something_new' }],
+  })
+  assert.equal(result.createdOptions, 1)
+  assert.equal(result.skipped[0].message, 'Confirm the Lot match first.')
+  assert.equal(result.skipped[1].message, 'It could not be imported.')
+  assert.deepEqual(describeImportResult(result), {
+    severity: 'warning',
+    message: 'Created 1 option and added 2 options to Lots. 2 lines were skipped.',
+  })
+
+  assert.deepEqual(describeImportResult(toImportResult({ created_options: 0, added_to_lots: 1, skipped: [] })), {
+    severity: 'success',
+    message: 'Added 1 option to Lots.',
+  })
+  assert.equal(
+    describeImportResult(toImportResult({ created_options: 0, added_to_lots: 0, skipped: [{ line_id: 1, reason: 'not_importable' }] })).severity,
+    'warning',
+  )
+})

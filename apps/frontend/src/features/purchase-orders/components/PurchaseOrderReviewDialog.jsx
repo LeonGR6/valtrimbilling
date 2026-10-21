@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Alert,
   Box,
@@ -24,21 +24,30 @@ import {
 } from '@mui/material'
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded'
 import CompareArrowsRoundedIcon from '@mui/icons-material/CompareArrowsRounded'
+import PlaylistAddRoundedIcon from '@mui/icons-material/PlaylistAddRounded'
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded'
 import TaskAltRoundedIcon from '@mui/icons-material/TaskAltRounded'
 import WarningAmberRoundedIcon from '@mui/icons-material/WarningAmberRounded'
 import { formatCurrency, formatOptionPrice } from '../../draw-invoice/utils/drawInvoiceFormatters.js'
+import { useAuth } from '../../auth/context/useAuth.js'
 import { usePurchaseOrderComparison } from '../hooks/usePurchaseOrders.js'
 import {
   COMPARISON_STATUSES,
   HEADER_STATUSES,
   describeHeaderMatch,
+  describeImportResult,
   describePurchaseOrderDocument,
   groupWorkOrders,
+  importAction,
   priceDifference,
   summarizeComparison,
   uncoveredByLot,
 } from '../services/purchaseOrderRecord.js'
+
+const PurchaseOrderImportDialog = lazy(() => import('./PurchaseOrderImportDialog.jsx'))
+
+// Only these roles can change the Job's options.
+const IMPORT_ROLES = ['ADMIN', 'PROJECT_MANAGEMENT']
 
 function Waiting({ title, children }) {
   return (
@@ -83,7 +92,7 @@ function descriptionOf(line) {
   return { first: first ?? '—', rest: rest.join(' · ') }
 }
 
-function WorkOrderTable({ group, onlyDifferences }) {
+function WorkOrderTable({ group, onlyDifferences, onImportLine }) {
   const lines = useMemo(
     () => group.lines
       .filter((line) => !onlyDifferences || line.status !== 'MATCH')
@@ -167,7 +176,21 @@ function WorkOrderTable({ group, onlyDifferences }) {
                     </Typography>
                   </Stack>
                 </TableCell>
-                <TableCell><StatusChip line={line} /></TableCell>
+                <TableCell>
+                  <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center' }}>
+                    <StatusChip line={line} />
+                    {onImportLine && importAction(line) && (
+                      <Button
+                        size="small"
+                        startIcon={<PlaylistAddRoundedIcon />}
+                        aria-label={`Add ${line.optionCode} to Lot ${line.lotNumber}`}
+                        onClick={() => onImportLine(line)}
+                      >
+                        Add
+                      </Button>
+                    )}
+                  </Stack>
+                </TableCell>
               </TableRow>
             )
           })}
@@ -177,7 +200,7 @@ function WorkOrderTable({ group, onlyDifferences }) {
   )
 }
 
-function WorkOrder({ group, onlyDifferences, canManage, confirming, onConfirm }) {
+function WorkOrder({ group, onlyDifferences, canManage, confirming, onConfirm, onImportLine }) {
   const note = describeHeaderMatch(group)
   const header = HEADER_STATUSES[group.headerStatus]
   const summary = summarizeComparison(group.lines)
@@ -246,7 +269,7 @@ function WorkOrder({ group, onlyDifferences, canManage, confirming, onConfirm })
           {note}
         </Alert>
       )}
-      <WorkOrderTable group={group} onlyDifferences={onlyDifferences} />
+      <WorkOrderTable group={group} onlyDifferences={onlyDifferences} onImportLine={onImportLine} />
     </Box>
   )
 }
@@ -271,6 +294,13 @@ export default function PurchaseOrderReviewDialog({
   const [onlyDifferences, setOnlyDifferences] = useState(false)
   const [confirmingKey, setConfirmingKey] = useState(null)
   const [matching, setMatching] = useState(false)
+  const { profile } = useAuth()
+  const canImport = canManage && IMPORT_ROLES.includes(profile?.role)
+  // The lines being offered for import (null = dialog closed) and which start selected.
+  const [importTarget, setImportTarget] = useState(null)
+  const [importing, setImporting] = useState(false)
+  const [importError, setImportError] = useState(null)
+  const [importResult, setImportResult] = useState(null)
   // One analysis per opening: React may run the effect twice, and a second request
   // would be rejected as already running.
   const requested = useRef(false)
@@ -324,6 +354,28 @@ export default function PurchaseOrderReviewDialog({
       setMatching(false)
     }
   })
+
+  const importable = useMemo(
+    () => lines.filter((line) => importAction(line) !== null),
+    [lines],
+  )
+  const openImport = (selectedLines) => {
+    setImportError(null)
+    setImportTarget({ ids: selectedLines.map((line) => line.lineId) })
+  }
+  const handleImport = async (lineIds) => {
+    setImporting(true)
+    setImportError(null)
+    try {
+      const result = await purchaseOrders.importOptions(lineIds)
+      setImportResult(result)
+      setImportTarget(null)
+    } catch (importFailure) {
+      setImportError(importFailure.message)
+    } finally {
+      setImporting(false)
+    }
+  }
 
   const handleReanalyze = () => run(() => analyze(document, { force: true }))
 
@@ -418,6 +470,18 @@ export default function PurchaseOrderReviewDialog({
                   </Alert>
                 )}
 
+                {importResult && (
+                  <Alert
+                    severity={describeImportResult(importResult).severity}
+                    onClose={() => setImportResult(null)}
+                  >
+                    {describeImportResult(importResult).message}
+                    {[...new Set(importResult.skipped.map((item) => item.message))].map((message) => (
+                      <Typography key={message} variant="body2">• {message}</Typography>
+                    ))}
+                  </Alert>
+                )}
+
                 {analysis.issueCount > 0 && (
                   <Alert severity="warning">
                     <Typography variant="body2" fontWeight={700}>
@@ -454,6 +518,16 @@ export default function PurchaseOrderReviewDialog({
                         </Tooltip>
                       ))}
                     <Box sx={{ flex: 1 }} />
+                    {canImport && importable.length > 0 && (
+                      <Button
+                        size="small"
+                        variant="outlined"
+                        startIcon={<PlaylistAddRoundedIcon />}
+                        onClick={() => openImport(importable)}
+                      >
+                        Add missing options ({importable.length})
+                      </Button>
+                    )}
                     <FormControlLabel
                       sx={{ mx: 0 }}
                       control={(
@@ -482,6 +556,7 @@ export default function PurchaseOrderReviewDialog({
                     canManage={canManage}
                     confirming={confirmingKey === group.key}
                     onConfirm={handleConfirm}
+                    onImportLine={canImport ? (line) => openImport([line]) : undefined}
                   />
                 ))}
 
@@ -513,6 +588,19 @@ export default function PurchaseOrderReviewDialog({
             )}
           </Stack>
         </DialogContent>
+      )}
+
+      {importTarget && (
+        <Suspense fallback={null}>
+          <PurchaseOrderImportDialog
+            lines={importable}
+            initialSelectedIds={importTarget.ids}
+            importing={importing}
+            error={importError}
+            onClose={() => setImportTarget(null)}
+            onConfirm={handleImport}
+          />
+        </Suspense>
       )}
 
       <DialogActions sx={{ px: 3, py: 1.5 }}>

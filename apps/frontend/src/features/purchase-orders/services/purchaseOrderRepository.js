@@ -1,6 +1,7 @@
 import { requireSupabase } from '../../../services/api.js'
 import {
   toComparisonLine,
+  toImportResult,
   toPurchaseOrderAnalysis,
   toUncoveredOption,
 } from './purchaseOrderRecord.js'
@@ -126,4 +127,26 @@ export async function listUncoveredOptions(jobId) {
   }
 
   return rows.map(toUncoveredOption)
+}
+
+/**
+ * Creates the options the chosen lines print that their Plan lacks and selects
+ * them for the Lot. One transaction; what cannot be imported comes back skipped.
+ */
+export async function importPurchaseOrderOptions(lineIds) {
+  const client = await requireSupabase()
+  const { data, error } = await client.rpc('import_purchase_order_options', {
+    p_line_ids: lineIds.map(Number),
+  })
+
+  if (error) {
+    if (error.code === '42501') {
+      throw new Error('Only Admin and Project Management users can import options.', {
+        cause: error,
+      })
+    }
+    // Validation messages from the database are written for the reviewer.
+    throw new Error(error.message || 'The options could not be imported.', { cause: error })
+  }
+  return toImportResult(data)
 }

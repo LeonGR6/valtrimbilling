@@ -4,6 +4,7 @@ import {
   analyzePurchaseOrder,
   comparePurchaseOrders,
   confirmPurchaseOrderHeader,
+  importPurchaseOrderOptions,
   listPurchaseOrderAnalyses,
   listUncoveredOptions,
   rematchPurchaseOrders,
@@ -77,6 +78,15 @@ export function usePurchaseOrders(documentIds) {
     setRevision((current) => current + 1)
   }, [])
 
+  const importOptions = useCallback(async (lineIds) => {
+    try {
+      return await importPurchaseOrderOptions(lineIds)
+    } finally {
+      // Whatever happened, what the comparison shows may have changed.
+      setRevision((current) => current + 1)
+    }
+  }, [])
+
   const analysesByDocumentId = userId ? loaded : NO_ANALYSES
 
   return useMemo(() => ({
@@ -88,12 +98,14 @@ export function usePurchaseOrders(documentIds) {
     analyze,
     rematch,
     confirmHeader,
+    importOptions,
   }), [
     analyze,
     analysesByDocumentId,
     analyzingDocumentId,
     confirmHeader,
     error,
+    importOptions,
     refresh,
     rematch,
     revision,

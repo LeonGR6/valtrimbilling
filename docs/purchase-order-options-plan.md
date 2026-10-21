@@ -206,7 +206,7 @@ cambiaría el precio de todo el Plan.
 | 1. Parser Olson + normalización + emparejamiento + tests | **Hecha** (`_shared/purchaseOrder*.ts`, 17 tests) |
 | 2. Migración + edge function + RPC de comparación | **Hecha** (sin aplicar ni desplegar; ver notas) |
 | 3. UI de revisión en Documents | **Hecha** (`features/purchase-orders`; la edge function necesita un nuevo despliegue) |
-| 4. Importar options faltantes | Pendiente |
+| 4. Importar options faltantes | **Hecha** (migración `20261026120000`; sin aplicar) |
 | 5. "Use PO price" | Pendiente |
 | 6. Insignias en Packages | Pendiente |
 | 7. Segundo builder / fallback LLM | Pendiente |
@@ -246,3 +246,16 @@ Notas de la etapa 3:
   (`action: 'confirm_header' | 'rematch'`) porque la normalización está ahí.
 - Fuera de esta etapa: elegir a mano el Lot de un encabezado sin resolver y elegir una option cuando varias
   comparten el código (se muestran con su explicación).
+
+Notas de la etapa 4:
+
+- `valtrim.import_purchase_order_options(line_ids[])` (solo ADMIN y PROJECT_MANAGEMENT, una transacción):
+  `MISSING_OPTION` crea la option en el Plan (nombre = primera línea del PDF, descripción = el resto, precio = el del PDF)
+  y la selecciona para el Lot; `NOT_IN_LOT` solo la selecciona al precio que el Plan tiene hoy. Un precio distinto en
+  el PDF no se aplica aquí (etapa 5).
+- Se omite y se reporta, sin adivinar: Lot solo sugerido (`header_not_confirmed`), línea ya importada o reemplazada,
+  Lot de utility building, Job/Phase/Plan inactivo, Phase con Packages ya facturados (`phase_billed`) y option sin precio.
+- La misma option faltante en varios Lots del mismo Plan se crea una sola vez. Un bloqueo asesor por Job evita
+  duplicados si dos personas importan a la vez.
+- UI: botón "Add missing options (N)" y un "Add" por fila, ambos abren un diálogo de confirmación donde se puede
+  quitar cualquier línea antes de escribir.

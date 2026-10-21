@@ -20,6 +20,7 @@ import {
   TableCell,
   TableHead,
   TableRow,
+  Tooltip,
   Typography,
 } from '@mui/material'
 import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded'
@@ -32,6 +33,7 @@ import {
   describeDifference,
   describeOver,
   describeRepeated,
+  describeScheduleBasis,
   describeSchedulePlan,
   describeUnmatchedLine,
   listEarlierPackages,
@@ -355,6 +357,34 @@ export default function GeneratePackageScheduleDialog({
                     label={`${source.template.pdf.name} · ${source.cells.length}`}
                   />
                 ))}
+              </Stack>
+              <Stack spacing={0.5} sx={{ mt: 1 }}>
+                {plan.sources.map((source) => {
+                  const basis = describeScheduleBasis(source)
+                  return (
+                    <Stack
+                      key={`${source.template.id}-basis`}
+                      direction="row"
+                      spacing={0.75}
+                      useFlexGap
+                      sx={{ alignItems: 'center', flexWrap: 'wrap' }}
+                    >
+                      {plan.sources.length > 1 && (
+                        <Typography variant="caption" color="text.secondary">
+                          {source.template.pdf.name}
+                        </Typography>
+                      )}
+                      <Tooltip title={basis.detail}>
+                        <Chip
+                          size="small"
+                          color={basis.color}
+                          variant={basis.color === 'default' ? 'outlined' : 'filled'}
+                          label={basis.label}
+                        />
+                      </Tooltip>
+                    </Stack>
+                  )
+                })}
               </Stack>
               {plan.sources.length > 1 && (
                 <Typography variant="caption" color="text.secondary">

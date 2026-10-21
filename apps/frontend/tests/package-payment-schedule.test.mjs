@@ -3,9 +3,11 @@ import test from 'node:test'
 import {
   buildPackageScheduleFileName,
   buildPackageScheduleStoragePath,
+  cellBasis,
   describeDifference,
   describeOver,
   describeRepeated,
+  describeScheduleBasis,
   describeSchedulePlan,
   describeUnmatchedLine,
   listEarlierPackages,
@@ -430,4 +432,128 @@ test('"more than the schedule holds" is judged on the gross price, and said so',
   assert.equal(item.draws[0].over, true)
   assert.equal(item.draws[0].previously, 991.67)
   assert.match(describeOver(item.draws[0]), /\$1,000\.00 before \+ \$1,000\.00 now is more than the \$1,000\.00/)
+})
+
+// A schedule that already prints the net: DP-00000059's Lots at their net amounts.
+const netSchedule = () => ({
+  ...modelsSchedule(),
+  mapping: {
+    ...modelsSchedule().mapping,
+    cells: [
+      cell('MODELS', '27', 1, 1275.29),
+      cell('MODELS', '28', 1, 1292.89),
+      cell('MODELS', '29', 1, 864.24),
+    ],
+  },
+})
+
+test('a cell is gross, net, both or neither, from what the line says it is worth', () => {
+  const [one] = packageScheduleLines(record(withDeductions('MODELS', '27', 0, 1286, 10.71)))
+
+  assert.equal(cellBasis(one, cell('MODELS', '27', 1, 1286)), 'gross')
+  assert.equal(cellBasis(one, cell('MODELS', '27', 1, 1275.29)), 'net')
+  // A cent of rounding in the builder's deduction still counts as the net.
+  assert.equal(cellBasis(one, cell('MODELS', '27', 1, 1275.3)), 'net')
+  assert.equal(cellBasis(one, cell('MODELS', '27', 1, 1200)), null)
+
+  // With nothing deducted, gross and net are the same number, to the cent.
+  const [plain] = packageScheduleLines(record(line('MODELS', '27', 0, 500)))
+  assert.equal(cellBasis(plain, cell('MODELS', '27', 1, 500)), 'both')
+  assert.equal(cellBasis(plain, cell('MODELS', '27', 1, 499.99)), null)
+})
+
+test('a schedule that prints the net agrees with the Package and is used as printed', () => {
+  const plan = matchPackageToSchedules(packageScheduleLines(dp59()), [netSchedule()])
+
+  assert.equal(plan.matches.length, 3)
+  assert.deepEqual(plan.matches.map((match) => match.basis), ['net', 'net', 'net'])
+  // The amounts agree: it is the same money, printed after the deductions.
+  assert.equal(plan.differing.length, 0)
+  assert.equal(plan.sources[0].basis, 'net')
+  assert.equal(plan.sources[0].mixed, false)
+
+  const [item] = summarizeSources(plan, [])
+  // This Request is the printed net, not the net of a net.
+  assert.deepEqual(item.fills.map(({ text }) => text), ['3,432.42'])
+  assert.equal(item.basis, 'net')
+  // The gross behind it is still known.
+  assert.equal(item.draws[0].requestGross, 3461.25)
+  assert.equal(item.draws[0].over, false)
+})
+
+test('a gross schedule is reported as gross, and the same Package gives the same request', () => {
+  const gross = matchPackageToSchedules(packageScheduleLines(dp59()), [modelsSchedule()])
+  const net = matchPackageToSchedules(packageScheduleLines(dp59()), [netSchedule()])
+
+  assert.equal(gross.sources[0].basis, 'gross')
+  assert.equal(summarizeSources(gross, [])[0].fills[0].text, summarizeSources(net, [])[0].fills[0].text)
+})
+
+test('the contract of a net schedule is compared with net amounts', () => {
+  // Contract for the draw: 1,275.29 net. Billing it twice goes over, in net terms.
+  const schedules = [{
+    ...netSchedule(),
+    mapping: { ...netSchedule().mapping, cells: [cell('MODELS', '27', 1, 1275.29)] },
+  }]
+  const earlier = matchPackageToSchedules(
+    packageScheduleLines(record(withDeductions('MODELS', '27', 0, 1286, 10.71))),
+    schedules,
+  )
+  const plan = matchPackageToSchedules(
+    packageScheduleLines(record(withDeductions('MODELS', '27', 0, 1286, 10.71))),
+    schedules,
+  )
+  const [item] = summarizeSources(plan, [{ number: 'DP-1', plan: earlier }])
+
+  assert.equal(item.draws[0].over, true)
+  assert.equal(item.draws[0].previouslyCompared, 1275.29)
+  assert.match(describeOver(item.draws[0]), /\$1,275\.29 before \+ \$1,275\.29 now is more than the \$1,275\.29/)
+
+  // One billing alone fits the contract exactly, and is not "over".
+  const [alone] = summarizeSources(plan, [])
+  assert.equal(alone.draws[0].over, false)
+})
+
+test('a schedule that mixes gross and net cells is flagged', () => {
+  const mixed = {
+    ...modelsSchedule(),
+    mapping: {
+      ...modelsSchedule().mapping,
+      cells: [
+        cell('MODELS', '27', 1, 1286),
+        cell('MODELS', '28', 1, 1292.89),
+        cell('MODELS', '29', 1, 864.24),
+      ],
+    },
+  }
+  const plan = matchPackageToSchedules(packageScheduleLines(dp59()), [mixed])
+
+  assert.deepEqual(plan.matches.map((match) => match.basis), ['gross', 'net', 'net'])
+  assert.equal(plan.sources[0].mixed, true)
+  // Most cells say net: that decides how it is read.
+  assert.equal(plan.sources[0].basis, 'net')
+  assert.equal(describeScheduleBasis(plan.sources[0]).color, 'warning')
+})
+
+test('the review says what each schedule prints', () => {
+  assert.equal(describeScheduleBasis({ basis: 'net', mixed: false }).label, 'Schedule prints net amounts')
+  assert.equal(describeScheduleBasis({ basis: 'gross', mixed: false }).label, 'Schedule prints gross prices')
+  assert.equal(describeScheduleBasis({ basis: 'gross', mixed: true }).label, 'Gross and net mixed')
+})
+
+test('a cell that is neither gross nor net still differs, as before', () => {
+  const plan = matchPackageToSchedules(
+    packageScheduleLines(dp59()),
+    [{
+      ...modelsSchedule(),
+      mapping: {
+        ...modelsSchedule().mapping,
+        cells: [cell('MODELS', '27', 1, 999), cell('MODELS', '28', 1, 1303.75), cell('MODELS', '29', 1, 871.5)],
+      },
+    }],
+  )
+
+  assert.equal(plan.differing.length, 1)
+  assert.equal(plan.matches[0].basis, null)
+  assert.equal(plan.matches[0].amountsAgree, false)
 })

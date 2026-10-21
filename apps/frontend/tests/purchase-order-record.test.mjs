@@ -348,3 +348,89 @@ test('says whether a Purchase Order backs the option a Package bills', async () 
   assert.equal(countUnbacked(none, [option({})]), 0)
   assert.equal(describeBacking({ state: 'no_po' }).color, 'default')
 })
+
+test('the import reports each option it selected for a Lot', async () => {
+  const { toImportResult } = await import('../src/features/purchase-orders/services/purchaseOrderRecord.js')
+  const { additionsFromImport } = await import('../src/features/purchase-orders/services/purchaseOrderEmailRecord.js')
+
+  const result = toImportResult({
+    created_options: 1,
+    added_to_lots: 2,
+    added: [
+      { line_id: 2, lot_id: 27, option_id: 3, created_option: true },
+      { line_id: 1, lot_id: 27, option_id: 1, created_option: false },
+    ],
+    skipped: [],
+  })
+  assert.deepEqual(result.added, [
+    { lineId: 2, lotId: 27, optionId: 3, createdOption: true },
+    { lineId: 1, lotId: 27, optionId: 1, createdOption: false },
+  ])
+  assert.deepEqual(additionsFromImport(result), [
+    { lotId: 27, optionId: 3, createdOption: true },
+    { lotId: 27, optionId: 1, createdOption: false },
+  ])
+  // An import that selected nothing (or an older response) has nothing to tell.
+  assert.deepEqual(toImportResult({ created_options: 0, added_to_lots: 0 }).added, [])
+  assert.deepEqual(additionsFromImport(undefined), [])
+})
+
+test('the email starts with Purchasing and the Job Coordinator, and the user can change it', async () => {
+  const {
+    addRecipients, describeMissingRoles, describeOptionsEmailSent,
+    emailDraftFromPreview, removeRecipient, validateRecipients,
+  } = await import('../src/features/purchase-orders/services/purchaseOrderEmailRecord.js')
+
+  const draft = emailDraftFromPreview({
+    rendered: { subject: 'Rendered subject' },
+    draft: {
+      subject: 'Options added to the Sequence Sheet · Job #1326 · Lot 27',
+      recipients: [
+        { role: 'Purchasing', name: 'Pat', email: 'Pat@Valtriminc.com' },
+        { role: 'Job Coordinator', name: 'Jo', email: 'jo@valtriminc.com' },
+        { role: 'Job Coordinator', name: 'Jo', email: 'jo@valtriminc.com' },
+        { role: 'Supervisor', name: 'x', email: 'not-an-email' },
+      ],
+    },
+    snapshot: { missingRoles: ['Job Coordinator'] },
+  })
+  assert.equal(draft.subject, 'Options added to the Sequence Sheet · Job #1326 · Lot 27')
+  assert.deepEqual(draft.recipients.map(({ email, role }) => [email, role]), [
+    ['pat@valtriminc.com', 'Purchasing'],
+    ['jo@valtriminc.com', 'Job Coordinator'],
+  ])
+  assert.deepEqual(draft.missingRoles, ['Job Coordinator'])
+
+  // Removing a suggested recipient.
+  const withoutPat = removeRecipient(draft.recipients, 'pat@valtriminc.com')
+  assert.deepEqual(withoutPat.map(({ email }) => email), ['jo@valtriminc.com'])
+
+  // Adding more: several at once, repeats ignored, case folded.
+  const added = addRecipients(withoutPat, 'Ana@example.com, jo@valtriminc.com; luis@example.com')
+  assert.deepEqual(added.recipients.map(({ email }) => email), [
+    'jo@valtriminc.com', 'ana@example.com', 'luis@example.com',
+  ])
+  assert.equal(added.error, '')
+  assert.equal(added.recipients[1].role, null)
+
+  // A bad address is reported, the good ones still go in.
+  const mixed = addRecipients([], ['nope', 'ok@example.com'])
+  assert.deepEqual(mixed.recipients.map(({ email }) => email), ['ok@example.com'])
+  assert.equal(mixed.error, 'nope is not a valid email address.')
+
+  // The limit.
+  const full = addRecipients(
+    Array.from({ length: 10 }, (_, index) => ({ email: `p${index}@example.com`, role: null, name: '' })),
+    'one-more@example.com',
+  )
+  assert.equal(full.recipients.length, 10)
+  assert.match(full.error, /up to 10 recipients/)
+
+  assert.deepEqual(validateRecipients([]), { success: false, error: 'Add at least one recipient.' })
+  assert.deepEqual(validateRecipients(withoutPat), { success: true, emails: ['jo@valtriminc.com'] })
+
+  assert.equal(describeMissingRoles([]), null)
+  assert.match(describeMissingRoles(['Purchasing']), /Purchasing has no email on file/)
+  assert.match(describeMissingRoles(['Purchasing', 'Job Coordinator']), /Purchasing and Job Coordinator have no email/)
+  assert.equal(describeOptionsEmailSent({ recipients: ['a@b.com', 'c@d.com'] }), 'Email sent to a@b.com, c@d.com.')
+})

@@ -284,3 +284,23 @@ Notas de la etapa 6:
   precio de hoy. Un precio NA coincide con un PDF que imprime $0.
 - Al crear, un aviso cuenta las options seleccionadas que el PO no respalda. Solo informa: nunca bloquea el botón.
 - Un Job sin ningún PO no ve la columna ni el aviso.
+
+## 10. Aviso por correo al agregar options (extra)
+
+Cuando una importación agrega options al Sequence Sheet, se ofrece avisar por correo a **Purchasing** y al **Job
+Coordinator** (los de la tabla `people` del Job):
+
+- Al terminar la importación se abre "Tell Purchasing and the Job Coordinator?" con la **vista previa del correo**
+  (el HTML tal como saldrá), el asunto editable y los destinatarios precargados como chips. Se quita uno con ✕ y se
+  agrega cualquiera escribiendo el correo y pulsando Enter o coma (se pegan varios a la vez; máximo 10).
+- No se envía nada hasta pulsar "Send email". "Don't send" deja las options agregadas y no avisa a nadie.
+- Si Purchasing o el Job Coordinator no tienen correo registrado, el diálogo lo dice y se puede escribir otro.
+- El correo lista, por Lot, cada option agregada con su descripción, precio y el Work Order del PO que la imprimió,
+  marcando las que se crearon como options nuevas del Plan.
+- Migración `20261028120000`: la importación ahora devuelve `added` (qué option quedó en qué Lot), para que el correo
+  diga exactamente lo que cambió.
+- Edge function `purchase-order-options-email` (`preview` / `send`, solo ADMIN y PROJECT_MANAGEMENT). El navegador solo
+  dice qué (Lot, option) se agregó; todo lo demás se lee en el servidor con los permisos del usuario y se descarta lo
+  que no esté realmente en el Sequence Sheet. Envía con Resend y reutiliza los secrets del correo del Sequence Sheet
+  (`PURCHASE_ORDER_OPTIONS_FROM_EMAIL` / `_REPLY_TO` si existen; si no, `SEQUENCE_SHEET_*` y luego `FOLLOW_UP_*`).
+  Usa una clave de idempotencia por apertura del diálogo: reintentar tras un fallo no duplica el correo.

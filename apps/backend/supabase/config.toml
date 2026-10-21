@@ -484,6 +484,12 @@ verify_jwt = true
 [functions.purchase-order-analyze]
 verify_jwt = true
 
+# Emails Purchasing and the Job Coordinator the options a Purchase Order added to the
+# Sequence Sheet. Previews and sends as the signed-in Admin or Project Management user;
+# it reuses the Sequence Sheet email's Resend secrets.
+[functions.purchase-order-options-email]
+verify_jwt = true
+
 [analytics]
 enabled = true
 port = 54327

@@ -343,6 +343,14 @@ export function toImportResult(data) {
   return {
     createdOptions: Number(data?.created_options ?? 0),
     addedToLots: Number(data?.added_to_lots ?? 0),
+    // Each option selected for a Lot by this import, to tell Purchasing and the Job
+    // Coordinator exactly what changed in the Sequence Sheet.
+    added: (Array.isArray(data?.added) ? data.added : []).map((item) => ({
+      lineId: Number(item.line_id),
+      lotId: Number(item.lot_id),
+      optionId: Number(item.option_id),
+      createdOption: item.created_option === true,
+    })),
     skipped: skipped.map((item) => ({
       lineId: Number(item.line_id),
       reason: item.reason,

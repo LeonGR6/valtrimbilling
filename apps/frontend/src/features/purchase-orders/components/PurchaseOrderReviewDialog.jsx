@@ -32,6 +32,7 @@ import WarningAmberRoundedIcon from '@mui/icons-material/WarningAmberRounded'
 import { formatCurrency, formatOptionPrice } from '../../draw-invoice/utils/drawInvoiceFormatters.js'
 import { useAuth } from '../../auth/context/useAuth.js'
 import { usePurchaseOrderComparison } from '../hooks/usePurchaseOrders.js'
+import { additionsFromImport } from '../services/purchaseOrderEmailRecord.js'
 import {
   COMPARISON_STATUSES,
   HEADER_STATUSES,
@@ -50,6 +51,7 @@ import {
 
 const PurchaseOrderImportDialog = lazy(() => import('./PurchaseOrderImportDialog.jsx'))
 const PurchaseOrderPriceDialog = lazy(() => import('./PurchaseOrderPriceDialog.jsx'))
+const PurchaseOrderEmailDialog = lazy(() => import('./PurchaseOrderEmailDialog.jsx'))
 
 // Only these roles can change the Job's options.
 const IMPORT_ROLES = ['ADMIN', 'PROJECT_MANAGEMENT']
@@ -323,6 +325,10 @@ export default function PurchaseOrderReviewDialog({
   const [importing, setImporting] = useState(false)
   const [importError, setImportError] = useState(null)
   const [importResult, setImportResult] = useState(null)
+  // After options were added to the Sequence Sheet: the email that offers to tell
+  // Purchasing and the Job Coordinator (null = closed), and what happened to it.
+  const [emailTarget, setEmailTarget] = useState(null)
+  const [emailNotice, setEmailNotice] = useState(null)
   // The line whose PDF price is being offered (null = dialog closed).
   const [priceTarget, setPriceTarget] = useState(null)
   const [adopting, setAdopting] = useState(false)
@@ -398,6 +404,9 @@ export default function PurchaseOrderReviewDialog({
       const result = await purchaseOrders.importOptions(lineIds)
       setImportResult(result)
       setImportTarget(null)
+      setEmailNotice(null)
+      // The people who order and coordinate the options should know about the change.
+      if (result.added.length > 0) setEmailTarget({ additions: additionsFromImport(result) })
     } catch (importFailure) {
       setImportError(importFailure.message)
     } finally {
@@ -523,6 +532,12 @@ export default function PurchaseOrderReviewDialog({
                       : summary.attention > 0
                         ? `${summary.attention} of ${summary.total} options need a look. This only informs: nothing is blocked and nothing was changed.`
                         : `All ${summary.total} options in this PDF match the system.`}
+                  </Alert>
+                )}
+
+                {emailNotice && (
+                  <Alert severity="success" onClose={() => setEmailNotice(null)}>
+                    {emailNotice}
                   </Alert>
                 )}
 
@@ -665,6 +680,20 @@ export default function PurchaseOrderReviewDialog({
             error={importError}
             onClose={() => setImportTarget(null)}
             onConfirm={handleImport}
+          />
+        </Suspense>
+      )}
+
+      {emailTarget && (
+        <Suspense fallback={null}>
+          <PurchaseOrderEmailDialog
+            job={job}
+            additions={emailTarget.additions}
+            onClose={() => setEmailTarget(null)}
+            onSent={(message) => {
+              setEmailNotice(message)
+              setEmailTarget(null)
+            }}
           />
         </Suspense>
       )}

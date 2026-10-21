@@ -1,7 +1,9 @@
 import { requireSupabase } from '../../../services/api.js'
+import { PACKAGE_DOCUMENT_BUCKET } from '../../release-templates/services/packageRelease.js'
 import {
   toComparisonLine,
   toImportResult,
+  toPriceResult,
   toPurchaseOrderAnalysis,
   toUncoveredOption,
 } from './purchaseOrderRecord.js'
@@ -149,4 +151,42 @@ export async function importPurchaseOrderOptions(lineIds) {
     throw new Error(error.message || 'The options could not be imported.', { cause: error })
   }
   return toImportResult(data)
+}
+
+/**
+ * Makes the price a Purchase Order prints the option's price in its Plan and moves
+ * the chosen Lots to it, with a reason, in one transaction. A Draft Package that
+ * bills it is calculated again; one that cannot change keeps its amount and the
+ * difference is recorded. `removeDocuments` allows removing the Release and Payment
+ * Schedule of those Draft Packages, which no longer match.
+ */
+export async function adoptPurchaseOrderPrice({ lineIds, reason, removeDocuments = false }) {
+  const client = await requireSupabase()
+  const { data, error } = await client.rpc('use_purchase_order_price', {
+    p_line_ids: lineIds.map(Number),
+    p_reason: reason.trim(),
+    p_remove_documents: Boolean(removeDocuments),
+  })
+
+  if (error) {
+    const messages = {
+      42501: 'Only Admin and Project Management users can change option prices.',
+      40001: 'Prices or Packages changed since this list was loaded. Reload it and try again.',
+      P0003: 'A Package has a generated Release or Payment Schedule. Confirm that they can be removed and try again.',
+    }
+    throw Object.assign(
+      new Error(messages[error.code] ?? error.message ?? 'The price could not be changed.', {
+        cause: error,
+      }),
+      { code: error.code },
+    )
+  }
+
+  const result = toPriceResult(data)
+  // Storage objects cannot be deleted from SQL: the removed PDFs go here, best effort.
+  if (result.removedStoragePaths.length > 0) {
+    await client.storage.from(PACKAGE_DOCUMENT_BUCKET).remove(result.removedStoragePaths)
+      .catch(() => {})
+  }
+  return result
 }

@@ -236,3 +236,69 @@ test('describes what an import did and why lines were skipped', async () => {
     'warning',
   )
 })
+
+test('the PDF price is offered together with the Lots that print the same price', async () => {
+  const { canUsePdfPrice, priceCandidates } = await import(
+    '../src/features/purchase-orders/services/purchaseOrderRecord.js'
+  )
+  const line = (overrides) => toComparisonLine(row({
+    status: 'PRICE_DIFF',
+    header_status: 'resolved',
+    plan_option_id: 100,
+    po_unit_price: '90.00',
+    system_price: '81.00',
+    ...overrides,
+  }))
+
+  assert.equal(canUsePdfPrice(line({})), true)
+  assert.equal(canUsePdfPrice(line({ status: 'MATCH' })), false)
+  assert.equal(canUsePdfPrice(line({ header_status: 'suggested' })), false)
+  assert.equal(canUsePdfPrice(line({ plan_option_id: null })), false)
+
+  const clicked = line({ line_id: 1, lot_number: '27' })
+  const candidates = priceCandidates(clicked, [
+    clicked,
+    line({ line_id: 2, lot_number: '31' }),
+    // Another price, another option, or not a difference: not offered.
+    line({ line_id: 3, lot_number: '32', po_unit_price: '95.00' }),
+    line({ line_id: 4, lot_number: '33', plan_option_id: 101 }),
+    line({ line_id: 5, lot_number: '34', status: 'MATCH' }),
+  ])
+  assert.deepEqual(candidates.map((candidate) => candidate.lotNumber), ['27', '31'])
+})
+
+test('describes what adopting a price did', async () => {
+  const { toPriceResult, describePriceResult } = await import(
+    '../src/features/purchase-orders/services/purchaseOrderRecord.js'
+  )
+  const formatMoney = (value) => `$${value.toFixed(2)}`
+  const context = { optionCode: '2FIN5006', planCode: '4B', formatMoney }
+
+  const result = toPriceResult({
+    price_set: true,
+    option_id: 100,
+    price: 90,
+    options: 2,
+    packages: [{ package_number: 'DP-1', documents_removed: 1 }],
+    differences: [{ package_number: 'DP-2' }],
+    skipped: [{ line_id: 9, reason: 'not_price_difference' }],
+  })
+  assert.equal(result.skipped[0].message, 'It already matches.')
+
+  const summary = describePriceResult(result, context)
+  assert.equal(summary.severity, 'warning')
+  assert.match(summary.message, /2FIN5006 now costs \$90.00 in Plan 4B\./)
+  assert.match(summary.message, /2 Lots bill that price\./)
+  assert.match(summary.message, /Recalculated DP-1\./)
+  assert.match(summary.message, /Generate the Release and Payment Schedule again for DP-1\./)
+  assert.match(summary.message, /DP-2 keep their amount/)
+
+  assert.match(
+    describePriceResult(toPriceResult({ price_set: false, price: 90, options: 1 }), context).message,
+    /already cost \$90.00/,
+  )
+  assert.equal(
+    describePriceResult(toPriceResult({ price_set: false, options: 0, skipped: [] }), context).message,
+    'No Lot changed price.',
+  )
+})

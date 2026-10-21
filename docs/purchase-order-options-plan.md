@@ -207,7 +207,7 @@ cambiaría el precio de todo el Plan.
 | 2. Migración + edge function + RPC de comparación | **Hecha** (sin aplicar ni desplegar; ver notas) |
 | 3. UI de revisión en Documents | **Hecha** (`features/purchase-orders`; la edge function necesita un nuevo despliegue) |
 | 4. Importar options faltantes | **Hecha** (migración `20261026120000`; sin aplicar) |
-| 5. "Use PO price" | Pendiente |
+| 5. "Use PO price" | **Hecha** (migración `20261027120000`; sin aplicar) |
 | 6. Insignias en Packages | Pendiente |
 | 7. Segundo builder / fallback LLM | Pendiente |
 
@@ -259,3 +259,17 @@ Notas de la etapa 4:
   duplicados si dos personas importan a la vez.
 - UI: botón "Add missing options (N)" y un "Add" por fila, ambos abren un diálogo de confirmación donde se puede
   quitar cualquier línea antes de escribir.
+
+Notas de la etapa 5:
+
+- `valtrim.use_purchase_order_price(line_ids[], reason, remove_documents)` (solo ADMIN y PROJECT_MANAGEMENT, una
+  transacción): (1) el precio de la option en su Plan pasa a ser el del PDF con `set_option_price` (si el Plan ya lo
+  tiene no se toca), y (2) los Lots elegidos se mueven a ese precio con `apply_phase_price_changes`, el mismo paso de
+  la pantalla de Pricing: pide un motivo, recalcula los Draft Packages que facturan la option, deja intactos los
+  Packages emitidos y registra la diferencia pendiente. Si el paso 2 falla, el paso 1 se deshace.
+- Una option tiene un solo precio por Plan: todas las líneas de una llamada deben ser de la misma option y el mismo
+  precio. El diálogo ofrece, sin marcarlos, los demás Lots del Plan cuyo PO imprime ese mismo precio.
+- Repetir la llamada no cambia nada (las líneas que ya coinciden se omiten). Es siempre una sugerencia: nada cambia
+  hasta confirmar con un motivo.
+- Si un Draft Package tiene Release o Payment Schedule generados, el diálogo pide un "sí" explícito para quitarlos
+  (error `P0003` del paso 2) y vuelve a intentar.

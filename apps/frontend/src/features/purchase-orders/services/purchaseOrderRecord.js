@@ -377,3 +377,84 @@ export function describeImportResult(result) {
     message: `${text.charAt(0).toUpperCase()}${text.slice(1)}.${skipped}`,
   }
 }
+
+// --- Adopting the PDF's price --------------------------------------------------
+
+/** True when the user can offer the PDF's price for a line: a settled price difference. */
+export function canUsePdfPrice(line) {
+  return line.status === 'PRICE_DIFF' && line.headerStatus === 'resolved' && line.planOptionId !== null
+}
+
+/**
+ * The lines that can take the same price together: an option has one price per
+ * Plan, so every line of that option that prints the same price is offered. The
+ * clicked line is always included.
+ */
+export function priceCandidates(line, lines) {
+  const same = lines.filter((candidate) => (
+    candidate.lineId !== line.lineId
+    && canUsePdfPrice(candidate)
+    && candidate.planOptionId === line.planOptionId
+    && candidate.poUnitPrice === line.poUnitPrice
+  ))
+  return [line, ...same].sort((a, b) =>
+    String(a.lotNumber).localeCompare(String(b.lotNumber), 'en', { numeric: true }))
+}
+
+export const PRICE_SKIP_REASONS = {
+  not_price_difference: 'It already matches.',
+  header_not_confirmed: 'Confirm the Lot match first.',
+  inactive: 'The Phase is inactive.',
+  not_current: 'A newer Purchase Order replaced this line.',
+}
+
+export function toPriceResult(data) {
+  const skipped = Array.isArray(data?.skipped) ? data.skipped : []
+  return {
+    priceSet: data?.price_set === true,
+    optionId: data?.option_id == null ? null : Number(data.option_id),
+    price: data?.price == null ? null : Number(data.price),
+    lots: Number(data?.options ?? 0),
+    packages: Array.isArray(data?.packages) ? data.packages : [],
+    differences: Array.isArray(data?.differences) ? data.differences : [],
+    removedStoragePaths: Array.isArray(data?.removed_storage_paths) ? data.removed_storage_paths : [],
+    skipped: skipped.map((item) => ({
+      lineId: Number(item.line_id),
+      reason: item.reason,
+      message: PRICE_SKIP_REASONS[item.reason] ?? 'It could not be changed.',
+    })),
+  }
+}
+
+/** What adopting a price did, in sentences for the reviewer. */
+export function describePriceResult(result, { optionCode, planCode, formatMoney }) {
+  if (result.lots === 0) {
+    return { severity: 'warning', message: 'No Lot changed price.' }
+  }
+
+  const recalculated = result.packages.map((item) => item.package_number).filter(Boolean)
+  const regenerate = result.packages
+    .filter((item) => Number(item.documents_removed) > 0)
+    .map((item) => item.package_number)
+  const owed = result.differences.map((item) => item.package_number).filter(Boolean)
+
+  return {
+    severity: result.skipped.length > 0 ? 'warning' : 'success',
+    message: [
+      result.priceSet
+        ? `${optionCode} now costs ${formatMoney(result.price)} in Plan ${planCode}.`
+        : `${optionCode} already cost ${formatMoney(result.price)} in Plan ${planCode}.`,
+      `${result.lots} ${result.lots === 1 ? 'Lot bills' : 'Lots bill'} that price.`,
+      recalculated.length > 0 ? `Recalculated ${recalculated.join(', ')}.` : null,
+      regenerate.length > 0
+        ? `Generate the Release and Payment Schedule again for ${regenerate.join(', ')}.`
+        : null,
+      owed.length > 0
+        ? `${owed.join(', ')} keep their amount; the difference is pending to collect.`
+        : null,
+      result.skipped.length > 0
+        ? `${result.skipped.length} ${result.skipped.length === 1 ? 'line was' : 'lines were'} skipped.`
+        : null,
+    ].filter(Boolean).join(' '),
+  }
+}

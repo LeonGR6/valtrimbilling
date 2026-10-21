@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useAuth } from '../../auth/context/useAuth.js'
 import {
+  adoptPurchaseOrderPrice,
   analyzePurchaseOrder,
   comparePurchaseOrders,
   confirmPurchaseOrderHeader,
@@ -87,6 +88,14 @@ export function usePurchaseOrders(documentIds) {
     }
   }, [])
 
+  const adoptPrice = useCallback(async (input) => {
+    try {
+      return await adoptPurchaseOrderPrice(input)
+    } finally {
+      setRevision((current) => current + 1)
+    }
+  }, [])
+
   const analysesByDocumentId = userId ? loaded : NO_ANALYSES
 
   return useMemo(() => ({
@@ -99,7 +108,9 @@ export function usePurchaseOrders(documentIds) {
     rematch,
     confirmHeader,
     importOptions,
+    adoptPrice,
   }), [
+    adoptPrice,
     analyze,
     analysesByDocumentId,
     analyzingDocumentId,

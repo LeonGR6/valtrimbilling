@@ -25,6 +25,7 @@ import {
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded'
 import CompareArrowsRoundedIcon from '@mui/icons-material/CompareArrowsRounded'
 import PlaylistAddRoundedIcon from '@mui/icons-material/PlaylistAddRounded'
+import PriceCheckRoundedIcon from '@mui/icons-material/PriceCheckRounded'
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded'
 import TaskAltRoundedIcon from '@mui/icons-material/TaskAltRounded'
 import WarningAmberRoundedIcon from '@mui/icons-material/WarningAmberRounded'
@@ -34,17 +35,21 @@ import { usePurchaseOrderComparison } from '../hooks/usePurchaseOrders.js'
 import {
   COMPARISON_STATUSES,
   HEADER_STATUSES,
+  canUsePdfPrice,
   describeHeaderMatch,
   describeImportResult,
+  describePriceResult,
   describePurchaseOrderDocument,
   groupWorkOrders,
   importAction,
+  priceCandidates,
   priceDifference,
   summarizeComparison,
   uncoveredByLot,
 } from '../services/purchaseOrderRecord.js'
 
 const PurchaseOrderImportDialog = lazy(() => import('./PurchaseOrderImportDialog.jsx'))
+const PurchaseOrderPriceDialog = lazy(() => import('./PurchaseOrderPriceDialog.jsx'))
 
 // Only these roles can change the Job's options.
 const IMPORT_ROLES = ['ADMIN', 'PROJECT_MANAGEMENT']
@@ -92,7 +97,7 @@ function descriptionOf(line) {
   return { first: first ?? '—', rest: rest.join(' · ') }
 }
 
-function WorkOrderTable({ group, onlyDifferences, onImportLine }) {
+function WorkOrderTable({ group, onlyDifferences, onImportLine, onUsePrice }) {
   const lines = useMemo(
     () => group.lines
       .filter((line) => !onlyDifferences || line.status !== 'MATCH')
@@ -179,6 +184,18 @@ function WorkOrderTable({ group, onlyDifferences, onImportLine }) {
                 <TableCell>
                   <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center' }}>
                     <StatusChip line={line} />
+                    {onUsePrice && canUsePdfPrice(line) && (
+                      <Tooltip title="Suggestion only: nothing changes until you confirm.">
+                        <Button
+                          size="small"
+                          startIcon={<PriceCheckRoundedIcon />}
+                          aria-label={`Use the PDF price for ${line.optionCode} in Lot ${line.lotNumber}`}
+                          onClick={() => onUsePrice(line)}
+                        >
+                          Use PDF price
+                        </Button>
+                      </Tooltip>
+                    )}
                     {onImportLine && importAction(line) && (
                       <Button
                         size="small"
@@ -200,7 +217,7 @@ function WorkOrderTable({ group, onlyDifferences, onImportLine }) {
   )
 }
 
-function WorkOrder({ group, onlyDifferences, canManage, confirming, onConfirm, onImportLine }) {
+function WorkOrder({ group, onlyDifferences, canManage, confirming, onConfirm, onImportLine, onUsePrice }) {
   const note = describeHeaderMatch(group)
   const header = HEADER_STATUSES[group.headerStatus]
   const summary = summarizeComparison(group.lines)
@@ -269,7 +286,12 @@ function WorkOrder({ group, onlyDifferences, canManage, confirming, onConfirm, o
           {note}
         </Alert>
       )}
-      <WorkOrderTable group={group} onlyDifferences={onlyDifferences} onImportLine={onImportLine} />
+      <WorkOrderTable
+        group={group}
+        onlyDifferences={onlyDifferences}
+        onImportLine={onImportLine}
+        onUsePrice={onUsePrice}
+      />
     </Box>
   )
 }
@@ -301,6 +323,12 @@ export default function PurchaseOrderReviewDialog({
   const [importing, setImporting] = useState(false)
   const [importError, setImportError] = useState(null)
   const [importResult, setImportResult] = useState(null)
+  // The line whose PDF price is being offered (null = dialog closed).
+  const [priceTarget, setPriceTarget] = useState(null)
+  const [adopting, setAdopting] = useState(false)
+  const [priceError, setPriceError] = useState(null)
+  const [needsDocumentsConfirmation, setNeedsDocumentsConfirmation] = useState(false)
+  const [priceResult, setPriceResult] = useState(null)
   // One analysis per opening: React may run the effect twice, and a second request
   // would be rejected as already running.
   const requested = useRef(false)
@@ -374,6 +402,34 @@ export default function PurchaseOrderReviewDialog({
       setImportError(importFailure.message)
     } finally {
       setImporting(false)
+    }
+  }
+
+  const openPrice = (line) => {
+    setPriceError(null)
+    setNeedsDocumentsConfirmation(false)
+    setPriceTarget(line)
+  }
+  const handleAdoptPrice = async (input) => {
+    setAdopting(true)
+    setPriceError(null)
+    try {
+      const result = await purchaseOrders.adoptPrice(input)
+      setPriceResult({
+        ...describePriceResult(result, {
+          optionCode: priceTarget.optionCode,
+          planCode: priceTarget.planCode,
+          formatMoney: formatCurrency,
+        }),
+        skipped: result.skipped,
+      })
+      setPriceTarget(null)
+    } catch (priceFailure) {
+      // Draft Packages with a generated Release or Payment Schedule need an explicit yes.
+      setNeedsDocumentsConfirmation(priceFailure.code === 'P0003')
+      setPriceError(priceFailure.message)
+    } finally {
+      setAdopting(false)
     }
   }
 
@@ -482,6 +538,15 @@ export default function PurchaseOrderReviewDialog({
                   </Alert>
                 )}
 
+                {priceResult && (
+                  <Alert severity={priceResult.severity} onClose={() => setPriceResult(null)}>
+                    {priceResult.message}
+                    {[...new Set(priceResult.skipped.map((item) => item.message))].map((message) => (
+                      <Typography key={message} variant="body2">• {message}</Typography>
+                    ))}
+                  </Alert>
+                )}
+
                 {analysis.issueCount > 0 && (
                   <Alert severity="warning">
                     <Typography variant="body2" fontWeight={700}>
@@ -557,6 +622,7 @@ export default function PurchaseOrderReviewDialog({
                     confirming={confirmingKey === group.key}
                     onConfirm={handleConfirm}
                     onImportLine={canImport ? (line) => openImport([line]) : undefined}
+                    onUsePrice={canImport ? openPrice : undefined}
                   />
                 ))}
 
@@ -599,6 +665,20 @@ export default function PurchaseOrderReviewDialog({
             error={importError}
             onClose={() => setImportTarget(null)}
             onConfirm={handleImport}
+          />
+        </Suspense>
+      )}
+
+      {priceTarget && (
+        <Suspense fallback={null}>
+          <PurchaseOrderPriceDialog
+            line={priceTarget}
+            candidates={priceCandidates(priceTarget, comparison.lines)}
+            adopting={adopting}
+            error={priceError}
+            needsDocumentsConfirmation={needsDocumentsConfirmation}
+            onClose={() => setPriceTarget(null)}
+            onConfirm={handleAdoptPrice}
           />
         </Suspense>
       )}

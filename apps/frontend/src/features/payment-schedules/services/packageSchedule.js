@@ -12,10 +12,21 @@ function toCents(value) {
   return Math.round(Number(value) * 100)
 }
 
+// What share of a Package line is paid: its net amount over its gross amount. The
+// builder deducts Retention and OCIP / WRAP from the gross, and the Package already
+// holds the result, so what a request asks for is the net, not the schedule's gross
+// price. A line with no amounts (or no gross) is taken whole.
+function netRatio(line) {
+  const gross = Number(line.grossAmount)
+  const net = Number(line.netAmount)
+  return gross > 0 && Number.isFinite(net) ? net / gross : 1
+}
+
 /**
  * The Lot / draw lines of a Package, as the schedule is compared with. A Package
  * line is the amount of one draw of one Lot; hardware and options billed apart
- * are not part of the schedule.
+ * are not part of the schedule. `netRatio` turns a gross amount of the line into
+ * what is requested after Retention and OCIP / WRAP.
  */
 export function packageScheduleLines(record) {
   return (record?.persistedDrawLines ?? []).map((line) => {
@@ -28,6 +39,7 @@ export function packageScheduleLines(record) {
       label: line.utilityLabel ?? `Lot ${line.lotNumber}`,
       isUtilityBuilding: Boolean(line.isUtilityBuilding),
       packageAmount: base,
+      netRatio: netRatio(line),
       // The schedule prints the price of the draw. Where the hardware is billed
       // inside the draw, it is part of that price.
       acceptedCents: [...new Set([toCents(base), toCents(base + hardware)])],
@@ -149,11 +161,16 @@ export function requestedAmount(match) {
   return match.amountsAgree ? match.cell.amount : match.line.packageAmount
 }
 
-function sumByDraw(matches) {
+/** What a matched line requests after Retention and OCIP / WRAP, in cents. */
+export function requestedNetCents(match) {
+  return Math.round(toCents(requestedAmount(match)) * (match.line.netRatio ?? 1))
+}
+
+function sumByDraw(matches, centsOf = (match) => toCents(requestedAmount(match))) {
   const totals = new Map()
   for (const match of matches) {
     const draw = match.cell.draw
-    totals.set(draw, (totals.get(draw) ?? 0) + toCents(requestedAmount(match)))
+    totals.set(draw, (totals.get(draw) ?? 0) + centsOf(match))
   }
   return totals
 }
@@ -172,12 +189,18 @@ export function summarizeSources(plan, earlier) {
       const { template } = source
       const rows = template.mapping.summaryRows
       const inTemplate = (match) => match.template === template
-      const request = sumByDraw(plan.matches.filter(inTemplate))
+      const requestMatches = plan.matches.filter(inTemplate)
+      // The rows of the form hold what is requested: the net, after Retention and OCIP /
+      // WRAP. The contract is the gross price, so "more than the schedule holds" is
+      // judged on the gross.
+      const request = sumByDraw(requestMatches, requestedNetCents)
+      const requestGross = sumByDraw(requestMatches)
 
       const previouslyMatches = earlier.flatMap(({ number, plan: earlierPlan }) => (
         earlierPlan.matches.filter(inTemplate).map((match) => ({ ...match, number }))
       ))
-      const previously = sumByDraw(previouslyMatches)
+      const previously = sumByDraw(previouslyMatches, requestedNetCents)
+      const previouslyGross = sumByDraw(previouslyMatches)
 
       const contract = new Map()
       for (const cell of template.mapping.cells) {
@@ -187,16 +210,20 @@ export function summarizeSources(plan, earlier) {
       const draws = [...new Set([...request.keys(), ...previously.keys()])]
         .sort((left, right) => left - right)
         .map((draw) => {
-          const before = previously.get(draw) ?? 0
-          const now = request.get(draw) ?? 0
+          const beforeGross = previouslyGross.get(draw) ?? 0
+          const nowGross = requestGross.get(draw) ?? 0
           const total = contract.get(draw) ?? 0
           return {
             draw,
-            previously: before / 100,
-            request: now / 100,
+            // What the two rows of the form say: net.
+            previously: (previously.get(draw) ?? 0) / 100,
+            request: (request.get(draw) ?? 0) / 100,
+            // The same, before the deductions, to compare with the contract.
+            previouslyGross: beforeGross / 100,
+            requestGross: nowGross / 100,
             contract: total / 100,
             // Billing more of a draw than the schedule holds.
-            over: before + now > total,
+            over: beforeGross + nowGross > total,
           }
         })
 
@@ -245,7 +272,10 @@ export function describeRepeated(item) {
 }
 
 export function describeOver(row) {
-  return `Draw ${row.draw}: ${formatMoney(row.previously)} before + ${formatMoney(row.request)} now is more than the ${formatMoney(row.contract)} of the schedule`
+  // Compared before Retention and OCIP / WRAP, like the schedule's own price.
+  const before = row.previouslyGross ?? row.previously
+  const now = row.requestGross ?? row.request
+  return `Draw ${row.draw}: ${formatMoney(before)} before + ${formatMoney(now)} now is more than the ${formatMoney(row.contract)} of the schedule`
 }
 
 /** What the dialog says about a plan: how much will be highlighted and what needs a look. */

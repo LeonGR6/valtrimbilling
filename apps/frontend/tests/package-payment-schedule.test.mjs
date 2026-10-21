@@ -284,3 +284,150 @@ test('a schedule without summary rows has nothing to fill', () => {
   const lines = packageScheduleLines(record(line('3', '23', 0, 100)))
   assert.deepEqual(summarizeSources(matchPackageToSchedules(lines, [plain]), []), [])
 })
+
+// DP-00000059: three Lots of MODELS, draw 1, with OCIP / WRAP of 0.833% and no
+// Retention. The schedule prints the gross price; the Package holds the net.
+const withDeductions = (phaseCode, lotNumber, drawIndex, gross, wrap, extra = {}) => line(
+  phaseCode,
+  lotNumber,
+  drawIndex,
+  gross,
+  {
+    grossAmount: gross,
+    retentionAmount: 0,
+    wrapAmount: wrap,
+    netAmount: Math.round((gross - wrap) * 100) / 100,
+    ...extra,
+  },
+)
+const dp59 = () => record(
+  withDeductions('MODELS', '27', 0, 1286, 10.71),
+  withDeductions('MODELS', '28', 0, 1303.75, 10.86),
+  withDeductions('MODELS', '29', 0, 871.5, 7.26),
+)
+const modelsSchedule = () => ({
+  ...template('models', [
+    cell('MODELS', '27', 1, 1286),
+    cell('MODELS', '28', 1, 1303.75),
+    cell('MODELS', '29', 1, 871.5),
+  ]),
+  mapping: {
+    version: 1,
+    layout: 'matrix',
+    cells: [
+      cell('MODELS', '27', 1, 1286),
+      cell('MODELS', '28', 1, 1303.75),
+      cell('MODELS', '29', 1, 871.5),
+    ],
+    summaryRows: {
+      previouslyInvoiced: [{ draw: 1, page: 1, rect }],
+      thisRequest: [{ draw: 1, page: 1, rect }],
+    },
+  },
+})
+
+test('This Request is the net of the Package, not the gross of the schedule', () => {
+  const plan = matchPackageToSchedules(packageScheduleLines(dp59()), [modelsSchedule()])
+  const [item] = summarizeSources(plan, [])
+
+  // 1,275.29 + 1,292.89 + 864.24, not 1,286.00 + 1,303.75 + 871.50 = 3,461.25.
+  assert.deepEqual(
+    item.fills.map(({ row, draw, text }) => [row, draw, text]),
+    [['thisRequest', 1, '3,432.42']],
+  )
+  assert.equal(item.draws[0].request, 3432.42)
+  // The contract is judged on the gross price: nothing here is over.
+  assert.equal(item.draws[0].requestGross, 3461.25)
+  assert.equal(item.draws[0].over, false)
+})
+
+test('the highlighted cells and their amounts still agree with the schedule gross', () => {
+  const plan = matchPackageToSchedules(packageScheduleLines(dp59()), [modelsSchedule()])
+
+  assert.equal(plan.matches.length, 3)
+  // The schedule prints gross prices, so the Package agrees with them.
+  assert.equal(plan.differing.length, 0)
+})
+
+test('Previously Invoiced is the net of the earlier Packages', () => {
+  const schedules = [modelsSchedule()]
+  const earlier = matchPackageToSchedules(
+    packageScheduleLines(record(withDeductions('MODELS', '27', 0, 1286, 10.71))),
+    schedules,
+  )
+  const plan = matchPackageToSchedules(
+    packageScheduleLines(record(withDeductions('MODELS', '28', 0, 1303.75, 10.86))),
+    schedules,
+  )
+  const [item] = summarizeSources(plan, [{ number: 'DP-1', plan: earlier }])
+
+  assert.deepEqual(
+    item.fills.map(({ row, text }) => [row, text]),
+    [['previouslyInvoiced', '1,275.29'], ['thisRequest', '1,292.89']],
+  )
+})
+
+test('Retention comes off the request too, with the OCIP / WRAP', () => {
+  // Gross 1,000.00, Retention 5% = 50.00, WRAP 0.833% = 8.33: net 941.67.
+  const schedules = [{
+    ...modelsSchedule(),
+    mapping: { ...modelsSchedule().mapping, cells: [cell('MODELS', '27', 1, 1000)] },
+  }]
+  const plan = matchPackageToSchedules(
+    packageScheduleLines(record(line('MODELS', '27', 0, 1000, {
+      grossAmount: 1000, retentionAmount: 50, wrapAmount: 8.33, netAmount: 941.67,
+    }))),
+    schedules,
+  )
+  const [item] = summarizeSources(plan, [])
+
+  assert.deepEqual(item.fills.map(({ text }) => text), ['941.67'])
+})
+
+test('only the share of the line that the schedule holds is netted', () => {
+  // The line also bills 100.00 of options: gross 1,100.00, WRAP 10% for the example.
+  // The schedule holds the 1,000.00 of the draw, so the request is 1,000.00 less its
+  // share of the deductions: 900.00 (net 990.00 of 1,100.00 is 90%).
+  const schedules = [{
+    ...modelsSchedule(),
+    mapping: { ...modelsSchedule().mapping, cells: [cell('MODELS', '27', 1, 1000)] },
+  }]
+  const plan = matchPackageToSchedules(
+    packageScheduleLines(record(line('MODELS', '27', 0, 1000, {
+      optionsAmount: 100, grossAmount: 1100, retentionAmount: 0, wrapAmount: 110, netAmount: 990,
+    }))),
+    schedules,
+  )
+  const [item] = summarizeSources(plan, [])
+
+  assert.deepEqual(item.fills.map(({ text }) => text), ['900.00'])
+})
+
+test('a line without amounts of its own is requested whole, as before', () => {
+  const [one] = packageScheduleLines(record(line('MODELS', '27', 0, 500)))
+  assert.equal(one.netRatio, 1)
+
+  const [noGross] = packageScheduleLines(record(line('MODELS', '27', 0, 500, { grossAmount: 0, netAmount: 0 })))
+  assert.equal(noGross.netRatio, 1)
+})
+
+test('"more than the schedule holds" is judged on the gross price, and said so', () => {
+  const schedules = [{
+    ...modelsSchedule(),
+    mapping: { ...modelsSchedule().mapping, cells: [cell('MODELS', '27', 1, 1000)] },
+  }]
+  const earlier = matchPackageToSchedules(
+    packageScheduleLines(record(withDeductions('MODELS', '27', 0, 1000, 8.33))),
+    schedules,
+  )
+  const plan = matchPackageToSchedules(
+    packageScheduleLines(record(withDeductions('MODELS', '27', 0, 1000, 8.33))),
+    schedules,
+  )
+  const [item] = summarizeSources(plan, [{ number: 'DP-1', plan: earlier }])
+
+  // 1,000 + 1,000 gross is more than the 1,000 contract, even though each net is 991.67.
+  assert.equal(item.draws[0].over, true)
+  assert.equal(item.draws[0].previously, 991.67)
+  assert.match(describeOver(item.draws[0]), /\$1,000\.00 before \+ \$1,000\.00 now is more than the \$1,000\.00/)
+})

@@ -443,8 +443,8 @@ export default function GeneratePackageScheduleDialog({
                       <TableHead>
                         <TableRow>
                           <TableCell>Draw</TableCell>
-                          <TableCell align="right">Previously</TableCell>
-                          <TableCell align="right">This request</TableCell>
+                          <TableCell align="right">Previously (net)</TableCell>
+                          <TableCell align="right">This request (net)</TableCell>
                           <TableCell align="right">Schedule</TableCell>
                         </TableRow>
                       </TableHead>

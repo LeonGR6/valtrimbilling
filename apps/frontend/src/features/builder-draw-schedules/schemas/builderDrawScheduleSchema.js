@@ -53,6 +53,27 @@ const optionalPercentageSchema = z
     'Use at most two decimals.',
   )
 
+// OCIP / WRAP insurance is usually a small share: from 0.001% up to 10%. It is
+// typed as a percentage, never as a fraction (0.05 is 0.05%, not 5%), and it
+// keeps three decimals, which is what the database stores.
+export const WRAP_PERCENTAGE_MIN = 0.001
+export const WRAP_PERCENTAGE_MAX = 10
+
+const wrapPercentageSchema = z
+  .preprocess(
+    (value) => (value === '' || value === null || value === undefined ? 0 : value),
+    z.coerce.number({ invalid_type_error: 'Enter a number.' }),
+  )
+  .refine(
+    (value) => value === 0
+      || (value >= WRAP_PERCENTAGE_MIN && value <= WRAP_PERCENTAGE_MAX),
+    `Enter a percentage between ${WRAP_PERCENTAGE_MIN} and ${WRAP_PERCENTAGE_MAX}, or leave it empty.`,
+  )
+  .refine(
+    (value) => Math.abs(value * 1000 - Math.round(value * 1000)) < 0.000001,
+    'Use at most three decimals.',
+  )
+
 const eventPercentageSchema = z.preprocess(
   (value) => (value === '' || value === null || value === undefined ? 0 : value),
   z.coerce
@@ -157,7 +178,7 @@ export function createBuilderDrawScheduleSchema(schedules, currentScheduleId) {
       retentionPercentage: optionalPercentageSchema,
       retentionReleaseScope: z.enum(['BUILDING', 'JOB']).default('JOB'),
       ocipWrapEnabled: z.boolean(),
-      ocipWrapPercentage: optionalPercentageSchema,
+      ocipWrapPercentage: wrapPercentageSchema,
       requiresPo: z.boolean(),
       requiresPaymentSchedule: z.boolean(),
       requiresRelease: z.boolean(),

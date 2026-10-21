@@ -65,6 +65,8 @@ import {
 import {
   createBuilderDrawScheduleSchema,
   percentageFromFraction,
+  WRAP_PERCENTAGE_MAX,
+  WRAP_PERCENTAGE_MIN,
 } from '../schemas/builderDrawScheduleSchema.js'
 import {
   computeDrawPeriods,
@@ -85,7 +87,7 @@ function formatPercentage(value) {
   if (!Number.isFinite(value)) return '0'
   return Number.isInteger(value)
     ? String(value)
-    : value.toFixed(2).replace(/0+$/, '').replace(/\.$/, '')
+    : value.toFixed(3).replace(/0+$/, '').replace(/\.$/, '')
 }
 
 function getBuilderInitials(builder) {
@@ -267,10 +269,10 @@ function BuilderDrawScheduleDialog({
   const retentionEnabled = useWatch({ control, name: 'retentionEnabled' })
   const ocipWrapEnabled = useWatch({ control, name: 'ocipWrapEnabled' })
   const retentionTyped = useWatch({ control, name: 'retentionPercentage' })
-  const ocipWrapTyped = useWatch({ control, name: 'ocipWrapPercentage' })
 
-  // 0.0833 means 8.33%: it is read that way when saved and rewritten once the
-  // field loses focus, with a hint while it is typed.
+  // Retention only: 0.0833 means 8.33%. It is read that way when saved and
+  // rewritten once the field loses focus, with a hint while it is typed.
+  // OCIP / WRAP is typed as a plain percentage (it can be below 1%).
   const percentageInputProps = (name) => {
     const field = register(name)
     return {
@@ -1213,19 +1215,18 @@ function BuilderDrawScheduleDialog({
                 <TextField
                   label="OCIP / WRAP insurance percentage"
                   type="number"
-                  {...percentageInputProps('ocipWrapPercentage')}
+                  {...register('ocipWrapPercentage')}
                   error={Boolean(errors.ocipWrapPercentage)}
                   helperText={
                     errors.ocipWrapPercentage?.message
-                    ?? fractionHint(ocipWrapTyped)
-                    ?? 'Insurance percentage deducted by the builder.'
+                    ?? 'From 0.001% to 10%, deducted by the builder.'
                   }
                   fullWidth
                   required
                   sx={{ mt: 1 }}
                   slotProps={{
                     input: { endAdornment: <InputAdornment position="end">%</InputAdornment> },
-                    htmlInput: { min: 1, max: 100, step: 0.01, inputMode: 'decimal' },
+                    htmlInput: { min: WRAP_PERCENTAGE_MIN, max: WRAP_PERCENTAGE_MAX, step: 0.001, inputMode: 'decimal' },
                   }}
                 />
               )}
@@ -1243,7 +1244,7 @@ function BuilderDrawScheduleDialog({
             }}
           >
             {[
-              ['requiresPo', 'Purchase order'],
+              ['requiresPo', 'Purchase order (Options)'],
               ['requiresPaymentSchedule', 'Payment schedule'],
               ['requiresRelease', 'Release'],
               ['requiresBackup', 'Backup documentation'],

@@ -310,7 +310,7 @@ set second_version_id = (
       "retentionEnabled": true,
       "retentionPercentage": 5,
       "wrapEnabled": true,
-      "wrapPercentage": 2,
+      "wrapPercentage": 0.125,
       "invoiceLineFormat": "BUILDING_SCOPE",
       "portalName": "Textura",
       "notes": "Replacement version"
@@ -360,7 +360,7 @@ select ok(
       and version.hardware_billing_draw_number is null
       and version.options_billing_draw_number = 1
       and version.wrap_enabled
-      and version.wrap_percentage = 2
+      and version.wrap_percentage = 0.125
   ),
   'Replacement version enables per-Package Hardware, Options and OCIP or WRAP configuration'
 );

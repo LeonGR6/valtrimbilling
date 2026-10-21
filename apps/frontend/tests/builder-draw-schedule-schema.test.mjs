@@ -377,9 +377,9 @@ test('disabled retention and OCIP options clear hidden percentages', () => {
 test('retention and OCIP / WRAP cannot exceed 100 percent combined', () => {
   const result = createBuilderDrawScheduleSchema([], null).safeParse(validSetup({
     retentionEnabled: true,
-    retentionPercentage: 60,
+    retentionPercentage: 100,
     ocipWrapEnabled: true,
-    ocipWrapPercentage: 50,
+    ocipWrapPercentage: 1,
   }))
 
   assert.equal(result.success, false)
@@ -453,24 +453,49 @@ test('A required Release needs the Conditional Final scope', () => {
   assert.equal(schema.safeParse(validSetup()).success, true)
 })
 
-test('retention and OCIP / WRAP read a fraction as the same percentage', () => {
+test('retention reads a fraction as the same percentage', () => {
   const schema = createBuilderDrawScheduleSchema([], null)
-  const parse = (retention, wrap) => schema.parse(validSetup({
+  const parse = (retention) => schema.parse(validSetup({
     retentionEnabled: true,
     retentionPercentage: retention,
+  })).retentionPercentage
+
+  assert.equal(parse('0.0833'), 8.33)
+  assert.equal(parse('8.33'), 8.33)
+  // More decimals than the database keeps are rounded, not rejected.
+  assert.equal(parse('0.08333'), 8.33)
+  // 1 is one percent, not a whole; typing a number over 1 is never a fraction.
+  assert.equal(parse('1'), 1)
+  assert.equal(parse(0.1), 10)
+})
+
+test('OCIP / WRAP accepts from 0.001 percent up to 10 percent, typed as a percentage', () => {
+  const schema = createBuilderDrawScheduleSchema([], null)
+  const parse = (wrap) => schema.safeParse(validSetup({
     ocipWrapEnabled: true,
     ocipWrapPercentage: wrap,
   }))
 
-  assert.equal(parse('0.0833', '0.05').retentionPercentage, 8.33)
-  assert.equal(parse('0.0833', '0.05').ocipWrapPercentage, 5)
-  assert.equal(parse('8.33', '5').retentionPercentage, 8.33)
-  // More decimals than the database keeps are rounded, not rejected.
-  assert.equal(parse('0.08333', '0.0125').retentionPercentage, 8.33)
-  assert.equal(parse('0.08333', '0.0125').ocipWrapPercentage, 1.25)
-  // 1 is one percent, not a whole; typing a number over 1 is never a fraction.
-  assert.equal(parse('1', '10').retentionPercentage, 1)
-  assert.equal(parse(0.1, 2).retentionPercentage, 10)
+  for (const [typed, stored] of [
+    ['0.001', 0.001], ['0.05', 0.05], [0.5, 0.5], ['1.25', 1.25], ['9.999', 9.999], [10, 10],
+  ]) {
+    const result = parse(typed)
+    assert.equal(result.success, true, `${typed} should be accepted`)
+    assert.equal(result.data.ocipWrapPercentage, stored)
+  }
+})
+
+test('OCIP / WRAP rejects what is under 0.001, over 10 or has more than three decimals', () => {
+  const schema = createBuilderDrawScheduleSchema([], null)
+
+  for (const wrap of ['0.0005', '0.0001', '10.001', 11, 50, '1.2345', -1]) {
+    const result = schema.safeParse(validSetup({
+      ocipWrapEnabled: true,
+      ocipWrapPercentage: wrap,
+    }))
+    assert.equal(result.success, false, `${wrap} should be rejected`)
+    assert.ok(result.error.flatten().fieldErrors.ocipWrapPercentage.length > 0)
+  }
 })
 
 test('a fraction too small to be a percentage of at least 1 is still rejected', () => {

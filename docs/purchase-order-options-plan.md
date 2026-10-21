@@ -208,7 +208,7 @@ cambiaría el precio de todo el Plan.
 | 3. UI de revisión en Documents | **Hecha** (`features/purchase-orders`; la edge function necesita un nuevo despliegue) |
 | 4. Importar options faltantes | **Hecha** (migración `20261026120000`; sin aplicar) |
 | 5. "Use PO price" | **Hecha** (migración `20261027120000`; sin aplicar) |
-| 6. Insignias en Packages | Pendiente |
+| 6. Insignias en Packages | **Hecha** (solo frontend) |
 | 7. Segundo builder / fallback LLM | Pendiente |
 
 Notas de la etapa 1:
@@ -273,3 +273,14 @@ Notas de la etapa 5:
   hasta confirmar con un motivo.
 - Si un Draft Package tiene Release o Payment Schedule generados, el diálogo pide un "sí" explícito para quitarlos
   (error `P0003` del paso 2) y vuelve a intentar.
+
+Notas de la etapa 6:
+
+- Solo frontend: reutiliza `compare_purchase_orders(job)`; no hay migración ni despliegue.
+- En el diálogo de **crear un Package** (tabla de options) y en el **detalle del Package** aparece una columna
+  "Purchase Order" con una insignia por option: "In the PO" (el PO la imprime al mismo precio), "PO price differs",
+  "Not in the PO" (el Lot tiene PO y no la imprime) o "No PO" (el Lot no tiene PO).
+- Se compara el precio que muestra la fila del Package (el del Lot al crearlo, el snapshot en uno emitido), no el
+  precio de hoy. Un precio NA coincide con un PDF que imprime $0.
+- Al crear, un aviso cuenta las options seleccionadas que el PO no respalda. Solo informa: nunca bloquea el botón.
+- Un Job sin ningún PO no ve la columna ni el aviso.

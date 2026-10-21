@@ -302,3 +302,49 @@ test('describes what adopting a price did', async () => {
     'No Lot changed price.',
   )
 })
+
+test('says whether a Purchase Order backs the option a Package bills', async () => {
+  const { buildPurchaseOrderBacking, countUnbacked, describeBacking } = await import(
+    '../src/features/purchase-orders/services/purchaseOrderRecord.js'
+  )
+  const line = (overrides) => toComparisonLine(row({
+    lot_id: 27,
+    plan_option_id: 100,
+    option_code_raw: '2FIN5006',
+    po_unit_price: '81.00',
+    ...overrides,
+  }))
+  const backing = buildPurchaseOrderBacking([
+    line({}),
+    line({ line_id: 2, option_code_raw: '1STR0024', plan_option_id: null, po_unit_price: '1126.00' }),
+    line({ line_id: 3, lot_id: null, option_code_raw: '9XXX0001' }),
+  ])
+  assert.equal(backing.hasPurchaseOrders, true)
+
+  const option = (overrides) => ({
+    lotId: 27, optionId: 100, optionCode: '2FIN5006', price: 81, priceNotApplicable: false, ...overrides,
+  })
+
+  assert.deepEqual(backing.lookup(option({})), { state: 'backed', poPrice: 81 })
+  // The price the Package shows is what is compared, not today's.
+  assert.deepEqual(backing.lookup(option({ price: 90 })), { state: 'price_differs', poPrice: 81 })
+  // A line without a chosen option is still found by its code.
+  assert.equal(backing.lookup(option({ optionId: 555, optionCode: '1STR-0024', price: 1126 })).state, 'backed')
+  // The Lot has a Purchase Order that does not print the option.
+  assert.equal(backing.lookup(option({ optionId: 7, optionCode: '5ZZZ0001' })).state, 'not_in_po')
+  // The Lot has no Purchase Order at all.
+  assert.equal(backing.lookup(option({ lotId: 99 })).state, 'no_po')
+  // NA bills nothing: it agrees with a PDF that prints $0.
+  const zero = buildPurchaseOrderBacking([line({ po_unit_price: '0.00' })])
+  assert.equal(zero.lookup(option({ price: 0, priceNotApplicable: true })).state, 'backed')
+
+  assert.equal(
+    countUnbacked(backing, [option({}), option({ price: 90 }), option({ optionId: 7, optionCode: '5ZZZ0001' }), option({ lotId: 99 })]),
+    2,
+  )
+  // A Job without Purchase Orders is left alone.
+  const none = buildPurchaseOrderBacking([])
+  assert.equal(none.hasPurchaseOrders, false)
+  assert.equal(countUnbacked(none, [option({})]), 0)
+  assert.equal(describeBacking({ state: 'no_po' }).color, 'default')
+})

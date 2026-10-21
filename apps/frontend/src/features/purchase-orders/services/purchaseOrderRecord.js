@@ -458,3 +458,93 @@ export function describePriceResult(result, { optionCode, planCode, formatMoney 
     ].filter(Boolean).join(' '),
   }
 }
+
+// --- Backing in Packages -------------------------------------------------------
+//
+// When a Package bills an option, does a Purchase Order back it? Only informs: it
+// never blocks a Package. The price compared is the one the Package row shows (the
+// Lot's price for a new Package, the snapshot for an issued one), not today's.
+
+function optionCodeKey(code) {
+  return String(code ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '')
+}
+
+/**
+ * An index of what the Job's Purchase Orders print, for looking an option of a Lot
+ * up quickly. `hasPurchaseOrders` is false when the Job has none, so the screens
+ * can stay quiet about a feature the Job does not use.
+ */
+export function buildPurchaseOrderBacking(lines) {
+  const lotsWithPurchaseOrder = new Set()
+  const byOptionId = new Map()
+  const byCode = new Map()
+
+  for (const line of lines) {
+    if (line.lotId === null) continue
+    lotsWithPurchaseOrder.add(line.lotId)
+    if (line.planOptionId !== null) byOptionId.set(`${line.lotId}|${line.planOptionId}`, line)
+    byCode.set(`${line.lotId}|${optionCodeKey(line.optionCode)}`, line)
+  }
+
+  return {
+    hasPurchaseOrders: lotsWithPurchaseOrder.size > 0,
+    /**
+     * 'backed', 'price_differs', 'not_in_po' (the Lot has a Purchase Order that does
+     * not print this option) or 'no_po' (the Lot has none). `poPrice` for a difference.
+     */
+    lookup(row) {
+      const lotId = Number(row.lotId)
+      const line = byOptionId.get(`${lotId}|${Number(row.optionId)}`)
+        ?? byCode.get(`${lotId}|${optionCodeKey(row.optionCode)}`)
+      if (!line) {
+        return { state: lotsWithPurchaseOrder.has(lotId) ? 'not_in_po' : 'no_po' }
+      }
+
+      const price = row.priceNotApplicable === true ? 0 : Number(row.price)
+      if (!Number.isFinite(price) || line.poUnitPrice === null) return { state: 'backed' }
+      return Math.round((price - line.poUnitPrice) * 100) === 0
+        ? { state: 'backed', poPrice: line.poUnitPrice }
+        : { state: 'price_differs', poPrice: line.poUnitPrice }
+    },
+  }
+}
+
+const BACKING_LABELS = {
+  backed: {
+    label: 'In the PO',
+    color: 'success',
+    variant: 'outlined',
+    hint: 'A Purchase Order prints this option at this price.',
+  },
+  price_differs: {
+    label: 'PO price differs',
+    color: 'warning',
+    variant: 'filled',
+    hint: 'A Purchase Order prints this option at another price.',
+  },
+  not_in_po: {
+    label: 'Not in the PO',
+    color: 'warning',
+    variant: 'filled',
+    hint: 'This Lot has a Purchase Order, and it does not print this option.',
+  },
+  no_po: {
+    label: 'No PO',
+    color: 'default',
+    variant: 'outlined',
+    hint: 'No Purchase Order has been uploaded for this Lot.',
+  },
+}
+
+export function describeBacking(result) {
+  return BACKING_LABELS[result.state] ?? null
+}
+
+/** How many of the rows a Purchase Order does not back (different price or missing). */
+export function countUnbacked(backing, rows) {
+  if (!backing?.hasPurchaseOrders) return 0
+  return rows.filter((row) => {
+    const { state } = backing.lookup(row)
+    return state === 'price_differs' || state === 'not_in_po'
+  }).length
+}

@@ -15,10 +15,12 @@ import {
   TableRow,
   Typography,
 } from '@mui/material'
+import PurchaseOrderBackingChip from '../../../purchase-orders/components/PurchaseOrderBackingChip.jsx'
+import { countUnbacked } from '../../../purchase-orders/services/purchaseOrderRecord.js'
 import { formatPhaseBuilding } from '../../../sequence-sheets/utils/phaseBuildingCodes.js'
 import { formatCurrency, formatOptionPrice } from '../../utils/drawInvoiceFormatters.js'
 
-export default function SelectableOptionsTable({ summary, onToggle }) {
+export default function SelectableOptionsTable({ summary, onToggle, backing = null }) {
   const availableFromDrawLabel = `Draw #${summary.optionsBillingDrawIndex + 1}`
   const chargeDrawLabel = summary.optionChargeDrawIndex == null
     ? '—'
@@ -28,6 +30,10 @@ export default function SelectableOptionsTable({ summary, onToggle }) {
   )
   const pendingOptionCount = summary.availableOptionRows.length
     - summary.billedOptionCount
+  // Purchase Orders only inform here: the column and the notice appear when the Job
+  // has any, and never stop the Package.
+  const showBacking = Boolean(backing?.hasPurchaseOrders)
+  const unbackedCount = countUnbacked(backing, summary.selectedOptionRows)
 
   return (
     <Card variant="outlined" sx={{ overflow: 'hidden' }}>
@@ -74,6 +80,15 @@ export default function SelectableOptionsTable({ summary, onToggle }) {
       </Box>
       <Divider />
 
+      {showBacking && unbackedCount > 0 && (
+        <Alert severity="warning" sx={{ m: 2, mb: 0 }}>
+          {unbackedCount === 1
+            ? '1 selected option is not backed by a Purchase Order, or its Purchase Order prints another price.'
+            : `${unbackedCount} selected options are not backed by a Purchase Order, or their Purchase Orders print another price.`}
+          {' '}This only informs: you can still create the package.
+        </Alert>
+      )}
+
       {summary.availableOptionRows.length === 0 ? (
         <Alert severity="info" sx={{ m: 2 }}>
           No lot that reached {availableFromDrawLabel} has options to charge.
@@ -92,6 +107,7 @@ export default function SelectableOptionsTable({ summary, onToggle }) {
                 <TableCell>Charged with</TableCell>
                 <TableCell align="right">Price</TableCell>
                 <TableCell>Status</TableCell>
+                {showBacking && <TableCell>Purchase Order</TableCell>}
               </TableRow>
             </TableHead>
             <TableBody>
@@ -168,6 +184,11 @@ export default function SelectableOptionsTable({ summary, onToggle }) {
                               : 'Not included')}
                       />
                     </TableCell>
+                    {showBacking && (
+                      <TableCell>
+                        <PurchaseOrderBackingChip result={backing.lookup(option)} />
+                      </TableCell>
+                    )}
                   </TableRow>
                 )
               })}
@@ -183,6 +204,7 @@ export default function SelectableOptionsTable({ summary, onToggle }) {
                   </Typography>
                 </TableCell>
                 <TableCell />
+                {showBacking && <TableCell />}
               </TableRow>
             </TableFooter>
           </Table>

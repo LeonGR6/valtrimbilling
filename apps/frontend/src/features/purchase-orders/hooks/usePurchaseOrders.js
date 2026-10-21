@@ -10,6 +10,7 @@ import {
   listUncoveredOptions,
   rematchPurchaseOrders,
 } from '../services/purchaseOrderRepository.js'
+import { buildPurchaseOrderBacking } from '../services/purchaseOrderRecord.js'
 
 const NO_ANALYSES = {}
 
@@ -157,4 +158,36 @@ export function usePurchaseOrderComparison(jobId, revision) {
     error: key !== null && state.key === key ? state.error : null,
     loading: key !== null && state.key !== key,
   }), [key, state])
+}
+
+const NO_BACKING = { jobId: null, backing: null }
+
+/**
+ * Whether the Purchase Orders of a Job back the options a Package bills. It is only
+ * information, so a failed load simply shows nothing. Pass a null `jobId` to load
+ * nothing.
+ */
+export function usePurchaseOrderBacking(jobId) {
+  const { profile } = useAuth()
+  const userId = profile?.id ?? null
+  const [loaded, setLoaded] = useState(NO_BACKING)
+  const wanted = jobId == null || !userId ? null : String(jobId)
+
+  useEffect(() => {
+    if (wanted === null) return undefined
+
+    let cancelled = false
+    comparePurchaseOrders(wanted)
+      .then((lines) => {
+        if (!cancelled) setLoaded({ jobId: wanted, backing: buildPurchaseOrderBacking(lines) })
+      })
+      .catch(() => {
+        if (!cancelled) setLoaded({ jobId: wanted, backing: null })
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [wanted])
+
+  return wanted !== null && loaded.jobId === wanted ? loaded.backing : null
 }

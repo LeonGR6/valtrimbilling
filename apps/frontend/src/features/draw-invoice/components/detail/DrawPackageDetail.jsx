@@ -85,6 +85,7 @@ import {
   PackageOptionsTable,
   PackageUtilityTable,
 } from './PackageTables.jsx'
+import { usePurchaseOrderBacking } from '../../../purchase-orders/hooks/usePurchaseOrders.js'
 
 // Loaded on demand: it brings the Release generation screens.
 const GeneratePackageDialog = lazy(() => import('./GeneratePackageDialog.jsx'))
@@ -95,6 +96,8 @@ const RELEASE_ROLES = ['ADMIN', 'ACCOUNTING', 'PROJECT_MANAGEMENT']
 export default function DrawPackageDetail() {
   const navigate = useNavigate()
   const { builderId, jobId, phaseId, packageId } = useParams()
+  // Whether the Job's Purchase Orders back the options of this Package (information only).
+  const purchaseOrderBacking = usePurchaseOrderBacking(jobId ?? null)
   const {
     jobs,
     loading: jobsLoading,
@@ -760,7 +763,7 @@ export default function DrawPackageDetail() {
             {focusedPackage && !hasNoDrawCells && <PackageHardwareTable summary={packageSummary} />}
             {focusedPackage && !hasNoDrawCells && <PackageUtilityTable summary={packageSummary} />}
             {focusedPackage && !hasNoDrawCells && packageSummary.lotCount > 0 && (
-              <PackageOptionsTable summary={packageSummary} />
+              <PackageOptionsTable summary={packageSummary} backing={purchaseOrderBacking} />
             )}
             {focusedPackage && isPriceAdjustment && (
               <PackagePriceAdjustmentTable adjustment={focusedPackage.priceAdjustment} />

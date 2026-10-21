@@ -29,6 +29,7 @@ import {
   formatPercentage,
 } from '../../utils/drawInvoiceFormatters.js'
 import { formatLagShort } from '../../../builder-draw-schedules/utils/drawLag.js'
+import PurchaseOrderBackingChip from '../../../purchase-orders/components/PurchaseOrderBackingChip.jsx'
 import { TableCardHeader } from '../shared/PackageUi.jsx'
 import { packageTableSx } from '../shared/packageTableStyles.js'
 
@@ -357,7 +358,8 @@ export function PackageUtilityTable({ summary }) {
   )
 }
 
-export function PackageOptionsTable({ summary }) {
+export function PackageOptionsTable({ summary, backing = null }) {
+  const showBacking = Boolean(backing?.hasPurchaseOrders)
   const availableFromDrawLabel = summary.optionsBillingDrawIndex == null
     ? 'Not configured'
     : `Draw #${summary.optionsBillingDrawIndex + 1}`
@@ -398,6 +400,7 @@ export function PackageOptionsTable({ summary }) {
                 <TableCell>Charged with</TableCell>
                 <TableCell align="right">Price</TableCell>
                 <TableCell>Status</TableCell>
+                {showBacking && <TableCell>Purchase Order</TableCell>}
               </TableRow>
             </TableHead>
             <TableBody>
@@ -439,6 +442,11 @@ export function PackageOptionsTable({ summary }) {
                             : 'Charged previously'}
                       />
                     </TableCell>
+                    {showBacking && (
+                      <TableCell>
+                        <PurchaseOrderBackingChip result={backing.lookup(option)} />
+                      </TableCell>
+                    )}
                   </TableRow>
                 )
               })}
@@ -452,6 +460,7 @@ export function PackageOptionsTable({ summary }) {
                   <Typography fontWeight={900}>{formatCurrency(summary.optionsTotal)}</Typography>
                 </TableCell>
                 <TableCell />
+                {showBacking && <TableCell />}
               </TableRow>
             </TableFooter>
           </Table>

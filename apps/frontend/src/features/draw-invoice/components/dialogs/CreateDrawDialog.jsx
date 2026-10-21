@@ -70,6 +70,7 @@ import {
   phaseBillingProgress,
 } from '../../utils/packagePhaseScope.js'
 import { useAuth } from '../../../auth/context/useAuth.js'
+import { usePurchaseOrderBacking } from '../../../purchase-orders/hooks/usePurchaseOrders.js'
 import { usePreliminaryNoticeGate } from '../../hooks/usePreliminaryNoticeGate.js'
 import DrawSelectionGrid from './DrawSelectionGrid.jsx'
 import CreatePackageHardwareTable from './CreatePackageHardwareTable.jsx'
@@ -144,6 +145,7 @@ export default function CreateDrawDialog({
   const { profile } = useAuth()
 
   const job = jobs.find((candidate) => String(candidate.id) === selectedJobId)
+  const purchaseOrderBacking = usePurchaseOrderBacking(job?.id ?? null)
   const phases = job?.sequenceSheet?.phases ?? []
   const shownPhaseIdSet = new Set(shownPhaseIds)
   const shownPhases = phases.filter(
@@ -1017,7 +1019,11 @@ export default function CreateDrawDialog({
           )}
 
           {hasScope && summary.optionsAreDue && (
-            <SelectableOptionsTable summary={summary} onToggle={toggleOption} />
+            <SelectableOptionsTable
+              summary={summary}
+              onToggle={toggleOption}
+              backing={purchaseOrderBacking}
+            />
           )}
 
           {hasScope && summary.optionsAreDue && summary.selectedOptionRows.length > 0 && (

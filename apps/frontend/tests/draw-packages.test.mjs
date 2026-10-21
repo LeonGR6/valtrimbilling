@@ -1290,3 +1290,35 @@ test('an Option that was never priced still blocks billing, unlike NA', () => {
   assert.equal(summary.unpricedOptionCount, 1)
   assert.equal(summary.selectedOptionRows[0].issue, 'PRICE_MISSING')
 })
+
+test('the preview amounts add up with a fractional OCIP / WRAP percentage', () => {
+  const job = {
+    sequenceSheet: {
+      plans: [{ id: 1, code: 'A', price: 10000, options: [] }],
+    },
+  }
+  const phase = {
+    id: 3,
+    lots: [{ id: 1, lotNumber: '19', planId: 1, optionIds: [] }],
+  }
+  const schedule = {
+    draws: [{ percentage: 50 }, { percentage: 50 }],
+    retentionEnabled: false,
+    retentionPercentage: 0,
+    ocipWrapEnabled: true,
+    ocipWrapPercentage: 0.833,
+  }
+  const summary = summarizeDrawPackage({
+    selections: [{ phaseId: 3, lotId: 1, drawIndex: 0 }],
+  }, job, phase, schedule)
+
+  assert.equal(summary.grossAmount, 5000)
+  assert.equal(summary.retention, 0)
+  // 5000 x 0.833% = 41.65
+  assert.equal(summary.wrapInsurance, 41.65)
+  assert.equal(summary.invoiceAmount, 4958.35)
+  assert.equal(
+    Math.round((summary.grossAmount - summary.retention - summary.wrapInsurance) * 100) / 100,
+    summary.invoiceAmount,
+  )
+})

@@ -19,7 +19,7 @@ export function formatPercentage(value) {
   const percentage = Number(value) || 0
   return Number.isInteger(percentage)
     ? String(percentage)
-    : percentage.toFixed(2).replace(/0+$/, '').replace(/\.$/, '')
+    : percentage.toFixed(3).replace(/0+$/, '').replace(/\.$/, '')
 }
 
 export function formatDate(value) {

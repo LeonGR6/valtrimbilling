@@ -73,6 +73,7 @@ import { useAuth } from '../../../auth/context/useAuth.js'
 import { usePreliminaryNoticeGate } from '../../hooks/usePreliminaryNoticeGate.js'
 import DrawSelectionGrid from './DrawSelectionGrid.jsx'
 import CreatePackageHardwareTable from './CreatePackageHardwareTable.jsx'
+import CreatePackageTotals from './CreatePackageTotals.jsx'
 import CreatePackageUtilityTable from './CreatePackageUtilityTable.jsx'
 import SelectableOptionsTable from './SelectableOptionsTable.jsx'
 
@@ -1121,10 +1122,8 @@ export default function CreateDrawDialog({
                       Hardware: <strong>{formatCurrency(summary.hardwareTotal)}</strong>
                     </Typography>
                   )}
-                  <Typography variant="body2">
-                    Invoice Amount: <strong>{formatCurrency(summary.invoiceAmount)}</strong>
-                  </Typography>
                 </Stack>
+                <CreatePackageTotals summary={summary} schedule={schedule} />
               </CardContent>
             </Card>
           )}
@@ -1148,10 +1147,10 @@ export default function CreateDrawDialog({
             ? (
                 <>
                   {isMultiPhase ? `${summary.phaseCount} Phases / Buildings · ` : ''}
-                  Invoice Amount <strong>{formatCurrency(summary.invoiceAmount)}</strong>
+                  Net amount <strong>{formatCurrency(summary.invoiceAmount)}</strong>
                 </>
               )
-            : 'Select what to bill to see the invoice amount.'}
+            : 'Select what to bill to see the net amount.'}
         </Typography>
         <Stack direction="row" spacing={1}>
         <Button color="inherit" onClick={onClose}>Cancel</Button>

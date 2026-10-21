@@ -204,7 +204,7 @@ cambiaría el precio de todo el Plan.
 | Etapa | Estado |
 |---|---|
 | 1. Parser Olson + normalización + emparejamiento + tests | **Hecha** (`_shared/purchaseOrder*.ts`, 17 tests) |
-| 2. Migración + edge function + RPC de comparación | Pendiente |
+| 2. Migración + edge function + RPC de comparación | **Hecha** (sin aplicar ni desplegar; ver notas) |
 | 3. UI de revisión en Documents | Pendiente |
 | 4. Importar options faltantes | Pendiente |
 | 5. "Use PO price" | Pendiente |
@@ -218,3 +218,19 @@ Notas de la etapa 1:
 - `MDL` → `MODELS` se resuelve como **sugerida** (abreviatura), no como coincidencia automática: el revisor la
   confirma una vez y queda como alias del Job. `Model` y `Models` sí coinciden solos (singular/plural).
 - Los Plans y los Lots nunca se emparejan por parecido (`4B` no se confunde con `4C`).
+
+Notas de la etapa 2:
+
+- Migración `20261025120000_purchase_order_analyses.sql`: `purchase_order_analyses`, `purchase_order_lines`,
+  `purchase_order_aliases`, la vista `purchase_order_current_lines` (la revisión más reciente gana),
+  `save_purchase_order_analysis` (solo `service_role`, reemplaza las líneas en una transacción),
+  `compare_purchase_orders(job_id)` y `purchase_order_uncovered_options(job_id)` (con los permisos de quien llama).
+- El análisis termina en `analyzed`, `failed` o `not_option_po` (un PDF que no es PO de options es un resultado,
+  no un error). No hay paso de confirmación: la comparación siempre es en vivo.
+- Estados de la comparación: `HEADER_UNRESOLVED`, `PLAN_MISMATCH`, `MISSING_OPTION`, `AMBIGUOUS_OPTION`,
+  `NOT_IN_LOT`, `PRICE_DIFF`, `MATCH`, más `conflicting_po_prices` (POs del mismo Plan con precios distintos).
+- El encabezado del PO se empareja con el Lot en la edge function (`purchaseOrderResolve.ts`); el Lot manda y su
+  Plan es el que se compara. Si el Plan impreso no coincide con el del Lot, queda `PLAN_MISMATCH`.
+- Una Phase repetida en varios buildings se distingue por el número de Lot y el Plan.
+- Pendiente para la etapa 3: la similitud de descripción (umbral 0.5) se calibrará con nombres reales del sistema,
+  que suelen ser más largos que lo que imprime el PO.

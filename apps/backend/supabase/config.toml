@@ -477,6 +477,13 @@ verify_jwt = true
 [functions.payment-schedule-analyze]
 verify_jwt = true
 
+# Reads the option lines of a Purchase Order PDF and matches them with the Job's
+# Lots. Same trust model as payment-schedule-analyze: the function checks the
+# caller's JWT and role, reads the document with the caller's permissions, then
+# writes as service_role.
+[functions.purchase-order-analyze]
+verify_jwt = true
+
 [analytics]
 enabled = true
 port = 54327

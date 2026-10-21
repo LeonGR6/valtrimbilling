@@ -61,10 +61,56 @@ test('collection uses issued unpaid invoice balances and keeps draft and voided 
     DRAFT: 2,
   })
   assert.equal(result.pendingBalance, 140)
-  assert.deepEqual(result.dueInvoices.map(({ id, balance, overdue }) => ({ id, balance, overdue })), [
+  assert.deepEqual(result.openInvoices.map(({ id, balance, overdue }) => ({ id, balance, overdue })), [
     { id: 2, balance: 80, overdue: true },
     { id: 3, balance: 30, overdue: false },
+    { id: 4, balance: 30, overdue: false },
   ])
+})
+
+test('collection aging splits the open balance into overdue, due this week and not yet due', () => {
+  const packages = [
+    record(1, 'AWAITING_PAYMENT', 'ISSUED', '2026-09-14', 100, 20),
+    record(2, 'AWAITING_PAYMENT', 'ISSUED', '2026-09-15', 40),
+    record(3, 'AWAITING_PAYMENT', 'ISSUED', '2026-09-21', 10),
+    record(4, 'AWAITING_PAYMENT', 'PARTIALLY_PAID', '2026-09-22', 60, 10),
+  ]
+  const { collectionAging, pendingBalance } = buildDashboardMetrics([], packages, now, 7)
+
+  assert.deepEqual(collectionAging, {
+    overdue: { count: 1, balance: 80 },
+    dueSoon: { count: 2, balance: 50 },
+    notDue: { count: 1, balance: 50 },
+  })
+  assert.equal(
+    collectionAging.overdue.balance + collectionAging.dueSoon.balance + collectionAging.notDue.balance,
+    pendingBalance,
+  )
+})
+
+test('the Production timeline lays a week out by day and longer periods by week', () => {
+  const events = [
+    event('mon', '2026-09-15', 'EXT'),
+    event('mon-dm', '2026-09-15', 'DM', 'TENTATIVE'),
+    event('sat', '2026-09-19', 'HW'),
+    event('next-week', '2026-09-23', 'SHUTTER'),
+    event('far', '2026-10-01', 'EXT'),
+  ]
+
+  const week = buildDashboardMetrics(events, [], now, 7).timeline
+  assert.equal(week.mode, 'days')
+  assert.equal(week.buckets.length, 7)
+  assert.deepEqual(week.buckets.map(({ events: dayEvents }) => dayEvents.length), [2, 0, 0, 0, 1, 0, 0])
+  assert.deepEqual(week.buckets.map(({ isWeekend }) => isWeekend), [false, false, false, false, true, true, false])
+  assert.equal(week.buckets[0].isToday, true)
+  assert.deepEqual(week.typeCounts, { EXT: 1, SHUTTER: 0, DM: 1, HW: 1 })
+
+  const month = buildDashboardMetrics(events, [], now, 30).timeline
+  assert.equal(month.mode, 'weeks')
+  assert.equal(month.buckets.length, 5)
+  assert.deepEqual(month.buckets.map(({ total }) => total), [3, 1, 1, 0, 0])
+  assert.deepEqual(month.typeCounts, { EXT: 2, SHUTTER: 1, DM: 1, HW: 1 })
+  assert.equal(buildDashboardMetrics(events, [], now, 90).timeline.buckets.length, 13)
 })
 
 test('date keys use the local calendar day and advance across months', () => {

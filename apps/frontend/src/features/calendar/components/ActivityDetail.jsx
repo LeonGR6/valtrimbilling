@@ -19,6 +19,9 @@ import ApartmentRoundedIcon from '@mui/icons-material/ApartmentRounded'
 import BusinessRoundedIcon from '@mui/icons-material/BusinessRounded'
 import CalendarMonthRoundedIcon from '@mui/icons-material/CalendarMonthRounded'
 import { extraEventLabel } from '../utils/calendarExtraEvents.js'
+import BuildRoundedIcon from '@mui/icons-material/BuildRounded'
+import LockRoundedIcon from '@mui/icons-material/LockRounded'
+import StraightenRoundedIcon from '@mui/icons-material/StraightenRounded'
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined'
 import EngineeringRoundedIcon from '@mui/icons-material/EngineeringRounded'
@@ -164,9 +167,17 @@ function formatChangeDate(value) {
   return Number.isNaN(date.getTime()) ? '' : changeDateFormatter.format(date)
 }
 
-function ScheduleRow({ label, lotStart, lotEnd, lotNumbers, date, dateOwner, note, tone }) {
+// What each extra event looks like in the hero, so it is not read as the
+// stage (DM, EXT, HW) it hangs from.
+const EXTRA_EVENT_ICONS = {
+  'install-only': <BuildRoundedIcon />,
+  'baseboard-install': <StraightenRoundedIcon />,
+  'lock-up': <LockRoundedIcon />,
+}
+
+function ScheduleRow({ label, lotStart, lotEnd, lotNumbers, date, dateOwner, note, tone, focused = false }) {
   return (
-    <Box className={`schedule-row activity-tone--${tone}`}>
+    <Box className={`schedule-row activity-tone--${tone}${focused ? ' is-focused' : ''}`}>
       <Box className="schedule-row__date">
         <Box className="schedule-row__date-value">
           <CalendarMonthRoundedIcon fontSize="small" />
@@ -174,7 +185,10 @@ function ScheduleRow({ label, lotStart, lotEnd, lotNumbers, date, dateOwner, not
         </Box>
         <span className="schedule-row__owner">{getDateOwnerLabel(dateOwner)}</span>
       </Box>
-      <Typography variant="body2" fontWeight={750}>{label}</Typography>
+      <Box className="schedule-row__label">
+        <Typography variant="body2" fontWeight={750}>{label}</Typography>
+        {focused && <span className="schedule-row__focus">This event</span>}
+      </Box>
       <Typography variant="caption" color="text.secondary">
         {getLotsLabel(lotStart, lotEnd, lotNumbers)} · All day
       </Typography>
@@ -230,7 +244,7 @@ function DateHistory({ history, tone }) {
   )
 }
 
-function StageScheduleDetail({ activityType, schedule, lotStart, lotEnd, lotNumbers }) {
+function StageScheduleDetail({ activityType, schedule, lotStart, lotEnd, lotNumbers, focusVariant = null }) {
   const type = activityTypeMap[activityType]
   const tone = getActivityTone(activityType, schedule.orderMaterial)
   const schedules = schedule.splitPhase
@@ -293,6 +307,7 @@ function StageScheduleDetail({ activityType, schedule, lotStart, lotEnd, lotNumb
             dateOwner={schedule.installDateOwner}
             note={schedule.installDateNote}
             tone={tone}
+            focused={focusVariant === 'install-only'}
           />
         )}
         {schedule.baseboardInstall && (
@@ -304,7 +319,8 @@ function StageScheduleDetail({ activityType, schedule, lotStart, lotEnd, lotNumb
             date={schedule.baseboardInstallDate}
             dateOwner={schedule.baseboardInstallDateOwner}
             note={schedule.baseboardInstallDateNote}
-            tone={tone}
+            tone={getActivityTone(activityType, false, 'baseboard-install')}
+            focused={focusVariant === 'baseboard-install'}
           />
         )}
         {schedule.lockUp && (
@@ -317,6 +333,7 @@ function StageScheduleDetail({ activityType, schedule, lotStart, lotEnd, lotNumb
             dateOwner={schedule.lockUpDateOwner}
             note={schedule.lockUpDateNote}
             tone={tone}
+            focused={focusVariant === 'lock-up'}
           />
         )}
       </Stack>
@@ -348,7 +365,7 @@ export default function ActivityDetail({
   // its own; any other event belongs to an activity that is deleted as a whole.
   const extraLabel = extraEventLabel(props.variant)
   const type = activityTypeMap[props.activityType]
-  const tone = getActivityTone(props.activityType, props.orderMaterial)
+  const tone = getActivityTone(props.activityType, props.orderMaterial, props.variant)
   const phaseLotNumbers = props.phaseLotNumbers ?? props.lotNumbers ?? []
   const lotStart = phaseLotNumbers[0] ?? props.lotStart
   const lotEnd = phaseLotNumbers.at(-1) ?? props.lotEnd
@@ -377,19 +394,41 @@ export default function ActivityDetail({
 
   return (
     <Box className="activity-drawer__layout">
-      <DrawerHeader eyebrow="PRODUCTION ACTIVITY" title={`Job #${props.jobCode}`} onClose={onClose} />
+      <DrawerHeader
+        eyebrow={extraLabel ?? 'PRODUCTION ACTIVITY'}
+        title={`Job #${props.jobCode}`}
+        onClose={onClose}
+      />
 
       <Box className="activity-drawer__scroll">
-        <Box className={`activity-detail__hero activity-tone--${tone}`}>
-          <Box className="activity-detail__type-mark">{type.shortLabel}</Box>
-          <Box>
-            <Typography variant="h6" fontWeight={780}>{type.label}</Typography>
-            <Typography variant="body2" color="text.secondary">
-              {props.phase} · {getLotsLabel(lotStart, lotEnd, phaseLotNumbers)}
-            </Typography>
+        {extraLabel ? (
+          <Box className={`activity-detail__hero activity-detail__hero--extra activity-tone--${tone}`}>
+            <Box className="activity-detail__type-mark" aria-hidden="true">
+              {EXTRA_EVENT_ICONS[props.variant]}
+            </Box>
+            <Box className="activity-detail__hero-text">
+              <span className="activity-detail__hero-title">{extraLabel}</span>
+              <span className="activity-detail__hero-date">
+                {formatDate(String(event.start).slice(0, 10))}
+                <span className="activity-detail__hero-owner">{getDateOwnerLabel(props.dateOwner)}</span>
+              </span>
+              <span className="activity-detail__hero-meta">
+                {type.shortLabel} · {props.phase} · {getLotsLabel(lotStart, lotEnd, phaseLotNumbers)}
+              </span>
+            </Box>
           </Box>
-          <Chip size="small" label="Production" className="activity-detail__chip" />
-        </Box>
+        ) : (
+          <Box className={`activity-detail__hero activity-tone--${tone}`}>
+            <Box className="activity-detail__type-mark">{type.shortLabel}</Box>
+            <Box>
+              <Typography variant="h6" fontWeight={780}>{type.label}</Typography>
+              <Typography variant="body2" color="text.secondary">
+                {props.phase} · {getLotsLabel(lotStart, lotEnd, phaseLotNumbers)}
+              </Typography>
+            </Box>
+            <Chip size="small" label="Production" className="activity-detail__chip" />
+          </Box>
+        )}
 
         {followUp && (
           <Alert severity={followUp.color === 'default' ? 'info' : followUp.color}>
@@ -426,7 +465,11 @@ export default function ActivityDetail({
           <Box className="activity-detail__section-title">
             <Box>
               <Typography variant="subtitle1" fontWeight={750}>{type.label} schedule</Typography>
-              <Typography variant="caption" color="text.secondary">Options and dates for the selected event.</Typography>
+              <Typography variant="caption" color="text.secondary">
+                {extraLabel
+                  ? `Where ${extraLabel.toLowerCase()} sits in the ${type.shortLabel} stage.`
+                  : 'Options and dates for the selected event.'}
+              </Typography>
             </Box>
             <Chip size="small" label={type.shortLabel} />
           </Box>
@@ -436,6 +479,7 @@ export default function ActivityDetail({
             lotStart={lotStart}
             lotEnd={lotEnd}
             lotNumbers={phaseLotNumbers}
+            focusVariant={extraLabel ? props.variant : null}
           />
         </Box>
 

@@ -332,6 +332,8 @@ test('Order Material changes the EXT tone without changing DM or HW', () => {
   assert.equal(getActivityTone('EXT', true), 'ext-order')
   assert.equal(getActivityTone('DM', true), 'dm')
   assert.equal(getActivityTone('HW', true), 'hw')
+  assert.equal(getActivityTone('DM', false, 'baseboard-install'), 'baseboard')
+  assert.equal(getActivityTone('DM', false, 'base'), 'dm')
 })
 
 test('the Month view shows one line: job, community, phase and building, lots and event', () => {

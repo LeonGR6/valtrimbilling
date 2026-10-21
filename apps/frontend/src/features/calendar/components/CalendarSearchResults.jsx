@@ -17,7 +17,7 @@ function todayIso() {
 function ResultRow({ event, selected, onOpen }) {
   const props = event.extendedProps
   const type = activityTypeMap[props.activityType]
-  const tone = getActivityTone(props.activityType, props.orderMaterial)
+  const tone = getActivityTone(props.activityType, props.orderMaterial, props.variant)
   const extra = props.variant === 'install-only'
     ? 'Install only'
     : props.variant === 'baseboard-install'

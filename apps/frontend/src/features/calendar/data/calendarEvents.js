@@ -82,7 +82,9 @@ export function getFollowUpStatusMeta(followUp) {
   }
 }
 
-export function getActivityTone(activityType, orderMaterial = false) {
+export function getActivityTone(activityType, orderMaterial = false, variant = null) {
+  // The Baseboard install is a DM event with a color of its own.
+  if (variant === 'baseboard-install') return 'baseboard'
   if (activityType === 'EXT' && orderMaterial) return 'ext-order'
   return activityTypeMap[activityType]?.tone ?? 'ext'
 }

@@ -82,6 +82,10 @@ export default function CalendarWorkspace({
             <span />
             EXT · Order Material
           </Box>
+          <Box className="calendar-color-key activity-tone--baseboard">
+            <span />
+            DM · Baseboard install
+          </Box>
         </Box>
 
         <Box className="calendar-scope-filters" aria-label="Search and filter events">
@@ -269,7 +273,11 @@ export default function CalendarWorkspace({
                 isMonth={info.view.type === 'dayGridMonth'}
               />}
               eventClassNames={({ event }) => {
-                const tone = getActivityTone(event.extendedProps.activityType, event.extendedProps.orderMaterial)
+                const tone = getActivityTone(
+                  event.extendedProps.activityType,
+                  event.extendedProps.orderMaterial,
+                  event.extendedProps.variant,
+                )
                 return [`fc-activity--${tone}`, `activity-tone--${tone}`, event.id === selectedId ? 'is-selected' : '']
               }}
               datesSet={({ view }) => onDatesSet(view.title, view.type)}

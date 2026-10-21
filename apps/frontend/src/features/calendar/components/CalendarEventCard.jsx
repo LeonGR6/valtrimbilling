@@ -11,7 +11,7 @@ import {
 export default function CalendarEventCard({ event, isList = false, isMonth = false }) {
   const props = event.extendedProps
   const type = activityTypeMap[props.activityType]
-  const tone = getActivityTone(props.activityType, props.orderMaterial)
+  const tone = getActivityTone(props.activityType, props.orderMaterial, props.variant)
   const followUp = getFollowUpStatusMeta(props.followUp)
 
   // Month view: one line per event, like a Google Calendar chip.

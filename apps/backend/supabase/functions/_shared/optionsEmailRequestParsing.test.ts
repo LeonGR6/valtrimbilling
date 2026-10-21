@@ -10,31 +10,12 @@ Deno.test("the changes the browser names are checked in shape and deduplicated",
     requestedChanges([
       { lotId: 27, optionId: "3", createdOption: true },
       { lotId: "27", optionId: 3 },
+      // A price sent by an older screen is ignored: the emails carry none.
       { lotId: "28", optionId: "4", price: "-14.5", priceNotApplicable: true },
-      { lotId: "29", optionId: "5", price: null },
     ]),
     [
-      {
-        lotId: "27",
-        optionId: "3",
-        createdOption: true,
-        price: undefined,
-        priceNotApplicable: false,
-      },
-      {
-        lotId: "28",
-        optionId: "4",
-        createdOption: false,
-        price: -14.5,
-        priceNotApplicable: true,
-      },
-      {
-        lotId: "29",
-        optionId: "5",
-        createdOption: false,
-        price: undefined,
-        priceNotApplicable: false,
-      },
+      { lotId: "27", optionId: "3", createdOption: true },
+      { lotId: "28", optionId: "4", createdOption: false },
     ],
   );
 
@@ -49,11 +30,6 @@ Deno.test("the changes the browser names are checked in shape and deduplicated",
     () => requestedChanges([{ lotId: "1", optionId: "abc" }]),
     Error,
     "valid option",
-  );
-  assertThrows(
-    () => requestedChanges([{ lotId: "1", optionId: "2", price: "free" }]),
-    Error,
-    "valid option price",
   );
   assertThrows(
     () =>

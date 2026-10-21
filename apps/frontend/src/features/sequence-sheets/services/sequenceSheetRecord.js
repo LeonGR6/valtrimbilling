@@ -78,8 +78,7 @@ export function toSequenceSheetPhaseRpc(jobId, phaseId, phase) {
 /**
  * The options a saved edit took out of Lots that already existed: the ones the Lot had
  * before and the form no longer selects. Changing a Lot's Plan drops the options of its
- * old Plan too, and counts the same. Each carries the price the Lot was billing, which is
- * gone once the selection is deleted. A Lot that is removed altogether is not listed:
+ * old Plan too, and counts the same. A Lot that is removed altogether is not listed:
  * the email is about options, and the Lot is not there to describe any more.
  */
 export function removedOptionChanges(previousPhase, form) {
@@ -94,13 +93,7 @@ export function removedOptionChanges(previousPhase, form) {
     const kept = new Set((lot.optionIds ?? []).map(String))
     for (const optionId of previous.optionIds ?? []) {
       if (kept.has(String(optionId))) continue
-      const price = previous.optionPrices?.[optionId]
-      changes.push({
-        lotId: Number(lot.id),
-        optionId: Number(optionId),
-        // Without a pinned price the server shows what the Plan holds today.
-        ...(price ? { price: price.price, priceNotApplicable: price.priceNotApplicable } : {}),
-      })
+      changes.push({ lotId: Number(lot.id), optionId: Number(optionId) })
     }
   }
 

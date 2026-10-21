@@ -6,12 +6,12 @@
 // POST body: {
 //   action: 'preview' | 'send',
 //   jobId: number,
-//   changes: [{ lotId, optionId, createdOption?, price?, priceNotApplicable? }],
+//   changes: [{ lotId, optionId, createdOption? }],
 //   recipientEmails?, subject?, requestId?               // send only
 // }
 //
 // The browser only says WHICH options changed. Everything the email shows (the Lots,
-// Plans, options, prices, work orders and the people it is addressed to) is loaded
+// Plans, options, work orders and the people it is addressed to) is loaded
 // with the signed-in user's own permissions, so a tampered request cannot make the
 // email say something the database does not. See purchaseOrderOptionsEmailLoader.ts.
 //

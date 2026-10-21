@@ -20,8 +20,6 @@ export interface OptionsEmailOption {
   code: string;
   // What the Sequence Sheet shows: the option's description, else its name.
   description: string;
-  price: number | null;
-  priceNotApplicable: boolean;
   // The Purchase Order that printed it, e.g. "Work order 0813MDLH27-13325-19". Empty
   // when there is none (a removed option).
   source: string;
@@ -74,18 +72,6 @@ function escapeHtml(value: string) {
     .replaceAll("'", "&#039;");
 }
 
-const money = new Intl.NumberFormat("en-US", {
-  style: "currency",
-  currency: "USD",
-});
-
-export function priceLabel(
-  option: Pick<OptionsEmailOption, "price" | "priceNotApplicable">,
-) {
-  if (option.priceNotApplicable) return "NA";
-  return option.price === null ? "—" : money.format(option.price);
-}
-
 function optionCount(snapshot: OptionsEmailSnapshot) {
   return snapshot.lots.reduce((total, lot) => total + lot.options.length, 0);
 }
@@ -122,6 +108,14 @@ const WORDING = {
   },
 } as const;
 
+// The banner says at a glance what happened: green when options were added, red when
+// they were removed. `soft` is the tint of the small "ValtrimBilling" line above the title.
+const THEME = {
+  added: { bar: "#16a34a", soft: "#dcfce7" },
+  added_manually: { bar: "#16a34a", soft: "#dcfce7" },
+  removed: { bar: "#dc2626", soft: "#fee2e2" },
+} as const;
+
 export function optionsEmailSubject(snapshot: OptionsEmailSnapshot) {
   return `${WORDING[snapshot.kind].title} · Job #${snapshot.jobCode} · ${
     lotsLabel(snapshot)
@@ -150,8 +144,8 @@ export function buildOptionsEmailDraft(
 const CELL =
   "padding:12px 14px;color:#1e293b;font-size:14px;vertical-align:top;";
 
-// One table row per option, so each price sits next to its own option. The Lot and
-// its Plan are written on the first row of the Lot only.
+// One table row per option. The Lot and its Plan are written on the first row of the
+// Lot only.
 function lotRowsHtml(lot: OptionsEmailLot, index: number) {
   const background = index % 2 === 0 ? "#ffffff" : "#f8fafc";
   return lot.options.map((option, optionIndex) => {
@@ -188,9 +182,6 @@ function lotRowsHtml(lot: OptionsEmailLot, index: number) {
         : ""
     }
       </td>
-      <td align="right" style="width:110px;${CELL}${border}font-weight:700;white-space:nowrap;">${
-      escapeHtml(priceLabel(option))
-    }</td>
     </tr>`;
   }).join("");
 }
@@ -226,9 +217,8 @@ export function renderOptionsEmail(
         lot.scope,
         `Plan ${lot.planCode || "unavailable"}`,
         `${option.code} · ${option.description}`,
-        priceLabel(option),
         option.source,
-      ].filter((part, index) => index < 5 || part !== "").join("\t")
+      ].filter((part, index) => index < 4 || part !== "").join("\t")
     )
   );
   const text = [
@@ -240,8 +230,8 @@ export function renderOptionsEmail(
     intro,
     "",
     snapshot.kind === "added"
-      ? "Lot\tScope\tPlan\tOption\tPrice\tPurchase Order"
-      : "Lot\tScope\tPlan\tOption\tPrice",
+      ? "Lot\tScope\tPlan\tOption\tPurchase Order"
+      : "Lot\tScope\tPlan\tOption",
     ...textRows,
     "",
     `${
@@ -253,8 +243,12 @@ export function renderOptionsEmail(
     <div style="margin:0;padding:28px 12px;background-color:#f8fafc;font-family:Arial,Helvetica,sans-serif;color:#1e293b;">
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:820px;margin:0 auto;border-collapse:separate;">
         <tr>
-          <td style="padding:24px 26px;background-color:#2563eb;border-radius:10px 10px 0 0;">
-            <p style="margin:0 0 5px;color:#dbeafe;font-size:12px;font-weight:700;letter-spacing:0.7px;text-transform:uppercase;">ValtrimBilling</p>
+          <td style="padding:24px 26px;background-color:${
+    THEME[snapshot.kind].bar
+  };border-radius:10px 10px 0 0;">
+            <p style="margin:0 0 5px;color:${
+    THEME[snapshot.kind].soft
+  };font-size:12px;font-weight:700;letter-spacing:0.7px;text-transform:uppercase;">ValtrimBilling</p>
             <h1 style="margin:0;color:#ffffff;font-size:24px;line-height:1.3;font-weight:700;">${
     escapeHtml(title)
   }</h1>
@@ -297,7 +291,6 @@ export function renderOptionsEmail(
                   <th align="left" style="padding:11px 14px;border-bottom:1px solid #cbd5e1;color:#475569;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.35px;">${
     WORDING[snapshot.kind].column
   }</th>
-                  <th align="right" style="padding:11px 14px;border-bottom:1px solid #cbd5e1;color:#475569;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.35px;">Price</th>
                 </tr>
               </thead>
               <tbody>${
@@ -336,8 +329,6 @@ export interface OptionsEmailAddition {
   optionCode: string;
   optionName: string;
   optionDescription: string;
-  price: number | null;
-  priceNotApplicable: boolean;
   workOrderNo: string | null;
   referenceNo: string | null;
   createdInPlan: boolean;
@@ -399,8 +390,6 @@ export function buildOptionsEmailSnapshot(
       description: addition.optionDescription.trim() ||
         addition.optionName.trim() ||
         "Option unavailable",
-      price: addition.price,
-      priceNotApplicable: addition.priceNotApplicable,
       // Only an option a Purchase Order added points to one.
       source: source.kind !== "added"
         ? ""

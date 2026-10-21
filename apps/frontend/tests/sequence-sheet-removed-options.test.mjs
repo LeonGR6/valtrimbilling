@@ -19,15 +19,15 @@ const lot = (overrides) => ({
 
 const phase = (...lots) => ({ id: 5, name: 'MODELS', building: '', lots })
 
-test('an unchecked option is a removal, with the price the Lot was billing', () => {
+test('an unchecked option is a removal', () => {
   const changes = removedOptionChanges(
     phase(lot()),
     { lots: [{ id: 27, optionIds: [3] }] },
   )
 
   assert.deepEqual(changes, [
-    { lotId: 27, optionId: 4, price: 81, priceNotApplicable: false },
-    { lotId: 27, optionId: 5, price: 0, priceNotApplicable: true },
+    { lotId: 27, optionId: 4 },
+    { lotId: 27, optionId: 5 },
   ])
 })
 
@@ -61,15 +61,6 @@ test('new rows, deleted Lots and Utility rows are not removed options', () => {
   })
 
   assert.deepEqual(changes, [])
-})
-
-test('a removed option without a pinned price carries none', () => {
-  const changes = removedOptionChanges(
-    phase(lot({ optionIds: [3], optionPrices: undefined })),
-    { lots: [{ id: 27, optionIds: [] }] },
-  )
-
-  assert.deepEqual(changes, [{ lotId: 27, optionId: 3 }])
 })
 
 test('a phase that was not loaded has nothing to compare', () => {

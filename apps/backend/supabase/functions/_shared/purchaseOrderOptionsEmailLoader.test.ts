@@ -3,7 +3,7 @@ import { loadOptionsEmailSnapshot } from "./purchaseOrderOptionsEmailLoader.ts";
 
 // A stand-in for the user client: it answers each table with the rows it was given
 // and ignores the filters, so these tests cover what the loader itself decides (which
-// pairs count, which price is shown, who is addressed), not the database.
+// pairs count, who is addressed), not the database.
 type Row = Record<string, unknown>;
 
 function fakeClient(tables: Record<string, Row[]>) {
@@ -44,8 +44,8 @@ const tables = (): Record<string, Row[]> => ({
   ],
   lots: [{ id: 27, lot_number: "27", plan_id: 12, phase_id: 5 }],
   lot_options: [
-    { lot_id: 27, option_id: 3, option_price_id: 200 },
-    { lot_id: 27, option_id: 4, option_price_id: null },
+    { lot_id: 27, option_id: 3 },
+    { lot_id: 27, option_id: 4 },
   ],
   plan_options: [
     {
@@ -65,11 +65,6 @@ const tables = (): Record<string, Row[]> => ({
   ],
   phases: [{ id: 5, code: "MODELS", building: "." }],
   plans: [{ id: 12, code: "4B" }],
-  option_prices: [
-    // The same rows answer the pinned price and the open price look-ups.
-    { id: 200, option_id: 3, price: "1126.00", is_not_applicable: false },
-    { id: 201, option_id: 4, price: "81.00", is_not_applicable: false },
-  ],
   purchase_order_current_lines: [
     {
       lot_id: 27,
@@ -86,7 +81,7 @@ const tables = (): Record<string, Row[]> => ({
   ],
 });
 
-Deno.test("loads the options, prices and sources of the pairs that were added", async () => {
+Deno.test("loads the options and sources of the pairs that were added", async () => {
   const { jobId, snapshot } = await loadOptionsEmailSnapshot(
     fakeClient(tables()),
     "added",
@@ -113,8 +108,6 @@ Deno.test("loads the options, prices and sources of the pairs that were added", 
     "1STR0024",
     "2FIN-5006",
   ]);
-  // The Lot's pinned price when it has one, else the option's open price.
-  assertEquals(lot.options.map((option) => option.price), [1126, 81]);
   assertEquals(lot.options.map((option) => option.createdInPlan), [
     true,
     false,
@@ -216,47 +209,20 @@ Deno.test("a removed option is loaded from what the database no longer has selec
     "Ana",
     "4",
     [
-      // Gone from the Lot: it counts, with the price the Lot was billing.
-      { lotId: "27", optionId: "5", price: -14, priceNotApplicable: false },
+      // Gone from the Lot: it counts.
+      { lotId: "27", optionId: "5" },
       // Still selected: it did not change, so it is not in the email.
-      { lotId: "27", optionId: "3", price: 1126 },
+      { lotId: "27", optionId: "3" },
     ],
   );
 
   assertEquals(snapshot.kind, "removed");
   const [lot] = snapshot.lots;
   assertEquals(lot.options.map((option) => option.code), ["2CAB3033"]);
-  assertEquals(lot.options[0].price, -14);
   assertEquals(lot.planCode, "4B");
   // A removed option points to no Purchase Order and was not created by anyone.
   assertEquals(lot.options[0].source, "");
   assertEquals(lot.options[0].createdInPlan, false);
-});
-
-Deno.test("without a price from the browser a removed option shows the Plan's price", async () => {
-  const data = tables();
-  data.plan_options.push({
-    id: 5,
-    plan_id: 12,
-    code: "2CAB3033",
-    name: "Add Upper Laundry Cabinet",
-    description: null,
-  });
-  data.option_prices.push({
-    id: 300,
-    option_id: 5,
-    price: "-14.00",
-    is_not_applicable: false,
-  });
-  const { snapshot } = await loadOptionsEmailSnapshot(
-    fakeClient(data),
-    "removed",
-    "Ana",
-    "4",
-    [{ lotId: "27", optionId: "5" }],
-  );
-
-  assertEquals(snapshot.lots[0].options[0].price, -14);
 });
 
 Deno.test("nothing removed means nothing to send", async () => {
@@ -288,8 +254,6 @@ Deno.test("an option added by editing is loaded like an added one, without a Pur
   assertEquals(snapshot.kind, "added_manually");
   const [lot] = snapshot.lots;
   assertEquals(lot.options.map((option) => option.code), ["1STR0024"]);
-  // The Lot's price, as for any selected option.
-  assertEquals(lot.options[0].price, 1126);
   // The fixture has a Purchase Order line for this option, and the email ignores it.
   assertEquals(lot.options[0].source, "");
   assertEquals(lot.options[0].createdInPlan, false);

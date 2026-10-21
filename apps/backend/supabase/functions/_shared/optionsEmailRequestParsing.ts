@@ -33,18 +33,10 @@ export function requestedChanges(value: unknown): RequestedChange[] {
     if (seen.has(key)) continue;
     seen.add(key);
 
-    const price = item?.price === undefined || item.price === null
-      ? undefined
-      : Number(item.price);
-    if (price !== undefined && !Number.isFinite(price)) {
-      throw new Error("Enter a valid option price.");
-    }
     changes.push({
       lotId,
       optionId,
       createdOption: item?.createdOption === true,
-      price,
-      priceNotApplicable: item?.priceNotApplicable === true,
     });
   }
   return changes;

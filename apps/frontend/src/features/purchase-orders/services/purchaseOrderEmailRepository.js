@@ -31,18 +31,12 @@ async function invokeEmail(kind, body) {
   return data
 }
 
-/**
- * What the browser names of each changed option; the server loads everything else.
- * A removed option also carries the price its Lot was billing, which the database no
- * longer has once the selection is gone.
- */
+/** What the browser names of each changed option; the server loads everything else. */
 function toRequestChanges(changes) {
-  return changes.map(({ lotId, optionId, createdOption, price, priceNotApplicable }) => ({
+  return changes.map(({ lotId, optionId, createdOption }) => ({
     lotId,
     optionId,
     createdOption: createdOption === true,
-    ...(price === undefined ? {} : { price }),
-    priceNotApplicable: priceNotApplicable === true,
   }))
 }
 

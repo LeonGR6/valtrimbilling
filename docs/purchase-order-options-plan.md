@@ -295,8 +295,8 @@ Coordinator** (los de la tabla `people` del Job):
   agrega cualquiera escribiendo el correo y pulsando Enter o coma (se pegan varios a la vez; máximo 10).
 - No se envía nada hasta pulsar "Send email". "Don't send" deja las options agregadas y no avisa a nadie.
 - Si Purchasing o el Job Coordinator no tienen correo registrado, el diálogo lo dice y se puede escribir otro.
-- El correo lista, por Lot, cada option agregada con su descripción, precio y el Work Order del PO que la imprimió,
-  marcando las que se crearon como options nuevas del Plan.
+- El correo lista, por Lot, cada option agregada con su descripción y el Work Order del PO que la imprimió,
+  marcando las que se crearon como options nuevas del Plan. No muestra precios.
 - Migración `20261028120000`: la importación ahora devuelve `added` (qué option quedó en qué Lot), para que el correo
   diga exactamente lo que cambió.
 - Edge function `purchase-order-options-email` (`preview` / `send`, solo ADMIN y PROJECT_MANAGEMENT). El navegador solo
@@ -312,8 +312,7 @@ suelta las del Plan anterior), se ofrece el mismo aviso a Purchasing y al Job Co
 previa, los mismos destinatarios precargados (que se pueden quitar o ampliar) y el mismo "Send email" / "Don't send":
 
 - La pantalla compara el Phase antes y después de guardar (`removedOptionChanges`) y manda solo los pares (Lot,
-  option) quitados, junto con el precio que el Lot facturaba: ese precio se borra con la selección y la base ya no lo
-  tiene. Todo lo demás lo lee el servidor; un par que siga seleccionado no entra en el correo.
+  option) quitados. Todo lo demás lo lee el servidor; un par que siga seleccionado no entra en el correo.
 - Un Lot que se elimina por completo no genera aviso: el correo habla de options y el Lot ya no está para describirlo.
 - Nueva edge function `sequence-sheet-options-removed-email`. Las dos funciones de aviso (`added` y `removed`) comparten
   `_shared/optionsEmailRequest.ts`; el cuerpo de la petición pasó de `additions` a `changes`, así que **las dos
@@ -337,3 +336,11 @@ misma vista previa, mismos destinatarios precargados (Purchasing y Job Coordinat
   de quitadas.
 - Resumen de los tres avisos: `added` (desde un PO), `added_manually` (editando un Phase) y `removed`; los tres
   comparten `_shared/optionsEmailRequest.ts`, y hay que desplegar sus tres funciones juntas.
+
+### 10.3 Ajustes de los tres correos
+
+- **Sin precios:** ninguno de los tres correos (options agregadas desde un PO, agregadas editando un Phase y quitadas)
+  muestra precio, ni columna ni monto. La tabla queda con Lot, Plan y las options; el servidor tampoco lee ni recibe
+  precios para armarlos.
+- **Color del encabezado según lo que pasó:** verde (`#16a34a`) cuando se agregan options, desde un PO o editando un
+  Phase, y rojo (`#dc2626`) cuando se quitan. Antes era azul en todos.

@@ -5,7 +5,6 @@ import {
   type OptionsEmailAddition,
   type OptionsEmailSource,
   optionsEmailSubject,
-  priceLabel,
   renderOptionsEmail,
 } from "./purchaseOrderOptionsEmail.ts";
 
@@ -20,8 +19,6 @@ const addition = (
   optionCode: "1STR0024",
   optionName: "Office with Exterior French Door First Floor",
   optionDescription: "",
-  price: 1126,
-  priceNotApplicable: false,
   workOrderNo: "0820MDLH27-13325-19",
   referenceNo: "0004617828",
   createdInPlan: true,
@@ -130,19 +127,6 @@ Deno.test("the description falls back to the name, and the source names the work
   assertEquals(lot.options[1].source, "Purchase Order");
 });
 
-Deno.test("prices are formatted, with NA and unknown kept apart", () => {
-  assertEquals(
-    priceLabel({ price: 1126, priceNotApplicable: false }),
-    "$1,126.00",
-  );
-  assertEquals(
-    priceLabel({ price: -14, priceNotApplicable: false }),
-    "-$14.00",
-  );
-  assertEquals(priceLabel({ price: 0, priceNotApplicable: true }), "NA");
-  assertEquals(priceLabel({ price: null, priceNotApplicable: false }), "—");
-});
-
 Deno.test("the rendered email says what changed and escapes what it prints", () => {
   const rendered = renderOptionsEmail(buildOptionsEmailSnapshot(source({
     additions: [
@@ -152,7 +136,9 @@ Deno.test("the rendered email says what changed and escapes what it prints", () 
 
   assertStringIncludes(rendered.html, "Options added to the Sequence Sheet");
   assertStringIncludes(rendered.html, "1STR0024");
-  assertStringIncludes(rendered.html, "$1,126.00");
+  // No price anywhere: neither a column nor an amount.
+  assert(!rendered.html.includes("Price"));
+  assert(!rendered.html.includes("$"));
   assertStringIncludes(rendered.html, "New option");
   assertStringIncludes(rendered.html, "Added by Andrés Pérez on Oct 21, 2026.");
   // The text between the tags is escaped.
@@ -191,13 +177,12 @@ Deno.test("a removed-options email says what was removed, with no Purchase Order
   const snapshot = buildOptionsEmailSnapshot(source({
     kind: "removed",
     additions: [
-      addition({ createdInPlan: false, price: -14, optionCode: "2CAB3033" }),
+      addition({ createdInPlan: false, optionCode: "2CAB3033" }),
       addition({
         lotId: "28",
         lotNumber: "28",
         planCode: "2A",
         optionCode: "2WRD0009",
-        price: 287,
       }),
     ],
   }));
@@ -223,7 +208,8 @@ Deno.test("a removed-options email says what was removed, with no Purchase Order
     rendered.html,
     "Removed by Andrés Pérez on Oct 21, 2026.",
   );
-  assertStringIncludes(rendered.html, "-$14.00");
+  assert(!rendered.html.includes("Price"));
+  assert(!rendered.html.includes("$"));
   assert(!rendered.html.includes("Purchase Order ·"));
   assert(!rendered.html.includes("New option"));
   assert(!rendered.html.includes("Added by"));
@@ -233,7 +219,7 @@ Deno.test("a removed-options email says what was removed, with no Purchase Order
     "2 options were removed from the Sequence Sheet of this Job.",
   );
   assertStringIncludes(rendered.text, "the order may need to change.");
-  assertStringIncludes(rendered.text, "Lot\tScope\tPlan\tOption\tPrice\n");
+  assertStringIncludes(rendered.text, "Lot\tScope\tPlan\tOption\n");
   // No Purchase Order column in the text either.
   assert(!rendered.text.includes("Purchase Order"));
 });
@@ -282,7 +268,7 @@ Deno.test("an option added by editing a Phase does not point to a Purchase Order
     "2 options were added to the Sequence Sheet of this Job.",
   );
   assert(!rendered.text.includes("printed in the Purchase Order"));
-  assertStringIncludes(rendered.text, "Lot\tScope\tPlan\tOption\tPrice\n");
+  assertStringIncludes(rendered.text, "Lot\tScope\tPlan\tOption\n");
   assert(!rendered.text.includes("Purchase Order"));
 });
 
@@ -296,4 +282,38 @@ Deno.test("a single option added by editing reads in the singular", () => {
     rendered.text,
     "1 option was added to the Sequence Sheet of this Job.",
   );
+});
+
+Deno.test("the banner is green when options were added and red when they were removed", () => {
+  const banner = (kind: OptionsEmailSource["kind"]) =>
+    renderOptionsEmail(buildOptionsEmailSnapshot(source({ kind }))).html;
+
+  for (const kind of ["added", "added_manually"] as const) {
+    const html = banner(kind);
+    assertStringIncludes(
+      html,
+      "background-color:#16a34a;border-radius:10px 10px 0 0",
+    );
+    assertStringIncludes(html, "color:#dcfce7;");
+    assert(!html.includes("#2563eb"));
+    assert(!html.includes("#dc2626"));
+  }
+
+  const removed = banner("removed");
+  assertStringIncludes(
+    removed,
+    "background-color:#dc2626;border-radius:10px 10px 0 0",
+  );
+  assertStringIncludes(removed, "color:#fee2e2;");
+  assert(!removed.includes("#2563eb"));
+  assert(!removed.includes("#16a34a;border-radius"));
+});
+
+Deno.test("the table has a Lot, a Plan and the options, and nothing else", () => {
+  const html = renderOptionsEmail(buildOptionsEmailSnapshot(source())).html;
+  const headers = [...html.matchAll(/<th [^>]*>([^<]*)<\/th>/gu)].map((match) =>
+    match[1]
+  );
+
+  assertEquals(headers, ["Lot", "Plan", "Options added"]);
 });

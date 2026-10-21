@@ -4,6 +4,7 @@ import {
   affectedDraftPackages,
   affectedIssuedPackages,
   buildPhasePriceRequest,
+  groupOptionChanges,
   groupPlanChanges,
   phaseEligibleChanges,
   summarizePhasePriceRequest,
@@ -315,5 +316,45 @@ test('equal Plan price changes of a Phase read once with how many Lots they cove
   assert.deepEqual(
     groups.map(({ lotCount, locked }) => [lotCount, locked]),
     [[2, false], [1, true]],
+  )
+})
+
+test('Option price changes of a Phase are grouped by Option, so equal changes read once', () => {
+  const change = (optionId, from, to) => ({
+    option_id: optionId,
+    code: `OPT-${optionId}`,
+    description: '',
+    billed: false,
+    locked: false,
+    packages: [],
+    from_price: from,
+    from_na: false,
+    to_price: to,
+    to_na: false,
+  })
+  const lot = (number, options) => ({
+    lot_id: number,
+    lot_number: String(number),
+    is_utility_building: false,
+    plan_id: 3,
+    plan_code: 'A',
+    plan_change: null,
+    option_changes: options,
+  })
+  const phases = toPhasePriceChanges([{
+    phase_id: 1,
+    code: '2B',
+    building: null,
+    lots: [
+      lot(1, [change(10, 300, 350)]),
+      lot(2, [change(10, 300, 350), change(11, 50, 60)]),
+      lot(3, [change(10, 320, 350)]),
+    ],
+  }])
+
+  const groups = groupOptionChanges(phases[0])
+  assert.deepEqual(
+    groups.map(({ code, fromPrice, toPrice, lotCount }) => [code, fromPrice, toPrice, lotCount]),
+    [['OPT-10', 300, 350, 2], ['OPT-11', 50, 60, 1], ['OPT-10', 320, 350, 1]],
   )
 })

@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useState } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Link as RouterLink,
   useNavigate,
@@ -20,6 +20,7 @@ import {
   DialogContent,
   DialogTitle,
   Divider,
+  IconButton,
   InputAdornment,
   Paper,
   Snackbar,
@@ -31,10 +32,10 @@ import {
   TableHead,
   TableRow,
   TextField,
+  Tooltip,
   Typography,
 } from '@mui/material'
 import ApartmentRoundedIcon from '@mui/icons-material/ApartmentRounded'
-import ArrowForwardRoundedIcon from '@mui/icons-material/ArrowForwardRounded'
 import AttachMoneyRoundedIcon from '@mui/icons-material/AttachMoneyRounded'
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined'
 import LayersRoundedIcon from '@mui/icons-material/LayersRounded'
@@ -43,18 +44,33 @@ import ReceiptLongRoundedIcon from '@mui/icons-material/ReceiptLongRounded'
 import WarningAmberRoundedIcon from '@mui/icons-material/WarningAmberRounded'
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
 import ConstructionRoundedIcon from '@mui/icons-material/ConstructionRounded'
+import EditNoteRoundedIcon from '@mui/icons-material/EditNoteRounded'
+import UndoRoundedIcon from '@mui/icons-material/UndoRounded'
 import { useBuilderDrawSchedules } from '../../builder-draw-schedules/context/useBuilderDrawSchedules.js'
 import { useBuilderContacts } from '../../builder-contacts/context/useBuilderContacts.js'
 import JobModuleNavigation from '../../jobs/components/JobModuleNavigation.jsx'
 import PlanToggle from '../../jobs/components/PlanToggle.jsx'
 import { optionPricingSummary } from '../utils/optionPricing.js'
-import { previewPhasePriceChanges } from '../services/phasePriceRepository.js'
+import {
+  previewPhasePriceChanges,
+  previewPhasePriceChangesFor,
+} from '../services/phasePriceRepository.js'
 import { listPendingPriceDifferences } from '../services/priceDifferencesRepository.js'
 import {
   formatSignedMoney,
   groupPriceDifferences,
 } from '../utils/priceDifferences.js'
+import JobPricingSelector from './JobPricingSelector.jsx'
+import usePriceWorksheet from '../hooks/usePriceWorksheet.js'
+import {
+  cellKey,
+  changedPriceCount,
+  describeChange,
+  keysOfChange,
+} from '../utils/priceWorksheet.js'
 import PriceDifferencesDialog from './PriceDifferencesDialog.jsx'
+import PriceWorksheetBar from './PriceWorksheetBar.jsx'
+import WorksheetPriceField from './WorksheetPriceField.jsx'
 import UpdatePhasePricesDialog from './UpdatePhasePricesDialog.jsx'
 import {
   getJobOptionCount,
@@ -68,7 +84,6 @@ import { JobContactsGrid } from '../../jobs/components/JobContacts.jsx'
 import {
   getJobBuilderId,
   jobBelongsToBuilder,
-  jobPlanPricingPath,
   jobPlansOptionsPath,
 } from '../../jobs/utils/jobRoutes.js'
 import { usePeople } from '../../people/context/usePeople.js'
@@ -324,6 +339,21 @@ function OptionPriceValue({ option }) {
   )
 }
 
+// Takes back what was typed in one row of the sheet while it is being edited.
+function UndoRowButton({ worksheet, keys, label }) {
+  const { evaluation } = worksheet
+  const dirty = keys.some((key) => evaluation.changedKeys.has(key) || evaluation.errors.has(key))
+  if (!dirty) return null
+
+  return (
+    <Tooltip title="Undo changes to this row">
+      <IconButton size="small" aria-label={label} onClick={() => worksheet.clearKeys(keys)}>
+        <UndoRoundedIcon fontSize="small" />
+      </IconButton>
+    </Tooltip>
+  )
+}
+
 function PlanPriceCard({
   builderId,
   plan,
@@ -334,6 +364,7 @@ function PlanPriceCard({
   separateHardwarePrice,
   expanded = true,
   onToggle = null,
+  worksheet = null,
   onEditPlan,
   onEditHardware,
   onEditOption,
@@ -412,55 +443,83 @@ function PlanPriceCard({
             useFlexGap
             sx={{ alignItems: 'center', flexWrap: 'wrap' }}
           >
-            <Box sx={{ minWidth: 130 }}>
+            <Box sx={{ minWidth: worksheet?.editing ? 170 : 130 }}>
               <Typography variant="caption" color="text.secondary" component="div">
                 Plan price
               </Typography>
-              <Typography
-                variant="h6"
-                fontWeight={800}
-                color={hasPrice(plan.price) ? 'text.primary' : 'text.secondary'}
-              >
-                {formatPrice(plan.price)}
-              </Typography>
-            </Box>
-            {separateHardwarePrice && (
-              <Box sx={{ minWidth: 150 }}>
-                <Typography variant="caption" color="text.secondary" component="div">
-                  Hardware price · 100%
-                </Typography>
+              {worksheet?.editing ? (
+                <WorksheetPriceField
+                  worksheet={worksheet}
+                  kind="plan"
+                  item={plan}
+                  label={`Price of plan ${plan.code}`}
+                />
+              ) : (
                 <Typography
                   variant="h6"
                   fontWeight={800}
-                  color={hardwareIsPriced ? 'text.primary' : 'warning.main'}
+                  color={hasPrice(plan.price) ? 'text.primary' : 'text.secondary'}
                 >
-                  {formatPrice(plan.hardwarePrice)}
+                  {formatPrice(plan.price)}
                 </Typography>
+              )}
+            </Box>
+            {separateHardwarePrice && (
+              <Box sx={{ minWidth: worksheet?.editing ? 190 : 150 }}>
+                <Typography variant="caption" color="text.secondary" component="div">
+                  Hardware price · 100%
+                </Typography>
+                {worksheet?.editing ? (
+                  <WorksheetPriceField
+                    worksheet={worksheet}
+                    kind="hardware"
+                    item={plan}
+                    label={`Hardware price of plan ${plan.code}`}
+                  />
+                ) : (
+                  <Typography
+                    variant="h6"
+                    fontWeight={800}
+                    color={hardwareIsPriced ? 'text.primary' : 'warning.main'}
+                  >
+                    {formatPrice(plan.hardwarePrice)}
+                  </Typography>
+                )}
                 <Typography variant="caption" color="text.secondary">
                   Additional to Plan Price
                 </Typography>
               </Box>
             )}
-            <Button
-              size="small"
-              variant="contained"
-              startIcon={<EditOutlinedIcon />}
-              onClick={onEditPlan}
-              disabled={!canManage || submitting}
-              disableElevation
-            >
-              Edit plan price
-            </Button>
-            {separateHardwarePrice && (
-              <Button
-                size="small"
-                variant="outlined"
-                startIcon={<ConstructionRoundedIcon />}
-                onClick={onEditHardware}
-                disabled={!canManage || submitting || !hasPrice(plan.price)}
-              >
-                {hardwareIsPriced ? 'Edit hardware price' : 'Set hardware price'}
-              </Button>
+            {worksheet?.editing ? (
+              <UndoRowButton
+                worksheet={worksheet}
+                keys={[cellKey.plan(plan.id), cellKey.hardware(plan.id)]}
+                label={`Undo changes to plan ${plan.code}`}
+              />
+            ) : (
+              <>
+                <Button
+                  size="small"
+                  variant="contained"
+                  startIcon={<EditOutlinedIcon />}
+                  onClick={onEditPlan}
+                  disabled={!canManage || submitting}
+                  disableElevation
+                >
+                  Edit plan price
+                </Button>
+                {separateHardwarePrice && (
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    startIcon={<ConstructionRoundedIcon />}
+                    onClick={onEditHardware}
+                    disabled={!canManage || submitting || !hasPrice(plan.price)}
+                  >
+                    {hardwareIsPriced ? 'Edit hardware price' : 'Set hardware price'}
+                  </Button>
+                )}
+              </>
             )}
           </Stack>
         </Stack>
@@ -578,18 +637,38 @@ function PlanPriceCard({
                     >
                       Option price
                     </Typography>
-                    <OptionPriceValue option={option} />
+                    {worksheet?.editing ? (
+                      <WorksheetPriceField
+                        worksheet={worksheet}
+                        kind="option"
+                        item={option}
+                        plan={plan}
+                        label={`Price of option ${option.code}`}
+                      />
+                    ) : (
+                      <OptionPriceValue option={option} />
+                    )}
                   </Box>
-                  <Button
-                    size="small"
-                    color="inherit"
-                    startIcon={<EditOutlinedIcon />}
-                    onClick={() => onEditOption(option)}
-                    disabled={!canManage || submitting}
-                    sx={{ justifySelf: { xs: 'start', md: 'end' } }}
-                  >
-                    Edit price
-                  </Button>
+                  {worksheet?.editing ? (
+                    <Box sx={{ justifySelf: { xs: 'start', md: 'end' } }}>
+                      <UndoRowButton
+                        worksheet={worksheet}
+                        keys={[cellKey.option(option.id)]}
+                        label={`Undo changes to option ${option.code}`}
+                      />
+                    </Box>
+                  ) : (
+                    <Button
+                      size="small"
+                      color="inherit"
+                      startIcon={<EditOutlinedIcon />}
+                      onClick={() => onEditOption(option)}
+                      disabled={!canManage || submitting}
+                      sx={{ justifySelf: { xs: 'start', md: 'end' } }}
+                    >
+                      Edit price
+                    </Button>
+                  )}
                 </Box>
               ))}
             </Box>
@@ -629,13 +708,14 @@ function PlanPriceCard({
   )
 }
 
-function PlanPricingSheet({
+export function PlanPricingSheet({
   builderId,
   jobId,
   plans,
   canManage,
   submitting,
   separateHardwarePrice,
+  worksheet,
   onEditPlan,
   onEditHardware,
   onEditOption,
@@ -644,7 +724,8 @@ function PlanPricingSheet({
   // Every Plan starts closed, as in Plans & options; the person opens the ones
   // they are pricing and they stay open while prices are saved.
   const [openIds, setOpenIds] = useState(() => new Set())
-  const isOpen = (plan) => openIds.has(plan.id)
+  // While prices are edited every Plan stays open: all the fields are in view.
+  const isOpen = (plan) => worksheet.editing || openIds.has(plan.id)
   const allOpen = plans.length > 0 && plans.every(isOpen)
   const toggle = (plan) => setOpenIds((current) => {
     const next = new Set(current)
@@ -655,8 +736,8 @@ function PlanPricingSheet({
   const toggleAll = () => setOpenIds(allOpen ? new Set() : new Set(plans.map(({ id }) => id)))
 
   return (
-    <>
-      {plans.length > 1 && (
+    <Box data-price-sheet>
+      {plans.length > 1 && !worksheet.editing && (
         <Stack direction="row" sx={{ justifyContent: 'flex-end', px: { xs: 2, md: 1.5 }, pt: 1 }}>
           <Button size="small" color="inherit" onClick={toggleAll}>
             {allOpen ? 'Collapse all' : 'Expand all'}
@@ -676,7 +757,8 @@ function PlanPricingSheet({
             submitting={submitting}
             separateHardwarePrice={separateHardwarePrice}
             expanded={isOpen(plan)}
-            onToggle={() => toggle(plan)}
+            onToggle={worksheet.editing ? null : () => toggle(plan)}
+            worksheet={worksheet}
             onEditPlan={() => onEditPlan(plan)}
             onEditHardware={() => onEditHardware(plan)}
             onEditOption={(option) => onEditOption(plan, option)}
@@ -688,7 +770,7 @@ function PlanPricingSheet({
         <Table
           size="small"
           aria-label="Plan and option pricing worksheet"
-          sx={{ minWidth: separateHardwarePrice ? 1120 : 940 }}
+          sx={{ minWidth: separateHardwarePrice ? 1190 : 980 }}
         >
           <TableHead>
             <TableRow
@@ -708,9 +790,9 @@ function PlanPricingSheet({
               <TableCell sx={{ width: 120 }}>Item</TableCell>
               <TableCell sx={{ width: 180 }}>Code</TableCell>
               <TableCell>Name / description</TableCell>
-              <TableCell sx={{ width: 160 }}>Price</TableCell>
+              <TableCell sx={{ width: 200 }}>Price</TableCell>
               {separateHardwarePrice && (
-                <TableCell sx={{ width: 190 }}>Hardware price</TableCell>
+                <TableCell sx={{ width: 210 }}>Hardware price</TableCell>
               )}
               <TableCell align="right" sx={{ width: separateHardwarePrice ? 300 : 180 }}>
                 Actions
@@ -729,11 +811,15 @@ function PlanPricingSheet({
                   <TableRow sx={{ bgcolor: 'primary.light', '& td': { py: 1.25 } }}>
                     <TableCell>
                       <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center', ml: -1 }}>
-                        <PlanToggle
-                          plan={plan}
-                          expanded={expanded}
-                          onToggle={() => toggle(plan)}
-                        />
+                        {worksheet.editing ? (
+                          <Box sx={{ width: 34, flexShrink: 0 }} />
+                        ) : (
+                          <PlanToggle
+                            plan={plan}
+                            expanded={expanded}
+                            onToggle={() => toggle(plan)}
+                          />
+                        )}
                         <Typography variant="body2" fontWeight={800} color="primary.main">
                           Plan
                         </Typography>
@@ -771,59 +857,89 @@ function PlanPricingSheet({
                       )}
                     </TableCell>
                     <TableCell>
-                      <Typography
-                        variant="body2"
-                        fontWeight={800}
-                        color={hasPrice(plan.price) ? 'text.primary' : 'text.secondary'}
-                      >
-                        {formatPrice(plan.price)}
-                      </Typography>
-                      <Typography variant="caption" color="text.secondary">
-                        Plan price
-                      </Typography>
+                      {worksheet.editing ? (
+                        <WorksheetPriceField
+                          worksheet={worksheet}
+                          kind="plan"
+                          item={plan}
+                          label={`Price of plan ${plan.code}`}
+                        />
+                      ) : (
+                        <>
+                          <Typography
+                            variant="body2"
+                            fontWeight={800}
+                            color={hasPrice(plan.price) ? 'text.primary' : 'text.secondary'}
+                          >
+                            {formatPrice(plan.price)}
+                          </Typography>
+                          <Typography variant="caption" color="text.secondary">
+                            Plan price
+                          </Typography>
+                        </>
+                      )}
                     </TableCell>
                     {separateHardwarePrice && (
                       <TableCell>
-                        <Typography
-                          variant="body2"
-                          fontWeight={800}
-                          color={hardwareIsPriced ? 'text.primary' : 'warning.main'}
-                        >
-                          {formatPrice(plan.hardwarePrice)}
-                        </Typography>
-                        <Typography variant="caption" color="text.secondary" component="div">
-                          Additional to Plan Price
-                        </Typography>
+                        {worksheet.editing ? (
+                          <WorksheetPriceField
+                            worksheet={worksheet}
+                            kind="hardware"
+                            item={plan}
+                            label={`Hardware price of plan ${plan.code}`}
+                          />
+                        ) : (
+                          <>
+                            <Typography
+                              variant="body2"
+                              fontWeight={800}
+                              color={hardwareIsPriced ? 'text.primary' : 'warning.main'}
+                            >
+                              {formatPrice(plan.hardwarePrice)}
+                            </Typography>
+                            <Typography variant="caption" color="text.secondary" component="div">
+                              Additional to Plan Price
+                            </Typography>
+                          </>
+                        )}
                       </TableCell>
                     )}
                     <TableCell align="right">
-                      <Stack
-                        direction="row"
-                        spacing={0.75}
-                        sx={{ justifyContent: 'flex-end', whiteSpace: 'nowrap' }}
-                      >
-                        <Button
-                          size="small"
-                          variant="contained"
-                          startIcon={<EditOutlinedIcon />}
-                          onClick={() => onEditPlan(plan)}
-                          disabled={!canManage || submitting}
-                          disableElevation
+                      {worksheet.editing ? (
+                        <UndoRowButton
+                          worksheet={worksheet}
+                          keys={[cellKey.plan(plan.id), cellKey.hardware(plan.id)]}
+                          label={`Undo changes to plan ${plan.code}`}
+                        />
+                      ) : (
+                        <Stack
+                          direction="row"
+                          spacing={0.75}
+                          sx={{ justifyContent: 'flex-end', whiteSpace: 'nowrap' }}
                         >
-                          Plan price
-                        </Button>
-                        {separateHardwarePrice && (
                           <Button
                             size="small"
-                            variant="outlined"
-                            startIcon={<ConstructionRoundedIcon />}
-                            onClick={() => onEditHardware(plan)}
-                            disabled={!canManage || submitting || !hasPrice(plan.price)}
+                            variant="contained"
+                            startIcon={<EditOutlinedIcon />}
+                            onClick={() => onEditPlan(plan)}
+                            disabled={!canManage || submitting}
+                            disableElevation
                           >
-                            Hardware
+                            Plan price
                           </Button>
-                        )}
-                      </Stack>
+                          {separateHardwarePrice && (
+                            <Button
+                              size="small"
+                              variant="outlined"
+                              startIcon={<ConstructionRoundedIcon />}
+                              onClick={() => onEditHardware(plan)}
+                              disabled={!canManage || submitting || !hasPrice(plan.price)}
+                            >
+                              Hardware
+                            </Button>
+                          )}
+                        </Stack>
+                      )}
                     </TableCell>
                   </TableRow>
 
@@ -862,10 +978,22 @@ function PlanPricingSheet({
                         </Typography>
                       </TableCell>
                       <TableCell>
-                        <OptionPriceValue option={option} />
-                        <Typography variant="caption" color="text.secondary" component="div">
-                          Option price
-                        </Typography>
+                        {worksheet.editing ? (
+                          <WorksheetPriceField
+                            worksheet={worksheet}
+                            kind="option"
+                            item={option}
+                            plan={plan}
+                            label={`Price of option ${option.code}`}
+                          />
+                        ) : (
+                          <>
+                            <OptionPriceValue option={option} />
+                            <Typography variant="caption" color="text.secondary" component="div">
+                              Option price
+                            </Typography>
+                          </>
+                        )}
                       </TableCell>
                       {separateHardwarePrice && (
                         <TableCell>
@@ -873,15 +1001,23 @@ function PlanPricingSheet({
                         </TableCell>
                       )}
                       <TableCell align="right">
-                        <Button
-                          size="small"
-                          color="inherit"
-                          startIcon={<EditOutlinedIcon />}
-                          onClick={() => onEditOption(plan, option)}
-                          disabled={!canManage || submitting}
-                        >
-                          Edit price
-                        </Button>
+                        {worksheet.editing ? (
+                          <UndoRowButton
+                            worksheet={worksheet}
+                            keys={[cellKey.option(option.id)]}
+                            label={`Undo changes to option ${option.code}`}
+                          />
+                        ) : (
+                          <Button
+                            size="small"
+                            color="inherit"
+                            startIcon={<EditOutlinedIcon />}
+                            onClick={() => onEditOption(plan, option)}
+                            disabled={!canManage || submitting}
+                          >
+                            Edit price
+                          </Button>
+                        )}
                       </TableCell>
                     </TableRow>
                   )) : (
@@ -913,199 +1049,6 @@ function PlanPricingSheet({
           </TableBody>
         </Table>
       </TableContainer>
-    </>
-  )
-}
-
-function JobPricingSelector({
-  jobs,
-  filteredJobs,
-  search,
-  loading,
-  error,
-  onSearchChange,
-  onSelectJob,
-  onRetry,
-}) {
-  return (
-    <Box sx={{ minHeight: '100%', bgcolor: 'background.default' }}>
-      <Box
-        sx={{
-          px: { xs: 2.5, md: 4 },
-          py: 3,
-          bgcolor: 'background.paper',
-          borderBottom: 1,
-          borderColor: 'divider',
-        }}
-      >
-        <Typography variant="overline" color="primary.main" fontWeight={750}>
-          Plan pricing
-        </Typography>
-        <Typography variant="h5" fontWeight={750} color="text.primary">
-          Choose a Job
-        </Typography>
-        <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-          Search for a Job first, then review and update the prices for its plans and options.
-        </Typography>
-      </Box>
-
-      <Box sx={{ p: { xs: 2.5, md: 4 } }}>
-        {error && (
-          <Alert
-            severity="error"
-            action={<Button color="inherit" size="small" onClick={onRetry}>Retry</Button>}
-            sx={{ mb: 2.5 }}
-          >
-            {error}
-          </Alert>
-        )}
-        <Card variant="outlined">
-          <CardContent sx={{ p: { xs: 2, sm: 2.5 } }}>
-            <Stack
-              direction={{ xs: 'column', sm: 'row' }}
-              spacing={1}
-              sx={{
-                mb: 2,
-                alignItems: { sm: 'center' },
-                justifyContent: 'space-between',
-              }}
-            >
-              <Box>
-                <Typography variant="subtitle1" fontWeight={750}>
-                  Find a Job
-                </Typography>
-                <Typography variant="body2" color="text.secondary">
-                  Search by Job number, builder or community.
-                </Typography>
-              </Box>
-              <Chip
-                size="small"
-                variant="outlined"
-                label={`${filteredJobs.length} ${filteredJobs.length === 1 ? 'result' : 'results'}`}
-              />
-            </Stack>
-
-            <TextField
-              value={search}
-              onChange={(event) => onSearchChange(event.target.value)}
-              placeholder="Search by Job#, builder or community"
-              fullWidth
-              autoFocus
-              slotProps={{
-                input: {
-                  startAdornment: (
-                    <InputAdornment position="start">
-                      <SearchRoundedIcon color="action" />
-                    </InputAdornment>
-                  ),
-                },
-              }}
-            />
-          </CardContent>
-
-          {loading ? (
-            <Box sx={{ py: 7, px: 3, textAlign: 'center', borderTop: 1, borderColor: 'divider' }}>
-              <Typography color="text.secondary">Loading Jobs, Plans and Options...</Typography>
-            </Box>
-          ) : filteredJobs.length > 0 ? (
-            <Stack divider={<Divider flexItem />}>
-              {filteredJobs.map((job) => {
-                const plans = job.sequenceSheet?.plans ?? []
-                const options = plans.flatMap((plan) => plan.options ?? [])
-                const pricedPlans = plans.filter((plan) => hasPrice(plan.price)).length
-                const pricedOptions = options.filter((option) => hasPrice(option.price)).length
-
-                return (
-                  <Box
-                    key={job.id}
-                    sx={{
-                      px: { xs: 2, sm: 2.5 },
-                      py: 2,
-                      display: 'flex',
-                      alignItems: { xs: 'stretch', md: 'center' },
-                      justifyContent: 'space-between',
-                      flexDirection: { xs: 'column', md: 'row' },
-                      gap: 2,
-                      '&:hover': { bgcolor: 'action.hover' },
-                    }}
-                  >
-                    <Stack
-                      direction="row"
-                      spacing={1.5}
-                      sx={{ alignItems: 'center', minWidth: 0 }}
-                    >
-                      <Box
-                        sx={{
-                          width: 44,
-                          height: 44,
-                          flexShrink: 0,
-                          borderRadius: 1.5,
-                          display: 'grid',
-                          placeItems: 'center',
-                          bgcolor: 'primary.light',
-                          color: 'primary.main',
-                        }}
-                      >
-                        <ApartmentRoundedIcon />
-                      </Box>
-                      <Box sx={{ minWidth: 0 }}>
-                        <Typography fontWeight={800}>Job #{job.code}</Typography>
-                        <Typography variant="body2" color="text.secondary">
-                          {job.builder} · {job.community}
-                        </Typography>
-                      </Box>
-                    </Stack>
-
-                    <Stack
-                      direction={{ xs: 'column', sm: 'row' }}
-                      spacing={1.5}
-                      sx={{ alignItems: { sm: 'center' } }}
-                    >
-                      <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: 'wrap' }}>
-                        <Chip
-                          size="small"
-                          label={`${pricedPlans} / ${plans.length} plan prices`}
-                        />
-                        <Chip
-                          size="small"
-                          variant="outlined"
-                          label={`${pricedOptions} / ${options.length} option prices`}
-                        />
-                      </Stack>
-                      <Button
-                        variant="contained"
-                        endIcon={<ArrowForwardRoundedIcon />}
-                        onClick={() => onSelectJob(job.id)}
-                        disableElevation
-                        sx={{ whiteSpace: 'nowrap' }}
-                      >
-                        Manage pricing
-                      </Button>
-                    </Stack>
-                  </Box>
-                )
-              })}
-            </Stack>
-          ) : (
-            <Box sx={{ py: 7, px: 3, textAlign: 'center', borderTop: 1, borderColor: 'divider' }}>
-              <SearchRoundedIcon color="disabled" sx={{ fontSize: 42, mb: 1 }} />
-              <Typography fontWeight={700}>
-                {jobs.length > 0 ? 'No Jobs match your search' : 'No Jobs available'}
-              </Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-                {jobs.length > 0
-                  ? 'Try another Job number, builder or community.'
-                  : 'Create a Job and configure its plans before assigning prices.'}
-              </Typography>
-              {jobs.length === 0 && (
-                <Button component={RouterLink} to="/jobs" variant="outlined" sx={{ mt: 2 }}>
-                  Go to Jobs
-                </Button>
-              )}
-            </Box>
-          )}
-        </Card>
-      </Box>
     </Box>
   )
 }
@@ -1127,7 +1070,6 @@ export default function PlanPricing() {
   const { builderDrawSchedules } = useBuilderDrawSchedules()
   const { people } = usePeople()
   const { contacts: builderContacts } = useBuilderContacts()
-  const [search, setSearch] = useState('')
   const [priceTarget, setPriceTarget] = useState(null)
   const [submitting, setSubmitting] = useState(false)
   const [notice, setNotice] = useState(null)
@@ -1180,31 +1122,21 @@ export default function PlanPricing() {
     }
   }
   const plans = job?.sequenceSheet?.plans ?? []
+  const worksheet = usePriceWorksheet(plans, { separateHardwarePrice })
+  // What was saved from the sheet so far, until the person is asked about the
+  // Phases that still use the old prices.
+  const savedChangesRef = useRef([])
+  const hasUnsavedChanges = worksheet.editing && worksheet.evaluation.changeCount > 0
+  useEffect(() => {
+    if (!hasUnsavedChanges) return undefined
+
+    const warn = (event) => event.preventDefault()
+    window.addEventListener('beforeunload', warn)
+    return () => window.removeEventListener('beforeunload', warn)
+  }, [hasUnsavedChanges])
   const options = plans.flatMap((plan) => plan.options ?? [])
   const pricedPlanCount = plans.filter((plan) => hasPrice(plan.price)).length
   const pricedOptionCount = options.filter((option) => hasPrice(option.price)).length
-  const filteredJobs = useMemo(() => {
-    const query = search.trim().toLowerCase()
-    if (!query) return jobs
-
-    return jobs.filter((jobOption) =>
-      [jobOption.code, jobOption.builder, jobOption.community]
-        .join(' ')
-        .toLowerCase()
-        .includes(query),
-    )
-  }, [jobs, search])
-
-  const selectJob = (selectedJobId) => {
-    const selectedJob = jobs.find(
-      (item) => String(item.id) === String(selectedJobId),
-    )
-    const selectedBuilderId = getJobBuilderId(selectedJob)
-    if (!selectedJob || selectedBuilderId == null) return
-
-    navigate(jobPlanPricingPath(selectedBuilderId, selectedJob.id))
-  }
-
   // The new price only reaches Phases created from now on. If older Phases still
   // use the previous one, offer to move them; a failed look-up never blocks the save.
   const offerExistingPhaseUpdate = async (savedTarget) => {
@@ -1220,6 +1152,98 @@ export default function PlanPricing() {
     } catch {
       // The price is saved; the update can still be started from the button.
     }
+  }
+
+  // The same question for everything saved from the sheet: one look-up, one dialog.
+  const offerExistingPhaseUpdateForChanges = async (changes) => {
+    if (!canManagePricing || changes.length === 0) return
+
+    try {
+      const rows = await previewPhasePriceChangesFor(job.id, changes)
+      if (rows.length === 0) return
+
+      const hasPlan = changes.some((change) => change.type === 'plan')
+      const hasOptions = changes.some((change) => change.type === 'option')
+      setPhasePriceDialog({
+        batch: changes,
+        rows,
+        loadRows: () => previewPhasePriceChangesFor(job.id, changes),
+        fromSave: true,
+        components: hasPlan && hasOptions ? 'ALL' : hasPlan ? 'PLAN' : 'OPTIONS',
+      })
+    } catch {
+      // The prices are saved; the update can still be started from the button.
+    }
+  }
+
+  const finishWorksheet = async () => {
+    const saved = savedChangesRef.current
+    savedChangesRef.current = []
+    worksheet.stop()
+    await offerExistingPhaseUpdateForChanges(saved)
+  }
+
+  const handleWorksheetSave = async () => {
+    const { errors, changes } = worksheet.evaluation
+    if (errors.size > 0) {
+      setNotice({
+        severity: 'error',
+        message: `Fix the ${errors.size === 1 ? 'price' : `${errors.size} prices`} marked in red before saving.`,
+      })
+      const firstInvalid = [...document.querySelectorAll('[data-price-sheet] input[aria-invalid="true"]')]
+        .find((input) => input.offsetParent !== null)
+      firstInvalid?.focus()
+      return
+    }
+    if (changes.length === 0) return
+
+    const total = changes.reduce((sum, change) => sum + changedPriceCount(change), 0)
+    let savedCount = 0
+    setSubmitting(true)
+    try {
+      for (const change of changes) {
+        try {
+          if (change.type === 'plan') {
+            await saveJobPlanPrice(job.id, change.plan.id, change.to.base, change.to.hardware)
+          } else {
+            await savePlanOptionPrice(
+              job.id,
+              change.plan.id,
+              change.option.id,
+              change.to.amount,
+              change.to.notApplicable,
+            )
+          }
+        } catch (saveError) {
+          // What was saved stays saved; the rest is still on the sheet to try again.
+          setNotice({
+            severity: 'error',
+            persist: true,
+            message: `${savedCount} of ${total} prices saved. ${describeChange(change)} could not be saved: ${saveError.message} The prices that were not saved are still here.`,
+          })
+          return
+        }
+
+        savedChangesRef.current.push(change)
+        savedCount += changedPriceCount(change)
+        worksheet.clearKeys(keysOfChange(change))
+      }
+
+      setNotice({
+        severity: 'success',
+        message: `${total} ${total === 1 ? 'price' : 'prices'} saved.`,
+      })
+      await finishWorksheet()
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const handleWorksheetDiscard = async () => {
+    if (savedChangesRef.current.length > 0) {
+      setNotice({ severity: 'info', message: 'The prices that were already saved stay saved.' })
+    }
+    await finishWorksheet()
   }
 
   const handlePriceSave = async ({ amount, notApplicable = false }) => {
@@ -1265,12 +1289,8 @@ export default function PlanPricing() {
     return (
       <JobPricingSelector
         jobs={jobs}
-        filteredJobs={filteredJobs}
-        search={search}
         loading={loading}
         error={error}
-        onSearchChange={setSearch}
-        onSelectJob={selectJob}
         onRetry={() => refreshJobs().catch(() => {})}
       />
     )
@@ -1344,6 +1364,7 @@ export default function PlanPricing() {
               variant="outlined"
               startIcon={<LayersRoundedIcon />}
               onClick={() => setPhasePriceDialog({})}
+              disabled={worksheet.editing}
             >
               Update existing Phases
             </Button>
@@ -1354,6 +1375,7 @@ export default function PlanPricing() {
               color={differenceTotals ? 'warning' : 'primary'}
               startIcon={<ReceiptLongRoundedIcon />}
               onClick={() => setDifferencesOpen(true)}
+              disabled={worksheet.editing}
             >
               {differenceTotals
                 ? `Price differences · ${formatSignedMoney(differenceTotals.net)}`
@@ -1441,6 +1463,16 @@ export default function PlanPricing() {
           </CardContent>
         </Card>
 
+        {worksheet.editing && (
+          <PriceWorksheetBar
+            changeCount={worksheet.evaluation.changeCount}
+            errorCount={worksheet.evaluation.errors.size}
+            saving={submitting}
+            onSave={handleWorksheetSave}
+            onDiscard={handleWorksheetDiscard}
+          />
+        )}
+
         <Box
           sx={{
             bgcolor: 'background.paper',
@@ -1471,12 +1503,27 @@ export default function PlanPricing() {
                 Review each plan and set the price for the plan and every option below it.
               </Typography>
             </Box>
-            <Chip
-              label={`${plans.length} ${plans.length === 1 ? 'plan' : 'plans'}`}
-              color="primary"
-              variant="outlined"
-              size="small"
-            />
+            <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center' }}>
+              <Chip
+                label={`${plans.length} ${plans.length === 1 ? 'plan' : 'plans'}`}
+                color="primary"
+                variant="outlined"
+                size="small"
+              />
+              {canManagePricing && plans.length > 0 && !worksheet.editing && (
+                <Button
+                  variant="contained"
+                  size="small"
+                  startIcon={<EditNoteRoundedIcon />}
+                  onClick={worksheet.start}
+                  disabled={submitting}
+                  disableElevation
+                  sx={{ textTransform: 'none' }}
+                >
+                  Edit prices
+                </Button>
+              )}
+            </Stack>
           </Box>
 
           {plans.length > 0 ? (
@@ -1487,6 +1534,7 @@ export default function PlanPricing() {
               canManage={canManagePricing}
               submitting={submitting}
               separateHardwarePrice={separateHardwarePrice}
+              worksheet={worksheet}
               onEditPlan={(plan) => setPriceTarget({ type: 'plan', plan })}
               onEditHardware={(plan) => setPriceTarget({ type: 'hardware', plan })}
               onEditOption={(plan, option) =>
@@ -1528,9 +1576,11 @@ export default function PlanPricing() {
 
       {phasePriceDialog && (
         <UpdatePhasePricesDialog
-          key={`${phasePriceDialog.planId ?? ''}-${phasePriceDialog.optionId ?? ''}-${phasePriceDialog.components ?? 'ALL'}`}
+          key={`${phasePriceDialog.planId ?? ''}-${phasePriceDialog.optionId ?? ''}-${phasePriceDialog.components ?? 'ALL'}${phasePriceDialog.batch ? '-batch' : ''}`}
           job={job}
           filter={phasePriceDialog}
+          initialRows={phasePriceDialog.rows}
+          loadRows={phasePriceDialog.loadRows}
           onClose={() => setPhasePriceDialog(null)}
           onApplied={async (result) => {
             // The Phases (their prices) and the Packages (their amounts, totals and

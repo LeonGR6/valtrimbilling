@@ -194,3 +194,22 @@ export function groupPlanChanges(phase) {
 
   return [...groups.values()]
 }
+
+/** Option price changes of a Phase grouped by Option, so equal changes read once. */
+export function groupOptionChanges(phase) {
+  const groups = new Map()
+
+  phase.lots.forEach((lot) => {
+    lot.options.forEach((option) => {
+      const key = [
+        option.optionId, option.fromPrice, option.fromNotApplicable,
+        option.toPrice, option.toNotApplicable,
+      ].join('|')
+      const group = groups.get(key) ?? { ...option, lotCount: 0 }
+      group.lotCount += 1
+      groups.set(key, group)
+    })
+  })
+
+  return [...groups.values()]
+}

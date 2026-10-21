@@ -4,20 +4,16 @@ import {
   Box,
   Button,
   Checkbox,
-  Chip,
   CircularProgress,
-  Collapse,
   Dialog,
   DialogActions,
   DialogContent,
   DialogTitle,
   FormControlLabel,
-  IconButton,
   Stack,
   TextField,
   Typography,
 } from '@mui/material'
-import ExpandMoreRoundedIcon from '@mui/icons-material/ExpandMoreRounded'
 import {
   applyPhasePriceChanges,
   previewPhasePriceChanges,
@@ -27,6 +23,7 @@ import {
   affectedDraftPackages,
   affectedIssuedPackages,
   buildPhasePriceRequest,
+  groupOptionChanges,
   groupPlanChanges,
   phaseEligibleChanges,
   summarizePhasePriceRequest,
@@ -57,83 +54,115 @@ function packageNumbers(packages) {
   return packages.map((item) => item.packageNumber).join(', ')
 }
 
-// Where a price is billed: a Draft Package is calculated again; any other keeps its
-// amount and the difference is recorded as pending to collect.
-function PackageNote({ packages }) {
-  const drafts = packages.filter((item) => item.recalculable)
-  const issued = packages.filter((item) => !item.recalculable)
+const VISIBLE_LINES = 3
 
-  return (
-    <>
-      {drafts.length > 0 && (
-        <Chip
-          size="small"
-          color="info"
-          variant="outlined"
-          label={`Recalculates ${packageNumbers(drafts)}`}
-          sx={{ ml: 1 }}
-        />
-      )}
-      {issued.length > 0 && (
-        <Chip
-          size="small"
-          color="warning"
-          variant="outlined"
-          label={`${packageNumbers(issued)} keeps its amount · difference pending`}
-          sx={{ ml: 1 }}
-        />
-      )}
-    </>
-  )
+// What would change in a Phase, one line per price: "Plan 2450  $240,000.00 → $245,000.00".
+function phaseLines(phase, components) {
+  const lines = []
+
+  if (components.includePlan) {
+    groupPlanChanges(phase).forEach((group) => {
+      const where = `${plural(group.lotCount, 'lot')}${group.locked ? ' · in an invoiced Package' : ''}`
+      if (group.baseChanged) {
+        lines.push({
+          key: `plan-${group.planCode}-${group.fromBase}-${group.toBase}-${group.locked}`,
+          label: `Plan ${group.planCode}`,
+          change: `${formatMoney(group.fromBase)} → ${formatMoney(group.toBase)}`,
+          where,
+        })
+      }
+      if (group.hardwareChanged) {
+        lines.push({
+          key: `hardware-${group.planCode}-${group.fromHardware}-${group.toHardware}-${group.locked}`,
+          label: `Hardware of plan ${group.planCode}`,
+          change: `${formatMoney(group.fromHardware)} → ${formatMoney(group.toHardware)}`,
+          where,
+        })
+      }
+    })
+  }
+
+  if (components.includeOptions) {
+    groupOptionChanges(phase).forEach((group) => {
+      lines.push({
+        key: `option-${group.optionId}-${group.fromPrice}-${group.toPrice}-${group.locked}`,
+        label: `Option ${group.code}`,
+        change: `${formatOption(group.fromPrice, group.fromNotApplicable)} → ${formatOption(group.toPrice, group.toNotApplicable)}`,
+        where: `${plural(group.lotCount, 'lot')}${group.locked ? ' · in an invoiced Package' : ''}`,
+        description: group.description,
+      })
+    })
+  }
+
+  return lines
 }
 
-function PhaseChangeDetails({ phase, components }) {
-  const planGroups = components.includePlan ? groupPlanChanges(phase) : []
-  const optionLines = components.includeOptions
-    ? phase.lots.flatMap((lot) => lot.options.map((option) => ({ lot, option })))
-    : []
+function PhaseChangeLines({ lines, expanded, onToggle }) {
+  const visible = expanded ? lines : lines.slice(0, VISIBLE_LINES)
+  const hidden = lines.length - visible.length
 
   return (
-    <Stack spacing={0.75} sx={{ py: 1, pl: 6 }}>
-      {planGroups.map((group) => (
-        <Typography key={`${group.planCode}-${group.fromBase}-${group.toBase}-${group.billed}`} variant="body2">
-          Plan {group.planCode}:{' '}
-          <strong>{formatMoney(group.fromBase)} → {formatMoney(group.toBase)}</strong>
-          {group.hardwareChanged && (
-            <> · Hardware {formatMoney(group.fromHardware)} → {formatMoney(group.toHardware)}</>
-          )}
-          {' '}· {plural(group.lotCount, 'lot')}
-          <PackageNote packages={group.packages} />
-        </Typography>
+    <Stack spacing={0.5} sx={{ mt: 0.75 }}>
+      {visible.map((line) => (
+        <Box
+          key={line.key}
+          sx={{
+            display: 'grid',
+            gridTemplateColumns: { xs: '1fr', sm: 'minmax(140px, 0.7fr) minmax(0, 1.3fr)' },
+            columnGap: 2,
+          }}
+        >
+          <Typography variant="body2" sx={{ fontWeight: 600 }}>
+            {line.label}
+            {line.description && (
+              <Typography component="span" variant="body2" color="text.secondary">
+                {' '}· {line.description}
+              </Typography>
+            )}
+          </Typography>
+          <Typography variant="body2" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+            {line.change}
+            <Typography component="span" variant="body2" color="text.secondary">
+              {' '}· {line.where}
+            </Typography>
+          </Typography>
+        </Box>
       ))}
-      {optionLines.map(({ lot, option }) => (
-        <Typography key={`${lot.lotId}-${option.optionId}`} variant="body2" color="text.secondary">
-          {lot.label} · {option.code}
-          {option.description ? ` · ${option.description}` : ''}:{' '}
-          {formatOption(option.fromPrice, option.fromNotApplicable)} →{' '}
-          {formatOption(option.toPrice, option.toNotApplicable)}
-          <PackageNote packages={option.packages} />
-        </Typography>
-      ))}
+      {(hidden > 0 || (expanded && lines.length > VISIBLE_LINES)) && (
+        <Box>
+          <Button size="small" onClick={onToggle} sx={{ textTransform: 'none', ml: -1 }}>
+            {expanded ? 'Show fewer' : `Show ${plural(hidden, 'more price')}`}
+          </Button>
+        </Box>
+      )}
     </Stack>
   )
 }
 
 /**
  * Moves Phases created before a price change to today's price. The list comes from
- * the server; Phases already billed in a Package are shown but cannot be picked,
- * and a reason is required. Packages are never touched here.
+ * the server; a reason is required. Packages that bill a chosen Phase are
+ * recalculated when they are Drafts and keep their amount otherwise.
  *
  * `filter` narrows the list to what was just changed ({ planId, optionId,
  * components }); without it every Phase of the Job with an older price is listed.
+ * `initialRows` is a list already looked up (for several changed prices at once)
+ * and `loadRows` looks it up again.
  */
-export default function UpdatePhasePricesDialog({ job, filter = {}, onClose, onApplied }) {
+export default function UpdatePhasePricesDialog({
+  job,
+  filter = {},
+  initialRows = null,
+  loadRows = null,
+  onClose,
+  onApplied,
+}) {
   const lockedComponents = filter.components && filter.components !== 'ALL'
     ? filter.components
     : null
-  const [status, setStatus] = useState('loading')
+  const [status, setStatus] = useState(initialRows ? 'ready' : 'loading')
   const [loadError, setLoadError] = useState(null)
-  const [phases, setPhases] = useState([])
+  const [phases, setPhases] = useState(() => (initialRows ? toPhasePriceChanges(initialRows) : []))
   const [selected, setSelected] = useState([])
   const [expanded, setExpanded] = useState([])
   const [includePlan, setIncludePlan] = useState(lockedComponents !== 'OPTIONS')
@@ -150,13 +179,19 @@ export default function UpdatePhasePricesDialog({ job, filter = {}, onClose, onA
   )
 
   useEffect(() => {
-    let cancelled = false
+    // The list this dialog was opened with is still good until it is reloaded.
+    if (initialRows && reloadKey === 0) return undefined
 
-    previewPhasePriceChanges(job.id, {
-      planId: filter.planId,
-      optionId: filter.optionId,
-      components: filter.components ?? 'ALL',
-    })
+    let cancelled = false
+    const request = loadRows
+      ? loadRows()
+      : previewPhasePriceChanges(job.id, {
+        planId: filter.planId,
+        optionId: filter.optionId,
+        components: filter.components ?? 'ALL',
+      })
+
+    request
       .then((rows) => {
         if (cancelled) return
         setPhases(toPhasePriceChanges(rows))
@@ -171,7 +206,7 @@ export default function UpdatePhasePricesDialog({ job, filter = {}, onClose, onA
       })
 
     return () => { cancelled = true }
-  }, [job.id, filter.planId, filter.optionId, filter.components, reloadKey])
+  }, [job.id, filter.planId, filter.optionId, filter.components, initialRows, loadRows, reloadKey])
 
   const eligibleByPhase = useMemo(
     () => new Map(phases.map((phase) => [phase.phaseId, phaseEligibleChanges(phase, components)])),
@@ -232,15 +267,22 @@ export default function UpdatePhasePricesDialog({ job, filter = {}, onClose, onA
 
   return (
     <Dialog open onClose={submitting ? undefined : onClose} fullWidth maxWidth="md">
-      <DialogTitle sx={{ fontWeight: 700 }}>Update prices of existing Phases</DialogTitle>
+      <DialogTitle sx={{ fontWeight: 700 }}>
+        {filter.fromSave ? 'Update existing Phases?' : 'Update prices of existing Phases'}
+      </DialogTitle>
       <DialogContent dividers>
         <Stack spacing={2}>
-          <Typography variant="body2" color="text.secondary">
-            {filter.fromSave
-              ? 'The price was saved. Phases created before it keep the price they were created with. Choose the ones that should take today\'s price.'
-              : 'Each Phase keeps the price it was created with. Choose the Phases that should take today\'s price.'}
-            {' '}Packages that already exist are never changed here.
-          </Typography>
+          <Box>
+            <Typography variant="body2">
+              {filter.fromSave
+                ? 'Your new prices are saved and every new Phase will use them. These Phases were created earlier, so they still have the old prices.'
+                : 'Each Phase keeps the price it had when it was created. Pick the Phases that should move to today\'s prices.'}
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+              Phases you leave unchecked keep their old price. You can update them later with
+              &ldquo;Update existing Phases&rdquo;.
+            </Typography>
+          </Box>
 
           {status === 'loading' && (
             <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center', py: 3, justifyContent: 'center' }}>
@@ -313,52 +355,62 @@ export default function UpdatePhasePricesDialog({ job, filter = {}, onClose, onA
                   label={`Select all (${selectablePhaseIds.length})`}
                 />
 
-                <Stack divider={<Box sx={{ borderTop: 1, borderColor: 'divider' }} />} sx={{ border: 1, borderColor: 'divider', borderRadius: 1.5 }}>
+                <Stack
+                  divider={<Box sx={{ borderTop: 1, borderColor: 'divider' }} />}
+                  sx={{ border: 1, borderColor: 'divider', borderRadius: 1.5 }}
+                >
                   {phases.map((phase) => {
                     const eligible = eligibleByPhase.get(phase.phaseId)
                     const disabled = eligible.count === 0
-                    const open = expanded.includes(phase.phaseId)
+                    const lines = disabled ? [] : phaseLines(phase, components)
+                    const drafts = eligible.packages.filter((item) => item.recalculable)
+                    const issued = eligible.packages.filter((item) => !item.recalculable)
 
                     return (
-                      <Box key={phase.phaseId}>
-                        <Stack direction="row" spacing={1} sx={{ alignItems: 'center', px: 1, py: 0.5 }}>
-                          <Checkbox
-                            checked={activeSelected.includes(phase.phaseId)}
-                            disabled={disabled}
-                            onChange={() => togglePhase(phase.phaseId)}
-                            slotProps={{ input: { 'aria-label': `Select Phase ${phase.label}` } }}
-                          />
-                          <Box sx={{ flex: 1, minWidth: 0 }}>
-                            <Typography variant="body2" fontWeight={700}>Phase {phase.label}</Typography>
+                      <Stack
+                        key={phase.phaseId}
+                        direction="row"
+                        spacing={1}
+                        sx={{ px: 1, py: 1, alignItems: 'flex-start' }}
+                      >
+                        <Checkbox
+                          checked={activeSelected.includes(phase.phaseId)}
+                          disabled={disabled}
+                          onChange={() => togglePhase(phase.phaseId)}
+                          sx={{ mt: -0.5 }}
+                          slotProps={{ input: { 'aria-label': `Select Phase ${phase.label}` } }}
+                        />
+                        <Box sx={{ flex: 1, minWidth: 0 }}>
+                          <Typography variant="body2" sx={{ fontWeight: 700 }}>
+                            Phase {phase.label}
+                          </Typography>
+                          {disabled ? (
                             <Typography variant="caption" color="text.secondary">
-                              {disabled
-                                ? 'Nothing to update for the chosen components'
-                                : [
-                                  `${plural(eligible.lots.length, 'Plan price')} · ${plural(eligible.options.length, 'Option price')} to update`,
-                                  eligible.packages.some((item) => item.recalculable)
-                                    ? `recalculates ${plural(eligible.packages.filter((item) => item.recalculable).length, 'Draft Package')}`
-                                    : null,
-                                  eligible.packages.some((item) => !item.recalculable)
-                                    ? `${plural(eligible.packages.filter((item) => !item.recalculable).length, 'Package')} keep their amount`
-                                    : null,
-                                ].filter(Boolean).join(' · ')}
+                              Nothing to update for the chosen components
                             </Typography>
-                          </Box>
-                          <IconButton
-                            size="small"
-                            aria-label={open ? 'Hide details' : 'Show details'}
-                            aria-expanded={open}
-                            onClick={() => toggleExpanded(phase.phaseId)}
-                          >
-                            <ExpandMoreRoundedIcon
-                              sx={{ transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 120ms' }}
-                            />
-                          </IconButton>
-                        </Stack>
-                        <Collapse in={open} unmountOnExit>
-                          <PhaseChangeDetails phase={phase} components={components} />
-                        </Collapse>
-                      </Box>
+                          ) : (
+                            <>
+                              <PhaseChangeLines
+                                lines={lines}
+                                expanded={expanded.includes(phase.phaseId)}
+                                onToggle={() => toggleExpanded(phase.phaseId)}
+                              />
+                              {(drafts.length > 0 || issued.length > 0) && (
+                                <Typography variant="caption" color="text.secondary" component="div" sx={{ mt: 0.75 }}>
+                                  {[
+                                    drafts.length > 0
+                                      ? `Recalculates Draft ${drafts.length === 1 ? 'Package' : 'Packages'} ${packageNumbers(drafts)}`
+                                      : null,
+                                    issued.length > 0
+                                      ? `${packageNumbers(issued)} ${issued.length === 1 ? 'keeps' : 'keep'} the amount billed`
+                                      : null,
+                                  ].filter(Boolean).join(' · ')}
+                                </Typography>
+                              )}
+                            </>
+                          )}
+                        </Box>
+                      </Stack>
                     )
                   })}
                 </Stack>
@@ -407,6 +459,7 @@ export default function UpdatePhasePricesDialog({ job, filter = {}, onClose, onA
 
               <TextField
                 label="Reason for the change"
+                placeholder="For example: new price list for 2027"
                 value={reason}
                 onChange={(event) => setReason(event.target.value)}
                 required
@@ -418,7 +471,7 @@ export default function UpdatePhasePricesDialog({ job, filter = {}, onClose, onA
                 helperText={
                   reason.length > 0 && !reasonValid
                     ? 'Enter between 3 and 500 characters.'
-                    : 'It is saved with who changed it and when.'
+                    : 'Saved with your name and the date.'
                 }
                 slotProps={{ htmlInput: { maxLength: 500 } }}
               />
@@ -437,12 +490,22 @@ export default function UpdatePhasePricesDialog({ job, filter = {}, onClose, onA
             {summary.issuedPackageCount > 0 ? ` · ${plural(summary.issuedPackageCount, 'issued Package')}` : ''}
           </Typography>
         )}
-        <Button onClick={onClose} disabled={submitting} color="inherit">
-          {phases.length > 0 ? 'Keep previous prices' : 'Close'}
+        <Button onClick={onClose} disabled={submitting} color="inherit" sx={{ textTransform: 'none' }}>
+          {phases.length > 0 ? 'Keep old prices' : 'Close'}
         </Button>
         {phases.length > 0 && (
-          <Button variant="contained" onClick={handleSubmit} disabled={!canSubmit}>
-            {submitting ? 'Updating…' : 'Update selected Phases'}
+          <Button
+            variant="contained"
+            onClick={handleSubmit}
+            disabled={!canSubmit}
+            disableElevation
+            sx={{ textTransform: 'none' }}
+          >
+            {submitting
+              ? 'Updating…'
+              : summary.phaseCount > 0
+                ? `Update ${plural(summary.phaseCount, 'Phase')}`
+                : 'Update Phases'}
           </Button>
         )}
       </DialogActions>

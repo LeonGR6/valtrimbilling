@@ -26,13 +26,14 @@ export function createJobSchema(jobs, currentJobId) {
         .number({ invalid_type_error: 'Select a supervisor.' })
         .int()
         .positive('Select a supervisor.'),
-      ...Object.fromEntries(jobContactRoles.map((role) => [
-        role.field,
-        z
+      ...Object.fromEntries(jobContactRoles.map((role) => {
+        const contact = z
           .number({ invalid_type_error: `Select a ${role.label.toLowerCase()}.` })
           .int()
-          .positive(`Select a ${role.label.toLowerCase()}.`),
-      ])),
+          .positive(`Select a ${role.label.toLowerCase()}.`)
+        // An optional contact may be left empty.
+        return [role.field, role.optional ? contact.nullable().optional() : contact]
+      })),
     })
     .superRefine((data, context) => {
       const duplicateCode = jobs.some(

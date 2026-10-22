@@ -2,6 +2,11 @@ function requiredId(value) {
   return Number(value)
 }
 
+// A contact the Job may go without: empty stays null instead of becoming 0.
+function optionalId(value) {
+  return value === null || value === undefined || value === '' ? null : Number(value)
+}
+
 export function toJobMutation(job) {
   return {
     code: job.code.trim().toUpperCase(),
@@ -9,11 +14,12 @@ export function toJobMutation(job) {
     community: job.community.trim(),
     supervisor_id: requiredId(job.supervisorId),
     superintendent_id: requiredId(job.superintendentId),
-    estimator_id: requiredId(job.estimatorId),
-    job_coordinator_id: requiredId(job.jobCoordinatorId),
-    purchasing_id: requiredId(job.purchasingId),
-    scheduling_id: requiredId(job.schedulingId),
-    options_coordinator_id: requiredId(job.optionsCoordinatorId),
+    estimator_id: optionalId(job.estimatorId),
+    job_coordinator_id: optionalId(job.jobCoordinatorId),
+    purchasing_id: optionalId(job.purchasingId),
+    scheduling_id: optionalId(job.schedulingId),
+    options_coordinator_id: optionalId(job.optionsCoordinatorId),
+    project_manager_id: optionalId(job.projectManagerId),
   }
 }
 
@@ -30,6 +36,7 @@ export function toJob(row) {
     purchasingId: row.purchasing_id,
     schedulingId: row.scheduling_id,
     optionsCoordinatorId: row.options_coordinator_id,
+    projectManagerId: row.project_manager_id ?? null,
     billingSetupVersionId: row.billing_setup_version_id,
     sequenceSheetName: row.sequence_sheet_name ?? '',
     status: row.status,

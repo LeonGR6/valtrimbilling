@@ -9,6 +9,7 @@ export const emptyJob = {
   purchasingId: null,
   schedulingId: null,
   optionsCoordinatorId: null,
+  projectManagerId: null,
 }
 
 export const emptyJobPlan = {

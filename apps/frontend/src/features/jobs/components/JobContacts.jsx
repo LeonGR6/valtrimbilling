@@ -3,9 +3,11 @@ import { formatPhoneNumber } from '../../../utils/phoneNumbers.js'
 
 /** One line per contact: the role in small type, then the name. For the Jobs table. */
 export function JobContactsSummary({ contacts }) {
+  // An optional contact nobody fills would only add a line saying so.
+  const shown = contacts.filter((contact) => !contact.optional || contact.name)
   return (
     <Stack spacing={0.25}>
-      {contacts.map((contact) => (
+      {shown.map((contact) => (
         <Typography key={contact.key} variant="body2" noWrap sx={{ lineHeight: 1.35 }}>
           <Box component="span" sx={{ color: 'text.secondary', fontSize: 12 }}>
             {contact.role}:{' '}

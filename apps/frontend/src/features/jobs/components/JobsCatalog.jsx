@@ -271,6 +271,7 @@ function JobDialog({
                   helperText={role.helperText}
                   control={control}
                   error={errors[role.field]}
+                  optional={role.optional}
                   people={availableContacts[role.field]}
                   optionCaption={role.source === 'company'
                     ? (person) => person.types.map((type) => personTypeLabels[type]).join(' · ')

@@ -196,7 +196,7 @@ test('job schema normalizes the fields used to create a job', () => {
   })
 })
 
-test('job schema requires a supervisor and every builder contact to be picked', () => {
+test('job schema requires only a supervisor and a jobsite superintendent', () => {
   const schema = createJobSchema([], null)
   const base = {
     code: 'JOB-2001',
@@ -204,15 +204,34 @@ test('job schema requires a supervisor and every builder contact to be picked', 
     community: 'Andara',
     supervisorId: 2,
     ...jobContacts,
+    projectManagerId: 11,
   }
 
-  for (const field of ['supervisorId', ...Object.keys(jobContacts)]) {
-    const missing = schema.safeParse({ ...base, [field]: null })
-    assert.equal(missing.success, false, `${field} should be required`)
+  for (const field of ['supervisorId', 'superintendentId']) {
+    assert.equal(schema.safeParse({ ...base, [field]: null }).success, false, `${field} should be required`)
+  }
 
+  const optional = Object.keys(jobContacts).filter((field) => field !== 'superintendentId')
+  for (const field of [...optional, 'projectManagerId']) {
+    assert.equal(schema.safeParse({ ...base, [field]: null }).success, true, `${field} should be optional`)
+    const { [field]: _left, ...without } = base
+    assert.equal(schema.safeParse(without).success, true, `${field} may be left out`)
+  }
+
+  for (const field of ['supervisorId', ...Object.keys(jobContacts), 'projectManagerId']) {
     const asText = schema.safeParse({ ...base, [field]: 'Lauren Mitchell' })
     assert.equal(asText.success, false, `${field} should reject a loose name`)
   }
+
+  const bare = schema.parse({
+    code: 'JOB-2002',
+    builder: 'KB Home',
+    community: 'Andara',
+    supervisorId: 2,
+    superintendentId: 5,
+  })
+  assert.equal(bare.supervisorId, 2)
+  assert.equal(bare.superintendentId, 5)
 })
 
 test('job schema rejects a duplicate job number', () => {

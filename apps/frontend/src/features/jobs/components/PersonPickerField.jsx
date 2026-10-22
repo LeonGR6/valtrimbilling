@@ -11,6 +11,7 @@ import {
   Typography,
 } from '@mui/material'
 import AddRoundedIcon from '@mui/icons-material/AddRounded'
+import ClearRoundedIcon from '@mui/icons-material/ClearRounded'
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined'
 import PersonAddAltRoundedIcon from '@mui/icons-material/PersonAddAltRounded'
 import InternationalPhoneInput from '../../../components/common/InternationalPhoneInput.jsx'
@@ -29,6 +30,7 @@ export default function PersonPickerField({
   helperText,
   control,
   error,
+  optional = false,
   people,
   onCreate,
   onUpdate,
@@ -110,7 +112,7 @@ export default function PersonPickerField({
               options={people}
               value={selected}
               openOnFocus
-              disableClearable
+              disableClearable={!optional}
               // forcePopupIcon also drops the hasPopupIcon class; popupIcon={null}
               // only hides the arrow and leaves its 39px of reserved padding.
               forcePopupIcon={onCreate || onUpdate ? false : 'auto'}
@@ -151,7 +153,10 @@ export default function PersonPickerField({
                   {...params}
                   label={label}
                   error={Boolean(error)}
-                  helperText={error?.message ?? (selected && selectedNote?.(selected)) ?? helperText}
+                  helperText={error?.message
+                    ?? (selected && selectedNote?.(selected))
+                    ?? helperText
+                    ?? (optional ? 'Optional' : undefined)}
                   // MUI 9 hands the input wiring over in params.slotProps —
                   // the older InputProps / inputProps pair no longer exists.
                   slotProps={{
@@ -161,6 +166,19 @@ export default function PersonPickerField({
                       endAdornment: onCreate || onUpdate
                         ? (
                             <Stack direction="row" spacing={0.5}>
+                              {optional && selected && (
+                                <Tooltip title="Clear">
+                                  <IconButton
+                                    size="small"
+                                    aria-label={`Clear ${label}`}
+                                    onMouseDown={(event) => event.stopPropagation()}
+                                    onClick={() => field.onChange(null)}
+                                    sx={{ width: 28, height: 28, color: 'text.secondary' }}
+                                  >
+                                    <ClearRoundedIcon sx={{ fontSize: 18 }} />
+                                  </IconButton>
+                                </Tooltip>
+                              )}
                               {onUpdate && selected && (
                                 <Tooltip title={editTitle}>
                                   <IconButton

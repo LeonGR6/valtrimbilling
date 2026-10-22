@@ -167,7 +167,11 @@ async function loadSnapshot(
     caller
       .from('people')
       .select('id, name, email')
-      .in('id', [job.job_coordinator_id, job.options_coordinator_id, job.purchasing_id]),
+      .in(
+        'id',
+        // These contacts are optional on a Job.
+        [job.job_coordinator_id, job.options_coordinator_id, job.purchasing_id].filter(Boolean),
+      ),
     caller.from('people').select('id, name, email').eq('id', job.supervisor_id).maybeSingle(),
     // The first Sequence Sheet of a Job is its earliest active Phase. Deleting
     // a Phase only deactivates it, so a deleted one must not count.

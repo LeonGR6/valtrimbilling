@@ -4,6 +4,7 @@ import {
   toJob,
   toJobMutation,
 } from '../src/features/jobs/services/jobRecord.js'
+import { jobContactRoles as jobContactRolesForTest } from '../src/features/jobs/data/jobContactRoles.js'
 import { contactTypesToAdd, resolveJobContacts } from '../src/features/jobs/utils/jobAssignments.js'
 
 test('Job rows map the persisted catalog and initialize unopened child modules', () => {
@@ -19,6 +20,7 @@ test('Job rows map the persisted catalog and initialize unopened child modules',
     purchasing_id: 47,
     scheduling_id: 48,
     options_coordinator_id: 49,
+    project_manager_id: 50,
     billing_setup_version_id: 8,
     sequence_sheet_name: null,
     status: 'ACTIVE',
@@ -38,6 +40,7 @@ test('Job rows map the persisted catalog and initialize unopened child modules',
     purchasingId: 47,
     schedulingId: 48,
     optionsCoordinatorId: 49,
+    projectManagerId: 50,
     billingSetupVersionId: 8,
     sequenceSheetName: '',
     status: 'ACTIVE',
@@ -66,6 +69,7 @@ test('Job mutations expose only the fields owned by the current form', () => {
     purchasingId: '47',
     schedulingId: '48',
     optionsCoordinatorId: '49',
+    projectManagerId: '50',
     billingSetupVersionId: 999,
     createdBy: 'browser-must-not-write-this',
   }), {
@@ -79,6 +83,7 @@ test('Job mutations expose only the fields owned by the current form', () => {
     purchasing_id: 47,
     scheduling_id: 48,
     options_coordinator_id: 49,
+    project_manager_id: 50,
   })
 })
 
@@ -100,6 +105,7 @@ test('a Job lists every contact by role with how to reach them', () => {
     'Purchasing',
     'Scheduling',
     'Options Coordinator',
+    'Project Manager',
   ])
   assert.equal(contacts[0].name, 'Alex Supervisor')
   assert.equal(contacts[0].phone, '+17145550162')
@@ -139,5 +145,54 @@ test('a person picked for several roles gets each type they lack, once', () => {
   assert.deepEqual(
     contactTypesToAdd({ ...job, optionsCoordinatorId: 2, estimatorId: 2 }, people, roles),
     [{ person: people[1], types: ['ESTIMATOR', 'OPTIONS_COORDINATOR'] }],
+  )
+})
+
+test('a Job without its optional contacts keeps them empty instead of turning them into 0', () => {
+  const mutation = toJobMutation({
+    code: 'job-92',
+    builderId: 12,
+    community: 'Andara',
+    supervisorId: 31,
+    superintendentId: 44,
+    estimatorId: null,
+    jobCoordinatorId: undefined,
+    purchasingId: '',
+  })
+
+  assert.equal(mutation.supervisor_id, 31)
+  assert.equal(mutation.superintendent_id, 44)
+  for (const column of [
+    'estimator_id',
+    'job_coordinator_id',
+    'purchasing_id',
+    'scheduling_id',
+    'options_coordinator_id',
+    'project_manager_id',
+  ]) {
+    assert.equal(mutation[column], null, column)
+  }
+
+  const job = toJob({ id: 1, code: 'J', builder_id: 1, community: 'c', supervisor_id: 3, superintendent_id: 4, estimator_id: null, created_at: '2026-10-01T00:00:00Z' })
+  assert.equal(job.estimatorId, null)
+  assert.equal(job.projectManagerId, null)
+})
+
+test('the Project Manager is a contact of a Job, listed last and left out of the table when empty', () => {
+  const people = [{ id: 31, name: 'Alex' }, { id: 60, name: 'Pat Manager', email: 'pat@example.com' }]
+  const withPm = resolveJobContacts({ supervisorId: 31, projectManagerId: 60 }, people, [])
+  const without = resolveJobContacts({ supervisorId: 31 }, people, [])
+
+  assert.equal(withPm.at(-1).role, 'Project Manager')
+  assert.equal(withPm.at(-1).name, 'Pat Manager')
+  assert.equal(withPm.at(-1).optional, true)
+  assert.equal(without.at(-1).name, '')
+  assert.equal(without.find((contact) => contact.role === 'Supervisor').optional, false)
+  assert.equal(without.find((contact) => contact.role === 'Jobsite Superintendent').optional, false)
+
+  // Someone picked as Project Manager who lacks the type gets it when the Job is saved.
+  assert.deepEqual(
+    contactTypesToAdd({ projectManagerId: 60 }, [{ id: 60, types: ['SCHEDULING'] }], jobContactRolesForTest),
+    [{ person: { id: 60, types: ['SCHEDULING'] }, types: ['SCHEDULING', 'PROJECT_MANAGER'] }],
   )
 })

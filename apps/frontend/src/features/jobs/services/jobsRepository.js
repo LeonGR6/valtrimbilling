@@ -13,6 +13,7 @@ const JOB_COLUMNS = [
   'purchasing_id',
   'scheduling_id',
   'options_coordinator_id',
+  'project_manager_id',
   'billing_setup_version_id',
   'sequence_sheet_name',
   'status',

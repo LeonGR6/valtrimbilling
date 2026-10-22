@@ -45,6 +45,7 @@ export function resolveJobContacts(job, people = [], builderContacts = []) {
     return {
       key: role.key ?? role.field,
       role: role.label,
+      optional: Boolean(role.optional),
       name: record?.name?.trim() ?? '',
       email: record?.email ?? '',
       phone: record?.phone ?? '',

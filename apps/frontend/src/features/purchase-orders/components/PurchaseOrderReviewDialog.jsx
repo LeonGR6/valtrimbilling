@@ -3,51 +3,42 @@ import {
   Alert,
   Box,
   Button,
+  ButtonBase,
   Chip,
   CircularProgress,
+  Collapse,
   Dialog,
   DialogActions,
   DialogContent,
   DialogTitle,
-  FormControlLabel,
   IconButton,
   Stack,
-  Switch,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
   Tooltip,
   Typography,
+  useMediaQuery,
 } from '@mui/material'
+import ChevronRightRoundedIcon from '@mui/icons-material/ChevronRightRounded'
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded'
 import CompareArrowsRoundedIcon from '@mui/icons-material/CompareArrowsRounded'
-import PlaylistAddRoundedIcon from '@mui/icons-material/PlaylistAddRounded'
-import PriceCheckRoundedIcon from '@mui/icons-material/PriceCheckRounded'
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded'
-import TaskAltRoundedIcon from '@mui/icons-material/TaskAltRounded'
-import WarningAmberRoundedIcon from '@mui/icons-material/WarningAmberRounded'
 import { formatCurrency, formatOptionPrice } from '../../draw-invoice/utils/drawInvoiceFormatters.js'
 import { useAuth } from '../../auth/context/useAuth.js'
 import { usePurchaseOrderComparison } from '../hooks/usePurchaseOrders.js'
 import { additionsFromImport } from '../services/purchaseOrderEmailRecord.js'
 import {
   COMPARISON_STATUSES,
-  HEADER_STATUSES,
-  canUsePdfPrice,
-  describeHeaderMatch,
-  describeImportResult,
   describePriceResult,
   describePurchaseOrderDocument,
+  describeImportResult,
   groupWorkOrders,
   importAction,
   priceCandidates,
-  priceDifference,
   summarizeComparison,
   uncoveredByLot,
+  workOrderNeedsLook,
 } from '../services/purchaseOrderRecord.js'
+import ComparisonSummary from './review/ComparisonSummary.jsx'
+import WorkOrderSection from './review/WorkOrderSection.jsx'
 
 const PurchaseOrderImportDialog = lazy(() => import('./PurchaseOrderImportDialog.jsx'))
 const PurchaseOrderPriceDialog = lazy(() => import('./PurchaseOrderPriceDialog.jsx'))
@@ -72,228 +63,63 @@ function Waiting({ title, children }) {
   )
 }
 
-function signedCurrency(value) {
-  return `${value > 0 ? '+' : ''}${formatCurrency(value)}`
-}
-
-function StatusChip({ line }) {
-  const info = COMPARISON_STATUSES[line.status]
-  if (!info) return null
-
-  const difference = line.status === 'PRICE_DIFF' ? priceDifference(line) : null
-  const label = difference === null ? info.label : `${info.label} (${signedCurrency(difference)} in the PDF)`
-  return (
-    <Tooltip title={info.hint}>
-      <Chip
-        size="small"
-        color={info.color}
-        variant={info.color === 'success' ? 'outlined' : 'filled'}
-        label={label}
-      />
-    </Tooltip>
-  )
-}
-
-function descriptionOf(line) {
-  const [first, ...rest] = line.descriptionLines
-  return { first: first ?? '—', rest: rest.join(' · ') }
-}
-
-function WorkOrderTable({ group, onlyDifferences, onImportLine, onUsePrice }) {
-  const lines = useMemo(
-    () => group.lines
-      .filter((line) => !onlyDifferences || line.status !== 'MATCH')
-      .sort((a, b) =>
-        COMPARISON_STATUSES[b.status].severity - COMPARISON_STATUSES[a.status].severity
-        || a.optionCode.localeCompare(b.optionCode)),
-    [group.lines, onlyDifferences],
-  )
-
-  if (lines.length === 0) return null
+function UncoveredOptions({ uncovered }) {
+  const [open, setOpen] = useState(false)
+  const count = uncovered.reduce((total, lot) => total + lot.options.length, 0)
 
   return (
-    <TableContainer>
-      <Table size="small" aria-label={`Options of work order ${group.workOrderNo}`}>
-        <TableHead>
-          <TableRow>
-            <TableCell>Option</TableCell>
-            <TableCell>In the PDF</TableCell>
-            <TableCell align="right">PDF price</TableCell>
-            <TableCell>In the system</TableCell>
-            <TableCell align="right">System price</TableCell>
-            <TableCell>Result</TableCell>
-          </TableRow>
-        </TableHead>
-        <TableBody>
-          {lines.map((line) => {
-            const description = descriptionOf(line)
-            return (
-              <TableRow key={line.lineId} hover>
-                <TableCell sx={{ whiteSpace: 'nowrap' }}>
-                  <Typography variant="body2" fontWeight={750}>{line.optionCode}</Typography>
-                  <Typography variant="caption" color="text.secondary">
-                    Ref {line.referenceNo}
-                  </Typography>
-                </TableCell>
-                <TableCell sx={{ maxWidth: 280 }}>
-                  <Typography variant="body2" sx={{ overflowWrap: 'anywhere' }}>
-                    {description.first}
-                  </Typography>
-                  {description.rest && (
-                    <Typography
-                      variant="caption"
-                      color="text.secondary"
-                      title={description.rest}
-                      sx={{ display: 'block', overflowWrap: 'anywhere' }}
-                    >
-                      {description.rest}
-                    </Typography>
-                  )}
-                </TableCell>
-                <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
-                  <Typography variant="body2" fontWeight={700}>
-                    {formatCurrency(line.poUnitPrice)}
-                  </Typography>
-                  {line.quantity !== 1 && (
-                    <Typography variant="caption" color="text.secondary">
-                      × {line.quantity}
-                    </Typography>
-                  )}
-                </TableCell>
-                <TableCell sx={{ maxWidth: 280 }}>
-                  {line.optionName ? (
-                    <Typography variant="body2" sx={{ overflowWrap: 'anywhere' }}>
-                      {line.optionName}
-                    </Typography>
-                  ) : (
-                    <Typography variant="body2" color="text.secondary">—</Typography>
-                  )}
-                </TableCell>
-                <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
-                  <Stack direction="row" spacing={0.5} sx={{ justifyContent: 'flex-end', alignItems: 'center' }}>
-                    {line.conflictingPoPrices && (
-                      <Tooltip title="Purchase Orders of other Lots of this Plan print a different price for this option. An option has one price per Plan.">
-                        <WarningAmberRoundedIcon color="warning" fontSize="small" />
-                      </Tooltip>
-                    )}
-                    <Typography variant="body2" fontWeight={700}>
-                      {line.optionName || line.systemPrice !== null
-                        ? formatOptionPrice(line.systemPrice, line.systemNotApplicable)
-                        : '—'}
-                    </Typography>
-                  </Stack>
-                </TableCell>
-                <TableCell>
-                  <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center' }}>
-                    <StatusChip line={line} />
-                    {onUsePrice && canUsePdfPrice(line) && (
-                      <Tooltip title="Suggestion only: nothing changes until you confirm.">
-                        <Button
-                          size="small"
-                          startIcon={<PriceCheckRoundedIcon />}
-                          aria-label={`Use the PDF price for ${line.optionCode} in Lot ${line.lotNumber}`}
-                          onClick={() => onUsePrice(line)}
-                        >
-                          Use PDF price
-                        </Button>
-                      </Tooltip>
-                    )}
-                    {onImportLine && importAction(line) && (
-                      <Button
-                        size="small"
-                        startIcon={<PlaylistAddRoundedIcon />}
-                        aria-label={`Add ${line.optionCode} to Lot ${line.lotNumber}`}
-                        onClick={() => onImportLine(line)}
-                      >
-                        Add
-                      </Button>
-                    )}
-                  </Stack>
-                </TableCell>
-              </TableRow>
-            )
-          })}
-        </TableBody>
-      </Table>
-    </TableContainer>
-  )
-}
-
-function WorkOrder({ group, onlyDifferences, canManage, confirming, onConfirm, onImportLine, onUsePrice }) {
-  const note = describeHeaderMatch(group)
-  const header = HEADER_STATUSES[group.headerStatus]
-  const summary = summarizeComparison(group.lines)
-  const printed = [
-    group.printed.lot ? `Lot ${group.printed.lot}` : null,
-    group.printed.phase ? `Phase ${group.printed.phase}` : null,
-    group.printed.plan ? `Plan ${group.printed.plan}` : null,
-  ].filter(Boolean).join(' · ')
-
-  return (
-    <Box sx={{ border: 1, borderColor: 'divider', borderRadius: 1.5, overflow: 'hidden' }}>
-      <Stack
-        direction={{ xs: 'column', sm: 'row' }}
-        spacing={1}
+    <Box sx={{ border: 1, borderColor: 'divider', borderRadius: 2, overflow: 'hidden' }}>
+      <ButtonBase
+        onClick={() => setOpen((current) => !current)}
+        aria-expanded={open}
         sx={{
-          p: 1.5,
-          alignItems: { sm: 'center' },
+          width: '100%',
+          px: 1.5,
+          py: 1.25,
+          gap: 1,
+          justifyContent: 'flex-start',
+          textAlign: 'left',
           bgcolor: 'action.hover',
+          '&.Mui-focusVisible': { outline: '2px solid', outlineColor: 'primary.main', outlineOffset: -2 },
         }}
       >
+        <ChevronRightRoundedIcon
+          fontSize="small"
+          sx={{
+            color: 'text.secondary',
+            transform: open ? 'rotate(90deg)' : 'none',
+            transition: 'transform 150ms',
+            '@media (prefers-reduced-motion: reduce)': { transition: 'none' },
+          }}
+        />
         <Box sx={{ flex: 1, minWidth: 0 }}>
-          <Typography fontWeight={850}>
-            {group.system ? `Lot ${group.system.lotNumber}` : printed || 'Work order'}
-            {group.system && (
-              <Typography component="span" color="text.secondary" fontWeight={500}>
-                {' · '}Phase {group.system.phaseCode} · Plan {group.system.planCode}
-              </Typography>
-            )}
-          </Typography>
-          <Typography variant="caption" color="text.secondary">
-            Work order {group.workOrderNo}
-            {group.system && printed ? ` · The PDF says ${printed}` : ''}
+          <Typography fontWeight={850}>In the system, but not in any Purchase Order</Typography>
+          <Typography variant="caption" color="text.secondary" component="div">
+            Selected for the Lots of this PDF, and no Purchase Order of the Job prints them.
           </Typography>
         </Box>
-        <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', flexWrap: 'wrap' }} useFlexGap>
-          {header && group.headerStatus !== 'resolved' && (
-            <Chip size="small" color={header.color} label={header.label} />
-          )}
-          <Chip
-            size="small"
-            variant="outlined"
-            color={summary.attention > 0 ? 'warning' : 'success'}
-            label={summary.attention > 0
-              ? `${summary.attention} of ${summary.total} to review`
-              : `${summary.total} ${summary.total === 1 ? 'option matches' : 'options match'}`}
-          />
-          {group.headerStatus === 'suggested' && canManage && (
-            <Button
-              size="small"
-              variant="contained"
-              disableElevation
-              startIcon={confirming ? <CircularProgress size={14} color="inherit" /> : <TaskAltRoundedIcon />}
-              disabled={confirming}
-              onClick={() => onConfirm(group)}
+        <Chip size="small" variant="outlined" color="warning" label={`${count} ${count === 1 ? 'option' : 'options'}`} />
+      </ButtonBase>
+      <Collapse in={open} unmountOnExit>
+        <Stack divider={<Box sx={{ borderTop: 1, borderColor: 'divider' }} />}>
+          {uncovered.map((lot) => (
+            <Box
+              key={lot.lotId}
+              sx={{ px: 2, py: 1.25, borderLeft: 4, borderLeftColor: 'warning.main' }}
             >
-              Confirm match
-            </Button>
-          )}
+              <Typography variant="body2" fontWeight={800}>Lot {lot.lotNumber}</Typography>
+              {lot.options.map((option) => (
+                <Typography key={option.optionId} variant="body2" color="text.secondary">
+                  <Box component="span" sx={{ fontWeight: 700, color: 'text.primary' }}>
+                    {option.optionCode}
+                  </Box>
+                  {' · '}{option.optionName} · {formatOptionPrice(option.systemPrice, option.systemNotApplicable)}
+                </Typography>
+              ))}
+            </Box>
+          ))}
         </Stack>
-      </Stack>
-      {note && (
-        <Alert
-          severity={group.headerStatus === 'suggested' ? 'info' : 'warning'}
-          sx={{ borderRadius: 0 }}
-        >
-          {note}
-        </Alert>
-      )}
-      <WorkOrderTable
-        group={group}
-        onlyDifferences={onlyDifferences}
-        onImportLine={onImportLine}
-        onUsePrice={onUsePrice}
-      />
+      </Collapse>
     </Box>
   )
 }
@@ -315,10 +141,15 @@ export default function PurchaseOrderReviewDialog({
   const { analyze, rematch, confirmHeader } = purchaseOrders
   const analyzing = purchaseOrders.analyzingDocumentId === document.id
   const [error, setError] = useState(null)
-  const [onlyDifferences, setOnlyDifferences] = useState(false)
+  // One result the work orders are narrowed to (null = all), and the work orders the person
+  // opened or closed by hand (the rest open when something in them needs a look).
+  const [statusFilter, setStatusFilter] = useState(null)
+  const [openOverrides, setOpenOverrides] = useState({})
   const [confirmingKey, setConfirmingKey] = useState(null)
   const [matching, setMatching] = useState(false)
   const { profile } = useAuth()
+  // On a phone the review takes the whole screen: its columns need the width.
+  const phone = useMediaQuery((theme) => theme.breakpoints.down('sm'))
   const canImport = canManage && IMPORT_ROLES.includes(profile?.role)
   // The lines being offered for import (null = dialog closed) and which start selected.
   const [importTarget, setImportTarget] = useState(null)
@@ -393,6 +224,23 @@ export default function PurchaseOrderReviewDialog({
     () => lines.filter((line) => importAction(line) !== null),
     [lines],
   )
+  // The lines each button of the summary would add: those not in the Lot, and those not in the system.
+  const importableByStatus = useMemo(() => ({
+    NOT_IN_LOT: importable.filter((line) => line.status === 'NOT_IN_LOT'),
+    MISSING_OPTION: importable.filter((line) => line.status === 'MISSING_OPTION'),
+  }), [importable])
+  // Narrowing to a result keeps the work orders that have it, all open.
+  const visibleGroups = useMemo(
+    () => (statusFilter
+      ? groups.filter((group) => group.lines.some((line) => line.status === statusFilter))
+      : groups),
+    [groups, statusFilter],
+  )
+  const isOpen = (group) => (statusFilter ? true : openOverrides[group.key] ?? workOrderNeedsLook(group))
+  const everyOpen = visibleGroups.every(isOpen)
+  const setAllOpen = (open) => setOpenOverrides(
+    Object.fromEntries(groups.map((group) => [group.key, open])),
+  )
   const openImport = (selectedLines) => {
     setImportError(null)
     setImportTarget({ ids: selectedLines.map((line) => line.lineId) })
@@ -452,6 +300,7 @@ export default function PurchaseOrderReviewDialog({
     <Dialog
       open
       fullWidth
+      fullScreen={phone}
       maxWidth="xl"
       scroll="paper"
       onClose={onClose}
@@ -522,19 +371,6 @@ export default function PurchaseOrderReviewDialog({
               <>
                 {comparison.error && <Alert severity="error">{comparison.error}</Alert>}
 
-                {!comparison.error && !loadingComparison && (
-                  <Alert
-                    severity={summary.attention > 0 ? 'warning' : 'success'}
-                    icon={summary.attention > 0 ? undefined : <CompareArrowsRoundedIcon />}
-                  >
-                    {summary.total === 0
-                      ? 'No options from this PDF are current: newer Purchase Orders replace them.'
-                      : summary.attention > 0
-                        ? `${summary.attention} of ${summary.total} options need a look. This only informs: nothing is blocked and nothing was changed.`
-                        : `All ${summary.total} options in this PDF match the system.`}
-                  </Alert>
-                )}
-
                 {emailNotice && (
                   <Alert severity="success" onClose={() => setEmailNotice(null)}>
                     {emailNotice}
@@ -577,49 +413,14 @@ export default function PurchaseOrderReviewDialog({
                   </Alert>
                 )}
 
-                {summary.total > 0 && (
-                  <Stack
-                    direction="row"
-                    spacing={1}
-                    useFlexGap
-                    sx={{ alignItems: 'center', flexWrap: 'wrap' }}
-                  >
-                    {Object.entries(COMPARISON_STATUSES)
-                      .filter(([key]) => summary.byStatus[key] > 0)
-                      .sort(([, a], [, b]) => b.severity - a.severity)
-                      .map(([key, info]) => (
-                        <Tooltip key={key} title={info.hint}>
-                          <Chip
-                            size="small"
-                            color={info.color}
-                            variant={info.color === 'success' ? 'outlined' : 'filled'}
-                            label={`${summary.byStatus[key]} · ${info.label}`}
-                          />
-                        </Tooltip>
-                      ))}
-                    <Box sx={{ flex: 1 }} />
-                    {canImport && importable.length > 0 && (
-                      <Button
-                        size="small"
-                        variant="outlined"
-                        startIcon={<PlaylistAddRoundedIcon />}
-                        onClick={() => openImport(importable)}
-                      >
-                        Add missing options ({importable.length})
-                      </Button>
-                    )}
-                    <FormControlLabel
-                      sx={{ mx: 0 }}
-                      control={(
-                        <Switch
-                          size="small"
-                          checked={onlyDifferences}
-                          onChange={(event) => setOnlyDifferences(event.target.checked)}
-                        />
-                      )}
-                      label="Only differences"
-                    />
-                  </Stack>
+                {!comparison.error && !loadingComparison && (
+                  <ComparisonSummary
+                    summary={summary}
+                    activeStatus={statusFilter}
+                    onSelectStatus={setStatusFilter}
+                    importableByStatus={canImport ? importableByStatus : undefined}
+                    onImport={canImport ? openImport : undefined}
+                  />
                 )}
 
                 {loadingComparison && (
@@ -628,11 +429,44 @@ export default function PurchaseOrderReviewDialog({
                   </Box>
                 )}
 
-                {groups.map((group) => (
-                  <WorkOrder
+                {visibleGroups.length > 0 && (
+                  <Stack
+                    direction="row"
+                    spacing={1}
+                    sx={{ alignItems: 'center', justifyContent: 'space-between' }}
+                  >
+                    <Typography variant="subtitle2" color="text.secondary">
+                      {statusFilter
+                        ? `${visibleGroups.length} of ${groups.length} work ${groups.length === 1 ? 'order' : 'orders'} showing “${COMPARISON_STATUSES[statusFilter].label}”`
+                        : `${groups.length} work ${groups.length === 1 ? 'order' : 'orders'}, one per Lot`}
+                    </Typography>
+                    <Stack direction="row" spacing={0.5}>
+                      {statusFilter && (
+                        <Button size="small" onClick={() => setStatusFilter(null)} sx={{ textTransform: 'none' }}>
+                          Show all
+                        </Button>
+                      )}
+                      {groups.length > 1 && (
+                        <Button
+                          size="small"
+                          color="inherit"
+                          onClick={() => setAllOpen(!everyOpen)}
+                          sx={{ textTransform: 'none' }}
+                        >
+                          {everyOpen ? 'Collapse all' : 'Expand all'}
+                        </Button>
+                      )}
+                    </Stack>
+                  </Stack>
+                )}
+
+                {visibleGroups.map((group) => (
+                  <WorkOrderSection
                     key={group.key}
                     group={group}
-                    onlyDifferences={onlyDifferences}
+                    open={isOpen(group)}
+                    onToggle={() => setOpenOverrides((current) => ({ ...current, [group.key]: !isOpen(group) }))}
+                    statusFilter={statusFilter}
                     canManage={canManage}
                     confirming={confirmingKey === group.key}
                     onConfirm={handleConfirm}
@@ -641,30 +475,7 @@ export default function PurchaseOrderReviewDialog({
                   />
                 ))}
 
-                {uncovered.length > 0 && (
-                  <Box sx={{ border: 1, borderColor: 'divider', borderRadius: 1.5, p: 1.5 }}>
-                    <Typography fontWeight={850}>
-                      In the system, but not in any Purchase Order
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-                      These options are selected for the Lots of this PDF, and no Purchase
-                      Order of the Job prints them.
-                    </Typography>
-                    <Stack spacing={1}>
-                      {uncovered.map((lot) => (
-                        <Box key={lot.lotId}>
-                          <Typography variant="body2" fontWeight={750}>Lot {lot.lotNumber}</Typography>
-                          {lot.options.map((option) => (
-                            <Typography key={option.optionId} variant="body2" color="text.secondary">
-                              {option.optionCode} · {option.optionName} ·{' '}
-                              {formatOptionPrice(option.systemPrice, option.systemNotApplicable)}
-                            </Typography>
-                          ))}
-                        </Box>
-                      ))}
-                    </Stack>
-                  </Box>
-                )}
+                {uncovered.length > 0 && !statusFilter && <UncoveredOptions uncovered={uncovered} />}
               </>
             )}
           </Stack>

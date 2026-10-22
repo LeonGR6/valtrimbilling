@@ -627,3 +627,83 @@ export function describeOptionOrder(line, formatMoney) {
     hint: [status.hint, difference].filter(Boolean).join(' '),
   }
 }
+
+// --- The summary at the top of the review ---------------------------------------
+
+// What to do about each result, in a sentence. Only informs: nothing is blocked.
+const STATUS_ADVICE = {
+  HEADER_UNRESOLVED: 'Add the Lot to the Job, then press Match again.',
+  PLAN_MISMATCH: 'Check the Plan of the Lot in the Sequence Sheet, or the PDF.',
+  MISSING_OPTION: 'Create and add puts it in the Plan and selects it for the Lot.',
+  AMBIGUOUS_OPTION: "Compare the PDF's description with the options of the Plan.",
+  NOT_IN_LOT: 'Add to the Lot selects it for that Lot.',
+  PRICE_DIFF: "Use PDF price offers the PDF's price; nothing changes until you confirm.",
+  MATCH: null,
+}
+
+export function describeStatusAdvice(status) {
+  return STATUS_ADVICE[status] ?? null
+}
+
+/**
+ * The results of a comparison as a breakdown: one entry per result that occurs, the
+ * most urgent first and the matches last, each with its count and its share of the
+ * options (for the bar).
+ */
+export function statusBreakdown(summary) {
+  if (summary.total === 0) return []
+  return Object.entries(COMPARISON_STATUSES)
+    .filter(([key]) => summary.byStatus[key] > 0)
+    .sort(([, a], [, b]) => b.severity - a.severity)
+    .map(([key, info]) => ({
+      key,
+      label: info.label,
+      color: info.color,
+      hint: info.hint,
+      advice: STATUS_ADVICE[key],
+      count: summary.byStatus[key],
+      share: summary.byStatus[key] / summary.total,
+    }))
+}
+
+/**
+ * The headline of a review: how many options match, and how serious what does not is
+ * (`error` when something cannot be compared at all, else `warning`).
+ */
+export function describeVerdict(summary) {
+  if (summary.total === 0) {
+    return {
+      tone: 'neutral',
+      headline: 'No options from this PDF are current',
+      detail: 'Newer Purchase Orders replace them.',
+    }
+  }
+  if (summary.attention === 0) {
+    return {
+      tone: 'success',
+      headline: summary.total === 1
+        ? 'The option in this PDF matches the system'
+        : `All ${summary.total} options in this PDF match the system`,
+      detail: 'Nothing to change.',
+    }
+  }
+  const blocked = Object.entries(COMPARISON_STATUSES).some(
+    ([key, info]) => info.color === 'error' && summary.byStatus[key] > 0,
+  )
+  return {
+    tone: blocked ? 'error' : 'warning',
+    headline: `${summary.matches} of ${summary.total} options match the system`,
+    detail: `${summary.attention} ${summary.attention === 1 ? 'needs' : 'need'} a look. This only informs: nothing is blocked and nothing was changed.`,
+  }
+}
+
+/** The lines of a work order that a filter on one result keeps (all of them without it). */
+export function linesWithStatus(lines, status) {
+  return status ? lines.filter((line) => line.status === status) : lines
+}
+
+/** Whether something in a work order needs a look: its Lot was not settled, or an option differs. */
+export function workOrderNeedsLook(group) {
+  return group.headerStatus !== 'resolved'
+    || group.lines.some((line) => line.status !== 'MATCH')
+}

@@ -5,6 +5,10 @@ import {
   countOptionsWithOrder,
   describeHeaderMatch,
   describeOptionOrder,
+  describeVerdict,
+  linesWithStatus,
+  statusBreakdown,
+  workOrderNeedsLook,
   describePurchaseOrderDocument,
   groupWorkOrders,
   priceDifference,
@@ -505,4 +509,60 @@ test('an order card says its numbers, its status and, when the price differs, bo
   assert.match(differs.hint, /The PDF prints \$300\.00; this Lot bills \$250\.00\./)
   assert.equal(unnumbered.workOrderNo, null)
   assert.equal(unnumbered.referenceNo, null)
+})
+
+// --- The summary at the top of the review ---
+
+const summaryOf = (...statuses) => summarizeComparison(statuses.map((status) => ({ status })))
+
+test('the breakdown lists the results that occur, most urgent first and the matches last', () => {
+  const breakdown = statusBreakdown(summaryOf('MATCH', 'MATCH', 'MATCH', 'NOT_IN_LOT', 'PRICE_DIFF', 'MISSING_OPTION', 'MATCH'))
+
+  assert.deepEqual(breakdown.map(({ key }) => key), ['MISSING_OPTION', 'NOT_IN_LOT', 'PRICE_DIFF', 'MATCH'])
+  assert.deepEqual(breakdown.map(({ count }) => count), [1, 1, 1, 4])
+  assert.equal(breakdown[0].color, 'error')
+  assert.equal(breakdown.at(-1).color, 'success')
+  assert.equal(breakdown.reduce((total, { share }) => total + share, 0), 1)
+  assert.equal(breakdown.at(-1).advice, null)
+  assert.match(breakdown[1].advice, /^Add to the Lot selects it/)
+  assert.deepEqual(statusBreakdown(summaryOf()), [])
+})
+
+test('the headline says how many options match and how serious the rest is', () => {
+  assert.deepEqual(describeVerdict(summaryOf()), {
+    tone: 'neutral',
+    headline: 'No options from this PDF are current',
+    detail: 'Newer Purchase Orders replace them.',
+  })
+
+  const clean = describeVerdict(summaryOf('MATCH', 'MATCH', 'MATCH'))
+  assert.equal(clean.tone, 'success')
+  assert.equal(clean.headline, 'All 3 options in this PDF match the system')
+  assert.equal(describeVerdict(summaryOf('MATCH')).headline, 'The option in this PDF matches the system')
+
+  const warning = describeVerdict(summaryOf('MATCH', 'MATCH', 'PRICE_DIFF', 'NOT_IN_LOT'))
+  assert.equal(warning.tone, 'warning')
+  assert.equal(warning.headline, '2 of 4 options match the system')
+  assert.match(warning.detail, /^2 need a look\. This only informs/)
+
+  const error = describeVerdict(summaryOf('MATCH', 'MISSING_OPTION'))
+  assert.equal(error.tone, 'error')
+  assert.match(error.detail, /^1 needs a look/)
+})
+
+test('a filter on one result keeps only those lines', () => {
+  const lines = [{ status: 'MATCH' }, { status: 'NOT_IN_LOT' }, { status: 'NOT_IN_LOT' }]
+
+  assert.equal(linesWithStatus(lines, 'NOT_IN_LOT').length, 2)
+  assert.equal(linesWithStatus(lines, null).length, 3)
+  assert.equal(linesWithStatus(lines, 'PRICE_DIFF').length, 0)
+})
+
+test('a work order needs a look when its Lot is not settled or an option differs', () => {
+  const group = (headerStatus, ...statuses) => ({ headerStatus, lines: statuses.map((status) => ({ status })) })
+
+  assert.equal(workOrderNeedsLook(group('resolved', 'MATCH', 'MATCH')), false)
+  assert.equal(workOrderNeedsLook(group('resolved', 'MATCH', 'PRICE_DIFF')), true)
+  assert.equal(workOrderNeedsLook(group('suggested', 'MATCH')), true)
+  assert.equal(workOrderNeedsLook(group('lot_not_found')), true)
 })

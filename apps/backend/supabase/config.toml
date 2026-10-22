@@ -500,6 +500,14 @@ verify_jwt = true
 [functions.sequence-sheet-options-added-email]
 verify_jwt = true
 
+# The DM reminder: tells a Job's Supervisor and Project Manager, the day before, that a DM is
+# scheduled and which Sequence Sheet lots it covers. Lists, previews and sends as the
+# signed-in Admin, Project Management or Scheduling user. DM_REMINDER_EMAIL_MODE decides
+# whether it can send at all (PREVIEW by default), and reuses the Sequence Sheet email's
+# Resend secrets.
+[functions.dm-reminder-email]
+verify_jwt = true
+
 [analytics]
 enabled = true
 port = 54327

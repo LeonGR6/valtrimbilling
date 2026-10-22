@@ -11,6 +11,7 @@ import {
 import CalendarMonthRoundedIcon from '@mui/icons-material/CalendarMonthRounded'
 import EventBusyRoundedIcon from '@mui/icons-material/EventBusyRounded'
 import ForwardToInboxRoundedIcon from '@mui/icons-material/ForwardToInboxRounded'
+import MarkEmailReadRoundedIcon from '@mui/icons-material/MarkEmailReadRounded'
 import SyncRoundedIcon from '@mui/icons-material/SyncRounded'
 import TuneRoundedIcon from '@mui/icons-material/TuneRounded'
 import ResponsiveCreateButton from '../../../components/common/ResponsiveCreateButton'
@@ -57,11 +58,13 @@ export default function CalendarPageHeader({
     ? 'Configure the automatic EXT, Shutter, DM and HW date spacing for each builder.'
     : activeTab === 'FOLLOW_UPS'
       ? 'Prepare and track scheduling emails to each Jobsite Superintendent.'
-      : activeTab === 'UNSCHEDULED'
-        ? 'Phases created in Sequence Sheets that have no EXT, DM or HW events yet.'
-        : calendarMode === 'PRODUCTION'
-          ? 'Schedule EXT, DM and HW as one production activity.'
-          : 'Track extra work and change orders separately.'
+      : activeTab === 'DM_REMINDERS'
+        ? 'Tell each Job\'s Supervisor and Project Manager, the day before, about its DM.'
+        : activeTab === 'UNSCHEDULED'
+          ? 'Phases created in Sequence Sheets that have no EXT, DM or HW events yet.'
+          : calendarMode === 'PRODUCTION'
+            ? 'Schedule EXT, DM and HW as one production activity.'
+            : 'Track extra work and change orders separately.'
 
   return (
     <>
@@ -160,6 +163,12 @@ export default function CalendarPageHeader({
             icon={<ForwardToInboxRoundedIcon />}
             iconPosition="start"
             label="Builder follow-ups"
+          />
+          <Tab
+            value="DM_REMINDERS"
+            icon={<MarkEmailReadRoundedIcon />}
+            iconPosition="start"
+            label="DM reminders"
           />
           <Tab
             value="UNSCHEDULED"

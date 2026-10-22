@@ -41,6 +41,7 @@ import ActivityDetail from './ActivityDetail.jsx'
 import ActivityForm from './ActivityForm.jsx'
 import BuilderDateSettings from './BuilderDateSettings.jsx'
 import BuilderFollowUpQueue from './BuilderFollowUpQueue.jsx'
+import DmReminders from './DmReminders.jsx'
 import CalendarPageHeader from './CalendarPageHeader.jsx'
 import CalendarWorkspace from './CalendarWorkspace.jsx'
 import UnscheduledPhases from './UnscheduledPhases.jsx'
@@ -70,7 +71,7 @@ import './CalendarScheduler.css'
 
 // Production is the only mode shown; a CHANGE_ORDERS value saved earlier is ignored.
 const CALENDAR_MODES = ['PRODUCTION']
-const CALENDAR_TABS = ['SCHEDULE', 'BUILDER_SETTINGS', 'FOLLOW_UPS', 'UNSCHEDULED']
+const CALENDAR_TABS = ['SCHEDULE', 'BUILDER_SETTINGS', 'FOLLOW_UPS', 'DM_REMINDERS', 'UNSCHEDULED']
 const CALENDAR_VIEWS = ['dayGridMonth', 'dayGridWeek', 'listWeek', 'multiMonthYear']
 const ACTIVITY_TYPES = ['EXT', 'SHUTTER', 'DM', 'HW']
 
@@ -566,6 +567,8 @@ export default function CalendarScheduler() {
           canManage={canManageProductionActivities}
           canConfigure={profile?.role === 'ADMIN'}
         />
+      ) : activeTab === 'DM_REMINDERS' ? (
+        <DmReminders />
       ) : activeTab === 'UNSCHEDULED' ? (
         <UnscheduledPhases
           unscheduled={phaseCoverage.unscheduled}

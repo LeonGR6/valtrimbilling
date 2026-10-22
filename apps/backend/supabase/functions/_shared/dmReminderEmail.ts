@@ -5,13 +5,8 @@
 // The message is HTML with a plain-text twin, like the Sequence Sheet email, and carries no
 // prices: only each Lot, its Plan, whether it is Reverse and the options it has.
 //
-// How it goes out is decided by a mode, so the same code can be reviewed, tried and then run
-// for real:
-//   PREVIEW  nothing is sent; the emails can only be reviewed (the default),
-//   TEST     it is sent, but only to the test addresses, and says who it would have gone to,
-//   LIVE     it is sent to the Job's contacts.
-
-export type DmReminderMode = "PREVIEW" | "TEST" | "LIVE";
+// Who it goes to is decided by the person sending it: the Job's Supervisor and Project Manager
+// are only the addresses it starts with, and they can be removed or joined by anyone else.
 
 export interface DmReminderContact {
   role: string;
@@ -47,7 +42,7 @@ export interface DmReminderEvent {
   projectManager: DmReminderContact | null;
   // The roles that should receive it but have no email on file.
   missingRoles: string[];
-  // When a LIVE email for this DM and day went out, or null.
+  // When an email for this DM and day last went out, or null.
   sentAt: string | null;
 }
 
@@ -64,22 +59,7 @@ export interface RenderedDmReminder {
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/u;
 
-// --- Mode and dates ------------------------------------------------------------------
-
-/** Anything but TEST or LIVE is PREVIEW: a mistyped secret must never send to real people. */
-export function reminderMode(value: string | undefined | null): DmReminderMode {
-  const normalized = String(value ?? "").trim().toUpperCase();
-  return normalized === "LIVE" || normalized === "TEST" ? normalized : "PREVIEW";
-}
-
-/** The addresses TEST sends to, from a comma, semicolon or space separated secret. */
-export function testRecipients(value: string | undefined | null): string[] {
-  const emails = String(value ?? "")
-    .split(/[\s,;]+/u)
-    .map((email) => email.trim().toLowerCase())
-    .filter((email) => EMAIL_PATTERN.test(email));
-  return [...new Set(emails)];
-}
+// --- Dates ------------------------------------------------------------------
 
 export function isIsoDate(value: unknown): value is string {
   if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/u.test(value)) {
@@ -181,25 +161,6 @@ export function buildDmReminderDraft(event: DmReminderEvent): DmReminderDraft {
   };
 }
 
-/** Who gets the email in each mode. PREVIEW sends nobody. */
-export function resolveDelivery(
-  mode: DmReminderMode,
-  chosen: string[],
-  test: string[],
-): { to: string[]; testNote: DmReminderTestNote | null } {
-  if (mode === "LIVE") return { to: chosen, testNote: null };
-  if (mode === "TEST") {
-    return { to: test, testNote: { intended: chosen, sentTo: test } };
-  }
-  return { to: [], testNote: null };
-}
-
-export interface DmReminderTestNote {
-  // Who the email would have gone to, and who it actually went to.
-  intended: string[];
-  sentTo: string[];
-}
-
 // --- Rendering -------------------------------------------------------------------------
 
 const BAR = "#2563eb";
@@ -242,24 +203,10 @@ function lotRowHtml(lot: DmReminderLot, index: number) {
     </tr>`;
 }
 
-function testBannerHtml(note: DmReminderTestNote) {
-  const intended = note.intended.length > 0
-    ? note.intended.map(escapeHtml).join(", ")
-    : "nobody yet (no recipients chosen)";
-  return `
-        <tr>
-          <td style="padding:12px 26px;background-color:#fef3c7;border:1px solid #fde68a;border-bottom:0;color:#92400e;font-size:13px;line-height:1.45;">
-            <strong>Test email.</strong> It would have gone to: ${intended}.
-          </td>
-        </tr>`;
-}
-
 export function renderDmReminderEmail(
   event: DmReminderEvent,
-  options: { testNote?: DmReminderTestNote | null } = {},
 ): RenderedDmReminder {
-  const baseSubject = dmReminderSubject(event);
-  const subject = options.testNote ? `[TEST] ${baseSubject}` : baseSubject;
+  const subject = dmReminderSubject(event);
   const when = formatEventDate(event.eventDate);
   const scope = dmScope(event);
   const intro = `A DM is scheduled for ${when}. These are the Sequence Sheet lots it covers.`;
@@ -275,14 +222,6 @@ export function renderDmReminderEmail(
     ].join("\t")
   );
   const text = [
-    ...(options.testNote
-      ? [
-        `TEST EMAIL. It would have gone to: ${
-          options.testNote.intended.join(", ") || "nobody yet"
-        }.`,
-        "",
-      ]
-      : []),
     `DM scheduled for ${when}`,
     `Builder: ${event.builderName}`,
     `Community: ${event.community}`,
@@ -300,13 +239,9 @@ export function renderDmReminderEmail(
   const value = "padding:0 0 10px;color:#1e293b;font-size:14px;font-weight:700;";
   const html = `
     <div style="margin:0;padding:28px 12px;background-color:#f8fafc;font-family:Arial,Helvetica,sans-serif;color:#1e293b;">
-      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:820px;margin:0 auto;border-collapse:separate;">${
-    options.testNote ? testBannerHtml(options.testNote) : ""
-  }
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:820px;margin:0 auto;border-collapse:separate;">
         <tr>
-          <td style="padding:24px 26px;background-color:${BAR};border-radius:${
-    options.testNote ? "0" : "10px 10px 0 0"
-  };">
+          <td style="padding:24px 26px;background-color:${BAR};border-radius:10px 10px 0 0;">
             <p style="margin:0 0 5px;color:${SOFT};font-size:12px;font-weight:700;letter-spacing:0.7px;text-transform:uppercase;">ValtrimBilling</p>
             <h1 style="margin:0;color:#ffffff;font-size:24px;line-height:1.3;font-weight:700;">DM scheduled for ${
     escapeHtml(when)

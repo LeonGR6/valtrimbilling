@@ -16,7 +16,6 @@ import { listDmReminders } from '../services/dmReminderRepository.js'
 import {
   describeDmLots,
   describeDmStatus,
-  describeReminderMode,
   formatDmDate,
   tomorrowInLosAngeles,
 } from '../services/dmReminderRecord.js'
@@ -30,8 +29,8 @@ function RecipientChip({ contact, role }) {
 
 /**
  * The normal DMs of a day (tomorrow by default), each with the email that tells the Job's
- * Supervisor and Project Manager about it. Whether an email can really be sent depends on the
- * mode the server is in; today it is for reviewing them.
+ * Supervisor and Project Manager about it. Nothing goes out until someone reviews the email,
+ * chooses who gets it and sends it.
  */
 export default function DmReminders() {
   const [date, setDate] = useState(() => tomorrowInLosAngeles())
@@ -63,8 +62,6 @@ export default function DmReminders() {
   const { data } = loaded
   const error = loaded.error && dismissedError !== loaded.key ? loaded.error : ''
 
-  const mode = data?.mode ?? 'PREVIEW'
-  const modeInfo = describeReminderMode(mode, data?.testRecipients ?? [])
   // The DMs of an earlier request are not shown under a new date while it loads.
   const events = loading ? [] : data?.events ?? []
   const tomorrow = tomorrowInLosAngeles()
@@ -106,9 +103,6 @@ export default function DmReminders() {
         </Stack>
       </Box>
 
-      <Alert severity={modeInfo.severity}>
-        <strong>{modeInfo.title}.</strong> {modeInfo.text}
-      </Alert>
       {error && <Alert severity="error" onClose={() => setDismissedError(loaded.key)}>{error}</Alert>}
       {notice && <Alert severity="success" onClose={() => setNotice('')}>{notice}</Alert>}
 
@@ -194,8 +188,6 @@ export default function DmReminders() {
       {reviewing && (
         <DmReminderEmailDialog
           event={reviewing}
-          mode={mode}
-          testRecipients={data?.testRecipients ?? []}
           onClose={() => setReviewing(null)}
           onSent={(message) => {
             setReviewing(null)

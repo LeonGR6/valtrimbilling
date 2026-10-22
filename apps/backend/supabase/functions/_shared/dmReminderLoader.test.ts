@@ -118,11 +118,15 @@ Deno.test("it addresses the Job's Supervisor and Project Manager and says who ha
   assertEquals(event.missingRoles, ["Project Manager"]);
 });
 
-Deno.test("a DM already announced says when, and a Job that is no longer active has no DM", async () => {
+Deno.test("a DM already announced says when it was last sent, and a Job that is no longer active has no DM", async () => {
   const withLog = tables();
-  withLog.dm_reminder_emails = [{ schedule_id: 13, event_date: DATE, sent_at: "2026-10-22T16:00:00Z" }];
+  withLog.dm_reminder_emails = [
+    { schedule_id: 13, event_date: DATE, sent_at: "2026-10-22T16:00:00Z" },
+    { schedule_id: 13, event_date: DATE, sent_at: "2026-10-22T18:30:00Z" },
+    { schedule_id: 13, event_date: DATE, sent_at: "2026-10-22T17:00:00Z" },
+  ];
   const [event] = await loadDmReminders(fakeClient(withLog), DATE);
-  assertEquals(event.sentAt, "2026-10-22T16:00:00Z");
+  assertEquals(event.sentAt, "2026-10-22T18:30:00Z");
 
   const inactive = tables();
   inactive.jobs = [{ ...inactive.jobs[0], is_active: false }];

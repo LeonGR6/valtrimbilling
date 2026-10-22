@@ -5,7 +5,6 @@ import {
   describeDmLots,
   describeDmStatus,
   describeMissingDmRoles,
-  describeReminderMode,
   dmDraftFromPreview,
   formatDmDate,
   shiftDate,
@@ -19,22 +18,6 @@ test('tomorrow is the next day by the California calendar', () => {
   assert.equal(shiftDate('2026-12-31', 1), '2027-01-01')
   assert.equal(shiftDate('2026-03-01', -1), '2026-02-28')
   assert.equal(formatDmDate('2026-10-23'), 'Fri, Oct 23, 2026')
-})
-
-test('each mode says what it does and whether an email can be sent', () => {
-  assert.deepEqual(
-    [describeReminderMode('PREVIEW').canSend, describeReminderMode(undefined).severity],
-    [false, 'info'],
-  )
-  assert.equal(describeReminderMode('LIVE').canSend, true)
-
-  const test_ = describeReminderMode('TEST', ['me@valtriminc.com'])
-  assert.equal(test_.canSend, true)
-  assert.match(test_.text, /only to me@valtriminc\.com/)
-
-  const noAddresses = describeReminderMode('TEST', [])
-  assert.equal(noAddresses.canSend, false)
-  assert.match(noAddresses.text, /DM_REMINDER_TEST_RECIPIENTS/)
 })
 
 test('a DM names its lots', () => {
@@ -83,11 +66,7 @@ test('missing contacts and sent emails read as sentences', () => {
   assert.match(describeMissingDmRoles(['Supervisor', 'Project Manager']), /^Supervisor and Project Manager are not set/)
 
   assert.equal(
-    describeDmEmailSent({ mode: 'LIVE', recipients: ['a@x.com', 'b@x.com'] }),
+    describeDmEmailSent({ recipients: ['a@x.com', 'b@x.com'] }),
     'Email sent to a@x.com, b@x.com.',
-  )
-  assert.equal(
-    describeDmEmailSent({ mode: 'TEST', recipients: ['me@x.com'], intendedRecipients: ['a@x.com'] }),
-    'Test email sent to me@x.com. It would have gone to a@x.com.',
   )
 })

@@ -7,9 +7,6 @@ import {
   isIsoDate,
   nextDay,
   renderDmReminderEmail,
-  reminderMode,
-  resolveDelivery,
-  testRecipients,
   todayInLosAngeles,
 } from "./dmReminderEmail.ts";
 
@@ -39,23 +36,6 @@ const event = (overrides: Partial<DmReminderEvent> = {}): DmReminderEvent => ({
   missingRoles: [],
   sentAt: null,
   ...overrides,
-});
-
-Deno.test("only TEST and LIVE change the mode: anything else is PREVIEW", () => {
-  assertEquals(reminderMode(undefined), "PREVIEW");
-  assertEquals(reminderMode(""), "PREVIEW");
-  assertEquals(reminderMode("live"), "LIVE");
-  assertEquals(reminderMode(" Test "), "TEST");
-  assertEquals(reminderMode("LIVE!"), "PREVIEW");
-  assertEquals(reminderMode("yes"), "PREVIEW");
-});
-
-Deno.test("the test addresses come from a list, without repeats or bad addresses", () => {
-  assertEquals(testRecipients(undefined), []);
-  assertEquals(
-    testRecipients("Me@valtriminc.com, me@valtriminc.com; you@x.com nope"),
-    ["me@valtriminc.com", "you@x.com"],
-  );
 });
 
 Deno.test("dates: today in California, the next day and a readable date", () => {
@@ -95,20 +75,6 @@ Deno.test("the draft is addressed to the Supervisor and the Project Manager that
   assertEquals(buildDmReminderDraft(event({ supervisor: null, projectManager: null })).recipients, []);
 });
 
-Deno.test("who receives it depends on the mode, and PREVIEW sends nobody", () => {
-  const chosen = ["hilario@valtriminc.com"];
-  const test = ["me@valtriminc.com"];
-
-  assertEquals(resolveDelivery("PREVIEW", chosen, test), { to: [], testNote: null });
-  assertEquals(resolveDelivery("LIVE", chosen, test), { to: chosen, testNote: null });
-  assertEquals(resolveDelivery("TEST", chosen, test), {
-    to: test,
-    testNote: { intended: chosen, sentTo: test },
-  });
-  // Test mode with no test addresses has nobody to send to, never the real ones.
-  assertEquals(resolveDelivery("TEST", chosen, []).to, []);
-});
-
 Deno.test("the email lists each lot with its Plan, Reverse and options, and no prices", () => {
   const rendered = renderDmReminderEmail(event());
 
@@ -125,16 +91,4 @@ Deno.test("the email lists each lot with its Plan, Reverse and options, and no p
   assertStringIncludes(rendered.text, "Lot 10\tPlan 2A\tReverse: No\tNo options selected");
   assert(!/\$|price/iu.test(rendered.html));
   assert(!/\$|price/iu.test(rendered.text));
-  assert(!rendered.html.includes("Test email"));
-});
-
-Deno.test("a test email says it is a test and who it would have gone to", () => {
-  const rendered = renderDmReminderEmail(event(), {
-    testNote: { intended: ["hilario@valtriminc.com", "pat@valtriminc.com"], sentTo: ["me@valtriminc.com"] },
-  });
-
-  assert(rendered.subject.startsWith("[TEST] DM "));
-  assertStringIncludes(rendered.html, "Test email.");
-  assertStringIncludes(rendered.html, "hilario@valtriminc.com, pat@valtriminc.com");
-  assertStringIncludes(rendered.text, "TEST EMAIL. It would have gone to: hilario@valtriminc.com, pat@valtriminc.com.");
 });

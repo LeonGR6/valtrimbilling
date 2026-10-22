@@ -11,26 +11,20 @@
 // it is addressed to, is loaded here with the signed-in user's own permissions
 // (dmReminderLoader.ts).
 //
-// How it goes out is set by the DM_REMINDER_EMAIL_MODE secret (see dmReminderEmail.ts):
-//   PREVIEW (default)  the emails can be reviewed but not sent,
-//   TEST               sent only to DM_REMINDER_TEST_RECIPIENTS, marked "[TEST]",
-//   LIVE               sent to the recipients chosen in the dialog (the Job's contacts).
-// A scheduled run would reuse loadDmReminders and the same sending code; it does not exist yet.
+// Who it goes to is the person's choice: the Job's Supervisor and Project Manager come
+// preloaded and can be removed or joined by anyone else. Nothing is sent until "send". Each send
+// is recorded, so the list can say when a DM was last announced. A scheduled run would reuse
+// loadDmReminders and the same sending code; it does not exist yet.
 //
 // Sending uses Resend, like the Sequence Sheet email, and reuses its sender secrets.
 
 import { handlePreflight, json } from "../_shared/cors.ts";
 import {
   buildDmReminderDraft,
-  type DmReminderEvent,
-  type DmReminderMode,
   dmReminderSubject,
   isIsoDate,
   nextDay,
   renderDmReminderEmail,
-  reminderMode,
-  resolveDelivery,
-  testRecipients,
   todayInLosAngeles,
 } from "../_shared/dmReminderEmail.ts";
 import { loadDmReminders } from "../_shared/dmReminderLoader.ts";
@@ -125,17 +119,6 @@ async function loadOne(
   return event;
 }
 
-/** The rendered email of one DM, the way the current mode would send it. */
-function renderFor(
-  event: DmReminderEvent,
-  mode: DmReminderMode,
-  chosen: string[],
-  test: string[],
-) {
-  const { testNote } = resolveDelivery(mode, chosen, test);
-  return renderDmReminderEmail(event, { testNote });
-}
-
 Deno.serve(async (req: Request) => {
   const preflight = handlePreflight(req);
   if (preflight) return preflight;
@@ -153,16 +136,11 @@ Deno.serve(async (req: Request) => {
       return json({ error: "Select a supported DM reminder action." }, 400);
     }
 
-    const mode = reminderMode(Deno.env.get("DM_REMINDER_EMAIL_MODE"));
-    const test = testRecipients(Deno.env.get("DM_REMINDER_TEST_RECIPIENTS"));
-
     if (action === "list") {
       const today = todayInLosAngeles();
       const date = body.date == null ? nextDay(today) : requiredDate(body.date);
       const events = await loadDmReminders(auth.caller, date);
       return json({
-        mode,
-        testRecipients: mode === "TEST" ? test : [],
         today,
         date,
         events: events.map((event) => ({
@@ -176,46 +154,13 @@ Deno.serve(async (req: Request) => {
     const draft = buildDmReminderDraft(event);
 
     if (action === "preview") {
-      return json({
-        mode,
-        testRecipients: mode === "TEST" ? test : [],
-        event,
-        draft,
-        rendered: renderFor(
-          event,
-          mode,
-          draft.recipients.map(({ email }) => email),
-          test,
-        ),
-      });
+      return json({ event, draft, rendered: renderDmReminderEmail(event) });
     }
 
     // --- send ---
-    if (mode === "PREVIEW") {
-      return json({
-        error:
-          "Sending is switched off: DM reminders can only be reviewed right now.",
-      }, 409);
-    }
-    if (mode === "LIVE" && event.sentAt) {
-      return json({
-        error: "This DM was already announced. It is not sent twice.",
-      }, 409);
-    }
-
     const chosen = recipientEmails(body.recipientEmails);
-    const delivery = resolveDelivery(mode, chosen, test);
-    if (delivery.to.length === 0) {
-      throw new Error(
-        "Test mode needs the DM_REMINDER_TEST_RECIPIENTS secret: a list of your own email addresses.",
-      );
-    }
-
-    const rendered = renderDmReminderEmail(event, { testNote: delivery.testNote });
-    const typed = subjectOverride(body.subject, dmReminderSubject(event));
-    const subject = mode === "TEST" && !typed.startsWith("[TEST]")
-      ? `[TEST] ${typed}`
-      : typed;
+    const rendered = renderDmReminderEmail(event);
+    const subject = subjectOverride(body.subject, dmReminderSubject(event));
     const providerMessageId = await sendSequenceSheetWithResend({
       apiKey: firstEnv(["RESEND_API_KEY"]),
       from: firstEnv([
@@ -229,25 +174,24 @@ Deno.serve(async (req: Request) => {
         "FOLLOW_UP_REPLY_TO",
       ]),
       idempotencyKey: [
-        `dm-reminder-${mode.toLowerCase()}`,
+        "dm-reminder",
         event.scheduleId,
         event.eventDate,
         requestId(body.requestId),
-        await fingerprint([delivery.to.join(","), subject]),
+        await fingerprint([chosen.join(","), subject]),
       ].join("-"),
-      recipients: delivery.to,
+      recipients: chosen,
       rendered: { ...rendered, subject },
     });
 
-    // The email is out. Recording it is what keeps a LIVE DM from being announced twice; a
+    // The email is out. Recording it is what lets the list say when the DM was announced; a
     // failure here is logged, not reported as a failed send.
     const sentAt = new Date().toISOString();
     const { error: logError } = await serviceClient().from("dm_reminder_emails")
       .insert({
         schedule_id: event.scheduleId,
         event_date: event.eventDate,
-        mode,
-        recipients: delivery.to,
+        recipients: chosen,
         subject,
         provider_message_id: providerMessageId,
         sent_by: auth.userId,
@@ -257,11 +201,9 @@ Deno.serve(async (req: Request) => {
 
     return json({
       sent: true,
-      mode,
       sentAt,
       providerMessageId,
-      recipients: delivery.to,
-      intendedRecipients: chosen,
+      recipients: chosen,
       rendered: { ...rendered, subject },
     });
   } catch (error) {

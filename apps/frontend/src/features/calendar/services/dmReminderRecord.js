@@ -1,5 +1,4 @@
-// Pure helpers for the DM reminder emails: dates, how the current mode is described, and the
-// sentences the screen shows. Nothing here touches the network or React.
+// Pure helpers for the DM reminder emails: dates and the sentences the screen shows. Nothing here touches the network or React.
 
 import { formatLotRange } from '../../draw-invoice/utils/drawPackages.js'
 
@@ -33,39 +32,6 @@ export function formatDmDate(date) {
   })
 }
 
-/** How the mode reads on screen, and whether an email can be sent in it. */
-export function describeReminderMode(mode, testRecipients = []) {
-  if (mode === 'LIVE') {
-    return {
-      severity: 'success',
-      title: 'Live',
-      text: 'Emails go to the people chosen in each message.',
-      canSend: true,
-    }
-  }
-  if (mode === 'TEST') {
-    return testRecipients.length > 0
-      ? {
-        severity: 'warning',
-        title: 'Test mode',
-        text: `Emails go only to ${testRecipients.join(', ')}, never to the Job's contacts. Each says who it would have gone to.`,
-        canSend: true,
-      }
-      : {
-        severity: 'warning',
-        title: 'Test mode without test addresses',
-        text: 'Add the DM_REMINDER_TEST_RECIPIENTS secret with your own email addresses to send test emails.',
-        canSend: false,
-      }
-  }
-  return {
-    severity: 'info',
-    title: 'Preview mode',
-    text: 'You can review every email, but none can be sent yet.',
-    canSend: false,
-  }
-}
-
 /** "Lots 1–9" for the lots of a DM, with their number when it helps. */
 export function describeDmLots(event) {
   const numbers = event.lots.map((lot) => lot.lotNumber)
@@ -76,14 +42,17 @@ export function describeDmLots(event) {
 
 const timestamp = new Intl.DateTimeFormat('en-US', { dateStyle: 'medium', timeStyle: 'short' })
 
+/** "Oct 22, 2026, 10:05 AM" for a moment, or an empty text for one that does not read. */
+export function formatDmTimestamp(value) {
+  const when = new Date(value)
+  return Number.isNaN(when.getTime()) ? '' : timestamp.format(when)
+}
+
 /** The status chip of one DM in the list. */
 export function describeDmStatus(event) {
   if (event.sentAt) {
-    const when = new Date(event.sentAt)
-    return {
-      color: 'success',
-      label: Number.isNaN(when.getTime()) ? 'Sent' : `Sent ${timestamp.format(when)}`,
-    }
+    const when = formatDmTimestamp(event.sentAt)
+    return { color: 'success', label: when ? `Sent ${when}` : 'Sent' }
   }
   if (!event.draft?.recipients?.length) {
     return { color: 'warning', label: 'Nobody to send to' }
@@ -118,10 +87,5 @@ export function dmDraftFromPreview(preview) {
 }
 
 export function describeDmEmailSent(result) {
-  const to = (result?.recipients ?? []).join(', ')
-  if (result?.mode === 'TEST') {
-    const intended = (result?.intendedRecipients ?? []).join(', ')
-    return `Test email sent to ${to}.${intended ? ` It would have gone to ${intended}.` : ''}`
-  }
-  return `Email sent to ${to}.`
+  return `Email sent to ${(result?.recipients ?? []).join(', ')}.`
 }

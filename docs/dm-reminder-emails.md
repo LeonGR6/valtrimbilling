@@ -18,26 +18,21 @@ From the DM's activity: its Job, and from the Job `supervisor_id` and `project_m
 (Company Contacts). The dialog starts with both and lets the user remove them or add anyone
 else (up to 10).
 
-## Modes (`DM_REMINDER_EMAIL_MODE` secret)
+## Sending
 
-| Mode | What happens |
-|---|---|
-| `PREVIEW` (default, also for any other value) | The email can be reviewed in Calendar > DM reminders; sending is refused. |
-| `TEST` | Sent only to `DM_REMINDER_TEST_RECIPIENTS` (comma separated), subject `[TEST] ...`, with a banner that says who it would have gone to. Never to the Job's contacts. |
-| `LIVE` | Sent to the recipients chosen in the dialog. A LIVE DM is not sent twice for the same day. |
+Calendar > **DM reminders** lists the DMs of a day (tomorrow by default). "Review email" opens
+the exact email with the Supervisor and Project Manager preloaded; the person removes any,
+adds other addresses, edits the subject and presses **Send email**. Nothing goes out
+otherwise, and "Don't send" tells no one. There are no test or live modes.
 
 Sender and reply-to reuse the Sequence Sheet email secrets (`DM_REMINDER_FROM_EMAIL` and
 `DM_REMINDER_REPLY_TO` win when set).
 
-```bash
-npm run secrets:set --workspace=@valtrimbilling/backend DM_REMINDER_EMAIL_MODE=TEST DM_REMINDER_TEST_RECIPIENTS=you@valtriminc.com
-```
-
 ## Record
 
-`valtrim.dm_reminder_emails` has one row per send (mode, recipients, subject, provider id).
-A unique index on `(schedule_id, event_date)` for `mode = 'LIVE'` is what stops a DM from
-being announced twice. Moving the DM to another day makes it announceable again.
+`valtrim.dm_reminder_emails` has one row per send (recipients, subject, provider id, who). The
+list shows "Sent <date>" for a DM already announced, and the dialog warns before sending it
+again, but a second send is allowed.
 
 ## Going automatic (not built yet)
 
@@ -48,4 +43,4 @@ sending. An automatic run needs only:
    default recipients, record it.
 2. A cron secret check, like `builder-follow-up-email` (`FOLLOW_UP_CRON_SECRET`).
 3. A `pg_cron` job, like `quickbooks-payments-sync`, once a day in the morning (California time).
-4. `DM_REMINDER_EMAIL_MODE=LIVE`.
+4. Skip a DM that already has a row in the record, so an automatic run never repeats a manual send.

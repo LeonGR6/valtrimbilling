@@ -69,7 +69,7 @@ export async function loadDmReminders(
   );
   if (schedules.length === 0) return [];
 
-  const [stages, activities, scheduleLots, liveLog] = await Promise.all([
+  const [stages, activities, scheduleLots, sendLog] = await Promise.all([
     caller.from("production_stages").select("id, stage_type, is_enabled")
       .in("id", unique(schedules.map((row) => row.stage_id))),
     caller.from("production_activities").select("id, job_id, phase_id, status")
@@ -77,7 +77,7 @@ export async function loadDmReminders(
     caller.from("production_schedule_lots").select("schedule_id, lot_id")
       .in("schedule_id", unique(schedules.map((row) => row.id))),
     caller.from("dm_reminder_emails").select("schedule_id, event_date, sent_at")
-      .eq("mode", "LIVE").eq("event_date", date)
+      .eq("event_date", date)
       .in("schedule_id", unique(schedules.map((row) => row.id))),
   ]);
 
@@ -143,12 +143,15 @@ export async function loadDmReminders(
   const plans = indexBy(many(plansResult), (row) => String(row.id));
   const options = indexBy(many(optionsResult), (row) => String(row.id));
   const phases = indexBy(many(phasesResult), (row) => String(row.id));
-  const sent = new Map(
-    many(liveLog).map((row): [string, string] => [
-      String(row.schedule_id),
-      String(row.sent_at),
-    ]),
-  );
+  // When each DM was last announced: the newest send of that day.
+  const sent = new Map<string, string>();
+  for (const row of many(sendLog)) {
+    const key = String(row.schedule_id);
+    const at = String(row.sent_at);
+    if (!sent.has(key) || Date.parse(at) > Date.parse(sent.get(key)!)) {
+      sent.set(key, at);
+    }
+  }
 
   const lotIdsBySchedule = new Map<string, string[]>();
   for (const row of many(scheduleLots)) {

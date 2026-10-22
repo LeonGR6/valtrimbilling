@@ -30,9 +30,9 @@ import {
 import {
   describeDmEmailSent,
   describeMissingDmRoles,
-  describeReminderMode,
   dmDraftFromPreview,
   formatDmDate,
+  formatDmTimestamp as formatTimestamp,
 } from '../services/dmReminderRecord.js'
 import { previewDmReminder, sendDmReminder } from '../services/dmReminderRepository.js'
 
@@ -46,11 +46,9 @@ function newRequestId() {
 /**
  * The DM reminder of one DM: the exact email, who it starts addressed to (the Job's Supervisor
  * and Project Manager), and a way to remove them or add anyone else. Nothing is sent until
- * "Send"; and in Preview mode nothing can be sent at all. In Test mode the email goes only to
- * the test addresses, whoever is listed here.
+ * "Send email"; "Don't send" tells no one.
  */
-export default function DmReminderEmailDialog({ event, mode, testRecipients, onClose, onSent }) {
-  const modeInfo = describeReminderMode(mode, testRecipients)
+export default function DmReminderEmailDialog({ event, onClose, onSent }) {
   const [preview, setPreview] = useState(null)
   const [loading, setLoading] = useState(true)
   const [recipients, setRecipients] = useState([])
@@ -91,8 +89,7 @@ export default function DmReminderEmailDialog({ event, mode, testRecipients, onC
     [recipients],
   )
   const missingMessage = preview ? describeMissingDmRoles(preview.missingRoles) : null
-  const alreadySent = Boolean(preview?.event?.sentAt) && mode === 'LIVE'
-  const canSend = modeInfo.canSend && !alreadySent
+  const lastSent = preview?.event?.sentAt ?? null
 
   const commit = (values) => {
     const result = addRecipients(recipients, values)
@@ -125,8 +122,6 @@ export default function DmReminderEmailDialog({ event, mode, testRecipients, onC
     }
   }
 
-  const sendLabel = mode === 'TEST' ? 'Send test email' : 'Send email'
-
   return (
     <Dialog
       open
@@ -158,12 +153,10 @@ export default function DmReminderEmailDialog({ event, mode, testRecipients, onC
 
       <DialogContent dividers>
         <Stack spacing={2.25}>
-          <Alert severity={modeInfo.severity}>
-            <strong>{modeInfo.title}.</strong> {modeInfo.text}
-          </Alert>
-          {alreadySent && (
-            <Alert severity="success">
-              This DM was already announced. It is not sent twice.
+          {lastSent && (
+            <Alert severity="info">
+              This DM was already announced on {formatTimestamp(lastSent)}. Sending again emails
+              the recipients below once more.
             </Alert>
           )}
           {error && <Alert severity="error">{error}</Alert>}
@@ -284,24 +277,16 @@ export default function DmReminderEmailDialog({ event, mode, testRecipients, onC
       </DialogContent>
 
       <DialogActions sx={{ px: 3, py: 2 }}>
-        <Button color="inherit" onClick={onClose} disabled={sending}>
-          {canSend ? "Don't send" : 'Close'}
-        </Button>
-        <Tooltip
-          title={canSend ? '' : alreadySent ? 'Already announced.' : 'Sending is off in this mode.'}
+        <Button color="inherit" onClick={onClose} disabled={sending}>Don&apos;t send</Button>
+        <Button
+          variant="contained"
+          disableElevation
+          startIcon={sending ? <CircularProgress size={16} color="inherit" /> : <EmailRoundedIcon />}
+          onClick={handleSend}
+          disabled={loading || !preview?.rendered || sending}
         >
-          <span>
-            <Button
-              variant="contained"
-              disableElevation
-              startIcon={sending ? <CircularProgress size={16} color="inherit" /> : <EmailRoundedIcon />}
-              onClick={handleSend}
-              disabled={loading || !preview?.rendered || sending || !canSend}
-            >
-              {sending ? 'Sending…' : sendLabel}
-            </Button>
-          </span>
-        </Tooltip>
+          {sending ? 'Sending…' : 'Send email'}
+        </Button>
       </DialogActions>
     </Dialog>
   )

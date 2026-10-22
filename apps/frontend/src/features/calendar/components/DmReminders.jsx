@@ -170,6 +170,14 @@ export default function DmReminders() {
                 spacing={1.25}
                 sx={{ alignItems: 'center', flexShrink: 0 }}
               >
+                {event.split && (
+                  <Chip
+                    size="small"
+                    variant="outlined"
+                    label="Split DM"
+                    title="The DM was split: this is one part, with its own date and lots."
+                  />
+                )}
                 <Chip size="small" color={status.color} variant={status.color === 'default' ? 'outlined' : 'filled'} label={status.label} />
                 <Button
                   variant="contained"

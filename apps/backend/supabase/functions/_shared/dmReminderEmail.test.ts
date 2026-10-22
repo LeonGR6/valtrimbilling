@@ -13,6 +13,7 @@ import {
 const event = (overrides: Partial<DmReminderEvent> = {}): DmReminderEvent => ({
   scheduleId: "13",
   eventDate: "2026-10-23",
+  split: false,
   jobId: "1",
   jobCode: "1319",
   community: "EL MONTE",
@@ -91,4 +92,13 @@ Deno.test("the email lists each lot with its Plan, Reverse and options, and no p
   assertStringIncludes(rendered.text, "Lot 10\tPlan 2A\tReverse: No\tNo options selected");
   assert(!/\$|price/iu.test(rendered.html));
   assert(!/\$|price/iu.test(rendered.text));
+});
+
+Deno.test("a part of a split DM says so", () => {
+  const whole = renderDmReminderEmail(event());
+  const part = renderDmReminderEmail(event({ split: true }));
+
+  assertStringIncludes(whole.text, "These are the Sequence Sheet lots it covers.");
+  assertStringIncludes(part.text, "It was split into parts; these are the Sequence Sheet lots of this part.");
+  assertStringIncludes(part.html, "split into parts");
 });

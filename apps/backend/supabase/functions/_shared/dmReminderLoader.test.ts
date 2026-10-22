@@ -36,6 +36,9 @@ const tables = (): Record<string, Row[]> => ({
     // A BASE schedule of an HW stage and one of a cancelled activity.
     { id: 17, stage_id: 2, activity_id: 5, variant: "BASE", scheduled_date: DATE, is_active: true },
     { id: 18, stage_id: 1, activity_id: 6, variant: "BASE", scheduled_date: DATE, is_active: true },
+    // The parts of a split DM (its BASE schedule is off), one of them on another day.
+    { id: 19, stage_id: 1, activity_id: 5, variant: "DIVISION", scheduled_date: DATE, is_active: true },
+    { id: 20, stage_id: 1, activity_id: 5, variant: "DIVISION", scheduled_date: "2026-10-26", is_active: true },
   ],
   production_stages: [
     { id: 1, stage_type: "DM", is_enabled: true },
@@ -46,6 +49,7 @@ const tables = (): Record<string, Row[]> => ({
     { id: 6, job_id: 1, phase_id: 3, status: "CANCELLED" },
   ],
   production_schedule_lots: [
+    { schedule_id: 19, lot_id: 2 },
     { schedule_id: 13, lot_id: 10 },
     { schedule_id: 13, lot_id: 2 },
     { schedule_id: 13, lot_id: 99 },
@@ -82,10 +86,12 @@ const tables = (): Record<string, Row[]> => ({
   dm_reminder_emails: [],
 });
 
-Deno.test("only the normal DM of an active activity on that day is loaded", async () => {
+Deno.test("only the main DM of an active activity on that day is loaded, a split one by its parts", async () => {
   const events = await loadDmReminders(fakeClient(tables()), DATE);
 
-  assertEquals(events.map((event) => event.scheduleId), ["13"]);
+  assertEquals(events.map((event) => event.scheduleId), ["13", "19"]);
+  assertEquals(events.map((event) => event.split), [false, true]);
+  assertEquals(events[1].lots.map((lot) => lot.lotNumber), ["2"]);
   assertEquals(events[0].jobCode, "1319");
   assertEquals(events[0].builderName, "KB Home");
   assertEquals(events[0].phaseCode, "2");
@@ -135,6 +141,7 @@ Deno.test("a DM already announced says when it was last sent, and a Job that is 
 
 Deno.test("naming one DM loads only that one, and a day with none is empty", async () => {
   assertEquals((await loadDmReminders(fakeClient(tables()), DATE, "13")).length, 1);
+  assertEquals((await loadDmReminders(fakeClient(tables()), DATE, "19")).length, 1);
   assertEquals(await loadDmReminders(fakeClient(tables()), DATE, "999"), []);
   assertEquals(await loadDmReminders(fakeClient({}), DATE), []);
 });

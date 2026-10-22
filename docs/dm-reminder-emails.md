@@ -5,7 +5,8 @@ with the Sequence Sheet lots that DM covers (Lot, Plan, Reverse, options; no pri
 
 ## What counts
 
-- Only the **BASE** schedule of a **DM** stage that is on (not `BASEBOARD_INSTALL`, not `DIVISION`).
+- The **BASE** schedule of a **DM** stage that is on. Not `BASEBOARD_INSTALL`.
+- A **split** DM: splitting turns the BASE schedule off and replaces it with `DIVISION` parts, each with its own date and lots, so each active part is announced on its own day as its own email (the row says "Split DM").
 - Of an activity that is still `ACTIVE` and a Job that is still active.
 - One email per DM (per `production_schedules` row), with the lots of that DM
   (`production_schedule_lots`; utility buildings left out).

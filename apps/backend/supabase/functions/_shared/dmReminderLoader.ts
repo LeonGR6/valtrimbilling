@@ -3,8 +3,9 @@
 // signed-in user's own permissions (RLS applies: `caller` is a user client, never the service
 // role), so a user sees only what they could already see in the app.
 //
-// Only a normal DM counts: the BASE schedule of a DM stage that is on, of an activity that is
-// still active and a Job that is still active. Kept apart from the Edge Function so it can be
+// Only the main DM counts: the BASE schedule of a DM stage that is on, or, when the DM was split,
+// each of its DIVISION parts (a split replaces the BASE schedule, so a part is announced on its
+// own day with its own lots). The activity and the Job must still be active. Kept apart from the Edge Function so it can be
 // tested with a fake client. There are no prices here: they are never read.
 
 import type {
@@ -20,6 +21,9 @@ type Caller = { from(table: string): any };
 // The client is not typed with the database, so a row is read field by field.
 // deno-lint-ignore no-explicit-any
 type Row = Record<string, any>;
+
+// A baseboard install is a different visit and is not announced.
+const MAIN_DM_VARIANTS = ["BASE", "DIVISION"];
 
 function many(result: { data: unknown; error: unknown }) {
   if (result.error) throw result.error;
@@ -59,11 +63,11 @@ export async function loadDmReminders(
     .from("production_schedules")
     .select("id, stage_id, activity_id, variant, scheduled_date, is_active")
     .eq("scheduled_date", date)
-    .eq("variant", "BASE")
+    .in("variant", MAIN_DM_VARIANTS)
     .eq("is_active", true);
   if (scheduleId !== null) query = query.eq("id", scheduleId);
   const schedules = many(await query).filter((row) =>
-    row.variant === "BASE" && row.is_active !== false &&
+    MAIN_DM_VARIANTS.includes(row.variant) && row.is_active !== false &&
     String(row.scheduled_date).slice(0, 10) === date &&
     (scheduleId === null || String(row.id) === scheduleId)
   );
@@ -203,6 +207,7 @@ export async function loadDmReminders(
     events.push({
       scheduleId: String(schedule.id),
       eventDate: date,
+      split: schedule.variant === "DIVISION",
       jobId: String(job.id),
       jobCode: String(job.code ?? ""),
       community: String(job.community ?? ""),

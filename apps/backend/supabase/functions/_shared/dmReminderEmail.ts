@@ -31,6 +31,8 @@ export interface DmReminderEvent {
   scheduleId: string;
   // YYYY-MM-DD, the day of the DM.
   eventDate: string;
+  // The DM was split and this is one of its parts: it covers only some of the Phase's lots.
+  split: boolean;
   jobId: string;
   jobCode: string;
   community: string;
@@ -209,7 +211,9 @@ export function renderDmReminderEmail(
   const subject = dmReminderSubject(event);
   const when = formatEventDate(event.eventDate);
   const scope = dmScope(event);
-  const intro = `A DM is scheduled for ${when}. These are the Sequence Sheet lots it covers.`;
+  const intro = event.split
+    ? `A DM is scheduled for ${when}. It was split into parts; these are the Sequence Sheet lots of this part.`
+    : `A DM is scheduled for ${when}. These are the Sequence Sheet lots it covers.`;
 
   const textRows = event.lots.map((lot) =>
     [

@@ -153,7 +153,7 @@ test('every Phase is listed for Payment Schedules, with the ones that have none'
   assert.equal(groups[1].empty, true)
   assert.equal(groups[1].meta, 'No payment schedule yet')
   assert.equal(groups[2].statusLabel, 'Needs review')
-  assert.match(groups[2].meta, /1 schedule, lots 0014–0015$/)
+  assert.match(groups[2].meta, /1 schedule, lots 14–15$/)
 })
 
 test('a schedule that covers several Phases is listed in each, and says where else it is', () => {
@@ -279,4 +279,145 @@ test('the file filter looks at the name and the lots', () => {
   assert.equal(matchesDocumentFilter(file, ['27'], 'revised'), true)
   assert.equal(matchesDocumentFilter(file, ['28'], '28'), true)
   assert.equal(matchesDocumentFilter(file, ['28'], 'nothing'), false)
+})
+
+// Job 1319: Phase 1 in two buildings (Lots 1-9 and 17-25) and Phase 2 (Lots 10-16).
+const lotsOf = (...numbers) => numbers.map((lotNumber) => ({ lotNumber: String(lotNumber) }))
+const range = (from, to) => Array.from({ length: to - from + 1 }, (_, index) => from + index)
+const jobWithLots = () => ({
+  sequenceSheet: {
+    phases: [
+      { id: 1, name: '1', building: '2', lots: lotsOf(...range(1, 9)) },
+      { id: 3, name: '2', building: '1', lots: lotsOf(...range(10, 16)) },
+      { id: 2, name: '1', building: '3', lots: lotsOf(...range(17, 25)) },
+    ],
+  },
+})
+const printedLots = (numbers, phase = null) => numbers.map((lot) => ({
+  phase,
+  lot: String(lot).padStart(2, '0'),
+  draw: 1,
+}))
+
+test('a Job lists the Lot numbers of each Phase, leaving out utility buildings', () => {
+  const list = jobPhaseList({
+    sequenceSheet: {
+      phases: [{
+        id: 1,
+        name: '1',
+        lots: [{ lotNumber: '1' }, { lotNumber: '', isUtilityBuilding: true }, { lotNumber: '2', isUtilityBuilding: false }],
+      }],
+    },
+  })
+
+  assert.deepEqual(list[0].lots, ['1', '2'])
+  assert.deepEqual(jobPhaseList(job([1, '3']))[0].lots, [])
+})
+
+test('a schedule that prints no Phase is placed by its Lots, which the Sequence Sheet assigns', () => {
+  const list = jobPhaseList(jobWithLots())
+  const template = { status: 'confirmed', mapping: { cells: printedLots(range(1, 25)) } }
+  const coverage = schedulePhaseCoverage(template, list)
+
+  assert.deepEqual([...coverage.lots.keys()], ['1', '2'])
+  assert.equal(coverage.lots.get('1').size, 18)
+  assert.equal(coverage.lots.get('2').size, 7)
+  assert.deepEqual([...coverage.inferred], ['1', '2'])
+  assert.equal(coverage.unmatched, 0)
+  assert.deepEqual(coverage.unknownLots, [])
+  assert.deepEqual(coverage.severalLots, [])
+})
+
+test('the Lots a schedule has that the Job does not are reported, and the rest are placed', () => {
+  const list = jobPhaseList(jobWithLots())
+  const template = { status: 'needs_review', detectedCells: printedLots([...range(10, 12), 40, 41]) }
+  const coverage = schedulePhaseCoverage(template, list)
+
+  assert.deepEqual([...coverage.lots.keys()], ['2'])
+  assert.deepEqual(coverage.unknownLots, ['40', '41'])
+  assert.equal(coverage.unmatched, 2)
+})
+
+test('a Lot number that two Phases have cannot tell the Phase', () => {
+  const list = jobPhaseList({
+    sequenceSheet: {
+      phases: [
+        { id: 1, name: '1', lots: lotsOf(1, 2) },
+        { id: 2, name: '2', lots: lotsOf(1, 2, 3) },
+      ],
+    },
+  })
+  const both = schedulePhaseCoverage({ status: 'needs_review', detectedCells: printedLots([1, 2]) }, list)
+  const partly = schedulePhaseCoverage({ status: 'needs_review', detectedCells: printedLots([1, 3]) }, list)
+
+  assert.equal(both.lots.size, 0)
+  assert.deepEqual(both.severalLots, ['01', '02'])
+  assert.deepEqual([...partly.lots.keys()], ['2'])
+  assert.deepEqual(partly.severalLots, ['01'])
+})
+
+test('a printed Phase is not overridden by the Lots', () => {
+  const list = jobPhaseList(jobWithLots())
+  const template = { status: 'confirmed', mapping: { cells: printedLots([1, 2], '2') } }
+  const coverage = schedulePhaseCoverage(template, list)
+
+  assert.deepEqual([...coverage.lots.keys()], ['2'])
+  assert.equal(coverage.inferred.size, 0)
+})
+
+test('the Job 1319 schedule fills every Phase, and says its Phase came from the Lots', () => {
+  const list = jobPhaseList(jobWithLots())
+  const documents = [doc('matrix', 'Finish Carpentry.pdf')]
+  const { groups, unassigned } = paymentScheduleGroups({
+    documents,
+    phases: list,
+    templates: { matrix: { status: 'confirmed', mapping: { cells: printedLots(range(1, 25)) } } },
+  })
+
+  assert.deepEqual(unassigned, [])
+  assert.deepEqual(groups.map(({ label, empty, status }) => [label, empty, status]), [
+    ['Phase 1', false, 'ok'],
+    ['Phase 2', false, 'ok'],
+  ])
+  assert.equal(groups[0].placements[0].inferred, true)
+  assert.deepEqual(groups[0].placements[0].alsoIn, ['Phase 2'])
+  assert.equal(groups[0].meta, '1 schedule, lots 1–9, 17–25')
+  assert.equal(groups[1].meta, '1 schedule, lots 10–16')
+})
+
+test('a Phase with Lots that no schedule has says which', () => {
+  const list = jobPhaseList(jobWithLots())
+  const { groups } = paymentScheduleGroups({
+    documents: [doc('part')],
+    phases: list,
+    templates: { part: { status: 'confirmed', mapping: { cells: printedLots(range(1, 5)) } } },
+  })
+
+  assert.equal(groups[0].meta, '1 schedule, lots 1–5 · no schedule for lots 6–9, 17–25')
+  assert.equal(groups[0].status, 'ok')
+  assert.equal(groups[1].empty, true)
+})
+
+test('a schedule none of whose Lots is in the Job, or whose Lots are in several Phases, says so', () => {
+  const list = jobPhaseList({
+    sequenceSheet: {
+      phases: [
+        { id: 1, name: '1', lots: lotsOf(1, 2) },
+        { id: 2, name: '2', lots: lotsOf(1, 2) },
+      ],
+    },
+  })
+  const { unassigned } = paymentScheduleGroups({
+    documents: [doc('far'), doc('twin')],
+    phases: list,
+    templates: {
+      far: { status: 'needs_review', detectedCells: printedLots([90, 91]) },
+      twin: { status: 'needs_review', detectedCells: printedLots([1, 2]) },
+    },
+  })
+
+  assert.deepEqual(unassigned.map(({ document, reason }) => [document.id, reason]), [
+    ['far', 'None of its Lots is in this Job'],
+    ['twin', 'Its Lots are in more than one Phase. Choose one when you review it'],
+  ])
 })

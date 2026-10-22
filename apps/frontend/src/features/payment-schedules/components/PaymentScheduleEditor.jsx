@@ -17,6 +17,7 @@ import {
   initialCells,
   initialPhaseMap,
   initialSummaryRows,
+  lotPhaseIndex,
   unmatchedPhases,
 } from '../services/paymentScheduleRecord.js'
 import PaymentSchedulePdfPages from './PaymentSchedulePdfPages.jsx'
@@ -25,11 +26,13 @@ import PaymentScheduleSummaryPanel from './PaymentScheduleSummaryPanel.jsx'
 const EDITABLE_STATUSES = ['needs_review', 'confirmed']
 const NO_REMOVED = new Set()
 const NO_PHASES = []
+const NO_LOTS = []
 
 export default function PaymentScheduleEditor({
   template,
   file,
   jobPhases = NO_PHASES,
+  jobLots = NO_LOTS,
   canManage,
   onConfirm,
   onReanalyze,
@@ -40,8 +43,10 @@ export default function PaymentScheduleEditor({
   const [selectedKey, setSelectedKey] = useState(null)
   const [selectedLotId, setSelectedLotId] = useState(null)
   const jobPhaseCodes = useMemo(() => jobPhases.map(({ code }) => code), [jobPhases])
+  // Which Phases have each Lot of the Job, for a schedule that prints no Phase.
+  const lotPhases = useMemo(() => lotPhaseIndex(jobLots), [jobLots])
   // Which Phase of the Job each Phase printed in the PDF stands for.
-  const [phaseMap, setPhaseMap] = useState(() => initialPhaseMap(cells, jobPhaseCodes))
+  const [phaseMap, setPhaseMap] = useState(() => initialPhaseMap(cells, jobPhaseCodes, lotPhases))
   const [acknowledged, setAcknowledged] = useState(false)
   // Previously Invoiced and This Request boxes (matrix schedules), and whether a
   // Package fills them.
@@ -54,8 +59,8 @@ export default function PaymentScheduleEditor({
   const readOnly = !canManage || !EDITABLE_STATUSES.includes(template.status)
   const busy = saving || reanalyzing
   const activeCells = useMemo(
-    () => applyPhaseMap(cells.filter((cell) => !removedKeys.has(cell.key)), phaseMap),
-    [cells, phaseMap, removedKeys],
+    () => applyPhaseMap(cells.filter((cell) => !removedKeys.has(cell.key)), phaseMap, lotPhases),
+    [cells, lotPhases, phaseMap, removedKeys],
   )
   // Only worth saying when the Job's Phases are known.
   const unmatched = useMemo(
@@ -175,6 +180,7 @@ export default function PaymentScheduleEditor({
                 selectedLotId={selectedLotId}
                 phaseMap={phaseMap}
                 jobPhases={jobPhases}
+                lotPhases={lotPhases}
                 unmatchedPhases={unmatched}
                 summaryRows={summaryRows}
                 fillSummary={fillSummary}

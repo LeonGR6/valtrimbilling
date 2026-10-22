@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   applyPhaseMap,
+  describeLotPhases,
   buildMapping,
   describeIssue,
   describePaymentScheduleDocument,
@@ -9,6 +10,9 @@ import {
   drawLabel,
   initialCells,
   initialPhaseMap,
+  lotPhaseIndex,
+  PHASE_BY_LOT,
+  phaseOfLot,
   initialSummaryRows,
   isPaymentScheduleDocumentType,
   lotRows,
@@ -249,4 +253,58 @@ test('the stored mapping keeps the summary rows only when asked and only for a m
   assert.equal('summaryRows' in buildMapping('matrix', cells), false)
   assert.equal('summaryRows' in buildMapping('line_items', cells, summary), false)
   assert.equal('summaryRows' in buildMapping('matrix', cells, { thisRequest: [] }), false)
+})
+
+// Job 1319: Lots 1-9 and 17-25 are in Phase 1 (two buildings), Lots 10-16 in Phase 2.
+const jobLots = [
+  ...Array.from({ length: 9 }, (_, i) => ({ lot: String(i + 1), phase: '1' })),
+  ...Array.from({ length: 7 }, (_, i) => ({ lot: String(i + 10), phase: '2' })),
+  ...Array.from({ length: 9 }, (_, i) => ({ lot: String(i + 17), phase: '1' })),
+]
+
+test('a Lot finds its Phase through the Job, whatever zeros the PDF prints', () => {
+  const index = lotPhaseIndex(jobLots)
+
+  assert.deepEqual(phaseOfLot('01', index), { status: 'found', phase: '1' })
+  assert.deepEqual(phaseOfLot('12', index), { status: 'found', phase: '2' })
+  assert.deepEqual(phaseOfLot('99', index), { status: 'unknown', phase: '' })
+  assert.deepEqual(
+    phaseOfLot('1', lotPhaseIndex([{ lot: '1', phase: '1' }, { lot: '1', phase: '2' }])),
+    { status: 'several', phase: '' },
+  )
+  // The same Phase in two buildings is still one Phase for the Lot.
+  assert.equal(phaseOfLot('1', lotPhaseIndex([{ lot: '1', phase: '1' }, { lot: '01', phase: '1' }])).status, 'found')
+})
+
+test('without a printed Phase, the Lots decide by default and are stored under their Phase', () => {
+  const cells = ['01', '10', '17', '30'].map((lot, i) => cell(String(i), 1, 5, { phase: null, lot }))
+  const index = lotPhaseIndex(jobLots)
+
+  assert.deepEqual(initialPhaseMap(cells, ['1', '2'], index), { '': PHASE_BY_LOT })
+  assert.deepEqual(applyPhaseMap(cells, { '': PHASE_BY_LOT }, index).map((c) => c.phase), ['1', '2', '1', null])
+  // Choosing a Phase by hand still wins, and "Any Phase" leaves the cells as they are.
+  assert.deepEqual(applyPhaseMap(cells, { '': '2' }, index).map((c) => c.phase), ['2', '2', '2', '2'])
+  assert.deepEqual(applyPhaseMap(cells, { '': '' }, index).map((c) => c.phase), [null, null, null, null])
+})
+
+test('no suggestion by Lot when the Job cannot place any of them', () => {
+  const cells = [cell('1', 1, 5, { phase: null, lot: '99' })]
+
+  assert.deepEqual(initialPhaseMap(cells, ['1'], lotPhaseIndex(jobLots)), { '': '' })
+  assert.deepEqual(initialPhaseMap(cells, ['1']), { '': '' })
+  assert.deepEqual(applyPhaseMap(cells, { '': PHASE_BY_LOT }).map((c) => c.phase), [null])
+})
+
+test('what the Lots say lists each Phase, the Lots in several and the ones the Job lacks', () => {
+  const cells = ['01', '02', '10', '55'].map((lot, i) => cell(String(i), 1, 5, { phase: null, lot }))
+    .concat(cell('x', 1, 5, { phase: 'MDL', lot: '03' }))
+  const index = lotPhaseIndex([...jobLots, { lot: '2', phase: '2' }])
+  const found = describeLotPhases(cells, index)
+
+  assert.deepEqual(found.phases, [
+    { phase: '1', lots: ['01'] },
+    { phase: '2', lots: ['10'] },
+  ])
+  assert.deepEqual(found.several, ['02'])
+  assert.deepEqual(found.unknown, ['55'])
 })

@@ -16,7 +16,7 @@ import {
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded'
 import { loadTemplateAndPdf } from '../../release-templates/services/releaseTemplateLoader.js'
 import { downloadReleasePdf } from '../../release-templates/services/releaseTemplateRepository.js'
-import { listJobPhases } from '../services/paymentScheduleRepository.js'
+import { listJobLots, listJobPhases } from '../services/paymentScheduleRepository.js'
 import { describeTemplateStatus } from '../services/paymentScheduleRecord.js'
 import PaymentScheduleEditor from './PaymentScheduleEditor.jsx'
 
@@ -77,6 +77,8 @@ export default function PaymentScheduleReviewDialog({
           // Without the Job's Phases the review still works; it only cannot
           // offer them.
           jobPhases: await listJobPhases(job.id).catch(() => []),
+          // The Lots tell the Phase of a schedule that prints none.
+          jobLots: await listJobLots(job.id).catch(() => []),
         })),
       }
     }
@@ -172,6 +174,7 @@ export default function PaymentScheduleReviewDialog({
             template={loaded.template}
             file={loaded.file}
             jobPhases={loaded.jobPhases}
+            jobLots={loaded.jobLots}
             canManage={canManage}
             onConfirm={handleConfirm}
             onReanalyze={handleReanalyze}

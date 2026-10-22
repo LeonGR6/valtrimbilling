@@ -18,18 +18,50 @@ import {
 } from '@mui/material'
 import RestoreRoundedIcon from '@mui/icons-material/RestoreRounded'
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
+import { formatLotRange } from '../../draw-invoice/utils/drawPackages.js'
 import {
   describeIssue,
+  describeLotPhases,
   describeTotals,
   drawLabel,
   formatMoney,
   LAYOUTS,
   lotRows,
   normalizeCodeKey,
+  PHASE_BY_LOT,
   printedPhases,
   summarizeCells,
   visibleIssues,
 } from '../services/paymentScheduleRecord.js'
+
+/** One option per Phase code: two buildings with the same Phase are a single choice. */
+function phaseOptions(jobPhases) {
+  const byCode = new Map()
+  for (const phase of jobPhases) {
+    const key = normalizeCodeKey(phase.code)
+    const entry = byCode.get(key) ?? { code: phase.code, buildings: [] }
+    if (phase.building) entry.buildings.push(phase.building)
+    byCode.set(key, entry)
+  }
+  return [...byCode.values()]
+}
+
+/** What the Lots say about a schedule that prints no Phase, in a few short lines. */
+function LotPhaseSummary({ lots }) {
+  return (
+    <Stack component="span" spacing={0.25} sx={{ display: 'flex' }}>
+      {lots.phases.map(({ phase, lots: phaseLots }) => (
+        <span key={phase}>Phase {phase}: Lots {formatLotRange(phaseLots)}</span>
+      ))}
+      {lots.several.length > 0 && (
+        <span>Lots {formatLotRange(lots.several)} are in more than one Phase, so they get none.</span>
+      )}
+      {lots.unknown.length > 0 && (
+        <span>Lots {formatLotRange(lots.unknown)} are not in this Job.</span>
+      )}
+    </Stack>
+  )
+}
 
 function Section({ title, children }) {
   return (
@@ -78,6 +110,7 @@ export default function PaymentScheduleSummaryPanel({
   selectedLotId,
   phaseMap,
   jobPhases,
+  lotPhases,
   unmatchedPhases,
   summaryRows,
   fillSummary,
@@ -105,6 +138,10 @@ export default function PaymentScheduleSummaryPanel({
   const drawNumbers = [...new Set(cells.map((cell) => cell.draw))].sort((a, b) => a - b)
   const selectedCell = cells.find((cell) => cell.key === selectedKey) ?? null
   const printed = printedPhases(cells)
+  const options = phaseOptions(jobPhases)
+  // Only the Lots the PDF gives no Phase for.
+  const lotsByPhase = describeLotPhases(cells, lotPhases)
+  const canChooseByLot = lotsByPhase.phases.length > 0
 
   return (
     <Stack spacing={2.5}>
@@ -203,7 +240,18 @@ export default function PaymentScheduleSummaryPanel({
         </Typography>
         {printed.map((phase) => {
           const chosen = phaseMap[phase] ?? ''
-          const suggested = chosen !== '' && normalizeCodeKey(chosen) !== normalizeCodeKey(phase)
+          const byLot = chosen === PHASE_BY_LOT
+          const suggested = !byLot && chosen !== '' && normalizeCodeKey(chosen) !== normalizeCodeKey(phase)
+          let helperText
+          if (byLot) {
+            helperText = <LotPhaseSummary lots={lotsByPhase} />
+          } else if (phase === '' && chosen === '') {
+            helperText = canChooseByLot
+              ? 'The Lots tell the Phases of this Job. Choose “By Lot” to use them, or leave this empty to match Lots of any Phase.'
+              : 'The document prints no Phase. Leave this empty to match Lots of any Phase.'
+          } else if (suggested) {
+            helperText = 'Suggested from the printed code. Check it.'
+          }
           return (
             <TextField
               key={phase || 'none'}
@@ -213,16 +261,17 @@ export default function PaymentScheduleSummaryPanel({
               value={chosen}
               disabled={readOnly}
               onChange={(event) => onPhaseChange(phase, event.target.value)}
-              helperText={phase === '' && chosen === ''
-                ? 'The document prints no Phase. Leave this empty to match Lots of any Phase.'
-                : suggested ? 'Suggested from the printed code. Check it.' : undefined}
+              helperText={helperText}
             >
               <MenuItem value="">
                 {phase === '' ? 'Any Phase' : 'Keep as printed'}
               </MenuItem>
-              {jobPhases.map((jobPhase) => (
-                <MenuItem key={jobPhase.code} value={jobPhase.code}>
-                  {jobPhase.code}{jobPhase.building ? ` · ${jobPhase.building}` : ''}
+              {phase === '' && canChooseByLot && (
+                <MenuItem value={PHASE_BY_LOT}>By Lot, from the Sequence Sheet</MenuItem>
+              )}
+              {options.map((option) => (
+                <MenuItem key={option.code} value={option.code}>
+                  {option.code}{option.buildings.length > 0 ? ` · ${option.buildings.join(', ')}` : ''}
                 </MenuItem>
               ))}
             </TextField>

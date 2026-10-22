@@ -135,17 +135,92 @@ export function printedPhases(cells) {
   return [...new Set(cells.map((cell) => cell.phase ?? ''))]
 }
 
-/** One suggestion per printed Phase, as the starting point of the mapping. */
-export function initialPhaseMap(cells, jobPhaseCodes) {
+// A schedule often prints no Phase at all, just Lots. The Job already says which Phase
+// each Lot is in (its Sequence Sheet), so the Lots tell the Phases: each Lot goes to the
+// Phase that has it, as long as only one does.
+
+/** The choice that sends every cell with no printed Phase to the Phase of its Lot. */
+export const PHASE_BY_LOT = '@lots'
+
+/**
+ * Which Phases have each Lot of the Job. `jobLots`: `{ lot, phase }`, the Lot number and
+ * the code of its Phase. Keyed by the normalized Lot, so "01" finds Lot 1.
+ */
+export function lotPhaseIndex(jobLots) {
+  const index = new Map()
+  for (const { lot, phase } of jobLots ?? []) {
+    const key = normalizeCodeKey(lot)
+    if (key === '' || !phase) continue
+    const codes = index.get(key) ?? []
+    if (!codes.some((code) => normalizeCodeKey(code) === normalizeCodeKey(phase))) codes.push(phase)
+    index.set(key, codes)
+  }
+  return index
+}
+
+/**
+ * The Phase a Lot is in: `found` with its code, `several` when more than one Phase has a
+ * Lot of that number (the Lot alone cannot tell), `unknown` when the Job has no such Lot.
+ */
+export function phaseOfLot(lot, index) {
+  const codes = index?.get(normalizeCodeKey(lot)) ?? []
+  if (codes.length === 1) return { status: 'found', phase: codes[0] }
+  return { status: codes.length === 0 ? 'unknown' : 'several', phase: '' }
+}
+
+/**
+ * What the Lots say about the cells that print no Phase: the Lots of each Phase, those that
+ * several Phases have and those the Job does not have. In order of appearance.
+ */
+export function describeLotPhases(cells, index) {
+  const phases = new Map()
+  const several = new Set()
+  const unknown = new Set()
+  for (const cell of cells) {
+    if ((cell.phase ?? '') !== '') continue
+    const found = phaseOfLot(cell.lot, index)
+    if (found.status === 'found') {
+      const key = normalizeCodeKey(found.phase)
+      const entry = phases.get(key) ?? { phase: found.phase, lots: new Set() }
+      entry.lots.add(String(cell.lot))
+      phases.set(key, entry)
+    } else {
+      (found.status === 'several' ? several : unknown).add(String(cell.lot))
+    }
+  }
+  return {
+    phases: [...phases.values()].map(({ phase, lots }) => ({ phase, lots: [...lots] })),
+    several: [...several],
+    unknown: [...unknown],
+  }
+}
+
+/**
+ * One suggestion per printed Phase, as the starting point of the mapping. Where the PDF
+ * prints no Phase, the Lots decide when the Job's Lots tell at least one of them.
+ */
+export function initialPhaseMap(cells, jobPhaseCodes, lotPhases = null) {
   return Object.fromEntries(
-    printedPhases(cells).map((printed) => [printed, suggestJobPhase(printed, jobPhaseCodes)]),
+    printedPhases(cells).map((printed) => {
+      if (printed === '') {
+        return [printed, describeLotPhases(cells, lotPhases).phases.length > 0 ? PHASE_BY_LOT : '']
+      }
+      return [printed, suggestJobPhase(printed, jobPhaseCodes)]
+    }),
   )
 }
 
-/** Stores each cell under the Job Phase chosen for its printed Phase. */
-export function applyPhaseMap(cells, phaseMap) {
+/**
+ * Stores each cell under the Job Phase chosen for its printed Phase. A cell sent "by Lot"
+ * takes the Phase of its Lot, and stays without one when the Lot does not tell.
+ */
+export function applyPhaseMap(cells, phaseMap, lotPhases = null) {
   return cells.map((cell) => {
     const target = phaseMap[cell.phase ?? '']
+    if (target === PHASE_BY_LOT) {
+      const found = phaseOfLot(cell.lot, lotPhases)
+      return found.status === 'found' ? { ...cell, phase: found.phase } : cell
+    }
     return target ? { ...cell, phase: target } : cell
   })
 }

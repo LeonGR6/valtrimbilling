@@ -116,3 +116,28 @@ export async function listJobPhases(jobId) {
     isActive: row.is_active,
   }))
 }
+
+/** The Lots of a Job with the code of their Phase: what tells a schedule's Lots apart. */
+export async function listJobLots(jobId) {
+  const client = await requireSupabase()
+  const [lots, phases] = await Promise.all([
+    client
+      .from('lots')
+      .select('lot_number, phase_id, is_utility_building')
+      .eq('job_id', Number(jobId)),
+    client
+      .from('phases')
+      .select('id, code')
+      .eq('job_id', Number(jobId))
+      .eq('is_active', true),
+  ])
+
+  const failure = lots.error ?? phases.error
+  if (failure) throw new Error(failure.message || 'The Job Lots could not be loaded.', { cause: failure })
+
+  const codeById = new Map((phases.data ?? []).map((row) => [row.id, row.code]))
+  return (lots.data ?? [])
+    // A utility building has no Lot number of its own.
+    .filter((row) => !row.is_utility_building && row.lot_number && codeById.has(row.phase_id))
+    .map((row) => ({ lot: row.lot_number, phase: codeById.get(row.phase_id) }))
+}

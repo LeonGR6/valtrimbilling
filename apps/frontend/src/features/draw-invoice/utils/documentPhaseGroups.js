@@ -5,7 +5,8 @@
 // is read from what was already analyzed:
 //   - a Purchase Order: the Phase of the Lots its lines were matched with;
 //   - a Payment Schedule: the Phase of its cells (the Job Phase a reviewer chose, or the
-//     one suggested from the Phase printed in the PDF).
+//     one suggested from the Phase printed in the PDF). A schedule that prints none is
+//     placed by its Lots, which the Sequence Sheet already assigns to a Phase.
 // A document that touches several Phases is listed in each of them. One whose Phase
 // cannot be told goes to "Not matched to a phase", with the reason.
 
@@ -31,7 +32,7 @@ export function phaseLabel(code) {
 
 /**
  * The Phases of a Job, one per code (the same Phase in several buildings is one), in
- * the order of the Sequence Sheet.
+ * the order of the Sequence Sheet, each with its Lot numbers.
  */
 export function jobPhaseList(job) {
   const seen = new Map()
@@ -43,8 +44,15 @@ export function jobPhaseList(job) {
       code: String(phase.name ?? phase.code),
       label: phaseLabel(phase.name ?? phase.code),
       ids: [],
+      lots: [],
     }
     entry.ids.push(Number(phase.id))
+    // A utility building has no Lot number of its own.
+    for (const lot of phase.lots ?? []) {
+      if (!lot.isUtilityBuilding && String(lot.lotNumber ?? '').trim() !== '') {
+        entry.lots.push(String(lot.lotNumber).trim())
+      }
+    }
     seen.set(key, entry)
   }
   return [...seen.values()]
@@ -153,17 +161,39 @@ function printedPhaseOf(cell) {
   return cell.phase == null ? '' : String(cell.phase).trim()
 }
 
+/** Which Phases (by key) have each Lot of the Job, keyed by the normalized Lot number. */
+function lotPhaseKeys(phases) {
+  const index = new Map()
+  for (const phase of phases) {
+    for (const lot of phase.lots ?? []) {
+      const key = normalizeCodeKey(lot)
+      const keys = index.get(key) ?? []
+      if (!keys.includes(phase.key)) keys.push(phase.key)
+      index.set(key, keys)
+    }
+  }
+  return index
+}
+
 /**
  * The Phases a Payment Schedule covers, from its cells: the Job Phase of a confirmed
  * schedule, or the suggestion for the Phase printed in an unconfirmed one. A schedule
- * that prints no Phase belongs to the only Phase of a Job that has one. Cells whose
- * Phase cannot be told are counted apart.
+ * that prints no Phase belongs to the only Phase of a Job that has one; in a Job with
+ * several, each Lot goes to the Phase that has it, as long as only one does. Cells whose
+ * Phase cannot be told are counted apart:
+ *  - `inferred`: Phases reached through the Lots, not through a printed Phase;
+ *  - `severalLots`: Lots that more than one Phase has;
+ *  - `unknownLots`: Lots the Job does not have.
  */
 export function schedulePhaseCoverage(template, phases) {
   const confirmed = template.status === 'confirmed' && template.mapping?.cells
   const cells = confirmed ? template.mapping.cells : template.detectedCells ?? []
   const codes = phases.map((phase) => phase.code)
+  const byLot = lotPhaseKeys(phases)
   const lots = new Map()
+  const inferred = new Set()
+  const severalLots = new Set()
+  const unknownLots = new Set()
   let unmatched = 0
   let unknownPhase = null
 
@@ -171,7 +201,20 @@ export function schedulePhaseCoverage(template, phases) {
     const printed = printedPhaseOf(cell)
     let key
     if (printed === '') {
-      key = phases.length === 1 ? phases[0].key : null
+      if (phases.length === 1) {
+        key = phases[0].key
+      } else {
+        const candidates = byLot.get(normalizeCodeKey(cell.lot)) ?? []
+        key = null
+        if (candidates.length === 1) {
+          key = candidates[0]
+          inferred.add(key)
+        } else if (byLot.size > 0) {
+          // A Job whose Sequence Sheet has no Lots yet cannot say anything about them.
+          if (candidates.length === 0) unknownLots.add(String(cell.lot))
+          else severalLots.add(String(cell.lot))
+        }
+      }
     } else {
       const code = confirmed ? printed : suggestJobPhase(printed, codes)
       const phase = code === '' ? null : phases.find((candidate) => candidate.key === phaseKey(code))
@@ -188,7 +231,15 @@ export function schedulePhaseCoverage(template, phases) {
     lots.set(key, set)
   }
 
-  return { lots, unmatched, unknownPhase, cellCount: cells.length }
+  return {
+    lots,
+    unmatched,
+    unknownPhase,
+    cellCount: cells.length,
+    inferred,
+    severalLots: [...severalLots],
+    unknownLots: [...unknownLots],
+  }
 }
 
 const SCHEDULE_REASONS = {
@@ -227,13 +278,11 @@ export function paymentScheduleGroups({ documents, phases, templates = {} }) {
 
     const coverage = schedulePhaseCoverage(template, phases)
     if (coverage.lots.size === 0) {
-      unassigned.push({
-        document,
-        reason: coverage.unknownPhase
-          ? `Its Phase (${coverage.unknownPhase}) is not in this Job`
-          : 'It prints no Phase. Choose one when you review it',
-        tone: 'warning',
-      })
+      let reason = 'It prints no Phase. Choose one when you review it'
+      if (coverage.unknownPhase) reason = `Its Phase (${coverage.unknownPhase}) is not in this Job`
+      else if (coverage.severalLots.length > 0) reason = 'Its Lots are in more than one Phase. Choose one when you review it'
+      else if (coverage.unknownLots.length > 0) reason = 'None of its Lots is in this Job'
+      unassigned.push({ document, reason, tone: 'warning' })
       continue
     }
 
@@ -245,6 +294,12 @@ export function paymentScheduleGroups({ documents, phases, templates = {} }) {
         lots: [...coverage.lots.get(key)],
         alsoIn: keys.filter((other) => other !== key)
           .map((other) => phases.find((candidate) => candidate.key === other).label),
+        // The Phase came from the Lots, since the PDF prints none.
+        inferred: coverage.inferred.has(key),
+        // Said once, on the first Phase the schedule is listed in.
+        looseLots: key === keys[0]
+          ? { several: coverage.severalLots, unknown: coverage.unknownLots }
+          : { several: [], unknown: [] },
       }
       byPhase.set(key, [...(byPhase.get(key) ?? []), placement])
     }
@@ -255,6 +310,9 @@ export function paymentScheduleGroups({ documents, phases, templates = {} }) {
     const needsReview = placements.filter(({ template }) => template.status !== 'confirmed').length
     const lots = placements.flatMap((placement) => placement.lots)
     const empty = placements.length === 0
+    // Lots of the Phase that no schedule has.
+    const covered = new Set(lots.map(normalizeCodeKey))
+    const uncovered = empty ? [] : phase.lots.filter((lot) => !covered.has(normalizeCodeKey(lot)))
     return {
       key: phase.key,
       label: phase.label,
@@ -263,7 +321,8 @@ export function paymentScheduleGroups({ documents, phases, templates = {} }) {
       attention: needsReview,
       meta: empty
         ? 'No payment schedule yet'
-        : `${plural(placements.length, 'schedule', 'schedules')}, lots ${formatLotRange(lots)}`,
+        : `${plural(placements.length, 'schedule', 'schedules')}, lots ${formatLotRange(lots.map(normalizeCodeKey))}${
+          uncovered.length > 0 ? ` · no schedule for lots ${formatLotRange(uncovered.map(normalizeCodeKey))}` : ''}`,
       status: empty ? 'missing' : needsReview > 0 ? 'attention' : 'ok',
       statusLabel: empty ? 'Missing' : needsReview > 0 ? 'Needs review' : 'Ready',
     }

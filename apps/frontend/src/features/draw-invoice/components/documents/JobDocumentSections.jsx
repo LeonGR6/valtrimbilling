@@ -13,7 +13,10 @@ import AddRoundedIcon from '@mui/icons-material/AddRounded'
 import EditNoteRoundedIcon from '@mui/icons-material/EditNoteRounded'
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
 import { describeReleaseDocument } from '../../../release-templates/services/releaseTemplateRecord.js'
-import { describePaymentScheduleDocument } from '../../../payment-schedules/services/paymentScheduleRecord.js'
+import {
+  describePaymentScheduleDocument,
+  normalizeCodeKey,
+} from '../../../payment-schedules/services/paymentScheduleRecord.js'
 import { describePurchaseOrderDocument } from '../../../purchase-orders/services/purchaseOrderRecord.js'
 import {
   jobPhaseList,
@@ -57,6 +60,20 @@ function unmatchedChip(item) {
 
 function alsoIn(placement) {
   return placement.alsoIn.length > 0 ? `also in ${placement.alsoIn.join(', ')}` : null
+}
+
+// What a Payment Schedule's row says besides its Lots: the other Phases it is in, that
+// its Phase was told by its Lots, and the Lots that could not be placed.
+function scheduleNote(placement) {
+  const loose = placement.looseLots
+  const lots = (list) => formatLotRange(list.map(normalizeCodeKey))
+  const notes = [
+    alsoIn(placement),
+    placement.inferred ? 'Phase deduced from its Lots' : null,
+    loose.several.length > 0 ? `Lots ${lots(loose.several)} are in several Phases` : null,
+    loose.unknown.length > 0 ? `Lots ${lots(loose.unknown)} are not in this Job` : null,
+  ].filter(Boolean)
+  return notes.length > 0 ? notes.join(' · ') : null
 }
 
 function SectionEmpty({ type, required }) {
@@ -218,8 +235,8 @@ export default function JobDocumentSections({
       <DocumentRow
         key={`${document.id}-${placement ? 'placed' : 'loose'}`}
         {...baseRow(document)}
-        detail={placement ? `Lots ${formatLotRange(placement.lots)}` : null}
-        note={placement ? alsoIn(placement) : null}
+        detail={placement ? `Lots ${formatLotRange(placement.lots.map(normalizeCodeKey))}` : null}
+        note={placement ? scheduleNote(placement) : null}
         chips={[
           ...(info.layoutChip ? [{ label: info.layoutChip.label, title: info.layoutChip.title }] : []),
           ...(unmatched

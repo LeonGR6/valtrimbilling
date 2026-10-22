@@ -7,11 +7,13 @@ import {
   confirmPurchaseOrderHeader,
   importPurchaseOrderOptions,
   listPurchaseOrderAnalyses,
+  listPurchaseOrderFiles,
   listPurchaseOrderLineLots,
   listUncoveredOptions,
   rematchPurchaseOrders,
 } from '../services/purchaseOrderRepository.js'
-import { buildPurchaseOrderBacking } from '../services/purchaseOrderRecord.js'
+import { createJobDocumentSignedUrl } from '../../draw-invoice/services/jobDocumentsRepository.js'
+import { buildOptionOrderIndex, buildPurchaseOrderBacking } from '../services/purchaseOrderRecord.js'
 
 const NO_ANALYSES = {}
 
@@ -223,4 +225,66 @@ export function usePurchaseOrderLineLots(jobId, revision) {
   }, [jobId, wanted])
 
   return wanted !== null && loaded.key === wanted ? loaded.lotsByAnalysis : NO_LOTS.lotsByAnalysis
+}
+
+const NO_LINKS = { jobId: null, index: null, files: {} }
+
+/**
+ * The Purchase Orders behind the options of a Job, to show beside each option of the
+ * Sequence Sheet: `index.linesFor(...)` for the lines of an option, `files` for the PDF of
+ * each, and `openFile` to open one in a new tab. Information only: a failed load shows
+ * nothing. Pass a null `jobId` to load nothing.
+ */
+export function usePurchaseOrderOptionLinks(jobId) {
+  const { profile } = useAuth()
+  const userId = profile?.id ?? null
+  const wanted = jobId == null || !userId ? null : String(jobId)
+  const [loaded, setLoaded] = useState(NO_LINKS)
+  const [openingId, setOpeningId] = useState(null)
+  const [openError, setOpenError] = useState(null)
+
+  useEffect(() => {
+    if (wanted === null) return undefined
+
+    let cancelled = false
+    comparePurchaseOrders(wanted)
+      .then(async (lines) => {
+        const ids = [...new Set(lines.filter((line) => line.lotId !== null).map((line) => line.documentId))]
+        const files = await listPurchaseOrderFiles(ids).catch(() => ({}))
+        if (!cancelled) setLoaded({ jobId: wanted, index: buildOptionOrderIndex(lines), files })
+      })
+      .catch(() => {
+        if (!cancelled) setLoaded({ jobId: wanted, index: null, files: {} })
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [wanted])
+
+  const openFile = useCallback(async (file) => {
+    // The tab opens first, while the click still counts, and gets its address after.
+    const previewWindow = window.open('', '_blank')
+    if (previewWindow) previewWindow.opener = null
+    setOpeningId(file.id)
+    setOpenError(null)
+    try {
+      const signedUrl = await createJobDocumentSignedUrl(file)
+      if (previewWindow) previewWindow.location.href = signedUrl
+      else window.location.assign(signedUrl)
+    } catch (error) {
+      previewWindow?.close()
+      setOpenError(error.message)
+    } finally {
+      setOpeningId(null)
+    }
+  }, [])
+
+  const ready = wanted !== null && loaded.jobId === wanted
+  return useMemo(() => ({
+    index: ready ? loaded.index : null,
+    files: ready ? loaded.files : NO_LINKS.files,
+    openFile,
+    openingId,
+    openError,
+  }), [loaded, openError, openFile, openingId, ready])
 }

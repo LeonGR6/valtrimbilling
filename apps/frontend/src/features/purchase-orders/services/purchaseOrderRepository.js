@@ -225,3 +225,24 @@ export async function listPurchaseOrderLineLots(jobId) {
 
   return lotsByAnalysis
 }
+
+/** The name and place in Storage of Purchase Order PDFs, to open them from elsewhere. */
+export async function listPurchaseOrderFiles(documentIds) {
+  if (documentIds.length === 0) return {}
+
+  const client = await requireSupabase()
+  const { data, error } = await client
+    .from('job_documents')
+    .select('id, original_name, storage_bucket, storage_path')
+    .in('id', documentIds)
+  if (error) {
+    throw new Error(error.message || 'The Purchase Order files could not be loaded.', { cause: error })
+  }
+
+  return Object.fromEntries((data ?? []).map((row) => [row.id, {
+    id: row.id,
+    name: row.original_name,
+    bucket: row.storage_bucket,
+    storagePath: row.storage_path,
+  }]))
+}

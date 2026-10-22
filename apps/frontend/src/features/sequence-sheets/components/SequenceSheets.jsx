@@ -95,6 +95,9 @@ import PhasesTable from './PhasesTable.jsx'
 import LotOptionPicker from './LotOptionPicker.jsx'
 import { getPhaseRowCounts, getSelectedOptionCount } from '../utils/phaseCounts.js'
 import SequenceSheetEmailDialog from './SequenceSheetEmailDialog.jsx'
+import OptionOrderChip from '../../purchase-orders/components/OptionOrderChip.jsx'
+import { usePurchaseOrderOptionLinks } from '../../purchase-orders/hooks/usePurchaseOrders.js'
+import { countOptionsWithOrder } from '../../purchase-orders/services/purchaseOrderRecord.js'
 import OptionsChangeEmailDialog from '../../purchase-orders/components/OptionsChangeEmailDialog.jsx'
 import { describeSequenceSheetEmailsSent } from '../services/sequenceSheetEmailRecord.js'
 import { addedOptionChanges, removedOptionChanges } from '../services/sequenceSheetRecord.js'
@@ -135,6 +138,14 @@ function PhaseDetails({
   const buildingLabel = formatBuilding(phase.building)
   const selectedOptionCount = getSelectedOptionCount(phase)
   const rowCounts = getPhaseRowCounts(phase)
+  // The Purchase Orders behind each option; nothing shows while they load or if they fail.
+  const orders = usePurchaseOrderOptionLinks(job.id)
+  const optionsOf = (lot) => (lot.isUtilityBuilding
+    ? []
+    : (getPlan(job, lot.planId)?.options ?? []).filter((option) => lot.optionIds?.includes(option.id)))
+  const optionsWithOrder = orders.index
+    ? countOptionsWithOrder(orders.index, (phase.lots ?? []).filter((lot) => !lot.isUtilityBuilding), optionsOf)
+    : 0
 
   return (
     <Box sx={{ minHeight: '100%', bgcolor: 'background.default' }}>
@@ -165,6 +176,12 @@ function PhaseDetails({
                 label: selectedOptionCount === 1 ? 'selected option' : 'selected options',
                 value: selectedOptionCount,
               },
+              ...(optionsWithOrder > 0
+                ? [{
+                  label: optionsWithOrder === 1 ? 'with a purchase order' : 'with purchase orders',
+                  value: optionsWithOrder,
+                }]
+                : []),
             ]}
           />
         )}
@@ -223,6 +240,9 @@ function PhaseDetails({
             Suggestions only appear for Phases with Calendar work.
           </Alert>
         )}
+        {orders.openError && (
+          <Alert severity="error" sx={{ mb: 2.5 }}>{orders.openError}</Alert>
+        )}
         <Box
           sx={{
             bgcolor: 'background.paper',
@@ -238,6 +258,7 @@ function PhaseDetails({
             </Typography>
             <Typography variant="body2" color="text.secondary">
               Lots and Utility rows keep their orientation. Utility rows use only one Plan Price.
+              {optionsWithOrder > 0 && ' Options marked with a receipt have a Purchase Order: click one to see it.'}
             </Typography>
           </Box>
           <TableContainer>
@@ -290,11 +311,18 @@ function PhaseDetails({
                         ) : options.length > 0 ? (
                           <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: 'wrap' }}>
                             {options.map((option) => (
-                              <Chip
+                              <OptionOrderChip
                                 key={option.id}
-                                size="small"
-                                variant="outlined"
-                                label={`${option.code} · ${option.description}`}
+                                option={option}
+                                lot={lot}
+                                lines={orders.index?.linesFor({
+                                  lotId: lot.id,
+                                  optionId: option.id,
+                                  optionCode: option.code,
+                                }) ?? []}
+                                files={orders.files}
+                                openingId={orders.openingId}
+                                onOpenFile={orders.openFile}
                               />
                             ))}
                           </Stack>

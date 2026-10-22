@@ -556,3 +556,74 @@ export function countUnbacked(backing, rows) {
     return state === 'price_differs' || state === 'not_in_po'
   }).length
 }
+
+// --- The Purchase Orders behind one option of a Lot ---------------------------
+
+/**
+ * Looks up the Purchase Order lines that print an option of a Lot, to show them next to
+ * the option in the Sequence Sheet. A line belongs to an option when the Lot and the
+ * option are the ones it was matched with, or, failing that, when the Lot and the code
+ * agree. An option can have more than one line (two Purchase Orders for the same Lot).
+ */
+export function buildOptionOrderIndex(lines) {
+  const byOptionId = new Map()
+  const byCode = new Map()
+  const push = (map, key, line) => {
+    const list = map.get(key) ?? []
+    list.push(line)
+    map.set(key, list)
+  }
+
+  for (const line of lines) {
+    if (line.lotId === null) continue
+    if (line.planOptionId !== null) push(byOptionId, `${line.lotId}|${line.planOptionId}`, line)
+    push(byCode, `${line.lotId}|${optionCodeKey(line.optionCode)}`, line)
+  }
+
+  // Newest revision first; the stored order breaks a tie.
+  const newestFirst = (left, right) =>
+    String(right.revisedOn ?? right.poDate ?? '').localeCompare(String(left.revisedOn ?? left.poDate ?? ''))
+    || left.lineId - right.lineId
+
+  return {
+    isEmpty: byCode.size === 0,
+    linesFor({ lotId, optionId, optionCode }) {
+      const matched = byOptionId.get(`${Number(lotId)}|${Number(optionId)}`)
+        ?? byCode.get(`${Number(lotId)}|${optionCodeKey(optionCode)}`)
+        ?? []
+      return [...matched].sort(newestFirst)
+    },
+  }
+}
+
+/** How many of the selected options of these Lots have a Purchase Order. */
+export function countOptionsWithOrder(index, lots, optionsOf) {
+  let count = 0
+  for (const lot of lots) {
+    for (const option of optionsOf(lot)) {
+      if (index.linesFor({ lotId: lot.id, optionId: option.id, optionCode: option.code }).length > 0) {
+        count += 1
+      }
+    }
+  }
+  return count
+}
+
+const ORDER_PRICE_STATUSES = new Set(['PRICE_DIFF'])
+
+/** What the card of one Purchase Order line says. */
+export function describeOptionOrder(line, formatMoney) {
+  const status = COMPARISON_STATUSES[line.status] ?? COMPARISON_STATUSES.MATCH
+  const difference = ORDER_PRICE_STATUSES.has(line.status) && line.poUnitPrice !== null
+    ? `The PDF prints ${formatMoney(line.poUnitPrice)}${
+      line.systemPrice === null ? '.' : `; this Lot bills ${formatMoney(line.systemPrice)}.`}`
+    : null
+
+  return {
+    workOrderNo: line.workOrderNo || null,
+    referenceNo: line.referenceNo || null,
+    quantity: line.quantity,
+    status: { label: status.label, color: status.color },
+    hint: [status.hint, difference].filter(Boolean).join(' '),
+  }
+}

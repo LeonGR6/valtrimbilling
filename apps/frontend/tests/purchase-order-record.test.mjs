@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
+  buildOptionOrderIndex,
+  countOptionsWithOrder,
   describeHeaderMatch,
+  describeOptionOrder,
   describePurchaseOrderDocument,
   groupWorkOrders,
   priceDifference,
@@ -433,4 +436,73 @@ test('the email starts with Purchasing and the Job Coordinator, and the user can
   assert.match(describeMissingRoles(['Purchasing']), /Purchasing has no email on file/)
   assert.match(describeMissingRoles(['Purchasing', 'Job Coordinator']), /Purchasing and Job Coordinator have no email/)
   assert.equal(describeOptionsEmailSent({ recipients: ['a@b.com', 'c@d.com'] }), 'Email sent to a@b.com, c@d.com.')
+})
+
+// --- The Purchase Orders behind one option of a Lot ---
+
+const orderLine = (lineId, overrides = {}) => ({
+  lineId,
+  documentId: 'doc-1',
+  workOrderNo: '4419',
+  referenceNo: '88213',
+  poDate: '2026-09-01',
+  revisedOn: null,
+  optionCode: 'C-101',
+  quantity: 1,
+  poUnitPrice: 250,
+  systemPrice: 250,
+  lotId: 27,
+  planOptionId: 9,
+  status: 'MATCH',
+  ...overrides,
+})
+
+test('an option finds its Purchase Order by the option it was matched with, else by code', () => {
+  const index = buildOptionOrderIndex([
+    orderLine(1),
+    orderLine(2, { lotId: 28, planOptionId: null, optionCode: 'c 102' }),
+    orderLine(3, { lotId: null }),
+  ])
+
+  assert.equal(index.isEmpty, false)
+  assert.deepEqual(index.linesFor({ lotId: 27, optionId: 9, optionCode: 'ZZ' }).map((l) => l.lineId), [1])
+  assert.deepEqual(index.linesFor({ lotId: 27, optionId: 4, optionCode: 'C-101' }).map((l) => l.lineId), [1])
+  assert.deepEqual(index.linesFor({ lotId: 28, optionId: 5, optionCode: 'C-102' }).map((l) => l.lineId), [2])
+  // Another Lot with the same option, an option no Purchase Order prints, and a line of no Lot.
+  assert.deepEqual(index.linesFor({ lotId: 29, optionId: 9, optionCode: 'C-101' }), [])
+  assert.deepEqual(index.linesFor({ lotId: 27, optionId: 8, optionCode: 'X-1' }), [])
+  assert.equal(buildOptionOrderIndex([orderLine(3, { lotId: null })]).isEmpty, true)
+})
+
+test('an option with several Purchase Orders lists the newest revision first', () => {
+  const index = buildOptionOrderIndex([
+    orderLine(1, { revisedOn: null, poDate: '2026-08-01' }),
+    orderLine(2, { documentId: 'doc-2', revisedOn: '2026-09-15' }),
+  ])
+
+  assert.deepEqual(index.linesFor({ lotId: 27, optionId: 9, optionCode: 'C-101' }).map((l) => l.lineId), [2, 1])
+})
+
+test('the options with an order are counted over the selected ones of the Lots', () => {
+  const index = buildOptionOrderIndex([orderLine(1), orderLine(2, { lotId: 28, planOptionId: 10, optionCode: 'D-1' })])
+  const lots = [{ id: 27 }, { id: 28 }, { id: 29 }]
+  const optionsOf = () => [{ id: 9, code: 'C-101' }, { id: 10, code: 'D-1' }]
+
+  assert.equal(countOptionsWithOrder(index, lots, optionsOf), 2)
+  assert.equal(countOptionsWithOrder(index, [], optionsOf), 0)
+})
+
+test('an order card says its numbers, its status and, when the price differs, both prices', () => {
+  const money = (value) => `$${value.toFixed(2)}`
+  const match = describeOptionOrder(orderLine(1), money)
+  const differs = describeOptionOrder(orderLine(2, { status: 'PRICE_DIFF', poUnitPrice: 300 }), money)
+  const unnumbered = describeOptionOrder(orderLine(3, { workOrderNo: '', referenceNo: null }), money)
+
+  assert.equal(match.workOrderNo, '4419')
+  assert.deepEqual(match.status, { label: 'Matches', color: 'success' })
+  assert.doesNotMatch(match.hint, /\$/)
+  assert.deepEqual(differs.status, { label: 'Price differs', color: 'warning' })
+  assert.match(differs.hint, /The PDF prints \$300\.00; this Lot bills \$250\.00\./)
+  assert.equal(unnumbered.workOrderNo, null)
+  assert.equal(unnumbered.referenceNo, null)
 })

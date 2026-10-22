@@ -7,6 +7,7 @@ import {
   confirmPurchaseOrderHeader,
   importPurchaseOrderOptions,
   listPurchaseOrderAnalyses,
+  listPurchaseOrderLineLots,
   listUncoveredOptions,
   rematchPurchaseOrders,
 } from '../services/purchaseOrderRepository.js'
@@ -190,4 +191,36 @@ export function usePurchaseOrderBacking(jobId) {
   }, [wanted])
 
   return wanted !== null && loaded.jobId === wanted ? loaded.backing : null
+}
+
+const NO_LOTS = { jobId: null, lotsByAnalysis: new Map() }
+
+/**
+ * The Lot and Phase of every stored line of a Job's Purchase Orders, by analysis, to
+ * place each PDF in its Phase. Information only: a failed load shows nothing. Pass a null
+ * `jobId` to load nothing; it loads again whenever `revision` changes.
+ */
+export function usePurchaseOrderLineLots(jobId, revision) {
+  const { profile } = useAuth()
+  const userId = profile?.id ?? null
+  const [loaded, setLoaded] = useState(NO_LOTS)
+  const wanted = jobId == null || !userId ? null : `${jobId}:${revision}`
+
+  useEffect(() => {
+    if (wanted === null) return undefined
+
+    let cancelled = false
+    listPurchaseOrderLineLots(jobId)
+      .then((lotsByAnalysis) => {
+        if (!cancelled) setLoaded({ key: wanted, lotsByAnalysis })
+      })
+      .catch(() => {
+        if (!cancelled) setLoaded({ key: wanted, lotsByAnalysis: NO_LOTS.lotsByAnalysis })
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [jobId, wanted])
+
+  return wanted !== null && loaded.key === wanted ? loaded.lotsByAnalysis : NO_LOTS.lotsByAnalysis
 }

@@ -31,9 +31,9 @@ import { usePaymentScheduleTemplates } from '../../../payment-schedules/hooks/us
 import { isPaymentScheduleDocumentType } from '../../../payment-schedules/services/paymentScheduleRecord.js'
 import {
   usePurchaseOrderComparison,
+  usePurchaseOrderLineLots,
   usePurchaseOrders,
 } from '../../../purchase-orders/hooks/usePurchaseOrders.js'
-import { summarizeByDocument } from '../../../purchase-orders/services/purchaseOrderRecord.js'
 import { summarizeJobDocumentRequirements } from '../../services/jobDocumentRecord.js'
 import {
   filterJobsForDocuments,
@@ -41,10 +41,9 @@ import {
   jobDocumentCommunityOptions,
   sortJobsMissingFirst,
 } from '../../utils/jobDocumentFilters.js'
-import DocumentCategoryCard from './DocumentCategoryCard.jsx'
 import DocumentDeleteDialog from './DocumentDeleteDialog.jsx'
 import DocumentUploadDialog from './DocumentUploadDialog.jsx'
-import { DOCUMENT_TYPES } from './jobDocumentTypes.js'
+import JobDocumentSections from './JobDocumentSections.jsx'
 
 // Loaded on demand: it brings the PDF viewer, which most visits never need.
 const ReleaseTemplateReviewDialog = lazy(
@@ -104,8 +103,8 @@ export default function JobDocumentsCatalog({ jobs, documentState }) {
     false,
     (value) => typeof value === 'boolean',
   )
-  // undefined = not chosen yet: the first Job on screen (one that still lacks documents, if any) opens.
-  const [expandedJobId, setExpandedJobId] = useState(undefined)
+  // Every Job starts collapsed: opening one is the user's choice.
+  const [expandedJobId, setExpandedJobId] = useState(null)
   const [uploadTarget, setUploadTarget] = useState(null)
   const [deleteTarget, setDeleteTarget] = useState(null)
   const [noticeEditorJob, setNoticeEditorJob] = useState(null)
@@ -217,12 +216,10 @@ export default function JobDocumentsCatalog({ jobs, documentState }) {
     missingOnly ? jobsMissingRequirements : scopedJobs,
     isMissingDocuments,
   )
-  const openJobId = expandedJobId === undefined
-    ? visibleJobs[0]?.id ?? null
-    : expandedJobId
-  // The cards of the open Job say how many options of each Purchase Order need a
-  // look. Only that Job is compared, and only when it has a Purchase Order that
-  // was analyzed.
+  const openJobId = expandedJobId
+  // The Purchase Orders of the open Job are placed in their Phase and say how many of
+  // their options need a look. Only that Job is read, and only when it has a Purchase
+  // Order that was analyzed.
   const openJobHasAnalyzedPurchaseOrder = openJobId !== null
     && (documentsByJob[String(openJobId)] ?? []).some((document) =>
       purchaseOrders.analysesByDocumentId[document.id]?.status === 'analyzed')
@@ -230,9 +227,9 @@ export default function JobDocumentsCatalog({ jobs, documentState }) {
     openJobHasAnalyzedPurchaseOrder ? openJobId : null,
     purchaseOrders.revision,
   )
-  const purchaseOrderSummaries = useMemo(
-    () => summarizeByDocument(purchaseOrderComparison.lines),
-    [purchaseOrderComparison.lines],
+  const purchaseOrderLots = usePurchaseOrderLineLots(
+    openJobHasAnalyzedPurchaseOrder ? openJobId : null,
+    purchaseOrders.revision,
   )
 
   const handleAddDocuments = async (files) => {
@@ -513,57 +510,48 @@ export default function JobDocumentsCatalog({ jobs, documentState }) {
                   id={`job-${job.id}-documents`}
                   sx={{ p: { xs: 2, sm: 2.5 } }}
                 >
-                  <Box
-                    sx={{
-                      display: 'grid',
-                      gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))',
-                      gap: 2,
-                      alignItems: 'stretch',
-                    }}
-                  >
-                    {DOCUMENT_TYPES.map((type) => (
-                      <DocumentCategoryCard
-                        key={type.key}
-                        type={type}
-                        documents={documents.filter((document) => document.typeKey === type.key)}
-                        required={requiredTypeKeys.includes(type.key)}
-                        canManage={canManageJobDocuments && job.isActive !== false}
-                        openingDocumentId={openingDocumentId}
-                        deletingDocumentId={deletingDocumentId}
-                        templatesByDocument={releaseTemplates.templatesByDocumentId}
-                        analyzingDocumentId={releaseTemplates.analyzingDocumentId}
-                        scheduleTemplatesByDocument={scheduleTemplates.templatesByDocumentId}
-                        analyzingScheduleDocumentId={scheduleTemplates.analyzingDocumentId}
-                        purchaseOrderAnalyses={purchaseOrders.analysesByDocumentId}
-                        analyzingPurchaseOrderId={purchaseOrders.analyzingDocumentId}
-                        purchaseOrderSummaries={isExpanded ? purchaseOrderSummaries : {}}
-                        onReviewPurchaseOrder={(document) => openTemplateReview([{ job, document, kind: 'purchase-order' }])}
-                        onReviewTemplate={(document) => openTemplateReview([{ job, document, kind: 'release' }])}
-                        onReviewSchedule={(document) => openTemplateReview([{ job, document, kind: 'schedule' }])}
-                        onFillNotice={() => setNoticeEditorJob(job)}
-                        onAdd={() => setUploadTarget({ job, type })}
-                        onDelete={(document) => {
-                          setDeleteError(null)
-                          setDeleteTarget({
-                            job,
-                            type,
-                            document,
-                            template: (
-                              isPaymentScheduleDocumentType(document.documentType)
-                                ? scheduleTemplates.templatesByDocumentId[document.id]
-                                : releaseTemplates.templatesByDocumentId[document.id]
-                            ) ?? null,
-                            isOnlyRequiredDocument:
-                              requiredTypeKeys.includes(type.key)
-                              && documents.filter(
-                                (candidate) => candidate.typeKey === type.key,
-                              ).length === 1,
-                          })
-                        }}
-                        onOpen={openJobDocument}
-                      />
-                    ))}
-                  </Box>
+                  {isExpanded && (
+                    <JobDocumentSections
+                      job={job}
+                      documents={documents}
+                      requiredTypeKeys={requiredTypeKeys}
+                      canManage={canManageJobDocuments && job.isActive !== false}
+                      openingDocumentId={openingDocumentId}
+                      deletingDocumentId={deletingDocumentId}
+                      releaseTemplates={releaseTemplates.templatesByDocumentId}
+                      analyzingReleaseId={releaseTemplates.analyzingDocumentId}
+                      scheduleTemplates={scheduleTemplates.templatesByDocumentId}
+                      analyzingScheduleId={scheduleTemplates.analyzingDocumentId}
+                      purchaseOrderAnalyses={purchaseOrders.analysesByDocumentId}
+                      analyzingPurchaseOrderId={purchaseOrders.analyzingDocumentId}
+                      purchaseOrderComparison={purchaseOrderComparison.lines}
+                      purchaseOrderLots={purchaseOrderLots}
+                      onAdd={(type) => setUploadTarget({ job, type })}
+                      onOpen={openJobDocument}
+                      onFillNotice={() => setNoticeEditorJob(job)}
+                      onReviewTemplate={(document) => openTemplateReview([{ job, document, kind: 'release' }])}
+                      onReviewSchedule={(document) => openTemplateReview([{ job, document, kind: 'schedule' }])}
+                      onReviewPurchaseOrder={(document) => openTemplateReview([{ job, document, kind: 'purchase-order' }])}
+                      onDelete={(document, type) => {
+                        setDeleteError(null)
+                        setDeleteTarget({
+                          job,
+                          type,
+                          document,
+                          template: (
+                            isPaymentScheduleDocumentType(document.documentType)
+                              ? scheduleTemplates.templatesByDocumentId[document.id]
+                              : releaseTemplates.templatesByDocumentId[document.id]
+                          ) ?? null,
+                          isOnlyRequiredDocument:
+                            requiredTypeKeys.includes(type.key)
+                            && documents.filter(
+                              (candidate) => candidate.typeKey === type.key,
+                            ).length === 1,
+                        })
+                      }}
+                    />
+                  )}
                 </AccordionDetails>
               </Accordion>
             )

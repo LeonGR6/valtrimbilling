@@ -190,3 +190,38 @@ export async function adoptPurchaseOrderPrice({ lineIds, reason, removeDocuments
   }
   return result
 }
+
+/**
+ * The Lot and Phase every stored line of a Job's Purchase Orders was matched with, by
+ * analysis. Superseded lines count too: they say which Phase a PDF belongs to.
+ */
+export async function listPurchaseOrderLineLots(jobId) {
+  const client = await requireSupabase()
+  const lotsByAnalysis = new Map()
+
+  for (let start = 0; ; start += PAGE_SIZE) {
+    const { data, error } = await client
+      .from('purchase_order_lines')
+      .select('id, analysis_id, phase_id, lot_raw')
+      .eq('job_id', Number(jobId))
+      .order('id', { ascending: true })
+      .range(start, start + PAGE_SIZE - 1)
+    if (error) {
+      throw new Error(error.message || 'The Purchase Order lots could not be loaded.', {
+        cause: error,
+      })
+    }
+
+    for (const row of data ?? []) {
+      const list = lotsByAnalysis.get(row.analysis_id) ?? []
+      list.push({
+        phaseId: row.phase_id == null ? null : Number(row.phase_id),
+        lotRaw: row.lot_raw ?? '',
+      })
+      lotsByAnalysis.set(row.analysis_id, list)
+    }
+    if ((data ?? []).length < PAGE_SIZE) break
+  }
+
+  return lotsByAnalysis
+}

@@ -1,6 +1,7 @@
-import { useRef, useState } from 'react'
+import { useState } from 'react'
 import { Box, IconButton, InputAdornment, TextField } from '@mui/material'
 import CalendarMonthRoundedIcon from '@mui/icons-material/CalendarMonthRounded'
+import CalendarPopover from './CalendarPopover.jsx'
 import {
   completeDateText,
   dateTextToIso,
@@ -9,7 +10,8 @@ import {
 } from '../../utils/dateInput.js'
 
 /**
- * A date that can be typed (05/12/2026) or picked from the calendar button.
+ * A date that can be typed (05/12/2026) or picked from the calendar button, which opens
+ * our own calendar (CalendarPopover) rather than the browser's picker.
  * `value` and `onChange` use ISO dates ("2026-05-12"); `onChange` gets "" while
  * what is typed is empty, incomplete or not a real date, like a native date input.
  */
@@ -26,7 +28,8 @@ export default function DateField({
   const [text, setText] = useState(() => isoToDateText(value))
   const [previousValue, setPreviousValue] = useState(value)
   const [touched, setTouched] = useState(false)
-  const pickerRef = useRef(null)
+  // The button the calendar hangs from while it is open.
+  const [pickerAnchor, setPickerAnchor] = useState(null)
 
   // A date changed from outside (the rule that moves DM and HW after EXT) is
   // shown, unless it is what the person is typing already.
@@ -43,11 +46,9 @@ export default function DateField({
 
   const invalid = touched && text.trim() !== '' && dateTextToIso(text) === ''
 
-  const openPicker = () => {
-    const picker = pickerRef.current
-    if (!picker) return
-    if (typeof picker.showPicker === 'function') picker.showPicker()
-    else picker.click()
+  const pick = (iso) => {
+    commit(isoToDateText(iso))
+    setPickerAnchor(null)
   }
 
   return (
@@ -84,7 +85,12 @@ export default function DateField({
                   edge="end"
                   size="small"
                   aria-label="Choose date from calendar"
-                  onClick={openPicker}
+                  aria-haspopup="dialog"
+                  aria-expanded={Boolean(pickerAnchor)}
+                  onClick={(event) => {
+                    const button = event.currentTarget
+                    setPickerAnchor((current) => (current ? null : button))
+                  }}
                 >
                   <CalendarMonthRoundedIcon fontSize="small" />
                 </IconButton>
@@ -93,25 +99,12 @@ export default function DateField({
           },
         }}
       />
-      {/* The browser's own calendar, opened by the button above. */}
-      <input
-        ref={pickerRef}
-        type="date"
-        tabIndex={-1}
-        aria-hidden="true"
+      <CalendarPopover
+        anchorEl={pickerAnchor}
         value={value ?? ''}
-        onChange={(event) => commit(isoToDateText(event.target.value))}
-        style={{
-          position: 'absolute',
-          left: 0,
-          bottom: 0,
-          width: '100%',
-          height: 0,
-          padding: 0,
-          border: 0,
-          opacity: 0,
-          pointerEvents: 'none',
-        }}
+        onPick={pick}
+        onClear={props.required ? undefined : () => pick('')}
+        onClose={() => setPickerAnchor(null)}
       />
     </Box>
   )

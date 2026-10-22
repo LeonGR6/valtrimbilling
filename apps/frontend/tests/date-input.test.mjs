@@ -5,6 +5,11 @@ import {
   dateTextToIso,
   isoToDateText,
   maskDateInput,
+  monthGrid,
+  monthOf,
+  monthTitle,
+  shiftMonth,
+  todayIso,
 } from '../src/utils/dateInput.js'
 
 test('typed dates become ISO dates in the common ways of writing them', () => {
@@ -55,4 +60,39 @@ test('ISO dates are shown as MM/DD/YYYY', () => {
   assert.equal(isoToDateText('2026-05-12T00:00:00'), '05/12/2026')
   assert.equal(isoToDateText(''), '')
   assert.equal(isoToDateText(undefined), '')
+})
+
+test('the month a calendar shows comes from the date, else from today', () => {
+  const now = new Date(2026, 9, 22)
+  assert.deepEqual(monthOf('2026-03-05', now), { year: 2026, month: 2 })
+  assert.deepEqual(monthOf('', now), { year: 2026, month: 9 })
+  assert.deepEqual(monthOf('not a date', now), { year: 2026, month: 9 })
+  assert.equal(todayIso(now), '2026-10-22')
+  assert.equal(todayIso(new Date(2026, 0, 5)), '2026-01-05')
+})
+
+test('months roll over the year in both directions', () => {
+  assert.deepEqual(shiftMonth({ year: 2026, month: 11 }, 1), { year: 2027, month: 0 })
+  assert.deepEqual(shiftMonth({ year: 2026, month: 0 }, -1), { year: 2025, month: 11 })
+  assert.deepEqual(shiftMonth({ year: 2026, month: 5 }, 0), { year: 2026, month: 5 })
+  assert.deepEqual(shiftMonth({ year: 2026, month: 5 }, -18), { year: 2024, month: 11 })
+  assert.equal(monthTitle({ year: 2026, month: 9 }), 'October 2026')
+})
+
+test('a month is drawn as six Sunday-first weeks with the neighbouring days around it', () => {
+  const weeks = monthGrid({ year: 2026, month: 9 })
+
+  assert.equal(weeks.length, 6)
+  assert.ok(weeks.every((week) => week.length === 7))
+  // October 1, 2026 is a Thursday: the first row starts on Sunday, September 27.
+  assert.equal(weeks[0][0].iso, '2026-09-27')
+  assert.equal(weeks[0][0].inMonth, false)
+  assert.equal(weeks[0][4].iso, '2026-10-01')
+  assert.equal(weeks[0][4].inMonth, true)
+  assert.equal(weeks.flat().filter((day) => day.inMonth).length, 31)
+  assert.equal(weeks[5][6].iso, '2026-11-07')
+
+  // A month that starts on a Sunday has no days before it; February of a leap year has 29.
+  assert.equal(monthGrid({ year: 2026, month: 1 })[0][0].iso, '2026-02-01')
+  assert.equal(monthGrid({ year: 2028, month: 1 }).flat().filter((day) => day.inMonth).length, 29)
 })

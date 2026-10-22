@@ -85,3 +85,53 @@ export function completeDateText(text) {
   const [, month, day, year] = match
   return `${month.padStart(2, '0')}/${day.padStart(2, '0')}/${year.length === 2 ? `20${year}` : year}`
 }
+
+// --- The month a calendar shows ----------------------------------------------------
+
+/** Today as "YYYY-MM-DD" by the local calendar. */
+export function todayIso(now = new Date()) {
+  const month = String(now.getMonth() + 1).padStart(2, '0')
+  const day = String(now.getDate()).padStart(2, '0')
+  return `${String(now.getFullYear()).padStart(4, '0')}-${month}-${day}`
+}
+
+/** The month of an ISO date (or of today's when it is not one): `{ year, month }`, month 0-11. */
+export function monthOf(iso, now = new Date()) {
+  const match = /^(\d{4})-(\d{2})-\d{2}/.exec(String(iso ?? ''))
+  return match
+    ? { year: Number(match[1]), month: Number(match[2]) - 1 }
+    : { year: now.getFullYear(), month: now.getMonth() }
+}
+
+/** The month `delta` months away, rolling over the year. */
+export function shiftMonth({ year, month }, delta) {
+  const index = year * 12 + month + delta
+  return { year: Math.floor(index / 12), month: ((index % 12) + 12) % 12 }
+}
+
+/** "October 2026". */
+export function monthTitle({ year, month }) {
+  return new Date(Date.UTC(year, month, 1)).toLocaleDateString('en-US', {
+    timeZone: 'UTC',
+    month: 'long',
+    year: 'numeric',
+  })
+}
+
+/**
+ * The weeks a calendar draws for a month, Sunday first, always six so it does not change
+ * height. Each day is `{ iso, day, inMonth }`; the days around the month belong to the
+ * neighbouring ones.
+ */
+export function monthGrid({ year, month }) {
+  const first = new Date(Date.UTC(year, month, 1))
+  const start = Date.UTC(year, month, 1 - first.getUTCDay())
+  return Array.from({ length: 6 }, (_, week) => Array.from({ length: 7 }, (_, weekday) => {
+    const date = new Date(start + (week * 7 + weekday) * 86_400_000)
+    return {
+      iso: date.toISOString().slice(0, 10),
+      day: date.getUTCDate(),
+      inMonth: date.getUTCMonth() === month,
+    }
+  }))
+}

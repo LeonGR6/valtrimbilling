@@ -7,6 +7,7 @@ import {
   COMPARISON_STATUSES,
   canUsePdfPrice,
   importAction,
+  lineStatusLabel,
   priceDifference,
 } from '../../services/purchaseOrderRecord.js'
 
@@ -146,7 +147,7 @@ export default function ComparisonLineRow({ line, onImportLine, onUsePrice }) {
             size="small"
             color={info.color}
             variant={info.color === 'success' ? 'outlined' : 'filled'}
-            label={difference === null ? info.label : `${info.label} · ${signedCurrency(difference)} in the PDF`}
+            label={difference === null ? lineStatusLabel(line) : `${info.label} · ${signedCurrency(difference)} in the PDF`}
           />
         </Tooltip>
         {onUsePrice && canUsePdfPrice(line) && (
@@ -170,7 +171,9 @@ export default function ComparisonLineRow({ line, onImportLine, onUsePrice }) {
             onClick={() => onImportLine(line)}
             sx={{ textTransform: 'none' }}
           >
-            {importAction(line) === 'create' ? 'Create and add' : 'Add to the Lot'}
+            {importAction(line) === 'create'
+              ? 'Create and add'
+              : `Add to the sequence sheet (Lot ${line.lotNumber})`}
           </Button>
         )}
       </Stack>

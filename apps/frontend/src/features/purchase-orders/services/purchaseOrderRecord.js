@@ -30,10 +30,10 @@ export const COMPARISON_STATUSES = {
     hint: 'The Plan has more than one option with this code and the description does not tell which one.',
   },
   NOT_IN_LOT: {
-    label: 'Not in this Lot',
+    label: 'Not in the sequence sheet',
     color: 'warning',
     severity: 2,
-    hint: 'The option exists in the Plan, but this Lot does not have it selected.',
+    hint: 'The option exists in the Plan, but the sequence sheet does not have it selected for that Lot.',
   },
   PRICE_DIFF: {
     label: 'Price differs',
@@ -636,7 +636,7 @@ const STATUS_ADVICE = {
   PLAN_MISMATCH: 'Check the Plan of the Lot in the Sequence Sheet, or the PDF.',
   MISSING_OPTION: 'Create and add puts it in the Plan and selects it for the Lot.',
   AMBIGUOUS_OPTION: "Compare the PDF's description with the options of the Plan.",
-  NOT_IN_LOT: 'Add to the Lot selects it for that Lot.',
+  NOT_IN_LOT: 'Add to the sequence sheet selects it for that Lot.',
   PRICE_DIFF: "Use PDF price offers the PDF's price; nothing changes until you confirm.",
   MATCH: null,
 }
@@ -706,4 +706,16 @@ export function linesWithStatus(lines, status) {
 export function workOrderNeedsLook(group) {
   return group.headerStatus !== 'resolved'
     || group.lines.some((line) => line.status !== 'MATCH')
+}
+
+/**
+ * The label of one line's result. An option that is in the Plan but not selected says for
+ * which Lot ("Not in the sequence sheet (For Lot 27)"); the others use the label of the result.
+ */
+export function lineStatusLabel(line) {
+  const info = COMPARISON_STATUSES[line.status]
+  if (!info) return ''
+  return line.status === 'NOT_IN_LOT' && line.lotNumber
+    ? `${info.label} (For Lot ${line.lotNumber})`
+    : info.label
 }

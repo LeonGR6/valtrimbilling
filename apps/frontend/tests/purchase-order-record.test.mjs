@@ -7,6 +7,7 @@ import {
   describeOptionOrder,
   describeVerdict,
   linesWithStatus,
+  lineStatusLabel,
   statusBreakdown,
   workOrderNeedsLook,
   describePurchaseOrderDocument,
@@ -524,7 +525,7 @@ test('the breakdown lists the results that occur, most urgent first and the matc
   assert.equal(breakdown.at(-1).color, 'success')
   assert.equal(breakdown.reduce((total, { share }) => total + share, 0), 1)
   assert.equal(breakdown.at(-1).advice, null)
-  assert.match(breakdown[1].advice, /^Add to the Lot selects it/)
+  assert.match(breakdown[1].advice, /^Add to the sequence sheet selects it/)
   assert.deepEqual(statusBreakdown(summaryOf()), [])
 })
 
@@ -565,4 +566,15 @@ test('a work order needs a look when its Lot is not settled or an option differs
   assert.equal(workOrderNeedsLook(group('resolved', 'MATCH', 'PRICE_DIFF')), true)
   assert.equal(workOrderNeedsLook(group('suggested', 'MATCH')), true)
   assert.equal(workOrderNeedsLook(group('lot_not_found')), true)
+})
+
+test('an option missing from the sequence sheet says for which Lot', () => {
+  assert.equal(
+    lineStatusLabel({ status: 'NOT_IN_LOT', lotNumber: '27' }),
+    'Not in the sequence sheet (For Lot 27)',
+  )
+  assert.equal(lineStatusLabel({ status: 'NOT_IN_LOT', lotNumber: null }), 'Not in the sequence sheet')
+  assert.equal(lineStatusLabel({ status: 'MATCH', lotNumber: '27' }), 'Matches')
+  assert.equal(lineStatusLabel({ status: 'MISSING_OPTION', lotNumber: '27' }), 'Not in the system')
+  assert.equal(lineStatusLabel({ status: 'nope' }), '')
 })

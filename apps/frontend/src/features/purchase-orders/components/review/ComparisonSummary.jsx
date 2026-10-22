@@ -8,7 +8,7 @@ const dot = (color) => `${color}.main`
 
 // What a result's button says, for the results an import can fix.
 const IMPORT_LABELS = {
-  NOT_IN_LOT: (count) => `Add ${count} to the ${count === 1 ? 'Lot' : 'Lots'}`,
+  NOT_IN_LOT: (count) => `Add ${count} to the sequence sheet`,
   MISSING_OPTION: (count) => `Create and add ${count}`,
 }
 

@@ -273,6 +273,10 @@ export function RowActionsMenu({ label, items }) {
         anchorEl={anchor}
         open={Boolean(anchor)}
         onClose={() => setAnchor(null)}
+        // The menu is drawn elsewhere on the page, but React still passes its clicks up to
+        // the row it belongs to. Without this, choosing an action (or clicking away) also
+        // "clicks" the row, which opens the row's page before the action can show anything.
+        onClick={(event) => event.stopPropagation()}
         anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
         transformOrigin={{ vertical: 'top', horizontal: 'right' }}
       >

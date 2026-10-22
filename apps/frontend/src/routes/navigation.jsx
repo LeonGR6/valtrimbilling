@@ -1,5 +1,6 @@
 import {
   CalendarPage,
+  ChangeOrdersPage,
   BuilderDrawSchedulesPage,
   FinancialsPage,
   HomePage,
@@ -22,6 +23,7 @@ export const navigationRoutes = [
   { path: '/jobs', label: 'Jobs', icon: 'jobs', element: <JobsPage /> },
   { path: '/sequence-sheets', label: 'Sequence Sheets', icon: 'sequence-sheets', element: <SequenceSheetsPage /> },
   { path: '/draw-invoice', label: 'Draw & Invoice', icon: 'draw-invoice', element: <DrawAndInvoicePage /> },
+  { path: '/change-orders', label: 'Extra / Change Orders', icon: 'change-orders', element: <ChangeOrdersPage /> },
   {
     path: '/builder-draw-schedules',
     label: 'Builder Setup',

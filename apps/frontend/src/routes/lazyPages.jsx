@@ -1,6 +1,7 @@
 import { lazy } from 'react'
 
 export const CalendarPage = lazy(() => import('../pages/Calendar'))
+export const ChangeOrdersPage = lazy(() => import('../pages/ChangeOrders'))
 export const BuilderDrawSchedulesPage = lazy(() => import('../pages/BuilderDrawSchedules'))
 export const FinancialsPage = lazy(() => import('../pages/Financials'))
 export const HomePage = lazy(() => import('../pages/Home'))

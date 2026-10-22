@@ -1038,7 +1038,8 @@ export default function SequenceSheets() {
   const [search, setSearch] = usePersistentState('sequence-sheets:search', '', isStoredString)
   const [storedBuilderId, setStoredBuilderId] = usePersistentState('sequence-sheets:builder', 'ALL', isStoredString)
   const [storedCommunity, setStoredCommunity] = usePersistentState('sequence-sheets:community', 'ALL', isStoredString)
-  const [expandedJobId, setExpandedJobId] = useState(jobs[0]?.id ?? null)
+  // Every Job starts collapsed; opening one is the user's choice.
+  const [expandedJobId, setExpandedJobId] = useState(null)
   const [dialogJobId, setDialogJobId] = useState(null)
   const [dialogPhaseId, setDialogPhaseId] = useState(null)
   const [deleteTarget, setDeleteTarget] = useState(null)

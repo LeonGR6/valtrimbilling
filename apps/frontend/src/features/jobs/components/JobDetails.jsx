@@ -29,6 +29,7 @@ import {
   Typography,
 } from '@mui/material'
 import AddRoundedIcon from '@mui/icons-material/AddRounded'
+import PlaylistAddRoundedIcon from '@mui/icons-material/PlaylistAddRounded'
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
 import ClearRoundedIcon from '@mui/icons-material/ClearRounded'
 import ContentCopyRoundedIcon from '@mui/icons-material/ContentCopyRounded'
@@ -73,6 +74,9 @@ import PlanToggle from './PlanToggle.jsx'
 import { PlanSortableList, SortablePlan } from './PlanSortable.jsx'
 import { JobContactsGrid } from './JobContacts.jsx'
 import JobBillingSetupCard from './JobBillingSetupCard.jsx'
+import BulkPlanOptionsMode from './bulk-edit/BulkPlanOptionsMode.jsx'
+import { describeBulkResult } from '../utils/bulkPlanOptions.js'
+import { getJobPlanUsage } from '../utils/planUsage.js'
 
 function PlanDialog({ plans, plan, onClose, onSave, submitting }) {
   // A new Plan can start with Options copied from another Plan of the Job.
@@ -914,6 +918,7 @@ export default function JobDetails({
   const {
     canManageJobs,
     createJobPlan,
+    applyPlanOptionChanges,
     updateJobPlan,
     deactivateJobPlan,
     reorderJobPlans,
@@ -923,6 +928,8 @@ export default function JobDetails({
     deactivatePlanOption,
   } = useJobs()
   const [planDialog, setPlanDialog] = useState(null)
+  // The bulk mode: Plans and Options edited, deleted and added in a grid, and saved together.
+  const [bulkOpen, setBulkOpen] = useState(false)
   const [optionDialog, setOptionDialog] = useState(null)
   const [copyDialog, setCopyDialog] = useState(null)
   // Plans the person has opened; every Plan starts closed.
@@ -937,6 +944,8 @@ export default function JobDetails({
   const canManagePlans = canManageJobs && job.isActive
   const jobPlans = job.sequenceSheet?.plans
   const plans = useMemo(() => jobPlans ?? [], [jobPlans])
+  // Which Plans and Options the Lots use: those cannot be deleted in the bulk mode.
+  const bulkUsage = useMemo(() => getJobPlanUsage(job), [job])
   // While searching, a plan shows when it matches or when some of its options
   // do; then only the matching options are listed under it.
   const visiblePlans = useMemo(() => {
@@ -997,6 +1006,24 @@ export default function JobDetails({
       setNotice({ severity: 'error', message: saveError.message })
     } finally {
       setSubmitting(false)
+    }
+  }
+
+  const handleBulkSave = async (changes, summary) => {
+    try {
+      const result = await applyPlanOptionChanges(job.id, changes)
+      // A few Plans open to show what was added; a long list stays closed.
+      const touched = [...new Set([...result.plans.map(({ id }) => id), ...result.optionPlanIds])]
+      if (touched.length <= 3) touched.forEach(revealPlan)
+      setNotice({
+        severity: 'success',
+        // The Options already there that the grid left out count with the ones the database skipped.
+        message: describeBulkResult({ ...result, optionsSkipped: result.optionsSkipped + summary.optionsSkipped }),
+      })
+      setBulkOpen(false)
+    } catch (bulkError) {
+      setNotice({ severity: 'error', message: bulkError.message })
+      throw bulkError
     }
   }
 
@@ -1100,14 +1127,25 @@ export default function JobDetails({
           />
         )}
         actions={canManagePlans && (
-          <Button
-            variant="contained"
-            startIcon={<AddRoundedIcon />}
-            onClick={() => setPlanDialog({ plan: null })}
-            disableElevation
-          >
-            New plan
-          </Button>
+          <Stack direction="row" spacing={1}>
+            <Button
+              variant="outlined"
+              startIcon={<PlaylistAddRoundedIcon />}
+              onClick={() => setBulkOpen(true)}
+              disabled={bulkOpen}
+            >
+              Bulk edit
+            </Button>
+            <Button
+              variant="contained"
+              startIcon={<AddRoundedIcon />}
+              onClick={() => setPlanDialog({ plan: null })}
+              disabled={bulkOpen}
+              disableElevation
+            >
+              New plan
+            </Button>
+          </Stack>
         )}
       />
 
@@ -1138,120 +1176,138 @@ export default function JobDetails({
 
         <JobBillingSetupCard job={job} />
 
-        <Box
-          sx={{
-            bgcolor: 'background.paper',
-            border: 1,
-            borderColor: 'divider',
-            borderRadius: 2,
-            overflow: 'hidden',
-          }}
-        >
-          <Stack
-            direction={{ xs: 'column', md: 'row' }}
-            spacing={1.5}
+        {bulkOpen && canManagePlans ? (
+          <BulkPlanOptionsMode
+            plans={plans}
+            usage={bulkUsage}
+            onSave={handleBulkSave}
+            onClose={() => setBulkOpen(false)}
+          />
+        ) : (
+          <Box
             sx={{
-              px: 2.5,
-              py: 1.5,
-              borderBottom: 1,
+              bgcolor: 'background.paper',
+              border: 1,
               borderColor: 'divider',
-              alignItems: { md: 'center' },
-              justifyContent: 'space-between',
+              borderRadius: 2,
+              overflow: 'hidden',
             }}
           >
-            <Stack direction="row" spacing={1.25} sx={{ alignItems: 'center' }}>
-              <Typography component="h2" variant="subtitle1" fontWeight={700}>
-                Plans &amp; options
-              </Typography>
-              <Chip
-                label={`${plans.length} ${plans.length === 1 ? 'plan' : 'plans'}`}
-                size="small"
-                variant="outlined"
-              />
+            <Stack
+              direction={{ xs: 'column', md: 'row' }}
+              spacing={1.5}
+              sx={{
+                px: 2.5,
+                py: 1.5,
+                borderBottom: 1,
+                borderColor: 'divider',
+                alignItems: { md: 'center' },
+                justifyContent: 'space-between',
+              }}
+            >
+              <Stack direction="row" spacing={1.25} sx={{ alignItems: 'center' }}>
+                <Typography component="h2" variant="subtitle1" fontWeight={700}>
+                  Plans &amp; options
+                </Typography>
+                <Chip
+                  label={`${plans.length} ${plans.length === 1 ? 'plan' : 'plans'}`}
+                  size="small"
+                  variant="outlined"
+                />
+              </Stack>
+              {plans.length > 0 && (
+                <TextField
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  size="small"
+                  placeholder="Search plans or options"
+                  sx={{ width: { xs: '100%', md: 320 } }}
+                  slotProps={{
+                    htmlInput: { 'aria-label': 'Search plans or options' },
+                    input: {
+                      startAdornment: (
+                        <InputAdornment position="start">
+                          <SearchRoundedIcon fontSize="small" color="action" />
+                        </InputAdornment>
+                      ),
+                      endAdornment: query ? (
+                        <InputAdornment position="end">
+                          <IconButton
+                            size="small"
+                            edge="end"
+                            aria-label="Clear search"
+                            onClick={() => setQuery('')}
+                          >
+                            <ClearRoundedIcon fontSize="small" />
+                          </IconButton>
+                        </InputAdornment>
+                      ) : null,
+                    },
+                  }}
+                />
+              )}
             </Stack>
-            {plans.length > 0 && (
-              <TextField
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                size="small"
-                placeholder="Search plans or options"
-                sx={{ width: { xs: '100%', md: 320 } }}
-                slotProps={{
-                  htmlInput: { 'aria-label': 'Search plans or options' },
-                  input: {
-                    startAdornment: (
-                      <InputAdornment position="start">
-                        <SearchRoundedIcon fontSize="small" color="action" />
-                      </InputAdornment>
-                    ),
-                    endAdornment: query ? (
-                      <InputAdornment position="end">
-                        <IconButton
-                          size="small"
-                          edge="end"
-                          aria-label="Clear search"
-                          onClick={() => setQuery('')}
-                        >
-                          <ClearRoundedIcon fontSize="small" />
-                        </IconButton>
-                      </InputAdornment>
-                    ) : null,
-                  },
-                }}
+
+            {plans.length === 0 ? (
+              <Box sx={{ py: 6, px: 3, textAlign: 'center' }}>
+                <LayersRoundedIcon color="disabled" sx={{ fontSize: 36, mb: 1 }} aria-hidden="true" />
+                <Typography fontWeight={700}>No plans in this job yet</Typography>
+                <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, mb: 2 }}>
+                  Add the first plan, then organize its options underneath it.
+                </Typography>
+                {canManagePlans && (
+                  <Stack direction="row" spacing={1} sx={{ justifyContent: 'center' }}>
+                    <Button
+                      variant="outlined"
+                      startIcon={<AddRoundedIcon />}
+                      onClick={() => setPlanDialog({ plan: null })}
+                    >
+                      Add plan
+                    </Button>
+                    <Button
+                      variant="outlined"
+                      startIcon={<PlaylistAddRoundedIcon />}
+                      onClick={() => setBulkOpen(true)}
+                    >
+                      Bulk edit
+                    </Button>
+                  </Stack>
+                )}
+              </Box>
+            ) : visiblePlans.length === 0 ? (
+              <CatalogEmptyState
+                title="No plans or options found"
+                description={`Nothing in Job ${job.code} matches “${query.trim()}”.`}
+                action={(
+                  <Button size="small" variant="outlined" onClick={() => setQuery('')}>
+                    Clear search
+                  </Button>
+                )}
+              />
+            ) : (
+              <PlansOptionsSheet
+                plans={visiblePlans}
+                canManage={canManagePlans}
+                // A filtered list hides Plans, so the order only changes without a search.
+                reorderable={canManagePlans && !query.trim() && plans.length > 1}
+                onReorder={handleReorder}
+                openPlanIds={openPlanIds}
+                onOpenPlanIdsChange={setOpenPlanIds}
+                searching={Boolean(query.trim())}
+                onAddPlan={() => setPlanDialog({ plan: null })}
+                onAddOption={(plan) => setOptionDialog({ plan, option: null })}
+                copySourcePlans={plans}
+                onCopyOptions={(plan) => setCopyDialog({ plan })}
+                onEditPlan={(plan) => setPlanDialog({ plan })}
+                onDeletePlan={(plan) => setDeleteTarget({ type: 'plan', plan })}
+                onEditOption={(plan, option) => setOptionDialog({ plan, option })}
+                onDeleteOption={(plan, option) =>
+                  setDeleteTarget({ type: 'option', plan, option })
+                }
               />
             )}
-          </Stack>
-
-          {plans.length === 0 ? (
-            <Box sx={{ py: 6, px: 3, textAlign: 'center' }}>
-              <LayersRoundedIcon color="disabled" sx={{ fontSize: 36, mb: 1 }} aria-hidden="true" />
-              <Typography fontWeight={700}>No plans in this job yet</Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, mb: 2 }}>
-                Add the first plan, then organize its options underneath it.
-              </Typography>
-              {canManagePlans && (
-                <Button
-                  variant="outlined"
-                  startIcon={<AddRoundedIcon />}
-                  onClick={() => setPlanDialog({ plan: null })}
-                >
-                  Add plan
-                </Button>
-              )}
-            </Box>
-          ) : visiblePlans.length === 0 ? (
-            <CatalogEmptyState
-              title="No plans or options found"
-              description={`Nothing in Job ${job.code} matches “${query.trim()}”.`}
-              action={(
-                <Button size="small" variant="outlined" onClick={() => setQuery('')}>
-                  Clear search
-                </Button>
-              )}
-            />
-          ) : (
-            <PlansOptionsSheet
-              plans={visiblePlans}
-              canManage={canManagePlans}
-              // A filtered list hides Plans, so the order only changes without a search.
-              reorderable={canManagePlans && !query.trim() && plans.length > 1}
-              onReorder={handleReorder}
-              openPlanIds={openPlanIds}
-              onOpenPlanIdsChange={setOpenPlanIds}
-              searching={Boolean(query.trim())}
-              onAddPlan={() => setPlanDialog({ plan: null })}
-              onAddOption={(plan) => setOptionDialog({ plan, option: null })}
-              copySourcePlans={plans}
-              onCopyOptions={(plan) => setCopyDialog({ plan })}
-              onEditPlan={(plan) => setPlanDialog({ plan })}
-              onDeletePlan={(plan) => setDeleteTarget({ type: 'plan', plan })}
-              onEditOption={(plan, option) => setOptionDialog({ plan, option })}
-              onDeleteOption={(plan, option) =>
-                setDeleteTarget({ type: 'option', plan, option })
-              }
-            />
-          )}
-        </Box>
+          </Box>
+        )}
       </Box>
 
       {planDialog && (

@@ -87,3 +87,23 @@ export function mergePlanOptionRecord(currentOption, updatedOption) {
       : {}),
   }
 }
+
+/** What apply_plan_option_changes reports, with the names the page uses. */
+export function toBulkChangeResult(data) {
+  return {
+    plansCreated: Number(data?.plans_created) || 0,
+    plansRestored: Number(data?.plans_restored) || 0,
+    plansUpdated: Number(data?.plans_updated) || 0,
+    plansDeleted: Number(data?.plans_deleted) || 0,
+    optionsCreated: Number(data?.options_created) || 0,
+    optionsSkipped: Number(data?.options_skipped) || 0,
+    optionsUpdated: Number(data?.options_updated) || 0,
+    optionsDeleted: Number(data?.options_deleted) || 0,
+    plans: (data?.plans ?? []).map((plan) => ({
+      id: Number(plan.id),
+      code: plan.code,
+      created: Boolean(plan.created),
+    })),
+    optionPlanIds: (data?.option_plan_ids ?? []).map(Number),
+  }
+}

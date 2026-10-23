@@ -8,6 +8,7 @@ import {
   updateJob as updateJobRecord,
 } from '../services/jobsRepository.js'
 import {
+  applyPlanOptionChanges as applyPlanOptionChangesRecord,
   createJobPlan as createJobPlanRecord,
   createPlanOption as createPlanOptionRecord,
   createPlanOptions as createPlanOptionsRecord,
@@ -160,6 +161,19 @@ export function JobsProvider({ children }) {
     )))
     setError(null)
     return created
+  }, [])
+
+  // Saves the whole grid in one go, then reads the Job's Plans again: Plans may have been created,
+  // renamed, brought back or deleted, so the list on screen is not worked out from what was sent.
+  const applyPlanOptionChanges = useCallback(async (jobId, changes) => {
+    const result = await applyPlanOptionChangesRecord(jobId, changes)
+    const reloaded = await listJobPlans([jobId])
+    const reloadedPlans = reloaded.get(Number(jobId)) ?? []
+    setJobRecords((current) => current.map((job) => (
+      job.id === jobId ? updateJobPlans(job, () => reloadedPlans) : job
+    )))
+    setError(null)
+    return result
   }, [])
 
   const updateJobPlan = useCallback(async (jobId, planId, plan) => {
@@ -391,6 +405,7 @@ export function JobsProvider({ children }) {
     updateJob,
     deactivateJob,
     createJobPlan,
+    applyPlanOptionChanges,
     updateJobPlan,
     deactivateJobPlan,
     reorderJobPlans,
@@ -403,6 +418,7 @@ export function JobsProvider({ children }) {
     saveSequenceSheetPhase,
     deactivateSequenceSheetPhase,
   }), [
+    applyPlanOptionChanges,
     canManageJobs,
     createJobPlan,
     createPlanOption,

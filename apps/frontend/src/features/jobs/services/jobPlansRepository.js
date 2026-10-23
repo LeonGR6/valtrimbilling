@@ -5,6 +5,7 @@ import {
   toOptionPriceRpc,
   toPlanOption,
   toPlanOptionMutation,
+  toBulkChangeResult,
   toPlanPriceRpc,
 } from './jobPlanRecord.js'
 
@@ -268,6 +269,23 @@ export async function createPlanOptions(planId, options) {
 
   throwRepositoryError(error)
   return (data ?? []).map((row) => toPlanOption(row))
+}
+
+/**
+ * Adds, edits and deletes Plans and Options of a Job in one transaction (see
+ * apply_plan_option_changes): missing Plans are created and deleted ones come back, Options a Plan
+ * already has are skipped, and a Plan or Option that a Lot uses cannot be deleted. `changes` is
+ * `{ new_plans, option_adds, plan_updates, option_updates, deleted_plans, deleted_options }`.
+ */
+export async function applyPlanOptionChanges(jobId, changes) {
+  const client = await requireSupabase()
+  const { data, error } = await client.rpc('apply_plan_option_changes', {
+    p_job_id: Number(jobId),
+    p_changes: changes,
+  })
+
+  throwRepositoryError(error)
+  return toBulkChangeResult(data)
 }
 
 export async function updatePlanOption(optionId, option) {

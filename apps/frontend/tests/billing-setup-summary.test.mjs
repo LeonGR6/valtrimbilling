@@ -185,8 +185,12 @@ test('a version with another number of Draws shows the missing ones as dashes', 
 })
 
 test('details that only one version has are compared with a dash', () => {
-  const withNotes = diffSetups(setup(), setup({ notes: 'Net of deposits' }))
-  assert.equal(withNotes.rows.some(({ label }) => label === 'Notes'), false)
+  const added = diffSetups(setup(), setup({ notes: 'Net of deposits' }))
+  const addedNote = added.rows.find(({ label }) => label === 'Notes')
+  assert.equal(addedNote.changed, true)
+  assert.equal(addedNote.from, '—')
+  assert.equal(addedNote.to, 'Net of deposits')
+
   const lost = diffSetups(setup({ notes: 'Net of deposits' }), setup())
   assert.deepEqual(lost.rows.find(({ label }) => label === 'Notes').to, '—')
 })

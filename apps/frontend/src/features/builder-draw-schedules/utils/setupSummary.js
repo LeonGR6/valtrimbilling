@@ -176,12 +176,15 @@ export function diffSetups(current, next) {
     (_, index) => row('Draws', `Draw ${index + 1}`, drawLine(currentDraws[index]), drawLine(nextDraws[index])),
   )
 
+  // Every detail either version has: a note added where there was none still shows up.
+  const currentDetails = describeSetupDetails(current)
   const nextDetails = describeSetupDetails(next)
-  const details = describeSetupDetails(current).map((detail) => row(
+  const labels = [...new Set([...currentDetails, ...nextDetails].map(({ label }) => label))]
+  const details = labels.map((label) => row(
     'Other',
-    detail.label,
-    detail.value,
-    nextDetails.find(({ label }) => label === detail.label)?.value ?? '—',
+    label,
+    currentDetails.find((detail) => detail.label === label)?.value ?? '—',
+    nextDetails.find((detail) => detail.label === label)?.value ?? '—',
   ))
 
   const rows = [...figures, ...draws, ...details]

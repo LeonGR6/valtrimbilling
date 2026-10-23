@@ -33,7 +33,13 @@ function Figure({ figure }) {
  * Draws with their percentages, then the rest. Read-only; `children` is for the actions
  * that go with it. `setup` is a billing setup record (see toBuilderDrawSchedule).
  */
-export default function BillingSetupSummary({ setup, title = 'Billing setup', children = null }) {
+export default function BillingSetupSummary({
+  setup,
+  title = 'Billing setup',
+  compact = false,
+  hideVersion = false,
+  children = null,
+}) {
   const figures = describeSetupFigures(setup)
   const { draws, total, totalIsComplete } = describeSetupDraws(setup)
   const details = describeSetupDetails(setup)
@@ -48,7 +54,7 @@ export default function BillingSetupSummary({ setup, title = 'Billing setup', ch
         useFlexGap
       >
         <Typography fontWeight={800}>{title}</Typography>
-        <Chip size="small" variant="outlined" label={`Version ${setup.versionNumber}`} />
+        {!hideVersion && <Chip size="small" variant="outlined" label={`Version ${setup.versionNumber}`} />}
         {status && <Chip size="small" color={status.color} variant="outlined" label={status.label} />}
         <Box sx={{ flex: 1 }} />
         {children}
@@ -60,7 +66,9 @@ export default function BillingSetupSummary({ setup, title = 'Billing setup', ch
           py: 1.5,
           display: 'grid',
           gap: 1.75,
-          gridTemplateColumns: { xs: 'repeat(2, minmax(0, 1fr))', sm: 'repeat(4, minmax(0, 1fr))' },
+          gridTemplateColumns: compact
+            ? 'repeat(2, minmax(0, 1fr))'
+            : { xs: 'repeat(2, minmax(0, 1fr))', sm: 'repeat(4, minmax(0, 1fr))' },
         }}
       >
         {figures.map((figure) => <Figure key={figure.key} figure={figure} />)}
@@ -109,14 +117,18 @@ export default function BillingSetupSummary({ setup, title = 'Billing setup', ch
           borderColor: 'divider',
           display: 'grid',
           rowGap: { sm: 0.75 },
-          gridTemplateColumns: { xs: '1fr', sm: '170px minmax(0, 1fr)' },
+          gridTemplateColumns: compact ? '1fr' : { xs: '1fr', sm: '170px minmax(0, 1fr)' },
           columnGap: 2,
         }}
       >
         {details.map(({ label, value }) => (
           // Side by side where there is room; on a phone the label sits over its value.
-          <Box key={label} sx={{ display: { xs: 'block', sm: 'contents' }, '&:not(:first-of-type)': { mt: { xs: 0.75, sm: 0 } } }}>
-            <Typography variant="body2" color="text.secondary" sx={{ fontSize: { xs: 12, sm: 'inherit' } }}>
+          <Box key={label} sx={{
+              display: compact ? 'block' : { xs: 'block', sm: 'contents' },
+              '&:not(:first-of-type)': { mt: compact ? 0.75 : { xs: 0.75, sm: 0 } },
+            }}
+          >
+            <Typography variant="body2" color="text.secondary" sx={{ fontSize: compact ? 12 : { xs: 12, sm: 'inherit' } }}>
               {label}
             </Typography>
             <Typography variant="body2" sx={{ overflowWrap: 'anywhere' }}>{value}</Typography>

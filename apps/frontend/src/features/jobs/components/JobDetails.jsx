@@ -72,6 +72,7 @@ import {
 import PlanToggle from './PlanToggle.jsx'
 import { PlanSortableList, SortablePlan } from './PlanSortable.jsx'
 import { JobContactsGrid } from './JobContacts.jsx'
+import JobBillingSetupCard from './JobBillingSetupCard.jsx'
 
 function PlanDialog({ plans, plan, onClose, onSave, submitting }) {
   // A new Plan can start with Options copied from another Plan of the Job.
@@ -1134,6 +1135,8 @@ export default function JobDetails({
             <JobContactsGrid contacts={contacts} />
           </CardContent>
         </Card>
+
+        <JobBillingSetupCard job={job} />
 
         <Box
           sx={{

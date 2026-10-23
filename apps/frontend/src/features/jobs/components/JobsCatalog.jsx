@@ -56,6 +56,9 @@ import { contactTypeLabels, emptyContact } from '../../builder-contacts'
 import { emptyPerson, personTypeLabels } from '../../people/data/people.js'
 import { useBuilderContacts } from '../../builder-contacts/context/useBuilderContacts.js'
 import JobDetails from './JobDetails.jsx'
+import JobBillingSetupBlock from './JobBillingSetupBlock.jsx'
+import { useBuilderDrawSchedules } from '../../builder-draw-schedules/context/useBuilderDrawSchedules.js'
+import { canCreateWithSetup, resolveJobSetup } from '../utils/jobSetup.js'
 import PersonPickerField from './PersonPickerField.jsx'
 import {
   emptyJob,
@@ -121,6 +124,23 @@ function JobDialog({
   })
   const selectedBuilderName = useWatch({ control, name: 'builder' })
   const selectedBuilderId = builderIdsByName.get(selectedBuilderName)
+  // The billing setup the Job will use (a new Job takes the Builder's current one), and which
+  // version of it the person confirmed.
+  const {
+    builderDrawSchedules,
+    jobBillingSetupVersions,
+    loading: setupsLoading,
+    canManageBuilderBillingSetups,
+    refreshBuilderBillingSetups,
+  } = useBuilderDrawSchedules()
+  const [confirmedSetupVersionId, setConfirmedSetupVersionId] = useState(null)
+  const resolvedSetup = resolveJobSetup({
+    job,
+    builderId: selectedBuilderId ?? job?.builderId,
+    builderSetups: builderDrawSchedules,
+    jobSetups: jobBillingSetupVersions,
+  })
+  const canSubmit = Boolean(job) || canCreateWithSetup(resolvedSetup.setup, confirmedSetupVersionId)
   // Per role: the active contacts that fit it, plus the one the Job already
   // has so an inactive assignment still shows while editing. The Superintendent
   // comes from the selected Builder; the rest are Company Contacts of that type.
@@ -297,6 +317,22 @@ function JobDialog({
             </Box>
           </Box>
 
+          <Box>
+            <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1.5 }}>
+              Billing setup
+            </Typography>
+            <JobBillingSetupBlock
+              resolved={resolvedSetup}
+              builderName={selectedBuilderName}
+              creating={!job}
+              confirmedVersionId={confirmedSetupVersionId}
+              onConfirm={setConfirmedSetupVersionId}
+              loading={setupsLoading}
+              canEditSetups={canManageBuilderBillingSetups}
+              onReload={() => refreshBuilderBillingSetups().catch(() => {})}
+            />
+          </Box>
+
           <Alert severity="info">
             After creating the Job, open it to configure its Plans and Options sequence sheet.
           </Alert>
@@ -307,7 +343,7 @@ function JobDialog({
         <Button color="inherit" onClick={onClose} disabled={submitting}>
           Cancel
         </Button>
-        <Button type="submit" variant="contained" disabled={submitting} disableElevation>
+        <Button type="submit" variant="contained" disabled={submitting || !canSubmit} disableElevation>
           {job ? 'Save changes' : 'Create job'}
         </Button>
       </DialogActions>

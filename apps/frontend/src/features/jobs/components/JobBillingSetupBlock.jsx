@@ -3,7 +3,7 @@ import OpenInNewRoundedIcon from '@mui/icons-material/OpenInNewRounded'
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded'
 import BillingSetupSummary from '../../builder-draw-schedules/components/BillingSetupSummary.jsx'
 
-const BUILDER_SETUPS_PATH = '/builder-draw-schedules'
+const builderSetupsPath = (builderId) => `/builder-draw-schedules?builder=${encodeURIComponent(builderId)}`
 
 /**
  * The billing setup a Job uses, in the Job form. A new Job shows the Builder's current setup and
@@ -60,7 +60,7 @@ export default function JobBillingSetupBlock({
             <Button
               size="small"
               component={Link}
-              href={BUILDER_SETUPS_PATH}
+              href={builderSetupsPath(setup.builderId)}
               target="_blank"
               rel="noopener noreferrer"
               endIcon={<OpenInNewRoundedIcon />}

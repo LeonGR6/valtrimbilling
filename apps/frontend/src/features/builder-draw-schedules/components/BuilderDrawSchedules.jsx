@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { Controller, useFieldArray, useForm, useWatch } from 'react-hook-form'
 import {
@@ -7,7 +8,6 @@ import {
   Box,
   Button,
   Card,
-  CardActions,
   Checkbox,
   Chip,
   Dialog,
@@ -34,12 +34,10 @@ import {
 import AddRoundedIcon from '@mui/icons-material/AddRounded'
 import BusinessRoundedIcon from '@mui/icons-material/BusinessRounded'
 import CalendarMonthRoundedIcon from '@mui/icons-material/CalendarMonthRounded'
-import ConstructionRoundedIcon from '@mui/icons-material/ConstructionRounded'
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
-import EditOutlinedIcon from '@mui/icons-material/EditOutlined'
 import ResponsiveCreateButton from '../../../components/common/ResponsiveCreateButton'
 import { useBuilders } from '../../builders/context/useBuilders.js'
-import { drawSharesEvent, formatLagShort } from '../utils/drawLag.js'
+import { drawSharesEvent } from '../utils/drawLag.js'
 import DrawLagControl from './DrawLagControl.jsx'
 import {
   defaultDraws,
@@ -47,17 +45,12 @@ import {
   drawEventTypeOptions,
   emptyHardwareEventPercentages,
   emptyUtilityEventPercentages,
-  finalReleaseScopeLabels,
   finalReleaseScopeOptions,
-  frequencyLabels,
   frequencyOptions,
-  invoiceLineFormatLabels,
   invoiceLineFormatOptions,
   MAX_DRAW_COUNT,
   MIN_DRAW_COUNT,
-  retentionReleaseScopeLabels,
   retentionReleaseScopeOptions,
-  submissionMethodLabels,
   submissionMethodOptions,
   utilityBillingModeOptions,
   weekdayOptions,
@@ -70,10 +63,10 @@ import {
 } from '../schemas/builderDrawScheduleSchema.js'
 import {
   computeDrawPeriods,
-  describeSchedule,
   formatPeriodDate,
 } from '../utils/drawPeriods.js'
 import { useBuilderDrawSchedules } from '../context/useBuilderDrawSchedules.js'
+import BuilderSetupTable from './BuilderSetupTable.jsx'
 
 const sectionSx = {
   fontSize: 12,
@@ -90,37 +83,11 @@ function formatPercentage(value) {
     : value.toFixed(3).replace(/0+$/, '').replace(/\.$/, '')
 }
 
-function getBuilderInitials(builder) {
-  const words = builder.name.trim().split(/\s+/)
-  return words.length > 1
-    ? `${words[0][0]}${words[1][0]}`.toUpperCase()
-    : builder.name.slice(0, 2).toUpperCase()
-}
-
 function getDrawTotal(draws) {
   return draws.reduce(
     (total, draw) => total + (Number(draw.percentage) || 0),
     0,
   )
-}
-
-function requiredDocuments(setup) {
-  return [
-    setup.requiresPo && 'PO',
-    setup.requiresPaymentSchedule && 'Payment schedule',
-    setup.requiresRelease
-      && (setup.finalReleaseScope
-        ? `Release · Final ${finalReleaseScopeLabels[setup.finalReleaseScope].toLowerCase()}`
-        : 'Release'),
-    setup.requiresBackup && 'Backup',
-  ].filter(Boolean)
-}
-
-function describeSubmission(setup) {
-  const method = submissionMethodLabels[setup.submissionMethod] ?? 'Portal'
-  const destination = setup.submissionDestination?.trim()
-
-  return destination ? `${method} · ${destination}` : `${method} · Not specified`
 }
 
 function SchedulePreview({ control }) {
@@ -195,6 +162,7 @@ function BuilderDrawScheduleDialog({
   schedule,
   schedules,
   builders,
+  initialBuilderId = '',
   onClose,
   onSave,
   submitting,
@@ -228,7 +196,7 @@ function BuilderDrawScheduleDialog({
           cutoffDays: [...schedule.cutoffDays],
         }
       : {
-          builderId: '',
+          builderId: initialBuilderId,
           draws: defaultDraws.map((draw) => ({ ...draw })),
           ...defaultBillingSettings,
           hardwareEventPercentages: { ...emptyHardwareEventPercentages },
@@ -1414,208 +1382,6 @@ function BuilderDrawScheduleDialog({
   )
 }
 
-function BuilderDrawScheduleCard({
-  schedule,
-  builder,
-  canManage,
-  onEdit,
-  onDeactivate,
-}) {
-  const total = getDrawTotal(schedule.draws)
-
-  return (
-    <Card
-      variant="outlined"
-      sx={{
-        display: 'flex',
-        flexDirection: 'column',
-        height: '100%',
-        borderRadius: 2,
-        overflow: 'hidden',
-      }}
-    >
-      <Stack
-        direction="row"
-        spacing={1.5}
-        sx={{ alignItems: 'center', p: 2, pb: 1.75 }}
-      >
-        <Avatar
-          variant="rounded"
-          sx={{
-            width: 42,
-            height: 42,
-            bgcolor: 'primary.light',
-            color: 'primary.main',
-            fontSize: 13,
-            fontWeight: 800,
-          }}
-        >
-          {getBuilderInitials(builder)}
-        </Avatar>
-        <Box sx={{ minWidth: 0, flex: 1 }}>
-          <Typography fontWeight={750} noWrap>
-            {builder.name}
-          </Typography>
-          <Typography variant="caption" color="text.secondary">
-            {builder.code} · {schedule.draws.length} draws
-          </Typography>
-        </Box>
-        <Chip
-          size="small"
-          variant="outlined"
-          label={`${formatPercentage(total)}% allocated`}
-          sx={{ fontWeight: 750 }}
-        />
-      </Stack>
-
-      <Divider />
-
-      <Stack spacing={0} sx={{ px: 2 }}>
-        {schedule.draws.map((draw, index) => (
-          <Stack
-            key={`${schedule.id}-draw-${index + 1}`}
-            direction="row"
-            spacing={1.25}
-            sx={{
-              minHeight: 54,
-              alignItems: 'center',
-              borderBottom: index < schedule.draws.length - 1 ? 1 : 0,
-              borderColor: 'divider',
-            }}
-          >
-            <Avatar
-              sx={{
-                width: 24,
-                height: 24,
-                bgcolor: 'background.default',
-                color: 'text.secondary',
-                fontSize: 11,
-                fontWeight: 750,
-              }}
-            >
-              {index + 1}
-            </Avatar>
-            <Typography variant="body2" fontWeight={650} sx={{ flex: 1 }}>
-              Draw {index + 1}
-              {draw.name?.trim() ? ` (${draw.name.trim()})` : ''}
-            </Typography>
-            <Chip
-              size="small"
-              variant="outlined"
-              label={draw.lag ? `${draw.eventType} ${formatLagShort(draw.lag)}` : draw.eventType}
-            />
-            {schedule.optionsBillingDrawIndex != null
-              && Number(schedule.optionsBillingDrawIndex) === index && (
-              <Chip size="small" color="primary" label="Options billed" />
-            )}
-            <Typography variant="body2" color="primary.main" fontWeight={800}>
-              {formatPercentage(Number(draw.percentage))}%
-            </Typography>
-          </Stack>
-        ))}
-      </Stack>
-
-      <Divider />
-
-      <Stack spacing={1.25} sx={{ flex: 1, p: 2 }}>
-        <Chip
-          size="small"
-          color={schedule.utilityBuilding ? 'success' : 'default'}
-          variant={schedule.utilityBuilding ? 'filled' : 'outlined'}
-          label={schedule.utilityBuilding
-            ? schedule.utilityBillingMode === 'BY_EVENT'
-              ? `Utility · ${drawEventTypeOptions
-                  .filter(({ value }) => Number(
-                    schedule.utilityEventPercentages?.[value],
-                  ) > 0)
-                  .map(({ value }) => (
-                    `${value} ${formatPercentage(Number(
-                      schedule.utilityEventPercentages[value],
-                    ))}%`
-                  )).join(' / ')}`
-              : 'Utility · 100% selectable'
-            : 'Utility Building · Inactive'}
-          sx={{ alignSelf: 'flex-start', fontWeight: 750 }}
-        />
-        {schedule.separateHardwarePrice && (
-          <Chip
-            size="small"
-            color="primary"
-            icon={<ConstructionRoundedIcon />}
-            label="Hardware separated"
-            sx={{ alignSelf: 'flex-start', fontWeight: 750 }}
-          />
-        )}
-        <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
-          <Chip
-            size="small"
-            variant="outlined"
-            label={frequencyLabels[schedule.frequency]}
-          />
-          <Typography variant="caption" color="text.secondary">
-            {describeSchedule(schedule)}
-          </Typography>
-        </Stack>
-
-        <Typography variant="body2" color="text.secondary">
-          Net {schedule.paymentTermsDays}
-          {schedule.retentionEnabled
-            ? ` · ${formatPercentage(schedule.retentionPercentage)}% retention · ${retentionReleaseScopeLabels[schedule.retentionReleaseScope] ?? 'Per Job'}`
-            : ''}
-          {schedule.ocipWrapEnabled
-            ? ` · ${formatPercentage(schedule.ocipWrapPercentage)}% OCIP / WRAP`
-            : ''}
-        </Typography>
-
-        <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: 'wrap' }}>
-          {requiredDocuments(schedule).length > 0 ? (
-            requiredDocuments(schedule).map((document) => (
-              <Chip key={document} label={document} size="small" variant="outlined" />
-            ))
-          ) : (
-            <Typography variant="caption" color="text.secondary">
-              No submission documents required
-            </Typography>
-          )}
-        </Stack>
-
-        <Typography variant="caption" color="text.secondary">
-          {describeSubmission(schedule)} ·{' '}
-          {invoiceLineFormatLabels[schedule.invoiceLineFormat]}
-        </Typography>
-      </Stack>
-
-      {canManage && (
-        <CardActions
-          sx={{
-            px: 2,
-            py: 1.25,
-            borderTop: 1,
-            borderColor: 'divider',
-            justifyContent: 'flex-end',
-          }}
-        >
-          <Button
-            size="small"
-            startIcon={<EditOutlinedIcon />}
-            onClick={() => onEdit(schedule)}
-          >
-            Edit
-          </Button>
-          <Button
-            size="small"
-            color="error"
-            startIcon={<DeleteOutlineRoundedIcon />}
-            onClick={() => onDeactivate(schedule)}
-          >
-            Deactivate
-          </Button>
-        </CardActions>
-      )}
-    </Card>
-  )
-}
-
 function DeactivateScheduleDialog({
   schedule,
   builder,
@@ -1672,6 +1438,9 @@ export default function BuilderDrawSchedules() {
     error: buildersError,
     refreshBuilders,
   } = useBuilders()
+  const [searchParams] = useSearchParams()
+  // A link from Create Job names the Builder whose setup to open.
+  const focusBuilderId = searchParams.get('builder')
   const [dialogState, setDialogState] = useState(null)
   const [deactivateTarget, setDeactivateTarget] = useState(null)
   const [notice, setNotice] = useState(null)
@@ -1778,57 +1547,16 @@ export default function BuilderDrawSchedules() {
           </Alert>
         )}
 
-        <Stack
-          direction={{ xs: 'column', sm: 'row' }}
-          spacing={1.5}
-          sx={{ alignItems: { sm: 'center' }, justifyContent: 'space-between', mb: 2 }}
-        >
-          <Box>
-            <Typography variant="subtitle1" fontWeight={750}>
-              Existing builder setups
-            </Typography>
-            <Typography variant="body2" color="text.secondary">
-              {schedules.length} {schedules.length === 1 ? 'builder is' : 'builders are'} configured.
-            </Typography>
-          </Box>
-          <Chip
-            icon={<BusinessRoundedIcon />}
-            label={`${schedules.length} configured`}
-            variant="outlined"
+        {schedules.length > 0 || builders.length > 0 ? (
+          <BuilderSetupTable
+            schedules={schedules}
+            builders={builders}
+            canManage={canManageBuilderBillingSetups}
+            focusBuilderId={focusBuilderId}
+            onEdit={(target) => setDialogState({ mode: 'edit', schedule: target })}
+            onDeactivate={setDeactivateTarget}
+            onCreateFor={(builder) => setDialogState({ mode: 'create', builderId: builder.id })}
           />
-        </Stack>
-
-        {schedules.length > 0 ? (
-          <Box
-            sx={{
-              display: 'grid',
-              gridTemplateColumns: {
-                xs: 'minmax(0, 1fr)',
-                md: 'repeat(2, minmax(0, 1fr))',
-                xl: 'repeat(3, minmax(0, 1fr))',
-              },
-              alignItems: 'stretch',
-              gap: 2,
-            }}
-          >
-            {schedules.map((schedule) => {
-              const builder = buildersById.get(schedule.builderId)
-              if (!builder) return null
-
-              return (
-                <BuilderDrawScheduleCard
-                  key={schedule.id}
-                  schedule={schedule}
-                  builder={builder}
-                  canManage={canManageBuilderBillingSetups}
-                  onEdit={(target) =>
-                    setDialogState({ mode: 'edit', schedule: target })
-                  }
-                  onDeactivate={setDeactivateTarget}
-                />
-              )
-            })}
-          </Box>
         ) : (
           <Card variant="outlined" sx={{ p: 6, textAlign: 'center' }}>
             <BusinessRoundedIcon color="action" sx={{ fontSize: 44 }} />
@@ -1860,6 +1588,7 @@ export default function BuilderDrawSchedules() {
           schedule={dialogState.schedule}
           schedules={schedules}
           builders={builders}
+          initialBuilderId={dialogState.builderId ?? ''}
           onClose={submitting ? undefined : () => setDialogState(null)}
           onSave={handleSave}
           submitting={submitting}

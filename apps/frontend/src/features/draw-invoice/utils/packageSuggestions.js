@@ -67,15 +67,24 @@ function comparePackageSuggestions(left, right) {
     )
 }
 
+// A missed cutoff is work left behind, not a cutoff that is coming up: the countdowns
+// (Home, the menu badge) only count the upcoming ones.
 export function selectUpcomingCutoffSuggestions(suggestions = [], limit = 3) {
   const normalizedLimit = Number.isInteger(limit) && limit > 0 ? limit : 3
 
   return suggestions
     .filter((suggestion) => (
-      suggestion?.mode === 'CUTOFF' && suggestion.cutoffDate
+      suggestion?.mode === 'CUTOFF'
+      && suggestion.cutoffDate
+      && !suggestion.isMissedCutoff
     ))
     .sort(comparePackageSuggestions)
     .slice(0, normalizedLimit)
+}
+
+function hasSelections(suggestion) {
+  return suggestion.suggestedSelections.length > 0
+    || suggestion.suggestedHardwareSelections.length > 0
 }
 
 export function buildPackageSuggestions({
@@ -99,31 +108,37 @@ export function buildPackageSuggestions({
     )
     if (!schedule) return []
 
-    const calendarSuggestion = buildCalendarDrawSuggestion({
+    const suggestionInput = {
       activities: productionActivities,
       job,
       schedule,
       packages,
       asOfDate,
-    })
-    if (
-      calendarSuggestion.suggestedSelections.length === 0
-      && calendarSuggestion.suggestedHardwareSelections.length === 0
-    ) return []
+    }
+    let calendarSuggestion = buildCalendarDrawSuggestion(suggestionInput)
+    let businessDaysRemaining = null
+    let nextCutoffDate = null
 
-    const businessDaysRemaining = calendarSuggestion.mode === 'CUTOFF'
-      ? countBusinessDaysThroughCutoff(
+    if (calendarSuggestion.mode === 'CUTOFF') {
+      nextCutoffDate = calendarSuggestion.cutoffDate
+      businessDaysRemaining = countBusinessDaysThroughCutoff(
         asOfDate,
         calendarSuggestion.cutoffDate,
       )
-      : null
-    if (
-      calendarSuggestion.mode === 'CUTOFF'
-      && (
-        businessDaysRemaining == null
-        || businessDaysRemaining > maxBusinessDays
-      )
-    ) return []
+      const insideWindow = businessDaysRemaining != null
+        && businessDaysRemaining <= maxBusinessDays
+
+      if (!insideWindow) {
+        // The next cutoff is still far away. What was ready by the last cutoff and is still
+        // unbilled is not waiting for it: it is shown as a missed cutoff.
+        calendarSuggestion = buildCalendarDrawSuggestion({
+          ...suggestionInput,
+          missedCutoff: true,
+        })
+        businessDaysRemaining = null
+      }
+    }
+    if (!hasSelections(calendarSuggestion)) return []
 
     const selectedPhaseIds = new Set(
       [
@@ -162,6 +177,10 @@ export function buildPackageSuggestions({
         ?? phases[0].id,
       mode: calendarSuggestion.mode,
       cutoffDate: calendarSuggestion.cutoffDate,
+      // Work ready by a cutoff that already went by and is still unbilled.
+      isMissedCutoff: calendarSuggestion.isMissedCutoff,
+      // The cutoff that is coming (for a missed one, cutoffDate is the past cutoff).
+      nextCutoffDate,
       windowStart: calendarSuggestion.windowStart,
       windowEnd: calendarSuggestion.windowEnd,
       businessDaysRemaining,
@@ -179,9 +198,9 @@ export function buildPackageSuggestions({
   }).sort(comparePackageSuggestions)
 }
 
-/** Package Suggestions of Jobs with a fixed cutoff inside the window. */
+/** Package Suggestions of Jobs whose fixed cutoff is inside the window (not the missed ones). */
 export function buildUpcomingCutoffSuggestions(options) {
   return buildPackageSuggestions(options).filter(
-    (suggestion) => suggestion.mode === 'CUTOFF',
+    (suggestion) => suggestion.mode === 'CUTOFF' && !suggestion.isMissedCutoff,
   )
 }

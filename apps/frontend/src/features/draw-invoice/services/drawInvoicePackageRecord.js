@@ -120,6 +120,65 @@ export function resolveBillingCutoffDate(packageDate, setupVersion) {
   return null
 }
 
+/**
+ * The latest cutoff date strictly before `packageDate`: the cutoff a Builder with fixed
+ * cutoffs last had. Null for a Builder that bills any date, or a setup that cannot say.
+ */
+export function resolvePreviousBillingCutoffDate(packageDate, setupVersion) {
+  const date = parseDateKey(packageDate)
+  if (!date || !setupVersion || setupVersion.cutoff_any_date) return null
+
+  if (setupVersion.frequency === 'MONTHLY') {
+    const cutoffDay = Number(setupVersion.cutoff_day)
+    if (!Number.isInteger(cutoffDay) || cutoffDay < 1 || cutoffDay > 31) return null
+
+    for (let monthOffset = 0; monthOffset >= -1; monthOffset -= 1) {
+      const candidate = dateOnMonthDay(
+        date.getFullYear(),
+        date.getMonth() + monthOffset,
+        cutoffDay,
+      )
+      if (candidate < date) return toDateKey(candidate)
+    }
+    return null
+  }
+
+  if (setupVersion.frequency === 'SEMIMONTHLY') {
+    const cutoffDays = [...new Set((setupVersion.cutoff_days ?? [])
+      .map(Number)
+      .filter((day) => Number.isInteger(day) && day >= 1 && day <= 31))]
+      .sort((left, right) => right - left)
+
+    for (let monthOffset = 0; monthOffset >= -1; monthOffset -= 1) {
+      const candidate = cutoffDays
+        .map((day) => dateOnMonthDay(
+          date.getFullYear(),
+          date.getMonth() + monthOffset,
+          day,
+        ))
+        .sort((left, right) => right - left)
+        .find((day) => day < date)
+      if (candidate) return toDateKey(candidate)
+    }
+    return null
+  }
+
+  if (setupVersion.frequency === 'WEEKLY') {
+    const cutoffWeekday = Number(setupVersion.cutoff_weekday)
+    if (!Number.isInteger(cutoffWeekday) || cutoffWeekday < 0 || cutoffWeekday > 6) {
+      return null
+    }
+
+    // The most recent such weekday before the date (a full week back when it is today's).
+    const daysSinceCutoff = (date.getDay() - cutoffWeekday + 7) % 7 || 7
+    const cutoffDate = new Date(date)
+    cutoffDate.setDate(cutoffDate.getDate() - daysSinceCutoff)
+    return toDateKey(cutoffDate)
+  }
+
+  return null
+}
+
 export function toDrawInvoicePackage(
   packageRow,
   invoiceRow,

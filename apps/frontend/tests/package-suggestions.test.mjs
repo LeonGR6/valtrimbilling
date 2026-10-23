@@ -225,3 +225,104 @@ test('Home selects only the three closest fixed-cutoff Package Suggestions', () 
     ['11', '30', '40'],
   )
 })
+
+// --- Missed cutoffs: work that was ready by a cutoff that went by and is still unbilled ---
+
+const semimonthly = (overrides = {}) => buildSchedule({
+  frequency: 'SEMIMONTHLY',
+  cutoffDay: null,
+  cutoffDays: [8, 22],
+  ...overrides,
+})
+
+const activityOn = (date) => buildActivity({
+  stages: [{
+    id: 92,
+    type: 'EXT',
+    isEnabled: true,
+    schedules: [{ id: 93, date, lotIds: [101], isActive: true }],
+  }],
+})
+
+const suggestOn = (asOfDate, date, schedule = semimonthly()) => buildPackageSuggestions({
+  jobs: [buildJob()],
+  jobBillingSetupVersions: [schedule],
+  packages: [],
+  productionActivities: [activityOn(date)],
+  asOfDate,
+})
+
+test('work ready before a cutoff that went by is shown as a missed cutoff while the next one is far away', () => {
+  // October 23: the October 22 cutoff just passed, the next is November 8 (11 business days).
+  const [suggestion] = suggestOn('2026-10-23', '2026-10-09')
+
+  assert.equal(suggestOn('2026-10-23', '2026-10-09').length, 1)
+  assert.equal(suggestion.isMissedCutoff, true)
+  assert.equal(suggestion.cutoffDate, '2026-10-22')
+  assert.equal(suggestion.nextCutoffDate, '2026-11-08')
+  assert.equal(suggestion.businessDaysRemaining, null)
+  assert.equal(suggestion.isCutoffToday, false)
+  assert.equal(suggestion.selectionCount, 1)
+  assert.equal(suggestion.initialPhaseId, 21)
+})
+
+test('work dated after the last cutoff waits for the next one: it is not a missed cutoff', () => {
+  // Ready on October 26, after the October 22 cutoff, and the November 8 cutoff is not close.
+  assert.deepEqual(suggestOn('2026-10-23', '2026-10-26'), [])
+  // The existing rule for a far cutoff still holds when nothing was left behind.
+  assert.deepEqual(
+    buildPackageSuggestions({
+      jobs: [buildJob()],
+      jobBillingSetupVersions: [buildSchedule({ cutoffDay: 20 })],
+      packages: [],
+      productionActivities: [buildActivity()],
+      asOfDate: '2026-10-05',
+    }),
+    [],
+  )
+})
+
+test('inside five business days the usual cutoff suggestion covers the old work too', () => {
+  const [suggestion] = suggestOn('2026-11-03', '2026-10-09')
+
+  assert.equal(suggestion.isMissedCutoff, false)
+  assert.equal(suggestion.cutoffDate, '2026-11-08')
+  assert.equal(suggestion.businessDaysRemaining, 4)
+})
+
+test('billed work is not a missed cutoff, and a Builder that bills any date has none', () => {
+  const billed = buildPackageSuggestions({
+    jobs: [buildJob()],
+    jobBillingSetupVersions: [semimonthly()],
+    // A Package that already holds the Lot and draw.
+    packages: [{
+      id: 1,
+      jobId: 11,
+      status: 'DRAFT',
+      selections: [{ phaseId: 21, lotId: 101, drawIndex: 0 }],
+      hardwareLines: [],
+      options: [],
+    }],
+    productionActivities: [activityOn('2026-10-09')],
+    asOfDate: '2026-10-23',
+  })
+  const anyDate = suggestOn('2026-10-23', '2026-10-09', semimonthly({ anyDate: true }))
+
+  assert.deepEqual(billed, [])
+  assert.equal(anyDate.length, 1)
+  assert.equal(anyDate[0].mode, 'ANY_DATE')
+  assert.equal(anyDate[0].isMissedCutoff, false)
+})
+
+test('missed cutoffs are listed first and do not count as upcoming cutoffs', () => {
+  const suggestions = [
+    { mode: 'CUTOFF', cutoffDate: '2026-11-03', isMissedCutoff: false, job: { code: '20', builder: 'Acme' } },
+    { mode: 'CUTOFF', cutoffDate: '2026-10-22', isMissedCutoff: true, job: { code: '30', builder: 'Acme' } },
+    { mode: 'ANY_DATE', cutoffDate: null, job: { code: '10', builder: 'Acme' } },
+  ]
+
+  assert.deepEqual(
+    selectUpcomingCutoffSuggestions(suggestions).map(({ job }) => job.code),
+    ['20'],
+  )
+})

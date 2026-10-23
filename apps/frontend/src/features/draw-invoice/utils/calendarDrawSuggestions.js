@@ -1,4 +1,7 @@
-import { resolveBillingCutoffDate } from '../services/drawInvoicePackageRecord.js'
+import {
+  resolveBillingCutoffDate,
+  resolvePreviousBillingCutoffDate,
+} from '../services/drawInvoicePackageRecord.js'
 import {
   buildBilledHardwareCharges,
   buildOptionChargeContext,
@@ -101,10 +104,11 @@ function countsForBilling(productionSchedule) {
   return productionSchedule.variant !== 'BASEBOARD_INSTALL'
 }
 
-function emptySuggestion(mode, cutoffDate = null) {
+function emptySuggestion(mode, cutoffDate = null, isMissedCutoff = false) {
   return {
     mode,
     cutoffDate,
+    isMissedCutoff,
     windowStart: null,
     windowEnd: null,
     eligibleCandidates: [],
@@ -214,12 +218,19 @@ export function buildDrawCalendarHeadings({
   })
 }
 
+/**
+ * What the Calendar says is ready to bill. A Builder that bills any date gets the best rolling
+ * window; one with fixed cutoffs gets everything up to its next cutoff. With `missedCutoff` a
+ * fixed-cutoff Builder gets instead what was already ready by its last cutoff and is still
+ * unbilled: work left behind after that cutoff went by.
+ */
 export function buildCalendarDrawSuggestion({
   activities = [],
   job,
   schedule,
   packages = [],
   asOfDate = localDateKey(),
+  missedCutoff = false,
 }) {
   const mode = schedule?.anyDate ? 'ANY_DATE' : 'CUTOFF'
   if (!job || !schedule || !parseDateKey(asOfDate)) {
@@ -337,11 +348,15 @@ export function buildCalendarDrawSuggestion({
     }
   }
 
+  const isMissedCutoff = mode === 'CUTOFF' && missedCutoff
+  const resolveCutoff = isMissedCutoff
+    ? resolvePreviousBillingCutoffDate
+    : resolveBillingCutoffDate
   const cutoffDate = mode === 'CUTOFF'
-    ? resolveBillingCutoffDate(asOfDate, toCutoffSetup(schedule))
+    ? resolveCutoff(asOfDate, toCutoffSetup(schedule))
     : null
   const latestEligibleDate = mode === 'ANY_DATE' ? asOfDate : cutoffDate
-  if (!latestEligibleDate) return emptySuggestion(mode, cutoffDate)
+  if (!latestEligibleDate) return emptySuggestion(mode, cutoffDate, isMissedCutoff)
 
   const eligibleCandidates = [...candidatesByKey.values()]
     .filter((candidate) => candidate.billableDate <= latestEligibleDate)
@@ -365,6 +380,7 @@ export function buildCalendarDrawSuggestion({
     return {
       mode,
       cutoffDate,
+      isMissedCutoff,
       windowStart: null,
       windowEnd: null,
       eligibleCandidates,
@@ -468,6 +484,7 @@ export function buildCalendarDrawSuggestion({
   return {
     mode,
     cutoffDate: null,
+    isMissedCutoff: false,
     windowStart: bestWindow?.windowStart ?? null,
     windowEnd: bestWindow?.windowEnd ?? null,
     eligibleCandidates,

@@ -438,3 +438,35 @@ test('a baseboard install never makes anything billable, even if it is dated bef
   })
   assert.equal(later.eligibleSelections.length, 2)
 })
+
+// --- The previous cutoff, for work left behind after a cutoff went by ---
+
+test('the previous cutoff is the latest one strictly before the date', async () => {
+  const { resolvePreviousBillingCutoffDate } = await import('../src/features/draw-invoice/services/drawInvoicePackageRecord.js')
+  const monthly = { frequency: 'MONTHLY', cutoff_any_date: false, cutoff_day: 10 }
+  const semimonthly = { frequency: 'SEMIMONTHLY', cutoff_any_date: false, cutoff_days: [8, 22] }
+  const weekly = { frequency: 'WEEKLY', cutoff_any_date: false, cutoff_weekday: 1 }
+
+  assert.equal(resolvePreviousBillingCutoffDate('2026-10-23', semimonthly), '2026-10-22')
+  assert.equal(resolvePreviousBillingCutoffDate('2026-10-22', semimonthly), '2026-10-08')
+  assert.equal(resolvePreviousBillingCutoffDate('2026-10-05', semimonthly), '2026-09-22')
+  assert.equal(resolvePreviousBillingCutoffDate('2026-01-05', semimonthly), '2025-12-22')
+
+  assert.equal(resolvePreviousBillingCutoffDate('2026-10-23', monthly), '2026-10-10')
+  assert.equal(resolvePreviousBillingCutoffDate('2026-10-10', monthly), '2026-09-10')
+  assert.equal(resolvePreviousBillingCutoffDate('2026-10-05', monthly), '2026-09-10')
+  // A cutoff on the 31st falls on the last day of a shorter month.
+  assert.equal(
+    resolvePreviousBillingCutoffDate('2026-03-05', { ...monthly, cutoff_day: 31 }),
+    '2026-02-28',
+  )
+
+  // October 23, 2026 is a Friday; Monday is weekday 1.
+  assert.equal(resolvePreviousBillingCutoffDate('2026-10-23', weekly), '2026-10-19')
+  assert.equal(resolvePreviousBillingCutoffDate('2026-10-19', weekly), '2026-10-12')
+
+  assert.equal(resolvePreviousBillingCutoffDate('2026-10-23', { ...monthly, cutoff_any_date: true }), null)
+  assert.equal(resolvePreviousBillingCutoffDate('2026-10-23', null), null)
+  assert.equal(resolvePreviousBillingCutoffDate('nope', monthly), null)
+  assert.equal(resolvePreviousBillingCutoffDate('2026-10-23', { frequency: 'MONTHLY', cutoff_any_date: false }), null)
+})

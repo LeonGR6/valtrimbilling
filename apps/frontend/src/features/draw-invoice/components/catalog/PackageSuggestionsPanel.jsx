@@ -33,7 +33,7 @@ function groupSuggestions(suggestions) {
   for (const suggestion of suggestions) {
     const key = suggestion.mode === 'ANY_DATE'
       ? 'ANY_DATE'
-      : `CUTOFF:${suggestion.cutoffDate}`
+      : `${suggestion.isMissedCutoff ? 'MISSED' : 'CUTOFF'}:${suggestion.cutoffDate}`
     const items = groups.get(key) ?? []
     items.push(suggestion)
     groups.set(key, items)
@@ -150,8 +150,8 @@ export default function PackageSuggestionsPanel({
       title="Package Suggestions"
       count={loading || error ? null : suggestions.length}
       hint={empty
-        ? 'Nothing is ready within the next 5 business days.'
-        : 'Calendar-based recommendations for upcoming Builder cutoffs.'}
+        ? 'Nothing is ready within the next 5 business days, and no cutoff was missed.'
+        : 'Calendar-based recommendations for upcoming Builder cutoffs, and for work left unbilled after a missed one.'}
       loading={loading}
       open={open}
       onToggle={onToggle}
@@ -168,7 +168,8 @@ export default function PackageSuggestionsPanel({
         <Box sx={{ px: 2, py: 1.5 }}>
           <Typography variant="body2" fontWeight={750}>No Package Suggestions right now</Typography>
           <Typography variant="body2" color="text.secondary">
-            No Calendar-linked work is ready within the next 5 business days.
+            No Calendar-linked work is ready within the next 5 business days, and no cutoff went by
+            with work still unbilled.
           </Typography>
         </Box>
       )}
@@ -176,6 +177,7 @@ export default function PackageSuggestionsPanel({
       {!loading && !error && groups.map(({ key, items }, groupIndex) => {
         const first = items[0]
         const anyDate = first.mode === 'ANY_DATE'
+        const missed = Boolean(first.isMissedCutoff)
 
         return (
           <Box key={key}>
@@ -192,12 +194,23 @@ export default function PackageSuggestionsPanel({
                 borderColor: 'divider',
               }}
             >
-              <EventRoundedIcon color="action" sx={{ fontSize: 16 }} />
+              <EventRoundedIcon color={missed ? 'warning' : 'action'} sx={{ fontSize: 16 }} />
               <Typography variant="body2" fontWeight={800}>
-                {anyDate ? 'Ready anytime' : `Cutoff ${formatLongDate(first.cutoffDate)}`}
+                {anyDate
+                  ? 'Ready anytime'
+                  : missed
+                    ? `Missed cutoff ${formatLongDate(first.cutoffDate)}`
+                    : `Cutoff ${formatLongDate(first.cutoffDate)}`}
               </Typography>
+              {missed && (
+                <Chip size="small" color="warning" label="Missed cutoff" sx={{ height: 20 }} />
+              )}
               <Typography variant="caption" color="text.secondary" sx={{ flex: 1 }}>
-                {anyDate ? 'Highest-value rolling Calendar window' : businessDaysLabel(first)}
+                {anyDate
+                  ? 'Highest-value rolling Calendar window'
+                  : missed
+                    ? `Ready by then and still unbilled · next cutoff ${formatLongDate(first.nextCutoffDate)}`
+                    : businessDaysLabel(first)}
               </Typography>
               <Typography variant="caption" color="text.secondary">
                 {items.length} {items.length === 1 ? 'Job' : 'Jobs'}

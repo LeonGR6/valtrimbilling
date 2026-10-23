@@ -148,6 +148,20 @@ export async function listJobBillingSetupVersions(versionIds = []) {
   return hydrateBillingSetupVersions(client, versions)
 }
 
+/** Every version of one Builder's setup a Job can use (the current one and the replaced ones), newest first. */
+export async function listBuilderSetupVersions(builderId) {
+  const client = await requireSupabase()
+  const { data: versions, error } = await client
+    .from('billing_setup_versions')
+    .select(VERSION_COLUMNS)
+    .eq('builder_id', Number(builderId))
+    .in('status', ['ACTIVE', 'SUPERSEDED'])
+    .order('version_number', { ascending: false })
+
+  throwRepositoryError(error)
+  return hydrateBillingSetupVersions(client, versions)
+}
+
 export async function saveBuilderBillingSetup(schedule) {
   const client = await requireSupabase()
   const { error } = await client.rpc(

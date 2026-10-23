@@ -6,6 +6,7 @@ import {
   describeSetupDraws,
   describeSetupFigures,
   describeSetupHeadline,
+  diffSetups,
   formatSetupPercentage,
 } from '../src/features/builder-draw-schedules/utils/setupSummary.js'
 import { canCreateWithSetup, resolveJobSetup } from '../src/features/jobs/utils/jobSetup.js'
@@ -154,4 +155,38 @@ test('a new Job can be created only after confirming the version that is shown',
   // The setup changed after it was confirmed: it has to be confirmed again.
   assert.equal(canCreateWithSetup(setup({ id: 21 }), 20), false)
   assert.equal(canCreateWithSetup(null, 20), false)
+})
+
+test('two versions side by side say what differs, wrap and retention first', () => {
+  const now = setup({ versionNumber: 2, ocipWrapPercentage: 1 })
+  const next = setup({ id: 20, versionNumber: 3, ocipWrapPercentage: 2 })
+  const { rows, changedCount } = diffSetups(now, next)
+
+  assert.equal(changedCount, 1)
+  const changed = rows.filter(({ changed: isChanged }) => isChanged)
+  assert.deepEqual(changed.map(({ label, from, to }) => [label, from, to]), [['OCIP / WRAP', '1%', '2%']])
+  assert.deepEqual(rows.slice(0, 4).map(({ label }) => label), ['Retention', 'OCIP / WRAP', 'Payment terms', 'Cutoff'])
+  assert.equal(rows.some(({ group }) => group === 'Draws'), true)
+  assert.equal(diffSetups(now, now).changedCount, 0)
+})
+
+test('a version with another number of Draws shows the missing ones as dashes', () => {
+  const longer = setup({
+    draws: [...setup().draws, { name: '', percentage: 0, eventType: 'HW', lag: null }],
+  })
+  const { rows } = diffSetups(setup(), longer)
+  const fourth = rows.find(({ label }) => label === 'Draw 4')
+
+  assert.deepEqual([fourth.from, fourth.changed], ['—', true])
+  assert.match(fourth.to, /^0% · HW/)
+  const different = diffSetups(setup(), setup({ draws: [{ name: '', percentage: 100, eventType: 'EXT', lag: null }] }))
+  assert.equal(different.rows.find(({ label }) => label === 'Draw 1').to, '100% · EXT')
+  assert.equal(different.rows.find(({ label }) => label === 'Draw 3').to, '—')
+})
+
+test('details that only one version has are compared with a dash', () => {
+  const withNotes = diffSetups(setup(), setup({ notes: 'Net of deposits' }))
+  assert.equal(withNotes.rows.some(({ label }) => label === 'Notes'), false)
+  const lost = diffSetups(setup({ notes: 'Net of deposits' }), setup())
+  assert.deepEqual(lost.rows.find(({ label }) => label === 'Notes').to, '—')
 })

@@ -153,3 +153,37 @@ export function describeSetupHeadline(setup) {
     .map(({ label, value }) => `${label} ${value.split(' · ')[0]}`)
     .join(' · ')
 }
+
+/**
+ * Two versions side by side: one row per figure, Draw and detail, with what each says and whether
+ * it differs. Rows that differ come first within their group so a change cannot be missed.
+ */
+export function diffSetups(current, next) {
+  const row = (group, label, from, to) => ({ group, label, from, to, changed: from !== to })
+
+  const figures = describeSetupFigures(current).map((figure, index) => {
+    const other = describeSetupFigures(next)[index]
+    return row('Billing', figure.label, figure.value, other.value)
+  })
+
+  const drawLine = (draw) => (draw
+    ? `${draw.percentage}% · ${[draw.eventType, draw.lag ? `${draw.lag} after` : null].filter(Boolean).join(' · ')}`
+    : '—')
+  const currentDraws = describeSetupDraws(current).draws
+  const nextDraws = describeSetupDraws(next).draws
+  const draws = Array.from(
+    { length: Math.max(currentDraws.length, nextDraws.length) },
+    (_, index) => row('Draws', `Draw ${index + 1}`, drawLine(currentDraws[index]), drawLine(nextDraws[index])),
+  )
+
+  const nextDetails = describeSetupDetails(next)
+  const details = describeSetupDetails(current).map((detail) => row(
+    'Other',
+    detail.label,
+    detail.value,
+    nextDetails.find(({ label }) => label === detail.label)?.value ?? '—',
+  ))
+
+  const rows = [...figures, ...draws, ...details]
+  return { rows, changedCount: rows.filter(({ changed }) => changed).length }
+}

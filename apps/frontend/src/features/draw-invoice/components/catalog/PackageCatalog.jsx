@@ -52,6 +52,7 @@ import {
   sortPackageCatalogContexts,
   summarizePackageCatalogStatuses,
 } from '../../utils/packageCatalog.js'
+import MissedCutoffsPanel from './MissedCutoffsPanel.jsx'
 import PackageSuggestionsPanel from './PackageSuggestionsPanel.jsx'
 import RetentionSuggestionsPanel from './RetentionSuggestionsPanel.jsx'
 import PackageTable from './PackageTable.jsx'
@@ -337,6 +338,11 @@ export default function PackageCatalog({
     true,
     (value) => typeof value === 'boolean',
   )
+  const [missedOpen, setMissedOpen] = usePersistentState(
+    'draw-invoice:packages:missed-open',
+    true,
+    (value) => typeof value === 'boolean',
+  )
   const [retentionOpen, setRetentionOpen] = usePersistentState(
     'draw-invoice:packages:retention-open',
     true,
@@ -350,6 +356,8 @@ export default function PackageCatalog({
     if (linkedToSuggestions) navigate({ hash: '' }, { replace: true })
     setSuggestionsOpen(!showSuggestions)
   }
+  const missedCutoffSuggestions = packageSuggestions.filter((suggestion) => suggestion.isMissedCutoff)
+  const upcomingSuggestions = packageSuggestions.filter((suggestion) => !suggestion.isMissedCutoff)
   const filtersActive = search !== '' || builderFilter !== 'ALL'
     || communityFilter !== 'ALL' || statusTab !== 'ALL'
 
@@ -459,8 +467,15 @@ export default function PackageCatalog({
               {quickbooks.notice}
             </Alert>
           )}
+          <MissedCutoffsPanel
+            suggestions={missedCutoffSuggestions}
+            disabled={!canManage || createDisabled}
+            open={missedOpen}
+            onToggle={() => setMissedOpen((current) => !current)}
+            onReview={onReviewSuggestion}
+          />
           <PackageSuggestionsPanel
-            suggestions={packageSuggestions}
+            suggestions={upcomingSuggestions}
             loading={productionActivitiesLoading}
             error={productionActivitiesError}
             disabled={!canManage || createDisabled}

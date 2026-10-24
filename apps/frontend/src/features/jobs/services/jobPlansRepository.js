@@ -1,4 +1,5 @@
 import { requireSupabase } from '../../../services/api.js'
+import { listAllRowsByIds } from '../../../services/pagedQuery.js'
 import {
   toJobPlan,
   toJobPlanMutation,
@@ -100,55 +101,46 @@ export async function listJobPlans(jobIds) {
   if (normalizedJobIds.length === 0) return new Map()
 
   const client = await requireSupabase()
-  const { data: planRows, error: plansError } = await client
+  // Every list is read in full: a request returns at most 1000 rows, and the Options of all the Jobs
+  // are more than that. Each is ordered by something unique so the pages do not overlap.
+  const planRows = await listAllRowsByIds(normalizedJobIds, (batch) => client
     .from('plans')
     .select(PLAN_COLUMNS)
-    .in('job_id', normalizedJobIds)
+    .in('job_id', batch)
     .eq('is_active', true)
     .order('display_order', { ascending: true })
-    .order('id', { ascending: true })
+    .order('id', { ascending: true }), throwRepositoryError)
 
-  throwRepositoryError(plansError)
-
-  if (!planRows?.length) return new Map()
+  if (!planRows.length) return new Map()
 
   const planIds = planRows.map(({ id }) => id)
-  const [optionResult, planPriceResult] = await Promise.all([
-    client
+  const [optionRows, planPriceRows] = await Promise.all([
+    listAllRowsByIds(planIds, (batch) => client
       .from('plan_options')
       .select(OPTION_COLUMNS)
-      .in('plan_id', planIds)
+      .in('plan_id', batch)
       .eq('is_active', true)
-      .order('id', { ascending: true }),
-    client
+      .order('id', { ascending: true }), throwRepositoryError),
+    listAllRowsByIds(planIds, (batch) => client
       .from('plan_prices')
       .select(PLAN_PRICE_COLUMNS)
-      .in('plan_id', planIds)
-      .is('effective_to', null)
-      .order('effective_from', { ascending: false }),
-  ])
-
-  throwRepositoryError(optionResult.error)
-  throwRepositoryError(planPriceResult.error)
-
-  const optionRows = optionResult.data ?? []
-  const optionIds = optionRows.map(({ id }) => id)
-  let optionPriceRows = []
-
-  if (optionIds.length > 0) {
-    const { data, error } = await client
-      .from('option_prices')
-      .select(OPTION_PRICE_COLUMNS)
-      .in('option_id', optionIds)
+      .in('plan_id', batch)
       .is('effective_to', null)
       .order('effective_from', { ascending: false })
-
-    throwRepositoryError(error)
-    optionPriceRows = data ?? []
-  }
+      .order('id', { ascending: true }), throwRepositoryError),
+  ])
+  // The Options come in batches of Plans: all the Options of a Plan are in one batch, in order.
+  const optionIds = optionRows.map(({ id }) => id)
+  const optionPriceRows = await listAllRowsByIds(optionIds, (batch) => client
+    .from('option_prices')
+    .select(OPTION_PRICE_COLUMNS)
+    .in('option_id', batch)
+    .is('effective_to', null)
+    .order('effective_from', { ascending: false })
+    .order('id', { ascending: true }), throwRepositoryError)
 
   const planPrices = new Map(
-    (planPriceResult.data ?? []).map((price) => [price.plan_id, price]),
+    planPriceRows.map((price) => [price.plan_id, price]),
   )
   const optionPrices = new Map(
     optionPriceRows.map((price) => [price.option_id, price]),

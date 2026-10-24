@@ -25,7 +25,6 @@ import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
 import SmsOutlinedIcon from '@mui/icons-material/SmsOutlined'
 import { formatPhoneNumber } from '../../../utils/phoneNumbers.js'
 import {
-  builderLabelsById,
   coordinatorLabelsById,
   isClosed,
   prioritiesByValue,
@@ -173,6 +172,7 @@ const columns = [
 
 export default function ServiceRequestsTable({
   requests,
+  builderLabelsById,
   totalCount,
   page,
   rowsPerPage,

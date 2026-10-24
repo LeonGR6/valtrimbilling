@@ -13,6 +13,8 @@ const theme = createTheme({
         background: { default: '#F8FAFC', paper: '#FFFFFF' },
         divider: '#E2E8F0',
         sidebar: { bg: '#F8FAFC', hover: '#F1F5F9' },
+        // Dashboard urgency: due soon / overdue (text-safe on the panel)
+        urgency: { soon: '#C2410C', late: '#DC2626' },
         sequence: {
           header: '#E8F1FB',
           plan: '#B8D2EE',
@@ -33,6 +35,7 @@ const theme = createTheme({
         background: { default: '#0F172A', paper: '#1E293B' },
         divider: '#334155',
         sidebar: { bg: '#0F172A', hover: '#334155' },
+        urgency: { soon: '#FB923C', late: '#F87171' },
         sequence: {
           header: '#172D43',
           plan: '#1D3B57',

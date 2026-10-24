@@ -1,15 +1,9 @@
-import { initialContacts } from '../../builder-contacts/data/builderContacts.js'
-import { initialPeople } from '../../people/data/people.js'
-
 const dateFormatter = new Intl.DateTimeFormat('en-US', {
   weekday: 'short',
   day: 'numeric',
   month: 'short',
   year: 'numeric',
 })
-
-const supervisorsById = new Map(initialPeople.map((person) => [person.id, person]))
-const superintendentsById = new Map(initialContacts.map((person) => [person.id, person]))
 
 function parseLocalDate(dateString) {
   const [year, month, day] = dateString.split('-').map(Number)
@@ -24,17 +18,37 @@ export function formatPhase(value) {
   return String(value).toLowerCase().startsWith('phase') ? String(value) : `Phase ${value}`
 }
 
+// A Phase can have no Building: it reads as an empty text, not "Building null".
 export function formatBuilding(value) {
-  return String(value).toLowerCase().startsWith('building') ? String(value) : `Building ${value}`
+  const text = String(value ?? '').trim()
+  if (!text) return ''
+  return text.toLowerCase().startsWith('building') ? text : `Building ${text}`
+}
+
+/** "Phase 2 · Building A", or just "Phase 2" when the Phase has no Building. */
+export function formatPhaseBuilding(phase, building, separator = ' · ') {
+  return [formatPhase(phase), formatBuilding(building)].filter(Boolean).join(separator)
+}
+
+export function findJobBuilder(job, builders = []) {
+  return builders.find((builder) => (
+    builder.id === job?.builderId || builder.name === job?.builder
+  ))
 }
 
 function sortLotNumbers(lots) {
   return [...lots].sort((a, b) => Number(a.lotNumber) - Number(b.lotNumber))
 }
 
-export function getPhasePatch(job, phase) {
-  const lots = sortLotNumbers(phase?.lots ?? [])
+export function getPhasePatch(job, phase, people = [], builderContacts = []) {
+  const lots = sortLotNumbers(
+    (phase?.lots ?? []).filter((lot) => !lot.isUtilityBuilding),
+  )
   const lotNumbers = lots.map((lot) => String(lot.lotNumber))
+  const supervisor = people.find((person) => person.id === job?.supervisorId)
+  const superintendent = builderContacts.find(
+    (contact) => contact.id === job?.superintendentId,
+  )
 
   return {
     jobId: job?.id ?? '',
@@ -47,8 +61,9 @@ export function getPhasePatch(job, phase) {
     lotStart: Number(lotNumbers[0]) || 1,
     lotEnd: Number(lotNumbers.at(-1)) || 1,
     lotNumbers,
-    foreman: supervisorsById.get(job?.supervisorId)?.name ?? '',
-    superintendent: superintendentsById.get(job?.superintendentId)?.name ?? '',
+    lotIds: lots.map((lot) => Number(lot.id)),
+    foreman: supervisor?.name ?? '',
+    superintendent: superintendent?.name ?? '',
     dmSplitPhase: false,
     dmSplitParts: [],
     hwSplitPhase: false,
@@ -56,7 +71,10 @@ export function getPhasePatch(job, phase) {
   }
 }
 
-export function createDefaultSplitParts(draft, date, dateOwner = '', note = '') {
+// The two starting divisions split the lots in half. Their date and note are
+// left empty on purpose: the person has to enter them, so a date is never
+// copied over by mistake.
+export function createDefaultSplitParts(draft, dateOwner = '') {
   const lotStart = Math.max(1, Number(draft.lotStart) || 1)
   const requestedEnd = Number(draft.lotEnd) || lotStart + 1
   const lotEnd = Math.max(lotStart + 1, requestedEnd)
@@ -64,8 +82,8 @@ export function createDefaultSplitParts(draft, date, dateOwner = '', note = '') 
   const stamp = Date.now()
 
   return [
-    { id: `split-${stamp}-a`, lotStart, lotEnd: midpoint, date, dateOwner, note, history: [] },
-    { id: `split-${stamp}-b`, lotStart: midpoint + 1, lotEnd, date, dateOwner, note, history: [] },
+    { id: `split-${stamp}-a`, lotStart, lotEnd: midpoint, date: '', dateOwner, note: '', history: [] },
+    { id: `split-${stamp}-b`, lotStart: midpoint + 1, lotEnd, date: '', dateOwner, note: '', history: [] },
   ]
 }
 
@@ -90,7 +108,16 @@ export function addSplitDivision(parts) {
     widestIndex,
     1,
     { ...part, lotEnd: midpoint },
-    { ...part, id: `split-${Date.now()}`, lotStart: midpoint + 1 },
+    // The new division starts blank: its date and note are entered by hand.
+    {
+      id: `split-${Date.now()}`,
+      lotStart: midpoint + 1,
+      lotEnd: part.lotEnd,
+      date: '',
+      dateOwner: part.dateOwner,
+      note: '',
+      history: [],
+    },
   )
   return nextParts
 }

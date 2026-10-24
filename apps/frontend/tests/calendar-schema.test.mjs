@@ -5,8 +5,15 @@ import {
   createProductionCalendarEvents,
   getActivityTone,
   getLotsLabel,
+  getMonthEventLabel,
   recordProductionDateHistory,
 } from '../src/features/calendar/data/calendarEvents.js'
+import {
+  addSplitDivision,
+  createDefaultSplitParts,
+  formatBuilding,
+  formatPhaseBuilding,
+} from '../src/features/calendar/components/calendarSchedulerUtils.js'
 import { calendarEventSchema } from '../src/features/calendar/schemas/calendarEventSchema.js'
 
 const validActivity = {
@@ -21,6 +28,7 @@ const validActivity = {
   lotStart: '66',
   lotEnd: '70',
   lotNumbers: ['66', '67', '68', '69', '70'],
+  lotIds: [501, 502, 503, 504, 505],
   foreman: 'Lauren Mitchell',
   superintendent: 'Daniel Torres',
   notes: '',
@@ -68,6 +76,7 @@ test('non-contiguous lots are grouped without filling gaps', () => {
     lotStart: '1',
     lotEnd: '12',
     lotNumbers,
+    lotIds: [601, 602, 603, 604, 610, 611, 612],
   })
   const events = createProductionCalendarEvents(values, 'production-discrete-lots', 124)
 
@@ -323,4 +332,143 @@ test('Order Material changes the EXT tone without changing DM or HW', () => {
   assert.equal(getActivityTone('EXT', true), 'ext-order')
   assert.equal(getActivityTone('DM', true), 'dm')
   assert.equal(getActivityTone('HW', true), 'hw')
+  assert.equal(getActivityTone('DM', false, 'baseboard-install'), 'baseboard')
+  assert.equal(getActivityTone('DM', false, 'base'), 'dm')
+})
+
+test('the Month view shows one line: job, community, phase and building, lots and event', () => {
+  const props = {
+    jobCode: '1319',
+    community: 'El Monte',
+    phase: 'Phase 1',
+    building: 'Building 2',
+    lotStart: 1,
+    lotEnd: 9,
+    lotNumbers: [1, 2, 3, 4, 5, 6, 7, 8, 9],
+    activityType: 'EXT',
+    variant: 'base',
+  }
+
+  assert.equal(getMonthEventLabel(props), 'El Monte · P1 B2 · (1–9) · EXT')
+  assert.equal(
+    getMonthEventLabel({ ...props, phase: '1.1', building: 'B', lotNumbers: [4], activityType: 'HW', variant: 'install-only' }),
+    'El Monte · P1.1 B · (4) · HW INSTALL ONLY',
+  )
+})
+
+test('split divisions start without a date or a note', () => {
+  const parts = createDefaultSplitParts({ lotStart: 1, lotEnd: 9 }, 'SUPERVISOR')
+
+  assert.deepEqual(parts.map(({ lotStart, lotEnd }) => [lotStart, lotEnd]), [[1, 5], [6, 9]])
+  assert.deepEqual(parts.map((part) => [part.date, part.note, part.dateOwner]), [
+    ['', '', 'SUPERVISOR'],
+    ['', '', 'SUPERVISOR'],
+  ])
+
+  // A division added later starts blank too, and is not tied to a saved schedule.
+  const withDates = parts.map((part) => ({ ...part, date: '2026-07-21', note: 'x', scheduleId: 9 }))
+  const added = addSplitDivision(withDates)
+  const newest = added.find((part) => !withDates.some((old) => old.id === part.id))
+  assert.equal(newest.date, '')
+  assert.equal(newest.note, '')
+  assert.equal(newest.scheduleId, undefined)
+})
+
+test('saving a split without its dates asks for them', () => {
+  const split = createDefaultSplitParts({ lotStart: 1, lotEnd: 4 }, 'SUPERVISOR')
+  const result = calendarEventSchema.safeParse({
+    ...validActivity,
+    lotStart: 1,
+    lotEnd: 4,
+    dmSplitPhase: true,
+    dmSplitParts: split,
+  })
+
+  assert.equal(result.success, false)
+  assert.ok(result.error.issues.some((issue) => issue.message === 'Enter the date of every division.'))
+
+  const filled = calendarEventSchema.safeParse({
+    ...validActivity,
+    lotStart: 1,
+    lotEnd: 4,
+    dmSplitPhase: true,
+    dmSplitParts: split.map((part) => ({ ...part, date: '2026-07-21' })),
+  })
+  assert.equal(filled.success, true)
+})
+
+test('a production activity can be scheduled for a phase without a building', () => {
+  const { building: _building, ...withoutBuilding } = validActivity
+  const result = calendarEventSchema.safeParse({ ...withoutBuilding })
+  assert.equal(result.success, true)
+  assert.equal(result.data.building, '')
+
+  const blank = calendarEventSchema.safeParse({ ...validActivity, building: '  ' })
+  assert.equal(blank.success, true)
+  assert.equal(blank.data.building, '')
+})
+
+test('the calendar names a phase with or without its building', () => {
+  assert.equal(formatBuilding(''), '')
+  assert.equal(formatBuilding(null), '')
+  assert.equal(formatBuilding(undefined), '')
+  assert.equal(formatBuilding('15'), 'Building 15')
+  assert.equal(formatBuilding('Building 15'), 'Building 15')
+  assert.equal(formatPhaseBuilding('2', '15'), 'Phase 2 · Building 15')
+  assert.equal(formatPhaseBuilding('2', ''), 'Phase 2')
+  assert.equal(formatPhaseBuilding('2', '15', ' / '), 'Phase 2 / Building 15')
+
+  const props = { ...validActivity, phase: 'Phase 2', building: '', lotNumbers: [4], lotStart: 4, lotEnd: 4 }
+  assert.equal(
+    getMonthEventLabel({ ...props, activityType: 'HW', variant: 'install-only' }).includes('B undefined'),
+    false,
+  )
+})
+
+test('DM baseboard install requires its separate date and owner defaults to Tentative', () => {
+  const missingDate = calendarEventSchema.safeParse({
+    ...validActivity,
+    dmBaseboardInstall: true,
+  })
+  assert.equal(missingDate.success, false)
+  assert.equal(missingDate.error.issues[0].path[0], 'dmBaseboardInstallDate')
+
+  const result = calendarEventSchema.parse({
+    ...validActivity,
+    dmBaseboardInstall: true,
+    dmBaseboardInstallDate: '2026-08-20',
+    dmBaseboardInstallDateOwner: '',
+  })
+  assert.equal(result.dmBaseboardInstallDateOwner, 'TENTATIVE')
+
+  // Off by default, like the other extra events.
+  assert.equal(calendarEventSchema.parse(validActivity).dmBaseboardInstall, false)
+})
+
+test('the DM baseboard install option creates a separate event', () => {
+  const values = calendarEventSchema.parse({
+    ...validActivity,
+    dmBaseboardInstall: true,
+    dmBaseboardInstallDate: '2026-08-20',
+    dmBaseboardInstallDateOwner: 'SUPERVISOR',
+    dmBaseboardInstallDateNote: 'After paint.',
+  })
+  const events = createProductionCalendarEvents(values, 'production-baseboard', 130)
+  const baseboard = events.find((event) => event.extendedProps.variant === 'baseboard-install')
+
+  assert.ok(baseboard)
+  assert.equal(baseboard.start, '2026-08-20')
+  assert.equal(baseboard.title.startsWith('DM BASEBOARD INSTALL'), true)
+  assert.equal(baseboard.extendedProps.activityType, 'DM')
+  assert.equal(baseboard.extendedProps.dateOwner, 'SUPERVISOR')
+  assert.equal(baseboard.extendedProps.dateNote, 'After paint.')
+  assert.deepEqual(baseboard.extendedProps.lotNumbers, values.lotNumbers)
+  // The DM event itself is still there, marked as having the extra event.
+  const dm = events.find((event) => event.extendedProps.variant === 'base' && event.extendedProps.activityType === 'DM')
+  assert.equal(dm.extendedProps.baseboardInstall, true)
+  assert.equal(getMonthEventLabel(baseboard.extendedProps).endsWith('DM BASEBOARD INSTALL'), true)
+
+  // Without the option there is no such event.
+  const plain = createProductionCalendarEvents(calendarEventSchema.parse(validActivity), 'production-plain', 131)
+  assert.equal(plain.some((event) => event.extendedProps.variant === 'baseboard-install'), false)
 })

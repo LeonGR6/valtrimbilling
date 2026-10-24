@@ -1,0 +1,193 @@
+import { requireSupabase } from '../../../services/api.js'
+import {
+  toBuilderBillingSetupRpc,
+  toBuilderDrawSchedule,
+} from './builderBillingSetupRecord.js'
+
+const VERSION_COLUMNS = [
+  'id',
+  'builder_id',
+  'version_number',
+  'status',
+  'separate_hardware_price',
+  'hardware_billing_mode',
+  'hardware_ext_percentage',
+  'hardware_dm_percentage',
+  'hardware_hw_percentage',
+  'utility_building',
+  'utility_billing_mode',
+  'utility_ext_percentage',
+  'utility_dm_percentage',
+  'utility_hw_percentage',
+  'options_billing_draw_number',
+  'frequency',
+  'cutoff_any_date',
+  'cutoff_day',
+  'cutoff_days',
+  'cutoff_weekday',
+  'payment_terms_days',
+  'retention_enabled',
+  'retention_percentage',
+  'retention_release_scope',
+  'final_release_scope',
+  'wrap_enabled',
+  'wrap_percentage',
+  'invoice_line_format',
+  'submission_method',
+  'submission_destination',
+  'portal_name',
+  'notes',
+].join(', ')
+
+const DRAW_COLUMNS = [
+  'id',
+  'setup_version_id',
+  'draw_number',
+  'name',
+  'percentage',
+  'event_type',
+  'lag_value',
+  'lag_unit',
+].join(', ')
+
+const DOCUMENT_COLUMNS = [
+  'id',
+  'setup_version_id',
+  'document_type',
+  'is_required',
+  'display_order',
+].join(', ')
+
+function throwRepositoryError(error) {
+  if (!error) return
+
+  if (error.code === '42501') {
+    throw new Error('You do not have permission to change Builder billing setups.', {
+      cause: error,
+    })
+  }
+
+  if (error.code === '23503') {
+    throw new Error('Select an active Builder that still exists.', { cause: error })
+  }
+
+  if (error.code === '23505') {
+    throw new Error('This Builder already has an active billing setup.', {
+      cause: error,
+    })
+  }
+
+  if (error.code === '23514') {
+    throw new Error('Review the billing frequency, draws, deductions and submission details.', {
+      cause: error,
+    })
+  }
+
+  throw new Error(error.message || 'The Builder billing setup request failed.', {
+    cause: error,
+  })
+}
+
+async function hydrateBillingSetupVersions(client, versions) {
+  if (!versions?.length) return []
+
+  const versionIds = versions.map(({ id }) => id)
+  const [drawResult, documentResult] = await Promise.all([
+    client
+      .from('billing_draws')
+      .select(DRAW_COLUMNS)
+      .in('setup_version_id', versionIds)
+      .order('setup_version_id', { ascending: true })
+      .order('draw_number', { ascending: true }),
+    client
+      .from('billing_required_documents')
+      .select(DOCUMENT_COLUMNS)
+      .in('setup_version_id', versionIds)
+      .order('setup_version_id', { ascending: true })
+      .order('display_order', { ascending: true }),
+  ])
+
+  throwRepositoryError(drawResult.error)
+  throwRepositoryError(documentResult.error)
+
+  return versions.map((version) => toBuilderDrawSchedule(
+    version,
+    drawResult.data ?? [],
+    documentResult.data ?? [],
+  ))
+}
+
+export async function listBuilderBillingSetups() {
+  const client = await requireSupabase()
+  const { data: versions, error: versionsError } = await client
+    .from('billing_setup_versions')
+    .select(VERSION_COLUMNS)
+    .eq('status', 'ACTIVE')
+    .order('builder_id', { ascending: true })
+
+  throwRepositoryError(versionsError)
+  return hydrateBillingSetupVersions(client, versions)
+}
+
+export async function listJobBillingSetupVersions(versionIds = []) {
+  const normalizedIds = [...new Set(
+    versionIds.map(Number).filter((value) => Number.isInteger(value) && value > 0),
+  )]
+  if (normalizedIds.length === 0) return []
+
+  const client = await requireSupabase()
+  const { data: versions, error: versionsError } = await client
+    .from('billing_setup_versions')
+    .select(VERSION_COLUMNS)
+    .in('id', normalizedIds)
+    .in('status', ['ACTIVE', 'SUPERSEDED'])
+    .order('builder_id', { ascending: true })
+    .order('version_number', { ascending: false })
+
+  throwRepositoryError(versionsError)
+  return hydrateBillingSetupVersions(client, versions)
+}
+
+/** Every version of one Builder's setup a Job can use (the current one and the replaced ones), newest first. */
+export async function listBuilderSetupVersions(builderId) {
+  const client = await requireSupabase()
+  const { data: versions, error } = await client
+    .from('billing_setup_versions')
+    .select(VERSION_COLUMNS)
+    .eq('builder_id', Number(builderId))
+    .in('status', ['ACTIVE', 'SUPERSEDED'])
+    .order('version_number', { ascending: false })
+
+  throwRepositoryError(error)
+  return hydrateBillingSetupVersions(client, versions)
+}
+
+export async function saveBuilderBillingSetup(schedule) {
+  const client = await requireSupabase()
+  const { error } = await client.rpc(
+    'save_builder_billing_setup',
+    toBuilderBillingSetupRpc(schedule),
+  )
+
+  throwRepositoryError(error)
+
+  const schedules = await listBuilderBillingSetups()
+  const saved = schedules.find(
+    (candidate) => candidate.builderId === Number(schedule.builderId),
+  )
+
+  if (!saved) {
+    throw new Error('The saved Builder billing setup could not be reloaded.')
+  }
+
+  return saved
+}
+
+export async function deactivateBuilderBillingSetup(builderId) {
+  const client = await requireSupabase()
+  const { error } = await client.rpc('deactivate_builder_billing_setup', {
+    p_builder_id: Number(builderId),
+  })
+
+  throwRepositoryError(error)
+}

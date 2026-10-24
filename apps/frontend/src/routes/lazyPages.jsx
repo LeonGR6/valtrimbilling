@@ -1,6 +1,7 @@
 import { lazy } from 'react'
 
 export const CalendarPage = lazy(() => import('../pages/Calendar'))
+export const ChangeOrdersPage = lazy(() => import('../pages/ChangeOrders'))
 export const BuilderDrawSchedulesPage = lazy(() => import('../pages/BuilderDrawSchedules'))
 export const FinancialsPage = lazy(() => import('../pages/Financials'))
 export const HomePage = lazy(() => import('../pages/Home'))
@@ -15,6 +16,7 @@ export const LoginPage = lazy(() => import('../pages/Auth/Login'))
 export const ForgotPasswordPage = lazy(() => import('../pages/Auth/ForgotPassword'))
 export const ResetPasswordPage = lazy(() => import('../pages/Auth/ResetPassword'))
 export const AcceptInvitePage = lazy(() => import('../pages/Auth/AcceptInvite'))
+export const BuilderFollowUpResponsePage = lazy(() => import('../pages/BuilderFollowUpResponse'))
 export const UsersPage = lazy(() => import('../pages/Users'))
 export const BuilderContactsPage = lazy(() => import('../pages/BuilderContacts'))
 export const CustomerServicePage = lazy(() => import('../pages/CustomerService'))

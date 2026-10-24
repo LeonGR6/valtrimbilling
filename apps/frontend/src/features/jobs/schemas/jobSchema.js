@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { jobContactRoles } from '../data/jobContactRoles.js'
 
 function normalize(value) {
   return value.trim().toLocaleLowerCase()
@@ -25,10 +26,14 @@ export function createJobSchema(jobs, currentJobId) {
         .number({ invalid_type_error: 'Select a supervisor.' })
         .int()
         .positive('Select a supervisor.'),
-      superintendentId: z
-        .number({ invalid_type_error: 'Select a jobsite superintendent.' })
-        .int()
-        .positive('Select a jobsite superintendent.'),
+      ...Object.fromEntries(jobContactRoles.map((role) => {
+        const contact = z
+          .number({ invalid_type_error: `Select a ${role.label.toLowerCase()}.` })
+          .int()
+          .positive(`Select a ${role.label.toLowerCase()}.`)
+        // An optional contact may be left empty.
+        return [role.field, role.optional ? contact.nullable().optional() : contact]
+      })),
     })
     .superRefine((data, context) => {
       const duplicateCode = jobs.some(

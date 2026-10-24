@@ -1,11 +1,12 @@
 import { useMemo, useState } from 'react'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { Controller, useForm } from 'react-hook-form'
+import { Controller, useForm, useWatch } from 'react-hook-form'
 import {
   Alert,
   Avatar,
   Box,
   Button,
+  Checkbox,
   Chip,
   Dialog,
   DialogActions,
@@ -13,6 +14,8 @@ import {
   DialogTitle,
   FormControl,
   FormControlLabel,
+  FormGroup,
+  FormHelperText,
   IconButton,
   InputAdornment,
   InputLabel,
@@ -48,6 +51,7 @@ import {
 import {
   emptyPerson,
   personTypeLabels,
+  personTypeOptions,
 } from '../data/people.js'
 import { usePeople } from '../context/usePeople.js'
 import { personSchema } from '../schemas/personSchema.js'
@@ -94,6 +98,8 @@ function PersonDialog({ person, onClose, onSave, submitting }) {
     mode: 'onTouched',
     reValidateMode: 'onChange',
   })
+  const selectedTypes = useWatch({ control, name: 'types' })
+  const isSupervisor = selectedTypes.includes('SUPERVISOR')
   return (
     <Dialog
       open
@@ -106,12 +112,12 @@ function PersonDialog({ person, onClose, onSave, submitting }) {
     >
       <DialogTitle sx={{ pb: 1 }}>
         <Typography variant="h6" component="div" fontWeight={700}>
-          {person ? 'Edit supervisor' : 'New supervisor'}
+          {person ? 'Edit company contact' : 'New company contact'}
         </Typography>
         <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
           {person
-            ? 'Update the supervisor contact information and territory.'
-            : 'Add a Valtrim supervisor who can be assigned to jobs.'}
+            ? 'Update the contact information and the types of this contact.'
+            : 'Add someone who works for Valtrim and can be assigned to jobs.'}
         </Typography>
       </DialogTitle>
 
@@ -161,18 +167,64 @@ function PersonDialog({ person, onClose, onSave, submitting }) {
           />
 
 
-          <TextField
-            label="Territory"
-            {...register('territory')}
-            error={Boolean(errors.territory)}
-            helperText={
-              errors.territory?.message
-              ?? 'Geographic area assigned to this Valtrim supervisor.'
-            }
-            required
-            fullWidth
-            slotProps={{ htmlInput: { maxLength: 80 } }}
+          <Controller
+            name="types"
+            control={control}
+            render={({ field }) => (
+              <Box>
+                <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 0.5 }}>
+                  Contact type
+                </Typography>
+                <FormGroup>
+                  {personTypeOptions.map((option) => (
+                    <FormControlLabel
+                      key={option.value}
+                      control={(
+                        <Checkbox
+                          size="small"
+                          checked={field.value.includes(option.value)}
+                          onChange={(_, checked) => field.onChange(
+                            checked
+                              ? [...field.value, option.value]
+                              : field.value.filter((type) => type !== option.value),
+                          )}
+                        />
+                      )}
+                      label={(
+                        <Box>
+                          <Typography variant="body2" fontWeight={600}>
+                            {option.label}
+                          </Typography>
+                          <Typography variant="caption" color="text.secondary">
+                            {option.description}
+                          </Typography>
+                        </Box>
+                      )}
+                      sx={{ alignItems: 'flex-start', mb: 0.5 }}
+                    />
+                  ))}
+                </FormGroup>
+                <FormHelperText error={Boolean(errors.types)}>
+                  {errors.types?.message ?? ' '}
+                </FormHelperText>
+              </Box>
+            )}
           />
+
+          {isSupervisor && (
+            <TextField
+              label="Territory"
+              {...register('territory')}
+              error={Boolean(errors.territory)}
+              helperText={
+                errors.territory?.message
+                ?? 'Geographic area assigned to this Valtrim supervisor.'
+              }
+              required
+              fullWidth
+              slotProps={{ htmlInput: { maxLength: 80 } }}
+            />
+          )}
 
           {person && (
             <Box
@@ -203,10 +255,10 @@ function PersonDialog({ person, onClose, onSave, submitting }) {
                 label={(
                   <Box>
                     <Typography variant="body2" fontWeight={600}>
-                      Active supervisor
+                      Active contact
                     </Typography>
                     <Typography variant="caption" color="text.secondary">
-                      Inactive supervisors remain visible in the roster.
+                      Inactive contacts remain visible in the list.
                     </Typography>
                   </Box>
                 )}
@@ -223,7 +275,7 @@ function PersonDialog({ person, onClose, onSave, submitting }) {
         <Button type="submit" variant="contained" disabled={submitting} disableElevation>
           {submitting
             ? 'Saving...'
-            : person ? 'Save changes' : 'Create supervisor'}
+            : person ? 'Save changes' : 'Create contact'}
         </Button>
       </DialogActions>
     </Dialog>
@@ -235,11 +287,11 @@ export default function PeopleCatalog() {
     people,
     loading,
     error,
-    canManageSupervisors,
+    canManageContacts,
     refreshPeople,
-    createSupervisor,
-    updateSupervisor,
-    deactivateSupervisor,
+    createContact,
+    updateContact,
+    deactivateContact,
   } = usePeople()
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState('all')
@@ -258,7 +310,14 @@ export default function PeopleCatalog() {
     return people.filter((person) => {
       const matchesSearch =
         !query ||
-        [person.name, person.phone, person.officePhone, person.email, person.territory]
+        [
+          person.name,
+          person.phone,
+          person.officePhone,
+          person.email,
+          person.territory,
+          ...person.types.map((type) => personTypeLabels[type]),
+        ]
           .join(' ')
           .toLowerCase()
           .includes(query)
@@ -299,12 +358,12 @@ export default function PeopleCatalog() {
     setSubmitting(true)
     try {
       if (dialogState?.mode === 'edit') {
-        await updateSupervisor(dialogState.person.id, form)
-        setNotice({ severity: 'success', message: 'Supervisor updated.' })
+        await updateContact(dialogState.person.id, form)
+        setNotice({ severity: 'success', message: 'Contact updated.' })
       } else {
-        await createSupervisor(form)
+        await createContact(form)
         setPage(0)
-        setNotice({ severity: 'success', message: 'Supervisor created.' })
+        setNotice({ severity: 'success', message: 'Contact created.' })
       }
 
       setDialogState(null)
@@ -318,10 +377,10 @@ export default function PeopleCatalog() {
   const handleDeactivate = async () => {
     setSubmitting(true)
     try {
-      await deactivateSupervisor(deactivateTarget.id)
+      await deactivateContact(deactivateTarget.id)
       setDeactivateTarget(null)
       setPage(0)
-      setNotice({ severity: 'success', message: 'Supervisor deactivated.' })
+      setNotice({ severity: 'success', message: 'Contact deactivated.' })
     } catch (deactivateError) {
       setNotice({ severity: 'error', message: deactivateError.message })
     } finally {
@@ -347,15 +406,15 @@ export default function PeopleCatalog() {
       >
         <Box>
           <Typography variant="h5" fontWeight={700} color="text.primary">
-            Crews &amp; Foremen
+            Company Contacts
           </Typography>
           <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-            Manage Valtrim supervisors available for job assignments.
+            Manage the Valtrim people who can be assigned to jobs: supervisors, estimators, coordinators and more.
           </Typography>
         </Box>
-        {canManageSupervisors && (
+        {canManageContacts && (
           <ResponsiveCreateButton
-            label="New supervisor"
+            label="New contact"
             onClick={() => setDialogState({ mode: 'create' })}
           />
         )}
@@ -383,7 +442,7 @@ export default function PeopleCatalog() {
                 setPage(0)
               }}
               size="small"
-              placeholder="Search supervisors or contact information..."
+              placeholder="Search contacts, types or contact information..."
               sx={{ width: { xs: '100%', md: 380 } }}
               slotProps={{
                 input: {
@@ -411,7 +470,7 @@ export default function PeopleCatalog() {
                   </InputAdornment>
                 )}
               >
-                <MenuItem value="all">All supervisors</MenuItem>
+                <MenuItem value="all">All contacts</MenuItem>
                 <MenuItem value="active">Active</MenuItem>
                 <MenuItem value="inactive">Inactive</MenuItem>
               </Select>
@@ -447,13 +506,13 @@ export default function PeopleCatalog() {
                     },
                   }}
                 >
-                  <TableCell>Person</TableCell>
+                  <TableCell>Contact</TableCell>
                   <TableCell>Phone number</TableCell>
                   <TableCell>Office phone number</TableCell>
-                  <TableCell>Person type</TableCell>
+                  <TableCell>Contact type</TableCell>
                   <TableCell>Territory</TableCell>
                   <TableCell>Status</TableCell>
-                  {canManageSupervisors && (
+                  {canManageContacts && (
                     <TableCell align="right" width={72}>Actions</TableCell>
                   )}
                 </TableRow>
@@ -544,7 +603,7 @@ export default function PeopleCatalog() {
                         }}
                       />
                     </TableCell>
-                    {canManageSupervisors && (
+                    {canManageContacts && (
                       <TableCell align="right">
                         <IconButton
                           size="small"
@@ -561,10 +620,10 @@ export default function PeopleCatalog() {
                 {loading && visiblePeople.length === 0 && (
                   <TableRow>
                     <TableCell
-                      colSpan={6 + Number(canManageSupervisors)}
+                      colSpan={6 + Number(canManageContacts)}
                       sx={{ py: 8, textAlign: 'center' }}
                     >
-                      <Typography color="text.secondary">Loading supervisors...</Typography>
+                      <Typography color="text.secondary">Loading contacts...</Typography>
                     </TableCell>
                   </TableRow>
                 )}
@@ -572,14 +631,14 @@ export default function PeopleCatalog() {
                 {!loading && visiblePeople.length === 0 && (
                   <TableRow>
                     <TableCell
-                      colSpan={6 + Number(canManageSupervisors)}
+                      colSpan={6 + Number(canManageContacts)}
                       sx={{ py: 8, textAlign: 'center' }}
                     >
                       <SearchRoundedIcon color="action" sx={{ fontSize: 40, mb: 1 }} />
-                      <Typography fontWeight={600}>No supervisors found</Typography>
+                      <Typography fontWeight={600}>No contacts found</Typography>
                       <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
                         {people.length === 0
-                          ? 'Create the first supervisor to start the roster.'
+                          ? 'Create the first contact to start the list.'
                           : 'Try changing your search or status filter.'}
                       </Typography>
                     </TableCell>
@@ -641,11 +700,11 @@ export default function PeopleCatalog() {
         fullWidth
         maxWidth="xs"
       >
-        <DialogTitle>Deactivate supervisor?</DialogTitle>
+        <DialogTitle>Deactivate contact?</DialogTitle>
         <DialogContent>
           <Typography variant="body2" color="text.secondary">
             {deactivateTarget
-              ? `${deactivateTarget.name} will remain in the roster as inactive.`
+              ? `${deactivateTarget.name} will remain in the list as inactive.`
               : ''}
           </Typography>
         </DialogContent>
@@ -664,7 +723,7 @@ export default function PeopleCatalog() {
             disabled={submitting}
             disableElevation
           >
-            {submitting ? 'Deactivating...' : 'Deactivate supervisor'}
+            {submitting ? 'Deactivating...' : 'Deactivate contact'}
           </Button>
         </DialogActions>
       </Dialog>

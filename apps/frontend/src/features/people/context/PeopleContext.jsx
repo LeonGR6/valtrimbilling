@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useAuth } from '../../auth/context/useAuth.js'
 import {
-  createSupervisor as createSupervisorRecord,
-  deactivateSupervisor as deactivateSupervisorRecord,
-  listSupervisors,
-  updateSupervisor as updateSupervisorRecord,
-} from '../services/supervisorsRepository.js'
+  createCompanyContact as createCompanyContactRecord,
+  deactivateCompanyContact as deactivateCompanyContactRecord,
+  listCompanyContacts,
+  updateCompanyContact as updateCompanyContactRecord,
+} from '../services/companyContactsRepository.js'
 import { PeopleContext } from './peopleContext.js'
 
 function sortPeople(people) {
@@ -17,7 +17,7 @@ export function PeopleProvider({ children }) {
   const [people, setPeople] = useState([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
-  const canManageSupervisors = ['ADMIN', 'PROJECT_MANAGEMENT'].includes(profile?.role)
+  const canManageContacts = ['ADMIN', 'PROJECT_MANAGEMENT'].includes(profile?.role)
 
   const refreshPeople = useCallback(async () => {
     if (!profile?.id) {
@@ -28,7 +28,7 @@ export function PeopleProvider({ children }) {
 
     setLoading(true)
     try {
-      const records = await listSupervisors()
+      const records = await listCompanyContacts()
       setPeople(records)
       setError(null)
       return records
@@ -54,26 +54,26 @@ export function PeopleProvider({ children }) {
     return undefined
   }, [profile?.id, refreshPeople])
 
-  const createSupervisor = useCallback(async (supervisor) => {
-    const created = await createSupervisorRecord(supervisor)
+  const createContact = useCallback(async (contact) => {
+    const created = await createCompanyContactRecord(contact)
     setPeople((current) => sortPeople([created, ...current]))
     setError(null)
     return created
   }, [])
 
-  const updateSupervisor = useCallback(async (supervisorId, supervisor) => {
-    const updated = await updateSupervisorRecord(supervisorId, supervisor)
+  const updateContact = useCallback(async (contactId, contact) => {
+    const updated = await updateCompanyContactRecord(contactId, contact)
     setPeople((current) => sortPeople(current.map((person) => (
-      person.id === supervisorId ? updated : person
+      person.id === contactId ? updated : person
     ))))
     setError(null)
     return updated
   }, [])
 
-  const deactivateSupervisor = useCallback(async (supervisorId) => {
-    const updated = await deactivateSupervisorRecord(supervisorId)
+  const deactivateContact = useCallback(async (contactId) => {
+    const updated = await deactivateCompanyContactRecord(contactId)
     setPeople((current) => current.map((person) => (
-      person.id === supervisorId ? updated : person
+      person.id === contactId ? updated : person
     )))
     setError(null)
     return updated
@@ -83,20 +83,20 @@ export function PeopleProvider({ children }) {
     people,
     loading,
     error,
-    canManageSupervisors,
+    canManageContacts,
     refreshPeople,
-    createSupervisor,
-    updateSupervisor,
-    deactivateSupervisor,
+    createContact,
+    updateContact,
+    deactivateContact,
   }), [
-    canManageSupervisors,
-    createSupervisor,
-    deactivateSupervisor,
+    canManageContacts,
+    createContact,
+    deactivateContact,
     error,
     loading,
     people,
     refreshPeople,
-    updateSupervisor,
+    updateContact,
   ])
 
   return <PeopleContext.Provider value={value}>{children}</PeopleContext.Provider>

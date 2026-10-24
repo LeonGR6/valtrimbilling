@@ -39,12 +39,12 @@ export const planOptionSchema = z.object({
   code: z
     .string()
     .trim()
-    .min(1, 'Enter the P.O. / OPT # (option code).')
-    .max(50, 'Use 50 characters or fewer.')
+    .min(1, 'Enter the OPT # (option code).')
+    .max(40, 'Use 40 characters or fewer.')
     .transform((value) => value.toUpperCase()),
   description: z
     .string()
     .trim()
-    .min(1, 'Enter the option description.')
+    .min(1, 'Enter the option description. If it doesn’t exist, enter the same value as the OPT #.')
     .max(240, 'Use 240 characters or fewer.'),
 })

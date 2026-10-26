@@ -1,5 +1,11 @@
 import { resolveJobBillingSchedule } from './packageSuggestions.js'
 
+// TEMPORARY: the one-month hold after the last Hardware cutoff is lifted, so a Retention Release is
+// ready from the last cutoff itself, once the Hardware is billed and its Packages qualify. Set this
+// back to true to hold it one month again. The database lifts it the same way (migration
+// 20261107120000), so both go back together.
+export const HOLD_RETENTION_ONE_MONTH = false
+
 const QUALIFYING_STATUSES = new Set([
   'AWAITING_PAYMENT',
   'PAID_CLOSED',
@@ -147,6 +153,7 @@ export function buildRetentionSuggestions({
   jobBillingSetupVersions = [],
   packages = [],
   asOfDate,
+  holdOneMonth = HOLD_RETENTION_ONE_MONTH,
 }) {
   if (!parseDateKey(asOfDate)) return []
 
@@ -297,7 +304,10 @@ export function buildRetentionSuggestions({
       const sourceCutoffDate = hasMissingCutoff || cutoffDates.length === 0
         ? null
         : [...cutoffDates].sort().at(-1)
-      const availableDate = addOneMonthClamped(sourceCutoffDate)
+      // Without the hold the release is available from the last cutoff itself.
+      const availableDate = holdOneMonth
+        ? addOneMonthClamped(sourceCutoffDate)
+        : sourceCutoffDate
 
       let status = 'WAITING_FOR_HARDWARE'
       if (remainingHardwareLots > 0 && projectedRemainingHardwareLots === 0) {

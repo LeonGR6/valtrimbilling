@@ -157,12 +157,14 @@ test('Per Building becomes ready one clamped calendar month after final Hardware
     jobBillingSetupVersions: [schedule()],
     packages,
     asOfDate: '2026-10-19',
+    holdOneMonth: true,
   }).find(({ phaseId }) => phaseId === 21)
   const ready = buildRetentionSuggestions({
     jobs: [job()],
     jobBillingSetupVersions: [schedule()],
     packages,
     asOfDate: '2026-10-20',
+    holdOneMonth: true,
   }).find(({ phaseId }) => phaseId === 21)
 
   assert.equal(before.sourceCutoffDate, '2026-09-20')
@@ -170,6 +172,52 @@ test('Per Building becomes ready one clamped calendar month after final Hardware
   assert.equal(before.status, 'WAITING_FOR_DATE')
   assert.equal(ready.status, 'READY')
   assert.equal(ready.releasableRetention, 85)
+})
+
+test('with the one-month hold lifted, retention is ready as soon as the Hardware is billed', () => {
+  const packages = [
+    drawPackage({
+      id: 1,
+      status: 'AWAITING_PAYMENT',
+      packageDate: '2026-09-15',
+      lines: [line({ lotId: 101, drawId: 1, retentionAmount: 55 })],
+    }),
+    drawPackage({
+      id: 2,
+      status: 'AWAITING_PAYMENT',
+      packageDate: '2026-09-16',
+      lines: [line({ lotId: 102, drawId: 2, retentionAmount: 30 })],
+    }),
+  ]
+  const suggestion = (asOfDate, holdOneMonth) => buildRetentionSuggestions({
+    jobs: [job()],
+    jobBillingSetupVersions: [schedule()],
+    packages,
+    asOfDate,
+    holdOneMonth,
+  }).find(({ phaseId }) => phaseId === 21)
+
+  // A day after the cutoff: held a month with the rule, ready without it.
+  assert.equal(suggestion('2026-09-21', true).status, 'WAITING_FOR_DATE')
+  const unlocked = suggestion('2026-09-21', false)
+  assert.equal(unlocked.status, 'READY')
+  assert.equal(unlocked.availableDate, '2026-09-20')
+  assert.equal(unlocked.releasableRetention, 85)
+
+  // Not before the cutoff itself: the database does not create it earlier either.
+  assert.equal(suggestion('2026-09-18', false).availableDate, '2026-09-20')
+  assert.equal(suggestion('2026-09-18', false).status, 'WAITING_FOR_DATE')
+  assert.equal(suggestion('2026-09-20', false).status, 'READY')
+
+  // Hardware still missing keeps it waiting: only the date hold is lifted.
+  const noHardware = buildRetentionSuggestions({
+    jobs: [job()],
+    jobBillingSetupVersions: [schedule()],
+    packages: [packages[0]],
+    asOfDate: '2026-09-21',
+    holdOneMonth: false,
+  }).find(({ phaseId }) => phaseId === 21)
+  assert.notEqual(noHardware.status, 'READY')
 })
 
 test('Per Job waits for every Building and excludes amounts allocated to an active release', () => {

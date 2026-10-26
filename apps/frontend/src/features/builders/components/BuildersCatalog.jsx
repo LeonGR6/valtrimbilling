@@ -511,10 +511,11 @@ export default function BuildersCatalog({
     [searchedBuilders, status],
   )
 
-  const visibleBuilders = filteredBuilders.slice(
-    page * rowsPerPage,
-    page * rowsPerPage + rowsPerPage,
-  )
+  // The Jobs entry lists every Builder at once so one can be picked without paging;
+  // the Builders catalog keeps its pages.
+  const visibleBuilders = isJobsEntry
+    ? filteredBuilders
+    : filteredBuilders.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
   const deactivateTargetJobCount = deactivateTarget
     ? getBuilderJobCount?.(deactivateTarget) ?? 0
     : 0
@@ -874,19 +875,21 @@ export default function BuildersCatalog({
             />
           )}
 
-          <TablePagination
-            component="div"
-            count={filteredBuilders.length}
-            page={page}
-            onPageChange={(_, nextPage) => setPage(nextPage)}
-            rowsPerPage={rowsPerPage}
-            onRowsPerPageChange={(event) => {
-              setRowsPerPage(Number(event.target.value))
-              setPage(0)
-            }}
-            rowsPerPageOptions={[5, 10, 25]}
-            labelRowsPerPage="Rows"
-          />
+          {!isJobsEntry && (
+            <TablePagination
+              component="div"
+              count={filteredBuilders.length}
+              page={page}
+              onPageChange={(_, nextPage) => setPage(nextPage)}
+              rowsPerPage={rowsPerPage}
+              onRowsPerPageChange={(event) => {
+                setRowsPerPage(Number(event.target.value))
+                setPage(0)
+              }}
+              rowsPerPageOptions={[5, 10, 25]}
+              labelRowsPerPage="Rows"
+            />
+          )}
         </Box>
       </Box>
 

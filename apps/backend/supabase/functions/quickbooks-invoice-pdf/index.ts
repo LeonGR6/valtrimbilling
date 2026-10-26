@@ -4,19 +4,10 @@ import { requireInvoiceUser, requirePackageId } from '../_shared/quickbooksAcces
 import { QuickbooksInvoicePdfError, saveInvoicePdfForPackage } from '../_shared/quickbooksInvoicePdf.ts'
 import { PackageNotFoundError } from '../_shared/quickbooksPackageSource.ts'
 import { realPdfStoreDeps } from '../_shared/quickbooksPdfStorage.ts'
-import {
-  openQuickbooksSession,
-  QuickbooksBusyError,
-  QuickbooksNotConnectedError,
-} from '../_shared/quickbooksSession.ts'
+import { openSessionFor } from '../_shared/quickbooksEnvironment.ts'
+import { QuickbooksBusyError, QuickbooksNotConnectedError } from '../_shared/quickbooksSession.ts'
 import { loadSyncContext } from '../_shared/quickbooksSyncContext.ts'
 import { serviceClient } from '../_shared/supabase.ts'
-
-function requiredEnv(name: string) {
-  const value = Deno.env.get(name)?.trim()
-  if (!value) throw new Error(`Missing Edge Function secret: ${name}.`)
-  return value
-}
 
 function errorResponse(error: unknown) {
   if (error instanceof PackageNotFoundError) return json({ code: 'PACKAGE_NOT_FOUND', error: error.message }, 404)
@@ -46,11 +37,8 @@ Deno.serve(async (req) => {
     const stored = await saveInvoicePdfForPackage({
       ...realPdfStoreDeps(admin, user.id),
       loadContext: (id) => loadSyncContext(admin, id),
-      openSession: () =>
-        openQuickbooksSession(admin, {
-          clientId: requiredEnv('QBO_CLIENT_ID'),
-          clientSecret: requiredEnv('QBO_CLIENT_SECRET'),
-        }),
+      // The PDF comes from the environment the invoice was created in.
+      openSession: (environment) => openSessionFor(admin, environment),
     }, packageId)
 
     return json(stored)

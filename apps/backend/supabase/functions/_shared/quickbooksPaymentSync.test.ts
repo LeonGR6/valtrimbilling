@@ -52,7 +52,7 @@ function harness(overrides: Partial<PaymentSyncDeps> = {}) {
 
 Deno.test('a paid invoice is recorded and closes the Package', async () => {
   const { deps, applied } = harness()
-  const [result] = await syncQuickbooksPayments(deps, [4])
+  const [result] = await syncQuickbooksPayments(deps, [4], 'sandbox')
 
   assertEquals(result.state, 'PAID')
   assertEquals(result.workflowStatus, 'PAID_CLOSED')
@@ -64,7 +64,7 @@ Deno.test('an open invoice keeps the Package waiting for payment', async () => {
   const { deps } = harness({
     getInvoice: () => Promise.resolve({ ...paidInvoice, balance: 1000, linkedTransactions: [] }),
   })
-  const [result] = await syncQuickbooksPayments(deps, [4])
+  const [result] = await syncQuickbooksPayments(deps, [4], 'sandbox')
 
   assertEquals([result.state, result.workflowStatus], ['OPEN', 'AWAITING_PAYMENT'])
 })
@@ -75,7 +75,7 @@ Deno.test('one Package failing does not stop the others', async () => {
       packageId === 5 ? { ...created, quickbooksStatus: 'NOT_CREATED', invoiceId: null } : created,
     ),
   })
-  const results = await syncQuickbooksPayments(deps, [5, 4])
+  const results = await syncQuickbooksPayments(deps, [5, 4], 'sandbox')
 
   assertEquals(results.map((item) => [item.packageId, item.state, item.error === null]), [
     [5, null, false],
@@ -87,7 +87,7 @@ Deno.test('an invoice from another company is not read', async () => {
   const { deps, applied } = harness({
     loadContext: () => Promise.resolve({ ...created, realmId: '1111' }),
   })
-  const [result] = await syncQuickbooksPayments(deps, [4])
+  const [result] = await syncQuickbooksPayments(deps, [4], 'sandbox')
 
   assertEquals(applied.length, 0)
   assertEquals(result.error?.includes('different company'), true)
@@ -95,8 +95,8 @@ Deno.test('an invoice from another company is not read', async () => {
 
 Deno.test('a QuickBooks session that cannot open fails the whole run, and nothing to do opens none', async () => {
   const { deps } = harness({ openSession: () => Promise.reject(new Error('not connected')) })
-  await assertRejects(() => syncQuickbooksPayments(deps, [4]), Error, 'not connected')
-  assertEquals(await syncQuickbooksPayments(deps, []), [])
+  await assertRejects(() => syncQuickbooksPayments(deps, [4], 'sandbox'), Error, 'not connected')
+  assertEquals(await syncQuickbooksPayments(deps, [], 'sandbox'), [])
 })
 
 Deno.test('today is read on the California calendar', () => {

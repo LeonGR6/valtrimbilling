@@ -3,12 +3,14 @@ import {
   Alert,
   Box,
   Button,
+  Checkbox,
   Chip,
   CircularProgress,
   Dialog,
   DialogActions,
   DialogContent,
   DialogTitle,
+  FormControlLabel,
   Stack,
   Table,
   TableBody,
@@ -23,45 +25,82 @@ import {
   getQuickbooksInvoiceSync,
   previewQuickbooksInvoice,
 } from '../../services/quickbooksRepository.js'
+import {
+  quickbooksEnvironmentLabel,
+  quickbooksInvoiceNumberStatus,
+} from '../../services/quickbooksRecord.js'
 import { localDateKey } from '../../utils/calendarDrawSuggestions.js'
 import { formatCurrency, formatDate } from '../../utils/drawInvoiceFormatters.js'
 
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/u
+const NUMBER_PATTERN = /^[0-9A-Za-z][0-9A-Za-z.-]{0,20}$/u
+const NUMBER_DELAY_MS = 400
+
+const NUMBER_COLORS = { success: 'success.main', error: 'error.main', neutral: 'text.secondary' }
 
 /**
  * Previews the QuickBooks invoice of a Package (a dry run that sends nothing),
- * then creates it. The preview is requested again whenever the date changes.
+ * then creates it. The preview is read again whenever the date or the typed
+ * invoice number changes. The mode (Test or Production) is shown and, once
+ * seen, sent back with the request: if the platform was switched in between,
+ * the server sends nothing.
  */
 export default function QuickbooksInvoiceDialog({ record, onClose, onSettled }) {
   const [txnDate, setTxnDate] = useState(() => localDateKey(new Date()))
+  const [invoiceNumber, setInvoiceNumber] = useState('')
+  const [settledNumber, setSettledNumber] = useState('')
   const [preview, setPreview] = useState(null)
+  const [shownEnvironment, setShownEnvironment] = useState(null)
+  const [lastNumber, setLastNumber] = useState(null)
+  const [confirmed, setConfirmed] = useState(false)
   const [lastSync, setLastSync] = useState(null)
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState('')
   const [result, setResult] = useState(null)
 
+  const typed = invoiceNumber.trim()
   const validDate = DATE_PATTERN.test(txnDate)
-  // A preview belongs to the date it was requested for; any other date is loading.
-  const currentPreview = preview?.key === txnDate ? preview : null
+  // The number goes to the preview once it has stopped changing and is valid.
+  const numberForPreview = NUMBER_PATTERN.test(settledNumber) ? settledNumber : null
+  const previewKey = `${txnDate}|${numberForPreview ?? ''}`
+  // A preview belongs to the date and number it was requested for; any other is loading.
+  const currentPreview = preview?.key === previewKey ? preview : null
   const loading = validDate && !result && currentPreview == null
   const previewError = currentPreview?.error ?? null
   const previewData = currentPreview?.data ?? null
 
   useEffect(() => {
+    const timer = setTimeout(() => setSettledNumber(typed), NUMBER_DELAY_MS)
+    return () => clearTimeout(timer)
+  }, [typed])
+
+  useEffect(() => {
     if (!validDate || result) return undefined
 
     let cancelled = false
-    previewQuickbooksInvoice(record.id, txnDate)
+    previewQuickbooksInvoice(record.id, txnDate, {
+      invoiceNumber: numberForPreview,
+      expectedEnvironment: shownEnvironment,
+    })
       .then((data) => {
-        if (!cancelled) setPreview({ key: txnDate, data, error: null })
+        if (cancelled) return
+        setPreview({ key: previewKey, data, error: null })
+        setShownEnvironment((current) => current ?? data.environment)
+        setLastNumber(data.numberCheck.last)
+        // A retry keeps the number of the earlier attempt: offer it when nothing was typed.
+        if (data.numberCheck.current) {
+          setInvoiceNumber((current) => current || data.numberCheck.current)
+        }
       })
       .catch((error) => {
-        if (!cancelled) setPreview({ key: txnDate, data: null, error })
+        if (!cancelled) setPreview({ key: previewKey, data: null, error })
       })
     return () => {
       cancelled = true
     }
-  }, [record.id, txnDate, validDate, result])
+    // The environment is read from the first preview and never re-requests one.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [record.id, txnDate, validDate, result, numberForPreview, previewKey])
 
   const hadSyncError = record.quickbooksStatus === 'SYNC_ERROR'
   useEffect(() => {
@@ -78,11 +117,23 @@ export default function QuickbooksInvoiceDialog({ record, onClose, onSettled }) 
     }
   }, [hadSyncError, record.id])
 
+  const environment = previewData?.environment ?? shownEnvironment
+  const environmentLabel = quickbooksEnvironmentLabel(environment)
+  const isProduction = environment === 'production'
+  const numberStatus = quickbooksInvoiceNumberStatus({
+    typed,
+    checking: loading || settledNumber !== typed || previewData == null,
+    numberCheck: previewData?.numberCheck,
+  })
+
   const create = async () => {
     setSubmitting(true)
     setSubmitError('')
     try {
-      setResult(await createQuickbooksInvoice(record.id, txnDate))
+      setResult(await createQuickbooksInvoice(record.id, txnDate, {
+        invoiceNumber: typed,
+        expectedEnvironment: environment,
+      }))
     } catch (error) {
       setSubmitError(error.message)
     } finally {
@@ -92,18 +143,35 @@ export default function QuickbooksInvoiceDialog({ record, onClose, onSettled }) 
     }
   }
 
-  const canCreate = Boolean(previewData) && !submitting && !result
+  const canCreate = Boolean(previewData)
+    && !submitting
+    && !result
+    && !numberStatus.blocking
+    && (!isProduction || confirmed)
 
   return (
     <Dialog open onClose={submitting ? undefined : onClose} fullWidth maxWidth="md">
-      <DialogTitle>Send {record.packageNumber} to QuickBooks</DialogTitle>
+      <DialogTitle>
+        <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
+          <span>Send {record.packageNumber} to QuickBooks</span>
+          {environment && (
+            <Chip
+              size="small"
+              color={isProduction ? 'error' : 'warning'}
+              label={isProduction ? 'PRODUCTION · real invoice' : 'TEST · not real'}
+              sx={{ fontWeight: 800 }}
+            />
+          )}
+        </Stack>
+      </DialogTitle>
       <DialogContent>
         <Stack spacing={2} sx={{ pt: 1 }}>
           {result ? (
             <>
               <Alert severity="success">
-                Invoice <strong>{result.docNumber || result.invoiceId}</strong> was created in
-                QuickBooks{result.customerName ? ` for ${result.customerName}` : ''}
+                Invoice <strong>{result.invoiceNumber || result.docNumber || result.invoiceId}</strong>{' '}
+                was created in QuickBooks {quickbooksEnvironmentLabel(result.environment)}
+                {result.customerName ? ` for ${result.customerName}` : ''}
                 {result.totalAmount != null ? ` · ${formatCurrency(result.totalAmount)}` : ''}.
               </Alert>
               {result.warnings.map((warning) => (
@@ -118,16 +186,34 @@ export default function QuickbooksInvoiceDialog({ record, onClose, onSettled }) 
                 </Alert>
               )}
               {submitError && <Alert severity="error">{submitError}</Alert>}
-              <TextField
-                label="Invoice date"
-                type="date"
-                value={txnDate}
-                onChange={(event) => setTxnDate(event.target.value)}
-                disabled={submitting}
-                error={!validDate}
-                slotProps={{ inputLabel: { shrink: true } }}
-                sx={{ maxWidth: 220 }}
-              />
+              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} sx={{ alignItems: { sm: 'flex-start' } }}>
+                <TextField
+                  label="Invoice number"
+                  value={invoiceNumber}
+                  onChange={(event) => setInvoiceNumber(event.target.value)}
+                  disabled={submitting}
+                  required
+                  error={numberStatus.tone === 'error'}
+                  helperText={(
+                    <Box component="span" sx={{ color: NUMBER_COLORS[numberStatus.tone] }}>
+                      {numberStatus.message}
+                      {lastNumber ? ` Last used here: ${lastNumber}.` : ''}
+                    </Box>
+                  )}
+                  slotProps={{ htmlInput: { maxLength: 21, autoComplete: 'off' } }}
+                  sx={{ minWidth: 240 }}
+                />
+                <TextField
+                  label="Invoice date"
+                  type="date"
+                  value={txnDate}
+                  onChange={(event) => setTxnDate(event.target.value)}
+                  disabled={submitting}
+                  error={!validDate}
+                  slotProps={{ inputLabel: { shrink: true } }}
+                  sx={{ maxWidth: 220 }}
+                />
+              </Stack>
               {loading && (
                 <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center' }}>
                   <CircularProgress size={20} />
@@ -192,6 +278,20 @@ export default function QuickbooksInvoiceDialog({ record, onClose, onSettled }) 
                       </TableBody>
                     </Table>
                   </Box>
+                  {isProduction && (
+                    <Alert severity="warning" icon={false}>
+                      <FormControlLabel
+                        control={(
+                          <Checkbox
+                            checked={confirmed}
+                            onChange={(event) => setConfirmed(event.target.checked)}
+                            disabled={submitting}
+                          />
+                        )}
+                        label={`This creates invoice ${typed || '…'} in your real QuickBooks for ${previewData.customerName} (${formatCurrency(previewData.total)}).`}
+                      />
+                    </Alert>
+                  )}
                 </>
               )}
             </>
@@ -203,8 +303,16 @@ export default function QuickbooksInvoiceDialog({ record, onClose, onSettled }) 
           {result ? 'Close' : 'Cancel'}
         </Button>
         {!result && (
-          <Button variant="contained" onClick={create} disabled={!canCreate} disableElevation>
-            {submitting ? 'Creating…' : 'Create invoice in QuickBooks'}
+          <Button
+            variant="contained"
+            color={isProduction ? 'error' : 'primary'}
+            onClick={create}
+            disabled={!canCreate}
+            disableElevation
+          >
+            {submitting
+              ? 'Creating…'
+              : `Create invoice in QuickBooks${environmentLabel ? ` ${environmentLabel}` : ''}`}
           </Button>
         )}
       </DialogActions>

@@ -2,11 +2,14 @@ import { useState } from 'react'
 import { Alert, Box, Button, Stack } from '@mui/material'
 import { useQuickbooksInvoicePdf } from '../../hooks/useQuickbooksInvoicePdf.js'
 import {
+  canResetQuickbooksTestInvoice,
   canVoidQuickbooksInvoice,
   isInvoicedThroughQuickbooks,
+  isQuickbooksTestPackage,
 } from '../../services/quickbooksRecord.js'
 import { saveQuickbooksInvoicePdf } from '../../services/quickbooksRepository.js'
 import { formatCurrency } from '../../utils/drawInvoiceFormatters.js'
+import QuickbooksResetDialog from './QuickbooksResetDialog.jsx'
 import QuickbooksVoidDialog from './QuickbooksVoidDialog.jsx'
 
 const savedDate = (value) => (value ? new Date(value).toLocaleDateString('en-US') : '')
@@ -14,7 +17,8 @@ const savedDate = (value) => (value ? new Date(value).toLocaleDateString('en-US'
 /**
  * What the Package page says about its QuickBooks invoice: already invoiced
  * (with its saved PDF and the option to void it), voided, or the last attempt
- * failed. Shows nothing for a Package that was never sent.
+ * failed. A Package invoiced in the QuickBooks Test company says so and can be
+ * moved back to Production. Shows nothing for a Package that was never sent.
  */
 export default function QuickbooksPackageNotice({
   record,
@@ -29,10 +33,25 @@ export default function QuickbooksPackageNotice({
   const [savingPdf, setSavingPdf] = useState(false)
   const [pdfError, setPdfError] = useState('')
   const [voidOpen, setVoidOpen] = useState(false)
+  const [resetOpen, setResetOpen] = useState(false)
 
   if (!record || !isInvoicedThroughQuickbooks(record)) return null
 
   const canVoid = canVoidQuickbooksInvoice(record, role)
+  const isTest = isQuickbooksTestPackage(record)
+  const canReset = canResetQuickbooksTestInvoice(record, role)
+  const resetButton = canReset && (
+    <Button color="inherit" size="small" onClick={() => setResetOpen(true)} sx={{ whiteSpace: 'nowrap' }}>
+      Move back to Production
+    </Button>
+  )
+  const resetDialog = resetOpen && (
+    <QuickbooksResetDialog
+      record={record}
+      onClose={() => setResetOpen(false)}
+      onReset={onChanged}
+    />
+  )
 
   const savePdf = async () => {
     setSavingPdf(true)
@@ -49,25 +68,36 @@ export default function QuickbooksPackageNotice({
 
   if (record.quickbooksStatus === 'VOIDED') {
     return (
-      <Alert severity="info">
-        <strong>The QuickBooks invoice was voided.</strong>
-        {record.quickbooksReference ? ` Invoice ${record.quickbooksReference} stays in QuickBooks with its amounts at $0.` : ''}
-        {' '}This Package can be deleted as a draft; to invoice its cells again, create a new Package.
-      </Alert>
+      <>
+        <Alert severity="info" action={resetButton || undefined}>
+          <strong>The {isTest ? 'Test ' : ''}QuickBooks invoice was voided.</strong>
+          {record.quickbooksReference ? ` Invoice ${record.quickbooksReference} stays in QuickBooks with its amounts at $0.` : ''}
+          {isTest
+            ? ' This was a test: move the Package back to Production to send it for real, or delete it as a draft.'
+            : ' This Package can be deleted as a draft; to invoice its cells again, create a new Package.'}
+        </Alert>
+        {resetDialog}
+      </>
     )
   }
 
   if (record.quickbooksStatus === 'SYNC_ERROR') {
     return (
-      <Alert
-        severity="warning"
-        action={canSend && (
-          <Button color="inherit" size="small" onClick={onSend}>Retry</Button>
-        )}
-      >
-        <strong>The last QuickBooks attempt failed.</strong>
-        {sync?.error ? ` ${sync.error}` : ''}
-      </Alert>
+      <>
+        <Alert
+          severity="warning"
+          action={(canSend || canReset) && (
+            <Stack direction="row" spacing={0.5}>
+              {canSend && <Button color="inherit" size="small" onClick={onSend}>Retry</Button>}
+              {resetButton}
+            </Stack>
+          )}
+        >
+          <strong>The last QuickBooks {isTest ? 'Test ' : ''}attempt failed.</strong>
+          {sync?.error ? ` ${sync.error}` : ''}
+        </Alert>
+        {resetDialog}
+      </>
     )
   }
 
@@ -78,7 +108,7 @@ export default function QuickbooksPackageNotice({
   return (
     <>
       <Alert
-        severity="success"
+        severity={isTest ? 'warning' : 'success'}
         sx={{ '& .MuiAlert-message': { flex: 1 } }}
       >
         <Stack
@@ -87,11 +117,14 @@ export default function QuickbooksPackageNotice({
           sx={{ alignItems: { md: 'center' }, justifyContent: 'space-between' }}
         >
           <Box>
-            <strong>Already invoiced in QuickBooks.</strong>{' '}
+            <strong>
+              {isTest ? 'TEST invoice in QuickBooks Test, not a real invoice.' : 'Already invoiced in QuickBooks.'}
+            </strong>{' '}
             {record.quickbooksReference ? `Invoice ${record.quickbooksReference}` : 'This Package has an invoice'}
             {sync?.totalAmount != null ? ` · ${formatCurrency(sync.totalAmount)}` : ''}
             {sync?.updatedAt ? ` · sent ${savedDate(sync.updatedAt)}` : ''}
             . It cannot be sent again or edited here.
+            {isTest && ' It cannot be sent to the Builder until it is moved back to Production.'}
             <Box sx={{ mt: 0.5, color: 'text.secondary' }}>
               {loading
                 ? 'Checking the invoice PDF…'
@@ -126,6 +159,7 @@ export default function QuickbooksPackageNotice({
                 {savingPdf ? 'Saving PDF…' : pdf ? 'Refresh PDF' : 'Save PDF'}
               </Button>
             )}
+            {resetButton}
             {canVoid && (
               <Button
                 color="error"
@@ -139,6 +173,7 @@ export default function QuickbooksPackageNotice({
           </Stack>
         </Stack>
       </Alert>
+      {resetDialog}
       {voidOpen && (
         <QuickbooksVoidDialog
           record={record}

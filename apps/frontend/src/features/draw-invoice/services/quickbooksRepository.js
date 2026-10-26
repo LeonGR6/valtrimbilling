@@ -3,6 +3,7 @@ import {
   QuickbooksInvoiceRequestError,
   toQuickbooksConnection,
   toQuickbooksCustomerLink,
+  toQuickbooksSettings,
   toQuickbooksInvoicePdf,
   toQuickbooksInvoicePreview,
   toQuickbooksInvoiceResult,
@@ -13,6 +14,7 @@ const OAUTH_START_FUNCTION = 'quickbooks-oauth-start'
 const INVOICE_FUNCTION = 'quickbooks-invoice-create'
 const CUSTOMERS_FUNCTION = 'quickbooks-customers'
 const VOID_FUNCTION = 'quickbooks-invoice-void'
+const RESET_FUNCTION = 'quickbooks-invoice-reset'
 const PDF_FUNCTION = 'quickbooks-invoice-pdf'
 const SYNC_COLUMNS = [
   'status',
@@ -56,20 +58,40 @@ async function functionErrorMessage(error, data) {
   return error?.message || 'The QuickBooks request failed.'
 }
 
-export async function getQuickbooksConnection() {
+/** Both QuickBooks connections (Test and Production), whichever exist. */
+export async function getQuickbooksConnections() {
   const client = await requireSupabase()
   const { data, error } = await client
     .from('quickbooks_connections')
     .select(CONNECTION_COLUMNS)
-    .maybeSingle()
   if (error) throw error
-  return toQuickbooksConnection(data)
+  return (data ?? []).map(toQuickbooksConnection)
 }
 
-export async function startQuickbooksOAuth() {
+/** Which QuickBooks environment new invoices go to. */
+export async function getQuickbooksSettings() {
+  const client = await requireSupabase()
+  const { data, error } = await client
+    .from('quickbooks_settings')
+    .select('active_environment, changed_at')
+    .maybeSingle()
+  if (error) throw error
+  return toQuickbooksSettings(data)
+}
+
+/** ADMIN only (the database refuses anyone else): choose Test or Production. */
+export async function setQuickbooksActiveEnvironment(environment) {
+  const client = await requireSupabase()
+  const { error } = await client.rpc('set_quickbooks_active_environment', {
+    p_environment: environment,
+  })
+  if (error) throw new Error(error.message, { cause: error })
+}
+
+export async function startQuickbooksOAuth(environment) {
   const client = await requireSupabase()
   const { data, error } = await client.functions.invoke(OAUTH_START_FUNCTION, {
-    body: {},
+    body: { environment },
   })
 
   if (error || data?.error) {
@@ -114,16 +136,36 @@ const invoiceRequest = (body) => functionRequest(INVOICE_FUNCTION, body)
 const customersRequest = (body) => functionRequest(CUSTOMERS_FUNCTION, body)
 
 /** Builds the invoice lines and finds the Customer without sending anything. */
-export async function previewQuickbooksInvoice(packageId, txnDate) {
+export async function previewQuickbooksInvoice(
+  packageId,
+  txnDate,
+  { invoiceNumber = null, expectedEnvironment = null } = {},
+) {
   const preview = toQuickbooksInvoicePreview(
-    await invoiceRequest({ packageId, txnDate, dryRun: true }),
+    await invoiceRequest({
+      packageId,
+      txnDate,
+      dryRun: true,
+      invoiceNumber,
+      expectedEnvironment,
+    }),
   )
   if (!preview) throw new QuickbooksInvoiceRequestError('QuickBooks returned no invoice preview.')
   return preview
 }
 
-export async function createQuickbooksInvoice(packageId, txnDate) {
-  return toQuickbooksInvoiceResult(await invoiceRequest({ packageId, txnDate }))
+/**
+ * `expectedEnvironment` is the mode the person was shown; if the platform was
+ * switched since, the server sends nothing and says so.
+ */
+export async function createQuickbooksInvoice(
+  packageId,
+  txnDate,
+  { invoiceNumber, expectedEnvironment },
+) {
+  return toQuickbooksInvoiceResult(
+    await invoiceRequest({ packageId, txnDate, invoiceNumber, expectedEnvironment }),
+  )
 }
 
 /** Outcome of the last QuickBooks attempt for a Package, or null if none. */
@@ -138,12 +180,13 @@ export async function getQuickbooksInvoiceSync(packageId) {
   return toQuickbooksInvoiceSync(data)
 }
 
-/** When the last invoice was created in QuickBooks, or null if none yet. */
-export async function getLastQuickbooksInvoiceAt() {
+/** When the last invoice was created in a QuickBooks environment, or null if none yet. */
+export async function getLastQuickbooksInvoiceAt(environment) {
   const client = await requireSupabase()
   const { data, error } = await client
     .from('quickbooks_invoice_syncs')
     .select('updated_at')
+    .eq('environment', environment)
     .eq('status', 'CREATED')
     .order('updated_at', { ascending: false })
     .limit(1)
@@ -181,6 +224,15 @@ export async function unlinkQuickbooksCustomer(builderId) {
 export async function voidQuickbooksInvoice(packageId) {
   const data = await functionRequest(VOID_FUNCTION, { packageId })
   return { quickbooks: data?.quickbooks ?? 'voided' }
+}
+
+/**
+ * Moves a Package invoiced in the QuickBooks Test company back to a clean Draft,
+ * so it can be sent to Production. The Test invoice itself stays in Test.
+ */
+export async function resetQuickbooksTestInvoice(packageId) {
+  const data = await functionRequest(RESET_FUNCTION, { packageId })
+  return { removedPdf: Boolean(data?.removedPdf) }
 }
 
 /** Downloads QuickBooks' PDF of the invoice and saves it as the Package's INVOICE document. */

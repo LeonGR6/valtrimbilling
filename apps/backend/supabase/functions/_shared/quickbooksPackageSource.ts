@@ -15,6 +15,11 @@ export interface LoadedPackage {
   /** Job Name in QuickBooks is the community; Job # is the Job code. */
   job: { code: string; community: string | null }
   paymentTermsDays: number | null
+  /** The environment the Package was last sent to, or null if never sent. */
+  quickbooksEnvironment: string | null
+  /** The invoice number and environment of the Package's own earlier attempt, if any. */
+  syncInvoiceNumber: string | null
+  syncEnvironment: string | null
   source: PackageInvoiceSource
 }
 
@@ -35,7 +40,7 @@ export async function loadPackageSource(admin: Admin, packageId: number): Promis
     await admin
       .from('draw_packages')
       .select(
-        'id, package_number, package_type, status, quickbooks_status, invoice_line_format, builder_id, job_id, setup_version_id',
+        'id, package_number, package_type, status, quickbooks_status, quickbooks_environment, invoice_line_format, builder_id, job_id, setup_version_id',
       )
       .eq('id', packageId)
       .maybeSingle(),
@@ -44,7 +49,7 @@ export async function loadPackageSource(admin: Admin, packageId: number): Promis
 
   const isAdjustment = header.package_type === 'PRICE_ADJUSTMENT'
 
-  const [draws, hardwareLines, adjustmentLines, invoice, builder, job, setup] = await Promise.all([
+  const [draws, hardwareLines, adjustmentLines, invoice, builder, job, setup, sync] = await Promise.all([
     admin
       .from('package_draws')
       .select(
@@ -78,6 +83,11 @@ export async function loadPackageSource(admin: Admin, packageId: number): Promis
       .select('payment_terms_days')
       .eq('id', header.setup_version_id)
       .maybeSingle(),
+    admin
+      .from('quickbooks_invoice_syncs')
+      .select('invoice_number, environment')
+      .eq('package_id', packageId)
+      .maybeSingle(),
   ])
 
   const builderRow = orThrow(builder)
@@ -85,6 +95,7 @@ export async function loadPackageSource(admin: Admin, packageId: number): Promis
   const jobRow = orThrow(job)
   if (!jobRow) throw new Error('The Package Job no longer exists.')
   const setupRow = orThrow(setup)
+  const syncRow = orThrow(sync)
 
   // A Utility row is named, not numbered, on the invoice; the adjustment line only
   // keeps the lot id, so the name is read from the Lot.
@@ -104,6 +115,9 @@ export async function loadPackageSource(admin: Admin, packageId: number): Promis
     builder: { id: builderRow.id, name: builderRow.name },
     job: { code: jobRow.code, community: jobRow.community ?? null },
     paymentTermsDays: setupRow?.payment_terms_days ?? null,
+    quickbooksEnvironment: header.quickbooks_environment ?? null,
+    syncInvoiceNumber: syncRow?.invoice_number ?? null,
+    syncEnvironment: syncRow?.environment ?? null,
     source: {
       package: header,
       draws: orThrow(draws) ?? [],

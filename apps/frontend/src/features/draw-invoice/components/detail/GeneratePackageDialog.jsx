@@ -44,6 +44,7 @@ import {
   downloadQuickbooksInvoicePdf,
   saveQuickbooksInvoicePdf,
 } from '../../services/quickbooksRepository.js'
+import { isQuickbooksTestPackage } from '../../services/quickbooksRecord.js'
 
 const NOT_READY = { canGenerate: false, generating: false, previewing: false, loading: true }
 
@@ -250,6 +251,9 @@ export default function GeneratePackageDialog({
   const [pageCounts, setPageCounts] = useState({ invoice: null, release: null, schedule: null })
   const invoicePdf = useQuickbooksInvoicePdf(packageRecord)
   const hasQuickbooksInvoice = packageRecord.quickbooksStatus === 'CREATED'
+  // An invoice in the QuickBooks Test company is not real: the Package can be
+  // generated to review it, but never sent or marked as submitted.
+  const isTestPackage = isQuickbooksTestPackage(packageRecord)
   const invoiceDocumentId = invoicePdf.pdf?.documentId ?? null
   const bundleFileName = buildPackageBundleFileName({
     jobCode: job.code,
@@ -570,6 +574,14 @@ export default function GeneratePackageDialog({
         <Box sx={{ minWidth: 0 }}>
           <Typography variant="h6" component="span" fontWeight={850} sx={{ display: 'block' }}>
             Generate Package (PDF)
+            {isTestPackage && (
+              <Chip
+                size="small"
+                color="warning"
+                label="TEST · not a real invoice"
+                sx={{ ml: 1.5, fontWeight: 800, verticalAlign: 'middle' }}
+              />
+            )}
           </Typography>
           <Typography variant="body2" color="text.secondary" component="span" sx={{ display: 'block' }}>
             {packageRecord.packageNumber} · Job #{job.code}
@@ -806,7 +818,29 @@ export default function GeneratePackageDialog({
               </Box>
             </DocumentCard>
 
-            {generated && (
+            {generated && isTestPackage && (
+              <Alert
+                severity="warning"
+                ref={submissionRef}
+                action={(
+                  <Button
+                    color="inherit"
+                    size="small"
+                    onClick={() => saveToDisk(
+                      new Blob([generated.bytes], { type: 'application/pdf' }),
+                      generated.fileName,
+                    )}
+                  >
+                    Download to review
+                  </Button>
+                )}
+              >
+                <strong>This Package was invoiced in QuickBooks Test, so it cannot be sent to the Builder.</strong>
+                {' '}Move it back to Production from the Package page first. Nothing was submitted.
+              </Alert>
+            )}
+
+            {generated && !isTestPackage && (
               <PackageSubmissionPanel
                 anchorRef={submissionRef}
                 method={submission.method}

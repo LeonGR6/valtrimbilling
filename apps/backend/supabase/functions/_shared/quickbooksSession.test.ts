@@ -59,10 +59,13 @@ const options = {
   sleep: () => Promise.resolve(),
 }
 
+const open = (admin: RpcClient, environment: 'sandbox' | 'production' = 'sandbox', extra = {}) =>
+  openQuickbooksSession(admin, environment, credentials, { ...options, ...extra })
+
 Deno.test('takes the lease, refreshes, stores the rotated token and releases the lease', async () => {
   const { admin, calls, names } = fakeAdmin({ stored })
 
-  const session = await openQuickbooksSession(admin, credentials, options)
+  const session = await open(admin)
 
   assertEquals(session, {
     environment: 'sandbox',
@@ -77,20 +80,41 @@ Deno.test('takes the lease, refreshes, stores the rotated token and releases the
     'release_quickbooks_token_lease',
   ])
   assertEquals(calls[2].args, {
+    p_environment: 'sandbox',
     p_refresh_token: 'rotated-refresh',
     p_refresh_token_expires_at: '2026-10-10T12:00:00.000Z',
   })
-  assertEquals(calls[3].args, { p_owner: 'owner-1' })
+  assertEquals(calls[3].args, { p_owner: 'owner-1', p_environment: 'sandbox' })
+})
+
+Deno.test('every call names the environment, so Test and Production never share a token or a lease', async () => {
+  const { admin, calls } = fakeAdmin({ stored: { ...stored, environment: 'production', realmId: '1111' } })
+
+  const session = await open(admin, 'production')
+
+  assertEquals(session.environment, 'production')
+  assertEquals(session.realmId, '1111')
+  for (const call of calls) {
+    assertEquals(call.args?.p_environment, 'production', call.name)
+  }
+})
+
+Deno.test('a connection that answers for the other environment is refused, and the lease is released', async () => {
+  const { admin, names } = fakeAdmin({ stored: { ...stored, environment: 'sandbox' } })
+
+  await assertRejects(() => open(admin, 'production'), Error, 'production returned the credentials of sandbox')
+
+  assertEquals(names().includes('rotate_quickbooks_refresh_token'), false)
+  assertEquals(names().at(-1), 'release_quickbooks_token_lease')
 })
 
 Deno.test('waits its turn while another request holds the lease', async () => {
   const sleeps: number[] = []
   const { admin, names } = fakeAdmin({ stored, lease: ['BUSY', 'BUSY', 'ACQUIRED'] })
 
-  await openQuickbooksSession(admin, credentials, {
-    ...options,
+  await open(admin, 'sandbox', {
     pollMilliseconds: 100,
-    sleep: (milliseconds) => {
+    sleep: (milliseconds: number) => {
       sleeps.push(milliseconds)
       return Promise.resolve()
     },
@@ -104,7 +128,7 @@ Deno.test('gives up with a clear error when the lease never frees up, without re
   const { admin, names } = fakeAdmin({ stored, lease: ['BUSY'] })
 
   await assertRejects(
-    () => openQuickbooksSession(admin, credentials, { ...options, waitMilliseconds: 500, pollMilliseconds: 250 }),
+    () => open(admin, 'sandbox', { waitMilliseconds: 500, pollMilliseconds: 250 }),
     QuickbooksBusyError,
   )
 
@@ -112,21 +136,25 @@ Deno.test('gives up with a clear error when the lease never frees up, without re
   assertEquals(names().includes('release_quickbooks_token_lease'), false)
 })
 
-Deno.test('fails when QuickBooks is not connected', async () => {
-  await assertRejects(
-    () => openQuickbooksSession(fakeAdmin({ lease: ['NOT_CONNECTED'] }).admin, credentials, options),
+Deno.test('fails, naming the environment, when that QuickBooks is not connected', async () => {
+  const none = await assertRejects(
+    () => open(fakeAdmin({ lease: ['NOT_CONNECTED'] }).admin, 'production'),
     QuickbooksNotConnectedError,
+    'QuickBooks Production is not connected',
   )
+  assertEquals(none.environment, 'production')
+
   await assertRejects(
-    () => openQuickbooksSession(fakeAdmin({ stored: null }).admin, credentials, options),
+    () => open(fakeAdmin({ stored: null }).admin, 'sandbox'),
     QuickbooksNotConnectedError,
+    'QuickBooks Test is not connected',
   )
 })
 
 Deno.test('releases the lease even when the refresh or the storing fails', async () => {
   const failing = fakeAdmin({ stored, rotateError: 'vault down' })
   await assertRejects(
-    () => openQuickbooksSession(failing.admin, credentials, options),
+    () => open(failing.admin),
     Error,
     'Could not store the rotated QuickBooks refresh token: vault down',
   )
@@ -135,8 +163,7 @@ Deno.test('releases the lease even when the refresh or the storing fails', async
   const rejected = fakeAdmin({ stored })
   await assertRejects(
     () =>
-      openQuickbooksSession(rejected.admin, credentials, {
-        ...options,
+      open(rejected.admin, 'sandbox', {
         fetcher: (() =>
           Promise.resolve(new Response(JSON.stringify({ error: 'invalid_grant' }), { status: 400 }))) as typeof fetch,
       }),

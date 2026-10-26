@@ -12,10 +12,10 @@ select has_function(
 );
 
 select ok(
-  not has_function_privilege('authenticated', 'valtrim.acquire_quickbooks_token_lease(uuid,integer)', 'execute')
-  and not has_function_privilege('anon', 'valtrim.release_quickbooks_token_lease(uuid)', 'execute')
-  and has_function_privilege('service_role', 'valtrim.acquire_quickbooks_token_lease(uuid,integer)', 'execute')
-  and has_function_privilege('service_role', 'valtrim.release_quickbooks_token_lease(uuid)', 'execute'),
+  not has_function_privilege('authenticated', 'valtrim.acquire_quickbooks_token_lease(uuid,text,integer)', 'execute')
+  and not has_function_privilege('anon', 'valtrim.release_quickbooks_token_lease(uuid,text)', 'execute')
+  and has_function_privilege('service_role', 'valtrim.acquire_quickbooks_token_lease(uuid,text,integer)', 'execute')
+  and has_function_privilege('service_role', 'valtrim.release_quickbooks_token_lease(uuid,text)', 'execute'),
   'Only the service role can take or release the lease'
 );
 
@@ -24,8 +24,8 @@ select ok(
     select bool_and(prosecdef and array_to_string(proconfig, ',') = 'search_path=""')
     from pg_proc
     where oid in (
-      'valtrim.acquire_quickbooks_token_lease(uuid,integer)'::regprocedure,
-      'valtrim.release_quickbooks_token_lease(uuid)'::regprocedure
+      'valtrim.acquire_quickbooks_token_lease(uuid,text,integer)'::regprocedure,
+      'valtrim.release_quickbooks_token_lease(uuid,text)'::regprocedure
     )
   ),
   'The lease functions use definer rights with an empty search path'
@@ -37,16 +37,16 @@ select ok(
 );
 
 select throws_ok(
-  $$ select valtrim.acquire_quickbooks_token_lease(gen_random_uuid(), 0) $$,
+  $$ select valtrim.acquire_quickbooks_token_lease(gen_random_uuid(), 'sandbox', 0) $$,
   '22023',
   'The QuickBooks token lease needs an owner and 1 to 120 seconds',
   'A lease needs a sensible duration'
 );
 
 select is(
-  valtrim.acquire_quickbooks_token_lease(gen_random_uuid(), 30),
+  valtrim.acquire_quickbooks_token_lease(gen_random_uuid(), 'sandbox', 30),
   case
-    when exists (select 1 from valtrim.quickbooks_connections connection where connection.id)
+    when exists (select 1 from valtrim.quickbooks_connections connection where connection.environment = 'sandbox')
       then 'ACQUIRED'
     else 'NOT_CONNECTED'
   end,
@@ -54,7 +54,7 @@ select is(
 );
 
 select is(
-  valtrim.release_quickbooks_token_lease(gen_random_uuid()),
+  valtrim.release_quickbooks_token_lease(gen_random_uuid(), 'sandbox'),
   false,
   'Releasing a lease that is not yours changes nothing'
 );

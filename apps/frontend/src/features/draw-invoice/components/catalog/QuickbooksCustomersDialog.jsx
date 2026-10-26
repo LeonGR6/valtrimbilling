@@ -20,7 +20,7 @@ import {
   Typography,
 } from '@mui/material'
 import { useBuilders } from '../../../builders/context/useBuilders.js'
-import { quickbooksCustomerRows } from '../../services/quickbooksRecord.js'
+import { quickbooksCustomerRows, quickbooksEnvironmentLabel } from '../../services/quickbooksRecord.js'
 import {
   linkQuickbooksCustomer,
   listQuickbooksCustomerLinks,
@@ -161,13 +161,25 @@ export default function QuickbooksCustomersDialog({ environment, onClose }) {
 
   return (
     <Dialog open onClose={busyId == null ? onClose : undefined} fullWidth maxWidth="md">
-      <DialogTitle>QuickBooks customers</DialogTitle>
+      <DialogTitle>
+        <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center' }}>
+          <span>QuickBooks customers</span>
+          <Chip
+            size="small"
+            color={environment === 'production' ? 'error' : 'warning'}
+            label={`${quickbooksEnvironmentLabel(environment)} company`}
+            sx={{ fontWeight: 800 }}
+          />
+        </Stack>
+      </DialogTitle>
       <DialogContent>
         <Stack spacing={2} sx={{ pt: 1 }}>
           <Typography variant="body2" color="text.secondary">
             Invoices go to the QuickBooks Customer linked to the Builder. With no link, the
             first invoice uses the Customer whose name is exactly the Builder&apos;s name and
-            remembers it. Link a different Customer here when the names do not match.
+            remembers it. Link a different Customer here when the names do not match. Each
+            QuickBooks company has its own links: these are the ones of the company the
+            platform is set to.
           </Typography>
           {loadError && <Alert severity="error">{loadError}</Alert>}
           {error && <Alert severity="error" onClose={() => setError('')}>{error}</Alert>}

@@ -299,6 +299,27 @@ export async function createQuickbooksInvoice(
   }
 }
 
+/** The invoice that already uses this number (DocNumber) in QuickBooks, or null. */
+export async function findQuickbooksInvoiceByDocNumber(
+  options: QuickbooksApiOptions,
+  docNumber: string,
+  fetcher: Fetcher = fetch,
+): Promise<{ id: string; docNumber: string } | null> {
+  const body = await apiGet(
+    'Looking up the QuickBooks invoice number',
+    options,
+    'query',
+    { query: `select Id, DocNumber from Invoice where DocNumber = ${quickbooksQueryLiteral(docNumber)} maxresults 1` },
+    fetcher,
+  )
+  const invoice = (body?.QueryResponse as { Invoice?: { Id?: unknown; DocNumber?: unknown }[] } | undefined)
+    ?.Invoice?.[0]
+
+  return typeof invoice?.Id === 'string'
+    ? { id: invoice.Id, docNumber: typeof invoice.DocNumber === 'string' ? invoice.DocNumber : docNumber }
+    : null
+}
+
 /** One invoice as it is in QuickBooks right now, or null when it no longer exists. */
 export async function getQuickbooksInvoice(
   options: QuickbooksApiOptions,

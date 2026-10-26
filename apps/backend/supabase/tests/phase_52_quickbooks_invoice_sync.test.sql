@@ -25,10 +25,10 @@ select ok(
 );
 
 select ok(
-  not has_function_privilege('authenticated', 'valtrim.claim_quickbooks_invoice_sync(bigint,uuid,text,text)', 'execute')
+  not has_function_privilege('authenticated', 'valtrim.claim_quickbooks_invoice_sync(bigint,uuid,text,text,text)', 'execute')
   and not has_function_privilege('authenticated', 'valtrim.complete_quickbooks_invoice_sync(bigint,text,text,text,numeric,jsonb)', 'execute')
   and not has_function_privilege('authenticated', 'valtrim.fail_quickbooks_invoice_sync(bigint,text,boolean)', 'execute')
-  and has_function_privilege('service_role', 'valtrim.claim_quickbooks_invoice_sync(bigint,uuid,text,text)', 'execute'),
+  and has_function_privilege('service_role', 'valtrim.claim_quickbooks_invoice_sync(bigint,uuid,text,text,text)', 'execute'),
   'Only the service role can claim, complete or fail an attempt'
 );
 
@@ -37,7 +37,7 @@ select ok(
     select bool_and(prosecdef and array_to_string(proconfig, ',') = 'search_path=""')
     from pg_proc
     where oid in (
-      'valtrim.claim_quickbooks_invoice_sync(bigint,uuid,text,text)'::regprocedure,
+      'valtrim.claim_quickbooks_invoice_sync(bigint,uuid,text,text,text)'::regprocedure,
       'valtrim.complete_quickbooks_invoice_sync(bigint,text,text,text,numeric,jsonb)'::regprocedure,
       'valtrim.fail_quickbooks_invoice_sync(bigint,text,boolean)'::regprocedure
     )
@@ -46,7 +46,7 @@ select ok(
 );
 
 select throws_ok(
-  $$ select valtrim.claim_quickbooks_invoice_sync(-1, gen_random_uuid(), 'sandbox', '9341') $$,
+  $$ select valtrim.claim_quickbooks_invoice_sync(-1, gen_random_uuid(), 'sandbox', '9341', '15001') $$,
   'P0002',
   'The Package no longer exists',
   'Claiming a missing Package fails'

@@ -3,8 +3,8 @@ import {
   buildQuickbooksAuthorizationUrl,
   createOAuthState,
   hashOAuthState,
-  parseQuickbooksEnvironment,
 } from '../_shared/quickbooksOAuth.ts'
+import { environmentOrNull, quickbooksClientCredentials } from '../_shared/quickbooksEnvironment.ts'
 import { serviceClient, userClient } from '../_shared/supabase.ts'
 
 const STATE_LIFETIME_MS = 10 * 60 * 1000
@@ -41,8 +41,15 @@ Deno.serve(async (req) => {
       return json({ error: 'Only an administrator can connect QuickBooks.' }, 403)
     }
 
-    parseQuickbooksEnvironment(Deno.env.get('QBO_ENVIRONMENT'))
-    const clientId = requiredEnv('QBO_CLIENT_ID')
+    // Which QuickBooks to connect: Test (sandbox) or Production. It is remembered
+    // with the one-time state, because Intuit's callback carries only the code.
+    const body = await req.json().catch(() => null)
+    const environment = environmentOrNull(body?.environment)
+    if (!environment) {
+      return json({ error: 'environment must be "sandbox" or "production".' }, 400)
+    }
+
+    const { clientId } = quickbooksClientCredentials(environment)
     const redirectUri = requiredEnv('QBO_REDIRECT_URI')
     const state = createOAuthState()
     const stateHash = await hashOAuthState(state)
@@ -61,6 +68,7 @@ Deno.serve(async (req) => {
       .insert({
         state_hash: stateHash,
         user_id: user.id,
+        environment,
         expires_at: new Date(now.getTime() + STATE_LIFETIME_MS).toISOString(),
       })
     if (insertError) throw insertError

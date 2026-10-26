@@ -20,6 +20,7 @@ import AddRoundedIcon from '@mui/icons-material/AddRounded'
 import AttachMoneyRoundedIcon from '@mui/icons-material/AttachMoneyRounded'
 import FolderOpenRoundedIcon from '@mui/icons-material/FolderOpenRounded'
 import LockRoundedIcon from '@mui/icons-material/LockRounded'
+import LinkRoundedIcon from '@mui/icons-material/LinkRounded'
 import PeopleAltRoundedIcon from '@mui/icons-material/PeopleAltRounded'
 import ReceiptLongRoundedIcon from '@mui/icons-material/ReceiptLongRounded'
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined'
@@ -57,7 +58,9 @@ import PackageSuggestionsPanel from './PackageSuggestionsPanel.jsx'
 import RetentionSuggestionsPanel from './RetentionSuggestionsPanel.jsx'
 import PackageTable from './PackageTable.jsx'
 import QuickbooksConnectButton from './QuickbooksConnectButton.jsx'
+import QuickbooksConnectionsDialog from './QuickbooksConnectionsDialog.jsx'
 import QuickbooksCustomersDialog from './QuickbooksCustomersDialog.jsx'
+import QuickbooksModeSwitch from './QuickbooksModeSwitch.jsx'
 
 const packageSummaryCards = [
   { status: 'DRAFT', icon: <ReceiptLongRoundedIcon />, color: 'primary.main' },
@@ -228,6 +231,7 @@ export default function PackageCatalog({
   )
   const [catalogAction, setCatalogAction] = useState(null)
   const [customersDialogOpen, setCustomersDialogOpen] = useState(false)
+  const [connectionsDialogOpen, setConnectionsDialogOpen] = useState(false)
   const [today] = useCurrentDate()
   const asOfDate = localDateKey(today)
   const jobDocuments = useJobDocuments(jobs)
@@ -392,6 +396,14 @@ export default function PackageCatalog({
               spacing={1}
               sx={{ ml: 'auto', alignItems: 'center', flexWrap: 'wrap', rowGap: 1 }}
             >
+              <QuickbooksModeSwitch
+                activeEnvironment={quickbooks.activeEnvironment}
+                connections={quickbooks.connections}
+                canSwitch={quickbooks.canSwitch}
+                switching={quickbooks.switching}
+                loading={quickbooks.loading}
+                onSwitch={quickbooks.switchMode}
+              />
               <QuickbooksConnectButton
                 compact
                 connection={quickbooks.connection}
@@ -400,6 +412,17 @@ export default function PackageCatalog({
                 lastInvoiceAt={quickbooks.lastInvoiceAt}
                 onConnect={quickbooks.connect}
               />
+              {quickbooks.canManageCustomers && (
+                <Tooltip title="QuickBooks connections">
+                  <IconButton
+                    aria-label="QuickBooks connections"
+                    onClick={() => setConnectionsDialogOpen(true)}
+                    sx={{ border: 1, borderColor: 'divider', borderRadius: 2 }}
+                  >
+                    <LinkRoundedIcon fontSize="small" />
+                  </IconButton>
+                </Tooltip>
+              )}
               {quickbooks.connection?.status === 'CONNECTED' && quickbooks.canManageCustomers && (
                 <Tooltip title="QuickBooks customers">
                   <IconButton
@@ -660,6 +683,15 @@ export default function PackageCatalog({
           record={selectedContext.record}
           onClose={() => setCatalogAction(null)}
           onCancel={onDelete}
+        />
+      )}
+      {connectionsDialogOpen && (
+        <QuickbooksConnectionsDialog
+          connections={quickbooks.connections}
+          activeEnvironment={quickbooks.activeEnvironment}
+          canConnect={quickbooks.canConnect}
+          onConnect={quickbooks.connectEnvironment}
+          onClose={() => setConnectionsDialogOpen(false)}
         />
       )}
       {customersDialogOpen && quickbooks.connection && (

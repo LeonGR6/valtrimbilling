@@ -5,20 +5,11 @@ import {
   parseCustomerAdminInput,
   QuickbooksCustomerAdminError,
 } from '../_shared/quickbooksCustomerAdmin.ts'
-import {
-  openQuickbooksSession,
-  QuickbooksBusyError,
-  QuickbooksNotConnectedError,
-} from '../_shared/quickbooksSession.ts'
+import { loadActiveEnvironment, openSessionFor } from '../_shared/quickbooksEnvironment.ts'
+import { QuickbooksBusyError, QuickbooksNotConnectedError } from '../_shared/quickbooksSession.ts'
 import { serviceClient, userClient } from '../_shared/supabase.ts'
 
 const ALLOWED_ROLES = ['ADMIN', 'ACCOUNTING']
-
-function requiredEnv(name: string) {
-  const value = Deno.env.get(name)?.trim()
-  if (!value) throw new Error(`Missing Edge Function secret: ${name}.`)
-  return value
-}
 
 function errorResponse(error: unknown) {
   if (error instanceof QuickbooksCustomerAdminError) {
@@ -66,20 +57,20 @@ Deno.serve(async (req) => {
     const admin = serviceClient()
 
     const result = await handleCustomerAction({
+      // Customers are linked for the environment the platform is set to; null when
+      // that one is not connected.
       getEnvironment: async () => {
+        const environment = await loadActiveEnvironment(admin)
         const { data, error } = await admin
           .from('quickbooks_connections')
-          .select('environment')
-          .eq('status', 'CONNECTED')
+          .select('status')
+          .eq('environment', environment)
           .maybeSingle()
         if (error) throw error
-        return data?.environment ?? null
+        return data?.status === 'CONNECTED' ? environment : null
       },
       openApi: async () => {
-        const session = await openQuickbooksSession(admin, {
-          clientId: requiredEnv('QBO_CLIENT_ID'),
-          clientSecret: requiredEnv('QBO_CLIENT_SECRET'),
-        })
+        const session = await openSessionFor(admin, await loadActiveEnvironment(admin))
         return {
           environment: session.environment,
           realmId: session.realmId,

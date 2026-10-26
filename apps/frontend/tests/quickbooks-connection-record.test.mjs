@@ -10,6 +10,10 @@ import {
   quickbooksOAuthReturnMessage,
   quickbooksProductMissing,
   toQuickbooksConnection,
+  quickbooksConnectionSummary,
+  quickbooksTokenDaysLeft,
+  isQuickbooksTestPackage,
+  canResetQuickbooksTestInvoice,
 } from '../src/features/draw-invoice/services/quickbooksRecord.js'
 
 const row = {
@@ -71,11 +75,11 @@ test('describes the status card for every connection state', () => {
   )
   assert.deepEqual(
     quickbooksStatusView({ loading: false, connection: connected, canConnect: true, lastInvoiceAt, now }),
-    { tone: 'success', status: 'Connected', detail: 'Last invoice: 12:42 PM · Sandbox' },
+    { tone: 'success', status: 'Connected', detail: 'Last invoice: 12:42 PM · Test' },
   )
   assert.equal(
     quickbooksStatusView({ loading: false, connection: connected, canConnect: true, now }).detail,
-    'No invoices yet · Sandbox',
+    'No invoices yet · Test',
   )
   assert.equal(
     quickbooksStatusView({ loading: false, connection: production, canConnect: true, lastInvoiceAt, now }).detail,
@@ -84,7 +88,7 @@ test('describes the status card for every connection state', () => {
   assert.deepEqual(quickbooksStatusView({ loading: false, connection: noProduct, canConnect: true }), {
     tone: 'warning',
     status: 'Product missing',
-    detail: 'Sandbox Co · Sandbox',
+    detail: 'Sandbox Co · Test',
   })
   assert.equal(quickbooksProductMissing(noProduct), true)
   assert.equal(quickbooksProductMissing(connected), false)
@@ -99,7 +103,7 @@ test('explains who can connect and which company is connected', () => {
   )
   assert.match(
     quickbooksButtonTitle({ canConnect: true, connection: connected }),
-    /Sandbox Co \(Sandbox\) · Product: Material Installation & Supply/,
+    /Sandbox Co \(Test\) · Product: Material Installation & Supply/,
   )
 })
 
@@ -174,7 +178,7 @@ test('a created invoice is highlighted and links to QuickBooks for every role', 
     quickbooksStatus: 'CREATED',
     quickbooksReference: 'DP-00000029',
   }
-  const sync = { environment: 'sandbox', invoiceId: '146', docNumber: 'DP-00000029' }
+  const sync = { environment: 'production', invoiceId: '146', docNumber: 'DP-00000029' }
 
   for (const canSend of [true, false]) {
     assert.deepEqual(quickbooksPackageStatusView({ record: created, sync, canSend }), {
@@ -182,7 +186,7 @@ test('a created invoice is highlighted and links to QuickBooks for every role', 
       status: 'Invoice created',
       detail: 'Invoice DP-00000029',
       action: 'open',
-      href: 'https://app.sandbox.qbo.intuit.com/app/invoice?txnId=146',
+      href: 'https://app.qbo.intuit.com/app/invoice?txnId=146',
     })
   }
   // Without the sync row the invoice is still announced, just not linked.
@@ -267,6 +271,8 @@ test('maps the created invoice and the last sync attempt', () => {
       docNumber: 'DP-00000068',
       totalAmount: 760,
       customerName: 'Trumark',
+      environment: null,
+      invoiceNumber: '',
       warnings: [],
     },
   )
@@ -295,7 +301,7 @@ test('maps the created invoice and the last sync attempt', () => {
 test('the QuickBooks card speaks in QuickBooks words once the payment is known', () => {
   const sync = (overrides) => toQuickbooksInvoiceSync({
     status: 'CREATED',
-    environment: 'sandbox',
+    environment: 'production',
     qbo_invoice_id: '150',
     qbo_doc_number: 'DP-00000004',
     qbo_state: 'OPEN',
@@ -504,4 +510,206 @@ test('a Price Adjustment is sent, shown and voided in QuickBooks like a Draw; a 
   assert.equal(quickbooksPackageStatusView({ record: release, sync: null, canSend: true }), null)
   assert.notEqual(quickbooksTableStatusView(adjustment), null)
   assert.equal(quickbooksTableStatusView(release), null)
+})
+
+test('an invoice sent to the Test QuickBooks says so, whatever QuickBooks reports', () => {
+  const record = {
+    packageType: 'DRAW',
+    status: 'AWAITING_PAYMENT',
+    quickbooksStatus: 'CREATED',
+    quickbooksReference: '15027',
+    quickbooksEnvironment: 'sandbox',
+  }
+  const sync = toQuickbooksInvoiceSync({
+    status: 'CREATED',
+    environment: 'sandbox',
+    qbo_invoice_id: '150',
+    qbo_doc_number: '15027',
+    qbo_state: 'OPEN',
+    qbo_balance: 1000,
+    qbo_total: 1000,
+    qbo_due_date: '2026-11-12',
+    qbo_overdue: false,
+    updated_at: 't',
+  })
+
+  assert.deepEqual(quickbooksPackageStatusView({ record, sync, canSend: true }), {
+    tone: 'warning',
+    status: 'Test invoice',
+    detail: 'Invoice 15027 · Test · Open',
+    action: 'open',
+    href: 'https://app.sandbox.qbo.intuit.com/app/invoice?txnId=150',
+  })
+  assert.deepEqual(quickbooksTableStatusView(record), {
+    tone: 'warning',
+    status: 'Test invoice',
+    detail: 'Invoice 15027 · Test',
+  })
+  // The lane on the Package is enough even before the sync row is read.
+  assert.equal(quickbooksPackageStatusView({ record, sync: null, canSend: false }).status, 'Test invoice')
+  // A Production invoice keeps QuickBooks' own words.
+  assert.equal(
+    quickbooksTableStatusView({ ...record, quickbooksEnvironment: 'production' }).status,
+    'Invoice created',
+  )
+})
+
+import {
+  canSwitchQuickbooksMode,
+  pickQuickbooksConnection,
+  quickbooksEnvironmentLabel,
+  quickbooksInvoiceNumberStatus,
+  toQuickbooksSettings,
+} from '../src/features/draw-invoice/services/quickbooksRecord.js'
+
+test('names the environments the way people say them', () => {
+  assert.equal(quickbooksEnvironmentLabel('sandbox'), 'Test')
+  assert.equal(quickbooksEnvironmentLabel('production'), 'Production')
+  assert.equal(quickbooksEnvironmentLabel(null), '')
+})
+
+test('reads the active mode, defaulting to Test, and only an ADMIN can change it', () => {
+  assert.deepEqual(toQuickbooksSettings({ active_environment: 'production', changed_at: 't' }), {
+    activeEnvironment: 'production',
+    changedAt: 't',
+  })
+  assert.equal(toQuickbooksSettings({ active_environment: 'anything' }).activeEnvironment, 'sandbox')
+  assert.equal(toQuickbooksSettings(null), null)
+
+  assert.equal(canSwitchQuickbooksMode('ADMIN'), true)
+  assert.equal(canSwitchQuickbooksMode('ACCOUNTING'), false)
+  assert.equal(canSwitchQuickbooksMode(undefined), false)
+})
+
+test('picks the connection of one environment out of both', () => {
+  const connections = [
+    toQuickbooksConnection({ ...row, environment: 'sandbox', company_name: 'Test Co' }),
+    toQuickbooksConnection({ ...row, environment: 'production', company_name: 'Real Co' }),
+  ]
+
+  assert.equal(pickQuickbooksConnection(connections, 'production').companyName, 'Real Co')
+  assert.equal(pickQuickbooksConnection(connections, 'sandbox').companyName, 'Test Co')
+  assert.equal(pickQuickbooksConnection([connections[0]], 'production'), null)
+  assert.equal(pickQuickbooksConnection(undefined, 'sandbox'), null)
+})
+
+test('the preview carries where the invoice goes and what is known about the number', () => {
+  const preview = toQuickbooksInvoicePreview({
+    environment: 'production',
+    customer: { displayName: 'Trumark' },
+    invoice: { Line: [], DocNumber: '15027' },
+    numberCheck: { number: '15027', inDatabase: false, inQuickbooks: true, last: '15026', current: null },
+  })
+
+  assert.equal(preview.environment, 'production')
+  assert.deepEqual(preview.numberCheck, {
+    number: '15027',
+    inDatabase: false,
+    inQuickbooks: true,
+    last: '15026',
+    current: null,
+  })
+  // An older answer without the number check still maps.
+  assert.deepEqual(toQuickbooksInvoicePreview({ invoice: { Line: [] } }).numberCheck, {
+    number: null,
+    inDatabase: false,
+    inQuickbooks: false,
+    last: null,
+    current: null,
+  })
+  assert.deepEqual(
+    [toQuickbooksInvoiceResult({ environment: 'production', invoiceNumber: '15027' }).environment,
+      toQuickbooksInvoiceResult({ environment: 'production', invoiceNumber: '15027' }).invoiceNumber],
+    ['production', '15027'],
+  )
+})
+
+test('tells the person whether the typed invoice number can be used', () => {
+  const free = { number: '15027', inDatabase: false, inQuickbooks: false, last: '15026', current: null }
+
+  assert.deepEqual(quickbooksInvoiceNumberStatus({ typed: '  ', checking: false, numberCheck: free }), {
+    tone: 'neutral',
+    blocking: true,
+    message: 'Type the invoice number.',
+  })
+  assert.equal(quickbooksInvoiceNumberStatus({ typed: 'bad number!', checking: false, numberCheck: free }).tone, 'error')
+  assert.equal(quickbooksInvoiceNumberStatus({ typed: 'X'.repeat(22), checking: false, numberCheck: free }).blocking, true)
+
+  // The check belongs to the number it was made for; while it catches up, nothing is allowed.
+  assert.equal(quickbooksInvoiceNumberStatus({ typed: '15028', checking: false, numberCheck: free }).message, 'Checking the number…')
+  assert.equal(quickbooksInvoiceNumberStatus({ typed: '15027', checking: true, numberCheck: free }).blocking, true)
+
+  assert.deepEqual(quickbooksInvoiceNumberStatus({ typed: '15027', checking: false, numberCheck: free }), {
+    tone: 'success',
+    blocking: false,
+    message: 'This number is available.',
+  })
+  assert.equal(
+    quickbooksInvoiceNumberStatus({ typed: '15027', checking: false, numberCheck: { ...free, inDatabase: true } }).message,
+    'Another Package already uses this number.',
+  )
+  assert.equal(
+    quickbooksInvoiceNumberStatus({ typed: '15027', checking: false, numberCheck: { ...free, inQuickbooks: true } }).message,
+    'QuickBooks already has an invoice with this number.',
+  )
+})
+
+test('counts the days left of the authorization and warns before it ends', () => {
+  const now = new Date('2026-10-26T12:00:00Z')
+  const at = (days) => toQuickbooksConnection({
+    ...row,
+    refresh_token_expires_at: new Date(now.getTime() + days * 86400000).toISOString(),
+  })
+
+  assert.equal(quickbooksTokenDaysLeft(at(40), now), 40)
+  assert.equal(quickbooksTokenDaysLeft(toQuickbooksConnection({ ...row, refresh_token_expires_at: null }), now), null)
+
+  assert.equal(quickbooksConnectionSummary('sandbox', at(60), now).status, 'Connected')
+  assert.equal(quickbooksConnectionSummary('sandbox', at(60), now).attention, false)
+
+  const soon = quickbooksConnectionSummary('production', at(5), now)
+  assert.equal(soon.status, 'Reconnect soon')
+  assert.equal(soon.tone, 'warning')
+  assert.equal(soon.expiry, 'Authorization ends in 5 days')
+  assert.equal(soon.attention, true)
+
+  const expired = quickbooksConnectionSummary('production', at(-2), now)
+  assert.equal(expired.status, 'Reconnect needed')
+  assert.equal(expired.tone, 'error')
+
+  const missing = quickbooksConnectionSummary('production', null, now)
+  assert.equal(missing.status, 'Not connected')
+  assert.equal(missing.label, 'Production')
+  assert.equal(missing.attention, false)
+
+  // The card of the active mode shows the warning too.
+  assert.deepEqual(
+    quickbooksStatusView({ loading: false, connection: at(5), canConnect: true, now }),
+    { tone: 'warning', status: 'Reconnect soon', detail: 'Authorization ends in 5 days · Test' },
+  )
+})
+
+test('only a Test Package that was never submitted can move back to Production', () => {
+  const testPackage = {
+    packageType: 'DRAW',
+    quickbooksEnvironment: 'sandbox',
+    quickbooksStatus: 'CREATED',
+    status: 'AWAITING_PAYMENT',
+    submissionStatus: 'NOT_SUBMITTED',
+    submittedAt: null,
+  }
+
+  assert.equal(isQuickbooksTestPackage(testPackage), true)
+  assert.equal(isQuickbooksTestPackage({ ...testPackage, quickbooksEnvironment: 'production' }), false)
+  assert.equal(isQuickbooksTestPackage({}), false)
+
+  assert.equal(canResetQuickbooksTestInvoice(testPackage, 'ACCOUNTING'), true)
+  assert.equal(canResetQuickbooksTestInvoice({ ...testPackage, quickbooksStatus: 'SYNC_ERROR' }, 'ADMIN'), true)
+  assert.equal(canResetQuickbooksTestInvoice({ ...testPackage, quickbooksStatus: 'VOIDED' }, 'ADMIN'), true)
+  assert.equal(canResetQuickbooksTestInvoice(testPackage, 'PROJECT_MANAGEMENT'), false)
+  assert.equal(canResetQuickbooksTestInvoice({ ...testPackage, quickbooksEnvironment: 'production' }, 'ADMIN'), false)
+  assert.equal(canResetQuickbooksTestInvoice({ ...testPackage, quickbooksStatus: 'NOT_CREATED' }, 'ADMIN'), false)
+  assert.equal(canResetQuickbooksTestInvoice({ ...testPackage, submissionStatus: 'SUBMITTED' }, 'ADMIN'), false)
+  assert.equal(canResetQuickbooksTestInvoice({ ...testPackage, submittedAt: '2026-10-20T00:00:00Z' }, 'ADMIN'), false)
+  assert.equal(canResetQuickbooksTestInvoice({ ...testPackage, status: 'PAID' }, 'ADMIN'), false)
 })

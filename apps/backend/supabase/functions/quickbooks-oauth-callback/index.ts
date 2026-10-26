@@ -7,6 +7,7 @@ import {
   QUICKBOOKS_PRODUCT_NAME,
   QUICKBOOKS_SCOPE,
 } from '../_shared/quickbooksOAuth.ts'
+import { quickbooksClientCredentials } from '../_shared/quickbooksEnvironment.ts'
 import { serviceClient } from '../_shared/supabase.ts'
 
 function requiredEnv(name: string) {
@@ -15,21 +16,22 @@ function requiredEnv(name: string) {
   return value
 }
 
-function returnLocation(status: 'connected' | 'error', reason?: string) {
+function returnLocation(status: 'connected' | 'error', reason?: string, environment?: string) {
   const returnUrl = new URL(requiredEnv('QBO_RETURN_URL'))
   if (!['http:', 'https:'].includes(returnUrl.protocol)) {
     throw new Error('QBO_RETURN_URL must use HTTP or HTTPS.')
   }
   returnUrl.searchParams.set('quickbooks', status)
   if (reason) returnUrl.searchParams.set('reason', reason)
+  if (environment) returnUrl.searchParams.set('environment', environment)
   return returnUrl.toString()
 }
 
-function redirect(status: 'connected' | 'error', reason?: string) {
+function redirect(status: 'connected' | 'error', reason?: string, environment?: string) {
   return new Response(null, {
     status: 303,
     headers: {
-      Location: returnLocation(status, reason),
+      Location: returnLocation(status, reason, environment),
       'Cache-Control': 'no-store',
       'Referrer-Policy': 'no-referrer',
     },
@@ -60,7 +62,7 @@ Deno.serve(async (req) => {
       .eq('state_hash', stateHash)
       .is('consumed_at', null)
       .gt('expires_at', consumedAt)
-      .select('user_id')
+      .select('user_id, environment')
       .maybeSingle()
 
     if (stateError) throw stateError
@@ -75,10 +77,11 @@ Deno.serve(async (req) => {
     const realmId = requestUrl.searchParams.get('realmId')
     if (!realmId) return redirect('error', 'missing_realm')
 
-    const environment = parseQuickbooksEnvironment(Deno.env.get('QBO_ENVIRONMENT'))
+    // The environment that started this connection (Test or Production): it picks
+    // the Intuit app keys and the QuickBooks host.
+    const environment = parseQuickbooksEnvironment(oauthState.environment)
     const tokens = await exchangeQuickbooksAuthorizationCode({
-      clientId: requiredEnv('QBO_CLIENT_ID'),
-      clientSecret: requiredEnv('QBO_CLIENT_SECRET'),
+      ...quickbooksClientCredentials(environment),
       redirectUri: requiredEnv('QBO_REDIRECT_URI'),
       code,
     })
@@ -105,7 +108,7 @@ Deno.serve(async (req) => {
     })
     if (completeError) throw completeError
 
-    return redirect(item ? 'connected' : 'error', item ? undefined : 'product_not_found')
+    return redirect(item ? 'connected' : 'error', item ? undefined : 'product_not_found', environment)
   } catch (error) {
     console.error('QuickBooks OAuth callback failed:', error)
     try {

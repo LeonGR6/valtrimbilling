@@ -1,7 +1,11 @@
 // Reads what QuickBooks shows for Package invoices and records it, so the
 // platform can tell open, overdue, paid, closed and voided invoices apart.
 
-import type { QuickbooksApiOptions, QuickbooksInvoiceDetail } from './quickbooksApi.ts'
+import type {
+  QuickbooksApiOptions,
+  QuickbooksEnvironment,
+  QuickbooksInvoiceDetail,
+} from './quickbooksApi.ts'
 import {
   deriveQuickbooksPaymentState,
   type QuickbooksPaymentState,
@@ -22,7 +26,7 @@ export interface AppliedPaymentState {
 
 export interface PaymentSyncDeps {
   loadContext(packageId: number): Promise<SyncContext>
-  openSession(): Promise<QuickbooksSession>
+  openSession(environment: QuickbooksEnvironment): Promise<QuickbooksSession>
   getInvoice(api: QuickbooksApiOptions, invoiceId: string): Promise<QuickbooksInvoiceDetail | null>
   /** Saves the state and returns the Package's workflow status afterwards. */
   apply(input: AppliedPaymentState): Promise<string | null>
@@ -49,7 +53,7 @@ export function todayInCalifornia(now: Date = new Date()) {
   }).format(now)
 }
 
-function failure(packageId: number, error: string): PaymentSyncResult {
+export function failure(packageId: number, error: string): PaymentSyncResult {
   return {
     packageId,
     state: null,
@@ -64,15 +68,17 @@ function failure(packageId: number, error: string): PaymentSyncResult {
 /**
  * Syncs the given Packages one by one. One Package failing (no invoice yet, a
  * QuickBooks error) is reported in its own result and does not stop the rest.
- * A session that cannot be opened (not connected, busy) fails the whole run.
+ * A session that cannot be opened (not connected, busy) fails the whole run of
+ * that environment; each environment is synced on its own.
  */
 export async function syncQuickbooksPayments(
   deps: PaymentSyncDeps,
   packageIds: number[],
+  environment: QuickbooksEnvironment,
 ): Promise<PaymentSyncResult[]> {
   if (packageIds.length === 0) return []
 
-  const session = await deps.openSession()
+  const session = await deps.openSession(environment)
   const api: QuickbooksApiOptions = {
     environment: session.environment,
     realmId: session.realmId,

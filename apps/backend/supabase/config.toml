@@ -437,6 +437,9 @@ verify_jwt = true
 [functions.quickbooks-invoice-void]
 verify_jwt = true
 
+[functions.quickbooks-invoice-reset]
+verify_jwt = true
+
 [functions.quickbooks-invoice-pdf]
 verify_jwt = true
 

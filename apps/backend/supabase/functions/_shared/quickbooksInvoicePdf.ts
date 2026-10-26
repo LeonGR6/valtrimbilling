@@ -5,7 +5,7 @@
 // creating the invoice: the invoice is the money record and must never be lost
 // because a PDF could not be saved.
 
-import type { QuickbooksApiOptions } from './quickbooksApi.ts'
+import type { QuickbooksApiOptions, QuickbooksEnvironment } from './quickbooksApi.ts'
 import type { QuickbooksSession } from './quickbooksSession.ts'
 
 // The same limit the Package documents bucket and the register function enforce.
@@ -113,7 +113,8 @@ export interface InvoicePdfContext {
 
 export interface InvoicePdfActionDeps extends PdfStoreDeps {
   loadContext(packageId: number): Promise<InvoicePdfContext>
-  openSession(): Promise<QuickbooksSession>
+  /** Opens the session of the environment the invoice was created in. */
+  openSession(environment: QuickbooksEnvironment): Promise<QuickbooksSession>
 }
 
 /** Saves, or saves again, the PDF of a Package whose invoice already exists. */
@@ -126,7 +127,14 @@ export async function saveInvoicePdfForPackage(
     throw new QuickbooksInvoicePdfError('NOT_CREATED', 'This Package has no QuickBooks invoice to save.')
   }
 
-  const session = await deps.openSession()
+  const environment = context.environment === 'sandbox' || context.environment === 'production'
+    ? context.environment
+    : null
+  if (!environment) {
+    throw new QuickbooksInvoicePdfError('NOT_CREATED', 'This Package has no QuickBooks invoice to save.')
+  }
+
+  const session = await deps.openSession(environment)
   if (session.environment !== context.environment || session.realmId !== context.realmId) {
     throw new QuickbooksInvoicePdfError(
       'WRONG_COMPANY',

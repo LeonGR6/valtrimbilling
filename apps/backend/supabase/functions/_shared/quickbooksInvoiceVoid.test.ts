@@ -130,3 +130,26 @@ Deno.test('failing to delete the saved PDF never fails the void', async () => {
 
   assertEquals((await voidPackageInvoice(deps, 29)).voided, true)
 })
+
+Deno.test('voids in the environment the invoice was created in, whatever mode is active', async () => {
+  const opened: string[] = []
+  const { deps } = harness({
+    openSession: (environment) => {
+      opened.push(environment)
+      return Promise.resolve({ environment, realmId: '1111', itemId: '77', accessToken: 'tok' })
+    },
+  }, { ...created, environment: 'production', realmId: '1111' })
+
+  await voidPackageInvoice(deps, 29)
+
+  assertEquals(opened, ['production'])
+})
+
+Deno.test('a Package whose invoice has no environment recorded is not voided', async () => {
+  const { deps, calls } = harness({}, { ...created, environment: null })
+
+  const error = await assertRejects(() => voidPackageInvoice(deps, 29), QuickbooksInvoiceVoidError)
+
+  assertEquals(error.code, 'NOT_CREATED')
+  assertEquals(calls, [])
+})

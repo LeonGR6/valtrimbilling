@@ -9,7 +9,11 @@
 // second step fails the next attempt finds the invoice already voided in
 // QuickBooks and only repeats the database step.
 
-import type { QuickbooksApiOptions, QuickbooksInvoiceDetail } from './quickbooksApi.ts'
+import type {
+  QuickbooksApiOptions,
+  QuickbooksEnvironment,
+  QuickbooksInvoiceDetail,
+} from './quickbooksApi.ts'
 import type { QuickbooksSession } from './quickbooksSession.ts'
 
 export type InvoiceVoidErrorCode = 'NOT_CREATED' | 'WRONG_COMPANY' | 'HAS_PAYMENTS'
@@ -35,7 +39,8 @@ export interface InvoiceVoidContext {
 
 export interface InvoiceVoidDeps {
   loadContext(packageId: number): Promise<InvoiceVoidContext>
-  openSession(): Promise<QuickbooksSession>
+  /** Opens the session of the environment the invoice was created in. */
+  openSession(environment: QuickbooksEnvironment): Promise<QuickbooksSession>
   getInvoice(api: QuickbooksApiOptions, invoiceId: string): Promise<QuickbooksInvoiceDetail | null>
   voidInvoice(api: QuickbooksApiOptions, invoice: { id: string; syncToken: string }): Promise<void>
   /** Records the void in the database; the path is the saved PDF to delete from Storage. */
@@ -51,6 +56,9 @@ export type InvoiceVoidResult = {
 
 const cents = (amount: number) => Math.round(amount * 100)
 
+const environmentOf = (value: string | null): QuickbooksEnvironment | null =>
+  value === 'sandbox' || value === 'production' ? value : null
+
 export async function voidPackageInvoice(
   deps: InvoiceVoidDeps,
   packageId: number,
@@ -64,7 +72,12 @@ export async function voidPackageInvoice(
     throw new QuickbooksInvoiceVoidError('NOT_CREATED', 'This Package has no QuickBooks invoice to void.')
   }
 
-  const session = await deps.openSession()
+  const environment = environmentOf(context.environment)
+  if (!environment) {
+    throw new QuickbooksInvoiceVoidError('NOT_CREATED', 'This Package has no QuickBooks invoice to void.')
+  }
+
+  const session = await deps.openSession(environment)
   if (session.environment !== context.environment || session.realmId !== context.realmId) {
     throw new QuickbooksInvoiceVoidError(
       'WRONG_COMPANY',

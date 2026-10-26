@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(12);
+select plan(11);
 
 select has_table('valtrim', 'quickbooks_oauth_states', 'OAuth states are stored');
 select has_table('valtrim', 'quickbooks_connections', 'The QuickBooks connection is stored');
@@ -39,21 +39,21 @@ select ok(
 );
 
 select ok(
-  not has_function_privilege('authenticated', 'valtrim.get_quickbooks_credentials()', 'execute')
-  and not has_function_privilege('anon', 'valtrim.get_quickbooks_credentials()', 'execute')
-  and has_function_privilege('service_role', 'valtrim.get_quickbooks_credentials()', 'execute'),
+  not has_function_privilege('authenticated', 'valtrim.get_quickbooks_credentials(text)', 'execute')
+  and not has_function_privilege('anon', 'valtrim.get_quickbooks_credentials(text)', 'execute')
+  and has_function_privilege('service_role', 'valtrim.get_quickbooks_credentials(text)', 'execute'),
   'Only the service role can read the decrypted credentials'
 );
 
 select ok(
   not has_function_privilege(
     'authenticated',
-    'valtrim.rotate_quickbooks_refresh_token(text, timestamptz)',
+    'valtrim.rotate_quickbooks_refresh_token(text, text, timestamptz)',
     'execute'
   )
   and has_function_privilege(
     'service_role',
-    'valtrim.rotate_quickbooks_refresh_token(text, timestamptz)',
+    'valtrim.rotate_quickbooks_refresh_token(text, text, timestamptz)',
     'execute'
   ),
   'Only the service role can rotate the refresh token'
@@ -65,8 +65,8 @@ select ok(
     from pg_proc
     where oid in (
       'valtrim.complete_quickbooks_connection(uuid,text,text,text,text,text,text,timestamptz,text,text)'::regprocedure,
-      'valtrim.get_quickbooks_credentials()'::regprocedure,
-      'valtrim.rotate_quickbooks_refresh_token(text,timestamptz)'::regprocedure
+      'valtrim.get_quickbooks_credentials(text)'::regprocedure,
+      'valtrim.rotate_quickbooks_refresh_token(text,text,timestamptz)'::regprocedure
     )
   ),
   'Credential functions use definer rights with an empty search path'
@@ -83,17 +83,11 @@ select throws_ok(
 );
 
 select throws_ok(
-  $$ insert into valtrim.quickbooks_connections (id, realm_id, environment, refresh_token_secret_id)
-     values (false, '1', 'sandbox', gen_random_uuid()) $$,
+  $$ insert into valtrim.quickbooks_connections (realm_id, environment, refresh_token_secret_id)
+     values ('1', 'staging', gen_random_uuid()) $$,
   '23514',
   null,
-  'Only one company can be connected'
-);
-
-select is(
-  valtrim.rotate_quickbooks_refresh_token('refresh', null),
-  false,
-  'Rotating without a connection stores nothing'
+  'Only Test (sandbox) and Production can be connected'
 );
 
 select * from finish();

@@ -132,3 +132,28 @@ Deno.test('on demand, refuses a Package with no created invoice or another Quick
   assertEquals(wrong.code, 'WRONG_COMPANY')
   assertEquals(other.calls.some((call) => call.startsWith('fetch')), false)
 })
+
+Deno.test('saves the PDF from the environment the invoice was created in', async () => {
+  const opened: string[] = []
+  const base = actionHarness({ environment: 'production', realmId: '1111' })
+  const deps: InvoicePdfActionDeps = {
+    ...base.deps,
+    openSession: (environment) => {
+      opened.push(environment)
+      return Promise.resolve({ environment, realmId: '1111', itemId: '77', accessToken: 'tok' })
+    },
+  }
+
+  await saveInvoicePdfForPackage(deps, 29)
+
+  assertEquals(opened, ['production'])
+})
+
+Deno.test('a Package whose invoice has no environment recorded has no PDF to save', async () => {
+  const { deps, calls } = actionHarness({ environment: null })
+
+  const error = await assertRejects(() => saveInvoicePdfForPackage(deps, 29), QuickbooksInvoicePdfError)
+
+  assertEquals(error.code, 'NOT_CREATED')
+  assertEquals(calls, [])
+})

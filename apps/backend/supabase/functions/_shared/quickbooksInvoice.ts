@@ -84,6 +84,7 @@ export type QuickbooksInvoiceErrorCode =
   | 'TOTAL_MISMATCH'
   | 'UNSUPPORTED_PACKAGE'
   | 'PRODUCT_MISSING'
+  | 'NUMBER_IN_USE'
 
 export class QuickbooksInvoiceError extends Error {
   readonly code: QuickbooksInvoiceErrorCode
@@ -238,6 +239,21 @@ function describe(group: LineGroup) {
   const lots = `${new Set(group.lots).size > 1 ? 'LOTS' : 'LOT'} #${formatLotRanges(group.lots)}`
   const place = group.building ? `BUILDING ${group.building.toUpperCase()} ${lots}` : lots
   return `${phaseText(group.phaseCode)} ${place}\n${group.scope}`
+}
+
+// QuickBooks limits an invoice number (DocNumber) to 21 characters.
+const INVOICE_NUMBER_PATTERN = /^[0-9A-Za-z][0-9A-Za-z.-]{0,20}$/u
+
+/** The invoice number a person typed, trimmed, or an error that says what is wrong with it. */
+export function parseInvoiceNumber(value: unknown) {
+  const number = typeof value === 'string' ? value.trim() : ''
+  if (!INVOICE_NUMBER_PATTERN.test(number)) {
+    throw new QuickbooksInvoiceError(
+      'INVALID_INPUT',
+      'Enter an invoice number of up to 21 letters, numbers, dots or dashes.',
+    )
+  }
+  return number
 }
 
 /** YYYY-MM-DD plus a number of days, computed in UTC so the host timezone cannot shift it. */

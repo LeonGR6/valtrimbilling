@@ -1,6 +1,28 @@
+// QuickBooks "sandbox" is called Test everywhere a person reads it.
 const ENVIRONMENT_LABELS = {
-  sandbox: 'Sandbox',
+  sandbox: 'Test',
   production: 'Production',
+}
+
+export function quickbooksEnvironmentLabel(environment) {
+  return ENVIRONMENT_LABELS[environment] ?? environment ?? ''
+}
+
+export function toQuickbooksSettings(row) {
+  if (!row) return null
+  return {
+    activeEnvironment: row.active_environment === 'production' ? 'production' : 'sandbox',
+    changedAt: row.changed_at ?? null,
+  }
+}
+
+/** The connection of one environment out of the (at most two) that exist. */
+export function pickQuickbooksConnection(connections, environment) {
+  return (connections ?? []).find((connection) => connection.environment === environment) ?? null
+}
+
+export function canSwitchQuickbooksMode(role) {
+  return role === 'ADMIN'
 }
 
 export function toQuickbooksConnection(row) {
@@ -63,11 +85,16 @@ export function quickbooksStatusView({ loading, connection, canConnect, lastInvo
     }
   }
 
-  const sandbox = connection.environment === 'sandbox' ? ' · Sandbox' : ''
+  const sandbox = connection.environment === 'sandbox' ? ' · Test' : ''
 
   if (quickbooksProductMissing(connection)) {
     const company = connection.companyName || `Company ${connection.realmId}`
     return { tone: 'warning', status: 'Product missing', detail: `${company}${sandbox}` }
+  }
+
+  const summary = quickbooksConnectionSummary(connection.environment, connection, now)
+  if (summary.attention) {
+    return { tone: summary.tone, status: summary.status, detail: `${summary.expiry}${sandbox}` }
   }
 
   const last = quickbooksLastInvoiceLabel(lastInvoiceAt, now)
@@ -75,6 +102,78 @@ export function quickbooksStatusView({ loading, connection, canConnect, lastInvo
     tone: 'success',
     status: 'Connected',
     detail: `${last ? `Last invoice: ${last}` : 'No invoices yet'}${sandbox}`,
+  }
+}
+
+const DAY_MS = 24 * 60 * 60 * 1000
+// Intuit rotates the refresh token every time it is used and it lasts about 100
+// days without use; a warning this early leaves time to reconnect.
+const TOKEN_WARNING_DAYS = 14
+
+/** Whole days until the refresh token expires (negative once expired), or null when unknown. */
+export function quickbooksTokenDaysLeft(connection, now = new Date()) {
+  if (!connection?.refreshTokenExpiresAt) return null
+  const expires = new Date(connection.refreshTokenExpiresAt)
+  if (Number.isNaN(expires.getTime())) return null
+  return Math.floor((expires.getTime() - now.getTime()) / DAY_MS)
+}
+
+/**
+ * One line per environment for the connections panel: whether it is connected,
+ * to which company, and how long the authorization lasts. `attention` is true
+ * when an administrator should act (reconnect, or the Product is missing).
+ */
+export function quickbooksConnectionSummary(environment, connection, now = new Date()) {
+  const label = quickbooksEnvironmentLabel(environment)
+  if (!connection || connection.status !== 'CONNECTED') {
+    return {
+      environment,
+      label,
+      tone: 'neutral',
+      status: 'Not connected',
+      company: '',
+      product: '',
+      expiry: '',
+      attention: false,
+    }
+  }
+
+  const company = connection.companyName || `Company ${connection.realmId}`
+  const daysLeft = quickbooksTokenDaysLeft(connection, now)
+  let expiry = ''
+  let tone = 'success'
+  let status = 'Connected'
+  let attention = false
+
+  if (daysLeft != null && daysLeft < 0) {
+    expiry = 'Authorization expired'
+    tone = 'error'
+    status = 'Reconnect needed'
+    attention = true
+  } else if (daysLeft != null && daysLeft <= TOKEN_WARNING_DAYS) {
+    expiry = `Authorization ends in ${daysLeft} ${daysLeft === 1 ? 'day' : 'days'}`
+    tone = 'warning'
+    status = 'Reconnect soon'
+    attention = true
+  } else if (daysLeft != null) {
+    expiry = `Authorization renews with use · ${daysLeft} days left`
+  }
+
+  if (quickbooksProductMissing(connection)) {
+    tone = tone === 'error' ? 'error' : 'warning'
+    status = tone === 'error' ? status : 'Product missing'
+    attention = true
+  }
+
+  return {
+    environment,
+    label,
+    tone,
+    status,
+    company,
+    product: connection.itemName || '',
+    expiry,
+    attention,
   }
 }
 
@@ -163,7 +262,43 @@ export function toQuickbooksInvoicePreview(data) {
       value: field.StringValue,
     })),
     warnings: Array.isArray(data.warnings) ? data.warnings : [],
+    // Where this invoice would go (Test or Production) and what is known about the typed number.
+    environment: data.environment ?? null,
+    numberCheck: {
+      number: data.numberCheck?.number ?? null,
+      inDatabase: Boolean(data.numberCheck?.inDatabase),
+      inQuickbooks: Boolean(data.numberCheck?.inQuickbooks),
+      last: data.numberCheck?.last ?? null,
+      current: data.numberCheck?.current ?? null,
+    },
   }
+}
+
+/**
+ * What to tell the person about the invoice number they typed: free, taken by
+ * another Package, or already in QuickBooks. `checking` is while the preview is
+ * being read again for the number just typed.
+ */
+export function quickbooksInvoiceNumberStatus({ typed, checking, numberCheck }) {
+  const value = String(typed ?? '').trim()
+  if (!value) return { tone: 'neutral', blocking: true, message: 'Type the invoice number.' }
+  if (!/^[0-9A-Za-z][0-9A-Za-z.-]{0,20}$/u.test(value)) {
+    return {
+      tone: 'error',
+      blocking: true,
+      message: 'Use up to 21 letters, numbers, dots or dashes.',
+    }
+  }
+  if (checking || numberCheck?.number !== value) {
+    return { tone: 'neutral', blocking: true, message: 'Checking the number…' }
+  }
+  if (numberCheck.inDatabase) {
+    return { tone: 'error', blocking: true, message: 'Another Package already uses this number.' }
+  }
+  if (numberCheck.inQuickbooks) {
+    return { tone: 'error', blocking: true, message: 'QuickBooks already has an invoice with this number.' }
+  }
+  return { tone: 'success', blocking: false, message: 'This number is available.' }
 }
 
 export function toQuickbooksInvoiceResult(data) {
@@ -172,6 +307,8 @@ export function toQuickbooksInvoiceResult(data) {
     docNumber: data?.docNumber ?? '',
     totalAmount: typeof data?.totalAmount === 'number' ? data.totalAmount : null,
     customerName: data?.customer?.displayName ?? '',
+    environment: data?.environment ?? null,
+    invoiceNumber: data?.invoiceNumber ?? '',
     warnings: Array.isArray(data?.warnings) ? data.warnings : [],
   }
 }
@@ -281,6 +418,17 @@ export function quickbooksPackageStatusView({ record, sync, canSend }) {
       const number = record.quickbooksReference || sync?.docNumber || ''
       // Once QuickBooks has been asked, its own word for the invoice is shown.
       const payment = quickbooksPaymentView(sync)
+      const href = quickbooksInvoiceUrl(sync?.environment, sync?.invoiceId)
+      // An invoice sent to the Test QuickBooks is not a real one, and says so.
+      if ((record.quickbooksEnvironment ?? sync?.environment) === 'sandbox') {
+        return {
+          tone: 'warning',
+          status: 'Test invoice',
+          detail: `${number ? `Invoice ${number} · ` : ''}Test${payment ? ` · ${payment.status}` : ''}`,
+          action: 'open',
+          href,
+        }
+      }
       return {
         tone: payment?.tone ?? 'success',
         status: payment?.status ?? 'Invoice created',
@@ -333,11 +481,17 @@ export function quickbooksTableStatusView(record) {
 
   switch (record.quickbooksStatus) {
     case 'CREATED':
-      return {
-        tone: 'success',
-        status: 'Invoice created',
-        detail: record.quickbooksReference ? `Invoice ${record.quickbooksReference}` : '',
-      }
+      return record.quickbooksEnvironment === 'sandbox'
+        ? {
+          tone: 'warning',
+          status: 'Test invoice',
+          detail: record.quickbooksReference ? `Invoice ${record.quickbooksReference} · Test` : 'Test',
+        }
+        : {
+          tone: 'success',
+          status: 'Invoice created',
+          detail: record.quickbooksReference ? `Invoice ${record.quickbooksReference}` : '',
+        }
     case 'SYNC_ERROR':
       return { tone: 'warning', status: 'Sync error', detail: 'Last attempt failed' }
     case 'VOIDED':
@@ -401,6 +555,27 @@ export function canVoidQuickbooksInvoice(record, role) {
     && record.quickbooksStatus === 'CREATED'
     // An open invoice puts the Package in Awaiting payment; it can be voided
     // there as long as it was not sent to the Builder and nothing was paid.
+    && ['DRAFT', 'AWAITING_PAYMENT'].includes(record.status)
+    && (record.submissionStatus ?? 'NOT_SUBMITTED') === 'NOT_SUBMITTED'
+    && !record.submittedAt
+}
+
+/** The Package was invoiced (or attempted) in the QuickBooks Test company: nothing about it is real. */
+export function isQuickbooksTestPackage(record) {
+  return record?.quickbooksEnvironment === 'sandbox'
+}
+
+/**
+ * Whether to offer moving a Test Package back to a clean Draft so it can be sent
+ * to Production. The database re-checks everything (unpaid, never submitted, not
+ * a Production invoice); this only hides the action when it cannot apply.
+ */
+export function canResetQuickbooksTestInvoice(record, role) {
+  return INVOICE_ROLES.includes(role)
+    && record != null
+    && isInvoicedThroughQuickbooks(record)
+    && isQuickbooksTestPackage(record)
+    && ['CREATED', 'VOIDED', 'SYNC_ERROR'].includes(record.quickbooksStatus)
     && ['DRAFT', 'AWAITING_PAYMENT'].includes(record.status)
     && (record.submissionStatus ?? 'NOT_SUBMITTED') === 'NOT_SUBMITTED'
     && !record.submittedAt

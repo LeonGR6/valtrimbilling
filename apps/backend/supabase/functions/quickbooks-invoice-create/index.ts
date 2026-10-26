@@ -11,21 +11,12 @@ import {
 import { loadPackageSource, PackageNotFoundError } from '../_shared/quickbooksPackageSource.ts'
 import { storeInvoicePdf } from '../_shared/quickbooksInvoicePdf.ts'
 import { realPdfStoreDeps } from '../_shared/quickbooksPdfStorage.ts'
-import {
-  openQuickbooksSession,
-  QuickbooksBusyError,
-  QuickbooksNotConnectedError,
-} from '../_shared/quickbooksSession.ts'
+import { ENVIRONMENT_LABELS, loadActiveEnvironment, openSessionFor } from '../_shared/quickbooksEnvironment.ts'
+import { QuickbooksBusyError, QuickbooksNotConnectedError } from '../_shared/quickbooksSession.ts'
 import { serviceClient, userClient } from '../_shared/supabase.ts'
 
 const ALLOWED_ROLES = ['ADMIN', 'ACCOUNTING']
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/u
-
-function requiredEnv(name: string) {
-  const value = Deno.env.get(name)?.trim()
-  if (!value) throw new Error(`Missing Edge Function secret: ${name}.`)
-  return value
-}
 
 function rpcFailure(error: { message: string } | null) {
   if (error) throw new Error(error.message)
@@ -94,15 +85,23 @@ Deno.serve(async (req) => {
     const txnDate = body?.txnDate ?? new Date().toISOString().slice(0, 10)
 
     const admin = serviceClient()
-    const credentials = {
-      clientId: requiredEnv('QBO_CLIENT_ID'),
-      clientSecret: requiredEnv('QBO_CLIENT_SECRET'),
+
+    // New invoices go where the platform is set (Test or Production). The page
+    // says which one it is showing; if that is no longer the active one, nothing
+    // is sent, so a stale tab can never send to the wrong company.
+    const environment = await loadActiveEnvironment(admin)
+    if (typeof body?.expectedEnvironment === 'string' && body.expectedEnvironment !== environment) {
+      return json({
+        code: 'ENVIRONMENT_CHANGED',
+        error: `QuickBooks is now in ${ENVIRONMENT_LABELS[environment]} mode. Reload the page and check before sending.`,
+        environment,
+      }, 409)
     }
 
     const result = await createPackageInvoice(
       realDeps({
         loadPackage: (id) => loadPackageSource(admin, id),
-        openSession: () => openQuickbooksSession(admin, credentials),
+        openSession: (sessionEnvironment) => openSessionFor(admin, sessionEnvironment),
         getCustomerMapping: async (builderId, environment) => {
           const { data, error } = await admin
             .from('builder_quickbooks_customers')
@@ -131,22 +130,34 @@ Deno.serve(async (req) => {
             .eq('environment', environment)
           if (error) throw error
         },
-        claim: async (id, environment, realmId) => {
-          const { data, error } = await admin.rpc('claim_quickbooks_invoice_sync', {
-            p_package_id: id,
-            p_user_id: user.id,
-            p_environment: environment,
-            p_realm_id: realmId,
-          })
-          rpcFailure(error)
-          return data as ClaimResult
+        isNumberTaken: async (numberEnvironment, invoiceNumber, id) => {
+          const { data, error } = await admin
+            .from('quickbooks_invoice_syncs')
+            .select('package_id')
+            .eq('environment', numberEnvironment)
+            .eq('invoice_number', invoiceNumber)
+            .neq('package_id', id)
+            .limit(1)
+          if (error) throw error
+          return (data?.length ?? 0) > 0
         },
-        peekInvoiceNumber: async (id) => {
-          const { data, error } = await admin.rpc('preview_quickbooks_invoice_number', {
-            p_package_id: id,
+        lastInvoiceNumber: async (numberEnvironment) => {
+          const { data, error } = await admin.rpc('last_quickbooks_invoice_number', {
+            p_environment: numberEnvironment,
           })
           rpcFailure(error)
           return (data as string | null) ?? null
+        },
+        claim: async (id, claimEnvironment, realmId, invoiceNumber) => {
+          const { data, error } = await admin.rpc('claim_quickbooks_invoice_sync', {
+            p_package_id: id,
+            p_user_id: user.id,
+            p_environment: claimEnvironment,
+            p_realm_id: realmId,
+            p_invoice_number: invoiceNumber,
+          })
+          rpcFailure(error)
+          return data as ClaimResult
         },
         complete: async (id, created, payload) => {
           const { error } = await admin.rpc('complete_quickbooks_invoice_sync', {
@@ -170,7 +181,13 @@ Deno.serve(async (req) => {
           rpcFailure(error)
         },
       }),
-      { packageId, txnDate, dryRun: body?.dryRun === true },
+      {
+        packageId,
+        txnDate,
+        dryRun: body?.dryRun === true,
+        environment,
+        invoiceNumber: typeof body?.invoiceNumber === 'string' ? body.invoiceNumber : null,
+      },
     )
 
     return json(result)

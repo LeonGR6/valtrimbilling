@@ -262,6 +262,8 @@ export function toDrawInvoicePackage(
     portalName: submissionMethod === 'PORTAL' ? submissionDestination : '',
     quickbooksStatus: packageRow.quickbooks_status ?? 'NOT_CREATED',
     quickbooksReference: packageRow.quickbooks_reference ?? null,
+    // The QuickBooks environment (sandbox = Test, production) the Package was sent to.
+    quickbooksEnvironment: packageRow.quickbooks_environment ?? null,
     paymentState: packageRow.quickbooks_invoice_syncs?.qbo_state ?? null,
     paymentOverdue: Boolean(packageRow.quickbooks_invoice_syncs?.qbo_overdue),
     submissionStatus: packageRow.submission_status ?? 'NOT_SUBMITTED',

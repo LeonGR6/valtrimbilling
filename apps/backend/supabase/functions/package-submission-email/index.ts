@@ -74,13 +74,19 @@ async function authorizeUser(req: Request) {
 async function loadPackage(caller: ReturnType<typeof userClient>, packageId: string) {
   const { data: record, error } = await caller
     .from('draw_packages')
-    .select('id, package_number, package_type, status, job_id, builder_id, setup_version_id, quickbooks_status, quickbooks_reference')
+    .select('id, package_number, package_type, status, job_id, builder_id, setup_version_id, quickbooks_status, quickbooks_reference, quickbooks_environment')
     .eq('id', packageId)
     .maybeSingle()
   if (error) throw error
   if (!record) throw new Error('The Package is no longer available.')
   if (['CANCELLED', 'VOIDED'].includes(String(record.status))) {
     throw new Error('A cancelled Package cannot be sent.')
+  }
+  // An invoice in the QuickBooks Test company is not a real one: the Builder must not receive it.
+  if (record.quickbooks_environment === 'sandbox') {
+    throw new Error(
+      'This Package was invoiced in QuickBooks Test, so it cannot be sent to the Builder. Move it back to Production first.',
+    )
   }
 
   const [setup, job, builder, invoice] = await Promise.all([

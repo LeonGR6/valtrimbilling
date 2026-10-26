@@ -17,6 +17,9 @@ const loaded = (patch: Partial<LoadedPackage['source']['package']> = {}, quickbo
   builder: { id: 1, name: 'Trumark' },
   job: { code: '1307', community: 'Sunset Ridge' },
   paymentTermsDays: 30,
+  quickbooksEnvironment: null,
+  syncInvoiceNumber: null,
+  syncEnvironment: null,
   source: {
     package: { package_type: 'DRAW', status: 'DRAFT', invoice_line_format: 'LOT_SCOPE', ...patch },
     draws: [
@@ -53,15 +56,18 @@ function harness(overrides: Partial<InvoiceSyncDeps> = {}, pkg: LoadedPackage = 
   const sent: { requestId: string; payload: unknown }[] = []
   const deps: InvoiceSyncDeps = {
     loadPackage: () => Promise.resolve(pkg),
-    openSession: () => {
+    openSession: (environment) => {
       calls.push('openSession')
       return Promise.resolve({
-        environment: 'sandbox',
+        environment,
         realmId: '9341',
         itemId: '19',
         accessToken: 'tok',
       })
     },
+    isNumberTaken: () => Promise.resolve(false),
+    lastInvoiceNumber: () => Promise.resolve('15026'),
+    findInvoiceByNumber: () => Promise.resolve(null),
     getCustomerMapping: () => Promise.resolve(null),
     saveCustomerMapping: () => {
       calls.push('saveCustomerMapping')
@@ -84,14 +90,14 @@ function harness(overrides: Partial<InvoiceSyncDeps> = {}, pkg: LoadedPackage = 
       calls.push('searchCustomers')
       return Promise.resolve([{ id: '58', displayName: 'Trumark' }])
     },
-    claim: (): Promise<ClaimResult> => {
+    claim: (_id, _environment, _realm, invoiceNumber): Promise<ClaimResult> => {
       calls.push('claim')
-      return Promise.resolve({ claimed: true, requestId: 'req-1' })
+      return Promise.resolve({ claimed: true, requestId: 'req-1', invoiceNumber })
     },
     createInvoice: (_api, payload, requestId) => {
       calls.push('createInvoice')
       sent.push({ requestId, payload })
-      return Promise.resolve({ id: '147', docNumber: 'DP-00000068', syncToken: '0', totalAmount: 760 })
+      return Promise.resolve({ id: '147', docNumber: payload.DocNumber ?? null, syncToken: '0', totalAmount: 760 })
     },
     complete: () => {
       calls.push('complete')
@@ -110,8 +116,19 @@ function harness(overrides: Partial<InvoiceSyncDeps> = {}, pkg: LoadedPackage = 
   return { deps, calls, sent }
 }
 
-const run = (deps: InvoiceSyncDeps, dryRun = false) =>
-  createPackageInvoice(deps, { packageId: 68, txnDate: '2026-10-09', dryRun })
+const run = (
+  deps: InvoiceSyncDeps,
+  dryRun = false,
+  extra: { environment?: 'sandbox' | 'production'; invoiceNumber?: string | null } = {},
+) =>
+  createPackageInvoice(deps, {
+    packageId: 68,
+    txnDate: '2026-10-09',
+    dryRun,
+    environment: 'sandbox',
+    invoiceNumber: '15001',
+    ...extra,
+  })
 
 Deno.test('dry run previews the invoice and changes nothing', async () => {
   const { deps, calls } = harness()
@@ -127,7 +144,7 @@ Deno.test('dry run previews the invoice and changes nothing', async () => {
     source: 'quickbooks',
     replacedStale: false,
   })
-  assertEquals(result.invoice.DocNumber, 'DP-00000068')
+  assertEquals(result.invoice.DocNumber, '15001')
   assertEquals(result.invoice.TxnDate, '2026-10-09')
   assertEquals(result.invoice.DueDate, '2026-11-08')
   assertEquals(result.invoice.Line.map((line) => [line.Description, line.Amount]), [
@@ -154,7 +171,7 @@ Deno.test('creates the invoice: claim, create with the claimed request id, then 
   assertEquals(result.dryRun, false)
   if (result.dryRun) return
   assertEquals(result.invoiceId, '147')
-  assertEquals(result.docNumber, 'DP-00000068')
+  assertEquals(result.docNumber, '15001')
 })
 
 Deno.test('a saved customer mapping is used without searching or saving again', async () => {
@@ -233,7 +250,7 @@ Deno.test('saves the QuickBooks PDF of the invoice once it is recorded', async (
 
   await run(deps)
 
-  assertEquals(saved, [{ packageId: 68, invoiceId: '147', documentNumber: 'DP-00000068' }])
+  assertEquals(saved, [{ packageId: 68, invoiceId: '147', documentNumber: '15001' }])
   assertEquals(calls.includes('complete'), true)
 })
 
@@ -344,30 +361,140 @@ Deno.test('if the created invoice cannot be recorded the claim stays reusable', 
   assertEquals(calls.slice(-2), ['createInvoice', 'fail(reusable=true)'])
 })
 
-Deno.test('a real send uses the serial invoice number as the QuickBooks DocNumber', async () => {
+Deno.test('a real send uses the typed invoice number as the QuickBooks DocNumber', async () => {
   const sent: (string | undefined)[] = []
+  const claimed: unknown[][] = []
   const { deps } = harness({
-    claim: () => Promise.resolve({ claimed: true, requestId: 'req-1', invoiceNumber: '15001' }),
+    claim: (...args) => {
+      claimed.push(args)
+      return Promise.resolve({ claimed: true, requestId: 'req-1', invoiceNumber: '15027' })
+    },
     createInvoice: (_api, payload) => {
       sent.push(payload.DocNumber)
-      return Promise.resolve({ id: '147', docNumber: '15001', syncToken: '0', totalAmount: 760 })
+      return Promise.resolve({ id: '147', docNumber: '15027', syncToken: '0', totalAmount: 760 })
     },
   })
 
-  const result = await createPackageInvoice(deps, { packageId: 68, txnDate: '2026-10-14', dryRun: false })
+  const result = await run(deps, false, { environment: 'production', invoiceNumber: ' 15027 ' })
 
-  assertEquals(sent, ['15001'])
-  assertEquals(result.dryRun === false && result.docNumber, '15001')
+  assertEquals(claimed, [[68, 'production', '9341', '15027']])
+  assertEquals(sent, ['15027'])
+  assertEquals(result.dryRun === false && result.docNumber, '15027')
+  assertEquals(result.dryRun === false && result.environment, 'production')
 })
 
-Deno.test('a preview shows the number the invoice would get and takes none', async () => {
-  const { deps, calls } = harness({
-    peekInvoiceNumber: () => Promise.resolve('15002'),
+Deno.test('the environment given is the one the session is opened for and the invoice goes to', async () => {
+  const opened: string[] = []
+  const { deps } = harness({
+    openSession: (environment) => {
+      opened.push(environment)
+      return Promise.resolve({ environment, realmId: '1111', itemId: '77', accessToken: 'tok' })
+    },
   })
 
-  const result = await createPackageInvoice(deps, { packageId: 68, txnDate: '2026-10-14', dryRun: true })
+  const result = await run(deps, true, { environment: 'production' })
 
-  assertEquals(result.dryRun && result.invoice.DocNumber, '15002')
+  assertEquals(opened, ['production'])
+  assertEquals(result.environment, 'production')
+})
+
+Deno.test('a real send without a valid invoice number never reaches QuickBooks', async () => {
+  for (const invoiceNumber of [null, '', '   ', 'bad number!', 'X'.repeat(22)]) {
+    const { deps, calls } = harness()
+    const error = await assertRejects(() => run(deps, false, { invoiceNumber }), QuickbooksInvoiceError)
+    assertEquals(error.code, 'INVALID_INPUT')
+    assertEquals(calls, [])
+  }
+})
+
+Deno.test('a number another Package already uses in this environment is refused before sending', async () => {
+  const { deps, calls } = harness({ isNumberTaken: () => Promise.resolve(true) })
+
+  const error = await assertRejects(() => run(deps), QuickbooksSyncConflictError)
+
+  assertEquals(error.reason, 'NUMBER_IN_USE')
+  assertEquals(calls.includes('claim'), false)
+})
+
+Deno.test('a number that already exists in QuickBooks is refused before sending', async () => {
+  const { deps, calls } = harness({ findInvoiceByNumber: () => Promise.resolve({ id: '88' }) })
+
+  const error = await assertRejects(() => run(deps, false, { environment: 'production' }), QuickbooksInvoiceError)
+
+  assertEquals(error.code, 'NUMBER_IN_USE')
+  assertEquals(error.message.includes('QuickBooks Production'), true)
+  assertEquals(calls.includes('claim'), false)
+})
+
+Deno.test('a preview reports whether the typed number is free, and the last one used', async () => {
+  const taken = harness({
+    isNumberTaken: () => Promise.resolve(true),
+    findInvoiceByNumber: () => Promise.resolve({ id: '88' }),
+  })
+  const used = await run(taken.deps, true)
+  assertEquals(used.dryRun && used.numberCheck, {
+    number: '15001',
+    inDatabase: true,
+    inQuickbooks: true,
+    last: '15026',
+    current: null,
+  })
+
+  const free = await run(harness().deps, true, { invoiceNumber: '15027' })
+  assertEquals(free.dryRun && free.numberCheck.inDatabase, false)
+  assertEquals(free.dryRun && free.numberCheck.inQuickbooks, false)
+
+  const blank = await run(harness().deps, true, { invoiceNumber: null })
+  assertEquals(blank.dryRun && blank.numberCheck.number, null)
+  assertEquals(blank.dryRun && blank.invoice.DocNumber, undefined)
+})
+
+Deno.test('the Package own number from an earlier attempt is not a clash when it is retried', async () => {
+  const retry: LoadedPackage = {
+    ...loaded({}, 'SYNC_ERROR'),
+    syncEnvironment: 'sandbox',
+    syncInvoiceNumber: '15001',
+    quickbooksEnvironment: 'sandbox',
+  }
+  const { deps, calls } = harness({
+    isNumberTaken: () => Promise.reject(new Error('should not ask')),
+    findInvoiceByNumber: () => Promise.reject(new Error('should not ask')),
+  }, retry)
+
+  const result = await run(deps)
+
+  assertEquals(calls.includes('createInvoice'), true)
+  assertEquals(result.dryRun, false)
+
+  const preview = await run(harness({}, retry).deps, true)
+  assertEquals(preview.dryRun && preview.numberCheck.current, '15001')
+})
+
+Deno.test('an attempt in the other environment is warned about and refused when it may have reached QuickBooks', async () => {
+  const earlier: LoadedPackage = {
+    ...loaded({}, 'SYNC_ERROR'),
+    syncEnvironment: 'production',
+    syncInvoiceNumber: '15030',
+    quickbooksEnvironment: 'production',
+  }
+
+  const preview = await run(harness({}, earlier).deps, true)
+  assertEquals(preview.warnings.some((warning) => warning.includes('last attempted in QuickBooks Production')), true)
+  assertEquals(preview.dryRun && preview.numberCheck.current, null)
+
+  const { deps } = harness({
+    claim: () => Promise.resolve({ claimed: false, reason: 'OTHER_ENVIRONMENT', environment: 'production' }),
+  }, earlier)
+  const error = await assertRejects(() => run(deps), QuickbooksSyncConflictError)
+  assertEquals(error.reason, 'OTHER_ENVIRONMENT')
+  assertEquals(error.message.includes('Switch to Production'), true)
+})
+
+Deno.test('a preview takes no number and does not claim', async () => {
+  const { deps, calls } = harness()
+
+  await run(deps, true)
+
   assertEquals(calls.includes('claim'), false)
 })
 

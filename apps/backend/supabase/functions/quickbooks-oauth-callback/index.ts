@@ -16,8 +16,14 @@ function requiredEnv(name: string) {
   return value
 }
 
-function returnLocation(status: 'connected' | 'error', reason?: string, environment?: string) {
-  const returnUrl = new URL(requiredEnv('QBO_RETURN_URL'))
+// The page the connection was started from, once known; QBO_RETURN_URL otherwise.
+function returnLocation(
+  status: 'connected' | 'error',
+  reason?: string,
+  environment?: string,
+  startedFrom?: string | null,
+) {
+  const returnUrl = new URL(startedFrom || requiredEnv('QBO_RETURN_URL'))
   if (!['http:', 'https:'].includes(returnUrl.protocol)) {
     throw new Error('QBO_RETURN_URL must use HTTP or HTTPS.')
   }
@@ -27,11 +33,16 @@ function returnLocation(status: 'connected' | 'error', reason?: string, environm
   return returnUrl.toString()
 }
 
-function redirect(status: 'connected' | 'error', reason?: string, environment?: string) {
+function redirect(
+  status: 'connected' | 'error',
+  reason?: string,
+  environment?: string,
+  startedFrom?: string | null,
+) {
   return new Response(null, {
     status: 303,
     headers: {
-      Location: returnLocation(status, reason, environment),
+      Location: returnLocation(status, reason, environment, startedFrom),
       'Cache-Control': 'no-store',
       'Referrer-Policy': 'no-referrer',
     },
@@ -45,6 +56,9 @@ Deno.serve(async (req) => {
       headers: { 'Cache-Control': 'no-store' },
     })
   }
+
+  // Known once the one-time state is consumed; every answer after that goes back there.
+  let startedFrom: string | null = null
 
   try {
     const requestUrl = new URL(req.url)
@@ -62,20 +76,21 @@ Deno.serve(async (req) => {
       .eq('state_hash', stateHash)
       .is('consumed_at', null)
       .gt('expires_at', consumedAt)
-      .select('user_id, environment')
+      .select('user_id, environment, return_url')
       .maybeSingle()
 
     if (stateError) throw stateError
     if (!oauthState) return redirect('error', 'invalid_state')
+    startedFrom = oauthState.return_url ?? null
 
-    if (requestUrl.searchParams.has('error')) return redirect('error', 'access_denied')
+    if (requestUrl.searchParams.has('error')) return redirect('error', 'access_denied', undefined, startedFrom)
 
     const code = requestUrl.searchParams.get('code')
-    if (!code) return redirect('error', 'missing_code')
+    if (!code) return redirect('error', 'missing_code', undefined, startedFrom)
 
     // Intuit returns the id of the company the administrator chose.
     const realmId = requestUrl.searchParams.get('realmId')
-    if (!realmId) return redirect('error', 'missing_realm')
+    if (!realmId) return redirect('error', 'missing_realm', undefined, startedFrom)
 
     // The environment that started this connection (Test or Production): it picks
     // the Intuit app keys and the QuickBooks host.
@@ -108,11 +123,16 @@ Deno.serve(async (req) => {
     })
     if (completeError) throw completeError
 
-    return redirect(item ? 'connected' : 'error', item ? undefined : 'product_not_found', environment)
+    return redirect(
+      item ? 'connected' : 'error',
+      item ? undefined : 'product_not_found',
+      environment,
+      startedFrom,
+    )
   } catch (error) {
     console.error('QuickBooks OAuth callback failed:', error)
     try {
-      return redirect('error', 'oauth_failed')
+      return redirect('error', 'oauth_failed', undefined, startedFrom)
     } catch {
       return new Response('QuickBooks OAuth failed.', {
         status: 500,

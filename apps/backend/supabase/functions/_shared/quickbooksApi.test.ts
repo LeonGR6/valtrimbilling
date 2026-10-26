@@ -2,6 +2,7 @@ import { assertEquals, assertRejects } from '@std/assert'
 import {
   createQuickbooksInvoice,
   findQuickbooksCustomers,
+  listQuickbooksCustomers,
   getQuickbooksCustomer,
   getQuickbooksInvoice,
   getQuickbooksInvoicePdf,
@@ -47,6 +48,28 @@ Deno.test('searches Customers by DisplayName and ignores malformed rows', async 
     calls[0].url.searchParams.get('query'),
     "select Id, DisplayName from Customer where DisplayName like '%O\\'Brien Homes%' maxresults 25",
   )
+})
+
+Deno.test('lists every Customer page by page, leaving out Jobs and malformed rows', async () => {
+  const full = Array.from({ length: 1000 }, (_, index) => ({ Id: String(index + 1), DisplayName: `C${index + 1}` }))
+  const queries: string[] = []
+  const pages = [
+    { QueryResponse: { Customer: full } },
+    { QueryResponse: { Customer: [{ Id: '2001', DisplayName: 'Zed Homes' }, { Id: '2002', DisplayName: 'Zed:Lot 1', Job: true }, { Id: 9 }] } },
+  ]
+  const fetcher = ((input: URL | RequestInfo) => {
+    queries.push(new URL(String(input)).searchParams.get('query') ?? '')
+    return Promise.resolve(reply(pages[queries.length - 1]))
+  }) as typeof fetch
+
+  const found = await listQuickbooksCustomers(options, fetcher)
+
+  assertEquals(found.length, 1001)
+  assertEquals(found.at(-1), { id: '2001', displayName: 'Zed Homes' })
+  assertEquals(queries, [
+    'select Id, DisplayName, Job from Customer order by DisplayName startposition 1 maxresults 1000',
+    'select Id, DisplayName, Job from Customer order by DisplayName startposition 1001 maxresults 1000',
+  ])
 })
 
 Deno.test('creates the invoice with an idempotency request id', async () => {

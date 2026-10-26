@@ -1,5 +1,10 @@
 import { handlePreflight, json } from '../_shared/cors.ts'
-import { findQuickbooksCustomers, getQuickbooksCustomer, QuickbooksApiError } from '../_shared/quickbooksApi.ts'
+import {
+  findQuickbooksCustomers,
+  getQuickbooksCustomer,
+  listQuickbooksCustomers,
+  QuickbooksApiError,
+} from '../_shared/quickbooksApi.ts'
 import {
   handleCustomerAction,
   parseCustomerAdminInput,
@@ -78,6 +83,7 @@ Deno.serve(async (req) => {
         }
       },
       searchCustomers: (api, query) => findQuickbooksCustomers(api, query),
+      listCustomers: (api) => listQuickbooksCustomers(api),
       getCustomer: (api, customerId) => getQuickbooksCustomer(api, customerId),
       saveMapping: async (builderId, environment, customer) => {
         const { error } = await admin.from('builder_quickbooks_customers').upsert({

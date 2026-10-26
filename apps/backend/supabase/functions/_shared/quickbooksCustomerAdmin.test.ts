@@ -14,6 +14,13 @@ function harness(overrides: Partial<CustomerAdminDeps> = {}) {
       calls.push('openApi')
       return Promise.resolve({ environment: 'sandbox', realmId: '9341', accessToken: 'tok' })
     },
+    listCustomers: () => {
+      calls.push('list')
+      return Promise.resolve([
+        { id: '58', displayName: 'Trumark Homes' },
+        { id: '61', displayName: 'Olson Homes' },
+      ])
+    },
     searchCustomers: (_api, query) => {
       calls.push(`search:${query}`)
       return Promise.resolve([{ id: '58', displayName: 'Trumark Homes' }])
@@ -46,6 +53,31 @@ Deno.test('validates the request before doing anything', () => {
     const error = assertThrows(() => parseCustomerAdminInput(bad), QuickbooksCustomerAdminError)
     assertEquals(error.code, 'INVALID_INPUT')
   }
+})
+
+Deno.test('lists every QuickBooks Customer to choose one by hand', async () => {
+  const { deps, calls } = harness()
+
+  assertEquals(parseCustomerAdminInput({ action: 'list' }), { action: 'list' })
+  const result = await handleCustomerAction(deps, { action: 'list' })
+
+  assertEquals(result, {
+    customers: [
+      { id: '58', displayName: 'Trumark Homes' },
+      { id: '61', displayName: 'Olson Homes' },
+    ],
+  })
+  assertEquals(calls, ['openApi', 'list'])
+})
+
+Deno.test('listing needs a connected QuickBooks', async () => {
+  const { deps } = harness({ getEnvironment: () => Promise.resolve(null) })
+
+  const error = await assertRejects(
+    () => handleCustomerAction(deps, { action: 'list' }),
+    QuickbooksCustomerAdminError,
+  )
+  assertEquals(error.code, 'NOT_CONNECTED')
 })
 
 Deno.test('searches QuickBooks Customers', async () => {

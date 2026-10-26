@@ -91,7 +91,8 @@ export async function setQuickbooksActiveEnvironment(environment) {
 export async function startQuickbooksOAuth(environment) {
   const client = await requireSupabase()
   const { data, error } = await client.functions.invoke(OAUTH_START_FUNCTION, {
-    body: { environment },
+    // Intuit sends the browser back to this page (the server checks it is an allowed one).
+    body: { environment, returnUrl: `${window.location.origin}${window.location.pathname}` },
   })
 
   if (error || data?.error) {
@@ -207,6 +208,12 @@ export async function listQuickbooksCustomerLinks() {
 
 export async function searchQuickbooksCustomers(query) {
   const data = await customersRequest({ action: 'search', query })
+  return data?.customers ?? []
+}
+
+/** Every active Customer of the connected QuickBooks company, ordered by name. */
+export async function listQuickbooksCustomers() {
+  const data = await customersRequest({ action: 'list' })
   return data?.customers ?? []
 }
 

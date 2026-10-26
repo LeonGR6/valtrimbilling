@@ -24,84 +24,57 @@ import { quickbooksCustomerRows, quickbooksEnvironmentLabel } from '../../servic
 import {
   linkQuickbooksCustomer,
   listQuickbooksCustomerLinks,
-  searchQuickbooksCustomers,
+  listQuickbooksCustomers,
   unlinkQuickbooksCustomer,
 } from '../../services/quickbooksRepository.js'
 
-const SEARCH_DELAY_MS = 350
-const MIN_SEARCH_LENGTH = 2
+const normalizedName = (value) => value.trim().toLowerCase()
 
-/** Searches QuickBooks while typing, starting from the Builder's own name. */
-function CustomerPicker({ builderName, saving, onSave, onCancel }) {
-  const [inputValue, setInputValue] = useState(builderName)
-  const [selected, setSelected] = useState(null)
-  const [found, setFound] = useState({ key: null, options: [], error: '' })
-
-  const query = inputValue.trim()
-  const searchable = query.length >= MIN_SEARCH_LENGTH
-  // Picking an option puts its name in the box; searching for it again is pointless.
-  const settled = selected != null && selected.displayName === inputValue
-  const loading = searchable && !settled && found.key !== query
-
-  useEffect(() => {
-    if (!searchable || settled) return undefined
-
-    let cancelled = false
-    const timer = setTimeout(() => {
-      searchQuickbooksCustomers(query)
-        .then((options) => {
-          if (!cancelled) setFound({ key: query, options, error: '' })
-        })
-        .catch((error) => {
-          if (!cancelled) setFound({ key: query, options: [], error: error.message })
-        })
-    }, SEARCH_DELAY_MS)
-
-    return () => {
-      cancelled = true
-      clearTimeout(timer)
-    }
-  }, [query, searchable, settled])
+/**
+ * Chooses a QuickBooks Customer out of the full list, typing only to narrow it.
+ * The Customer whose name equals the Builder's is already selected when there is
+ * one. A Customer already linked to another Builder says so.
+ */
+function CustomerPicker({ builderName, customers, takenBy, saving, onSave, onCancel }) {
+  const [selected, setSelected] = useState(
+    () => customers.find((customer) => normalizedName(customer.displayName) === normalizedName(builderName)) ?? null,
+  )
+  const takenByOther = selected ? takenBy.get(selected.id) : null
 
   return (
     <Stack spacing={1.5} sx={{ py: 1 }}>
-      {found.key === query && found.error && <Alert severity="error">{found.error}</Alert>}
       <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5}>
         <Autocomplete
           fullWidth
           size="small"
-          options={found.key === query ? found.options : []}
+          options={customers}
           value={selected}
-          inputValue={inputValue}
-          loading={loading}
-          filterOptions={(options) => options}
+          autoHighlight
           getOptionLabel={(option) => option.displayName}
           isOptionEqualToValue={(option, value) => option.id === value.id}
           onChange={(_event, value) => setSelected(value)}
-          onInputChange={(_event, value, reason) => {
-            // On mount MUI "resets" the box to empty because nothing is selected,
-            // which would erase the Builder name the search starts from.
-            if (reason === 'reset' && value === '') return
-            setInputValue(value)
+          noOptionsText="No QuickBooks Customer matches"
+          renderOption={(props, option) => {
+            const { key, ...optionProps } = props
+            const other = takenBy.get(option.id)
+            return (
+              <li key={key} {...optionProps}>
+                <Stack direction="row" spacing={1} sx={{ alignItems: 'center', width: '100%' }}>
+                  <span>{option.displayName}</span>
+                  {other && (
+                    <Typography variant="caption" color="text.secondary" sx={{ ml: 'auto' }}>
+                      linked to {other}
+                    </Typography>
+                  )}
+                </Stack>
+              </li>
+            )
           }}
-          noOptionsText={searchable ? 'No QuickBooks Customer found' : 'Type at least 2 characters'}
           renderInput={(params) => (
             <TextField
               {...params}
-              label="QuickBooks Customer"
-              // MUI 9 hands the input wiring over in params.slotProps.
-              slotProps={{
-                ...params.slotProps,
-                input: {
-                  ...params.slotProps.input,
-                  endAdornment: (
-                    <>
-                      {loading && <CircularProgress size={16} />}
-                      {params.slotProps.input.endAdornment}
-                    </>
-                  ),
-                },
-              }}
+              label={`QuickBooks Customer (${customers.length})`}
+              placeholder="Type to narrow the list"
             />
           )}
         />
@@ -116,6 +89,12 @@ function CustomerPicker({ builderName, saving, onSave, onCancel }) {
         </Button>
         <Button onClick={onCancel} disabled={saving}>Cancel</Button>
       </Stack>
+      {takenByOther && (
+        <Alert severity="warning">
+          This Customer is already linked to {takenByOther}. Linking it here as well sends both
+          Builders&apos; invoices to the same QuickBooks Customer.
+        </Alert>
+      )}
     </Stack>
   )
 }
@@ -128,6 +107,8 @@ export default function QuickbooksCustomersDialog({ environment, onClose }) {
   const [editingId, setEditingId] = useState(null)
   const [busyId, setBusyId] = useState(null)
   const [error, setError] = useState('')
+  // The QuickBooks list is read the first time a Customer is to be chosen, then reused.
+  const [customers, setCustomers] = useState({ status: 'idle', items: [], error: '' })
 
   useEffect(() => {
     let cancelled = false
@@ -144,6 +125,26 @@ export default function QuickbooksCustomersDialog({ environment, onClose }) {
   }, [])
 
   const rows = links ? quickbooksCustomerRows(builders, links, environment) : []
+
+  const loadCustomers = () => {
+    setCustomers((current) => ({ ...current, status: 'loading', error: '' }))
+    listQuickbooksCustomers()
+      .then((items) => setCustomers({ status: 'ready', items, error: '' }))
+      .catch((failure) => setCustomers({ status: 'error', items: [], error: failure.message }))
+  }
+
+  const startEditing = (builderId) => {
+    const closing = editingId === builderId
+    setEditingId(closing ? null : builderId)
+    if (!closing && customers.status === 'idle') loadCustomers()
+  }
+
+  // Which Builder each Customer already belongs to, to flag a second link to it.
+  const takenByFor = (builderId) => new Map(
+    rows
+      .filter((row) => row.linked && row.builderId !== builderId)
+      .map((row) => [row.customerId, row.builderName]),
+  )
 
   const change = async (builderId, action) => {
     setBusyId(builderId)
@@ -179,8 +180,19 @@ export default function QuickbooksCustomersDialog({ environment, onClose }) {
             first invoice uses the Customer whose name is exactly the Builder&apos;s name and
             remembers it. Link a different Customer here when the names do not match. Each
             QuickBooks company has its own links: these are the ones of the company the
-            platform is set to.
+            platform is set to. Choose the Customer from the full list once per Builder; it is
+            remembered afterwards.
           </Typography>
+          {customers.status === 'ready' && (
+            <Box>
+              <Button size="small" onClick={loadCustomers}>
+                Reload the QuickBooks Customers ({customers.items.length})
+              </Button>
+              <Typography variant="caption" color="text.secondary" sx={{ ml: 1 }}>
+                Use it after creating a new Customer in QuickBooks.
+              </Typography>
+            </Box>
+          )}
           {loadError && <Alert severity="error">{loadError}</Alert>}
           {error && <Alert severity="error" onClose={() => setError('')}>{error}</Alert>}
           {!links && !loadError && (
@@ -226,7 +238,7 @@ export default function QuickbooksCustomersDialog({ environment, onClose }) {
                         <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
                           <Button
                             size="small"
-                            onClick={() => setEditingId(editingId === row.builderId ? null : row.builderId)}
+                            onClick={() => startEditing(row.builderId)}
                             disabled={busyId != null}
                           >
                             {row.linked ? 'Change' : 'Link'}
@@ -246,15 +258,31 @@ export default function QuickbooksCustomersDialog({ environment, onClose }) {
                       {editingId === row.builderId && (
                         <TableRow>
                           <TableCell colSpan={3}>
-                            <CustomerPicker
-                              builderName={row.builderName}
-                              saving={busyId === row.builderId}
-                              onCancel={() => setEditingId(null)}
-                              onSave={(customer) => change(
-                                row.builderId,
-                                () => linkQuickbooksCustomer(row.builderId, customer.id),
-                              )}
-                            />
+                            {customers.status === 'ready' ? (
+                              <CustomerPicker
+                                builderName={row.builderName}
+                                customers={customers.items}
+                                takenBy={takenByFor(row.builderId)}
+                                saving={busyId === row.builderId}
+                                onCancel={() => setEditingId(null)}
+                                onSave={(customer) => change(
+                                  row.builderId,
+                                  () => linkQuickbooksCustomer(row.builderId, customer.id),
+                                )}
+                              />
+                            ) : customers.status === 'error' ? (
+                              <Alert
+                                severity="error"
+                                action={<Button color="inherit" size="small" onClick={loadCustomers}>Retry</Button>}
+                              >
+                                {customers.error}
+                              </Alert>
+                            ) : (
+                              <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center', py: 1 }}>
+                                <CircularProgress size={20} />
+                                <Typography color="text.secondary">Loading the QuickBooks Customers…</Typography>
+                              </Stack>
+                            )}
                           </TableCell>
                         </TableRow>
                       )}

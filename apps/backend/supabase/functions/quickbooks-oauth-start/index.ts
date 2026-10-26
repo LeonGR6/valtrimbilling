@@ -5,6 +5,7 @@ import {
   hashOAuthState,
 } from '../_shared/quickbooksOAuth.ts'
 import { environmentOrNull, quickbooksClientCredentials } from '../_shared/quickbooksEnvironment.ts'
+import { resolveReturnUrl } from '../_shared/quickbooksReturnUrl.ts'
 import { serviceClient, userClient } from '../_shared/supabase.ts'
 
 const STATE_LIFETIME_MS = 10 * 60 * 1000
@@ -49,6 +50,13 @@ Deno.serve(async (req) => {
       return json({ error: 'environment must be "sandbox" or "production".' }, 400)
     }
 
+    // The page to come back to: the one the administrator is on, if it is allowed.
+    const returnUrl = resolveReturnUrl(
+      body?.returnUrl,
+      Deno.env.get('QBO_RETURN_URL'),
+      Deno.env.get('QBO_ALLOWED_RETURN_ORIGINS'),
+    )
+
     const { clientId } = quickbooksClientCredentials(environment)
     const redirectUri = requiredEnv('QBO_REDIRECT_URI')
     const state = createOAuthState()
@@ -69,6 +77,7 @@ Deno.serve(async (req) => {
         state_hash: stateHash,
         user_id: user.id,
         environment,
+        return_url: returnUrl,
         expires_at: new Date(now.getTime() + STATE_LIFETIME_MS).toISOString(),
       })
     if (insertError) throw insertError

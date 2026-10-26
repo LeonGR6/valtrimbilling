@@ -200,6 +200,48 @@ export async function findQuickbooksCustomers(
   )
 }
 
+const CUSTOMER_PAGE_SIZE = 1000
+// A safety stop: no real company has this many Customers, and a bug must not loop.
+const CUSTOMER_MAX_PAGES = 10
+
+/**
+ * Every active Customer, ordered by name, for choosing one by hand. QuickBooks
+ * Jobs (sub-customers such as "Builder:Lot 12") are left out: a Builder is linked
+ * to its top-level Customer.
+ */
+export async function listQuickbooksCustomers(
+  options: QuickbooksApiOptions,
+  fetcher: Fetcher = fetch,
+): Promise<QuickbooksCustomer[]> {
+  const customers: QuickbooksCustomer[] = []
+
+  for (let page = 0; page < CUSTOMER_MAX_PAGES; page += 1) {
+    const body = await apiGet(
+      'Listing the QuickBooks Customers',
+      options,
+      'query',
+      {
+        query: 'select Id, DisplayName, Job from Customer order by DisplayName '
+          + `startposition ${page * CUSTOMER_PAGE_SIZE + 1} maxresults ${CUSTOMER_PAGE_SIZE}`,
+      },
+      fetcher,
+    )
+    const rows = (body?.QueryResponse as
+      | { Customer?: { Id?: unknown; DisplayName?: unknown; Job?: unknown }[] }
+      | undefined)?.Customer ?? []
+
+    for (const row of rows) {
+      if (row.Job === true) continue
+      if (typeof row.Id === 'string' && typeof row.DisplayName === 'string') {
+        customers.push({ id: row.Id, displayName: row.DisplayName })
+      }
+    }
+    if (rows.length < CUSTOMER_PAGE_SIZE) break
+  }
+
+  return customers
+}
+
 /** One Customer by id, or null when it no longer exists. */
 export async function getQuickbooksCustomer(
   options: QuickbooksApiOptions,

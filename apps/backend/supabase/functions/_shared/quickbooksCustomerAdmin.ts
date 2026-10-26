@@ -6,6 +6,7 @@ import type { QuickbooksApiOptions, QuickbooksCustomer, QuickbooksCustomerDetail
 
 export type CustomerAdminInput =
   | { action: 'search'; query: string }
+  | { action: 'list' }
   | { action: 'link'; builderId: number; customerId: string }
   | { action: 'unlink'; builderId: number }
 
@@ -36,6 +37,8 @@ export interface CustomerAdminDeps {
   /** Opens a QuickBooks session; only called when QuickBooks itself is needed. */
   openApi(): Promise<QuickbooksApiOptions>
   searchCustomers(api: QuickbooksApiOptions, query: string): Promise<QuickbooksCustomer[]>
+  /** Every active Customer, to choose one by hand instead of searching by name. */
+  listCustomers(api: QuickbooksApiOptions): Promise<QuickbooksCustomer[]>
   getCustomer(api: QuickbooksApiOptions, customerId: string): Promise<QuickbooksCustomerDetail | null>
   saveMapping(
     builderId: number,
@@ -68,6 +71,8 @@ export function parseCustomerAdminInput(body: unknown): CustomerAdminInput {
       }
       return { action: 'search', query }
     }
+    case 'list':
+      return { action: 'list' }
     case 'link': {
       const customerId = typeof input.customerId === 'string' ? input.customerId.trim() : ''
       if (!customerId) {
@@ -102,6 +107,9 @@ export async function handleCustomerAction(
 
   if (input.action === 'search') {
     return { customers: await deps.searchCustomers(api, input.query) }
+  }
+  if (input.action === 'list') {
+    return { customers: await deps.listCustomers(api) }
   }
 
   const customer = await deps.getCustomer(api, input.customerId)

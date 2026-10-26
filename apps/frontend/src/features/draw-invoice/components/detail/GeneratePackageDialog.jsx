@@ -213,6 +213,10 @@ export default function GeneratePackageDialog({
   packages,
   // How this Builder receives its packages: { method, destination }.
   submission = { method: 'PORTAL', destination: '' },
+  // Whether the billing setup of the Package asks for a Release and a Payment Schedule. One it does
+  // not ask for starts out of the PDF and does not block generating it.
+  requiresRelease = true,
+  requiresPaymentSchedule = true,
   // The emails of this Package already sent, newest first, and a way to refresh them.
   submissions = [],
   onSent = null,
@@ -225,7 +229,11 @@ export default function GeneratePackageDialog({
   const submissionRef = useRef(null)
   const [release, setRelease] = useState(NOT_READY)
   const [schedule, setSchedule] = useState(NOT_READY)
-  const [included, setIncluded] = useState({ invoice: true, release: true, schedule: true })
+  const [included, setIncluded] = useState({
+    invoice: true,
+    release: requiresRelease,
+    schedule: requiresPaymentSchedule,
+  })
   const [step, setStep] = useState(null)
   const [completedSteps, setCompletedSteps] = useState([])
   const [error, setError] = useState(null)
@@ -484,13 +492,20 @@ export default function GeneratePackageDialog({
       : invoicePdf.pdf
         ? { tone: 'success', label: 'Ready' }
         : { tone: 'warning', label: 'PDF not saved' }
-  const releaseStatus = statusOf(release)
-  const scheduleStatus = statusOf(schedule)
+  // A document the setup does not ask for, that is left out and cannot be generated, only says so.
+  // Ticking "In the PDF" brings it back like any other.
+  const isNotNeeded = (required, isIncluded, state) => (
+    !required && !isIncluded && !state.loading && !state.canGenerate
+  )
+  const releaseNotNeeded = isNotNeeded(requiresRelease, included.release, release)
+  const scheduleNotNeeded = isNotNeeded(requiresPaymentSchedule, included.schedule, schedule)
+  const releaseStatus = releaseNotNeeded ? { tone: 'default', label: 'Not required' } : statusOf(release)
+  const scheduleStatus = scheduleNotNeeded ? { tone: 'default', label: 'Not required' } : statusOf(schedule)
 
-  const summaryRow = (title, status, isIncluded, includedNote) => ({
+  const summaryRow = (title, status, isIncluded, includedNote, leftOutNote = 'Left out of the PDF') => ({
     title,
     status: isIncluded ? status : { tone: 'default', label: 'Left out' },
-    note: isIncluded ? includedNote : 'Left out of the PDF',
+    note: isIncluded ? includedNote : leftOutNote,
   })
   const summaryRows = [
     summaryRow(
@@ -501,8 +516,20 @@ export default function GeneratePackageDialog({
         ? 'No QuickBooks invoice'
         : invoicePdf.pdf ? 'QuickBooks PDF' : 'Not included until its PDF is saved',
     ),
-    summaryRow('Release', releaseStatus, useRelease, release.canGenerate ? 'Will be generated' : 'Needs attention'),
-    summaryRow('Payment Schedule', scheduleStatus, useSchedule, schedule.canGenerate ? 'Will be generated' : 'Needs attention'),
+    summaryRow(
+      'Release',
+      releaseStatus,
+      useRelease,
+      release.canGenerate ? 'Will be generated' : 'Needs attention',
+      releaseNotNeeded ? 'Not required by the billing setup' : undefined,
+    ),
+    summaryRow(
+      'Payment Schedule',
+      scheduleStatus,
+      useSchedule,
+      schedule.canGenerate ? 'Will be generated' : 'Needs attention',
+      scheduleNotNeeded ? 'Not required by the billing setup' : undefined,
+    ),
   ]
 
   const progressSteps = [
@@ -658,7 +685,7 @@ export default function GeneratePackageDialog({
               description="Filled from this Package with the Job's Release template."
               status={releaseStatus}
               include={{ checked: included.release, onChange: setInclude('release') }}
-              fix={fixFor(release)}
+              fix={releaseNotNeeded ? null : fixFor(release)}
               actions={release.canGenerate && (
                 <>
                   <Button
@@ -695,16 +722,24 @@ export default function GeneratePackageDialog({
                 />
               )}
             >
-              <GeneratePackageReleaseDialog
-                embedded
-                hideInlinePreview
-                ref={releaseRef}
-                packageRecord={packageRecord}
-                packages={packages}
-                job={job}
-                onReadyChange={setRelease}
-                onClose={onClose}
-              />
+              {releaseNotNeeded && (
+                <Typography variant="body2" color="text.secondary">
+                  The billing setup of this Package does not ask for a Release. Tick “In the PDF” to
+                  add one anyway.
+                </Typography>
+              )}
+              <Box sx={{ display: releaseNotNeeded ? 'none' : 'block' }}>
+                <GeneratePackageReleaseDialog
+                  embedded
+                  hideInlinePreview
+                  ref={releaseRef}
+                  packageRecord={packageRecord}
+                  packages={packages}
+                  job={job}
+                  onReadyChange={setRelease}
+                  onClose={onClose}
+                />
+              </Box>
             </DocumentCard>
 
             <DocumentCard
@@ -714,7 +749,7 @@ export default function GeneratePackageDialog({
               status={scheduleStatus}
               include={{ checked: included.schedule, onChange: setInclude('schedule') }}
               anchorRef={scheduleCardRef}
-              fix={fixFor(schedule)}
+              fix={scheduleNotNeeded ? null : fixFor(schedule)}
               actions={schedule.canGenerate && (
                 <>
                   <Button
@@ -751,16 +786,24 @@ export default function GeneratePackageDialog({
                 />
               )}
             >
-              <GeneratePackageScheduleDialog
-                embedded
-                hideInlinePreview
-                ref={scheduleRef}
-                packageRecord={packageRecord}
-                job={job}
-                packages={packages}
-                onReadyChange={setSchedule}
-                onClose={onClose}
-              />
+              {scheduleNotNeeded && (
+                <Typography variant="body2" color="text.secondary">
+                  The billing setup of this Package does not ask for a Payment Schedule. Tick “In the
+                  PDF” to add one anyway.
+                </Typography>
+              )}
+              <Box sx={{ display: scheduleNotNeeded ? 'none' : 'block' }}>
+                <GeneratePackageScheduleDialog
+                  embedded
+                  hideInlinePreview
+                  ref={scheduleRef}
+                  packageRecord={packageRecord}
+                  job={job}
+                  packages={packages}
+                  onReadyChange={setSchedule}
+                  onClose={onClose}
+                />
+              </Box>
             </DocumentCard>
 
             {generated && (

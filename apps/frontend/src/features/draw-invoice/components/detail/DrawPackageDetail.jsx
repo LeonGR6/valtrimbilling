@@ -806,6 +806,8 @@ export default function DrawPackageDetail() {
               method: schedule?.submissionMethod,
               destination: schedule?.submissionDestination,
             }}
+            requiresRelease={schedule ? schedule.requiresRelease : true}
+            requiresPaymentSchedule={schedule ? schedule.requiresPaymentSchedule : true}
             submissions={submissions}
             onSent={() => {
               reloadSubmissions()

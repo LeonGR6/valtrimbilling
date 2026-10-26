@@ -109,6 +109,7 @@ test('the values row maps to the model the screen uses', () => {
       reason: null,
       scope: 'PHASE',
       isFinal: false,
+      retentionFinal: false,
       scopes: [
         { key: '1', label: 'Phase 1', total: 12, remainingAfter: 4, closes: false },
       ],
@@ -341,6 +342,87 @@ test('a Retention Release Package is not generated', () => {
   )
   assert.equal(choice.state, 'retention')
   assert.equal(choice.template, null)
+})
+
+// Retention released Per Job with the Final Release Per Project (Job 1302): the Retention Release is
+// the Final, and the Draw Packages are never.
+const retentionIsFinal = {
+  applicable: true,
+  reason: null,
+  scope: 'PROJECT',
+  is_final: true,
+  retention_final: true,
+  scopes: [
+    { key: 'job', label: 'the Job', total: 0, covered_before: 0, covered_after: 0, remaining_after: 0, closes: true },
+  ],
+}
+
+test('a Retention Release uses the Conditional Final when the setup releases retention at the Final level', () => {
+  const values = valuesWith(retentionIsFinal, 'RETENTION_RELEASE')
+  const choice = chooseRelease(values, [progressTemplate, finalTemplate])
+
+  assert.equal(values.finalRelease.retentionFinal, true)
+  assert.equal(choice.state, 'ready')
+  assert.equal(choice.releaseType, CONDITIONAL_FINAL_TYPE)
+  assert.equal(choice.template, finalTemplate)
+  assert.equal(choice.isFinal, true)
+  assert.equal(choice.forRetention, true)
+  assert.deepEqual(choice.closing, ['the Job'])
+  assert.equal(
+    buildFinalReleaseNote({ scope: values.finalRelease.scope, closing: choice.closing, jobCode: '1302' }),
+    'Final release per Project (Job #1302)',
+  )
+
+  // It is never filled with the Progress form instead.
+  const withoutFinal = chooseRelease(values, [progressTemplate])
+  assert.equal(withoutFinal.state, 'missing_template')
+  assert.equal(withoutFinal.isFinal, true)
+})
+
+test('the Retention Release Final is filled with its amount, the cut-off and the unpaid earlier Packages', () => {
+  const values = valuesWith(retentionIsFinal, 'RETENTION_RELEASE')
+  const fill = buildPackageFillValues(values)
+
+  assert.equal(fill.check_amount, 1697.25)
+  assert.equal(fill.through_date, '2026-10-10')
+  assert.equal(fill.waiver_release_dates.length, values.pendingPackages.length)
+})
+
+test('a Draw Package uses the Progress form while the Retention Release is the Final', () => {
+  // The last Draw Package finishes the Job, but the server no longer calls it the Final.
+  const lastDraw = {
+    applicable: true,
+    reason: null,
+    scope: 'PROJECT',
+    is_final: false,
+    retention_final: true,
+    scopes: [
+      { key: 'job', label: 'the Job', total: 84, covered_before: 77, covered_after: 84, remaining_after: 0, closes: true },
+    ],
+  }
+  const choice = chooseRelease(valuesWith(lastDraw), [progressTemplate, finalTemplate])
+
+  assert.equal(choice.state, 'ready')
+  assert.equal(choice.releaseType, CONDITIONAL_PROGRESS_TYPE)
+  assert.equal(choice.isFinal, false)
+  assert.equal(choice.retentionFinal, true)
+})
+
+test('a setup that releases retention at another level leaves the Retention Release without a Release', () => {
+  // Retention Per Job but the Final Release Per Phase: the server leaves it not applicable, as before.
+  const choice = chooseRelease(
+    valuesWith(
+      { applicable: false, reason: 'RETENTION_RELEASE', scope: null, is_final: false, scopes: [] },
+      'RETENTION_RELEASE',
+    ),
+    [progressTemplate, finalTemplate],
+  )
+  assert.equal(choice.state, 'retention')
+
+  // Without retention the Draw Package that finishes the scope is still the Final, as before.
+  const noRetention = chooseRelease(valuesWith(lastOfPhase), [progressTemplate, finalTemplate])
+  assert.equal(noRetention.releaseType, CONDITIONAL_FINAL_TYPE)
+  assert.equal(noRetention.retentionFinal, false)
 })
 
 test('the Final form is filled with the Package net amount and cut-off date', () => {

@@ -339,8 +339,9 @@ export default function GeneratePackageReleaseDialog({
 
         {choice?.state === 'retention' && (
           <Alert severity="info">
-            This Package is a Retention Release. Its Release is not set up yet, so it
-            cannot be generated here.
+            This Package is a Retention Release. It has a Release only when the Builder setup
+            releases retention at the level the Final Release is set to (Per Job with Per
+            Project, or Per Building with Per Building), so there is none to generate here.
           </Alert>
         )}
 
@@ -354,7 +355,7 @@ export default function GeneratePackageReleaseDialog({
         {choice?.state === 'missing_template' && (
           <Alert severity="warning">
             {choice.isFinal
-              ? `This is the last Package of ${choice.closing.join(' and ')}, so it needs the Conditional Final Release, and this Job does not have one. Upload it in the Documents section (Releases) and confirm its template, then generate it again.`
+              ? `${choice.forRetention ? 'This Retention Release is' : 'This is'} the last Package of ${choice.closing.join(' and ')}, so it needs the Conditional Final Release, and this Job does not have one. Upload it in the Documents section (Releases) and confirm its template, then generate it again.`
               : 'This Job has no Conditional Progress Release. Upload it in the Documents section (Releases) and confirm its template, then generate it again.'}
           </Alert>
         )}
@@ -366,10 +367,12 @@ export default function GeneratePackageReleaseDialog({
               <Typography fontWeight={750}>{releaseTypeLabel(template.releaseType)}</Typography>
               <Typography variant="caption" color="text.secondary">
                 {choice.isFinal
-                  ? `Last Package of ${choice.closing.join(' and ')}.`
-                  : choice.scopeConfigured
-                    ? 'This Package does not finish its Phase, Building or Project.'
-                    : "The Builder's setup does not say where the Conditional Final Release applies, so the Progress form is used."}
+                  ? `${choice.forRetention ? 'Retention Release: last' : 'Last'} Package of ${choice.closing.join(' and ')}.`
+                  : choice.retentionFinal
+                    ? 'The Retention Release of this Job is the Conditional Final, so this Package uses the Progress form.'
+                    : choice.scopeConfigured
+                      ? 'This Package does not finish its Phase, Building or Project.'
+                      : "The Builder's setup does not say where the Conditional Final Release applies, so the Progress form is used."}
               </Typography>
             </Box>
 

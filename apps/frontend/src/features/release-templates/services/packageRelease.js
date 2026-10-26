@@ -77,6 +77,9 @@ function toFinalRelease(row) {
     // True when this Package, counted as billed, leaves nothing to bill in
     // every scope it touches.
     isFinal: finalRelease.is_final === true,
+    // True when the Job's Retention Release is the Final: the setup has retention and releases it at
+    // the level the Final Release is set to. The Draw Packages then use the Progress form.
+    retentionFinal: finalRelease.retention_final === true,
     scopes: (finalRelease.scopes ?? []).map((scope) => ({
       key: scope.key,
       label: scope.label,
@@ -133,7 +136,9 @@ export function toPackageReleaseValues(row) {
 
 /**
  * Which Release a Package needs and whether it can be generated.
- *  - `retention`: a Retention Release Package; its Release is not defined yet.
+ *  - `retention`: a Retention Release Package whose setup does not release retention at the level
+ *    the Final Release is set to; it has no Release. When it does, the Retention Release is the
+ *    Conditional Final (`forRetention`) and the Draw Packages never are.
  *  - `price_adjustment`: a Price Adjustment Package; it bills no Lot or Draw, so
  *    there is no Release to fill.
  *  - `missing_template`: the Job has no confirmed template of the type needed.
@@ -144,7 +149,9 @@ export function toPackageReleaseValues(row) {
  */
 export function chooseRelease(values, templates) {
   const { finalRelease } = values
-  if (finalRelease.reason === 'RETENTION_RELEASE' || values.packageType === 'RETENTION_RELEASE') {
+  const forRetention = finalRelease.reason === 'RETENTION_RELEASE'
+    || values.packageType === 'RETENTION_RELEASE'
+  if (forRetention && !finalRelease.applicable) {
     return { state: 'retention', releaseType: null, template: null, isFinal: false, closing: [] }
   }
   if (finalRelease.reason === 'PRICE_ADJUSTMENT' || values.packageType === 'PRICE_ADJUSTMENT') {
@@ -160,6 +167,8 @@ export function chooseRelease(values, templates) {
     releaseType,
     template,
     isFinal,
+    forRetention,
+    retentionFinal: finalRelease.retentionFinal,
     // Setups made before the Final option have no scope: every Package keeps
     // using the Progress form until the Builder setup is edited.
     scopeConfigured: finalRelease.applicable,

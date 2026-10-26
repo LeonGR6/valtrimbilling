@@ -547,6 +547,7 @@ export default function ActivityForm({
                         activityType="DM"
                         parts={draft.dmSplitParts}
                         totalLots={totalLots}
+                        lotNumbers={draft.lotNumbers}
                         onChange={(parts) => onChange({ dmSplitParts: parts })}
                         onReset={() => onChange({
                           dmSplitParts: createDefaultSplitParts(draft, draft.dmDateOwner),
@@ -634,6 +635,7 @@ export default function ActivityForm({
                         activityType="HW"
                         parts={draft.hwSplitParts}
                         totalLots={totalLots}
+                        lotNumbers={draft.lotNumbers}
                         onChange={(parts) => onChange({ hwSplitParts: parts })}
                         onReset={() => onChange({
                           hwSplitParts: createDefaultSplitParts(draft, draft.hwDateOwner),

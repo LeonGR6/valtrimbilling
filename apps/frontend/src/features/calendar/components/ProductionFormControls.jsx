@@ -12,7 +12,8 @@ import {
 import DateField from '../../../components/common/DateField.jsx'
 import AddRoundedIcon from '@mui/icons-material/AddRounded'
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
-import { activityTypeMap, dateOwnerOptions } from '../data/calendarEvents.js'
+import { activityTypeMap, dateOwnerOptions, getLotsLabel } from '../data/calendarEvents.js'
+import { lotsInRange } from '../utils/splitLotGroups.js'
 import { addSplitDivision, removeSplitDivision } from './calendarSchedulerUtils.js'
 
 export function OptionCheckbox({ checked, disabled = false, label, description, onChange, endAdornment = null }) {
@@ -67,7 +68,22 @@ export function DateOwnerSelector({ value, onChange, label = 'Date ownership', c
   )
 }
 
-export function SplitScheduleEditor({ activityType, parts, totalLots, onChange, onReset }) {
+// Tells which Lots of the Phase a division covers. The Phase can hold separate
+// groups of Lots, so the From–To range alone does not say it.
+function SplitDivisionLots({ part, lotNumbers }) {
+  if (!lotNumbers.length) return null
+
+  const lots = lotsInRange(lotNumbers, part.lotStart, part.lotEnd)
+  return (
+    <Typography variant="caption" color={lots.length ? 'text.secondary' : 'error'} component="p">
+      {lots.length
+        ? `Covers ${getLotsLabel(part.lotStart, part.lotEnd, lots)}`
+        : 'No lot of this phase falls in this range.'}
+    </Typography>
+  )
+}
+
+export function SplitScheduleEditor({ activityType, parts, totalLots, lotNumbers = [], onChange, onReset }) {
   const type = activityTypeMap[activityType]
   const canAddDivision = parts.length < totalLots
 
@@ -77,6 +93,11 @@ export function SplitScheduleEditor({ activityType, parts, totalLots, onChange, 
         <Box>
           <Typography variant="subtitle2" fontWeight={800}>Split schedule</Typography>
           <Typography variant="caption" color="text.secondary">Each division becomes an all-day calendar event.</Typography>
+          {lotNumbers.length > 0 && (
+            <Typography variant="caption" color="text.secondary" component="p">
+              Lots of this phase: {getLotsLabel(null, null, lotNumbers).replace(/^Lots? /, '')}
+            </Typography>
+          )}
         </Box>
         <Stack direction="row" spacing={0.5}>
           <Button size="small" onClick={onReset}>Reset</Button>
@@ -84,7 +105,7 @@ export function SplitScheduleEditor({ activityType, parts, totalLots, onChange, 
             size="small"
             startIcon={<AddRoundedIcon />}
             disabled={!canAddDivision}
-            onClick={() => onChange(addSplitDivision(parts))}
+            onClick={() => onChange(addSplitDivision(parts, lotNumbers))}
           >
             Division
           </Button>
@@ -134,6 +155,7 @@ export function SplitScheduleEditor({ activityType, parts, totalLots, onChange, 
                 required
               />
             </Box>
+            <SplitDivisionLots part={part} lotNumbers={lotNumbers} />
             <DateOwnerSelector
               value={part.dateOwner}
               onChange={(dateOwner) => onChange(parts.map((item) => item.id === part.id

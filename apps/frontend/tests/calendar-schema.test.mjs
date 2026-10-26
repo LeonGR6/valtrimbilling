@@ -117,7 +117,7 @@ test('production dates reject unsupported date types', () => {
   assert.equal(unsupportedOwner.error.issues[0].path[0], 'dmDateOwner')
 })
 
-test('DM split phase requires contiguous lot ranges with a date per division', () => {
+test('DM split phase covers every lot of the phase once, with a date per division', () => {
   const result = calendarEventSchema.parse({
     ...validActivity,
     dmSplitPhase: true,
@@ -375,11 +375,11 @@ test('split divisions start without a date or a note', () => {
 })
 
 test('saving a split without its dates asks for them', () => {
-  const split = createDefaultSplitParts({ lotStart: 1, lotEnd: 4 }, 'SUPERVISOR')
+  const lots = { lotStart: 1, lotEnd: 4, lotNumbers: ['1', '2', '3', '4'], lotIds: [1, 2, 3, 4] }
+  const split = createDefaultSplitParts(lots, 'SUPERVISOR')
   const result = calendarEventSchema.safeParse({
     ...validActivity,
-    lotStart: 1,
-    lotEnd: 4,
+    ...lots,
     dmSplitPhase: true,
     dmSplitParts: split,
   })
@@ -389,12 +389,59 @@ test('saving a split without its dates asks for them', () => {
 
   const filled = calendarEventSchema.safeParse({
     ...validActivity,
-    lotStart: 1,
-    lotEnd: 4,
+    ...lots,
     dmSplitPhase: true,
     dmSplitParts: split.map((part) => ({ ...part, date: '2026-07-21' })),
   })
   assert.equal(filled.success, true)
+})
+
+// Job 1301 keeps Lots 11–14 and 21–23 in the same Phase.
+const separateGroups = {
+  lotStart: 11,
+  lotEnd: 23,
+  lotNumbers: ['11', '12', '13', '14', '21', '22', '23'],
+  lotIds: [11, 12, 13, 14, 21, 22, 23],
+}
+
+test('a phase with separate groups of lots starts its split from the real lots', () => {
+  const parts = createDefaultSplitParts(separateGroups, 'SUPERVISOR')
+
+  assert.deepEqual(parts.map(({ lotStart, lotEnd }) => [lotStart, lotEnd]), [[11, 14], [21, 23]])
+
+  const added = addSplitDivision(parts, separateGroups.lotNumbers)
+  assert.deepEqual(added.map(({ lotStart, lotEnd }) => [lotStart, lotEnd]), [[11, 12], [13, 14], [21, 23]])
+})
+
+test('a split can divide a phase with separate groups of lots', () => {
+  const split = (parts) => calendarEventSchema.safeParse({
+    ...validActivity,
+    ...separateGroups,
+    dmSplitPhase: true,
+    dmSplitParts: parts.map((part, index) => ({
+      id: `p${index}`, date: '2026-08-13', dateOwner: 'SUPERVISOR', ...part,
+    })),
+  })
+
+  assert.equal(split([{ lotStart: 11, lotEnd: 14 }, { lotStart: 21, lotEnd: 23 }]).success, true)
+  // The numbers between the groups are not lots, so a range may reach across them.
+  assert.equal(split([{ lotStart: 11, lotEnd: 17 }, { lotStart: 18, lotEnd: 23 }]).success, true)
+  assert.equal(split([
+    { lotStart: 11, lotEnd: 12 },
+    { lotStart: 13, lotEnd: 14 },
+    { lotStart: 21, lotEnd: 23 },
+  ]).success, true)
+
+  const leftOut = split([{ lotStart: 11, lotEnd: 12 }, { lotStart: 21, lotEnd: 23 }])
+  assert.equal(leftOut.success, false)
+  assert.match(leftOut.error.issues[0].message, /Lots 11–14, 21–23 once/)
+
+  const repeated = split([{ lotStart: 11, lotEnd: 21 }, { lotStart: 14, lotEnd: 23 }])
+  assert.equal(repeated.success, false)
+
+  const empty = split([{ lotStart: 11, lotEnd: 23 }, { lotStart: 15, lotEnd: 20 }])
+  assert.equal(empty.success, false)
+  assert.match(empty.error.issues[0].message, /at least one Lot of the phase/)
 })
 
 test('a production activity can be scheduled for a phase without a building', () => {

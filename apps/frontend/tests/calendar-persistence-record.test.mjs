@@ -76,6 +76,22 @@ test('Production form values map to one atomic persisted activity payload', () =
   assert.deepEqual(hw.schedules.at(-1).lotIds, [101, 102, 103, 104])
 })
 
+test('a split over separate groups of lots sends the lots of each group', () => {
+  const payload = toProductionActivityRpc({
+    ...createPersistableDraft(),
+    lotNumbers: ['11', '12', '13', '14', '21', '22', '23'],
+    lotIds: [111, 112, 113, 114, 121, 122, 123],
+    dmSplitParts: [
+      { id: 'a', scheduleId: null, lotStart: 11, lotEnd: 14, date: '2026-10-08', dateOwner: 'TENTATIVE', note: '' },
+      { id: 'b', scheduleId: null, lotStart: 21, lotEnd: 23, date: '2026-10-09', dateOwner: 'TENTATIVE', note: '' },
+    ],
+  })
+  const dm = payload.p_stages.find((stage) => stage.type === 'DM')
+
+  assert.deepEqual(dm.schedules[0].lotIds, [111, 112, 113, 114])
+  assert.deepEqual(dm.schedules[1].lotIds, [121, 122, 123])
+})
+
 test('Production deletion maps only a valid persisted activity id', () => {
   assert.deepEqual(toCancelProductionActivityRpc('77'), { p_activity_id: 77 })
   assert.throws(

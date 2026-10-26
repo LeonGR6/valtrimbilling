@@ -1,4 +1,6 @@
 import { z } from 'zod'
+import { getLotsLabel } from '../data/calendarEvents.js'
+import { findSplitCoverageProblem } from '../utils/splitLotGroups.js'
 
 const requiredText = (message, max = 100) => z
   .string()
@@ -54,21 +56,22 @@ function validateSplitParts(value, context, enabledField, partsField) {
     return
   }
 
-  const sortedParts = [...parts].sort((a, b) => a.lotStart - b.lotStart)
-  const allRangesValid = sortedParts.every((part) => part.lotEnd >= part.lotStart)
-  const coversFullRange = sortedParts[0]?.lotStart === value.lotStart
-    && sortedParts.at(-1)?.lotEnd === value.lotEnd
-  const hasNoGaps = sortedParts.every((part, index) => (
-    index === 0 || part.lotStart === sortedParts[index - 1].lotEnd + 1
-  ))
+  // The Phase can hold separate groups of Lots (11–14 and 21–23), so the
+  // divisions are checked against its real Lots and not against first–last.
+  const problem = findSplitCoverageProblem(parts, value.lotNumbers)
+  if (!problem) return
 
-  if (!allRangesValid || !coversFullRange || !hasNoGaps) {
-    context.addIssue({
-      code: z.ZodIssueCode.custom,
-      path: [partsField],
-      message: `Split groups must cover lots ${value.lotStart}–${value.lotEnd} once, without gaps.`,
-    })
+  const phaseLots = getLotsLabel(value.lotStart, value.lotEnd, value.lotNumbers)
+  const messages = {
+    'invalid-range': 'Every division needs its From lot to be lower than or equal to its To lot.',
+    'empty-division': `Every division needs at least one Lot of the phase (${phaseLots}).`,
+    'uneven-coverage': `Split groups must cover ${phaseLots} once, with no Lot left out or repeated.`,
   }
+  context.addIssue({
+    code: z.ZodIssueCode.custom,
+    path: [partsField],
+    message: messages[problem],
+  })
 }
 
 export const productionActivitySchema = z.object({

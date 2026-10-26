@@ -1,3 +1,5 @@
+import { lotsInRange, sortedLotNumbers } from '../utils/splitLotGroups.js'
+
 const dateFormatter = new Intl.DateTimeFormat('en-US', {
   weekday: 'short',
   day: 'numeric',
@@ -71,47 +73,68 @@ export function getPhasePatch(job, phase, people = [], builderContacts = []) {
   }
 }
 
+// The Lots a split starts from. A Phase can hold separate groups (11–14 and
+// 21–23), so the real Lot numbers are used and the gaps between them are not
+// counted. Without them, it falls back to the continuous From–To range.
+function splitLots(draft) {
+  const lots = sortedLotNumbers(draft.lotNumbers)
+  if (lots.length >= 2) return lots
+
+  const lotStart = Math.max(1, Number(draft.lotStart) || 1)
+  const lotEnd = Math.max(lotStart + 1, Number(draft.lotEnd) || lotStart + 1)
+  return Array.from({ length: lotEnd - lotStart + 1 }, (_, index) => lotStart + index)
+}
+
 // The two starting divisions split the lots in half. Their date and note are
 // left empty on purpose: the person has to enter them, so a date is never
 // copied over by mistake.
 export function createDefaultSplitParts(draft, dateOwner = '') {
-  const lotStart = Math.max(1, Number(draft.lotStart) || 1)
-  const requestedEnd = Number(draft.lotEnd) || lotStart + 1
-  const lotEnd = Math.max(lotStart + 1, requestedEnd)
-  const midpoint = Math.floor((lotStart + lotEnd) / 2)
+  const lots = splitLots(draft)
+  const half = Math.ceil(lots.length / 2)
   const stamp = Date.now()
 
   return [
-    { id: `split-${stamp}-a`, lotStart, lotEnd: midpoint, date: '', dateOwner, note: '', history: [] },
-    { id: `split-${stamp}-b`, lotStart: midpoint + 1, lotEnd, date: '', dateOwner, note: '', history: [] },
+    { id: `split-${stamp}-a`, lotStart: lots[0], lotEnd: lots[half - 1], date: '', dateOwner, note: '', history: [] },
+    { id: `split-${stamp}-b`, lotStart: lots[half], lotEnd: lots.at(-1), date: '', dateOwner, note: '', history: [] },
   ]
 }
 
-export function addSplitDivision(parts) {
+// Splits the division with the most Lots in two. `lotNumbers` are the Lots of
+// the Phase, so a division that spans a gap (11–14 and 21–23) is split by the
+// Lots it really has.
+export function addSplitDivision(parts, lotNumbers = []) {
+  const phaseLots = sortedLotNumbers(lotNumbers)
+  const lotsOf = (part) => (phaseLots.length
+    ? lotsInRange(phaseLots, part.lotStart, part.lotEnd)
+    : Array.from(
+      { length: Math.max(0, Number(part.lotEnd) - Number(part.lotStart) + 1) },
+      (_, index) => Number(part.lotStart) + index,
+    ))
+
   let widestIndex = -1
-  let widestSize = 0
+  let widestLots = []
 
   parts.forEach((part, index) => {
-    const size = Number(part.lotEnd) - Number(part.lotStart) + 1
-    if (size > widestSize) {
+    const lots = lotsOf(part)
+    if (lots.length > widestLots.length) {
       widestIndex = index
-      widestSize = size
+      widestLots = lots
     }
   })
 
-  if (widestIndex < 0 || widestSize < 2) return parts
+  if (widestIndex < 0 || widestLots.length < 2) return parts
 
   const part = parts[widestIndex]
-  const midpoint = Math.floor((Number(part.lotStart) + Number(part.lotEnd)) / 2)
+  const half = Math.ceil(widestLots.length / 2)
   const nextParts = [...parts]
   nextParts.splice(
     widestIndex,
     1,
-    { ...part, lotEnd: midpoint },
+    { ...part, lotEnd: widestLots[half - 1] },
     // The new division starts blank: its date and note are entered by hand.
     {
       id: `split-${Date.now()}`,
-      lotStart: midpoint + 1,
+      lotStart: widestLots[half],
       lotEnd: part.lotEnd,
       date: '',
       dateOwner: part.dateOwner,

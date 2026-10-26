@@ -48,9 +48,11 @@ function normalizeHardwareBillingMode(value) {
 }
 
 export function toBuilderDrawSchedule(version, draws = [], documents = []) {
+  // The documents of every version loaded together arrive in one list, so each version keeps
+  // only its own: otherwise a version would require what any other one requires.
   const documentTypes = new Set(
     documents
-      .filter((document) => document.is_required)
+      .filter((document) => document.setup_version_id === version.id && document.is_required)
       .map((document) => document.document_type),
   )
   const submissionMethod = normalizeSubmissionMethod(version.submission_method)

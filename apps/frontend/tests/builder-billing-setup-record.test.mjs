@@ -254,3 +254,44 @@ test('The Conditional Final scope is only kept while a Release is required', () 
   const payload = toBuilderBillingSetupRpc({ ...withoutRelease, finalReleaseScope: 'PROJECT' })
   assert.equal(payload.p_config.finalReleaseScope, null)
 })
+
+test('each setup version requires only its own documents when several are loaded together', () => {
+  const version = (id, versionNumber) => ({
+    id,
+    builder_id: 7,
+    version_number: versionNumber,
+    status: versionNumber === 2 ? 'ACTIVE' : 'SUPERSEDED',
+    final_release_scope: 'PROJECT',
+    frequency: 'MONTHLY',
+    cutoff_day: 20,
+    payment_terms_days: 30,
+    invoice_line_format: 'LOT',
+    submission_method: 'PORTAL',
+  })
+  // Version 1 required the three documents; version 2 only asks for the Purchase order.
+  const documents = [
+    { setup_version_id: 1, document_type: 'PURCHASE_ORDER', is_required: true },
+    { setup_version_id: 1, document_type: 'PAYMENT_SCHEDULE', is_required: true },
+    { setup_version_id: 1, document_type: 'RELEASE', is_required: true },
+    { setup_version_id: 2, document_type: 'PURCHASE_ORDER', is_required: true },
+    { setup_version_id: 2, document_type: 'PAYMENT_SCHEDULE', is_required: false },
+    { setup_version_id: 2, document_type: 'RELEASE', is_required: false },
+    { setup_version_id: 3, document_type: 'BACKUP', is_required: true },
+  ]
+  const draws = []
+
+  const first = toBuilderDrawSchedule(version(1, 1), draws, documents)
+  const second = toBuilderDrawSchedule(version(2, 2), draws, documents)
+
+  assert.deepEqual(
+    [first.requiresPo, first.requiresPaymentSchedule, first.requiresRelease, first.requiresBackup],
+    [true, true, true, false],
+  )
+  assert.deepEqual(
+    [second.requiresPo, second.requiresPaymentSchedule, second.requiresRelease, second.requiresBackup],
+    [true, false, false, false],
+  )
+  // Unchecking the Release also drops the Conditional Final scope that depends on it.
+  assert.equal(first.finalReleaseScope, 'PROJECT')
+  assert.equal(second.finalReleaseScope, '')
+})

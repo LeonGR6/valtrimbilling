@@ -67,6 +67,70 @@ export function toOptionPriceRpc(optionId, price, notApplicable = false) {
   }
 }
 
+/**
+ * The changed prices of the price sheet as set_job_prices takes them: the Plans (with their
+ * Hardware price) and the Options (a price, or NA) of one Job.
+ */
+export function toJobPricesRpc(jobId, changes) {
+  const plans = []
+  const options = []
+
+  for (const change of changes) {
+    if (change.type === 'option') {
+      options.push({
+        option_id: Number(change.option.id),
+        price: change.to.notApplicable ? 0 : Number(change.to.amount),
+        not_applicable: Boolean(change.to.notApplicable),
+      })
+    } else {
+      plans.push({
+        plan_id: Number(change.plan.id),
+        base_price: Number(change.to.base),
+        hardware_price: change.to.hardware == null ? null : Number(change.to.hardware),
+      })
+    }
+  }
+
+  return { p_job_id: Number(jobId), p_plans: plans, p_options: options }
+}
+
+/** The Plans of a Job as they are once the changed prices are saved. */
+export function applyJobPriceChanges(plans, changes) {
+  const planChanges = new Map()
+  const optionChanges = new Map()
+  for (const change of changes) {
+    if (change.type === 'option') optionChanges.set(change.option.id, change)
+    else planChanges.set(change.plan.id, change)
+  }
+
+  return plans.map((plan) => {
+    const planChange = planChanges.get(plan.id)
+    const savedPlan = planChange
+      ? {
+        ...plan,
+        price: Number(planChange.to.base),
+        hardwarePrice: planChange.to.hardware == null ? null : Number(planChange.to.hardware),
+      }
+      : plan
+
+    if (!(savedPlan.options ?? []).some((option) => optionChanges.has(option.id))) return savedPlan
+
+    return {
+      ...savedPlan,
+      options: savedPlan.options.map((option) => {
+        const change = optionChanges.get(option.id)
+        if (!change) return option
+
+        return {
+          ...option,
+          price: change.to.notApplicable ? 0 : Number(change.to.amount),
+          priceNotApplicable: Boolean(change.to.notApplicable),
+        }
+      }),
+    }
+  })
+}
+
 export function mergeJobPlanRecord(currentPlan, updatedPlan) {
   return {
     ...currentPlan,

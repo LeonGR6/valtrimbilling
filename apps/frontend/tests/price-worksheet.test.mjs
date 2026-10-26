@@ -6,8 +6,7 @@ import {
   editableText,
   effectivePlanPrice,
   evaluateWorksheet,
-  keysOfChange,
-  mergePhasePreviews,
+  keepPhasePriceChanges,
   parseCell,
 } from '../src/features/plan-pricing/utils/priceWorksheet.js'
 
@@ -112,32 +111,42 @@ test('invalid fields report their message and do not become changes', () => {
   assert.equal(result.changes.length, 0)
 })
 
-test('the Phases found for several changed prices are merged into one list', () => {
-  const lot = (extra) => ({ lot_id: 5, lot_number: '5', plan_id: 1, plan_code: '2450', plan_change: null, option_changes: [], ...extra })
-  const merged = mergePhasePreviews([
-    [{ phase_id: 1, code: '2B', lots: [lot({ plan_change: { to_base: 10 } })] }],
-    [
-      { phase_id: 1, code: '2B', lots: [lot({ option_changes: [{ option_id: 10 }] }), { ...lot({ option_changes: [{ option_id: 10 }] }), lot_id: 6 }] },
-      { phase_id: 2, code: '3A', lots: [lot({ lot_id: 9 })] },
-    ],
-    [{ phase_id: 1, code: '2B', lots: [lot({ option_changes: [{ option_id: 10 }, { option_id: 11 }] })] }],
-  ])
+test('the Phases of the Job narrow to the prices that were saved', () => {
+  const lot = (extra) => ({
+    lot_id: 5, lot_number: '5', plan_id: 1, plan_code: '2450', plan_change: null, option_changes: [], ...extra,
+  })
+  const rows = [
+    {
+      phase_id: 1,
+      code: '2B',
+      lots: [
+        // Plan 1 and Option 10 were saved: both stay. Option 11 was not saved: it goes.
+        lot({ plan_change: { to_base: 10 }, option_changes: [{ option_id: 10 }, { option_id: 11 }] }),
+        // Only Option 11 differs here, and it was not saved: the Lot goes.
+        lot({ lot_id: 6, option_changes: [{ option_id: 11 }] }),
+      ],
+    },
+    // Plan 2 was not saved: its older price is not offered.
+    { phase_id: 2, code: '3A', lots: [lot({ lot_id: 9, plan_id: 2, plan_change: { to_base: 20 } })] },
+  ]
+  const changes = [
+    { type: 'plan', plan: { id: 1 } },
+    { type: 'option', plan: { id: 1 }, option: { id: 10 } },
+  ]
 
-  assert.equal(merged.length, 2)
-  const first = merged.find((phase) => phase.phase_id === 1)
-  assert.equal(first.lots.length, 2)
-  const lotFive = first.lots.find((item) => item.lot_id === 5)
-  assert.deepEqual(lotFive.plan_change, { to_base: 10 })
-  assert.deepEqual(lotFive.option_changes.map((item) => item.option_id), [10, 11])
-  assert.deepEqual(mergePhasePreviews([[], null]), [])
-})
+  const kept = keepPhasePriceChanges(rows, changes)
 
-test('a saved change covers its fields', () => {
-  assert.deepEqual(keysOfChange({ type: 'option', option: { id: 10 } }), [cellKey.option(10)])
-  assert.deepEqual(
-    keysOfChange({ type: 'plan', plan: { id: 1 } }),
-    [cellKey.plan(1), cellKey.hardware(1)],
-  )
+  assert.equal(kept.length, 1)
+  assert.equal(kept[0].phase_id, 1)
+  assert.deepEqual(kept[0].lots.map((item) => item.lot_id), [5])
+  assert.deepEqual(kept[0].lots[0].plan_change, { to_base: 10 })
+  assert.deepEqual(kept[0].lots[0].option_changes, [{ option_id: 10 }])
+
+  // An Option saved alone does not bring the Plan price of its Lots along.
+  const optionOnly = keepPhasePriceChanges(rows, [{ type: 'option', plan: { id: 1 }, option: { id: 10 } }])
+  assert.equal(optionOnly[0].lots[0].plan_change, null)
+  assert.deepEqual(keepPhasePriceChanges(null, changes), [])
+  assert.deepEqual(keepPhasePriceChanges(rows, []), [])
 })
 
 test('Hardware is checked against the Plan price being typed, else the saved one', () => {

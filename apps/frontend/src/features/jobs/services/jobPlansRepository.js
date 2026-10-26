@@ -7,6 +7,7 @@ import {
   toPlanOption,
   toPlanOptionMutation,
   toBulkChangeResult,
+  toJobPricesRpc,
   toPlanPriceRpc,
 } from './jobPlanRecord.js'
 
@@ -319,6 +320,21 @@ export async function saveJobPlanPrice(planId, basePrice, hardwarePrice) {
     price: Number(basePrice),
     hardwarePrice: hardwarePrice == null ? null : Number(hardwarePrice),
   }
+}
+
+/**
+ * Saves many Plan and Option prices of a Job in one request and one transaction (see set_job_prices):
+ * either every price is saved or none is. `changes` are the changed prices of the price sheet. The
+ * server names the Plan or Option that cannot be saved, so its message is shown as it is.
+ */
+export async function saveJobPrices(jobId, changes) {
+  const client = await requireSupabase()
+  const { error } = await client.rpc('set_job_prices', toJobPricesRpc(jobId, changes))
+
+  if (error && (error.code === '23514' || error.code === '23503') && error.message) {
+    throw new Error(error.message, { cause: error })
+  }
+  throwRepositoryError(error)
 }
 
 /** Sets an Option price, or NA (`notApplicable`): then it is $0 and adds and subtracts nothing. */

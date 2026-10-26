@@ -1,6 +1,6 @@
 import { requireSupabase } from '../../../services/api.js'
 import { PACKAGE_DOCUMENT_BUCKET } from '../../release-templates/services/packageRelease.js'
-import { mergePhasePreviews } from '../utils/priceWorksheet.js'
+import { keepPhasePriceChanges } from '../utils/priceWorksheet.js'
 
 function throwRepositoryError(error) {
   if (!error) return
@@ -49,17 +49,14 @@ export async function previewPhasePriceChanges(jobId, {
 }
 
 /**
- * The Phases whose price differs from today's for several changed prices at once:
- * one look-up per changed Plan or Option price, merged into one list.
+ * The Phases whose price differs from today's for several changed prices at once: one look-up of
+ * the Job, narrowed to the changed Plans and Options. A look-up per price meant hundreds of requests
+ * when a whole sheet of prices was saved.
  */
 export async function previewPhasePriceChangesFor(jobId, changes) {
-  const previews = await Promise.all(changes.map((change) => (
-    change.type === 'option'
-      ? previewPhasePriceChanges(jobId, { optionId: change.option.id, components: 'OPTIONS' })
-      : previewPhasePriceChanges(jobId, { planId: change.plan.id, components: 'PLAN' })
-  )))
+  if (changes.length === 0) return []
 
-  return mergePhasePreviews(previews)
+  return keepPhasePriceChanges(await previewPhasePriceChanges(jobId), changes)
 }
 
 /**

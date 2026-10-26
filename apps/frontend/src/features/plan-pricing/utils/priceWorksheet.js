@@ -137,45 +137,30 @@ export function evaluateWorksheet(plans, drafts, { separateHardwarePrice = false
 }
 
 /**
- * Merges the server's lists of Phases with an older price, one per changed price,
- * into one list: a Phase appears once, a Lot once, with all its changed prices.
+ * Narrows the Phases of a Job that use an older price to the prices that were just saved. The server
+ * lists every older price of the Job at once; a Phase appears once, a Lot once, with only the Plan
+ * price and the Options of `changes`. A Lot or Phase left with nothing to move is dropped.
  */
-export function mergePhasePreviews(previews) {
-  const phases = new Map()
+export function keepPhasePriceChanges(rows, changes) {
+  const planIds = new Set(changes.filter((change) => change.type === 'plan').map((change) => change.plan.id))
+  const optionIds = new Set(changes.filter((change) => change.type === 'option').map((change) => change.option.id))
+  const phases = []
 
-  for (const rows of previews) {
-    for (const row of rows ?? []) {
-      let phase = phases.get(row.phase_id)
-      if (!phase) {
-        phase = { ...row, lots: [] }
-        phases.set(row.phase_id, phase)
-      }
+  for (const row of rows ?? []) {
+    const lots = []
 
-      for (const lot of row.lots ?? []) {
-        const known = phase.lots.find((item) => item.lot_id === lot.lot_id)
-        if (!known) {
-          phase.lots.push({ ...lot, option_changes: [...(lot.option_changes ?? [])] })
-          continue
-        }
+    for (const lot of row.lots ?? []) {
+      const planChange = planIds.has(lot.plan_id) ? lot.plan_change ?? null : null
+      const optionChanges = (lot.option_changes ?? []).filter((change) => optionIds.has(change.option_id))
+      if (!planChange && optionChanges.length === 0) continue
 
-        known.plan_change = known.plan_change ?? lot.plan_change ?? null
-        for (const change of lot.option_changes ?? []) {
-          if (!known.option_changes.some((item) => item.option_id === change.option_id)) {
-            known.option_changes.push(change)
-          }
-        }
-      }
+      lots.push({ ...lot, plan_change: planChange, option_changes: optionChanges })
     }
+
+    if (lots.length > 0) phases.push({ ...row, lots })
   }
 
-  return [...phases.values()]
-}
-
-/** The fields a saved change covers, so the sheet can forget what it typed there. */
-export function keysOfChange(change) {
-  return change.type === 'option'
-    ? [cellKey.option(change.option.id)]
-    : [cellKey.plan(change.plan.id), cellKey.hardware(change.plan.id)]
+  return phases
 }
 
 /** The Plan price Hardware is checked against: the one being typed, else the saved one. */
@@ -203,11 +188,4 @@ export function cleanPastedPrice(text) {
 export function changedPriceCount(change) {
   if (change.type === 'option') return 1
   return Number(change.baseChanged) + Number(change.hardwareChanged)
-}
-
-/** "Plan 2450" or "Option OPT-12": what a change is about, for messages. */
-export function describeChange(change) {
-  return change.type === 'option'
-    ? `Option ${change.option.code}`
-    : `Plan ${change.plan.code}`
 }

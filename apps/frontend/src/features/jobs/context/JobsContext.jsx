@@ -17,11 +17,13 @@ import {
   listJobPlans,
   reorderJobPlans as reorderJobPlansRecord,
   saveJobPlanPrice as saveJobPlanPriceRecord,
+  saveJobPrices as saveJobPricesRecord,
   savePlanOptionPrice as savePlanOptionPriceRecord,
   updateJobPlan as updateJobPlanRecord,
   updatePlanOption as updatePlanOptionRecord,
 } from '../services/jobPlansRepository.js'
 import {
+  applyJobPriceChanges,
   mergeJobPlanRecord,
   mergePlanOptionRecord,
 } from '../services/jobPlanRecord.js'
@@ -360,6 +362,17 @@ export function JobsProvider({ children }) {
     return saved
   }, [])
 
+  // Every changed price of the sheet is saved in one request, and the Job changes once.
+  const saveJobPrices = useCallback(async (jobId, changes) => {
+    await saveJobPricesRecord(jobId, changes)
+    setJobRecords((current) => current.map((job) => (
+      job.id === jobId
+        ? updateJobPlans(job, (plans) => applyJobPriceChanges(plans, changes))
+        : job
+    )))
+    setError(null)
+  }, [])
+
   const saveSequenceSheetPhase = useCallback(async (
     jobId,
     phaseId,
@@ -414,6 +427,7 @@ export function JobsProvider({ children }) {
     updatePlanOption,
     deactivatePlanOption,
     saveJobPlanPrice,
+    saveJobPrices,
     savePlanOptionPrice,
     saveSequenceSheetPhase,
     deactivateSequenceSheetPhase,
@@ -433,6 +447,7 @@ export function JobsProvider({ children }) {
     refreshJobs,
     reorderJobPlans,
     saveJobPlanPrice,
+    saveJobPrices,
     savePlanOptionPrice,
     saveSequenceSheetPhase,
     deactivateSequenceSheetPhase,

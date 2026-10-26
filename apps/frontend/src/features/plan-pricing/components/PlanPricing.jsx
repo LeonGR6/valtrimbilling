@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useEffect, useMemo, useState } from 'react'
 import {
   Link as RouterLink,
   useNavigate,
@@ -65,8 +65,6 @@ import usePriceWorksheet from '../hooks/usePriceWorksheet.js'
 import {
   cellKey,
   changedPriceCount,
-  describeChange,
-  keysOfChange,
 } from '../utils/priceWorksheet.js'
 import PriceDifferencesDialog from './PriceDifferencesDialog.jsx'
 import PriceWorksheetBar from './PriceWorksheetBar.jsx'
@@ -1064,6 +1062,7 @@ export default function PlanPricing() {
     canManageJobs,
     refreshJobs,
     saveJobPlanPrice,
+    saveJobPrices,
     savePlanOptionPrice,
   } = useJobs()
   const { refreshDrawInvoicePackages } = useDrawInvoicePackages()
@@ -1123,9 +1122,6 @@ export default function PlanPricing() {
   }
   const plans = job?.sequenceSheet?.plans ?? []
   const worksheet = usePriceWorksheet(plans, { separateHardwarePrice })
-  // What was saved from the sheet so far, until the person is asked about the
-  // Phases that still use the old prices.
-  const savedChangesRef = useRef([])
   const hasUnsavedChanges = worksheet.editing && worksheet.evaluation.changeCount > 0
   useEffect(() => {
     if (!hasUnsavedChanges) return undefined
@@ -1176,11 +1172,9 @@ export default function PlanPricing() {
     }
   }
 
-  const finishWorksheet = async () => {
-    const saved = savedChangesRef.current
-    savedChangesRef.current = []
+  const finishWorksheet = async (savedChanges = []) => {
     worksheet.stop()
-    await offerExistingPhaseUpdateForChanges(saved)
+    await offerExistingPhaseUpdateForChanges(savedChanges)
   }
 
   const handleWorksheetSave = async () => {
@@ -1198,53 +1192,32 @@ export default function PlanPricing() {
     if (changes.length === 0) return
 
     const total = changes.reduce((sum, change) => sum + changedPriceCount(change), 0)
-    let savedCount = 0
     setSubmitting(true)
     try {
-      for (const change of changes) {
-        try {
-          if (change.type === 'plan') {
-            await saveJobPlanPrice(job.id, change.plan.id, change.to.base, change.to.hardware)
-          } else {
-            await savePlanOptionPrice(
-              job.id,
-              change.plan.id,
-              change.option.id,
-              change.to.amount,
-              change.to.notApplicable,
-            )
-          }
-        } catch (saveError) {
-          // What was saved stays saved; the rest is still on the sheet to try again.
-          setNotice({
-            severity: 'error',
-            persist: true,
-            message: `${savedCount} of ${total} prices saved. ${describeChange(change)} could not be saved: ${saveError.message} The prices that were not saved are still here.`,
-          })
-          return
-        }
-
-        savedChangesRef.current.push(change)
-        savedCount += changedPriceCount(change)
-        worksheet.clearKeys(keysOfChange(change))
+      // One request for the whole sheet: every price is saved or none is, so a failure leaves
+      // everything on the sheet to try again.
+      try {
+        await saveJobPrices(job.id, changes)
+      } catch (saveError) {
+        setNotice({
+          severity: 'error',
+          persist: true,
+          message: `No price was saved. ${saveError.message} The prices are still here.`,
+        })
+        return
       }
 
       setNotice({
         severity: 'success',
         message: `${total} ${total === 1 ? 'price' : 'prices'} saved.`,
       })
-      await finishWorksheet()
+      await finishWorksheet(changes)
     } finally {
       setSubmitting(false)
     }
   }
 
-  const handleWorksheetDiscard = async () => {
-    if (savedChangesRef.current.length > 0) {
-      setNotice({ severity: 'info', message: 'The prices that were already saved stay saved.' })
-    }
-    await finishWorksheet()
-  }
+  const handleWorksheetDiscard = () => worksheet.stop()
 
   const handlePriceSave = async ({ amount, notApplicable = false }) => {
     setSubmitting(true)

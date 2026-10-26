@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
+  applyJobPriceChanges,
   mergeJobPlanRecord,
   mergePlanOptionRecord,
   toJobPlan,
   toJobPlanMutation,
+  toJobPricesRpc,
   toOptionPriceRpc,
   toPlanOption,
   toPlanOptionMutation,
@@ -162,4 +164,61 @@ test('Catalog edits retain prices and nested Options already in state', () => {
     description: 'Updated',
     price: 250,
   })
+})
+
+test('the changed prices of a sheet go to the database as two lists of one Job', () => {
+  const changes = [
+    { type: 'plan', plan: { id: '31' }, to: { base: '7360.00', hardware: null } },
+    { type: 'plan', plan: { id: 32 }, to: { base: 5000, hardware: '80.5' } },
+    { type: 'option', plan: { id: 31 }, option: { id: '61' }, to: { amount: '250.50', notApplicable: false } },
+    // Whatever number was typed is ignored: NA is always sent as 0.
+    { type: 'option', plan: { id: 31 }, option: { id: 62 }, to: { amount: 99, notApplicable: true } },
+    { type: 'option', plan: { id: 32 }, option: { id: 63 }, to: { amount: -150, notApplicable: false } },
+  ]
+
+  assert.deepEqual(toJobPricesRpc('14', changes), {
+    p_job_id: 14,
+    p_plans: [
+      { plan_id: 31, base_price: 7360, hardware_price: null },
+      { plan_id: 32, base_price: 5000, hardware_price: 80.5 },
+    ],
+    p_options: [
+      { option_id: 61, price: 250.5, not_applicable: false },
+      { option_id: 62, price: 0, not_applicable: true },
+      { option_id: 63, price: -150, not_applicable: false },
+    ],
+  })
+})
+
+test('saving the sheet changes only the prices that were saved, in one pass', () => {
+  const plans = [
+    {
+      id: 31,
+      code: '2450',
+      price: 7000,
+      hardwarePrice: null,
+      options: [
+        { id: 61, code: 'A', price: 100, priceNotApplicable: false },
+        { id: 62, code: 'B', price: 200, priceNotApplicable: false },
+        { id: 63, code: 'C', price: null, priceNotApplicable: false },
+      ],
+    },
+    { id: 32, code: '1980', price: 5000, hardwarePrice: 40, options: [{ id: 64, code: 'D', price: 10, priceNotApplicable: false }] },
+  ]
+  const saved = applyJobPriceChanges(plans, [
+    { type: 'plan', plan: plans[0], to: { base: 7360, hardware: 80 } },
+    { type: 'option', plan: plans[0], option: plans[0].options[0], to: { amount: 250.5, notApplicable: false } },
+    { type: 'option', plan: plans[0], option: plans[0].options[2], to: { amount: 99, notApplicable: true } },
+  ])
+
+  assert.equal(saved[0].price, 7360)
+  assert.equal(saved[0].hardwarePrice, 80)
+  assert.deepEqual(saved[0].options.map(({ id, price, priceNotApplicable }) => [id, price, priceNotApplicable]), [
+    [61, 250.5, false],
+    [62, 200, false],
+    [63, 0, true],
+  ])
+  // What was not changed is the same object, so it does not render again.
+  assert.equal(saved[1], plans[1])
+  assert.equal(plans[0].price, 7000)
 })

@@ -204,10 +204,12 @@ test('with the one-month hold lifted, retention is ready as soon as the Hardware
   assert.equal(unlocked.availableDate, '2026-09-20')
   assert.equal(unlocked.releasableRetention, 85)
 
-  // Not before the cutoff itself: the database does not create it earlier either.
-  assert.equal(suggestion('2026-09-18', false).availableDate, '2026-09-20')
-  assert.equal(suggestion('2026-09-18', false).status, 'WAITING_FOR_DATE')
-  assert.equal(suggestion('2026-09-20', false).status, 'READY')
+  // Even with the last cutoff still ahead the release is ready, available from today.
+  const beforeCutoff = suggestion('2026-09-18', false)
+  assert.equal(beforeCutoff.sourceCutoffDate, '2026-09-20')
+  assert.equal(beforeCutoff.availableDate, '2026-09-18')
+  assert.equal(beforeCutoff.status, 'READY')
+  assert.equal(suggestion('2026-09-18', true).status, 'WAITING_FOR_DATE')
 
   // Hardware still missing keeps it waiting: only the date hold is lifted.
   const noHardware = buildRetentionSuggestions({

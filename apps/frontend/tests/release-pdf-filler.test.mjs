@@ -35,6 +35,28 @@ async function readBack(bytes, pageNumber = 1) {
   return { items, widgets: annotations.filter((a) => a.subtype === 'Widget').length, viewport }
 }
 
+// The fill color each text run of the first page is drawn with, by its text.
+async function fillColors(bytes) {
+  const pdf = await pdfjs.getDocument({
+    data: new Uint8Array(bytes),
+    useSystemFonts: true,
+    isEvalSupported: false,
+    verbosity: 0,
+  }).promise
+  const { fnArray, argsArray } = await (await pdf.getPage(1)).getOperatorList()
+  const colors = new Map()
+  let color = '#000000'
+  fnArray.forEach((fn, index) => {
+    if (fn === pdfjs.OPS.setFillRGBColor) color = argsArray[index][0] ?? color
+    if (fn === pdfjs.OPS.showText) {
+      const text = argsArray[index][0].map((glyph) => glyph.unicode ?? '').join('')
+      colors.set(text, color)
+    }
+  })
+  await pdf.loadingTask.destroy()
+  return colors
+}
+
 async function blankPdf({ rotation = 0, cropBox = null } = {}) {
   const doc = await PDFDocument.create()
   const page = doc.addPage([612, 792])
@@ -345,6 +367,19 @@ for (const rotation of [0, 90, 180, 270]) {
     assert.ok(note.x >= 36 && note.x + note.width <= viewport.width - 36)
   })
 }
+
+test('the footer note is red and the values stay black', async () => {
+  const { bytes } = await fillReleasePdf({
+    pdfBytes: await blankPdf(),
+    mapping: mappingFor(signatureDate),
+    values: { signature_date: '2026-09-30' },
+    footerNote: 'Final release per Phase: Phase 5',
+  })
+  const colors = await fillColors(bytes)
+
+  assert.equal(colors.get('Final release per Phase: Phase 5'), '#ff0000')
+  assert.equal(colors.get('09/30/2026'), '#000000')
+})
 
 test('the footer note goes near the foot of the last page when there is no signature date box', async () => {
   const { bytes } = await fillReleasePdf({

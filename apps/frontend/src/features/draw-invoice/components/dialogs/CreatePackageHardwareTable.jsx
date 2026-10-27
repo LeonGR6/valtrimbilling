@@ -88,7 +88,9 @@ export default function CreatePackageHardwareTable({
                     {hardware.hardwareBillingMode === 'BY_EVENT'
                       ? hardware.isCalendarSuggested
                         ? `${hardware.hardwareEventType} Calendar event · Suggested`
-                        : `${hardware.hardwareEventType} · Manual selection`
+                        : hardware.isDrawSelected
+                          ? `${hardware.hardwareEventType} · Its Lot Draw is selected`
+                          : `${hardware.hardwareEventType} · Manual selection`
                       : `Draw #${hardware.drawIndex + 1}${hardware.drawName?.trim()
                         ? ` · ${hardware.drawName.trim()}`
                         : ''}`}
@@ -151,8 +153,10 @@ export default function CreatePackageHardwareTable({
           <Box>
             <Typography fontWeight={800}>Hardware</Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mt: 0.25 }}>
-              Every available Lot is listed. Upcoming Calendar portions are
-              preselected; any other portion can be selected manually.
+              Every available Lot is listed. Selecting a Lot's Draw above selects
+              its Hardware portion for that event, and clearing the Draw clears
+              it. Upcoming Calendar portions are preselected, and any portion can
+              be changed here.
             </Typography>
           </Box>
           <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>

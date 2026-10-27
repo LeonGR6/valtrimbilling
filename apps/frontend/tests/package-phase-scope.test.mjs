@@ -4,6 +4,7 @@ import {
   initialShownPhaseIds,
   isMultiPhasePackage,
   packagePhaseLabels,
+  sortPhasesForPicking,
 } from '../src/features/draw-invoice/utils/packagePhaseScope.js'
 
 const schedule = {
@@ -87,4 +88,37 @@ test('multi-phase Packages are labelled by Phase and Building', () => {
   assert.equal(isMultiPhasePackage(1), false)
   assert.equal(isMultiPhasePackage(2), true)
   assert.equal(isMultiPhasePackage(undefined), false)
+})
+
+const named = (...names) => names.map((name) => ({ name }))
+const orderOf = (phases) => sortPhasesForPicking(phases).map(
+  ({ name, building }) => (building ? `${name}/${building}` : name),
+)
+
+test('Phases with a letter code come first, then the numbered ones', () => {
+  assert.deepEqual(
+    orderOf(named('16', 'MBO 1', '17', 'MBO 2', '14', '15')),
+    ['MBO 1', 'MBO 2', '14', '15', '16', '17'],
+  )
+})
+
+test('Phase codes go in natural order, not text order', () => {
+  assert.deepEqual(
+    orderOf(named('Phase 10', '9', 'MBO 10', 'Phase MBO 2', '9A', '2')),
+    ['Phase MBO 2', 'MBO 10', '2', '9', '9A', 'Phase 10'],
+  )
+  assert.deepEqual(orderOf(named('B', 'a', 'C')), ['a', 'B', 'C'])
+})
+
+test('Buildings of one Phase go by Building, and the list given is not changed', () => {
+  const phases = [
+    { name: '3', building: 'B' },
+    { name: '3' },
+    { name: '3', building: 'A' },
+    { name: '2', building: 'C' },
+  ]
+
+  assert.deepEqual(orderOf(phases), ['2/C', '3', '3/A', '3/B'])
+  assert.deepEqual(phases.map(({ building }) => building), ['B', undefined, 'A', 'C'])
+  assert.deepEqual(sortPhasesForPicking([]), [])
 })

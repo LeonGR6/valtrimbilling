@@ -38,7 +38,11 @@ import {
   getUtilityBillingMode,
   getUtilityEventPercentage,
 } from '../utils/drawWorksheet.js'
-import { isMultiPhasePackage, phaseScopeLabel } from '../utils/packagePhaseScope.js'
+import {
+  isMultiPhasePackage,
+  phaseScopeLabel,
+  sortPhasesForPicking,
+} from '../utils/packagePhaseScope.js'
 
 const NO_KEYS = new Set()
 
@@ -61,7 +65,7 @@ export function EditDrawPackageDialog({
   onSave,
 }) {
   const releases = usePackageReleases(record.id)
-  const availablePhases = job.sequenceSheet?.phases ?? []
+  const availablePhases = sortPhasesForPicking(job.sequenceSheet?.phases ?? [])
   // Every Phase the Package already covers is shown, plus any the user adds.
   // A Phase that has cells stays on screen: its cells are removed by unchecking
   // them, never by hiding the Phase.

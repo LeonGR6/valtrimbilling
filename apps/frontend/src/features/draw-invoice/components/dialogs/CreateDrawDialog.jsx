@@ -42,6 +42,7 @@ import {
   drawSelectionKey,
   hardwareChargeKey,
   hardwareSelectionKey,
+  optionSelectionKey,
   summarizeDrawPackage,
   utilityChargeKey,
 } from '../../utils/drawPackages.js'
@@ -62,12 +63,18 @@ import {
   buildDrawCalendarHeadings,
   localDateKey,
 } from '../../utils/calendarDrawSuggestions.js'
+import {
+  hardwareChargeKeyOfCell,
+  hardwareChargesAfterCellChange,
+} from '../../utils/packageHardwareLink.js'
+import { excludedOptionsAfterCellChange } from '../../utils/packageOptionLink.js'
 import { formatLag } from '../../../builder-draw-schedules/utils/drawLag.js'
 import {
   initialShownPhaseIds,
   isMultiPhasePackage,
   packagePhaseLabels,
   phaseBillingProgress,
+  sortPhasesForPicking,
 } from '../../utils/packagePhaseScope.js'
 import { useAuth } from '../../../auth/context/useAuth.js'
 import { usePurchaseOrderBacking } from '../../../purchase-orders/hooks/usePurchaseOrders.js'
@@ -146,7 +153,7 @@ export default function CreateDrawDialog({
 
   const job = jobs.find((candidate) => String(candidate.id) === selectedJobId)
   const purchaseOrderBacking = usePurchaseOrderBacking(job?.id ?? null)
-  const phases = job?.sequenceSheet?.phases ?? []
+  const phases = sortPhasesForPicking(job?.sequenceSheet?.phases ?? [])
   const shownPhaseIdSet = new Set(shownPhaseIds)
   const shownPhases = phases.filter(
     (candidate) => shownPhaseIdSet.has(String(candidate.id)),
@@ -312,6 +319,10 @@ export default function CreateDrawDialog({
   const selectedSplitHardwareChargeKeys = new Set(
     splitHardwareSelectionKeys ?? suggestedSplitHardwareChargeKeys,
   )
+  // The Hardware portions whose Lot Draw is selected.
+  const drawHardwareChargeKeys = new Set(
+    selectedSelections.map((cell) => hardwareChargeKeyOfCell(schedule, cell)),
+  )
   const splitHardwareSelections = hardwareBillingMode === 'BY_EVENT'
     ? buildAvailableSeparateHardwareSelections({ job, schedule })
         .filter(({ phaseId }) => shownPhaseIdSet.has(String(phaseId)))
@@ -324,6 +335,7 @@ export default function CreateDrawDialog({
           return {
             ...selection,
             isCalendarSuggested: suggestedSplitHardwareChargeKeys.has(chargeKey),
+            isDrawSelected: drawHardwareChargeKeys.has(chargeKey),
             chargeHardware: selectedSplitHardwareChargeKeys.has(chargeKey)
               && !billedHardwareCharges.has(chargeKey),
           }
@@ -343,14 +355,26 @@ export default function CreateDrawDialog({
   const selectionIsSelected = (phaseId, lotId, drawIndex) =>
     selectedSelectionKeys.has(`${phaseId}:${lotId}:${drawIndex}`)
 
-  const clearExcludedOptionsWithoutBillingDraw = (selections) => {
-    const optionsBillingDrawIndex = schedule?.optionsBillingDrawIndex
-    if (!selections.some(
-      ({ drawIndex }) => optionsBillingDrawIndex != null
-        && Number(drawIndex) >= Number(optionsBillingDrawIndex),
-    )) {
-      setExcludedOptionKeys([])
-    }
+  const optionKeysOfLot = (phaseId, lotId) => {
+    const row = phaseModels
+      .find((model) => String(model.phase.id) === String(phaseId))
+      ?.worksheet.rows.find((candidate) => String(candidate.id) === String(lotId))
+
+    return (row?.selectedOptions ?? []).map(
+      (option) => optionSelectionKey(phaseId, lotId, option.id),
+    )
+  }
+
+  // A Lot that reaches the Options billing Draw has its Options selected, and one
+  // that no longer reaches it has them cleared. Each Option can still be changed on its own.
+  const followOptions = (previousCells, nextCells) => {
+    setExcludedOptionKeys((current) => excludedOptionsAfterCellChange({
+      schedule,
+      excludedKeys: current,
+      previousCells,
+      nextCells,
+      optionKeysOfLot,
+    }))
   }
 
   const pruneHardwareSelections = (selections) => {
@@ -362,6 +386,20 @@ export default function CreateDrawDialog({
     setHardwareSelectionKeys((current) => current.filter(
       (key) => availableKeys.has(key),
     ))
+  }
+
+  // Selecting a Lot's Draw selects the Hardware portion of its event, and clearing
+  // the Draw clears the portion. The portion can still be changed on its own.
+  const followHardware = (previousCells, nextCells) => {
+    if (hardwareBillingMode !== 'BY_EVENT') return
+
+    setSplitHardwareSelectionKeys((current) => hardwareChargesAfterCellChange({
+      schedule,
+      chargeKeys: current ?? suggestedSplitHardwareChargeKeys,
+      previousCells,
+      nextCells,
+      billedChargeKeys: billedHardwareCharges,
+    }))
   }
 
   const resetPackageChoices = () => {
@@ -387,13 +425,16 @@ export default function CreateDrawDialog({
     setShownPhaseIds((current) => [...current, ...ids])
     if (selectionOverrides !== null) {
       const known = new Set(selectionOverrides.map(cellKey))
-      setSelectedSelections([
+      const nextSelections = [
         ...selectionOverrides,
         ...calendarSuggestion.suggestedSelections.filter(
           (selection) => ids.includes(String(selection.phaseId))
             && !known.has(cellKey(selection)),
         ),
-      ])
+      ]
+      followHardware(selectionOverrides, nextSelections)
+      followOptions(selectionOverrides, nextSelections)
+      setSelectedSelections(nextSelections)
     }
   }
 
@@ -410,7 +451,7 @@ export default function CreateDrawDialog({
     setSplitHardwareSelectionKeys((current) => current === null
       ? null
       : current.filter((key) => !lotIds.has(key.split(':')[0])))
-    clearExcludedOptionsWithoutBillingDraw(nextSelections)
+    setExcludedOptionKeys((current) => current.filter((key) => !key.startsWith(`${id}:`)))
     pruneHardwareSelections(nextSelections)
   }
 
@@ -424,8 +465,9 @@ export default function CreateDrawDialog({
       ? selectedSelections.filter((selection) => cellKey(selection) !== key)
       : [...selectedSelections, { phaseId: candidate.id, lotId, drawIndex }]
 
-    clearExcludedOptionsWithoutBillingDraw(nextSelections)
+    followOptions(selectedSelections, nextSelections)
     pruneHardwareSelections(nextSelections)
+    followHardware(selectedSelections, nextSelections)
     setSelectedSelections(nextSelections)
   }
 
@@ -462,8 +504,9 @@ export default function CreateDrawDialog({
           ),
         ]
 
-    clearExcludedOptionsWithoutBillingDraw(nextSelections)
+    followOptions(selectedSelections, nextSelections)
     pruneHardwareSelections(nextSelections)
+    followHardware(selectedSelections, nextSelections)
     setSelectedSelections(nextSelections)
   }
 

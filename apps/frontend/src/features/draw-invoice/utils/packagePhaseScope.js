@@ -1,4 +1,8 @@
-import { formatPhaseBuilding } from '../../sequence-sheets/utils/phaseBuildingCodes.js'
+import {
+  formatPhaseBuilding,
+  normalizeBuildingCode,
+  normalizePhaseCode,
+} from '../../sequence-sheets/utils/phaseBuildingCodes.js'
 import {
   buildAvailableSeparateHardwareSelections,
   buildCalendarDrawSuggestion,
@@ -52,6 +56,30 @@ export function initialShownPhaseIds({
   }
 
   return phases.map((phase) => String(phase.id)).filter((id) => ids.has(id))
+}
+
+const compareCodes = (left, right) => left.localeCompare(right, 'en', {
+  numeric: true,
+  sensitivity: 'base',
+})
+
+/**
+ * The Phases in the order they are offered: the ones whose code starts with a
+ * letter first (MBO 1, MBO 2, MBO 10), then the numbered ones (14, 15, 16, 16A).
+ * A Phase split in Buildings goes by its Building within the Phase. The codes are
+ * compared as they are shown, without the word "Phase".
+ */
+export function sortPhasesForPicking(phases) {
+  const startsWithDigit = (code) => /^\d/.test(code)
+
+  return [...phases].sort((left, right) => {
+    const leftCode = normalizePhaseCode(left.name)
+    const rightCode = normalizePhaseCode(right.name)
+
+    return (Number(startsWithDigit(leftCode)) - Number(startsWithDigit(rightCode)))
+      || compareCodes(leftCode, rightCode)
+      || compareCodes(normalizeBuildingCode(left.building), normalizeBuildingCode(right.building))
+  })
 }
 
 export function phaseScopeLabel(phaseName, building) {

@@ -169,8 +169,9 @@ export default function SelectableOptionsTable({ summary, onToggle, backing = nu
           <Box>
             <Typography fontWeight={800}>Options</Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mt: 0.25 }}>
-              Pending options from every lot that reached this billing draw are
-              selected by default. Previously billed options cannot be selected again.
+              Selecting a Lot's cell from {availableFromDrawLabel} on selects its
+              pending options, and clearing it clears them. Any option can still be
+              changed here. Previously billed options cannot be selected again.
             </Typography>
           </Box>
           <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>

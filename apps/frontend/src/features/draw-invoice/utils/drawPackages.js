@@ -40,7 +40,7 @@ function optionBillingIdentity(lotId, optionId) {
   return `${lotId}:${optionId}`
 }
 
-function isAtOrAfterOptionsBillingDraw(drawIndex, optionsBillingDrawIndex) {
+export function isAtOrAfterOptionsBillingDraw(drawIndex, optionsBillingDrawIndex) {
   return optionsBillingDrawIndex !== null
     && Number(drawIndex) >= optionsBillingDrawIndex
 }
@@ -488,7 +488,7 @@ export function summarizeSelectedDrawCells(rows = [], drawCount = 0, isSelected 
   }
 }
 
-function getOptionsBillingDrawIndex(record, schedule) {
+export function getOptionsBillingDrawIndex(record, schedule) {
   const configuredIndex = Object.prototype.hasOwnProperty.call(
     record ?? {},
     'optionsBillingDrawIndex',
@@ -888,6 +888,7 @@ export function summarizeDrawPackage(record, job, phaseOrPhases, schedule) {
             hardwareAmount: row.hardwareEventAmounts?.[eventType] ?? 0,
             chargeHardware: selection.chargeHardware !== false,
             isCalendarSuggested: Boolean(selection.isCalendarSuggested),
+            isDrawSelected: Boolean(selection.isDrawSelected),
           }]
         })
       : selections.flatMap((selection) => {

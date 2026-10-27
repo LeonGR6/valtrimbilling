@@ -21,6 +21,8 @@ const CAP_HEIGHT_EM = 0.72
 // the form (the Date of Signature).
 const NOTE_FONT_SIZE = 9
 const NOTE_GAP = 14
+// Red, so the note stands out from the form's black print.
+const NOTE_COLOR = [1, 0, 0]
 
 async function loadLibrary() {
   // Loaded on demand: the library is only needed when a PDF is filled.
@@ -119,7 +121,7 @@ function drawInBox(page, font, text, field, library) {
 }
 
 /**
- * A short line centered under the signature block, at the bottom of the form:
+ * A short red line centered under the signature block, at the bottom of the form:
  * under the Date of Signature when the mapping has it, else near the foot of the
  * last page. It shrinks, never wraps, to stay inside the page margins.
  */
@@ -150,7 +152,7 @@ function drawFooterNote(doc, font, text, mapping, library) {
     y: anchor.y,
     size,
     font,
-    color: rgb(0, 0, 0),
+    color: rgb(...NOTE_COLOR),
     rotate: degrees(box.rotation),
   })
   return true

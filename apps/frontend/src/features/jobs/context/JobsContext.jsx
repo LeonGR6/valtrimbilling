@@ -32,6 +32,7 @@ import {
   listSequenceSheetPhases,
   saveSequenceSheetPhase as saveSequenceSheetPhaseRecord,
 } from '../../sequence-sheets/services/sequenceSheetsRepository.js'
+import { sortOptionsByCode } from '../../../utils/optionOrder.js'
 import { JobsContext } from './jobsContext.js'
 
 function sortJobs(jobs) {
@@ -240,7 +241,7 @@ export function JobsProvider({ children }) {
       job.id === jobId
         ? updateJobPlans(job, (plans) => plans.map((plan) => (
             plan.id === planId
-              ? { ...plan, options: [...(plan.options ?? []), created] }
+              ? { ...plan, options: sortOptionsByCode([...(plan.options ?? []), created]) }
               : plan
           )))
         : job
@@ -255,7 +256,7 @@ export function JobsProvider({ children }) {
       job.id === jobId
         ? updateJobPlans(job, (plans) => plans.map((plan) => (
             plan.id === planId
-              ? { ...plan, options: [...(plan.options ?? []), ...created] }
+              ? { ...plan, options: sortOptionsByCode([...(plan.options ?? []), ...created]) }
               : plan
           )))
         : job
@@ -277,11 +278,12 @@ export function JobsProvider({ children }) {
             plan.id === planId
               ? {
                   ...plan,
-                  options: (plan.options ?? []).map((currentOption) => (
+                  // Editing the code moves the Option to its place in the list.
+                  options: sortOptionsByCode((plan.options ?? []).map((currentOption) => (
                     currentOption.id === optionId
                       ? mergePlanOptionRecord(currentOption, updated)
                       : currentOption
-                  )),
+                  ))),
                 }
               : plan
           )))

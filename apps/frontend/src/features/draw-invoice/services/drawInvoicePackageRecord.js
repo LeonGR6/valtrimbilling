@@ -1,3 +1,5 @@
+import { compareOptionCodes } from '../../../utils/optionOrder.js'
+
 // A Package is a Draft until it is submitted, then it waits for payment.
 export const DRAW_PACKAGE_STATUSES = [
   'DRAFT',
@@ -453,7 +455,11 @@ export function toDrawInvoicePackage(
       drawName: '',
       isUtilityBuilding: false,
     })),
-    persistedOptionLines: optionRows.map((row) => {
+    // Lot by Lot, and by option code within each Lot.
+    persistedOptionLines: [...optionRows].sort(
+      (left, right) => left.lot_id - right.lot_id
+        || compareOptionCodes(left.option_code, right.option_code),
+    ).map((row) => {
       const drawRow = drawRowsByLotAndDraw.get(`${row.lot_id}:${row.draw_id}`)
       const billingDrawRow = drawRowsByLotAndDraw.get(
         `${row.billing_lot_id ?? row.lot_id}:${row.draw_id}`,

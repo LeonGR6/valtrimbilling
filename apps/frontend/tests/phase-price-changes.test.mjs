@@ -352,9 +352,10 @@ test('Option price changes of a Phase are grouped by Option, so equal changes re
     ],
   }])
 
+  // By code, so the two changes of OPT-10 read together.
   const groups = groupOptionChanges(phases[0])
   assert.deepEqual(
     groups.map(({ code, fromPrice, toPrice, lotCount }) => [code, fromPrice, toPrice, lotCount]),
-    [['OPT-10', 300, 350, 2], ['OPT-11', 50, 60, 1], ['OPT-10', 320, 350, 1]],
+    [['OPT-10', 300, 350, 2], ['OPT-10', 320, 350, 1], ['OPT-11', 50, 60, 1]],
   )
 })

@@ -12,6 +12,7 @@ import {
 } from '@mui/material'
 import ChevronRightRoundedIcon from '@mui/icons-material/ChevronRightRounded'
 import TaskAltRoundedIcon from '@mui/icons-material/TaskAltRounded'
+import { compareOptionCodes } from '../../../../utils/optionOrder.js'
 import {
   COMPARISON_STATUSES,
   HEADER_STATUSES,
@@ -42,7 +43,7 @@ export default function WorkOrderSection({
   const lines = useMemo(
     () => linesWithStatus(group.lines, statusFilter).sort((a, b) =>
       COMPARISON_STATUSES[b.status].severity - COMPARISON_STATUSES[a.status].severity
-      || a.optionCode.localeCompare(b.optionCode)),
+      || compareOptionCodes(a.optionCode, b.optionCode)),
     [group.lines, statusFilter],
   )
   const printed = [

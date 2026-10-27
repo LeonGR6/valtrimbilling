@@ -2,6 +2,8 @@
 // the comparison with the system's options and how it is described on screen.
 // Nothing here touches the network or React.
 
+import { compareOptionCodes, sortOptionsByCode } from '../../../utils/optionOrder.js'
+
 // What each comparison status means for the reviewer. `severity` orders them, the
 // most urgent first. Every status only informs: nothing blocks a Package.
 export const COMPARISON_STATUSES = {
@@ -286,8 +288,16 @@ export function uncoveredByLot(uncovered, lotIds) {
     entry.options.push(option)
     lots.set(option.lotId, entry)
   }
-  return [...lots.values()].sort((a, b) =>
-    a.lotNumber.localeCompare(b.lotNumber, 'en', { numeric: true }))
+  return [...lots.values()]
+    .map((lot) => ({ ...lot, options: sortOptionsByCode(lot.options, (option) => option.optionCode) }))
+    .sort((a, b) => a.lotNumber.localeCompare(b.lotNumber, 'en', { numeric: true }))
+}
+
+/** Lines of a Purchase Order Lot by Lot, and by option code within each Lot. */
+export function sortLinesByLotAndOption(lines) {
+  return [...lines].sort((a, b) =>
+    String(a.lotNumber ?? '').localeCompare(String(b.lotNumber ?? ''), 'en', { numeric: true })
+    || compareOptionCodes(a.optionCode, b.optionCode))
 }
 
 // --- Importing options -------------------------------------------------------

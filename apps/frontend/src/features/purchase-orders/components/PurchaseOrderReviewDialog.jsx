@@ -33,6 +33,7 @@ import {
   groupWorkOrders,
   importAction,
   priceCandidates,
+  sortLinesByLotAndOption,
   summarizeComparison,
   uncoveredByLot,
   workOrderNeedsLook,
@@ -221,7 +222,7 @@ export default function PurchaseOrderReviewDialog({
   })
 
   const importable = useMemo(
-    () => lines.filter((line) => importAction(line) !== null),
+    () => sortLinesByLotAndOption(lines.filter((line) => importAction(line) !== null)),
     [lines],
   )
   // The lines each button of the summary would add: those not in the Lot, and those not in the system.

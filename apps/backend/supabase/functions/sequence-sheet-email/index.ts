@@ -239,7 +239,8 @@ async function loadSnapshot(
     isUtilityBuilding: Boolean(lot.is_utility_building),
     options: (optionIdsByLot.get(String(lot.id)) ?? [])
       .map((optionId) => optionsById.get(optionId))
-      .filter((option): option is SequenceSheetEmailOption => Boolean(option)),
+      .filter((option): option is SequenceSheetEmailOption => Boolean(option))
+      .sort((a, b) => a.code.localeCompare(b.code)),
   }))
 
   return {

@@ -5,6 +5,8 @@
 // Package with a QuickBooks invoice, sent or paid bills keeps its amount, and the
 // difference is recorded as pending to collect. The server enforces the same rules.
 
+import { sortOptionsByCode } from '../../../utils/optionOrder.js'
+
 function money(value) {
   return value == null ? null : Number(value)
 }
@@ -76,7 +78,7 @@ export function toPhasePriceChanges(rows = []) {
       planId: Number(lot.plan_id),
       planCode: lot.plan_code,
       plan: toPlanChange(lot.plan_change),
-      options: (lot.option_changes ?? []).map(toOptionChange),
+      options: sortOptionsByCode((lot.option_changes ?? []).map(toOptionChange)),
     })),
   }))
 }
@@ -211,5 +213,5 @@ export function groupOptionChanges(phase) {
     })
   })
 
-  return [...groups.values()]
+  return sortOptionsByCode([...groups.values()])
 }

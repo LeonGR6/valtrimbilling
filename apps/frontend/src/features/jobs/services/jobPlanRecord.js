@@ -1,3 +1,5 @@
+import { sortOptionsByCode } from '../../../utils/optionOrder.js'
+
 function moneyValue(value) {
   return value == null ? null : Number(value)
 }
@@ -47,7 +49,7 @@ export function toJobPlan(row, currentPrice = null, options = []) {
     price: moneyValue(currentPrice?.base_price),
     hardwarePrice: moneyValue(currentPrice?.hardware_price),
     isActive: row.is_active,
-    options,
+    options: sortOptionsByCode(options),
   }
 }
 

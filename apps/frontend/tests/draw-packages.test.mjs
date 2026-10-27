@@ -18,6 +18,7 @@ import {
   optionSelectionKey,
   summarizeDrawPackage,
   summarizeRetentionSource,
+  summarizeSelectedDrawCells,
   utilityChargeKey,
 } from '../src/features/draw-invoice/utils/drawPackages.js'
 import { testJobs } from './fixtures/jobs.mjs'
@@ -1380,4 +1381,39 @@ test('an option line without its billing Lot is read as billed in its own Lot', 
 test('the Retention Release is described by its Lots and Options', () => {
   assert.equal(describeRetentionSource({ lotCount: 28, optionCount: 0 }), '28 Lots · 0 Options')
   assert.equal(describeRetentionSource({ lotCount: 1, optionCount: 1 }), '1 Lot · 1 Option')
+})
+
+test('the ticked cells of the grid add up by Draw and in all', () => {
+  const rows = [
+    { id: 1, drawAmounts: [1117, 2904.2, 446.8] },
+    { id: 2, drawAmounts: [1118.5, 2908.1, 447.4] },
+    { id: 3, drawAmounts: [1158.75, 3012.75, 463.5] },
+  ]
+  const ticked = new Set(['1:0', '2:0', '1:1', '3:2'])
+  const summary = summarizeSelectedDrawCells(rows, 3, (id, drawIndex) => ticked.has(`${id}:${drawIndex}`))
+
+  assert.deepEqual(summary.draws, [
+    { count: 2, total: 2235.5 },
+    { count: 1, total: 2904.2 },
+    { count: 1, total: 463.5 },
+  ])
+  assert.equal(summary.count, 4)
+  assert.equal(summary.total, 5603.2)
+})
+
+test('the selected total keeps the cents exact and ignores what is not ticked or has no amount', () => {
+  // 0.1 + 0.2 is not 0.3 in floating point: the sums are done in cents.
+  const rows = [
+    { id: 1, drawAmounts: [0.1] },
+    { id: 2, drawAmounts: [0.2] },
+    { id: 3, drawAmounts: [null] },
+    { id: 4 },
+    { id: 5, drawAmounts: [999] },
+  ]
+  const summary = summarizeSelectedDrawCells(rows, 1, (id) => id <= 4)
+
+  assert.deepEqual(summary.draws, [{ count: 4, total: 0.3 }])
+  assert.equal(summary.total, 0.3)
+  assert.deepEqual(summarizeSelectedDrawCells(rows, 1), { draws: [{ count: 0, total: 0 }], count: 0, total: 0 })
+  assert.deepEqual(summarizeSelectedDrawCells([], 0), { draws: [], count: 0, total: 0 })
 })

@@ -15,13 +15,31 @@ import {
 } from '@mui/material'
 import LockRoundedIcon from '@mui/icons-material/LockRounded'
 import { formatLag, formatLagShort } from '../../../builder-draw-schedules/utils/drawLag.js'
-import { drawSelectionKey } from '../../utils/drawPackages.js'
+import { drawSelectionKey, summarizeSelectedDrawCells } from '../../utils/drawPackages.js'
 import { calendarSelectionKey } from '../../utils/calendarDrawSuggestions.js'
 import {
   formatCurrency,
   formatLongDate,
   formatPercentage,
 } from '../../utils/drawInvoiceFormatters.js'
+
+// The tones of the dark theme are translucent. A cell that sticks while the rows scroll needs a
+// solid base under its tone, or the rows going under it show through.
+const solidTone = (tone) => (theme) => ({
+  backgroundColor: theme.palette.background.paper,
+  backgroundImage: tone
+    ? `linear-gradient(${theme.palette[tone].light}, ${theme.palette[tone].light})`
+    : 'none',
+})
+
+// The totals stay at the bottom of the table while its rows scroll.
+const footerCellSx = {
+  position: 'sticky',
+  bottom: 0,
+  zIndex: 2,
+  borderTop: 2,
+  borderColor: 'divider',
+}
 
 function calendarHeadingLabel(heading) {
   if (!heading?.eventType) return 'Event not set'
@@ -57,6 +75,12 @@ export default function DrawSelectionGrid({
   const selectedLotKeys = [...new Set(
     selectedSelections.map(({ phaseId, lotId }) => `${phaseId}:${lotId}`),
   )]
+  // How many cells are ticked in each Draw and what they add up to.
+  const selectedTotals = summarizeSelectedDrawCells(
+    worksheet.rows,
+    worksheet.draws.length,
+    selectionIsSelected,
+  )
 
   return (
     <Box>
@@ -110,63 +134,19 @@ export default function DrawSelectionGrid({
           >
             <TableHead>
               <TableRow>
-                <TableCell rowSpan={2} sx={{ width: 95, fontWeight: 800 }}>
+                <TableCell sx={{ width: 95, fontWeight: 800, verticalAlign: 'bottom' }}>
                   Lot
                 </TableCell>
-                <TableCell rowSpan={2} sx={{ width: 90, fontWeight: 800 }}>
+                <TableCell sx={{ width: 90, fontWeight: 800, verticalAlign: 'bottom' }}>
                   Plan
                 </TableCell>
                 <TableCell
-                  rowSpan={2}
                   align="right"
-                  sx={{ width: 115, fontWeight: 800 }}
+                  sx={{ width: 115, fontWeight: 800, verticalAlign: 'bottom' }}
                 >
                   Price per lot
                 </TableCell>
-                {worksheet.draws.map((draw, drawIndex) => (
-                  <TableCell
-                    key={`select-draw-heading-${drawIndex}`}
-                    align="center"
-                    sx={{
-                      minWidth: 185,
-                      borderLeft: 1,
-                      borderColor: 'divider',
-                      bgcolor: 'primary.light',
-                    }}
-                  >
-                    <Typography
-                      variant="caption"
-                      color="primary.main"
-                      fontWeight={800}
-                      component="div"
-                      title={drawCalendarHeadings[drawIndex]?.lag
-                        ? `Billed ${formatLag(drawCalendarHeadings[drawIndex].lag)} after ${drawCalendarHeadings[drawIndex].eventType}. Available: ${(drawCalendarHeadings[drawIndex].availableDates ?? [])
-                          .map(formatLongDate)
-                          .join(' · ')}`
-                        : (drawCalendarHeadings[drawIndex]?.eventDates ?? [])
-                          .map(formatLongDate)
-                          .join(' · ')}
-                      sx={{ mb: 0.25, whiteSpace: 'normal' }}
-                    >
-                      {calendarHeadingLabel(drawCalendarHeadings[drawIndex])}
-                    </Typography>
-                    <Typography color="primary.main" fontWeight={850}>
-                      Draw #{drawIndex + 1}
-                    </Typography>
-                    <Typography
-                      variant="caption"
-                      color="primary.main"
-                      fontWeight={750}
-                      component="div"
-                    >
-                      {formatPercentage(draw.percentage)}%
-                      {draw.name?.trim() ? ` · ${draw.name.trim()}` : ''}
-                    </Typography>
-                  </TableCell>
-                ))}
-              </TableRow>
-              <TableRow>
-                {worksheet.draws.map((_, drawIndex) => {
+                {worksheet.draws.map((draw, drawIndex) => {
                   const availableRows = worksheet.rows.filter(
                     (row) => rowAllowsGroupSelection(row)
                       && !selectionIsUsed(row.id, drawIndex)
@@ -180,14 +160,45 @@ export default function DrawSelectionGrid({
 
                   return (
                     <TableCell
-                      key={`select-draw-${drawIndex}`}
+                      key={`select-draw-heading-${drawIndex}`}
                       align="center"
-                      sx={{ borderLeft: 1, borderColor: 'divider' }}
+                      sx={[
+                        { minWidth: 185, borderLeft: 1, borderColor: 'divider', verticalAlign: 'top' },
+                        solidTone('primary'),
+                      ]}
                     >
+                      <Typography
+                        variant="caption"
+                        color="primary.main"
+                        fontWeight={800}
+                        component="div"
+                        title={drawCalendarHeadings[drawIndex]?.lag
+                          ? `Billed ${formatLag(drawCalendarHeadings[drawIndex].lag)} after ${drawCalendarHeadings[drawIndex].eventType}. Available: ${(drawCalendarHeadings[drawIndex].availableDates ?? [])
+                            .map(formatLongDate)
+                            .join(' · ')}`
+                          : (drawCalendarHeadings[drawIndex]?.eventDates ?? [])
+                            .map(formatLongDate)
+                            .join(' · ')}
+                        sx={{ mb: 0.25, whiteSpace: 'normal' }}
+                      >
+                        {calendarHeadingLabel(drawCalendarHeadings[drawIndex])}
+                      </Typography>
+                      <Typography color="primary.main" fontWeight={850}>
+                        Draw #{drawIndex + 1}
+                      </Typography>
+                      <Typography
+                        variant="caption"
+                        color="primary.main"
+                        fontWeight={750}
+                        component="div"
+                      >
+                        {formatPercentage(draw.percentage)}%
+                        {draw.name?.trim() ? ` · ${draw.name.trim()}` : ''}
+                      </Typography>
                       <Stack
                         direction="row"
                         spacing={0.25}
-                        sx={{ alignItems: 'center', justifyContent: 'center' }}
+                        sx={{ alignItems: 'center', justifyContent: 'center', mt: 0.5 }}
                       >
                         <Checkbox
                           size="small"
@@ -349,28 +360,47 @@ export default function DrawSelectionGrid({
             {worksheet.rows.length > 0 && (
               <TableFooter>
                 <TableRow>
-                  <TableCell colSpan={3}>
-                    <Typography fontWeight={850}>
-                      {selectedLotKeys.length}{' '}
-                      {selectedLotKeys.length === 1 ? 'lot' : 'lots'} ·{' '}
-                      {selectedSelections.length}{' '}
-                      {selectedSelections.length === 1 ? 'cell' : 'cells'}
-                    </Typography>
+                  <TableCell colSpan={3} sx={[footerCellSx, solidTone(null)]}>
+                    <Stack
+                      direction="row"
+                      spacing={1.5}
+                      sx={{ alignItems: 'center', justifyContent: 'space-between' }}
+                    >
+                      <Typography fontWeight={850}>
+                        {selectedLotKeys.length}{' '}
+                        {selectedLotKeys.length === 1 ? 'lot' : 'lots'} ·{' '}
+                        {selectedSelections.length}{' '}
+                        {selectedSelections.length === 1 ? 'cell' : 'cells'}
+                      </Typography>
+                      <Box sx={{ textAlign: 'right' }}>
+                        <Typography variant="caption" color="text.secondary" component="div">
+                          Selected total
+                        </Typography>
+                        <Typography
+                          fontWeight={900}
+                          color={selectedTotals.count > 0 ? 'primary.main' : 'text.disabled'}
+                          sx={{ fontVariantNumeric: 'tabular-nums' }}
+                        >
+                          {selectedTotals.count > 0 ? formatCurrency(selectedTotals.total) : '—'}
+                        </Typography>
+                      </Box>
+                    </Stack>
                   </TableCell>
-                  {worksheet.draws.map((_, drawIndex) => (
+                  {selectedTotals.draws.map((selected, drawIndex) => (
                     <TableCell
                       key={`selected-total-${drawIndex}`}
                       align="center"
-                      sx={{ borderLeft: 1, borderColor: 'divider' }}
+                      sx={[{ ...footerCellSx, borderLeft: 1 }, solidTone(null)]}
                     >
-                      <Typography variant="caption" color="text.secondary">
-                        {selectedSelections.filter(
-                          (selection) => (
-                            String(selection.phaseId) === String(phase.id)
-                            && selection.drawIndex === drawIndex
-                          ),
-                        ).length}{' '}
-                        selected
+                      <Typography
+                        fontWeight={850}
+                        color={selected.count > 0 ? 'primary.main' : 'text.disabled'}
+                        sx={{ fontVariantNumeric: 'tabular-nums' }}
+                      >
+                        {selected.count > 0 ? formatCurrency(selected.total) : '—'}
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary" component="div">
+                        {selected.count} selected
                       </Typography>
                     </TableCell>
                   ))}

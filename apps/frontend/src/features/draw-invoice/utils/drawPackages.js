@@ -465,6 +465,29 @@ function addCurrencyAmounts(...amounts) {
   ) / 100
 }
 
+/**
+ * What the selected cells of a Lot / Draw grid add up to, by Draw and in all: how many cells are
+ * ticked and their amounts, in cents so the sums are exact. `isSelected(rowId, drawIndex)` says
+ * whether a cell is ticked; a cell with no amount counts as ticked but adds nothing.
+ */
+export function summarizeSelectedDrawCells(rows = [], drawCount = 0, isSelected = () => false) {
+  const draws = Array.from({ length: drawCount }, () => ({ count: 0, total: 0 }))
+
+  for (const row of rows) {
+    for (let drawIndex = 0; drawIndex < drawCount; drawIndex += 1) {
+      if (!isSelected(row.id, drawIndex)) continue
+      draws[drawIndex].count += 1
+      draws[drawIndex].total = addCurrencyAmounts(draws[drawIndex].total, row.drawAmounts?.[drawIndex])
+    }
+  }
+
+  return {
+    draws,
+    count: draws.reduce((sum, draw) => sum + draw.count, 0),
+    total: addCurrencyAmounts(...draws.map((draw) => draw.total)),
+  }
+}
+
 function getOptionsBillingDrawIndex(record, schedule) {
   const configuredIndex = Object.prototype.hasOwnProperty.call(
     record ?? {},

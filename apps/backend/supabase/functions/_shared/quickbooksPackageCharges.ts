@@ -36,6 +36,14 @@ export interface PackageDrawRow {
   wrap_amount: Numeric
 }
 
+/** One option billed by the Package, with the Lot it belongs to (not the Lot of the line it is billed on). */
+export interface PackageOptionRow {
+  lot_number: string
+  phase_code: string
+  building: string | null
+  option_price: Numeric
+}
+
 export interface PackageHardwareLineRow {
   lot_number: string
   phase_code: string
@@ -71,6 +79,11 @@ export interface PackageInvoiceSource {
   package: PackageHeaderRow
   draws: PackageDrawRow[]
   hardwareLines: PackageHardwareLineRow[]
+  /**
+   * The options the Package bills, one row each. Their amount is charged on a single draw line, but
+   * they belong to several Lots, and the invoice names those Lots.
+   */
+  optionLines?: PackageOptionRow[]
   /** Only a Price Adjustment Package has them. */
   adjustmentLines?: PackageAdjustmentLineRow[]
   invoice: PackageInvoiceRow | null
@@ -95,6 +108,43 @@ function cents(value: Numeric, field: string) {
 
 function eventScope(base: string, eventType: string | null) {
   return eventType ? `${base} - ${eventType}` : undefined
+}
+
+/**
+ * The OPTIONS charges, one per Lot that has options, when the option rows can stand for the amounts
+ * of the draw lines; null when they cannot, and the amount of each draw line is charged as it is.
+ *
+ * A Package charges its options on one draw line (the first Draw it bills at or after the Options
+ * Draw), so that line holds the whole amount even when the options belong to many Lots. The invoice
+ * names the Lots of the options, so it takes them from the option rows. That is only done when the
+ * rows add up to exactly what the lines bill, so the invoice total can never change because of it.
+ */
+function optionCharges(
+  draws: PackageDrawRow[],
+  optionLines: PackageOptionRow[],
+): PackageCharge[] | null {
+  if (optionLines.length === 0) return null
+
+  const billed = draws.reduce((sum, row) => sum + cents(row.options_amount, 'options_amount'), 0)
+  const listed = optionLines.reduce((sum, row) => sum + cents(row.option_price, 'option_price'), 0)
+  if (billed !== listed) return null
+
+  const byLot = new Map<string, PackageCharge & { cents: number }>()
+  for (const row of optionLines) {
+    const key = [row.phase_code, row.building ?? '', row.lot_number].join('|')
+    const charge = byLot.get(key) ?? {
+      phaseCode: row.phase_code,
+      building: row.building,
+      lotNumber: row.lot_number,
+      kind: 'OPTIONS' as const,
+      amount: 0,
+      cents: 0,
+    }
+    charge.cents += cents(row.option_price, 'option_price')
+    charge.amount = charge.cents / 100
+    byLot.set(key, charge)
+  }
+  return [...byLot.values()].map(({ cents: _cents, ...charge }) => charge)
 }
 
 export function mapPackageToCharges(source: PackageInvoiceSource): PackageInvoiceCharges {
@@ -187,6 +237,9 @@ export function mapPackageToCharges(source: PackageInvoiceSource): PackageInvoic
     }
   }
 
+  const perLotOptions = optionCharges(draws, source.optionLines ?? [])
+  if (perLotOptions) charges.push(...perLotOptions)
+
   for (const row of draws) {
     retentionCents += cents(row.retention_amount, 'retention_amount')
     wrapCents += cents(row.wrap_amount, 'wrap_amount')
@@ -228,12 +281,14 @@ export function mapPackageToCharges(source: PackageInvoiceSource): PackageInvoic
       scopeLabel: eventScope('HARDWARE', row.hardware_event_type),
       amount: Number(row.hardware_amount),
     })
-    charges.push({
-      ...place,
-      lotNumber: row.lot_number,
-      kind: 'OPTIONS',
-      amount: Number(row.options_amount),
-    })
+    if (!perLotOptions) {
+      charges.push({
+        ...place,
+        lotNumber: row.lot_number,
+        kind: 'OPTIONS',
+        amount: Number(row.options_amount),
+      })
+    }
   }
 
   for (const row of hardwareLines) {

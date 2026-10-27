@@ -6,6 +6,7 @@ import {
   type PackageDrawRow,
   type PackageHardwareLineRow,
   type PackageInvoiceSource,
+  type PackageOptionRow,
 } from './quickbooksPackageCharges.ts'
 
 const header = { package_type: 'DRAW', status: 'DRAFT', invoice_line_format: 'LOT_SCOPE' }
@@ -390,4 +391,129 @@ Deno.test('a Retention Release is still not sent to QuickBooks', () => {
     QuickbooksInvoiceError,
   )
   assertEquals(error.code, 'UNSUPPORTED_PACKAGE')
+})
+
+const optionRow = (patch: Partial<PackageOptionRow>): PackageOptionRow => ({
+  lot_number: '1',
+  phase_code: '1',
+  building: null,
+  option_price: 0,
+  ...patch,
+})
+
+// DP-00000109 (Job 1236): four Lots with options. The Package charges every option on the line of
+// the first Lot, but the options belong to Lots 26, 27, 40 and 41.
+const buildingScope = { ...header, invoice_line_format: 'BUILDING_SCOPE' }
+const dp109 = (optionLines: PackageOptionRow[] | undefined): PackageInvoiceSource => {
+  const lots: Array<[string, number, number, number]> = [
+    ['26', 1204.75, 3132.35, 481.9],
+    ['27', 1262.5, 3282.5, 505],
+    ['40', 1259.75, 3275.35, 503.9],
+    ['41', 1002.75, 2607.15, 401.1],
+  ]
+  return {
+    package: buildingScope,
+    draws: lots.flatMap(([lot, one, two, three]) => [
+      draw({ lot_number: lot, phase_code: 'L9-25A', building: null, draw_number: 1, base_draw_amount: one }),
+      draw({
+        lot_number: lot,
+        phase_code: 'L9-25A',
+        building: null,
+        draw_number: 2,
+        base_draw_amount: two,
+        options_amount: lot === '26' ? 3572 : 0,
+      }),
+      draw({ lot_number: lot, phase_code: 'L9-25A', building: null, draw_number: 3, base_draw_amount: three }),
+    ]),
+    hardwareLines: [],
+    ...(optionLines ? { optionLines } : {}),
+    invoice: { net_amount: '22491.00' },
+  }
+}
+const dp109Options = [
+  { lot: '26', prices: [913, 798, -64, -126] },
+  { lot: '27', prices: [766, 264] },
+  { lot: '40', prices: [255] },
+  { lot: '41', prices: [766] },
+].flatMap(({ lot, prices }) =>
+  prices.map((price) => optionRow({ lot_number: lot, phase_code: 'L9-25A', option_price: price }))
+)
+
+Deno.test('the OPTIONS line names every Lot whose options it bills, not only the Lot it is charged on', () => {
+  // Lot 26 holds 1521 in options (a credit among them) and the other Lots the rest: 3572 in all.
+  const rows = [
+    ...dp109Options.filter((row) => row.lot_number === '26'),
+    ...dp109Options.filter((row) => row.lot_number !== '26'),
+  ]
+  assertEquals(rows.reduce((sum, row) => sum + Number(row.option_price), 0), 3572)
+
+  const payload = invoiceFor(dp109(rows))
+  assertEquals(
+    payload.Line.map((line) => [line.Description, line.Amount]),
+    [
+      ['PHASE L9-25A LOTS #26-27, 40-41\nDRAW 1', 4729.75],
+      ['PHASE L9-25A LOTS #26-27, 40-41\nDRAW 2', 12297.35],
+      ['PHASE L9-25A LOTS #26-27, 40-41\nDRAW 3', 1891.9],
+      ['PHASE L9-25A LOTS #26-27, 40-41\nOPTIONS', 3572],
+    ],
+  )
+})
+
+Deno.test('a Lot whose options cancel out is left off the OPTIONS line', () => {
+  const rows = [
+    optionRow({ lot_number: '26', phase_code: 'L9-25A', option_price: 3572 }),
+    optionRow({ lot_number: '27', phase_code: 'L9-25A', option_price: 64 }),
+    optionRow({ lot_number: '27', phase_code: 'L9-25A', option_price: -64 }),
+  ]
+
+  const payload = invoiceFor(dp109(rows))
+  assertEquals(
+    payload.Line.find((line) => line.Description.endsWith('OPTIONS'))?.Description,
+    'PHASE L9-25A LOT #26\nOPTIONS',
+  )
+})
+
+Deno.test('option rows that do not add up to the lines leave the invoice as the lines bill it', () => {
+  // Rows worth 3000 against 3572 billed: the amounts of the lines win, so the total is never changed.
+  const rows = [optionRow({ lot_number: '26', phase_code: 'L9-25A', option_price: 2000 }),
+    optionRow({ lot_number: '27', phase_code: 'L9-25A', option_price: 1000 })]
+
+  const payload = invoiceFor(dp109(rows))
+  assertEquals(
+    payload.Line.find((line) => line.Description.endsWith('OPTIONS')),
+    {
+      Amount: 3572,
+      DetailType: 'SalesItemLineDetail',
+      Description: 'PHASE L9-25A LOT #26\nOPTIONS',
+      SalesItemLineDetail: { ItemRef: { value: '19' }, Qty: 1, UnitPrice: 3572 },
+    },
+  )
+})
+
+Deno.test('a Package without option rows keeps charging the options of each line', () => {
+  const payload = invoiceFor(dp109(undefined))
+  assertEquals(
+    payload.Line.find((line) => line.Description.endsWith('OPTIONS'))?.Description,
+    'PHASE L9-25A LOT #26\nOPTIONS',
+  )
+})
+
+Deno.test('options of Lots in another Phase get their own OPTIONS line there', () => {
+  const rows = [
+    optionRow({ lot_number: '26', phase_code: 'L9-25A', option_price: 2000 }),
+    optionRow({ lot_number: '27', phase_code: 'L9-25A', option_price: 1000 }),
+    optionRow({ lot_number: '5', phase_code: 'L9-26', option_price: 572 }),
+  ]
+
+  const payload = invoiceFor(dp109(rows))
+  assertEquals(
+    payload.Line.filter((line) => line.Description.endsWith('OPTIONS')).map((line) => [
+      line.Description,
+      line.Amount,
+    ]),
+    [
+      ['PHASE L9-25A LOTS #26-27\nOPTIONS', 3000],
+      ['PHASE L9-26 LOT #5\nOPTIONS', 572],
+    ],
+  )
 })

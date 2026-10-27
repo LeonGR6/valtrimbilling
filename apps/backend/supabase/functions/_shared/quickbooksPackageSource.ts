@@ -49,7 +49,7 @@ export async function loadPackageSource(admin: Admin, packageId: number): Promis
 
   const isAdjustment = header.package_type === 'PRICE_ADJUSTMENT'
 
-  const [draws, hardwareLines, adjustmentLines, invoice, builder, job, setup, sync] = await Promise.all([
+  const [draws, hardwareLines, optionLines, adjustmentLines, invoice, builder, job, setup, sync] = await Promise.all([
     admin
       .from('package_draws')
       .select(
@@ -65,6 +65,13 @@ export async function loadPackageSource(admin: Admin, packageId: number): Promis
       )
       .eq('package_id', packageId)
       .order('id'),
+    // The options of the Package, with the Lot each one belongs to.
+    admin
+      .from('package_options')
+      .select('lot_number, phase_code, building, option_price')
+      .eq('package_id', packageId)
+      .order('lot_id')
+      .order('option_id'),
     // Only a Price Adjustment Package has difference lines.
     isAdjustment
       ? admin
@@ -122,6 +129,7 @@ export async function loadPackageSource(admin: Admin, packageId: number): Promis
       package: header,
       draws: orThrow(draws) ?? [],
       hardwareLines: orThrow(hardwareLines) ?? [],
+      optionLines: orThrow(optionLines) ?? [],
       adjustmentLines: adjustmentRows.map(({ lot_id: lotId, ...row }) => ({
         ...row,
         is_utility_building: Boolean(lotsById.get(lotId)?.is_utility_building),

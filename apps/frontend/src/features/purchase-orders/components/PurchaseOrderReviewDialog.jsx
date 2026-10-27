@@ -555,7 +555,10 @@ export default function PurchaseOrderReviewDialog({
           </Tooltip>
         )}
         <Box sx={{ flex: 1 }} />
-        <Button variant="contained" disableElevation onClick={onClose}>Close</Button>
+        {/* With several documents queued, the button opens the next one; only the last one closes. */}
+        <Button variant="contained" disableElevation onClick={onClose}>
+          {position && position.index < position.total ? 'Next' : 'Close'}
+        </Button>
       </DialogActions>
     </Dialog>
   )

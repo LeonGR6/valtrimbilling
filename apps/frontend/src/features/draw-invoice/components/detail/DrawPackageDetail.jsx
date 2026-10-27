@@ -254,6 +254,12 @@ export default function DrawPackageDetail() {
   ) ?? builderDrawSchedules.find(
     (item) => String(item.builderId) === String(focusedBuilderId),
   )
+  // What a Package bills stays with the setup it was made with. The documents it needs and how it
+  // is delivered follow the setup the Job is on now: the same one, unless the Job was moved to
+  // another version after it was billed.
+  const jobSetup = jobBillingSetupVersions.find(
+    (version) => String(version.id) === String(focusedJob.billingSetupVersionId),
+  ) ?? schedule
   const worksheet = buildDrawWorksheet(focusedJob, selectedPhase, schedule)
   const focusedPackagePhaseIds = new Set(
     (focusedPackage?.phaseIds?.length
@@ -819,11 +825,11 @@ export default function DrawPackageDetail() {
             job={focusedJob}
             packages={drawInvoicePackages}
             submission={{
-              method: schedule?.submissionMethod,
-              destination: schedule?.submissionDestination,
+              method: jobSetup?.submissionMethod,
+              destination: jobSetup?.submissionDestination,
             }}
-            requiresRelease={schedule ? schedule.requiresRelease : true}
-            requiresPaymentSchedule={schedule ? schedule.requiresPaymentSchedule : true}
+            requiresRelease={jobSetup ? jobSetup.requiresRelease : true}
+            requiresPaymentSchedule={jobSetup ? jobSetup.requiresPaymentSchedule : true}
             submissions={submissions}
             onSent={() => {
               reloadSubmissions()

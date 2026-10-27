@@ -53,12 +53,9 @@ export function findJobDocuments(documentsByJob, jobId, ids) {
 }
 
 /**
- * The documents of each Job and the document types it must have.
- *
- * A Job keeps the Billing Setup version it was created with for everything that
- * is billed, but its document checklist is not billing: `requirementVersionByJob`
- * (Job id -> setup version id) says which version each Job's checklist is read
- * from, usually its Builder's current one. A Job without an entry uses its own.
+ * The documents of each Job and the document types it must have, read from the Billing Setup
+ * version the Job is on. `requirementVersionByJob` (Job id -> setup version id) says which version
+ * each Job's checklist is read from; a Job without an entry uses its own.
  */
 export function buildJobDocumentLibrary(
   jobs,
@@ -107,15 +104,15 @@ export function buildJobDocumentLibrary(
 }
 
 /**
- * Which setup version each Job's document checklist is read from: the current
- * (ACTIVE) version of its Builder, so a change to the documents a Builder
- * requires reaches the Jobs it already has; the Job's own version when its
- * Builder has no current one.
+ * Which setup version each Job's document checklist is read from: the version the Job is on, the
+ * one it was created with or moved to with Change setup. A newer version of its Builder asks for
+ * other documents only for the Jobs that take it. A Job with no version of its own (none was
+ * recorded) reads its Builder's current (ACTIVE) one.
  */
 export function pickRequirementVersions(jobs, activeVersionByBuilder) {
   return Object.fromEntries(jobs.map((job) => [
     String(job.id),
-    activeVersionByBuilder.get(String(job.builderId)) ?? job.billingSetupVersionId,
+    job.billingSetupVersionId ?? activeVersionByBuilder.get(String(job.builderId)),
   ]))
 }
 

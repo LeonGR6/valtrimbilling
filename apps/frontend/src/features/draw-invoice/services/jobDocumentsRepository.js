@@ -91,11 +91,16 @@ export async function listJobDocumentLibrary(jobs) {
   const client = await requireSupabase()
   const jobIds = [...new Set(jobs.map(({ id }) => Number(id)))]
 
-  // A Job's document checklist follows its Builder's current Billing Setup, not
-  // the version the Job was created with (that one still decides billing). The
-  // documents and the Builders' current versions are read together.
+  // A Job's document checklist follows the Billing Setup version the Job is on. Only a Job with no
+  // version of its own needs its Builder's current one, so the Builders of those are read, together
+  // with the documents.
   const builderIds = [
-    ...new Set(jobs.map(({ builderId }) => Number(builderId)).filter(Number.isFinite)),
+    ...new Set(
+      jobs
+        .filter(({ billingSetupVersionId }) => billingSetupVersionId == null)
+        .map(({ builderId }) => Number(builderId))
+        .filter(Number.isFinite),
+    ),
   ]
   const documentRequest = client
     .from('job_documents')

@@ -81,11 +81,68 @@ const FIELD_LABELS = {
   notes: 'Notes',
 }
 
+// The parts of the form, in the order they are filled, and what each is called on screen.
+export const SETUP_SECTIONS = {
+  builder: 'Builder',
+  draws: 'Draws',
+  hardware: 'Hardware and Utility',
+  cycle: 'Billing cycle',
+  deductions: 'Deductions',
+  submission: 'Documents and submission',
+}
+
+const SECTION_OF_FIELD = {
+  builderId: 'builder',
+  draws: 'draws',
+  optionsBillingDrawIndex: 'draws',
+  separateHardwarePrice: 'hardware',
+  hardwareBillingMode: 'hardware',
+  hardwareEventPercentages: 'hardware',
+  utilityBuilding: 'hardware',
+  utilityBillingMode: 'hardware',
+  utilityEventPercentages: 'hardware',
+  frequency: 'cycle',
+  anyDate: 'cycle',
+  cutoffDay: 'cycle',
+  cutoffDays: 'cycle',
+  cutoffWeekday: 'cycle',
+  paymentTermsDays: 'cycle',
+  retentionEnabled: 'deductions',
+  retentionPercentage: 'deductions',
+  retentionReleaseScope: 'deductions',
+  ocipWrapEnabled: 'deductions',
+  ocipWrapPercentage: 'deductions',
+}
+
 /**
- * What stops the form from being saved, as short lines a person can act on, from the issues the
- * schema reports (`schema.safeParse(values).error.issues`). The same issue is listed once.
+ * Where an issue lives on the form: the part it belongs to, and the name of the field to take the
+ * person to. `path` is the path the schema reports (`['draws', 2, 'percentage']`). A problem that
+ * belongs to the whole list of Draws (their total) leads to the first percentage.
  */
-export function describeFormIssues(issues = [], values = {}) {
+export function locateFormIssue(path = []) {
+  const [field, index, detail] = path
+  const section = SECTION_OF_FIELD[field] ?? 'submission'
+
+  if (field === 'draws') {
+    if (index === undefined) return { section, name: 'draws.0.percentage' }
+    return { section, name: `draws.${index}.${detail ?? 'percentage'}` }
+  }
+  if (field === 'hardwareEventPercentages') {
+    return { section, name: `hardwareEventPercentages.${index ?? 'EXT'}` }
+  }
+  if (field === 'utilityEventPercentages') {
+    return { section, name: `utilityEventPercentages.${index ?? 'EXT'}` }
+  }
+  if (field === 'cutoffDays') return { section, name: 'cutoffDays.0' }
+  return { section, name: field }
+}
+
+/**
+ * What stops the form from being saved, as short lines a person can act on, each with where it is
+ * on the form, from the issues the schema reports (`schema.safeParse(values).error.issues`). The
+ * same line is listed once.
+ */
+export function describeFormIssueTargets(issues = [], values = {}) {
   const drawTotal = (values.draws ?? []).reduce((sum, draw) => sum + (toNumber(draw?.percentage) ?? 0), 0)
   const seen = new Set()
   const lines = []
@@ -106,9 +163,57 @@ export function describeFormIssues(issues = [], values = {}) {
     }
     if (!seen.has(text)) {
       seen.add(text)
-      lines.push(text)
+      lines.push({ text, ...locateFormIssue(issue.path) })
     }
   }
 
   return lines
+}
+
+/** The same lines as plain text, for the places that only say what is missing. */
+export function describeFormIssues(issues = [], values = {}) {
+  return describeFormIssueTargets(issues, values).map(({ text }) => text)
+}
+
+/** How many lines each part of the form has: `{ draws: 2, cycle: 1 }`. */
+export function countIssuesBySection(targets = []) {
+  return targets.reduce((counts, { section }) => ({ ...counts, [section]: (counts[section] ?? 0) + 1 }), {})
+}
+
+// What the database says when it refuses a setup, in the words of the form and tied to the field it
+// is about. The database speaks of its own rules, sometimes in Spanish; a person needs the field.
+const SERVER_REASONS = [
+  [/already has an active billing setup|select an active builder/iu, 'builderId', 'builder',
+    (message) => (/already has/iu.test(message)
+      ? 'This builder already has an active billing setup.'
+      : 'Select an active builder that still exists.')],
+  [/porcentajes de los draws deben sumar 100/iu, 'draws.0.percentage', 'draws', () => 'Draw percentages must total exactly 100%.'],
+  [/entre 2 y 5 draws/iu, 'draws.0.percentage', 'draws', () => 'Configure between 2 and 5 draws.'],
+  [/event type EXT, DM o HW/iu, 'draws.0.eventType', 'draws', () => 'Every Draw needs an event: EXT, DM or HW.'],
+  [/draw lag needs another draw/iu, 'draws.0.percentage', 'draws', () => 'A Draw lag needs another Draw with the same event.'],
+  [/draws deben ser consecutivos/iu, 'draws.0.percentage', 'draws', () => 'The Draws must be numbered one after another.'],
+  [/draw configurado para options/iu, 'optionsBillingDrawIndex', 'draws', () => 'Select one of the configured Draws to bill Options.'],
+  [/draw configurado para hardware/iu, 'hardwareEventPercentages.EXT', 'hardware', () => 'The Draw set for Hardware does not exist.'],
+  [/hardware event percentages must total|separate hardware setups must allocate/iu, 'hardwareEventPercentages.EXT', 'hardware',
+    () => 'Hardware event percentages must total exactly 100%.'],
+  [/utility (event percentages|allocation)/iu, 'utilityEventPercentages.EXT', 'hardware',
+    (message) => (/total/iu.test(message)
+      ? 'Utility event percentages must total exactly 100%.'
+      : 'Every Utility allocation needs a Draw with that event.')],
+  [/conditional final release/iu, 'finalReleaseScope', 'submission',
+    (message) => (/needs release/iu.test(message)
+      ? 'The Conditional Final Release needs a Release to be required.'
+      : 'Select where the Conditional Final Release applies.')],
+]
+
+/**
+ * What a refused save says, and where it belongs: `{ text, name, section }`, with `name` and
+ * `section` null when the message is about something no single field holds.
+ */
+export function explainSaveError(message) {
+  const text = String(message ?? '').trim()
+  for (const [pattern, name, section, say] of SERVER_REASONS) {
+    if (pattern.test(text)) return { text: say(text), name, section }
+  }
+  return { text, name: null, section: null }
 }

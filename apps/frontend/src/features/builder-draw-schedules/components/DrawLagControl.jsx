@@ -41,7 +41,12 @@ export default function DrawLagControl({ drawNumber, eventType, lag, error, onCh
   }
 
   return (
-    <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexWrap: 'wrap', rowGap: 0.5 }}>
+    <Stack
+      direction="row"
+      spacing={1}
+      data-setup-field={`draws.${drawNumber - 1}.lag`}
+      sx={{ alignItems: 'center', flexWrap: 'wrap', rowGap: 0.5 }}
+    >
       {current ? (
         <Chip
           size="small"

@@ -56,6 +56,7 @@ export default function DrawsSection() {
 
   return (
     <Section
+      id="draws"
       title="Draws"
       hint="A Draw is a share of the price billed when its Calendar event happens. They are billed in this order and must add up to 100%."
     >
@@ -115,6 +116,7 @@ export default function DrawsSection() {
                   <TextField
                     label="Percentage"
                     type="number"
+                    required
                     {...register(`draws.${index}.percentage`)}
                     error={Boolean(fieldErrors?.percentage)}
                     helperText={fieldErrors?.percentage?.message}
@@ -127,6 +129,7 @@ export default function DrawsSection() {
                       <TextField
                         {...eventField}
                         select
+                        required
                         label="Event"
                         error={Boolean(fieldErrors?.eventType)}
                         helperText={fieldErrors?.eventType ? 'Choose an event' : undefined}

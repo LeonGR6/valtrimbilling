@@ -2,7 +2,15 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { createBuilderDrawScheduleSchema } from '../src/features/builder-draw-schedules/schemas/builderDrawScheduleSchema.js'
 import { defaultBillingSettings, defaultDraws } from '../src/features/builder-draw-schedules/data/builderDrawSchedules.js'
-import { describeFormIssues, setupFromFormValues } from '../src/features/builder-draw-schedules/utils/setupForm.js'
+import {
+  SETUP_SECTIONS,
+  countIssuesBySection,
+  describeFormIssueTargets,
+  describeFormIssues,
+  explainSaveError,
+  locateFormIssue,
+  setupFromFormValues,
+} from '../src/features/builder-draw-schedules/utils/setupForm.js'
 import { describeSetupFigures, diffSetups } from '../src/features/builder-draw-schedules/utils/setupSummary.js'
 
 const blank = () => ({
@@ -99,4 +107,82 @@ test('the form compares with the setup being edited, field by field', () => {
     edited.rows.filter(({ changed }) => changed).map(({ label, from, to }) => [label, from, to]),
     [['OCIP / WRAP', 'Off', '1.5%'], ['Payment terms', 'Net 30 days', 'Net 45 days']],
   )
+})
+
+test('an issue says which part of the form it is in and which field to take the person to', () => {
+  assert.deepEqual(locateFormIssue(['builderId']), { section: 'builder', name: 'builderId' })
+  assert.deepEqual(locateFormIssue(['draws', 2, 'percentage']), { section: 'draws', name: 'draws.2.percentage' })
+  assert.deepEqual(locateFormIssue(['draws', 1, 'eventType']), { section: 'draws', name: 'draws.1.eventType' })
+  assert.deepEqual(locateFormIssue(['draws', 0, 'lag']), { section: 'draws', name: 'draws.0.lag' })
+  // The total of the Draws belongs to no single Draw: it leads to the first percentage.
+  assert.deepEqual(locateFormIssue(['draws']), { section: 'draws', name: 'draws.0.percentage' })
+  assert.deepEqual(locateFormIssue(['optionsBillingDrawIndex']), { section: 'draws', name: 'optionsBillingDrawIndex' })
+  assert.deepEqual(locateFormIssue(['hardwareEventPercentages']), { section: 'hardware', name: 'hardwareEventPercentages.EXT' })
+  assert.deepEqual(locateFormIssue(['utilityEventPercentages', 'DM']), { section: 'hardware', name: 'utilityEventPercentages.DM' })
+  assert.deepEqual(locateFormIssue(['cutoffDays']), { section: 'cycle', name: 'cutoffDays.0' })
+  assert.deepEqual(locateFormIssue(['cutoffDay']), { section: 'cycle', name: 'cutoffDay' })
+  assert.deepEqual(locateFormIssue(['paymentTermsDays']), { section: 'cycle', name: 'paymentTermsDays' })
+  assert.deepEqual(locateFormIssue(['retentionPercentage']), { section: 'deductions', name: 'retentionPercentage' })
+  assert.deepEqual(locateFormIssue(['ocipWrapPercentage']), { section: 'deductions', name: 'ocipWrapPercentage' })
+  assert.deepEqual(locateFormIssue(['finalReleaseScope']), { section: 'submission', name: 'finalReleaseScope' })
+  assert.deepEqual(locateFormIssue(['submissionDestination']), { section: 'submission', name: 'submissionDestination' })
+  assert.deepEqual(locateFormIssue([]), { section: 'submission', name: undefined })
+  assert.deepEqual(Object.keys(SETUP_SECTIONS), ['builder', 'draws', 'hardware', 'cycle', 'deductions', 'submission'])
+})
+
+test('every line the form lists can be found on the form, with its part counted', () => {
+  const values = {
+    ...filled(),
+    requiresRelease: true,
+    finalReleaseScope: '',
+    retentionEnabled: true,
+    retentionPercentage: 0,
+    frequency: 'SEMIMONTHLY',
+    cutoffDays: [10, 10],
+    submissionMethod: 'EMAIL',
+    submissionDestination: '',
+  }
+  const targets = describeFormIssueTargets(issuesOf(values), values)
+  const byText = Object.fromEntries(targets.map(({ text, name, section }) => [text, { name, section }]))
+
+  assert.deepEqual(byText['Release: Select where the Conditional Final Release applies'], { name: 'finalReleaseScope', section: 'submission' })
+  assert.deepEqual(byText['Retention: Enter the retention percentage'], { name: 'retentionPercentage', section: 'deductions' })
+  assert.deepEqual(byText['Cutoff: The two cutoff days must be different'], { name: 'cutoffDays.0', section: 'cycle' })
+  assert.deepEqual(byText['Submission: Enter the submission email'], { name: 'submissionDestination', section: 'submission' })
+  assert.deepEqual(countIssuesBySection(targets), { submission: 2, deductions: 1, cycle: 1 })
+  // The plain lines are the same ones.
+  assert.deepEqual(describeFormIssues(issuesOf(values), values), targets.map(({ text }) => text))
+  assert.deepEqual(countIssuesBySection([]), {})
+})
+
+test('a refused save names the field it is about, in the words of the form', () => {
+  assert.deepEqual(explainSaveError('Hardware event percentages must total 100'), {
+    text: 'Hardware event percentages must total exactly 100%.',
+    name: 'hardwareEventPercentages.EXT',
+    section: 'hardware',
+  })
+  // The database sometimes answers in Spanish.
+  assert.deepEqual(explainSaveError('Los porcentajes de los draws deben sumar 100'), {
+    text: 'Draw percentages must total exactly 100%.',
+    name: 'draws.0.percentage',
+    section: 'draws',
+  })
+  assert.equal(explainSaveError('La configuracion debe tener entre 2 y 5 draws').section, 'draws')
+  assert.equal(explainSaveError('El draw configurado para options no existe').name, 'optionsBillingDrawIndex')
+  assert.equal(explainSaveError('Select Per Phase, Per Building or Per Project for the Conditional Final Release').name, 'finalReleaseScope')
+  assert.equal(
+    explainSaveError('The Conditional Final Release scope needs Release to be required to submit').text,
+    'The Conditional Final Release needs a Release to be required.',
+  )
+  assert.equal(explainSaveError('Every Utility allocation needs a matching Draw event').text, 'Every Utility allocation needs a Draw with that event.')
+  assert.equal(explainSaveError('Utility event percentages must total 100').text, 'Utility event percentages must total exactly 100%.')
+  assert.equal(explainSaveError('This Builder already has an active billing setup.').name, 'builderId')
+
+  // Something no field holds is said as it is, with nowhere to point.
+  assert.deepEqual(explainSaveError('You do not have permission to change Builder billing setups.'), {
+    text: 'You do not have permission to change Builder billing setups.',
+    name: null,
+    section: null,
+  })
+  assert.deepEqual(explainSaveError(''), { text: '', name: null, section: null })
 })

@@ -39,6 +39,7 @@ export default function SubmissionSection() {
 
   return (
     <Section
+      id="submission"
       title="Documents and submission"
       hint="What each Package needs, and how it is sent to the builder."
     >

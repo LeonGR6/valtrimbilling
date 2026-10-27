@@ -29,6 +29,7 @@ export default function DeductionsSection() {
 
   return (
     <Section
+      id="deductions"
       title="Deductions"
       hint="What the builder holds back from every Package."
     >

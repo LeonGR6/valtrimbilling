@@ -1,5 +1,6 @@
 import { requireSupabase } from '../../../services/api.js'
 import {
+  setupSaveErrorMessage,
   toBuilderBillingSetupRpc,
   toBuilderDrawSchedule,
 } from './builderBillingSetupRecord.js'
@@ -61,31 +62,7 @@ const DOCUMENT_COLUMNS = [
 function throwRepositoryError(error) {
   if (!error) return
 
-  if (error.code === '42501') {
-    throw new Error('You do not have permission to change Builder billing setups.', {
-      cause: error,
-    })
-  }
-
-  if (error.code === '23503') {
-    throw new Error('Select an active Builder that still exists.', { cause: error })
-  }
-
-  if (error.code === '23505') {
-    throw new Error('This Builder already has an active billing setup.', {
-      cause: error,
-    })
-  }
-
-  if (error.code === '23514') {
-    throw new Error('Review the billing frequency, draws, deductions and submission details.', {
-      cause: error,
-    })
-  }
-
-  throw new Error(error.message || 'The Builder billing setup request failed.', {
-    cause: error,
-  })
+  throw new Error(setupSaveErrorMessage(error), { cause: error })
 }
 
 async function hydrateBillingSetupVersions(client, versions) {

@@ -83,6 +83,8 @@ export default function BuilderDrawSchedules() {
   const [dialogState, setDialogState] = useState(null)
   const [deactivateTarget, setDeactivateTarget] = useState(null)
   const [notice, setNotice] = useState(null)
+  // Why the last save was refused. It stays in the dialog, with the form, until it is fixed or closed.
+  const [saveError, setSaveError] = useState(null)
   const [submitting, setSubmitting] = useState(false)
   const buildersById = useMemo(
     () => new Map(builders.map((builder) => [builder.id, builder])),
@@ -91,6 +93,7 @@ export default function BuilderDrawSchedules() {
 
   const handleSave = async (form) => {
     setSubmitting(true)
+    setSaveError(null)
     try {
       await saveBuilderBillingSetup(form)
       setNotice({
@@ -100,8 +103,8 @@ export default function BuilderDrawSchedules() {
           : 'Builder setup created and activated.',
       })
       setDialogState(null)
-    } catch (saveError) {
-      setNotice({ severity: 'error', message: saveError.message })
+    } catch (failure) {
+      setSaveError({ message: failure.message })
     } finally {
       setSubmitting(false)
     }
@@ -228,9 +231,10 @@ export default function BuilderDrawSchedules() {
           schedules={schedules}
           builders={builders}
           initialBuilderId={dialogState.builderId ?? ''}
-          onClose={submitting ? undefined : () => setDialogState(null)}
+          onClose={submitting ? undefined : () => { setDialogState(null); setSaveError(null) }}
           onSave={handleSave}
           submitting={submitting}
+          error={saveError}
         />
       )}
 

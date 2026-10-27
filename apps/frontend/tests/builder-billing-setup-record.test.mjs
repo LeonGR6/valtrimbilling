@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
+  setupSaveErrorMessage,
   toBuilderBillingSetupRpc,
   toBuilderDrawSchedule,
 } from '../src/features/builder-draw-schedules/services/builderBillingSetupRecord.js'
@@ -294,4 +295,27 @@ test('each setup version requires only its own documents when several are loaded
   // Unchecking the Release also drops the Conditional Final scope that depends on it.
   assert.equal(first.finalReleaseScope, 'PROJECT')
   assert.equal(second.finalReleaseScope, '')
+})
+
+test('a refused save keeps what the database says about a rule it checks, and not about a table', () => {
+  // A rule the database checks on purpose says what is wrong.
+  assert.equal(
+    setupSaveErrorMessage({ code: '23514', message: 'Hardware event percentages must total 100' }),
+    'Hardware event percentages must total 100',
+  )
+  // A plain constraint of a table says nothing a person can use.
+  assert.equal(
+    setupSaveErrorMessage({ code: '23514', message: 'new row for relation "billing_setup_versions" violates check constraint "x"' }),
+    'Review the billing frequency, draws, deductions and submission details.',
+  )
+  assert.equal(
+    setupSaveErrorMessage({ code: '23514', message: '' }),
+    'Review the billing frequency, draws, deductions and submission details.',
+  )
+  assert.equal(setupSaveErrorMessage({ code: '23505', message: 'duplicate key value' }), 'This Builder already has an active billing setup.')
+  assert.equal(setupSaveErrorMessage({ code: '23503', message: 'x' }), 'Select an active Builder that still exists.')
+  assert.equal(setupSaveErrorMessage({ code: '42501', message: 'x' }), 'You do not have permission to change Builder billing setups.')
+  assert.equal(setupSaveErrorMessage({ message: 'Network down' }), 'Network down')
+  assert.equal(setupSaveErrorMessage({}), 'The Builder billing setup request failed.')
+  assert.equal(setupSaveErrorMessage(null), 'The Builder billing setup request failed.')
 })

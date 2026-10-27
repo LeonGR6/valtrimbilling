@@ -73,6 +73,7 @@ export default function HardwareUtilitySection() {
 
   return (
     <Section
+      id="hardware"
       title="Hardware and Utility"
       hint="Two things this builder may price apart from the Plan."
     >

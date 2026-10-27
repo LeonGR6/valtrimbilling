@@ -5,14 +5,25 @@ import { useFormContext, useWatch } from 'react-hook-form'
 import { setupFromFormValues } from '../../utils/setupForm.js'
 import { diffSetups } from '../../utils/setupSummary.js'
 import BillingSetupSummary from '../BillingSetupSummary.jsx'
+import IssueList from './IssueList.jsx'
 
-function Status({ issues, blockedByNoChange }) {
+function Status({ issues, blockedByNoChange, attempted, onSelectIssue }) {
   const ready = issues.length === 0 && !blockedByNoChange
   const Icon = ready ? CheckCircleRoundedIcon : ErrorOutlineRoundedIcon
   const color = ready ? 'success.main' : issues.length > 0 ? 'error.main' : 'text.secondary'
+  // After the person tried to save, what is wrong is the thing to look at.
+  const alarmed = attempted && issues.length > 0
 
   return (
-    <Box sx={{ border: 1, borderColor: ready ? 'success.main' : 'divider', borderRadius: 2, px: 1.75, py: 1.25 }}>
+    <Box
+      sx={{
+        border: alarmed ? 2 : 1,
+        borderColor: ready ? 'success.main' : alarmed ? 'error.main' : 'divider',
+        borderRadius: 2,
+        px: alarmed ? 'calc(14px - 1px)' : '14px',
+        py: alarmed ? 'calc(10px - 1px)' : '10px',
+      }}
+    >
       <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
         <Icon fontSize="small" sx={{ color }} />
         <Typography fontWeight={800} aria-live="polite">
@@ -24,12 +35,11 @@ function Status({ issues, blockedByNoChange }) {
         </Typography>
       </Stack>
       {issues.length > 0 && (
-        <Box component="ul" sx={{ m: 0, mt: 0.75, pl: 2.5 }}>
-          {issues.map((issue) => (
-            <Typography key={issue} component="li" variant="body2" color="text.secondary" sx={{ overflowWrap: 'anywhere' }}>
-              {issue}
-            </Typography>
-          ))}
+        <Box sx={{ mt: 0.75 }}>
+          <IssueList items={issues} onSelect={onSelectIssue} />
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.75 }}>
+            Select one to go to it.
+          </Typography>
         </Box>
       )}
     </Box>
@@ -71,10 +81,11 @@ function Changes({ rows, fromVersion }) {
 }
 
 /**
- * Beside the form (under it on a phone): whether the setup can be saved and what is missing,
+ * Beside the form (under it on a phone): whether the setup can be saved and what is missing (each
+ * line leads to its field),
  * for an edit what differs from the version being edited, and the setup as it stands.
  */
-export default function SetupLivePanel({ current, issues, isDirty }) {
+export default function SetupLivePanel({ current, issues, isDirty, attempted = false, onSelectIssue = () => {} }) {
   const { control } = useFormContext()
   const values = useWatch({ control })
   const setup = setupFromFormValues(values)
@@ -82,7 +93,12 @@ export default function SetupLivePanel({ current, issues, isDirty }) {
 
   return (
     <Stack spacing={2}>
-      <Status issues={issues} blockedByNoChange={Boolean(current) && !isDirty} />
+      <Status
+        issues={issues}
+        blockedByNoChange={Boolean(current) && !isDirty}
+        attempted={attempted}
+        onSelectIssue={onSelectIssue}
+      />
       {diff && <Changes rows={diff.rows} fromVersion={current.versionNumber} />}
       <BillingSetupSummary setup={setup} title="Summary" compact hideVersion />
     </Stack>

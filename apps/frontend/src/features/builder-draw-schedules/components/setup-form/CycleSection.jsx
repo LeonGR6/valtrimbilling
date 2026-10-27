@@ -107,6 +107,7 @@ export default function CycleSection() {
 
   return (
     <Section
+      id="cycle"
       title="Billing cycle"
       hint="When Packages are cut off, and when the builder pays."
     >
@@ -148,6 +149,7 @@ export default function CycleSection() {
         <TextField
           label="Cutoff day"
           type="number"
+          required
           {...register('cutoffDay')}
           error={Boolean(errors.cutoffDay)}
           helperText={errors.cutoffDay?.message ?? 'Day of the month'}
@@ -161,6 +163,7 @@ export default function CycleSection() {
           <TextField
             label="First cutoff day"
             type="number"
+            required
             {...register('cutoffDays.0')}
             error={Boolean(errors.cutoffDays)}
             helperText={errors.cutoffDays?.message ?? 'Day of the month'}
@@ -170,6 +173,7 @@ export default function CycleSection() {
           <TextField
             label="Second cutoff day"
             type="number"
+            required
             {...register('cutoffDays.1')}
             error={Boolean(errors.cutoffDays)}
             helperText="Day of the month"
@@ -199,6 +203,7 @@ export default function CycleSection() {
       <TextField
         label="Payment terms"
         type="number"
+        required
         {...register('paymentTermsDays')}
         error={Boolean(errors.paymentTermsDays)}
         helperText={errors.paymentTermsDays?.message ?? 'Days after the invoice date'}

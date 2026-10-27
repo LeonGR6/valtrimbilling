@@ -213,3 +213,23 @@ export function toBuilderBillingSetupRpc(schedule) {
       })),
   }
 }
+
+/**
+ * What the person is told when the database refuses to save a setup. A rule the database checks on
+ * purpose says what is wrong, so its own message is kept; a plain table constraint or an unknown
+ * error does not, and gets the general advice.
+ */
+export function setupSaveErrorMessage(error) {
+  const message = String(error?.message ?? '').trim()
+  const technical = /violates (check|foreign key|unique) constraint|duplicate key|^new row for relation/iu.test(message)
+
+  if (error?.code === '42501') return 'You do not have permission to change Builder billing setups.'
+  if (error?.code === '23503') return 'Select an active Builder that still exists.'
+  if (error?.code === '23505') return 'This Builder already has an active billing setup.'
+  if (error?.code === '23514') {
+    return message && !technical
+      ? message
+      : 'Review the billing frequency, draws, deductions and submission details.'
+  }
+  return message || 'The Builder billing setup request failed.'
+}

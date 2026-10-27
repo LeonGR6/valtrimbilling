@@ -96,6 +96,7 @@ import LotOptionPicker from './LotOptionPicker.jsx'
 import { getPhaseRowCounts, getSelectedOptionCount } from '../utils/phaseCounts.js'
 import SequenceSheetEmailDialog from './SequenceSheetEmailDialog.jsx'
 import OptionOrderChip from '../../purchase-orders/components/OptionOrderChip.jsx'
+import OptionsBillingNotice from '../../jobs/components/OptionsBillingNotice.jsx'
 import { usePurchaseOrderOptionLinks } from '../../purchase-orders/hooks/usePurchaseOrders.js'
 import { countOptionsWithOrder } from '../../purchase-orders/services/purchaseOrderRecord.js'
 import OptionsChangeEmailDialog from '../../purchase-orders/components/OptionsChangeEmailDialog.jsx'
@@ -243,6 +244,8 @@ function PhaseDetails({
         {orders.openError && (
           <Alert severity="error" sx={{ mb: 2.5 }}>{orders.openError}</Alert>
         )}
+        <OptionsBillingNotice job={job} optionCount={selectedOptionCount} sx={{ mb: 2.5 }} />
+
         <Box
           sx={{
             bgcolor: 'background.paper',

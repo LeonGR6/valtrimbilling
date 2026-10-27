@@ -74,6 +74,7 @@ import PlanToggle from './PlanToggle.jsx'
 import { PlanSortableList, SortablePlan } from './PlanSortable.jsx'
 import { JobContactsGrid } from './JobContacts.jsx'
 import JobBillingSetupCard from './JobBillingSetupCard.jsx'
+import OptionsBillingNotice from './OptionsBillingNotice.jsx'
 import BulkPlanOptionsMode from './bulk-edit/BulkPlanOptionsMode.jsx'
 import { describeBulkResult } from '../utils/bulkPlanOptions.js'
 import { getJobPlanUsage } from '../utils/planUsage.js'
@@ -1175,6 +1176,7 @@ export default function JobDetails({
         </Card>
 
         <JobBillingSetupCard job={job} />
+        <OptionsBillingNotice job={job} optionCount={getJobOptionCount(job)} sx={{ mb: 2.5 }} />
 
         {bulkOpen && canManagePlans ? (
           <BulkPlanOptionsMode

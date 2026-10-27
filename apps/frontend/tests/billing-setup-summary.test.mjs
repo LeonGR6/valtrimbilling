@@ -9,7 +9,11 @@ import {
   diffSetups,
   formatSetupPercentage,
 } from '../src/features/builder-draw-schedules/utils/setupSummary.js'
-import { canCreateWithSetup, resolveJobSetup } from '../src/features/jobs/utils/jobSetup.js'
+import {
+  canCreateWithSetup,
+  describeMissingOptionsBilling,
+  resolveJobSetup,
+} from '../src/features/jobs/utils/jobSetup.js'
 
 const setup = (overrides = {}) => ({
   id: 16,
@@ -193,4 +197,37 @@ test('details that only one version has are compared with a dash', () => {
 
   const lost = diffSetups(setup({ notes: 'Net of deposits' }), setup())
   assert.deepEqual(lost.rows.find(({ label }) => label === 'Notes').to, '—')
+})
+
+test('a Job with options is warned when its setup does not say where options are billed', () => {
+  const unset = setup({ optionsBillingDrawIndex: null })
+  const message = describeMissingOptionsBilling({ setup: unset, optionCount: 3 })
+
+  assert.match(message, /version 2/)
+  assert.match(message, /does not say in which Draw the options are billed/)
+  assert.match(message, /Builder's setup/)
+  assert.match(message, /Change setup/)
+})
+
+test('no warning without options, without a setup to read, or when a Draw bills options', () => {
+  const unset = setup({ optionsBillingDrawIndex: null })
+
+  assert.equal(describeMissingOptionsBilling({ setup: unset, optionCount: 0 }), null)
+  assert.equal(describeMissingOptionsBilling({ setup: null, optionCount: 4 }), null)
+  assert.equal(describeMissingOptionsBilling({ setup: setup({ optionsBillingDrawIndex: 0 }), optionCount: 4 }), null)
+  assert.equal(describeMissingOptionsBilling({ setup: setup({ optionsBillingDrawIndex: 2 }), optionCount: 4 }), null)
+})
+
+test('the warning points to the Builder\'s newer version when that one bills options', () => {
+  const own = setup({ id: 16, versionNumber: 1, optionsBillingDrawIndex: null })
+  const newer = setup({ id: 20, versionNumber: 3, optionsBillingDrawIndex: 1 })
+  const stillUnset = setup({ id: 21, versionNumber: 4, optionsBillingDrawIndex: null })
+
+  const pointsToNewer = describeMissingOptionsBilling({ setup: own, newerBuilderSetup: newer, optionCount: 2 })
+  assert.match(pointsToNewer, /version 1/)
+  assert.match(pointsToNewer, /current setup \(version 3\) does/)
+  assert.doesNotMatch(pointsToNewer, /Choose the Draw/)
+
+  const asksToConfigure = describeMissingOptionsBilling({ setup: own, newerBuilderSetup: stillUnset, optionCount: 2 })
+  assert.match(asksToConfigure, /Choose the Draw that bills Options/)
 })

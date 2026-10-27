@@ -31,6 +31,22 @@ export function resolveJobSetup({ job, builderId, builderSetups = [], jobSetups 
   return { setup: builderSetup, source: builderSetup ? 'builder' : 'none', newerBuilderSetup: null }
 }
 
+/**
+ * What to tell the person when a Job has Options but its setup does not say in which Draw they are
+ * billed: no Package would charge them. Null when there is nothing to warn about (no Options, no
+ * setup to read, or the setup already names the Draw).
+ */
+export function describeMissingOptionsBilling({ setup, newerBuilderSetup = null, optionCount = 0 }) {
+  if (!setup || !(optionCount > 0) || setup.optionsBillingDrawIndex != null) return null
+
+  const lead = `The billing setup this Job uses (version ${setup.versionNumber}) does not say in which Draw the options are billed, so no Package will charge them.`
+  if (newerBuilderSetup && newerBuilderSetup.optionsBillingDrawIndex != null) {
+    return `${lead} The Builder's current setup (version ${newerBuilderSetup.versionNumber}) does: use Change setup on this Job to move it there.`
+  }
+
+  return `${lead} Choose the Draw that bills Options in the Builder's setup, then use Change setup on this Job to move it to the new version.`
+}
+
 /** Whether a new Job can be created: its setup is known and the person confirmed that version. */
 export function canCreateWithSetup(setup, confirmedVersionId) {
   return Boolean(setup) && String(confirmedVersionId) === String(setup.id)

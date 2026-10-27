@@ -36,7 +36,12 @@ import { writeStoredValue } from '../../../../hooks/usePersistentState.js'
 import { buildPackageBundleFileName, mergePdfs } from '../../services/packageBundle.js'
 import { formatFileSize } from '../documents/jobDocumentTypes.js'
 import PackageSubmissionPanel from './PackageSubmissionPanel.jsx'
-import { describeSentPackage } from '../../services/packageSubmissionRecord.js'
+import {
+  describeSentPackage,
+  describeStatusAfterGenerate,
+  movesToAwaitingPaymentOnGenerate,
+} from '../../services/packageSubmissionRecord.js'
+import { markPackageSubmitted } from '../../services/packageSubmissionRepository.js'
 import { packageDocumentNumber } from '../../utils/packageInvoiceLabel.js'
 import DocumentThumbnail from './DocumentThumbnail.jsx'
 import { useQuickbooksInvoicePdf } from '../../hooks/useQuickbooksInvoicePdf.js'
@@ -206,7 +211,8 @@ const FIXES = {
  * The whole Package in one place, in the order it is joined: 1. the QuickBooks
  * invoice, 2. the Release and 3. the Payment Schedule. Each document can be
  * previewed, downloaded and left out on its own, and the ones that are in are
- * generated, saved to the Package and downloaded together as a single PDF.
+ * generated, saved to the Package and downloaded together as a single PDF. Generating a Draft
+ * Package also moves it to Awaiting payment (not when it was invoiced in QuickBooks Test).
  */
 export default function GeneratePackageDialog({
   packageRecord,
@@ -221,6 +227,8 @@ export default function GeneratePackageDialog({
   // The emails of this Package already sent, newest first, and a way to refresh them.
   submissions = [],
   onSent = null,
+  // Called once generating moved the Package to Awaiting payment, so its page shows the new status.
+  onGenerated = null,
   onClose,
 }) {
   const navigate = useNavigate()
@@ -449,12 +457,27 @@ export default function GeneratePackageDialog({
       saveToDisk(new Blob([bytes], { type: 'application/pdf' }), bundleFileName)
       finish('merging')
       setGenerated({ bytes, fileName: bundleFileName })
+
+      // A Package that is generated, with everything it needs, is on its way to the Builder: a Draft
+      // becomes Awaiting payment, as it does when it is emailed, printed or downloaded for the portal.
+      // The PDF is already downloaded, so a failure here only says so.
+      const statusResult = { attempted: movesToAwaitingPaymentOnGenerate(packageRecord, { isTestInvoice: isTestPackage }) }
+      if (statusResult.attempted) {
+        try {
+          statusResult.workflowStatus = await markPackageSubmitted(packageRecord.id)
+          onGenerated?.()
+        } catch {
+          statusResult.failed = true
+        }
+      }
+
       setDone({
         fileName: bundleFileName,
         pageCount,
         invoice: useInvoice,
         release: useRelease,
         schedule: useSchedule,
+        statusNote: describeStatusAfterGenerate(statusResult),
       })
     } catch (generationError) {
       setError(generationError.message)
@@ -886,6 +909,11 @@ export default function GeneratePackageDialog({
             >
               File name: {bundleFileName}
             </Typography>
+            {movesToAwaitingPaymentOnGenerate(packageRecord, { isTestInvoice: isTestPackage }) && (
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+                Generating the Package moves it to Awaiting payment.
+              </Typography>
+            )}
             {submissions.length > 0 && (
               <Alert severity="success" icon={<TaskAltRoundedIcon />} sx={{ mt: 2 }}>
                 {describeSentPackage(submissions)}
@@ -943,6 +971,7 @@ export default function GeneratePackageDialog({
                 Downloaded “{done.fileName}” ({done.pageCount} {done.pageCount === 1 ? 'page' : 'pages'})
                 {includedList.length > 0 ? ` with ${includedList.join(', ')}` : ''}.
                 {done.release || done.schedule ? ' The generated documents were saved to this Package.' : ''}
+                {done.statusNote}
               </Alert>
             )}
           </Paper>

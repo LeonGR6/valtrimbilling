@@ -835,6 +835,7 @@ export default function DrawPackageDetail() {
               reloadSubmissions()
               refreshDrawInvoicePackages()
             }}
+            onGenerated={refreshDrawInvoicePackages}
             onClose={() => setPackageDialogOpen(false)}
           />
         </Suspense>

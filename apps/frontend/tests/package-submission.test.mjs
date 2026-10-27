@@ -8,8 +8,10 @@ import {
   addRecipients,
   describeSentHistory,
   describeSentPackage,
+  describeStatusAfterGenerate,
   describeSubmission,
   fitsAsAttachment,
+  movesToAwaitingPaymentOnGenerate,
   recipientsProblem,
   splitRecipientText,
   toPackageSubmission,
@@ -109,5 +111,30 @@ test('the list of recipients says what is wrong with it', () => {
   assert.match(
     recipientsProblem(Array.from({ length: 11 }, (_, index) => `a${index}@builder.com`)),
     /up to 10/,
+  )
+})
+
+test('generating a Draft Package moves it, unless its invoice is from QuickBooks Test', () => {
+  assert.equal(movesToAwaitingPaymentOnGenerate({ status: 'DRAFT' }), true)
+  // A Package past Draft keeps its status, and a Test invoice is never a submission.
+  assert.equal(movesToAwaitingPaymentOnGenerate({ status: 'AWAITING_PAYMENT' }), false)
+  assert.equal(movesToAwaitingPaymentOnGenerate({ status: 'PAID_CLOSED' }), false)
+  assert.equal(movesToAwaitingPaymentOnGenerate({ status: 'CANCELLED' }), false)
+  assert.equal(movesToAwaitingPaymentOnGenerate({ status: 'DRAFT' }, { isTestInvoice: true }), false)
+  assert.equal(movesToAwaitingPaymentOnGenerate(null), false)
+})
+
+test('the generate dialog says what happened to the status, and nothing when it was not touched', () => {
+  assert.equal(describeStatusAfterGenerate(), '')
+  assert.equal(describeStatusAfterGenerate({ attempted: false }), '')
+  assert.equal(
+    describeStatusAfterGenerate({ attempted: true, workflowStatus: 'AWAITING_PAYMENT' }),
+    ' The Package is now Awaiting payment.',
+  )
+  // The database answers with the status it already had when the Package was past Draft.
+  assert.equal(describeStatusAfterGenerate({ attempted: true, workflowStatus: 'PAID_CLOSED' }), '')
+  assert.equal(
+    describeStatusAfterGenerate({ attempted: true, failed: true }),
+    ' Its status could not be updated: change it by hand.',
   )
 })

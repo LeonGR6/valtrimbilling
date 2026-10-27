@@ -32,6 +32,26 @@ export function describeSubmission(method, destination) {
   return { kind: 'PORTAL', title: 'Upload to the portal', target }
 }
 
+/**
+ * Whether generating the Package (the button that downloads it) moves it to Awaiting payment: it is
+ * still a Draft, and its invoice is a real one. A Package invoiced in QuickBooks Test can be
+ * generated to review it but never counts as submitted.
+ */
+export function movesToAwaitingPaymentOnGenerate(packageRecord, { isTestInvoice = false } = {}) {
+  return !isTestInvoice && packageRecord?.status === 'DRAFT'
+}
+
+/**
+ * What the generate dialog adds about the status once the Package is downloaded. `attempted` is
+ * whether the Package was to be moved; `workflowStatus` is what the database answered, and
+ * `failed` that it could not be updated (the PDF is downloaded all the same).
+ */
+export function describeStatusAfterGenerate({ attempted = false, workflowStatus = null, failed = false } = {}) {
+  if (!attempted) return ''
+  if (failed) return ' Its status could not be updated: change it by hand.'
+  return workflowStatus === 'AWAITING_PAYMENT' ? ' The Package is now Awaiting payment.' : ''
+}
+
 /** True when the PDF is small enough to travel as an email attachment. */
 export function fitsAsAttachment(bytes) {
   return bytes.length > 0 && bytes.length <= MAX_EMAIL_ATTACHMENT_BYTES

@@ -75,6 +75,7 @@ import { PlanSortableList, SortablePlan } from './PlanSortable.jsx'
 import { JobContactsGrid } from './JobContacts.jsx'
 import JobBillingSetupCard from './JobBillingSetupCard.jsx'
 import OptionsBillingNotice from './OptionsBillingNotice.jsx'
+import { filterPlansByQuery } from '../utils/planSearch.js'
 import BulkPlanOptionsMode from './bulk-edit/BulkPlanOptionsMode.jsx'
 import { describeBulkResult } from '../utils/bulkPlanOptions.js'
 import { getJobPlanUsage } from '../utils/planUsage.js'
@@ -949,22 +950,7 @@ export default function JobDetails({
   const bulkUsage = useMemo(() => getJobPlanUsage(job), [job])
   // While searching, a plan shows when it matches or when some of its options
   // do; then only the matching options are listed under it.
-  const visiblePlans = useMemo(() => {
-    const needle = query.trim().toLowerCase()
-    if (!needle) return plans
-
-    const matches = (...values) => values.join(' ').toLowerCase().includes(needle)
-
-    return plans.flatMap((plan) => {
-      const allOptions = plan.options ?? []
-      if (matches(plan.code, plan.name ?? '')) return [plan]
-
-      const options = allOptions.filter((option) => matches(option.code, option.description))
-      return options.length > 0
-        ? [{ ...plan, options, optionCount: allOptions.length }]
-        : []
-    })
-  }, [plans, query])
+  const visiblePlans = useMemo(() => filterPlansByQuery(plans, query), [plans, query])
   const deleteDependencies = deleteTarget
     ? deleteTarget.type === 'plan'
       ? getPlanLotDependencies(job, deleteTarget.plan.id)

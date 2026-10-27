@@ -37,6 +37,7 @@ import {
 } from '@mui/material'
 import ApartmentRoundedIcon from '@mui/icons-material/ApartmentRounded'
 import AttachMoneyRoundedIcon from '@mui/icons-material/AttachMoneyRounded'
+import ClearRoundedIcon from '@mui/icons-material/ClearRounded'
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined'
 import LayersRoundedIcon from '@mui/icons-material/LayersRounded'
 import LocationCityRoundedIcon from '@mui/icons-material/LocationCityRounded'
@@ -50,6 +51,8 @@ import { useBuilderDrawSchedules } from '../../builder-draw-schedules/context/us
 import { useBuilderContacts } from '../../builder-contacts/context/useBuilderContacts.js'
 import JobModuleNavigation from '../../jobs/components/JobModuleNavigation.jsx'
 import PlanToggle from '../../jobs/components/PlanToggle.jsx'
+import { filterPlansByQuery } from '../../jobs/utils/planSearch.js'
+import { CatalogEmptyState } from '../../../components/common/CatalogPage'
 import { optionPricingSummary } from '../utils/optionPricing.js'
 import {
   previewPhasePriceChanges,
@@ -369,7 +372,8 @@ function PlanPriceCard({
 }) {
   const options = plan.options ?? []
   const hardwareIsPriced = hasPrice(plan.hardwarePrice)
-  const summary = optionPricingSummary(options)
+  // A search narrows the Options shown, not what the Plan still needs priced.
+  const summary = optionPricingSummary(plan.allOptions ?? options)
 
   return (
     <Card component="article" variant="outlined" sx={{ overflow: 'hidden' }}>
@@ -541,7 +545,9 @@ function PlanPriceCard({
             <Chip
               size="small"
               variant="outlined"
-              label={`${options.length} ${options.length === 1 ? 'option' : 'options'}`}
+              label={plan.optionCount != null && plan.optionCount !== options.length
+                ? `${options.length} of ${plan.optionCount} options`
+                : `${options.length} ${options.length === 1 ? 'option' : 'options'}`}
             />
           </Stack>
 
@@ -714,6 +720,7 @@ export function PlanPricingSheet({
   submitting,
   separateHardwarePrice,
   worksheet,
+  searching = false,
   onEditPlan,
   onEditHardware,
   onEditOption,
@@ -722,8 +729,9 @@ export function PlanPricingSheet({
   // Every Plan starts closed, as in Plans & options; the person opens the ones
   // they are pricing and they stay open while prices are saved.
   const [openIds, setOpenIds] = useState(() => new Set())
-  // While prices are edited every Plan stays open: all the fields are in view.
-  const isOpen = (plan) => worksheet.editing || openIds.has(plan.id)
+  // While prices are edited every Plan stays open: all the fields are in view. So do they while
+  // searching, so the Options that matched can be seen.
+  const isOpen = (plan) => worksheet.editing || searching || openIds.has(plan.id)
   const allOpen = plans.length > 0 && plans.every(isOpen)
   const toggle = (plan) => setOpenIds((current) => {
     const next = new Set(current)
@@ -735,7 +743,7 @@ export function PlanPricingSheet({
 
   return (
     <Box data-price-sheet>
-      {plans.length > 1 && !worksheet.editing && (
+      {plans.length > 1 && !worksheet.editing && !searching && (
         <Stack direction="row" sx={{ justifyContent: 'flex-end', px: { xs: 2, md: 1.5 }, pt: 1 }}>
           <Button size="small" color="inherit" onClick={toggleAll}>
             {allOpen ? 'Collapse all' : 'Expand all'}
@@ -802,7 +810,8 @@ export function PlanPricingSheet({
               const planOptions = plan.options ?? []
               const hardwareIsPriced = hasPrice(plan.hardwarePrice)
               const expanded = isOpen(plan)
-              const summary = optionPricingSummary(planOptions)
+              // A search narrows the Options shown, not what the Plan still needs priced.
+              const summary = optionPricingSummary(plan.allOptions ?? planOptions)
 
               return (
                 <Fragment key={plan.id}>
@@ -1122,6 +1131,11 @@ export default function PlanPricing() {
   }
   const plans = job?.sequenceSheet?.plans ?? []
   const worksheet = usePriceWorksheet(plans, { separateHardwarePrice })
+  // The search only narrows what is listed: the worksheet keeps every price typed in the Plans and
+  // Options that are out of sight, and saves them all.
+  const [query, setQuery] = useState('')
+  const visiblePlans = filterPlansByQuery(plans, query)
+  const searching = Boolean(query.trim())
   const hasUnsavedChanges = worksheet.editing && worksheet.evaluation.changeCount > 0
   useEffect(() => {
     if (!hasUnsavedChanges) return undefined
@@ -1476,7 +1490,43 @@ export default function PlanPricing() {
                 Review each plan and set the price for the plan and every option below it.
               </Typography>
             </Box>
-            <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center' }}>
+            <Stack
+              direction="row"
+              spacing={1.5}
+              useFlexGap
+              sx={{ alignItems: 'center', flexWrap: 'wrap', width: { xs: '100%', sm: 'auto' } }}
+            >
+              {plans.length > 0 && (
+                <TextField
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  size="small"
+                  placeholder="Search plans or options"
+                  sx={{ width: { xs: '100%', sm: 300 } }}
+                  slotProps={{
+                    htmlInput: { 'aria-label': 'Search plans or options' },
+                    input: {
+                      startAdornment: (
+                        <InputAdornment position="start">
+                          <SearchRoundedIcon fontSize="small" color="action" />
+                        </InputAdornment>
+                      ),
+                      endAdornment: query ? (
+                        <InputAdornment position="end">
+                          <IconButton
+                            size="small"
+                            edge="end"
+                            aria-label="Clear search"
+                            onClick={() => setQuery('')}
+                          >
+                            <ClearRoundedIcon fontSize="small" />
+                          </IconButton>
+                        </InputAdornment>
+                      ) : null,
+                    },
+                  }}
+                />
+              )}
               <Chip
                 label={`${plans.length} ${plans.length === 1 ? 'plan' : 'plans'}`}
                 color="primary"
@@ -1499,11 +1549,22 @@ export default function PlanPricing() {
             </Stack>
           </Box>
 
-          {plans.length > 0 ? (
+          {plans.length > 0 && visiblePlans.length === 0 ? (
+            <CatalogEmptyState
+              title="No plans or options found"
+              description={`Nothing in Job ${job.code} matches “${query.trim()}”.`}
+              action={(
+                <Button size="small" variant="outlined" onClick={() => setQuery('')}>
+                  Clear search
+                </Button>
+              )}
+            />
+          ) : plans.length > 0 ? (
             <PlanPricingSheet
               builderId={resolvedBuilderId}
               jobId={job.id}
-              plans={plans}
+              plans={visiblePlans}
+              searching={searching}
               canManage={canManagePricing}
               submitting={submitting}
               separateHardwarePrice={separateHardwarePrice}

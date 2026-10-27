@@ -7,7 +7,7 @@ import {
   parseMoneyCents,
 } from "./paymentScheduleTypes.ts";
 import type { ReleasePdfContent } from "./releasePdf.ts";
-import type { PageContent, TextRun } from "./releaseTypes.ts";
+import type { PageContent, PageRule, TextRun } from "./releaseTypes.ts";
 
 // Hand-built pages in the two layouts, so the parsers are covered without the
 // private sample PDFs. Coordinates follow the real documents: amounts are right
@@ -256,4 +256,130 @@ Deno.test("a schedule without those rows, and a list, have no summary rows", () 
     ["DRAW 1 15% Frames Delivered", "Lot 01 - 2653 ...", "1,735.05"],
   ], "$1,735.05")));
   assertEquals(list.summaryRows, null);
+});
+
+// --- Previously Invoiced and This Request: every draw gets a box, with or without "$" ---
+
+// The page of matrixPage() as the points the boxes cover, for readable assertions.
+function points(rect: { x: number; y: number; w: number; h: number }) {
+  return {
+    left: rect.x * 612,
+    right: (rect.x + rect.w) * 612,
+    top: 792 - rect.y * 792,
+    bottom: 792 - (rect.y + rect.h) * 792,
+  };
+}
+
+function near(actual: number, expected: number, message: string) {
+  assert(Math.abs(actual - expected) < 0.01, `${message}: ${actual} is not ${expected}`);
+}
+
+function withoutSigns(source: PageContent) {
+  return { ...source, runs: source.runs.filter((r) => r.text.trim() !== "$") };
+}
+
+function rule(x0: number, y0: number, x1: number, y1: number): PageRule {
+  return { x0, y0, x1, y1 };
+}
+
+// The borders of the cells of matrixPage(): lines at x 168, 218.5 and 262 for the two
+// draws, and at y 510, 530 and 550 for the two rows.
+const CELL_COLUMNS = [168, 218.5, 262].map((x) => rule(x, 505, x + 0.5, 555));
+const CELL_ROWS = [510, 530, 550].map((y) => rule(40, y, 300, y + 0.5));
+
+function summaryOf(source: PageContent) {
+  const { summaryRows } = analyzePaymentScheduleContent(content(source));
+  assert(summaryRows);
+  return summaryRows;
+}
+
+Deno.test("cells without a $ are found from the borders of the table", () => {
+  const rows = summaryOf({
+    ...withoutSigns(matrixPage()),
+    rules: [...CELL_COLUMNS, ...CELL_ROWS],
+  });
+
+  for (const [row, bottom, top] of [
+    [rows.previouslyInvoiced, 531.1, 549.4],
+    [rows.thisRequest, 511.1, 529.4],
+  ] as const) {
+    assertEquals(row.map((target) => target.draw), [1, 2]);
+    const [first, second] = row.map((target) => points(target.rect));
+    // The whole cell, a little inside its borders.
+    near(first.left, 169.1, "draw 1 left");
+    near(first.right, 217.9, "draw 1 right");
+    near(second.left, 219.6, "draw 2 left");
+    near(second.right, 261.4, "draw 2 right");
+    near(first.bottom, bottom, "bottom");
+    near(first.top, top, "top");
+    near(second.bottom, bottom, "draw 2 bottom");
+  }
+});
+
+Deno.test("a $ in a cell moves its box to the right of the sign; the other cells keep their width", () => {
+  const source = withoutSigns(matrixPage());
+  const rows = summaryOf({
+    ...source,
+    // Only the first cell of This Request prints a $.
+    runs: [...source.runs, run("$", 172, 520, 5)],
+    rules: [...CELL_COLUMNS, ...CELL_ROWS],
+  });
+
+  const [first, second] = rows.thisRequest.map((target) => points(target.rect));
+  near(first.left, 178, "after the sign");
+  near(first.right, 217.9, "draw 1 right");
+  near(second.left, 219.6, "draw 2 whole cell");
+  // Previously Invoiced prints no $ at all.
+  near(points(rows.previouslyInvoiced[0].rect).left, 169.1, "no sign, whole cell");
+});
+
+Deno.test("without borders or $ the boxes follow the columns the amounts sit in", () => {
+  const rows = summaryOf(withoutSigns(matrixPage()));
+
+  for (const row of [rows.previouslyInvoiced, rows.thisRequest]) {
+    assertEquals(row.map((target) => target.draw), [1, 2]);
+    const [first, second] = row.map((target) => points(target.rect));
+    // Amounts end at 215 and 258: their cells end a few points after, one after the other.
+    assert(first.right > 215 && first.right <= 219, `draw 1 right ${first.right}`);
+    assert(second.right > 258 && second.right <= 262, `draw 2 right ${second.right}`);
+    assert(first.right <= second.left, "the boxes do not touch");
+    assert(second.left - first.right < 3, "and sit next to each other");
+    assert(first.right - first.left > 25 && second.right - second.left > 25, "wide enough for an amount");
+  }
+  assert(rows.thisRequest[0].rect.y > rows.previouslyInvoiced[0].rect.y);
+});
+
+Deno.test("a $ in only one cell does not leave the other draws without a box", () => {
+  const source = withoutSigns(matrixPage());
+  const rows = summaryOf({ ...source, runs: [...source.runs, run("$", 172, 520, 5)] });
+
+  assertEquals(rows.thisRequest.map((target) => target.draw), [1, 2]);
+  assertEquals(rows.previouslyInvoiced.map((target) => target.draw), [1, 2]);
+  const [first, second] = rows.thisRequest.map((target) => points(target.rect));
+  // The first box starts at its $ (the sign ends at 177, the box keeps its usual 1.5 margin);
+  // none reaches into the next cell.
+  assert(first.left > 176 && first.left < 178, `starts at ${first.left}`);
+  assert(first.right <= second.left + 0.01);
+});
+
+Deno.test("borders that only run across still give every draw a box, in the row's height", () => {
+  const rows = summaryOf({ ...withoutSigns(matrixPage()), rules: CELL_ROWS });
+
+  const [first, second] = rows.previouslyInvoiced.map((target) => points(target.rect));
+  assertEquals(rows.previouslyInvoiced.map((target) => target.draw), [1, 2]);
+  near(first.bottom, 531.1, "row bottom");
+  near(first.top, 549.4, "row top");
+  near(second.bottom, 531.1, "draw 2 row bottom");
+  assert(first.right <= second.left + 0.01);
+});
+
+Deno.test("a border too far away to be the cell's is not used", () => {
+  // A line across the whole page, 300 points from the draws, is not a cell border.
+  const rows = summaryOf({
+    ...withoutSigns(matrixPage()),
+    rules: [rule(5, 505, 5.5, 555), rule(600, 505, 600.5, 555), ...CELL_ROWS],
+  });
+
+  const [first] = rows.thisRequest.map((target) => points(target.rect));
+  assert(first.right - first.left < 60, `${first.right - first.left} wide`);
 });

@@ -1,6 +1,7 @@
-import { getDocumentProxy } from "npm:unpdf@^1.8.1";
+import { getDocumentProxy, getResolvedPDFJS } from "npm:unpdf@^1.8.1";
+import { rulesFromOperators } from "./paymentScheduleRules.ts";
 import { normalizeRotation } from "./releaseGeometry.ts";
-import type { PageContent, TextRun, Widget } from "./releaseTypes.ts";
+import type { PageContent, PageRule, TextRun, Widget } from "./releaseTypes.ts";
 
 // Reads a PDF with pdf.js (through unpdf) into the plain structures the pure
 // classifier and field detector work on. pdf.js is the only parser used for
@@ -58,6 +59,23 @@ export interface ReadPdfOptions {
   // How many pages get their text and fields read. A Release is one or two
   // pages; a Payment Schedule table can run over many.
   maxContentPages?: number;
+  // Decides, from the text of a page, whether its drawn lines (the borders of a
+  // table) are read too. Reading them means walking every drawing operator of the
+  // page, so only the pages that need them pay for it.
+  readRulesWhen?: (runs: TextRun[]) => boolean;
+}
+
+/** The lines a page draws; none when they cannot be read, so the page still analyzes. */
+async function readPageRules(
+  page: { getOperatorList(): Promise<{ fnArray: ArrayLike<number>; argsArray: ArrayLike<unknown> }> },
+  origin: [number, number],
+): Promise<PageRule[]> {
+  try {
+    const { OPS } = await getResolvedPDFJS();
+    return rulesFromOperators(await page.getOperatorList(), OPS, origin);
+  } catch {
+    return [];
+  }
 }
 
 export async function readReleasePdf(
@@ -119,7 +137,11 @@ export async function readReleasePdf(
         if (widget) widgets.push(widget);
       }
 
-      pages.push({ ...size, runs, widgets });
+      const rules = options.readRulesWhen?.(runs)
+        ? await readPageRules(page, [left, bottom])
+        : undefined;
+
+      pages.push({ ...size, runs, widgets, ...(rules ? { rules } : {}) });
     }
 
     return { pageCount: pdf.numPages, pageSizes, pages, textLength };

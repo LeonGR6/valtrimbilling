@@ -7,10 +7,22 @@ import type { ScheduleRect } from "./paymentScheduleTypes.ts";
 // size as `height`, so the box reaches below the baseline for descenders and
 // above it for the capitals.
 
-const PAD_X = 1.5;
-const PAD_Y = 1;
-const DESCENT = 0.25;
-const ASCENT = 0.85;
+export const PAD_X = 1.5;
+export const PAD_Y = 1;
+export const DESCENT = 0.25;
+export const ASCENT = 0.85;
+
+/** Normalized rectangle (top-left origin, displayed page) of a box in page points. */
+export function boxRect(
+  left: number,
+  bottom: number,
+  right: number,
+  top: number,
+  page: PageContent,
+): ScheduleRect {
+  const { x, y, w, h } = normalizeRect([left, bottom, right, top], page);
+  return { x, y, w, h };
+}
 
 /** Normalized rectangle (top-left origin, displayed page) around the runs. */
 export function runsRect(runs: TextRun[], page: PageContent): ScheduleRect {
@@ -21,6 +33,5 @@ export function runsRect(runs: TextRun[], page: PageContent): ScheduleRect {
   const top = Math.max(...runs.map((run) => run.y + run.height * ASCENT)) +
     PAD_Y;
 
-  const { x, y, w, h } = normalizeRect([left, bottom, right, top], page);
-  return { x, y, w, h };
+  return boxRect(left, bottom, right, top, page);
 }

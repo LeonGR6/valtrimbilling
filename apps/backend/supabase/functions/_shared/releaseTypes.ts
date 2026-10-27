@@ -41,6 +41,16 @@ export interface Widget {
   value: string;
 }
 
+// A straight line the page draws, like the border of a table cell, as the box it
+// covers: [x0, x1] by [y0, y1] in the same space as TextRun. A line is as thin as it
+// is drawn, so one of the two sides is a line's width.
+export interface PageRule {
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+}
+
 export interface PageContent {
   page: number;
   width: number;
@@ -49,6 +59,9 @@ export interface PageContent {
   rotation: number;
   runs: TextRun[];
   widgets: Widget[];
+  // The lines drawn on the page. Only read for pages that need them (a table's
+  // cells), so most pages leave it out.
+  rules?: PageRule[];
 }
 
 // Rectangle on the page as it is displayed (after rotation), normalized to

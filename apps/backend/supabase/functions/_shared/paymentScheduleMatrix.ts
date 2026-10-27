@@ -1,4 +1,6 @@
 import { runsRect } from "./paymentScheduleGeometry.ts";
+import { readSummaryTargets, summaryRowKind } from "./paymentScheduleSummary.ts";
+import type { SummaryColumns } from "./paymentScheduleSummary.ts";
 import {
   centsToDollars,
   groupRows,
@@ -13,7 +15,6 @@ import type {
   ScheduleIssue,
   ScheduleRow,
   SummaryRows,
-  SummaryTarget,
 } from "./paymentScheduleTypes.ts";
 import type { PageContent, TextRun } from "./releaseTypes.ts";
 
@@ -42,9 +43,6 @@ const COST_CODE_REACH = 20;
 // A run farther than this share of the narrowest column gap belongs to no column.
 const COLUMN_REACH = 0.6;
 const HEADER_ROWS = 2;
-const PREVIOUSLY_INVOICED = /^previously\s+invoiced$/iu;
-const THIS_REQUEST = /^this\s+request$/iu;
-const DOLLAR_SIGN = /^\$$/u;
 // How many rows below "Total Contract" are searched for the summary rows.
 const SUMMARY_SEARCH_ROWS = 6;
 
@@ -207,49 +205,6 @@ function moneyRun(runs: TextRun[]) {
   return runs.find((run) => parseMoneyCents(run.text) !== null) ?? null;
 }
 
-/**
- * The boxes of a summary row. Each draw's cell is marked with a "$" at its left
- * edge, so the value goes between that sign and the next cell. A "$" belongs to
- * the draw whose column is centered one half cell to its right.
- */
-function readSummaryTargets(
-  header: MatrixHeader,
-  row: ScheduleRow,
-  page: PageContent,
-): SummaryTarget[] {
-  const drawColumns = header.columns.filter((column) => column.kind === "draw");
-  const targets: SummaryTarget[] = [];
-
-  const signs = row.runs.filter((run) => DOLLAR_SIGN.test(run.text.trim()));
-  for (const [index, sign] of signs.entries()) {
-    const center = sign.x + header.pitch / 2;
-    let best: Column | null = null;
-    let bestDistance = Infinity;
-    for (const column of drawColumns) {
-      const distance = Math.abs(column.center - center);
-      if (distance < bestDistance) {
-        best = column;
-        bestDistance = distance;
-      }
-    }
-    if (!best || bestDistance > header.pitch / 2) continue;
-
-    // The cell ends where the next one starts; the last one is as wide as a
-    // typical column.
-    const left = sign.x + sign.width + 1;
-    const right = (signs[index + 1]?.x ?? sign.x + header.pitch) - 2;
-    if (right <= left) continue;
-
-    targets.push({
-      draw: best.draw!,
-      page: page.page,
-      rect: runsRect([{ ...sign, x: left, width: right - left }], page),
-    });
-  }
-
-  return targets.sort((a, b) => a.draw - b.draw);
-}
-
 export function parseMatrixSchedule(pages: PageContent[]): ParsedSchedule | null {
   const cells: ScheduleCell[] = [];
   const issues: ScheduleIssue[] = [];
@@ -265,6 +220,8 @@ export function parseMatrixSchedule(pages: PageContent[]): ParsedSchedule | null
 
   for (const page of pages) {
     const rows = groupRows(page.runs);
+    // The amounts of this page by draw: they show where each draw's text sits.
+    const amounts = new Map<number, TextRun[]>();
     // A page that repeats the header re-reads its columns; one that does not
     // keeps the previous page's.
     const found = findHeader(rows);
@@ -298,12 +255,17 @@ export function parseMatrixSchedule(pages: PageContent[]): ParsedSchedule | null
         }
 
         // The rows to fill sit just below the totals.
+        const columns: SummaryColumns = {
+          drawColumns: header.columns
+            .filter((column) => column.kind === "draw")
+            .map((column) => ({ draw: column.draw!, center: column.center })),
+          pitch: header.pitch,
+          amounts,
+        };
         for (const below of rows.slice(rows.indexOf(row) + 1, rows.indexOf(row) + 1 + SUMMARY_SEARCH_ROWS)) {
-          const label = below.runs[0]?.text.trim() ?? "";
-          if (PREVIOUSLY_INVOICED.test(label) && summary.previouslyInvoiced.length === 0) {
-            summary.previouslyInvoiced = readSummaryTargets(header, below, page);
-          } else if (THIS_REQUEST.test(label) && summary.thisRequest.length === 0) {
-            summary.thisRequest = readSummaryTargets(header, below, page);
+          const kind = summaryRowKind(below.runs[0]?.text ?? "");
+          if (kind && summary[kind].length === 0) {
+            summary[kind] = readSummaryTargets(columns, below, page);
           }
         }
         break;
@@ -316,6 +278,11 @@ export function parseMatrixSchedule(pages: PageContent[]): ParsedSchedule | null
           entry.run !== null
         );
       if (drawCells.length === 0) continue;
+      for (const { draw, run } of drawCells) {
+        const column = amounts.get(draw) ?? [];
+        column.push(run);
+        amounts.set(draw, column);
+      }
 
       if (reading.lot === "" || !LOT_VALUE.test(reading.lot)) {
         issues.push({

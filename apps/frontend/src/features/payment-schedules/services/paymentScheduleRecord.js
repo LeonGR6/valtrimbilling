@@ -236,9 +236,28 @@ function toSummaryTarget({ draw, page, rect }) {
   return { draw, page, rect: { x: rect.x, y: rect.y, w: rect.w, h: rect.h } }
 }
 
-/** The boxes the reviewer starts from: the confirmed ones, else those just found. */
+/**
+ * The boxes the reviewer starts from. A schedule that was never confirmed starts from
+ * what was found. A confirmed one keeps its boxes, except in a row where a new analysis
+ * finds a box for every draw the confirmed row has: that analysis reads the cells better
+ * (or finds more of them), so its boxes replace the old ones, and a row the confirmed
+ * schedule has none of is filled from it. The reviewer confirms again to store them.
+ */
 export function initialSummaryRows(template) {
-  return template.mapping?.summaryRows ?? template.summaryRows ?? null
+  const confirmed = template.mapping?.summaryRows ?? null
+  const found = template.summaryRows ?? null
+  if (!confirmed) return found
+  if (!found) return confirmed
+
+  const rows = {}
+  for (const key of ['previouslyInvoiced', 'thisRequest']) {
+    const kept = confirmed[key] ?? []
+    const detected = found[key] ?? []
+    const covered = kept.every(({ draw }) => detected.some((box) => box.draw === draw))
+    const chosen = detected.length > 0 && covered ? detected : kept
+    if (chosen.length > 0) rows[key] = chosen
+  }
+  return Object.keys(rows).length > 0 ? rows : null
 }
 
 export function buildMapping(layout, cells, summaryRows = null) {

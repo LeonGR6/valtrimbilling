@@ -227,17 +227,48 @@ const summary = {
   thisRequest: [{ draw: 1, page: 1, rect: { x: 0.3, y: 0.52, w: 0.05, h: 0.01 } }],
 }
 
-test('the summary rows come from the analysis, and the confirmed mapping wins', () => {
+test('the summary rows come from the analysis until a schedule is confirmed', () => {
   const found = toPaymentScheduleTemplate(row({ analysis: { summaryRows: summary } }))
   assert.deepEqual(initialSummaryRows(found), summary)
   assert.equal(initialSummaryRows(toPaymentScheduleTemplate(row())), null)
 
+  // Confirmed, and nothing new found: the confirmed boxes are the ones.
+  const confirmedRows = { thisRequest: [{ draw: 1, page: 1, rect: { x: 0.1, y: 0.1, w: 0.1, h: 0.1 } }] }
+  const confirmed = toPaymentScheduleTemplate(row({
+    mapping: { version: 1, layout: 'matrix', cells: [], summaryRows: confirmedRows },
+  }))
+  assert.deepEqual(initialSummaryRows(confirmed), confirmedRows)
+})
+
+test('a confirmed schedule keeps a box the new analysis no longer finds', () => {
   const confirmedRows = { thisRequest: [{ draw: 2, page: 1, rect: { x: 0.1, y: 0.1, w: 0.1, h: 0.1 } }] }
   const confirmed = toPaymentScheduleTemplate(row({
     analysis: { summaryRows: summary },
     mapping: { version: 1, layout: 'matrix', cells: [], summaryRows: confirmedRows },
   }))
-  assert.deepEqual(initialSummaryRows(confirmed), confirmedRows)
+
+  // This Request has a box for draw 2 and the analysis only finds draw 1: the confirmed one stays.
+  // Previously Invoiced was never confirmed, so it comes from the analysis.
+  assert.deepEqual(initialSummaryRows(confirmed), {
+    thisRequest: confirmedRows.thisRequest,
+    previouslyInvoiced: summary.previouslyInvoiced,
+  })
+})
+
+test('a new analysis that finds every draw of a confirmed schedule replaces its boxes', () => {
+  // Job 1317, Phase 4: only the first draw of This Request was found, because it was the only
+  // cell with a "$". The new analysis finds the five cells of both rows.
+  const box = (draw, x) => ({ draw, page: 1, rect: { x, y: 0.5, w: 0.07, h: 0.017 } })
+  const everyDraw = (y) => [1, 2, 3, 4, 5].map((draw) => ({ ...box(draw, 0.2 + draw * 0.1), rect: { x: 0.2 + draw * 0.1, y, w: 0.07, h: 0.017 } }))
+  const confirmed = toPaymentScheduleTemplate(row({
+    analysis: { summaryRows: { previouslyInvoiced: everyDraw(0.5), thisRequest: everyDraw(0.52) } },
+    mapping: { version: 1, layout: 'matrix', cells: [], summaryRows: { thisRequest: [box(1, 0.29)] } },
+  }))
+
+  assert.deepEqual(initialSummaryRows(confirmed), {
+    previouslyInvoiced: everyDraw(0.5),
+    thisRequest: everyDraw(0.52),
+  })
 })
 
 test('the stored mapping keeps the summary rows only when asked and only for a matrix', () => {

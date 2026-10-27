@@ -2,6 +2,7 @@ import { parseLineItemSchedule } from "./paymentScheduleLineItems.ts";
 import { parseMatrixSchedule } from "./paymentScheduleMatrix.ts";
 import { PaymentScheduleError } from "./paymentScheduleTypes.ts";
 import type { ParsedSchedule } from "./paymentScheduleTypes.ts";
+import { hasSummaryLabel } from "./paymentScheduleSummary.ts";
 import { MAX_ANALYZED_PAGES, readReleasePdf } from "./releasePdf.ts";
 import type { PageSize, ReleasePdfContent } from "./releasePdf.ts";
 
@@ -50,6 +51,9 @@ export function analyzePaymentScheduleContent(
 export async function analyzePaymentSchedulePdf(bytes: Uint8Array) {
   const content = await readReleasePdf(bytes, {
     maxContentPages: MAX_ANALYZED_PAGES,
+    // The cells of the Previously Invoiced and This Request rows are found by the
+    // borders of the table, so the pages that print those rows read their lines.
+    readRulesWhen: hasSummaryLabel,
   });
   return analyzePaymentScheduleContent(content);
 }

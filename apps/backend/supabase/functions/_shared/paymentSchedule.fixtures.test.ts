@@ -41,6 +41,8 @@ function cell(
 const MATRIX_1 = "Example Payment Schedule 1 Template.pdf";
 const LIST = "Example Payment Schedule 2 Template.pdf";
 const MATRIX_3 = "Example Payment Schedule 3 Template.pdf";
+// Phase 4 of Job 1317: only one of the ten Previously Invoiced / This Request cells prints a "$".
+const MATRIX_4 = "Example Payment Schedule 4 Without Dollar Signs.pdf";
 
 Deno.test({
   name: "fixture matrix 1: Phase 003, Lots 14 to 27, five draws",
@@ -180,5 +182,43 @@ Deno.test({
     // The highlight covers the whole row, not only the amount.
     const row = cell(analysis, "01", 1)!.rect;
     assert(row.x < 0.1 && row.x + row.w > 0.9);
+  },
+});
+
+Deno.test({
+  name: "fixture matrix 4: cells without a $ get their box too, inside the borders of the table",
+  ignore: !available(MATRIX_4),
+  async fn() {
+    const { summaryRows, pageSizes } = await analyze(MATRIX_4);
+    assert(summaryRows);
+    const { width, height } = pageSizes[0];
+
+    // The five draw cells, left and right border in PDF points, and the two rows (bottom, top).
+    const columns = [[174.3, 219], [219.4, 263.9], [264.3, 309], [309.5, 358.5], [358.9, 412.5]];
+    const rows = [
+      [summaryRows.previouslyInvoiced, 418.9, 437.4],
+      [summaryRows.thisRequest, 399.9, 418.4],
+    ] as const;
+
+    for (const [row, bottom, top] of rows) {
+      assertEquals(row.map((target) => target.draw), [1, 2, 3, 4, 5]);
+      for (const [index, target] of row.entries()) {
+        const [left, right] = columns[index];
+        const x0 = target.rect.x * width;
+        const x1 = (target.rect.x + target.rect.w) * width;
+        const yTop = height - target.rect.y * height;
+        const yBottom = height - (target.rect.y + target.rect.h) * height;
+        assertEquals(target.page, 1);
+        assert(x0 >= left && x1 <= right, `draw ${index + 1} x ${x0}-${x1} outside ${left}-${right}`);
+        assert(x1 - x0 > 25, `draw ${index + 1} is ${x1 - x0} wide`);
+        assert(yBottom >= bottom && yTop <= top, `draw ${index + 1} y ${yBottom}-${yTop}`);
+        assert(yTop - yBottom > 10, `draw ${index + 1} is ${yTop - yBottom} tall`);
+      }
+    }
+
+    // The only $ of the rows, in the first cell of This Request (it ends at x 182.3), stays
+    // outside its box.
+    assert(summaryRows.thisRequest[0].rect.x * width >= 182.3);
+    assert(summaryRows.previouslyInvoiced[0].rect.x * width < 178);
   },
 });

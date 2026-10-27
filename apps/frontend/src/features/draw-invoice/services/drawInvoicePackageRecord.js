@@ -471,6 +471,10 @@ export function toDrawInvoicePackage(
         phaseCode: row.phase_code ?? drawRow?.phase_code ?? null,
         building: hasOriginSnapshot ? row.building : (drawRow?.building ?? null),
         lotId: row.lot_id,
+        // The Lot and Draw whose line carries this option's amount, which a Retention Release
+        // points back to.
+        billingLotId: row.billing_lot_id ?? row.lot_id,
+        drawId: row.draw_id,
         lotNumber: row.lot_number ?? drawRow?.lot_number ?? '',
         planCode: row.plan_code ?? drawRow?.plan_code ?? null,
         optionId: row.option_id,

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import {
   Box,
   Button,
@@ -30,7 +30,11 @@ import {
 } from '../../../sequence-sheets/utils/phaseBuildingCodes.js'
 import { canCorrectDrawPackage } from '../../services/drawInvoicePackageRecord.js'
 import { describeJobDocumentProgress } from '../../services/jobDocumentRecord.js'
-import { formatPackageScopeEventTypes } from '../../utils/drawPackages.js'
+import {
+  describeRetentionSource,
+  formatPackageScopeEventTypes,
+  summarizeRetentionSource,
+} from '../../utils/drawPackages.js'
 import {
   formatBillingPeriod,
   formatCurrency,
@@ -224,6 +228,9 @@ export default function PackageTable({
   onAction,
   onClearFilters,
 }) {
+  // A Retention Release reads the options of the Packages it releases from.
+  const allRecords = useMemo(() => activeContexts.map(({ record }) => record), [activeContexts])
+
   return (
     <>
       <Box sx={{ bgcolor: 'background.paper', border: 1, borderColor: 'divider', borderRadius: 2, overflow: 'hidden' }}>
@@ -383,7 +390,7 @@ export default function PackageTable({
                       {record.packageType === 'PRICE_ADJUSTMENT'
                         ? `${record.priceAdjustment?.lineCount ?? 0} ${record.priceAdjustment?.lineCount === 1 ? 'line' : 'lines'}`
                         : record.packageType === 'RETENTION_RELEASE'
-                        ? `${record.retentionRelease?.sourceLines?.length ?? 0} source lines`
+                        ? describeRetentionSource(summarizeRetentionSource(record.retentionRelease, allRecords))
                         : summary.lotCount > 0 ? summary.lotRange : 'No Lots'}
                     </Typography>
                     {record.packageType === 'DRAW' && summary.utilityCount > 0 && (

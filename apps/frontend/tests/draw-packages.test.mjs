@@ -9,6 +9,7 @@ import {
   buildOptionChargeContext,
   buildPackageOptionHistory,
   buildUsedDrawSelections,
+  describeRetentionSource,
   drawSelectionKey,
   hardwareChargeKey,
   formatLotRange,
@@ -16,6 +17,7 @@ import {
   makePackageSelections,
   optionSelectionKey,
   summarizeDrawPackage,
+  summarizeRetentionSource,
   utilityChargeKey,
 } from '../src/features/draw-invoice/utils/drawPackages.js'
 import { testJobs } from './fixtures/jobs.mjs'
@@ -1321,4 +1323,61 @@ test('the preview amounts add up with a fractional OCIP / WRAP percentage', () =
     Math.round((summary.grossAmount - summary.retention - summary.wrapInsurance) * 100) / 100,
     summary.invoiceAmount,
   )
+})
+
+test('a Retention Release counts the Lots it releases and the Options billed in those lines', () => {
+  const release = {
+    sourceLines: [
+      { sourcePackageId: 10, sourceLotId: 101, sourceDrawId: 501 },
+      { sourcePackageId: 10, sourceLotId: 101, sourceDrawId: 502 },
+      { sourcePackageId: 10, sourceLotId: 102, sourceDrawId: 502 },
+      { sourcePackageId: 11, sourceLotId: 103, sourceDrawId: 502 },
+    ],
+    sourceHardwareLines: [
+      { sourcePackageId: 10, sourceLotId: 101, hardwareEventType: 'HW' },
+      { sourcePackageId: 10, sourceLotId: 104, hardwareEventType: 'HW' },
+    ],
+  }
+  const packages = [
+    {
+      id: 10,
+      persistedOptionLines: [
+        // Billed with Lot 101 in Draw 502: part of the release.
+        { lotId: 101, optionId: 1, billingLotId: 101, drawId: 502 },
+        { lotId: 101, optionId: 2, billingLotId: 101, drawId: 502 },
+        // An Option of Lot 102 billed in the line of Lot 101 counts once, with its own Lot.
+        { lotId: 102, optionId: 1, billingLotId: 101, drawId: 501 },
+        // Billed in a Draw the release does not point to.
+        { lotId: 101, optionId: 3, billingLotId: 101, drawId: 599 },
+      ],
+    },
+    { id: 11, persistedOptionLines: [{ lotId: 103, optionId: 1, billingLotId: 103, drawId: 502 }] },
+    // A Package the release does not come from.
+    { id: 12, persistedOptionLines: [{ lotId: 105, optionId: 1, billingLotId: 105, drawId: 502 }] },
+  ]
+
+  assert.deepEqual(summarizeRetentionSource(release, packages), { lotCount: 4, optionCount: 4 })
+})
+
+test('a Retention Release without options in its lines says zero Options', () => {
+  const release = {
+    sourceLines: [{ sourcePackageId: 10, sourceLotId: 101, sourceDrawId: 501 }],
+    sourceHardwareLines: [],
+  }
+
+  assert.deepEqual(summarizeRetentionSource(release, [{ id: 10, persistedOptionLines: [] }]), { lotCount: 1, optionCount: 0 })
+  assert.deepEqual(summarizeRetentionSource(release, []), { lotCount: 1, optionCount: 0 })
+  assert.deepEqual(summarizeRetentionSource(null, []), { lotCount: 0, optionCount: 0 })
+})
+
+test('an option line without its billing Lot is read as billed in its own Lot', () => {
+  const release = { sourceLines: [{ sourcePackageId: 10, sourceLotId: 101, sourceDrawId: 501 }] }
+  const packages = [{ id: 10, persistedOptionLines: [{ lotId: 101, optionId: 1, drawId: 501 }] }]
+
+  assert.equal(summarizeRetentionSource(release, packages).optionCount, 1)
+})
+
+test('the Retention Release is described by its Lots and Options', () => {
+  assert.equal(describeRetentionSource({ lotCount: 28, optionCount: 0 }), '28 Lots · 0 Options')
+  assert.equal(describeRetentionSource({ lotCount: 1, optionCount: 1 }), '1 Lot · 1 Option')
 })

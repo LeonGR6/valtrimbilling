@@ -48,6 +48,7 @@ import {
 import {
   buildPackageOptionHistory,
   summarizeDrawPackage,
+  summarizeRetentionSource,
 } from '../../utils/drawPackages.js'
 import { buildDrawWorksheet } from '../../utils/drawWorksheet.js'
 import {
@@ -262,6 +263,9 @@ export default function DrawPackageDetail() {
   )
   const isRetentionRelease = focusedPackage?.packageType === 'RETENTION_RELEASE'
   const isPriceAdjustment = focusedPackage?.packageType === 'PRICE_ADJUSTMENT'
+  const retentionSource = isRetentionRelease
+    ? summarizeRetentionSource(focusedPackage.retentionRelease, drawInvoicePackages)
+    : null
   // Neither has Lot / Draw cells: the Draw worksheet and its tables do not apply.
   const hasNoDrawCells = isRetentionRelease || isPriceAdjustment
   const focusedPackagePhases = focusedPackage?.retentionRelease?.scopeType === 'JOB'
@@ -600,9 +604,13 @@ export default function DrawPackageDetail() {
                       : `Job #${focusedJob.code}`,
                   },
                   {
-                    label: 'Source lines',
-                    value: focusedPackage.retentionRelease?.sourceLines?.length ?? 0,
+                    label: 'Lots billed',
+                    value: retentionSource.lotCount,
                     detail: `Cutoff ${formatDate(focusedPackage.retentionRelease?.sourceCutoffDate)}`,
+                  },
+                  {
+                    label: 'Options billed',
+                    value: retentionSource.optionCount,
                   },
                 ]}
                 lines={[

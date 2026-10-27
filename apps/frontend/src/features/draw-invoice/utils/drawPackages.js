@@ -48,6 +48,45 @@ function isAtOrAfterOptionsBillingDraw(drawIndex, optionsBillingDrawIndex) {
 const DRAW_EVENT_TYPES = new Set(['EXT', 'DM', 'HW'])
 const EVENT_TYPE_ORDER_INDEX = { EXT: 100, DM: 101, HW: 102 }
 
+/**
+ * What a Retention Release gives back, in what a person bills: the Lots whose retention it
+ * releases (draw and Hardware lines) and the Options that were billed in those same lines.
+ * `packages` are the Job's Packages, where the Options of the source Packages are read.
+ */
+export function summarizeRetentionSource(retentionRelease, packages = []) {
+  const drawLines = retentionRelease?.sourceLines ?? []
+  const hardwareLines = retentionRelease?.sourceHardwareLines ?? []
+  const lotIds = new Set([
+    ...drawLines.map((line) => String(line.sourceLotId)),
+    ...hardwareLines.map((line) => String(line.sourceLotId)),
+  ])
+  const sourceDraws = new Set(drawLines.map((line) => (
+    `${line.sourcePackageId}:${line.sourceLotId}:${line.sourceDrawId}`
+  )))
+  const sourcePackageIds = new Set(drawLines.map((line) => String(line.sourcePackageId)))
+  const options = new Set()
+
+  for (const record of packages) {
+    if (!sourcePackageIds.has(String(record.id))) continue
+    for (const option of record.persistedOptionLines ?? []) {
+      const billingLotId = option.billingLotId ?? option.lotId
+      if (sourceDraws.has(`${record.id}:${billingLotId}:${option.drawId}`)) {
+        options.add(`${option.lotId}:${option.optionId}`)
+      }
+    }
+  }
+
+  return { lotCount: lotIds.size, optionCount: options.size }
+}
+
+/** "28 Lots · 3 Options": the one-line version of summarizeRetentionSource. */
+export function describeRetentionSource({ lotCount, optionCount }) {
+  return [
+    `${lotCount} ${lotCount === 1 ? 'Lot' : 'Lots'}`,
+    `${optionCount} ${optionCount === 1 ? 'Option' : 'Options'}`,
+  ].join(' · ')
+}
+
 export function formatPackageScopeEventTypes(eventTypes = []) {
   const supportedEventTypes = [...new Set(
     eventTypes.filter((eventType) => DRAW_EVENT_TYPES.has(eventType)),

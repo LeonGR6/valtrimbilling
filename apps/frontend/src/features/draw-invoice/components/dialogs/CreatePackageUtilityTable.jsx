@@ -13,6 +13,7 @@ import {
   TableRow,
   Typography,
 } from '@mui/material'
+import BilledRowsAccordion from './BilledRowsAccordion.jsx'
 import { utilityChargeKey } from '../../utils/drawPackages.js'
 import {
   formatCurrency,
@@ -60,6 +61,151 @@ export default function CreatePackageUtilityTable({
     }))
   const selectedCount = selectedUtilitySelections.length
 
+  // A row with every one of its charges billed has nothing left to choose.
+  const isFullyBilled = (row) => (isSplit
+    ? eventColumns.length > 0 && eventColumns.every((column) => billedUtilityCharges.has(
+      utilityChargeKey(row.id, 'BY_EVENT', column.eventType),
+    ))
+    : billedUtilityCharges.has(utilityChargeKey(row.id, 'FULL')))
+  const pendingRows = worksheet.rows.filter((row) => !isFullyBilled(row))
+  const billedRows = worksheet.rows.filter(isFullyBilled)
+
+  // The same table for what is still to choose and for what was already billed.
+  const renderTable = (rows, label) => (
+    <TableContainer>
+      <Table
+        size="small"
+        aria-label={label}
+        sx={{ minWidth: isSplit ? 420 + eventColumns.length * 190 : 720 }}
+      >
+        <TableHead>
+          <TableRow>
+            <TableCell sx={{ fontWeight: 800 }}>Utility</TableCell>
+            <TableCell sx={{ fontWeight: 800 }}>Plan</TableCell>
+            <TableCell align="right" sx={{ fontWeight: 800 }}>Plan Price</TableCell>
+            {isSplit ? eventColumns.map((column) => (
+              <TableCell
+                key={column.eventType}
+                align="center"
+                sx={{ minWidth: 190, bgcolor: 'primary.light', color: 'primary.main' }}
+              >
+                <Typography variant="caption" fontWeight={800} component="div">
+                  {eventLabel(
+                    drawCalendarHeadings[column.configuredDrawIndex],
+                    column.eventType,
+                  )}
+                </Typography>
+                <Typography fontWeight={850}>
+                  {formatPercentage(
+                    worksheet.rows[0]?.utilityPercentages?.[
+                      column.configuredDrawIndex
+                    ] ?? 0,
+                  )}% configured
+                </Typography>
+              </TableCell>
+            )) : (
+              <>
+                <TableCell align="center" sx={{ fontWeight: 800 }}>Charge</TableCell>
+                <TableCell sx={{ fontWeight: 800 }}>Status</TableCell>
+              </>
+            )}
+          </TableRow>
+        </TableHead>
+        <TableBody>
+          {rows.map((row) => {
+            const fullCharge = billedUtilityCharges.get(
+              utilityChargeKey(row.id, 'FULL'),
+            )
+            const fullChecked = fullUtilityRowIds.includes(String(row.id))
+              && fullUtilityAnchorDrawIndex !== null
+            return (
+              <TableRow key={row.id} hover>
+                <TableCell>
+                  <Typography fontWeight={850}>{row.utilityLabel}</Typography>
+                </TableCell>
+                <TableCell>
+                  <Typography fontWeight={750}>{row.planCode ?? '—'}</Typography>
+                </TableCell>
+                <TableCell align="right">
+                  <Typography fontWeight={850}>{formatCurrency(row.basePrice)}</Typography>
+                </TableCell>
+                {isSplit ? eventColumns.map((column) => {
+                  const chargeKey = utilityChargeKey(
+                    row.id,
+                    'BY_EVENT',
+                    column.eventType,
+                  )
+                  const billed = billedUtilityCharges.get(chargeKey)
+                  const eligibleDrawIndex = column.selectedDrawIndex
+                  const selected = eligibleDrawIndex !== undefined
+                    && selectedKeys.has(
+                      `${phase.id}:${row.id}:${eligibleDrawIndex}`,
+                    )
+                  const amountDrawIndex = eligibleDrawIndex
+                    ?? column.configuredDrawIndex
+                  return (
+                    <TableCell key={column.eventType} align="center">
+                      <Checkbox
+                        size="small"
+                        checked={selected}
+                        disabled={Boolean(billed) || eligibleDrawIndex === undefined}
+                        onChange={() => onToggleSplit(row.id, eligibleDrawIndex)}
+                        inputProps={{
+                          'aria-label': `Charge ${row.utilityLabel} ${column.eventType} Utility portion`,
+                        }}
+                      />
+                      <Typography variant="caption" component="div" fontWeight={750}>
+                        {formatCurrency(row.drawAmounts[amountDrawIndex])}
+                      </Typography>
+                      <Typography variant="caption" component="div" color="text.secondary">
+                        {billed
+                          ? `Charged · ${billed.packageNumber}`
+                          : eligibleDrawIndex === undefined
+                            ? 'Draw not selected'
+                            : selected
+                              ? 'Will be charged'
+                              : 'Not charged'}
+                      </Typography>
+                    </TableCell>
+                  )
+                }) : (
+                  <>
+                    <TableCell align="center">
+                      <Checkbox
+                        size="small"
+                        checked={fullChecked}
+                        disabled={Boolean(fullCharge)
+                          || fullUtilityAnchorDrawIndex === null}
+                        onChange={() => onToggleFull(row.id)}
+                        inputProps={{
+                          'aria-label': `Charge 100% of ${row.utilityLabel}`,
+                        }}
+                      />
+                    </TableCell>
+                    <TableCell>
+                      <Chip
+                        size="small"
+                        color={fullChecked ? 'primary' : 'default'}
+                        variant={fullChecked ? 'filled' : 'outlined'}
+                        label={fullCharge
+                          ? `Charged · ${fullCharge.packageNumber}`
+                          : fullUtilityAnchorDrawIndex === null
+                            ? 'Select a Lot Draw first'
+                            : fullChecked
+                              ? 'Will be charged in this package'
+                              : 'Not charged'}
+                      />
+                    </TableCell>
+                  </>
+                )}
+              </TableRow>
+            )
+          })}
+        </TableBody>
+      </Table>
+    </TableContainer>
+  )
+
   return (
     <Card variant="outlined" sx={{ overflow: 'hidden' }}>
       <Box sx={{ px: { xs: 2, sm: 2.5 }, py: 2, bgcolor: 'action.hover' }}>
@@ -85,138 +231,17 @@ export default function CreatePackageUtilityTable({
         </Stack>
       </Box>
       <Divider />
-      <TableContainer>
-        <Table
-          size="small"
-          aria-label="Choose Utility Building charges"
-          sx={{ minWidth: isSplit ? 420 + eventColumns.length * 190 : 720 }}
-        >
-          <TableHead>
-            <TableRow>
-              <TableCell sx={{ fontWeight: 800 }}>Utility</TableCell>
-              <TableCell sx={{ fontWeight: 800 }}>Plan</TableCell>
-              <TableCell align="right" sx={{ fontWeight: 800 }}>Plan Price</TableCell>
-              {isSplit ? eventColumns.map((column) => (
-                <TableCell
-                  key={column.eventType}
-                  align="center"
-                  sx={{ minWidth: 190, bgcolor: 'primary.light', color: 'primary.main' }}
-                >
-                  <Typography variant="caption" fontWeight={800} component="div">
-                    {eventLabel(
-                      drawCalendarHeadings[column.configuredDrawIndex],
-                      column.eventType,
-                    )}
-                  </Typography>
-                  <Typography fontWeight={850}>
-                    {formatPercentage(
-                      worksheet.rows[0]?.utilityPercentages?.[
-                        column.configuredDrawIndex
-                      ] ?? 0,
-                    )}% configured
-                  </Typography>
-                </TableCell>
-              )) : (
-                <>
-                  <TableCell align="center" sx={{ fontWeight: 800 }}>Charge</TableCell>
-                  <TableCell sx={{ fontWeight: 800 }}>Status</TableCell>
-                </>
-              )}
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {worksheet.rows.map((row) => {
-              const fullCharge = billedUtilityCharges.get(
-                utilityChargeKey(row.id, 'FULL'),
-              )
-              const fullChecked = fullUtilityRowIds.includes(String(row.id))
-                && fullUtilityAnchorDrawIndex !== null
-              return (
-                <TableRow key={row.id} hover>
-                  <TableCell>
-                    <Typography fontWeight={850}>{row.utilityLabel}</Typography>
-                  </TableCell>
-                  <TableCell>
-                    <Typography fontWeight={750}>{row.planCode ?? '—'}</Typography>
-                  </TableCell>
-                  <TableCell align="right">
-                    <Typography fontWeight={850}>{formatCurrency(row.basePrice)}</Typography>
-                  </TableCell>
-                  {isSplit ? eventColumns.map((column) => {
-                    const chargeKey = utilityChargeKey(
-                      row.id,
-                      'BY_EVENT',
-                      column.eventType,
-                    )
-                    const billed = billedUtilityCharges.get(chargeKey)
-                    const eligibleDrawIndex = column.selectedDrawIndex
-                    const selected = eligibleDrawIndex !== undefined
-                      && selectedKeys.has(
-                        `${phase.id}:${row.id}:${eligibleDrawIndex}`,
-                      )
-                    const amountDrawIndex = eligibleDrawIndex
-                      ?? column.configuredDrawIndex
-                    return (
-                      <TableCell key={column.eventType} align="center">
-                        <Checkbox
-                          size="small"
-                          checked={selected}
-                          disabled={Boolean(billed) || eligibleDrawIndex === undefined}
-                          onChange={() => onToggleSplit(row.id, eligibleDrawIndex)}
-                          inputProps={{
-                            'aria-label': `Charge ${row.utilityLabel} ${column.eventType} Utility portion`,
-                          }}
-                        />
-                        <Typography variant="caption" component="div" fontWeight={750}>
-                          {formatCurrency(row.drawAmounts[amountDrawIndex])}
-                        </Typography>
-                        <Typography variant="caption" component="div" color="text.secondary">
-                          {billed
-                            ? `Charged · ${billed.packageNumber}`
-                            : eligibleDrawIndex === undefined
-                              ? 'Draw not selected'
-                              : selected
-                                ? 'Will be charged'
-                                : 'Not charged'}
-                        </Typography>
-                      </TableCell>
-                    )
-                  }) : (
-                    <>
-                      <TableCell align="center">
-                        <Checkbox
-                          size="small"
-                          checked={fullChecked}
-                          disabled={Boolean(fullCharge)
-                            || fullUtilityAnchorDrawIndex === null}
-                          onChange={() => onToggleFull(row.id)}
-                          inputProps={{
-                            'aria-label': `Charge 100% of ${row.utilityLabel}`,
-                          }}
-                        />
-                      </TableCell>
-                      <TableCell>
-                        <Chip
-                          size="small"
-                          color={fullChecked ? 'primary' : 'default'}
-                          variant={fullChecked ? 'filled' : 'outlined'}
-                          label={fullCharge
-                            ? `Charged · ${fullCharge.packageNumber}`
-                            : fullUtilityAnchorDrawIndex === null
-                              ? 'Select a Lot Draw first'
-                              : fullChecked
-                                ? 'Will be charged in this package'
-                                : 'Not charged'}
-                        />
-                      </TableCell>
-                    </>
-                  )}
-                </TableRow>
-              )
-            })}
-          </TableBody>
-        </Table>
-      </TableContainer>
+      {pendingRows.length > 0 ? renderTable(pendingRows, 'Choose Utility Building charges') : (
+        <Box sx={{ px: { xs: 2, sm: 2.5 }, py: 2 }}>
+          <Typography variant="body2" color="text.secondary">
+            Every Utility Building charge of this Phase was already billed.
+            There is nothing pending.
+          </Typography>
+        </Box>
+      )}
+      <BilledRowsAccordion count={billedRows.length} nouns={['Utility row', 'Utility rows']}>
+        {renderTable(billedRows, 'Utility Building charges already billed')}
+      </BilledRowsAccordion>
     </Card>
   )
 }

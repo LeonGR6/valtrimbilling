@@ -1,7 +1,13 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { PDFDocument, StandardFonts } from '@cantoo/pdf-lib'
-import { buildPackageBundleFileName, mergePdfs } from '../src/features/draw-invoice/services/packageBundle.js'
+import {
+  buildPackageBundleFileName,
+  describeStoredBundle,
+  hasGeneratedPackage,
+  mergePdfs,
+  pickStoredBundleDocuments,
+} from '../src/features/draw-invoice/services/packageBundle.js'
 
 async function pdf(pages, label) {
   const doc = await PDFDocument.create()
@@ -29,4 +35,49 @@ test('the joined file is named after the Job and the Package', () => {
     'Package - Job 1318 - DP-00000046.pdf',
   )
   assert.equal(buildPackageBundleFileName({ jobCode: 'A/B', packageNumber: '' }), 'Package - Job A B.pdf')
+})
+
+const stored = (name, completedAt) => ({ id: name, completedAt, file: { name, bucket: 'package-documents', storagePath: name } })
+
+test('a Package counts as generated once its Release or its Payment Schedule is saved', () => {
+  assert.equal(hasGeneratedPackage(), false)
+  assert.equal(hasGeneratedPackage({ releases: [], schedules: [] }), false)
+  assert.equal(hasGeneratedPackage({ releases: [stored('r', '2026-10-20')] }), true)
+  assert.equal(hasGeneratedPackage({ schedules: [stored('s', '2026-10-20')] }), true)
+})
+
+test('the generated Package is put together as it is joined: invoice, Release, Payment Schedule', () => {
+  const parts = pickStoredBundleDocuments({
+    hasInvoice: true,
+    releases: [stored('release.pdf', '2026-10-20')],
+    schedules: [stored('schedule.pdf', '2026-10-21')],
+  })
+
+  assert.deepEqual(parts.map((part) => part.key), ['invoice', 'release', 'schedule'])
+  assert.deepEqual(parts.map((part) => part.file?.name), [undefined, 'release.pdf', 'schedule.pdf'])
+})
+
+test('a document generated again is taken in its newest version, and missing ones are skipped', () => {
+  const parts = pickStoredBundleDocuments({
+    releases: [
+      stored('old.pdf', '2026-10-18T10:00:00Z'),
+      stored('new.pdf', '2026-10-20T09:00:00Z'),
+      stored('middle.pdf', '2026-10-19T12:00:00Z'),
+    ],
+  })
+
+  assert.deepEqual(parts.map((part) => [part.key, part.file.name]), [['release', 'new.pdf']])
+  assert.deepEqual(pickStoredBundleDocuments({ hasInvoice: true }).map((part) => part.key), ['invoice'])
+  assert.deepEqual(pickStoredBundleDocuments(), [])
+})
+
+test('the view says which saved documents it is joined from', () => {
+  const part = (label) => ({ key: label, label })
+  assert.equal(
+    describeStoredBundle([part('Invoice'), part('Release'), part('Payment Schedule')]),
+    'Invoice, Release and Payment Schedule saved on this Package',
+  )
+  assert.equal(describeStoredBundle([part('Release'), part('Payment Schedule')]), 'Release and Payment Schedule saved on this Package')
+  assert.equal(describeStoredBundle([part('Release')]), 'Release saved on this Package')
+  assert.equal(describeStoredBundle([]), '')
 })

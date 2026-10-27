@@ -26,6 +26,8 @@ import MoveToInboxRoundedIcon from '@mui/icons-material/MoveToInboxRounded'
  */
 export default function PackageHeaderActions({
   leading,
+  // Opens the Package that was generated, when it was; it renders nothing otherwise.
+  viewGenerated = null,
   lockedReason,
   hasPackage,
   canGenerate,
@@ -77,6 +79,7 @@ export default function PackageHeaderActions({
           Edit Package
         </Button>
       )}
+      {hasPackage && viewGenerated}
       {hasPackage && canGenerate && (
         <Button
           variant="contained"

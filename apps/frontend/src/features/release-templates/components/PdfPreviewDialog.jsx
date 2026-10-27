@@ -13,6 +13,7 @@ import {
   Typography,
 } from '@mui/material'
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded'
+import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded'
 import { Document, Page } from 'react-pdf'
 import './pdfWorker.js'
 
@@ -32,6 +33,8 @@ export default function PdfPreviewDialog({
   onConfirm = null,
   // What to tell about the file; the default is for one that was only built.
   statusNote = 'nothing has been saved yet',
+  // Adds a Download button, for a file the person may want to keep.
+  onDownload = null,
   onClose,
 }) {
   const containerRef = useRef(null)
@@ -125,6 +128,11 @@ export default function PdfPreviewDialog({
 
       <DialogActions sx={{ px: 3, py: 1.5 }}>
         <Button onClick={onClose}>Close</Button>
+        {onDownload && (
+          <Button variant={onConfirm ? 'text' : 'contained'} disableElevation startIcon={<DownloadRoundedIcon />} onClick={onDownload}>
+            Download
+          </Button>
+        )}
         {onConfirm && (
           <Button variant="contained" onClick={onConfirm}>{confirmLabel}</Button>
         )}

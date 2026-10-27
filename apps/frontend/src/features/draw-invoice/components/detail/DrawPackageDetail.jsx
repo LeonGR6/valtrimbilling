@@ -87,6 +87,7 @@ import {
   PackageUtilityTable,
 } from './PackageTables.jsx'
 import { usePurchaseOrderBacking } from '../../../purchase-orders/hooks/usePurchaseOrders.js'
+import ViewGeneratedPackageButton from './ViewGeneratedPackageButton.jsx'
 
 // Loaded on demand: it brings the Release generation screens.
 const GeneratePackageDialog = lazy(() => import('./GeneratePackageDialog.jsx'))
@@ -436,6 +437,13 @@ export default function DrawPackageDetail() {
                     </Tooltip>
                   )}
                 </>
+              )}
+              viewGenerated={focusedPackage && focusedJob && (
+                <ViewGeneratedPackageButton
+                  packageRecord={focusedPackage}
+                  job={focusedJob}
+                  reloadKey={packageDialogOpen}
+                />
               )}
               lockedReason={editLockedReason}
               hasPackage={Boolean(focusedPackage)}

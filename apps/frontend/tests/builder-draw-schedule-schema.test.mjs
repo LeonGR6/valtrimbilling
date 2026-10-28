@@ -117,11 +117,15 @@ test('Builder Draw Schedule supports only the two invoice line formats', () => {
   }
 })
 
-test('Builder Draw Schedule supports Portal, Email and Mail submission', () => {
+test('Builder Draw Schedule supports Portal, Email, Mail, Supply Pro, Textura, KB IE and KB LA submission', () => {
   assert.deepEqual(submissionMethodOptions, [
     { value: 'PORTAL', label: 'Portal' },
     { value: 'EMAIL', label: 'Email' },
     { value: 'MAIL', label: 'Mail' },
+    { value: 'SUPPLY_PRO', label: 'Supply Pro' },
+    { value: 'TEXTURA', label: 'Textura' },
+    { value: 'KB_IE', label: 'KB IE' },
+    { value: 'KB_LA', label: 'KB LA' },
   ])
 
   const portal = createBuilderDrawScheduleSchema([], null).parse(validSetup({
@@ -360,6 +364,23 @@ test('Builder Draw Schedule stores billing deductions and submission requirement
   assert.equal(result.requiresRelease, true)
   assert.equal(result.submissionMethod, 'PORTAL')
   assert.equal(result.submissionDestination, 'Textura')
+})
+
+test('Supply Pro, Textura, KB IE and KB LA are accepted without a destination', () => {
+  for (const submissionMethod of ['SUPPLY_PRO', 'TEXTURA', 'KB_IE', 'KB_LA']) {
+    const result = createBuilderDrawScheduleSchema([], null).safeParse(validSetup({
+      submissionMethod,
+      submissionDestination: '',
+    }))
+
+    assert.equal(result.success, true, submissionMethod)
+    assert.equal(result.data.submissionMethod, submissionMethod)
+  }
+
+  const unknown = createBuilderDrawScheduleSchema([], null).safeParse(validSetup({
+    submissionMethod: 'FAX',
+  }))
+  assert.equal(unknown.success, false)
 })
 
 test('disabled retention and OCIP options clear hidden percentages', () => {

@@ -1,3 +1,4 @@
+import { submissionMethodOptions, isNamedSubmissionMethod } from '../data/builderDrawSchedules.js'
 import { normalizeLag } from '../utils/drawLag.js'
 
 const requiredDocumentDefinitions = [
@@ -36,7 +37,7 @@ function normalizeInvoiceLineFormat(value) {
 }
 
 function normalizeSubmissionMethod(value) {
-  return ['EMAIL', 'MAIL'].includes(value) ? value : 'PORTAL'
+  return submissionMethodOptions.some((option) => option.value === value) ? value : 'PORTAL'
 }
 
 function normalizeUtilityBillingMode(value) {
@@ -125,7 +126,10 @@ export function toBuilderBillingSetupRpc(schedule) {
   const frequency = schedule.frequency
   const optionsDrawIndex = schedule.optionsBillingDrawIndex
   const submissionMethod = normalizeSubmissionMethod(schedule.submissionMethod)
-  const submissionDestination = schedule.submissionDestination.trim() || null
+  // A named method (Textura...) is the destination itself: a name typed under another method is dropped.
+  const submissionDestination = isNamedSubmissionMethod(submissionMethod)
+    ? null
+    : schedule.submissionDestination.trim() || null
 
   return {
     p_builder_id: Number(schedule.builderId),

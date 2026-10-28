@@ -14,6 +14,7 @@ import { Controller, useFormContext, useWatch } from 'react-hook-form'
 import {
   finalReleaseScopeOptions,
   invoiceLineFormatOptions,
+  isNamedSubmissionMethod,
   submissionMethodOptions,
 } from '../../data/builderDrawSchedules.js'
 import { Section } from './formParts.jsx'
@@ -36,6 +37,8 @@ export default function SubmissionSection() {
   const requiresRelease = useWatch({ control, name: 'requiresRelease' })
   const submissionMethod = useWatch({ control, name: 'submissionMethod' })
   const destination = DESTINATIONS[submissionMethod] ?? DESTINATIONS.PORTAL
+  // Supply Pro, Textura, KB IE and KB LA are the destination themselves: there is nothing to type.
+  const hasDestination = !isNamedSubmissionMethod(submissionMethod)
 
   return (
     <Section
@@ -104,6 +107,12 @@ export default function SubmissionSection() {
               {...field}
               select
               label="Submitted by"
+              onChange={(event) => {
+                field.onChange(event)
+                if (isNamedSubmissionMethod(event.target.value)) {
+                  setValue('submissionDestination', '', { shouldDirty: true, shouldValidate: true })
+                }
+              }}
               error={Boolean(errors.submissionMethod)}
               helperText={errors.submissionMethod?.message}
               sx={{ width: { xs: '100%', sm: 180 }, flexShrink: 0 }}
@@ -114,19 +123,21 @@ export default function SubmissionSection() {
             </TextField>
           )}
         />
-        <TextField
-          key={submissionMethod}
-          label={destination.label}
-          type={submissionMethod === 'EMAIL' ? 'email' : 'text'}
-          placeholder={destination.placeholder}
-          {...register('submissionDestination')}
-          error={Boolean(errors.submissionDestination)}
-          helperText={errors.submissionDestination?.message ?? destination.helper}
-          required={submissionMethod !== 'PORTAL'}
-          multiline={submissionMethod === 'MAIL'}
-          minRows={submissionMethod === 'MAIL' ? 2 : undefined}
-          fullWidth
-        />
+        {hasDestination && (
+          <TextField
+            key={submissionMethod}
+            label={destination.label}
+            type={submissionMethod === 'EMAIL' ? 'email' : 'text'}
+            placeholder={destination.placeholder}
+            {...register('submissionDestination')}
+            error={Boolean(errors.submissionDestination)}
+            helperText={errors.submissionDestination?.message ?? destination.helper}
+            required={submissionMethod !== 'PORTAL'}
+            multiline={submissionMethod === 'MAIL'}
+            minRows={submissionMethod === 'MAIL' ? 2 : undefined}
+            fullWidth
+          />
+        )}
       </Stack>
 
       <Controller

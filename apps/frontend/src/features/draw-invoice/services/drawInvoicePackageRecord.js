@@ -1,4 +1,5 @@
 import { compareOptionCodes } from '../../../utils/optionOrder.js'
+import { submissionMethodOptions } from '../../builder-draw-schedules/data/builderDrawSchedules.js'
 
 // A Package is a Draft until it is submitted, then it waits for payment.
 export const DRAW_PACKAGE_STATUSES = [
@@ -231,8 +232,8 @@ export function toDrawInvoicePackage(
     ...sortedHardwareRows.map((row) => row.phase_id),
   ])
   const primaryPhaseId = packageRow.phase_id ?? phaseIds[0] ?? null
-  const submissionMethod = ['EMAIL', 'MAIL'].includes(
-    setupVersion?.submission_method,
+  const submissionMethod = submissionMethodOptions.some(
+    (option) => option.value === setupVersion?.submission_method,
   )
     ? setupVersion.submission_method
     : 'PORTAL'

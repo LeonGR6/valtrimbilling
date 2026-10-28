@@ -226,6 +226,54 @@ test('legacy portal records load as Portal submissions', () => {
   assert.equal(schedule.retentionReleaseScope, 'JOB')
 })
 
+test('Supply Pro, Textura, KB IE and KB LA load as they are and save with no destination', () => {
+  const version = {
+    id: 93,
+    builder_id: 9,
+    version_number: 1,
+    status: 'ACTIVE',
+    frequency: 'MONTHLY',
+    cutoff_day: 20,
+    payment_terms_days: 30,
+    invoice_line_format: 'LOT_SCOPE',
+    submission_destination: null,
+    portal_name: null,
+  }
+
+  for (const method of ['SUPPLY_PRO', 'TEXTURA', 'KB_IE', 'KB_LA']) {
+    const schedule = toBuilderDrawSchedule({ ...version, submission_method: method })
+    assert.equal(schedule.submissionMethod, method)
+    assert.equal(schedule.submissionDestination, '')
+
+    // A name typed under Portal before the method was changed does not travel with it.
+    const { p_config: config } = toBuilderBillingSetupRpc({
+      ...schedule,
+      submissionDestination: 'Leftover portal',
+      draws: [],
+    })
+    assert.equal(config.submissionMethod, method)
+    assert.equal(config.submissionDestination, null)
+    assert.equal(config.portalName, null)
+  }
+
+  // A method this version of the app does not know is read as Portal.
+  assert.equal(toBuilderDrawSchedule({ ...version, submission_method: 'FAX' }).submissionMethod, 'PORTAL')
+})
+
+test('Portal keeps its name when it is saved', () => {
+  const { p_config: config } = toBuilderBillingSetupRpc({
+    builderId: 7,
+    frequency: 'MONTHLY',
+    draws: [],
+    submissionMethod: 'PORTAL',
+    submissionDestination: ' Own portal ',
+    notes: '',
+  })
+
+  assert.equal(config.submissionDestination, 'Own portal')
+  assert.equal(config.portalName, 'Own portal')
+})
+
 test('The Conditional Final scope is only kept while a Release is required', () => {
   const base = {
     id: 5,

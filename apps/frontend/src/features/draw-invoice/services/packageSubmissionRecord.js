@@ -1,6 +1,8 @@
 // How a generated Package goes to the Builder, the way the Builder's setup says.
 // Pure helpers; the call to the email function is in packageSubmissionRepository.js.
 
+import { submissionMethodLabels, isNamedSubmissionMethod } from '../../builder-draw-schedules/data/builderDrawSchedules.js'
+
 export const MAX_EMAIL_ATTACHMENT_BYTES = 15 * 1024 * 1024
 
 /** The PDF as base64, built in chunks so a large file does not overflow the call stack. */
@@ -18,10 +20,14 @@ export function newSubmissionRequestId() {
 }
 
 /**
- * How the Package goes to the Builder: by email, by mail (printed) or through
- * the Builder's portal. Anything else is treated as a portal.
+ * How the Package goes to the Builder: by email, by mail (printed) or uploaded to a portal. Supply
+ * Pro, Textura, KB IE and KB LA are portals that the method itself names. Anything else is treated
+ * as a portal.
  */
 export function describeSubmission(method, destination) {
+  if (isNamedSubmissionMethod(method)) {
+    return { kind: 'PORTAL', title: 'Upload to the portal', target: submissionMethodLabels[method] }
+  }
   const target = String(destination ?? '').trim()
   if (method === 'EMAIL') {
     return { kind: 'EMAIL', title: 'Send by email', target }

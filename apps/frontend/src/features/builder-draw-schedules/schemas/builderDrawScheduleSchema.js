@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { MAX_DRAW_COUNT, MIN_DRAW_COUNT } from '../data/builderDrawSchedules.js'
+import { MAX_DRAW_COUNT, MIN_DRAW_COUNT, submissionMethodOptions } from '../data/builderDrawSchedules.js'
 import { LAG_UNITS, lagLimit } from '../utils/drawLag.js'
 
 const drawPercentageSchema = z.preprocess(
@@ -185,7 +185,7 @@ export function createBuilderDrawScheduleSchema(schedules, currentScheduleId) {
       finalReleaseScope: z.enum(['', 'PHASE', 'BUILDING', 'PROJECT']).default(''),
       requiresBackup: z.boolean(),
       invoiceLineFormat: z.enum(['LOT_SCOPE', 'BUILDING_SCOPE']),
-      submissionMethod: z.enum(['PORTAL', 'EMAIL', 'MAIL']),
+      submissionMethod: z.enum(submissionMethodOptions.map((option) => option.value)),
       submissionDestination: z
         .string()
         .trim()

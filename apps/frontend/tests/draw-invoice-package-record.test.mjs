@@ -251,6 +251,34 @@ test('maps persisted package, invoice and calculated snapshots to the UI model',
   })
 })
 
+test('a Package keeps the Supply Pro, Textura, KB IE or KB LA its setup was made with, and no destination', () => {
+  const setup = (submission) => ({
+    frequency: 'MONTHLY',
+    cutoff_day: 20,
+    submission_destination: null,
+    portal_name: null,
+    ...submission,
+  })
+
+  for (const method of ['SUPPLY_PRO', 'TEXTURA', 'KB_IE', 'KB_LA']) {
+    const record = toDrawInvoicePackage(packageRow, null, [], [], setup({ submission_method: method }))
+    assert.equal(record.submissionMethod, method)
+    assert.equal(record.submissionDestination, '')
+    assert.equal(record.portalName, '')
+  }
+
+  // A method this version of the app does not know is read as Portal, with its name.
+  const unknown = toDrawInvoicePackage(
+    packageRow,
+    null,
+    [],
+    [],
+    setup({ submission_method: 'FAX', portal_name: 'Old portal' }),
+  )
+  assert.equal(unknown.submissionMethod, 'PORTAL')
+  assert.equal(unknown.submissionDestination, 'Old portal')
+})
+
 test('maps immutable Utility Building draw snapshots', () => {
   const record = toDrawInvoicePackage(
     packageRow,

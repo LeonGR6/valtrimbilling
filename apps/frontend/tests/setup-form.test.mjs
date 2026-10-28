@@ -32,6 +32,26 @@ const issuesOf = (values) => {
   return result.success ? [] : result.error.issues
 }
 
+test('a named submission method carries no destination, and Portal keeps its name', () => {
+  const read = (submissionMethod, submissionDestination) => setupFromFormValues({
+    ...filled(),
+    submissionMethod,
+    submissionDestination,
+  })
+
+  for (const method of ['SUPPLY_PRO', 'TEXTURA', 'KB_IE', 'KB_LA']) {
+    assert.equal(read(method, ' leftover from Portal ').submissionDestination, '', method)
+  }
+  assert.equal(read('PORTAL', ' Own portal ').submissionDestination, 'Own portal')
+  assert.equal(read('EMAIL', ' ap@builder.com ').submissionDestination, 'ap@builder.com')
+})
+
+test('a named submission method asks for nothing more in the form', () => {
+  const lines = describeFormIssues(issuesOf({ ...filled(), submissionMethod: 'TEXTURA', submissionDestination: '' }))
+
+  assert.equal(lines.some((line) => line.startsWith('Submission:')), false)
+})
+
 test('the typed form reads as a setup: numbers are numbers and a fraction is the percentage it stands for', () => {
   const setup = setupFromFormValues({
     ...filled(),

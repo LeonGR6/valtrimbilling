@@ -124,6 +124,17 @@ test('the rest of the setup is described in plain words', () => {
   assert.equal(other['Options are billed in'], 'Not set')
   assert.equal(other['Required documents'], 'None required')
   assert.equal(other['Submitted by'], 'Portal')
+
+  for (const [submissionMethod, label] of [
+    ['SUPPLY_PRO', 'Supply Pro'], ['TEXTURA', 'Textura'], ['KB_IE', 'KB IE'], ['KB_LA', 'KB LA'],
+  ]) {
+    const named = Object.fromEntries(describeSetupDetails(setup({
+      submissionMethod,
+      submissionDestination: '',
+    })).map(({ label: name, value }) => [name, value]))
+    assert.equal(named['Submitted by'], label)
+  }
+  assert.equal(other['Submitted by'], 'Portal')
   assert.equal(other.Notes, 'Net of deposits')
 })
 

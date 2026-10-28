@@ -63,7 +63,19 @@ export const submissionMethodOptions = [
   { value: 'PORTAL', label: 'Portal' },
   { value: 'EMAIL', label: 'Email' },
   { value: 'MAIL', label: 'Mail' },
+  { value: 'SUPPLY_PRO', label: 'Supply Pro' },
+  { value: 'TEXTURA', label: 'Textura' },
+  { value: 'KB_IE', label: 'KB IE' },
+  { value: 'KB_LA', label: 'KB LA' },
 ]
+
+// Supply Pro, Textura, KB IE and KB LA are places where the Package is uploaded. The method
+// already names the place, so unlike Portal they have no destination to type.
+export const NAMED_SUBMISSION_METHODS = ['SUPPLY_PRO', 'TEXTURA', 'KB_IE', 'KB_LA']
+
+export function isNamedSubmissionMethod(method) {
+  return NAMED_SUBMISSION_METHODS.includes(method)
+}
 
 export const submissionMethodLabels = Object.fromEntries(
   submissionMethodOptions.map(({ value, label }) => [value, label]),

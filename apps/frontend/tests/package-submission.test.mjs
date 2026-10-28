@@ -37,6 +37,20 @@ test('the Builder setup decides how the Package goes out', () => {
   assert.equal(describeSubmission(undefined, null).kind, 'PORTAL')
 })
 
+test('Supply Pro, Textura, KB IE and KB LA are uploaded to the portal they are named after', () => {
+  const targets = { SUPPLY_PRO: 'Supply Pro', TEXTURA: 'Textura', KB_IE: 'KB IE', KB_LA: 'KB LA' }
+
+  for (const [method, target] of Object.entries(targets)) {
+    assert.deepEqual(describeSubmission(method, ''), {
+      kind: 'PORTAL',
+      title: 'Upload to the portal',
+      target,
+    })
+  }
+  // The name of the method wins over anything left in the destination.
+  assert.equal(describeSubmission('TEXTURA', 'old portal').target, 'Textura')
+})
+
 test('only a PDF that fits is sent as an attachment', () => {
   assert.equal(fitsAsAttachment(new Uint8Array(10)), true)
   assert.equal(fitsAsAttachment(new Uint8Array(0)), false)

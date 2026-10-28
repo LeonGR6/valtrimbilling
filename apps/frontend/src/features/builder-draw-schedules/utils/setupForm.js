@@ -2,6 +2,7 @@
 // it is being filled, and what is still missing before it can be saved. Pure: nothing here
 // touches the network or React.
 
+import { isNamedSubmissionMethod } from '../data/builderDrawSchedules.js'
 import { percentageFromFraction } from '../schemas/builderDrawScheduleSchema.js'
 import { normalizeLag } from './drawLag.js'
 import { formatSetupPercentage } from './setupSummary.js'
@@ -59,7 +60,10 @@ export function setupFromFormValues(values = {}) {
     requiresBackup: Boolean(values.requiresBackup),
     invoiceLineFormat: values.invoiceLineFormat,
     submissionMethod: values.submissionMethod,
-    submissionDestination: String(values.submissionDestination ?? '').trim(),
+    // Textura, Supply Pro, KB IE and KB LA name the destination themselves: nothing typed under another method goes with them.
+    submissionDestination: isNamedSubmissionMethod(values.submissionMethod)
+      ? ''
+      : String(values.submissionDestination ?? '').trim(),
     notes: String(values.notes ?? '').trim(),
   }
 }

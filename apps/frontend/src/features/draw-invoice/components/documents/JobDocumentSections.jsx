@@ -113,6 +113,7 @@ export default function JobDocumentSections({
   purchaseOrderAnalyses,
   analyzingPurchaseOrderId,
   purchaseOrderComparison,
+  purchaseOrderComparisonState,
   purchaseOrderLots,
   onAdd,
   onOpen,
@@ -150,8 +151,16 @@ export default function JobDocumentSections({
       analyses: purchaseOrderAnalyses,
       lotsByAnalysis: purchaseOrderLots,
       comparison: purchaseOrderComparison,
+      comparisonState: purchaseOrderComparisonState,
     }),
-    [byType, phases, purchaseOrderAnalyses, purchaseOrderLots, purchaseOrderComparison],
+    [
+      byType,
+      phases,
+      purchaseOrderAnalyses,
+      purchaseOrderLots,
+      purchaseOrderComparison,
+      purchaseOrderComparisonState,
+    ],
   )
   const statuses = useMemo(
     () => Object.fromEntries(DOCUMENT_TYPES.map((type) => [

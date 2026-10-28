@@ -10,6 +10,7 @@ import {
   schedulePhaseCoverage,
   summarizeSection,
 } from '../src/features/draw-invoice/utils/documentPhaseGroups.js'
+import { toComparisonLine } from '../src/features/purchase-orders/services/purchaseOrderRecord.js'
 
 const job = (...phases) => ({
   sequenceSheet: { phases: phases.map(([id, name, building = '']) => ({ id, name, building })) },
@@ -270,6 +271,105 @@ test('the Purchase Order section counts what needs a look, including what is not
     }),
   })
   assert.deepEqual([clean.tone, clean.badge.label], ['ok', 'All match'])
+})
+
+// Documents analyzed and placed in Phase 3 (Lots 42, 50, 55), with nothing compared yet.
+const placedOrders = (comparison, comparisonState) => purchaseOrderGroups({
+  documents: [doc('a'), doc('b'), doc('c')],
+  phases,
+  analyses: {
+    a: { id: 'A', status: 'analyzed' },
+    b: { id: 'B', status: 'analyzed' },
+    c: { id: 'C', status: 'analyzed' },
+  },
+  lotsByAnalysis: new Map([
+    ['A', [{ phaseId: 3, lotRaw: '55' }]],
+    ['B', [{ phaseId: 3, lotRaw: '50' }]],
+    ['C', [{ phaseId: 3, lotRaw: '42' }]],
+  ]),
+  comparison,
+  comparisonState,
+})
+
+test('a Phase is not "All match" while its Purchase Orders are not compared', () => {
+  const loading = placedOrders([], 'loading')
+  assert.deepEqual(
+    [loading.groups[0].status, loading.groups[0].statusLabel],
+    ['pending', 'Comparing…'],
+  )
+
+  const failed = placedOrders([], 'error')
+  assert.deepEqual(
+    [failed.groups[0].status, failed.groups[0].statusLabel],
+    ['pending', 'Not compared'],
+  )
+
+  // Compared: nothing flagged is a match, and a flagged option still says so.
+  const compared = placedOrders([
+    { documentId: 'a', phaseId: 3, status: 'MATCH' },
+    { documentId: 'b', phaseId: 3, status: 'PLAN_MISMATCH' },
+  ], 'ready')
+  assert.deepEqual(
+    [compared.groups[0].status, compared.groups[0].statusLabel],
+    ['attention', '1 to review'],
+  )
+  const clean = placedOrders([{ documentId: 'a', phaseId: 3, status: 'MATCH' }], 'ready')
+  assert.deepEqual([clean.groups[0].status, clean.groups[0].statusLabel], ['ok', 'All match'])
+
+  // Nothing to read (no comparison was asked for) keeps its old meaning.
+  assert.equal(placedOrders([], 'idle').groups[0].statusLabel, 'All match')
+  assert.equal(placedOrders([]).groups[0].statusLabel, 'All match')
+})
+
+// The rows compare_purchase_orders returns for Job 1282: Phase 3 is in two buildings
+// (Phases 55 and 56), and the PO of Lot 22 prints a price the system does not have.
+const comparedRow = (documentId, phaseId, status) => ({
+  line_id: 1,
+  job_document_id: documentId,
+  phase_id: phaseId,
+  status,
+})
+
+test('a price that differs in a Purchase Order shows in the Phase and on its file, from the rows as the database sends them', () => {
+  const { groups } = purchaseOrderGroups({
+    documents: [doc('a', 'P3 LOT 14.pdf'), doc('b', 'P3 LOT 22.pdf'), doc('c', 'P3 LOT 23.pdf')],
+    phases: jobPhaseList(job([55, '3', '2'], [56, '3', '3'])),
+    analyses: {
+      a: { id: 'A', status: 'analyzed' },
+      b: { id: 'B', status: 'analyzed' },
+      c: { id: 'C', status: 'analyzed' },
+    },
+    lotsByAnalysis: new Map([
+      ['A', [{ phaseId: 55, lotRaw: '14' }]],
+      ['B', [{ phaseId: 55, lotRaw: '22' }]],
+      ['C', [{ phaseId: 56, lotRaw: '23' }]],
+    ]),
+    comparison: [
+      comparedRow('a', '55', 'MATCH'),
+      comparedRow('b', '55', 'PRICE_DIFF'),
+      comparedRow('c', '56', 'MATCH'),
+    ].map(toComparisonLine),
+  })
+
+  assert.equal(groups.length, 1)
+  assert.deepEqual([groups[0].status, groups[0].statusLabel], ['attention', '1 to review'])
+  assert.deepEqual(
+    groups[0].placements.map(({ document, summary }) => [document.id, summary.total, summary.attention]),
+    [['a', 1, 0], ['b', 1, 1], ['c', 1, 0]],
+  )
+})
+
+test('the Purchase Order section does not say "All match" before it compared anything', () => {
+  const section = (comparisonState) => summarizeSection({
+    type: 'purchase-order',
+    required: false,
+    documents: [doc('a'), doc('b'), doc('c')],
+    purchaseOrderGroups: placedOrders([], comparisonState),
+  })
+
+  assert.deepEqual([section('loading').tone, section('loading').badge.label], ['idle', 'Comparing…'])
+  assert.deepEqual([section('error').tone, section('error').badge.label], ['attention', 'Not compared'])
+  assert.equal(section('ready').badge.label, 'All match')
 })
 
 test('the file filter looks at the name and the lots', () => {

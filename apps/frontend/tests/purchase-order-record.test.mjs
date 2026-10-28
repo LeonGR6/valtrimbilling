@@ -39,6 +39,7 @@ function row(overrides = {}) {
     header_status: 'suggested',
     lot_id: 27,
     lot_number: '27',
+    phase_id: '5',
     phase_code: 'MODELS',
     building: '.',
     plan_code: '4B',
@@ -58,16 +59,19 @@ test('maps a comparison line with numbers as numbers', () => {
   assert.equal(line.systemPrice, -14)
   assert.equal(line.quantity, 1)
   assert.equal(line.lotId, 27)
+  assert.equal(line.phaseId, 5)
   assert.equal(line.documentId, 'doc-27')
 
   const unmatched = toComparisonLine(row({
     lot_id: null,
     lot_number: null,
+    phase_id: null,
     system_price: null,
     plan_option_id: null,
     status: 'HEADER_UNRESOLVED',
   }))
   assert.equal(unmatched.lotId, null)
+  assert.equal(unmatched.phaseId, null)
   assert.equal(unmatched.systemPrice, null)
   assert.equal(unmatched.planOptionId, null)
 })

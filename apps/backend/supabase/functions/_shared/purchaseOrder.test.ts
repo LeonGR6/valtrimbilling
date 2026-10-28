@@ -5,6 +5,7 @@ import {
   matchOption,
   matchPhase,
   matchPlan,
+  planFitsLotPlan,
   stringSimilarity,
 } from "./purchaseOrderMatch.ts";
 import {
@@ -13,6 +14,7 @@ import {
   normalizePhaseKey,
   optionNameAndDescription,
   planKeyCandidates,
+  planParts,
 } from "./purchaseOrderNormalize.ts";
 import { parseSignedCents, toIsoDate } from "./purchaseOrderOlson.ts";
 import { PurchaseOrderError } from "./purchaseOrderTypes.ts";
@@ -255,6 +257,61 @@ Deno.test("Plans are the printed Plan plus its elevation", () => {
   if (bare.status === "matched") assertEquals(bare.kind, "elevation_ignored");
 
   assertEquals(matchPlan("Plan 4B", null, plans).status, "matched");
+});
+
+Deno.test("a Plan is read by its number, elevation and ADA, not by how it is written", () => {
+  const parts = (plan: string, elevation: string | null = null) =>
+    planParts(plan, elevation);
+
+  // The PO prints the Plan and the elevation apart; the system joins them.
+  assertEquals(parts("4", "B"), { base: "4", elevation: "B", ada: false });
+  assertEquals(parts("4B"), { base: "4", elevation: "B", ada: false });
+  assertEquals(parts("Plan 4B"), { base: "4", elevation: "B", ada: false });
+
+  // The R after the elevation is the same Plan mirrored.
+  assertEquals(parts("1", "CR"), { base: "1", elevation: "C", ada: false });
+  assertEquals(parts("2", "B-R"), { base: "2", elevation: "B", ada: false });
+  assertEquals(parts("3", "A-R"), { base: "3", elevation: "A", ada: false });
+
+  // ADA is its own version, written apart or attached.
+  assertEquals(parts("3", "AR ADA"), { base: "3", elevation: "A", ada: true });
+  assertEquals(parts("3", "A ADA"), { base: "3", elevation: "A", ada: true });
+  assertEquals(parts("3B-ADA"), { base: "3", elevation: "B", ada: true });
+
+  // What the system adds after the elevation is not part of it.
+  assertEquals(parts("2B STC32"), { base: "2", elevation: "B", ada: false });
+  assertEquals(parts("1A B200A"), { base: "1", elevation: "A", ada: false });
+  assertEquals(parts("2X STC29"), { base: "2", elevation: "X", ada: false });
+
+  // No elevation, decimals and names that are not numbered Plans.
+  assertEquals(parts("3"), { base: "3", elevation: "", ada: false });
+  assertEquals(parts("1 FLOORING"), { base: "1", elevation: "", ada: false });
+  assertEquals(parts("4.1"), { base: "4.1", elevation: "", ada: false });
+  assertEquals(parts("67"), { base: "67", elevation: "", ada: false });
+  assertEquals(parts("NEGATIVE PLAN TEST").base, "");
+  assertEquals(parts("2", "R"), { base: "2", elevation: "R", ada: false });
+});
+
+Deno.test("a printed Plan fits the Lot's Plan when only the notation differs", () => {
+  // What the real POs print against what the system holds.
+  assertEquals(planFitsLotPlan("1", "CR", "1C"), true);
+  assertEquals(planFitsLotPlan("4", "CR", "4C"), true);
+  assertEquals(planFitsLotPlan("2", "B-R", "2B STC32"), true);
+  assertEquals(planFitsLotPlan("2", "B", "2B STC29"), true);
+  assertEquals(planFitsLotPlan("3", "A ADA", "3A-ADA"), true);
+  assertEquals(planFitsLotPlan("3", "AR ADA", "3A-ADA"), true);
+
+  // Another elevation, another number or another version is another Plan.
+  assertEquals(planFitsLotPlan("3", "AR ADA", "3B-ADA"), false);
+  assertEquals(planFitsLotPlan("3", "A", "3A-ADA"), false);
+  assertEquals(planFitsLotPlan("3", "A ADA", "3A"), false);
+  assertEquals(planFitsLotPlan("5", "CR", "4C"), false);
+  assertEquals(planFitsLotPlan("4", "BR", "4C"), false);
+
+  // Nothing to compare the elevation with: left to the other rules.
+  assertEquals(planFitsLotPlan("3", "A", "3"), false);
+  assertEquals(planFitsLotPlan("3", null, "3A"), false);
+  assertEquals(planFitsLotPlan("X", null, "3A"), false);
 });
 
 Deno.test("Lots match by number only", () => {

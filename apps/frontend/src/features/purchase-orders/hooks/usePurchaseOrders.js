@@ -132,6 +132,10 @@ const NOTHING_COMPARED = { lines: [], uncovered: [] }
 /**
  * Every current Purchase Order line of a Job against the system, loaded again
  * whenever `revision` changes. Pass a null `jobId` to load nothing.
+ *
+ * `status` says whether `lines` can be trusted: 'idle' (nothing asked for), 'loading',
+ * 'ready' or 'error'. While it is not 'ready' the lines are empty, which is not the
+ * same as every line matching.
  */
 export function usePurchaseOrderComparison(jobId, revision) {
   const { profile } = useAuth()
@@ -155,12 +159,16 @@ export function usePurchaseOrderComparison(jobId, revision) {
     }
   }, [jobId, key])
 
-  return useMemo(() => ({
-    lines: key !== null && state.key === key ? state.lines : NOTHING_COMPARED.lines,
-    uncovered: key !== null && state.key === key ? state.uncovered : NOTHING_COMPARED.uncovered,
-    error: key !== null && state.key === key ? state.error : null,
-    loading: key !== null && state.key !== key,
-  }), [key, state])
+  return useMemo(() => {
+    const current = key !== null && state.key === key
+    return {
+      lines: current ? state.lines : NOTHING_COMPARED.lines,
+      uncovered: current ? state.uncovered : NOTHING_COMPARED.uncovered,
+      error: current ? state.error : null,
+      loading: key !== null && !current,
+      status: key === null ? 'idle' : !current ? 'loading' : state.error ? 'error' : 'ready',
+    }
+  }, [key, state])
 }
 
 const NO_BACKING = { jobId: null, backing: null }

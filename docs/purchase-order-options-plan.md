@@ -285,6 +285,21 @@ Notas de la etapa 6:
 - Al crear, un aviso cuenta las options seleccionadas que el PO no respalda. Solo informa: nunca bloquea el botón.
 - Un Job sin ningún PO no ve la columna ni el aviso.
 
+### 9.1 Plan: la R (reverse) y las especificaciones no cambian el Plan
+
+Con POs reales apareció que el PO imprime el Plan y la elevación aparte, a veces con una **R** (reverse, el mismo Plan
+en espejo): `1` + `CR`, `2` + `B-R`, `4` + `CR`. El sistema lo llama `1C`, `2B STC32`, `4C`. Esas líneas quedaban en
+`PLAN_MISMATCH` y su comparación no se hacía.
+
+- `planParts` (`purchaseOrderNormalize.ts`) separa un Plan en número, elevación y ADA: ignora la R tras la elevación y lo
+  que el sistema agrega después (`STC32`, `B200A`). `planFitsLotPlan` (`purchaseOrderMatch.ts`) dice si lo impreso es el
+  Plan del Lot.
+- `resolveHeader` la usa para verificar el Lot y para desempatar Lots con el mismo número en distintos buildings. Si el
+  Plan encaja, la cabecera queda `resolved` sin pedir confirmación.
+- Sigue siendo `PLAN_MISMATCH` cuando cambia el número, la letra de elevación o la versión ADA (`3` + `AR ADA` contra
+  `3B-ADA`). Un Plan que el sistema nombra sin elevación (`3`) sigue quedando `suggested`, como antes.
+- Las líneas ya guardadas se corrigen con "Match again" (acción `rematch`), después de desplegar `purchase-order-analyze`.
+
 ## 10. Aviso por correo al agregar options (extra)
 
 Cuando una importación agrega options al Sequence Sheet, se ofrece avisar por correo a **Purchasing** y al **Job

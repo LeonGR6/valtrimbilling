@@ -525,6 +525,7 @@ export default function JobDocumentsCatalog({ jobs, documentState }) {
                       purchaseOrderAnalyses={purchaseOrders.analysesByDocumentId}
                       analyzingPurchaseOrderId={purchaseOrders.analyzingDocumentId}
                       purchaseOrderComparison={purchaseOrderComparison.lines}
+                      purchaseOrderComparisonState={purchaseOrderComparison.status}
                       purchaseOrderLots={purchaseOrderLots}
                       onAdd={(type) => setUploadTarget({ job, type })}
                       onOpen={openJobDocument}

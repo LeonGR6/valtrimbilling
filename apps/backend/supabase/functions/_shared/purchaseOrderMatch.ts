@@ -4,6 +4,7 @@ import {
   normalizeOptionCode,
   normalizePhaseKey,
   planKeyCandidates,
+  planParts,
 } from "./purchaseOrderNormalize.ts";
 
 // Matches what a Purchase Order prints with the system's Phases, Plans, Lots and
@@ -211,6 +212,23 @@ export function matchPlan<T extends { code: string }>(
   return bare.status === "matched"
     ? { ...bare, kind: "elevation_ignored" }
     : bare;
+}
+
+/**
+ * Whether what a PO prints for the Plan is the Plan of a Lot: the same number, the
+ * same elevation and the same ADA version. Mirrored ("CR" for "C") and the spec the
+ * system adds ("2B STC32" for "2B") do not make it another Plan; a different
+ * elevation ("3A" for "3B") or no elevation to compare does.
+ */
+export function planFitsLotPlan(
+  planRaw: string,
+  elevationRaw: string | null,
+  lotPlanCode: string,
+) {
+  const printed = planParts(planRaw, elevationRaw);
+  const lot = planParts(lotPlanCode);
+  return printed.base !== "" && printed.base === lot.base &&
+    printed.elevation === lot.elevation && printed.ada === lot.ada;
 }
 
 /** 0 to 1: how much of the meaning two descriptions share (words, not letters). */

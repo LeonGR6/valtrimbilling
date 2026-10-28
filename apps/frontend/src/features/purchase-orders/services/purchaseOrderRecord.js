@@ -104,6 +104,8 @@ export function toComparisonLine(row) {
     headerStatus: row.header_status,
     lotId: row.lot_id === null || row.lot_id === undefined ? null : Number(row.lot_id),
     lotNumber: row.lot_number ?? null,
+    // The Phase of the Lot, which is what places the line in a Phase of the Documents list.
+    phaseId: row.phase_id === null || row.phase_id === undefined ? null : Number(row.phase_id),
     phaseCode: row.phase_code ?? null,
     building: row.building ?? null,
     planCode: row.plan_code ?? null,

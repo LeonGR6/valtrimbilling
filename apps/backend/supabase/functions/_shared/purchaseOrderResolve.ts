@@ -5,6 +5,7 @@ import {
   matchPhase,
   matchPlan,
   type OptionCandidate,
+  planFitsLotPlan,
 } from "./purchaseOrderMatch.ts";
 import {
   normalizeLotKey,
@@ -58,7 +59,8 @@ export interface HeaderAliases {
 // The status stored with each line. Must match the check constraint of
 // valtrim.purchase_order_lines.header_status.
 export type HeaderStatus =
-  // Everything matched exactly.
+  // Everything matched: by name, or the Plan printed the same way the Lot's Plan
+  // reads once the notation is set aside (mirrored "CR" for "C", a spec like STC32).
   | "resolved"
   // Found, but through an abbreviation, a close spelling or by ignoring the
   // elevation. A reviewer confirms it once and it is remembered as an alias.
@@ -136,7 +138,6 @@ export function resolveHeader(
   // 2. Plan, kept apart: it only verifies the Lot, unless two Lots tie.
   let plan: JobPlan | null = null;
   let planExact = true;
-  let planGivenButUnknown = false;
   if (workOrder.planRaw !== null) {
     const match = matchPlan(
       workOrder.planRaw,
@@ -148,10 +149,19 @@ export function resolveHeader(
       plan = match.candidate;
       planExact = match.status === "matched" &&
         match.kind !== "elevation_ignored";
-    } else {
-      planGivenButUnknown = true;
     }
   }
+
+  // Whether the Plan the PO prints is the Lot's own, read by what it says (a printed
+  // "2" + "B-R" is the Lot's "2B STC32"), not by letters alone.
+  const printedPlanFits = (lot: JobLot) => {
+    if (workOrder.planRaw === null) return false;
+    const lotPlan = context.plans.find((candidate) =>
+      candidate.id === lot.planId
+    );
+    return lotPlan !== undefined &&
+      planFitsLotPlan(workOrder.planRaw, workOrder.elevationRaw, lotPlan.code);
+  };
 
   // 3. Lot: the same number inside the Phase.
   const inPhase = context.lots.filter((lot) =>
@@ -171,8 +181,10 @@ export function resolveHeader(
     candidates = [];
   }
   // Several Lots share the number (one per building): the Plan tells them apart.
-  if (candidates.length > 1 && plan) {
-    const samePlan = candidates.filter((lot) => lot.planId === plan.id);
+  if (candidates.length > 1 && workOrder.planRaw !== null) {
+    const samePlan = candidates.filter((lot) =>
+      (plan !== null && lot.planId === plan.id) || printedPlanFits(lot)
+    );
     if (samePlan.length > 0) candidates = samePlan;
   }
   if (candidates.length !== 1) {
@@ -187,8 +199,9 @@ export function resolveHeader(
     const lotPlan = context.plans.find((candidate) =>
       candidate.id === lot.planId
     );
-    const same = plan !== null && plan.id === lot.planId;
-    if (planGivenButUnknown || !same) {
+    const fits = printedPlanFits(lot);
+    const same = fits || (plan !== null && plan.id === lot.planId);
+    if (!same) {
       return {
         status: "plan_mismatch",
         lotId: lot.id,
@@ -204,7 +217,9 @@ export function resolveHeader(
   }
 
   return {
-    status: phaseExact && planExact ? "resolved" : "suggested",
+    status: phaseExact && (planExact || printedPlanFits(lot))
+      ? "resolved"
+      : "suggested",
     lotId: lot.id,
     phaseId: lot.phaseId,
     planId: lot.planId,

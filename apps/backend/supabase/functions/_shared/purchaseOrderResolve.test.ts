@@ -88,6 +88,98 @@ Deno.test("the printed Plan is checked against the Lot's Plan", () => {
   );
 });
 
+// Plans as a real Job names them: the elevation joined to the number, a spec after it
+// ("STC32"), and an ADA version.
+const realPlans: JobContext = {
+  phases: [{ id: 3, code: "3" }],
+  plans: [
+    { id: 1, code: "1C" },
+    { id: 2, code: "2B STC29" },
+    { id: 3, code: "2B STC32" },
+    { id: 4, code: "3A-ADA" },
+    { id: 5, code: "3B-ADA" },
+    { id: 6, code: "4C" },
+    { id: 7, code: "3" },
+  ],
+  lots: [
+    { id: 55, phaseId: 3, planId: 1, lotNumber: "55" },
+    { id: 50, phaseId: 3, planId: 3, lotNumber: "50" },
+    { id: 27, phaseId: 3, planId: 5, lotNumber: "27" },
+    { id: 28, phaseId: 3, planId: 4, lotNumber: "28" },
+    { id: 22, phaseId: 3, planId: 6, lotNumber: "22" },
+    { id: 60, phaseId: 3, planId: 7, lotNumber: "60" },
+  ],
+};
+
+Deno.test("a mirrored Plan (R) or a spec the PO does not print still matches the Lot", () => {
+  const resolved = (
+    lot: string,
+    plan: string,
+    elevation: string,
+    id: number,
+  ) => {
+    const result = resolveHeader(
+      header(lot, "003", plan, elevation),
+      realPlans,
+    );
+    assertEquals(result.status, "resolved", `${plan} ${elevation}`);
+    assertEquals(result.lotId, id);
+  };
+
+  resolved("55", "1", "CR", 55);
+  resolved("22", "4", "CR", 22);
+  // The Lot is on "2B STC32"; the PO prints Plan 2, elevation B reversed.
+  resolved("50", "2", "B-R", 50);
+  resolved("28", "3", "AR ADA", 28);
+});
+
+Deno.test("a real difference in the Plan is still reported", () => {
+  // Lot 27 is 3B-ADA and the PO prints 3A ADA (reversed).
+  const elevation = resolveHeader(
+    header("27", "003", "3", "AR ADA"),
+    realPlans,
+  );
+  assertEquals(elevation.status, "plan_mismatch");
+  assertEquals(elevation.detail, {
+    printedPlan: "3",
+    printedElevation: "AR ADA",
+    lotPlan: "3B-ADA",
+  });
+
+  // Another Plan number, and a missing ADA.
+  assertEquals(
+    resolveHeader(header("22", "003", "5", "CR"), realPlans).status,
+    "plan_mismatch",
+  );
+  assertEquals(
+    resolveHeader(header("28", "003", "3", "A"), realPlans).status,
+    "plan_mismatch",
+  );
+});
+
+Deno.test("a Plan the system names without elevation is still only suggested", () => {
+  // Lot 60 is on Plan "3": the PO's elevation cannot be checked, so it is confirmed once.
+  const result = resolveHeader(header("60", "003", "3", "A-R"), realPlans);
+  assertEquals(result.status, "suggested");
+  assertEquals(result.lotId, 60);
+});
+
+Deno.test("a Lot number repeated across buildings is told apart by a mirrored Plan", () => {
+  const twoBuildings: JobContext = {
+    phases: [{ id: 1, code: "1" }, { id: 2, code: "1" }],
+    plans: [{ id: 10, code: "2B STC32" }, { id: 11, code: "4C" }],
+    lots: [
+      { id: 31, phaseId: 1, planId: 10, lotNumber: "3" },
+      { id: 32, phaseId: 2, planId: 11, lotNumber: "3" },
+    ],
+  };
+
+  const first = resolveHeader(header("3", "1", "2", "B-R"), twoBuildings);
+  assertEquals([first.status, first.lotId], ["resolved", 31]);
+  const second = resolveHeader(header("3", "1", "4", "CR"), twoBuildings);
+  assertEquals([second.status, second.lotId], ["resolved", 32]);
+});
+
 Deno.test("a Lot or Phase that does not exist is reported, not guessed", () => {
   assertEquals(
     resolveHeader(header("99", "MODELS", "4", "B"), context).status,

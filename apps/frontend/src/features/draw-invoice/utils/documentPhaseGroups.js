@@ -79,6 +79,9 @@ const PO_REASONS = {
  *  - `analyses`: analysis of each document id.
  *  - `lotsByAnalysis`: for each analysis id, the lines' `{ phaseId, lotRaw }` as stored.
  *  - `comparison`: the current lines compared with the system (their status per option).
+ *  - `comparisonState`: 'loading' or 'error' while `comparison` is empty because it has
+ *    not been read, which is not the same as every line matching. Anything else means it
+ *    was read (or there is nothing to read).
  */
 export function purchaseOrderGroups({
   documents,
@@ -86,6 +89,7 @@ export function purchaseOrderGroups({
   analyses = {},
   lotsByAnalysis = new Map(),
   comparison = [],
+  comparisonState = 'ready',
 }) {
   const byPhase = new Map()
   const unassigned = []
@@ -135,6 +139,7 @@ export function purchaseOrderGroups({
     }
   }
 
+  const notCompared = comparisonState === 'loading' || comparisonState === 'error'
   const groups = phases
     .filter((phase) => byPhase.has(phase.key))
     .map((phase) => {
@@ -147,12 +152,16 @@ export function purchaseOrderGroups({
         placements,
         attention,
         meta: `${plural(placements.length, 'purchase order', 'purchase orders')}, lots ${formatLotRange(lots)}`,
-        status: attention > 0 ? 'attention' : 'ok',
-        statusLabel: attention > 0 ? `${attention} to review` : 'All match',
+        status: attention > 0 ? 'attention' : notCompared ? 'pending' : 'ok',
+        statusLabel: attention > 0
+          ? `${attention} to review`
+          : comparisonState === 'loading'
+            ? 'Comparing…'
+            : comparisonState === 'error' ? 'Not compared' : 'All match',
       }
     })
 
-  return { groups, unassigned }
+  return { groups, unassigned, comparisonState }
 }
 
 // --- Payment Schedules ---------------------------------------------------------
@@ -411,14 +420,22 @@ export function summarizeSection({
 
     case 'purchase-order': {
       if (count === 0) return none('Missing')
-      const { groups, unassigned } = purchaseGroups
+      const { groups, unassigned, comparisonState } = purchaseGroups
       const attention = groups.reduce((sum, group) => sum + group.attention, 0) + unassigned.length
       const summary = groups.length > 0
         ? `${plural(count, 'purchase order', 'purchase orders')} in ${plural(groups.length, 'phase', 'phases')}`
         : plural(count, 'purchase order', 'purchase orders')
-      return attention > 0
-        ? { tone: 'attention', summary, badge: { color: 'warning', label: `${attention} to review` } }
-        : { tone: 'ok', summary, badge: { color: 'success', label: 'All match' } }
+      if (attention > 0) {
+        return { tone: 'attention', summary, badge: { color: 'warning', label: `${attention} to review` } }
+      }
+      // Nothing flagged, but nothing compared either: that is not "all match".
+      if (comparisonState === 'loading') {
+        return { tone: 'idle', summary, badge: { color: 'info', label: 'Comparing…' } }
+      }
+      if (comparisonState === 'error') {
+        return { tone: 'attention', summary, badge: { color: 'warning', label: 'Not compared' } }
+      }
+      return { tone: 'ok', summary, badge: { color: 'success', label: 'All match' } }
     }
 
     default: {

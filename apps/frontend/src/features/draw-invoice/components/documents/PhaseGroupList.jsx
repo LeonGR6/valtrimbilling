@@ -12,7 +12,7 @@ import {
 import AddRoundedIcon from '@mui/icons-material/AddRounded'
 import ChevronRightRoundedIcon from '@mui/icons-material/ChevronRightRounded'
 
-const STATUS_COLORS = { ok: 'success', attention: 'warning', missing: 'error' }
+const STATUS_COLORS = { ok: 'success', attention: 'warning', missing: 'error', pending: 'info' }
 
 function GroupFrame({ children, dashed = false }) {
   return (

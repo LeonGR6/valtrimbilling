@@ -229,6 +229,22 @@ export function canCreateQuickbooksInvoice(record, role) {
     && ['NOT_CREATED', 'SYNC_ERROR'].includes(record.quickbooksStatus)
 }
 
+/**
+ * The date the QuickBooks invoice is dated with: the cut off date of a Draw Package
+ * whose Builder bills on cut off dates, and `today` (the day the invoice is created)
+ * for a Builder that bills any date, a Price Adjustment, or a setup that gives no cut
+ * off date. `source` says which one it is.
+ */
+export function quickbooksInvoiceDate(record, today) {
+  const hasCutoff = (record?.packageType ?? 'DRAW') === 'DRAW'
+    && !record?.billingCutoffAnyDate
+    && Boolean(record?.billingCutoffDate)
+
+  return hasCutoff
+    ? { date: record.billingCutoffDate, source: 'CUTOFF' }
+    : { date: today, source: 'CREATION' }
+}
+
 /** The Edge Function answers { code, error, candidates? } for every refusal. */
 export class QuickbooksInvoiceRequestError extends Error {
   constructor(message, code = null, candidates = []) {

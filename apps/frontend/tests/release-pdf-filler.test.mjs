@@ -247,14 +247,15 @@ test('several values on one line are printed separated by commas', async () => {
   assert.ok(texts.includes('1,200.00, 845.50'))
 })
 
-test('an empty list leaves its blank empty and is reported as skipped', async () => {
-  const { bytes, skipped } = await fillReleasePdf({
+test('an empty list prints N/A in its blank', async () => {
+  const { bytes, filled, skipped } = await fillReleasePdf({
     pdfBytes: await blankPdf(),
     mapping: mappingFor(rectField('waiver_release_dates', 'MM/DD/YYYY', datesBox)),
     values: { waiver_release_dates: [] },
   })
-  assert.deepEqual(skipped, ['waiver_release_dates'])
-  assert.deepEqual((await readBack(bytes)).items.map((item) => item.text), ['FORM TITLE'])
+  assert.deepEqual(filled, ['waiver_release_dates'])
+  assert.deepEqual(skipped, [])
+  assert.deepEqual((await readBack(bytes)).items.map((item) => item.text), ['FORM TITLE', 'N/A'])
 })
 
 test('a long list shrinks, may use the margin to the right of its box, and stays on the page', async () => {
@@ -339,6 +340,42 @@ test('the partly filled flat template keeps what was already printed', { skip: !
   const texts = (await readBack(bytes)).items.map((item) => item.text)
   assert.ok(texts.includes('09/30/2026'))
   assert.ok(texts.some((text) => text.includes('FILLED PREVIOUSLY')))
+})
+
+const exceptionFields = [
+  rectField('waiver_release_dates', 'MM/DD/YYYY', { x: 0.2, y: 0.5, w: 0.4, h: 0.02 }),
+  rectField('unpaid_progress_amount', 'plain', { x: 0.2, y: 0.55, w: 0.4, h: 0.02 }),
+  rectField('disputed_claims_amount', 'plain', { x: 0.2, y: 0.6, w: 0.4, h: 0.02 }),
+]
+
+test('the Exceptions blanks print N/A when there is nothing to list', async () => {
+  const { bytes, filled, skipped } = await fillReleasePdf({
+    pdfBytes: await blankPdf(),
+    mapping: mappingFor(...exceptionFields, rectField('through_date', 'MM/DD/YYYY', { x: 0.2, y: 0.3, w: 0.3, h: 0.02 })),
+    values: { waiver_release_dates: [], unpaid_progress_amount: [], disputed_claims_amount: '' },
+  })
+
+  const { items } = await readBack(bytes)
+  assert.equal(items.filter((item) => item.text === 'N/A').length, 3)
+  assert.deepEqual(filled, ['waiver_release_dates', 'unpaid_progress_amount', 'disputed_claims_amount'])
+  // Any other blank with no value stays empty and is reported as before.
+  assert.deepEqual(skipped, ['through_date'])
+})
+
+test('the Exceptions blanks print their values, not N/A, when there are some', async () => {
+  const { bytes } = await fillReleasePdf({
+    pdfBytes: await blankPdf(),
+    mapping: mappingFor(...exceptionFields),
+    values: {
+      waiver_release_dates: ['2026-09-20'],
+      unpaid_progress_amount: [1200],
+      disputed_claims_amount: '',
+    },
+  })
+
+  const texts = (await readBack(bytes)).items.map((item) => item.text)
+  assert.ok(texts.includes('09/20/2026') && texts.includes('1,200.00'))
+  assert.equal(texts.filter((text) => text === 'N/A').length, 1)
 })
 
 const signatureDate = rectField('signature_date', 'MM/DD/YYYY', { x: 0.25, y: 0.78, w: 0.32, h: 0.02 })

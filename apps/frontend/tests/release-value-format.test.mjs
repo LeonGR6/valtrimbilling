@@ -3,6 +3,7 @@ import test from 'node:test'
 import {
   defaultTestValue,
   formatReleaseValue,
+  printedReleaseValues,
   todayDateInput,
 } from '../src/features/release-templates/services/releaseValueFormat.js'
 
@@ -49,4 +50,25 @@ test('a test fill starts with today and a sample amount', () => {
   assert.equal(defaultTestValue('signature_date', day), '2026-09-05')
   assert.equal(defaultTestValue('check_amount', day), '1250.00')
   assert.equal(defaultTestValue('unpaid_progress_amount', day), '1250.00')
+})
+
+test('the Exceptions blanks print N/A when there is nothing to list', () => {
+  for (const empty of [[], undefined, null, '', ['nope']]) {
+    assert.equal(printedReleaseValues('waiver_release_dates', 'MM/DD/YYYY', empty), 'N/A')
+    assert.equal(printedReleaseValues('unpaid_progress_amount', 'plain', empty), 'N/A')
+    assert.equal(printedReleaseValues('disputed_claims_amount', 'currency', empty), 'N/A')
+  }
+})
+
+test('the Exceptions blanks print their values when there are any', () => {
+  assert.equal(printedReleaseValues('waiver_release_dates', 'MM/DD/YYYY', ['2026-09-20', '2026-10-05']), '09/20/2026, 10/05/2026')
+  assert.equal(printedReleaseValues('unpaid_progress_amount', 'plain', [1200, '845.5']), '1,200.00, 845.50')
+  assert.equal(printedReleaseValues('disputed_claims_amount', 'currency', 2045.5), '$2,045.50')
+  assert.equal(printedReleaseValues('disputed_claims_amount', 'plain', 0), '0.00')
+})
+
+test('the other variables and unknown ones stay blank when empty', () => {
+  assert.equal(printedReleaseValues('through_date', 'MM/DD/YYYY', ''), '')
+  assert.equal(printedReleaseValues('check_amount', 'plain', undefined), '')
+  assert.equal(printedReleaseValues('invoice_number', 'plain', ''), '')
 })

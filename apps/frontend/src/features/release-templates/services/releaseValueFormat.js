@@ -93,6 +93,17 @@ export function formatReleaseValues(variableKey, format, value) {
     .join(', ')
 }
 
+/**
+ * What is printed for a variable: its values, or its `emptyText` (N/A for the
+ * Exceptions blanks) when there is nothing to print. Variables without an
+ * `emptyText` give '' and their blank stays empty.
+ */
+export function printedReleaseValues(variableKey, format, value) {
+  return formatReleaseValues(variableKey, format, value)
+    || getReleaseVariable(variableKey)?.emptyText
+    || ''
+}
+
 /** What a test fill starts with: today's date and a sample amount. */
 export function defaultTestValue(variableKey, now = new Date()) {
   return getReleaseVariable(variableKey)?.kind === 'amount'

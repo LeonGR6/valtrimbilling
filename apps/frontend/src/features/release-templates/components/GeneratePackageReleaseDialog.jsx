@@ -44,7 +44,7 @@ import {
   savePackageRelease,
 } from '../services/packageReleaseRepository.js'
 import { getReleaseVariable, releaseTypeLabel } from '../services/releaseTemplateRecord.js'
-import { formatReleaseValue, formatReleaseValues } from '../services/releaseValueFormat.js'
+import { formatReleaseValue, printedReleaseValues } from '../services/releaseValueFormat.js'
 
 // The three values a person can correct before generating. The two Exceptions
 // lines are edited as rows (one per unpaid earlier Package, or added by hand).
@@ -421,8 +421,8 @@ export default function GeneratePackageReleaseDialog({
 
                 {exceptionRows.length === 0 && (
                   <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-                    There are no unpaid Packages from an earlier cut-off, so these lines stay
-                    blank unless you add one.
+                    There are no unpaid Packages from an earlier cut-off, so these lines print
+                    N/A unless you add one.
                   </Typography>
                 )}
 
@@ -514,19 +514,19 @@ export default function GeneratePackageReleaseDialog({
                     {plan.filled.some(({ key }) => key === 'waiver_release_dates') && (
                       <Typography variant="body2">
                         <strong>Date(s) of Waiver and Release:</strong>{' '}
-                        {formatReleaseValues('waiver_release_dates', formatOf('waiver_release_dates'), exceptionLines.waiver_release_dates) || '—'}
+                        {printedReleaseValues('waiver_release_dates', formatOf('waiver_release_dates'), exceptionLines.waiver_release_dates)}
                       </Typography>
                     )}
                     {plan.filled.some(({ key }) => key === 'unpaid_progress_amount') && (
                       <Typography variant="body2">
                         <strong>Amount(s) of Unpaid Progress Payment(s):</strong>{' '}
-                        {formatReleaseValues('unpaid_progress_amount', formatOf('unpaid_progress_amount'), exceptionLines.unpaid_progress_amount) || '—'}
+                        {printedReleaseValues('unpaid_progress_amount', formatOf('unpaid_progress_amount'), exceptionLines.unpaid_progress_amount)}
                       </Typography>
                     )}
                     {isFilled('disputed_claims_amount') && (
                       <Typography variant="body2">
                         <strong>Disputed claims for extras:</strong>{' '}
-                        {formatReleaseValue('disputed_claims_amount', formatOf('disputed_claims_amount'), exceptionLines.disputed_claims_amount) || '—'}
+                        {printedReleaseValues('disputed_claims_amount', formatOf('disputed_claims_amount'), exceptionLines.disputed_claims_amount)}
                       </Typography>
                     )}
                   </Stack>

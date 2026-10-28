@@ -27,6 +27,7 @@ import {
 } from '../../services/quickbooksRepository.js'
 import {
   quickbooksEnvironmentLabel,
+  quickbooksInvoiceDate,
   quickbooksInvoiceNumberStatus,
 } from '../../services/quickbooksRecord.js'
 import { localDateKey } from '../../utils/calendarDrawSuggestions.js'
@@ -46,7 +47,10 @@ const NUMBER_COLORS = { success: 'success.main', error: 'error.main', neutral: '
  * the server sends nothing.
  */
 export default function QuickbooksInvoiceDialog({ record, onClose, onSettled }) {
-  const [txnDate, setTxnDate] = useState(() => localDateKey(new Date()))
+  // The invoice is dated with the Package's cut off date, or the day it is created
+  // when the Builder bills any date. The person can still change it.
+  const [suggestedDate] = useState(() => quickbooksInvoiceDate(record, localDateKey(new Date())))
+  const [txnDate, setTxnDate] = useState(suggestedDate.date)
   const [invoiceNumber, setInvoiceNumber] = useState('')
   const [settledNumber, setSettledNumber] = useState('')
   const [preview, setPreview] = useState(null)
@@ -210,6 +214,11 @@ export default function QuickbooksInvoiceDialog({ record, onClose, onSettled }) 
                   onChange={(event) => setTxnDate(event.target.value)}
                   disabled={submitting}
                   error={!validDate}
+                  helperText={txnDate !== suggestedDate.date
+                    ? `Suggested: ${formatDate(suggestedDate.date)}`
+                    : suggestedDate.source === 'CUTOFF'
+                      ? 'Cut off date of this Package'
+                      : 'Today, the day the invoice is created'}
                   slotProps={{ inputLabel: { shrink: true } }}
                   sx={{ maxWidth: 220 }}
                 />

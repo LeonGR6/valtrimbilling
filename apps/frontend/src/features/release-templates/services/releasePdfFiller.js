@@ -1,6 +1,6 @@
 import { boxOnPage } from './releasePdfGeometry.js'
 import { getReleaseVariable } from './releaseTemplateRecord.js'
-import { formatReleaseValues } from './releaseValueFormat.js'
+import { printedReleaseValues } from './releaseValueFormat.js'
 
 // Writes values into a Release PDF at the boxes of a confirmed mapping.
 //
@@ -174,7 +174,7 @@ export async function fillReleasePdf({ pdfBytes, mapping, values, footerNote = n
 
   const texts = mapping.fields.map((field) => ({
     field,
-    text: formatReleaseValues(field.variable, field.format, values[field.variable]),
+    text: printedReleaseValues(field.variable, field.format, values[field.variable]),
   }))
 
   const filled = []

@@ -62,13 +62,15 @@ export const RELEASE_VARIABLES = [
     formats: DATE_FORMATS,
     defaultFormat: 'MM/DD/YYYY',
   },
-  // The two blanks of the "Exceptions" part of the Conditional Progress form.
+  // The two blanks of the "Exceptions" part of the Conditional Progress form. With
+  // nothing to list they print `emptyText` instead of staying blank.
   {
     key: 'waiver_release_dates',
     kind: 'date',
     label: 'Date(s) of Waiver and Release',
     formats: DATE_FORMATS,
     defaultFormat: 'MM/DD/YYYY',
+    emptyText: 'N/A',
   },
   {
     key: 'unpaid_progress_amount',
@@ -76,6 +78,7 @@ export const RELEASE_VARIABLES = [
     label: 'Amount(s) of Unpaid Progress Payment(s)',
     formats: AMOUNT_FORMATS,
     defaultFormat: 'plain',
+    emptyText: 'N/A',
   },
   // The one blank of the "Exceptions" part of the Conditional Final form.
   {
@@ -84,6 +87,7 @@ export const RELEASE_VARIABLES = [
     label: 'Disputed Claims for Extras',
     formats: AMOUNT_FORMATS,
     defaultFormat: 'plain',
+    emptyText: 'N/A',
   },
 ]
 

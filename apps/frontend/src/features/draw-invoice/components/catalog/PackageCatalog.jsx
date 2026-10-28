@@ -16,6 +16,7 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material'
+import AccountBalanceWalletRoundedIcon from '@mui/icons-material/AccountBalanceWalletRounded'
 import AddRoundedIcon from '@mui/icons-material/AddRounded'
 import AttachMoneyRoundedIcon from '@mui/icons-material/AttachMoneyRounded'
 import FolderOpenRoundedIcon from '@mui/icons-material/FolderOpenRounded'
@@ -37,6 +38,7 @@ import {
   TransferDrawPackageCellsDialog,
 } from '../DrawPackageCorrectionDialogs.jsx'
 import JobDocumentsCatalog from '../documents/JobDocumentsCatalog.jsx'
+import ReceivablesCatalog from '../receivables/ReceivablesCatalog.jsx'
 import { DRAW_PACKAGE_STATUS_LABELS } from '../../services/drawInvoicePackageRecord.js'
 import { localDateKey } from '../../utils/calendarDrawSuggestions.js'
 import { summarizeDrawPackage } from '../../utils/drawPackages.js'
@@ -206,7 +208,7 @@ export default function PackageCatalog({
   const [catalogTab, setCatalogTab] = usePersistentState(
     'draw-invoice:section',
     'packages',
-    (value) => value === 'packages' || value === 'documents',
+    (value) => value === 'packages' || value === 'documents' || value === 'ar',
   )
   const [search, setSearch] = usePersistentState('draw-invoice:packages:search', '', isStoredString)
   const [statusTab, setStatusTab] = usePersistentState(
@@ -387,7 +389,9 @@ export default function PackageCatalog({
             <Typography variant="caption" color="text.secondary" sx={{ display: { xs: 'none', sm: 'block' } }}>
               {catalogTab === 'packages'
                 ? 'Review active Packages by status and manage their billing workflow.'
-                : 'Keep each Job’s releases, purchase orders, and payment schedules together.'}
+                : catalogTab === 'documents'
+                  ? 'Keep each Job’s releases, purchase orders, and payment schedules together.'
+                  : 'See what is owed on QuickBooks invoices and how long it has been past due.'}
             </Typography>
           </Box>
           {catalogTab === 'packages' && (
@@ -465,11 +469,19 @@ export default function PackageCatalog({
             iconPosition="start"
             label="Documents"
           />
+          <Tab
+            value="ar"
+            icon={<AccountBalanceWalletRoundedIcon />}
+            iconPosition="start"
+            label="A/R"
+          />
         </Tabs>
       </Box>
 
       {catalogTab === 'documents' ? (
         <JobDocumentsCatalog jobs={jobs} documentState={jobDocuments} />
+      ) : catalogTab === 'ar' ? (
+        <ReceivablesCatalog jobs={jobs} />
       ) : (
         <Stack spacing={1.5} sx={{ p: { xs: 2, md: 3 } }}>
           {error && (

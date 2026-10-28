@@ -88,6 +88,7 @@ import {
   PackageUtilityTable,
 } from './PackageTables.jsx'
 import { usePurchaseOrderBacking } from '../../../purchase-orders/hooks/usePurchaseOrders.js'
+import { currentPackageOptions } from '../../utils/packagePurchaseOrders.js'
 import ViewGeneratedPackageButton from './ViewGeneratedPackageButton.jsx'
 
 // Loaded on demand: it brings the Release generation screens.
@@ -291,6 +292,10 @@ export default function DrawPackageDetail() {
         schedule,
       )
     : null
+  // What this Package charges now: the Purchase Orders behind these go into its PDF.
+  const currentOptionRows = currentPackageOptions(
+    packageSummary?.chargedOptionRows ?? packageSummary?.selectedOptionRows ?? [],
+  )
   const isMultiPhase = Boolean(focusedPackage)
     && !hasNoDrawCells
     && isMultiPhasePackage(packageSummary?.phaseCount)
@@ -464,6 +469,7 @@ export default function DrawPackageDetail() {
                 <ViewGeneratedPackageButton
                   packageRecord={focusedPackage}
                   job={focusedJob}
+                  optionRows={currentOptionRows}
                   reloadKey={packageDialogOpen}
                 />
               )}
@@ -840,6 +846,7 @@ export default function DrawPackageDetail() {
             packageRecord={focusedPackage}
             job={focusedJob}
             packages={drawInvoicePackages}
+            optionRows={currentOptionRows}
             submission={{
               method: jobSetup?.submissionMethod,
               destination: jobSetup?.submissionDestination,

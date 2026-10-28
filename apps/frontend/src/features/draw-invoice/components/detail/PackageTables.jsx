@@ -31,6 +31,8 @@ import {
 } from '../../utils/drawInvoiceFormatters.js'
 import { formatLagShort } from '../../../builder-draw-schedules/utils/drawLag.js'
 import PurchaseOrderBackingChip from '../../../purchase-orders/components/PurchaseOrderBackingChip.jsx'
+import { findUnbackedOptions } from '../../utils/packagePurchaseOrders.js'
+import PackagePurchaseOrderWarning from '../shared/PackagePurchaseOrderWarning.jsx'
 import { TableCardHeader } from '../shared/PackageUi.jsx'
 import { packageTableSx } from '../shared/packageTableStyles.js'
 
@@ -368,6 +370,8 @@ export function PackageOptionsTable({ summary, backing = null }) {
   // What this package charges comes first, then what earlier packages charged.
   const currentRows = chargedOptionRows.filter((option) => option.chargedInCurrentPackage)
   const previousRows = chargedOptionRows.filter((option) => !option.chargedInCurrentPackage)
+  // Only what this package charges is warned about: earlier packages were already sent.
+  const unbacked = findUnbackedOptions(backing, currentRows)
 
   const renderTable = (rows, { label, total = false }) => (
     <TableContainer>
@@ -475,6 +479,7 @@ export function PackageOptionsTable({ summary, backing = null }) {
         </Alert>
       ) : (
         <>
+          <PackagePurchaseOrderWarning unbacked={unbacked} sx={{ m: 2, mb: 0 }} />
           {currentRows.length > 0 ? renderTable(currentRows, {
             label: 'Options charged through this package',
             total: true,

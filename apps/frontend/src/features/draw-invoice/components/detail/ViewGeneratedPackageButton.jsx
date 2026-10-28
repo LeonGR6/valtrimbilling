@@ -7,6 +7,8 @@ import {
   hasGeneratedPackage,
 } from '../../services/packageBundle.js'
 import { buildStoredPackageBundle, listStoredPackageDocuments } from '../../services/storedPackageBundle.js'
+import { loadPackagePurchaseOrders } from '../../services/packagePurchaseOrders.js'
+import { joinableOrders } from '../../utils/packagePurchaseOrders.js'
 import { packageDocumentNumber } from '../../utils/packageInvoiceLabel.js'
 
 const PdfPreviewDialog = lazy(() => import('../../../release-templates/components/PdfPreviewDialog.jsx'))
@@ -24,9 +26,11 @@ function saveToDisk(bytes, fileName) {
  * Opens the Package that was already generated, without generating it again. It shows up only
  * once the Package has a saved Release or Payment Schedule, which is what generating it leaves
  * behind, and the PDF is the saved documents joined in the order they were joined the first time.
+ * The Purchase Orders behind the options it charges (`optionRows`) are joined after them, as they are
+ * when it is generated; they are the Job's, so they are looked up as they stand now.
  * `reloadKey` changes when something may have been generated, so the button looks again.
  */
-export default function ViewGeneratedPackageButton({ packageRecord, job, reloadKey = null }) {
+export default function ViewGeneratedPackageButton({ packageRecord, job, optionRows = [], reloadKey = null }) {
   const packageId = packageRecord.id
   const lookup = `${packageId}:${reloadKey}`
   const [found, setFound] = useState({ lookup: null, documents: null })
@@ -56,7 +60,13 @@ export default function ViewGeneratedPackageButton({ packageRecord, job, reloadK
     setOpening(true)
     setError(null)
     try {
-      const built = await buildStoredPackageBundle(packageId, documents)
+      // The Purchase Orders are an addition: if they cannot be looked up, the saved documents still open.
+      const purchaseOrders = optionRows.length === 0
+        ? []
+        : await loadPackagePurchaseOrders({ jobId: job.id, rows: optionRows })
+          .then(joinableOrders)
+          .catch(() => [])
+      const built = await buildStoredPackageBundle(packageId, documents, { purchaseOrders })
       setBundle({
         ...built,
         fileName: buildPackageBundleFileName({

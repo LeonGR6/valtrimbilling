@@ -17,12 +17,18 @@ export async function listStoredPackageDocuments(packageId) {
 }
 
 /**
- * The generated Package as one PDF, joined from its saved documents.
+ * The generated Package as one PDF, joined from its saved documents and the Purchase Orders behind
+ * its options (`purchaseOrders`, from loadPackagePurchaseOrders).
  * @returns {Promise<{ bytes: Uint8Array, pageCount: number, parts: Array<{ key: string, label: string }> }>}
  */
-export async function buildStoredPackageBundle(packageId, { releases, schedules }) {
+export async function buildStoredPackageBundle(packageId, { releases, schedules }, { purchaseOrders = [] } = {}) {
   const invoice = await downloadQuickbooksInvoicePdf(packageId)
-  const parts = pickStoredBundleDocuments({ hasInvoice: Boolean(invoice), releases, schedules })
+  const parts = pickStoredBundleDocuments({
+    hasInvoice: Boolean(invoice),
+    releases,
+    schedules,
+    purchaseOrders,
+  })
 
   const pdfs = await Promise.all(parts.map(async (part) => {
     if (part.key === 'invoice') return invoice.bytes

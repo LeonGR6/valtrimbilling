@@ -1,8 +1,10 @@
 import { cleanNamePart } from '../../release-templates/services/packageRelease.js'
+import { describePurchaseOrderCount } from '../utils/packagePurchaseOrders.js'
 
-// The Package's documents in one PDF, for sending: the Release first and the
-// Payment Schedule after it. The two documents are also saved on their own as
-// Package documents; this file is only handed to the person.
+// The Package's documents in one PDF, for sending: the invoice, the Release, the
+// Payment Schedule and then the Purchase Orders behind the options it charges. The Release and the
+// Payment Schedule are also saved on their own as Package documents; the Purchase Orders stay with
+// the Job. This file is only handed to the person.
 
 /** Puts the PDFs one after the other. Returns the bytes and the page count. */
 export async function mergePdfs(pdfs) {
@@ -42,12 +44,18 @@ export function hasGeneratedPackage({ releases = [], schedules = [] } = {}) {
 
 /**
  * The saved documents a generated Package is joined from, in the order it is joined: the
- * invoice, the Release and the Payment Schedule. When a document was generated more than once
- * the newest one is the Package's. The PDF the person downloaded is never saved as a whole, so
- * this is how it is put together again.
- * `releases` and `schedules` are the lists of the Package's saved documents (`completedAt`).
+ * invoice, the Release, the Payment Schedule and the Purchase Orders. When a document was
+ * generated more than once the newest one is the Package's. The PDF the person downloaded is never
+ * saved as a whole, so this is how it is put together again.
+ * `releases` and `schedules` are the lists of the Package's saved documents (`completedAt`);
+ * `purchaseOrders` are the Job's Purchase Orders behind the options (`file`), already in order.
  */
-export function pickStoredBundleDocuments({ hasInvoice = false, releases = [], schedules = [] } = {}) {
+export function pickStoredBundleDocuments({
+  hasInvoice = false,
+  releases = [],
+  schedules = [],
+  purchaseOrders = [],
+} = {}) {
   const newest = (documents) => [...documents].sort(
     (left, right) => String(right.completedAt ?? '').localeCompare(String(left.completedAt ?? '')),
   )[0] ?? null
@@ -58,14 +66,24 @@ export function pickStoredBundleDocuments({ hasInvoice = false, releases = [], s
     hasInvoice && { key: 'invoice', label: 'Invoice' },
     release && { key: 'release', label: 'Release', file: release.file },
     schedule && { key: 'schedule', label: 'Payment Schedule', file: schedule.file },
+    ...purchaseOrders
+      .filter((order) => order.file)
+      .map((order) => ({ key: 'purchase-order', label: 'Purchase Order', file: order.file })),
   ].filter(Boolean)
 }
 
-/** "Invoice, Release and Payment Schedule saved on this Package": what the view is joined from. */
+/**
+ * "Invoice, Release and Payment Schedule saved on this Package · 2 Purchase Orders from the Job":
+ * what the view is joined from. The Purchase Orders are the Job's, not saved on the Package.
+ */
 export function describeStoredBundle(parts = []) {
-  const labels = parts.map(({ label }) => label)
+  const labels = parts.filter(({ key }) => key !== 'purchase-order').map(({ label }) => label)
+  const orderCount = parts.length - labels.length
   const list = labels.length > 1
     ? `${labels.slice(0, -1).join(', ')} and ${labels[labels.length - 1]}`
     : labels.join('')
-  return list ? `${list} saved on this Package` : ''
+  return [
+    list ? `${list} saved on this Package` : '',
+    orderCount > 0 ? `${describePurchaseOrderCount(orderCount)} from the Job` : '',
+  ].filter(Boolean).join(' · ')
 }

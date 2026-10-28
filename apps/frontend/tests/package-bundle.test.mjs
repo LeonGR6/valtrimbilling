@@ -57,6 +57,28 @@ test('the generated Package is put together as it is joined: invoice, Release, P
   assert.deepEqual(parts.map((part) => part.file?.name), [undefined, 'release.pdf', 'schedule.pdf'])
 })
 
+test('the Purchase Orders behind the options are joined after the Payment Schedule', () => {
+  const order = (name) => ({ documentId: name, file: { name, bucket: 'job-documents', storagePath: name } })
+  const parts = pickStoredBundleDocuments({
+    hasInvoice: true,
+    releases: [stored('release.pdf', '2026-10-20')],
+    schedules: [stored('schedule.pdf', '2026-10-21')],
+    purchaseOrders: [order('po-1.pdf'), order('po-2.pdf')],
+  })
+
+  assert.deepEqual(parts.map((part) => part.key), [
+    'invoice', 'release', 'schedule', 'purchase-order', 'purchase-order',
+  ])
+  assert.deepEqual(parts.slice(3).map((part) => part.file.name), ['po-1.pdf', 'po-2.pdf'])
+
+  // An order whose PDF is not there is left out, and so are Purchase Orders when there are none.
+  assert.deepEqual(
+    pickStoredBundleDocuments({ purchaseOrders: [{ documentId: 9, file: null }] }),
+    [],
+  )
+  assert.deepEqual(pickStoredBundleDocuments({ hasInvoice: true }).map((part) => part.key), ['invoice'])
+})
+
 test('a document generated again is taken in its newest version, and missing ones are skipped', () => {
   const parts = pickStoredBundleDocuments({
     releases: [
@@ -69,6 +91,20 @@ test('a document generated again is taken in its newest version, and missing one
   assert.deepEqual(parts.map((part) => [part.key, part.file.name]), [['release', 'new.pdf']])
   assert.deepEqual(pickStoredBundleDocuments({ hasInvoice: true }).map((part) => part.key), ['invoice'])
   assert.deepEqual(pickStoredBundleDocuments(), [])
+})
+
+test('the view says the Purchase Orders come from the Job, not from the Package', () => {
+  const part = (key, label) => ({ key, label })
+  assert.equal(
+    describeStoredBundle([
+      part('invoice', 'Invoice'),
+      part('release', 'Release'),
+      part('purchase-order', 'Purchase Order'),
+      part('purchase-order', 'Purchase Order'),
+    ]),
+    'Invoice and Release saved on this Package · 2 Purchase Orders from the Job',
+  )
+  assert.equal(describeStoredBundle([part('purchase-order', 'Purchase Order')]), '1 Purchase Order from the Job')
 })
 
 test('the view says which saved documents it is joined from', () => {

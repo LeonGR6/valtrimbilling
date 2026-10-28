@@ -509,8 +509,9 @@ export function buildPurchaseOrderBacking(lines) {
   return {
     hasPurchaseOrders: lotsWithPurchaseOrder.size > 0,
     /**
-     * 'backed', 'price_differs', 'not_in_po' (the Lot has a Purchase Order that does
-     * not print this option) or 'no_po' (the Lot has none). `poPrice` for a difference.
+     * 'backed', 'price_differs', 'plan_differs' (the price agrees, but the PDF was printed for
+     * another Plan than the Lot's), 'not_in_po' (the Lot has a Purchase Order that does not
+     * print this option) or 'no_po' (the Lot has none). `poPrice` for a difference.
      */
     lookup(row) {
       const lotId = Number(row.lotId)
@@ -520,10 +521,12 @@ export function buildPurchaseOrderBacking(lines) {
         return { state: lotsWithPurchaseOrder.has(lotId) ? 'not_in_po' : 'no_po' }
       }
 
+      // The price is looked at first; a Plan that differs only matters when the price agrees.
+      const agreeing = line.status === 'PLAN_MISMATCH' ? 'plan_differs' : 'backed'
       const price = row.priceNotApplicable === true ? 0 : Number(row.price)
-      if (!Number.isFinite(price) || line.poUnitPrice === null) return { state: 'backed' }
+      if (!Number.isFinite(price) || line.poUnitPrice === null) return { state: agreeing }
       return Math.round((price - line.poUnitPrice) * 100) === 0
-        ? { state: 'backed', poPrice: line.poUnitPrice }
+        ? { state: agreeing, poPrice: line.poUnitPrice }
         : { state: 'price_differs', poPrice: line.poUnitPrice }
     },
   }
@@ -541,6 +544,12 @@ const BACKING_LABELS = {
     color: 'warning',
     variant: 'filled',
     hint: 'A Purchase Order prints this option at another price.',
+  },
+  plan_differs: {
+    label: 'PO plan differs',
+    color: 'warning',
+    variant: 'filled',
+    hint: "A Purchase Order prints this option at this price, but for another Plan than this Lot's.",
   },
   not_in_po: {
     label: 'Not in the PO',
@@ -565,7 +574,7 @@ export function countUnbacked(backing, rows) {
   if (!backing?.hasPurchaseOrders) return 0
   return rows.filter((row) => {
     const { state } = backing.lookup(row)
-    return state === 'price_differs' || state === 'not_in_po'
+    return state === 'price_differs' || state === 'plan_differs' || state === 'not_in_po'
   }).length
 }
 

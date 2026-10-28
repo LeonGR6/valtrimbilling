@@ -346,6 +346,13 @@ test('says whether a Purchase Order backs the option a Package bills', async () 
   assert.equal(backing.lookup(option({ optionId: 7, optionCode: '5ZZZ0001' })).state, 'not_in_po')
   // The Lot has no Purchase Order at all.
   assert.equal(backing.lookup(option({ lotId: 99 })).state, 'no_po')
+  // A line printed for another Plan than the Lot's is not well related, even at the right price...
+  const planDiffers = buildPurchaseOrderBacking([line({ status: 'PLAN_MISMATCH' })])
+  assert.deepEqual(planDiffers.lookup(option({})), { state: 'plan_differs', poPrice: 81 })
+  assert.equal(countUnbacked(planDiffers, [option({})]), 1)
+  assert.equal(describeBacking({ state: 'plan_differs' }).label, 'PO plan differs')
+  // ...but a price that differs says so first.
+  assert.equal(planDiffers.lookup(option({ price: 90 })).state, 'price_differs')
   // NA bills nothing: it agrees with a PDF that prints $0.
   const zero = buildPurchaseOrderBacking([line({ po_unit_price: '0.00' })])
   assert.equal(zero.lookup(option({ price: 0, priceNotApplicable: true })).state, 'backed')

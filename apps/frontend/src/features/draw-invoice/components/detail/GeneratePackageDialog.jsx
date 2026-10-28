@@ -50,12 +50,21 @@ import {
   saveQuickbooksInvoicePdf,
 } from '../../services/quickbooksRepository.js'
 import { isQuickbooksTestPackage } from '../../services/quickbooksRecord.js'
+import { downloadPurchaseOrderPdf } from '../../services/packagePurchaseOrders.js'
+import { usePackagePurchaseOrders } from '../../hooks/usePackagePurchaseOrders.js'
+import {
+  describeOrderOptions,
+  describePurchaseOrderCount,
+  joinableOrders,
+} from '../../utils/packagePurchaseOrders.js'
+import PackagePurchaseOrderWarning from '../shared/PackagePurchaseOrderWarning.jsx'
 
 const NOT_READY = { canGenerate: false, generating: false, previewing: false, loading: true }
 
 const STEP_LABELS = {
   previewing: 'Building preview…',
   invoice: 'Reading the QuickBooks invoice…',
+  orders: 'Reading the Purchase Orders…',
   release: 'Generating the Release…',
   schedule: 'Generating the Payment Schedule…',
   merging: 'Joining the documents…',
@@ -209,7 +218,8 @@ const FIXES = {
 
 /**
  * The whole Package in one place, in the order it is joined: 1. the QuickBooks
- * invoice, 2. the Release and 3. the Payment Schedule. Each document can be
+ * invoice, 2. the Release, 3. the Payment Schedule and 4. the Purchase Orders behind the
+ * options it charges (only for a Job that has them). Each document can be
  * previewed, downloaded and left out on its own, and the ones that are in are
  * generated, saved to the Package and downloaded together as a single PDF. Generating a Draft
  * Package also moves it to Awaiting payment (not when it was invoiced in QuickBooks Test).
@@ -224,6 +234,8 @@ export default function GeneratePackageDialog({
   // not ask for starts out of the PDF and does not block generating it.
   requiresRelease = true,
   requiresPaymentSchedule = true,
+  // The options this Package charges now: the Purchase Orders behind them go into the PDF.
+  optionRows = [],
   // The emails of this Package already sent, newest first, and a way to refresh them.
   submissions = [],
   onSent = null,
@@ -242,6 +254,7 @@ export default function GeneratePackageDialog({
     invoice: true,
     release: requiresRelease,
     schedule: requiresPaymentSchedule,
+    purchaseOrders: true,
   })
   const [step, setStep] = useState(null)
   const [completedSteps, setCompletedSteps] = useState([])
@@ -251,6 +264,8 @@ export default function GeneratePackageDialog({
   const [generated, setGenerated] = useState(null)
   const [preview, setPreview] = useState(null)
   const [invoicePreview, setInvoicePreview] = useState(null)
+  const [orderPreview, setOrderPreview] = useState(null)
+  const [orderBusy, setOrderBusy] = useState(null)
   const [invoiceBusy, setInvoiceBusy] = useState(null)
   const [invoiceError, setInvoiceError] = useState(null)
   // The files as they stand now, for the thumbnails; nothing here is saved.
@@ -258,6 +273,7 @@ export default function GeneratePackageDialog({
   const [builtBytes, setBuiltBytes] = useState({ release: null, schedule: null })
   const [pageCounts, setPageCounts] = useState({ invoice: null, release: null, schedule: null })
   const invoicePdf = useQuickbooksInvoicePdf(packageRecord)
+  const purchaseOrders = usePackagePurchaseOrders({ jobId: job.id, rows: optionRows })
   const hasQuickbooksInvoice = packageRecord.quickbooksStatus === 'CREATED'
   // An invoice in the QuickBooks Test company is not real: the Package can be
   // generated to review it, but never sent or marked as submitted.
@@ -342,6 +358,11 @@ export default function GeneratePackageDialog({
   const useInvoice = included.invoice && hasQuickbooksInvoice && Boolean(invoicePdf.pdf)
   const useRelease = included.release
   const useSchedule = included.schedule
+  // The Purchase Orders behind the options this Package charges. A Job that does not use them has no card.
+  const orderPlan = purchaseOrders.plan
+  const orders = joinableOrders(orderPlan)
+  const showOrdersCard = purchaseOrders.status === 'error' || Boolean(orderPlan?.usesPurchaseOrders)
+  const useOrders = included.purchaseOrders && orders.length > 0
 
   const loadInvoice = async () => {
     if (invoiceFile) return invoiceFile
@@ -350,13 +371,17 @@ export default function GeneratePackageDialog({
     return saved
   }
   const loadInvoiceBytes = async () => (useInvoice ? (await loadInvoice()).bytes : null)
+  const loadOrderBytes = async () => (useOrders ? Promise.all(orders.map(downloadPurchaseOrderPdf)) : [])
 
   // A part can be busy on its own too (building its own preview).
-  const busy = step !== null || invoiceBusy !== null || release.generating || schedule.generating
-  const anythingIncluded = useInvoice || useRelease || useSchedule
+  const busy = step !== null || invoiceBusy !== null || orderBusy !== null
+    || release.generating || schedule.generating
+  const anythingIncluded = useInvoice || useRelease || useSchedule || useOrders
+  // The Purchase Orders are looked up first, so the PDF is never joined without ones that are there.
   const canGenerate = anythingIncluded
     && (!useRelease || release.canGenerate)
     && (!useSchedule || schedule.canGenerate)
+    && purchaseOrders.status !== 'loading'
     && !busy
 
   // --- The invoice on its own -------------------------------------------
@@ -388,6 +413,20 @@ export default function GeneratePackageDialog({
     invoicePdf.reload()
   })
 
+  // --- The Purchase Orders on their own ----------------------------------
+
+  const previewOrder = async (order) => {
+    setError(null)
+    setOrderBusy(order.documentId)
+    try {
+      setOrderPreview({ bytes: await downloadPurchaseOrderPdf(order), fileName: order.file.name })
+    } catch (previewError) {
+      setError(previewError.message)
+    } finally {
+      setOrderBusy(null)
+    }
+  }
+
   // --- The whole Package --------------------------------------------------
 
   // The documents as they would be generated, joined; nothing is saved.
@@ -401,6 +440,7 @@ export default function GeneratePackageDialog({
       if (invoiceBytes) documents.push(invoiceBytes)
       if (useRelease) documents.push((await releaseRef.current.build()).bytes)
       if (useSchedule) documents.push((await scheduleRef.current.build()).bytes)
+      documents.push(...await loadOrderBytes())
       const { bytes } = await mergePdfs(documents)
       setPreview({ bytes, fileName: bundleFileName })
     } catch (previewError) {
@@ -424,6 +464,14 @@ export default function GeneratePackageDialog({
         setStep('invoice')
         documents.push(await loadInvoiceBytes())
         finish('invoice')
+      }
+
+      // Also read before anything is generated or saved.
+      let orderPdfs = []
+      if (useOrders) {
+        setStep('orders')
+        orderPdfs = await loadOrderBytes()
+        finish('orders')
       }
 
       if (useRelease) {
@@ -452,6 +500,7 @@ export default function GeneratePackageDialog({
         finish('schedule')
       }
 
+      documents.push(...orderPdfs)
       setStep('merging')
       const { bytes, pageCount } = await mergePdfs(documents)
       saveToDisk(new Blob([bytes], { type: 'application/pdf' }), bundleFileName)
@@ -477,6 +526,7 @@ export default function GeneratePackageDialog({
         invoice: useInvoice,
         release: useRelease,
         schedule: useSchedule,
+        purchaseOrders: orderPdfs.length,
         statusNote: describeStatusAfterGenerate(statusResult),
       })
     } catch (generationError) {
@@ -529,6 +579,14 @@ export default function GeneratePackageDialog({
   const releaseStatus = releaseNotNeeded ? { tone: 'default', label: 'Not required' } : statusOf(release)
   const scheduleStatus = scheduleNotNeeded ? { tone: 'default', label: 'Not required' } : statusOf(schedule)
 
+  const ordersStatus = purchaseOrders.status === 'error'
+    ? { tone: 'warning', label: 'Could not check' }
+    : (orderPlan?.unbacked.length ?? 0) > 0
+      ? { tone: 'warning', label: 'Needs a look' }
+      : orders.length > 0
+        ? { tone: 'success', label: 'Ready' }
+        : { tone: 'default', label: 'None linked' }
+
   const summaryRow = (title, status, isIncluded, includedNote, leftOutNote = 'Left out of the PDF') => ({
     title,
     status: isIncluded ? status : { tone: 'default', label: 'Left out' },
@@ -557,10 +615,18 @@ export default function GeneratePackageDialog({
       schedule.canGenerate ? 'Will be generated' : 'Needs attention',
       scheduleNotNeeded ? 'Not required by the billing setup' : undefined,
     ),
-  ]
+    showOrdersCard && summaryRow(
+      'Purchase Orders',
+      ordersStatus,
+      useOrders,
+      describePurchaseOrderCount(orders.length),
+      orders.length === 0 ? 'None linked to the options' : undefined,
+    ),
+  ].filter(Boolean)
 
   const progressSteps = [
     useInvoice && { key: 'invoice', label: 'Read the invoice' },
+    useOrders && { key: 'orders', label: 'Read the Purchase Orders' },
     useRelease && { key: 'release', label: 'Generate the Release' },
     useSchedule && { key: 'schedule', label: 'Generate the Payment Schedule' },
     { key: 'merging', label: 'Join and download' },
@@ -572,6 +638,7 @@ export default function GeneratePackageDialog({
     done?.invoice && 'the QuickBooks invoice',
     done?.release && 'the Release',
     done?.schedule && 'the Payment Schedule',
+    done?.purchaseOrders > 0 && describePurchaseOrderCount(done.purchaseOrders),
   ].filter(Boolean)
 
   return (
@@ -841,6 +908,61 @@ export default function GeneratePackageDialog({
               </Box>
             </DocumentCard>
 
+            {showOrdersCard && (
+              <DocumentCard
+                number={4}
+                title="Purchase Orders"
+                description="The Job's Purchase Orders behind the options this Package charges, joined after the other documents."
+                status={ordersStatus}
+                include={{
+                  checked: useOrders,
+                  disabled: orders.length === 0,
+                  hint: orders.length === 0 ? 'No Purchase Order PDF is linked to these options' : undefined,
+                  onChange: setInclude('purchaseOrders'),
+                }}
+              >
+                <Stack spacing={1.5}>
+                  {purchaseOrders.status === 'error' && (
+                    <Alert
+                      severity="warning"
+                      action={<Button color="inherit" size="small" onClick={purchaseOrders.reload}>Try again</Button>}
+                    >
+                      The Purchase Orders could not be checked, so none is added to the PDF: {purchaseOrders.error}
+                    </Alert>
+                  )}
+                  <PackagePurchaseOrderWarning unbacked={orderPlan?.unbacked} />
+                  {orderPlan && orderPlan.orders.length === 0 && (
+                    <Typography variant="body2" color="text.secondary">
+                      No Purchase Order is linked to the options this Package charges, so none is added to the PDF.
+                    </Typography>
+                  )}
+                  {orderPlan?.orders.map((order) => (
+                    <Stack key={order.documentId} direction="row" spacing={1.5} sx={{ alignItems: 'center' }}>
+                      <Box sx={{ flex: 1, minWidth: 0 }}>
+                        <Typography variant="body2" fontWeight={750} sx={{ overflowWrap: 'anywhere' }}>
+                          {order.file?.name ?? 'The PDF of this Purchase Order is not available'}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          Backs {describeOrderOptions(order)}
+                        </Typography>
+                      </Box>
+                      {order.file && (
+                        <Button
+                          size="small"
+                          variant="outlined"
+                          startIcon={orderBusy === order.documentId ? <CircularProgress size={16} /> : <VisibilityRoundedIcon />}
+                          disabled={busy}
+                          onClick={() => previewOrder(order)}
+                        >
+                          Preview
+                        </Button>
+                      )}
+                    </Stack>
+                  ))}
+                </Stack>
+              </DocumentCard>
+            )}
+
             {generated && isTestPackage && (
               <Alert
                 severity="warning"
@@ -887,7 +1009,8 @@ export default function GeneratePackageDialog({
           >
             <Typography variant="subtitle1" fontWeight={850}>Package PDF</Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
-              One file, joined in this order. Each document that goes in is also saved to the Package.
+              One file, joined in this order. The Release and the Payment Schedule that go in are also
+              saved to the Package{showOrdersCard ? '; the Purchase Orders stay with the Job' : ''}.
             </Typography>
             <Stack spacing={1.25}>
               {summaryRows.map((row, index) => (
@@ -1011,6 +1134,15 @@ export default function GeneratePackageDialog({
             generate()
           }}
           onClose={() => setPreview(null)}
+        />
+      )}
+
+      {orderPreview && (
+        <PdfPreviewDialog
+          title="Purchase Order"
+          subtitle={orderPreview.fileName}
+          bytes={orderPreview.bytes}
+          onClose={() => setOrderPreview(null)}
         />
       )}
 

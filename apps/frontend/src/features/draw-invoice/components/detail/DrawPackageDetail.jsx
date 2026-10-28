@@ -485,7 +485,11 @@ export default function DrawPackageDetail() {
               onEdit={() => setCorrectionDialog('edit')}
               onMoveCells={() => setCorrectionDialog('transfer')}
               onDelete={() => setCorrectionDialog('delete')}
-              onCreate={() => setCreateDialogOpen(true)}
+              onCreate={() => {
+                setCreateDialogOpen(true)
+                // Read again what is saved, so an Option added a moment ago is seen.
+                Promise.all([refreshJobs(), refreshDrawInvoicePackages()]).catch(() => {})
+              }}
             />
             {submissions.length > 0 && (
               <Tooltip

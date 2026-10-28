@@ -94,6 +94,13 @@ export default function DrawInvoiceCatalog() {
     ))
   }
 
+  // A Package is made from what is saved now, so an Option added a moment ago (here or by someone
+  // else) is read again when the dialog opens, and the Phase that was complete shows up open.
+  const openCreateDialog = (context) => {
+    setCreateDialogContext(context)
+    Promise.all([refreshJobs(), refreshDrawInvoicePackages()]).catch(() => {})
+  }
+
   const handleRetry = () => {
     Promise.all([
       refreshJobs(),
@@ -130,8 +137,8 @@ export default function DrawInvoiceCatalog() {
         createDisabled={billingSetupsLoading || jobBillingSetupVersions.length === 0}
         error={error}
         onRetry={handleRetry}
-        onCreate={() => setCreateDialogContext({})}
-        onReviewSuggestion={(suggestion) => setCreateDialogContext({
+        onCreate={() => openCreateDialog({})}
+        onReviewSuggestion={(suggestion) => openCreateDialog({
           jobId: suggestion.job.id,
           phaseId: suggestion.initialPhaseId,
         })}

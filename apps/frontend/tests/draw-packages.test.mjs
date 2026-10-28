@@ -1417,3 +1417,65 @@ test('the selected total keeps the cents exact and ignores what is not ticked or
   assert.deepEqual(summarizeSelectedDrawCells(rows, 1), { draws: [{ count: 0, total: 0 }], count: 0, total: 0 })
   assert.deepEqual(summarizeSelectedDrawCells([], 0), { draws: [], count: 0, total: 0 })
 })
+
+test('an Option added to a Lot of a completed Phase is billed on a cell of another Phase', () => {
+  // Phase 3 was billed in full (its Lot 21 included, and its option C9100). P65100C was added to Lot 21
+  // afterwards. Phase 4 still has Lots to bill.
+  const job = {
+    id: 9,
+    sequenceSheet: {
+      plans: [{
+        id: 1,
+        code: '3C',
+        price: 1000,
+        options: [
+          { id: 10, code: 'C9100', description: 'Door', price: 100 },
+          { id: 11, code: 'P65100C', description: 'Paint', price: 250 },
+        ],
+      }],
+    },
+  }
+  const completedPhase = { id: 3, name: 'L9-24A', lots: [{ id: 21, lotNumber: '21', planId: 1, optionIds: [10, 11] }] }
+  const openPhase = { id: 4, name: 'L9-24B', lots: [{ id: 23, lotNumber: '23', planId: 1, optionIds: [] }] }
+  const schedule = {
+    draws: [{ percentage: 25 }, { percentage: 65 }, { percentage: 10 }],
+    optionsBillingDrawIndex: 2,
+  }
+  const earlier = {
+    id: 115,
+    packageNumber: 'DP-00000115',
+    jobId: 9,
+    status: 'DRAFT',
+    optionsBillingDrawIndex: 2,
+    selections: [0, 1, 2].map((drawIndex) => ({ phaseId: 3, lotId: 21, drawIndex })),
+    persistedOptionLines: [{ lotId: 21, optionId: 10, price: 100 }],
+  }
+  const context = buildOptionChargeContext([earlier], 9, 2)
+  const summaryFor = (selections) => summarizeDrawPackage(
+    { selections, optionsBillingDrawIndex: 2, ...context },
+    job,
+    [completedPhase, openPhase],
+    schedule,
+  )
+
+  // Billing Draw 3 of the open Phase: the new option goes with it, the billed one does not.
+  const carried = summaryFor([{ phaseId: 4, lotId: 23, drawIndex: 2 }])
+  assert.equal(carried.optionsAreDue, true)
+  assert.deepEqual(
+    carried.selectedOptionRows.map((option) => [option.lotNumber, option.optionCode]),
+    [['21', 'P65100C']],
+  )
+  assert.equal(carried.optionsTotal, 250)
+  assert.equal(carried.billedOptionCount, 1)
+
+  // Before a cell is chosen the option is not lost: it is there, waiting for one.
+  const waiting = summaryFor([])
+  assert.equal(waiting.optionsAreDue, false)
+  assert.deepEqual(
+    waiting.availableOptionRows.filter((option) => !option.isBilled).map((option) => option.optionCode),
+    ['P65100C'],
+  )
+
+  // A cell before the Options billing Draw cannot carry it.
+  assert.equal(summaryFor([{ phaseId: 4, lotId: 23, drawIndex: 1 }]).optionsAreDue, false)
+})

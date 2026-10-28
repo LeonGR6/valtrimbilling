@@ -166,6 +166,14 @@ export default function CreateDrawDialog({
   )
   const billedHardwareCharges = buildBilledHardwareCharges(packages, job?.id)
   const billedUtilityCharges = buildBilledUtilityCharges(packages, job?.id)
+  const optionChargeContext = buildOptionChargeContext(
+    packages,
+    job?.id,
+    schedule?.optionsBillingDrawIndex ?? null,
+  )
+  const billedOptionIdentities = new Set(
+    optionChargeContext.billedOptionEntries.map(({ identity }) => identity),
+  )
   // Phases whose every cell and charge is already in a Package go to their own
   // collapsed section, so the ones that still have something to bill come first.
   const progressByPhaseId = new Map(phases.map((candidate) => [
@@ -177,6 +185,7 @@ export default function CreateDrawDialog({
       usedSelections,
       billedUtilityCharges,
       billedHardwareCharges,
+      billedOptionIdentities,
     }),
   ]))
   // A Phase already added to the Package stays among the chips so it can be removed.
@@ -560,11 +569,6 @@ export default function CreateDrawDialog({
     )
   }
 
-  const optionChargeContext = buildOptionChargeContext(
-    packages,
-    job?.id,
-    schedule?.optionsBillingDrawIndex ?? null,
-  )
   const draftRecord = {
     lotIds: packageSelections.map(({ lotId }) => lotId),
     drawIndexes: selectedDrawIndexes,
@@ -578,6 +582,11 @@ export default function CreateDrawDialog({
   const summary = summarizeDrawPackage(draftRecord, job, phases, schedule)
   const packagePhaseLabelList = packagePhaseLabels(summary.phaseSummaries)
   const isMultiPhase = isMultiPhasePackage(summary.phaseCount)
+  // Options selected on a Lot whose Draws are already billed. They are billed on a Draw of this
+  // Package at or after the Options billing Draw, so they wait until one is selected.
+  const waitingOptionRows = summary.optionsAreDue || schedule?.optionsBillingDrawIndex == null
+    ? []
+    : summary.availableOptionRows.filter((option) => !option.isBilled)
 
   const toggleOption = (option) => {
     setExcludedOptionKeys((current) => current.includes(option.id)
@@ -647,6 +656,11 @@ export default function CreateDrawDialog({
     const cellCount = selectedSelections.filter(
       (selection) => String(selection.phaseId) === id,
     ).length
+    // A Phase whose cells are all billed stays open only for Options added since.
+    const progress = progressByPhaseId.get(id)
+    const optionsLeft = progress.pendingOptions > 0 && progress.billedCells === progress.totalCells
+      ? progress.pendingOptions
+      : 0
 
     return (
       <Chip
@@ -663,6 +677,7 @@ export default function CreateDrawDialog({
           formatPhaseBuilding(candidate.name, candidate.building),
           `${counts.lots} lots`,
           counts.utility > 0 ? `${counts.utility} Utility` : null,
+          optionsLeft > 0 ? `${optionsLeft} ${optionsLeft === 1 ? 'option' : 'options'} to bill` : null,
           cellCount > 0 ? `${cellCount} ${cellCount === 1 ? 'cell' : 'cells'}` : null,
         ].filter(Boolean).join(' · ')}
       />
@@ -1059,6 +1074,26 @@ export default function CreateDrawDialog({
               billedHardwareCharges={billedHardwareCharges}
               onToggle={toggleHardwareSelection}
             />
+          )}
+
+          {hasScope && waitingOptionRows.length > 0 && (
+            <Alert severity="info">
+              <strong>
+                {waitingOptionRows.length === 1
+                  ? '1 option is waiting to be billed'
+                  : `${waitingOptionRows.length} options are waiting to be billed`}
+              </strong>
+              {': '}
+              {waitingOptionRows.slice(0, 4)
+                .map((option) => `Lot ${option.lotNumber} · ${option.optionCode}`)
+                .join(', ')}
+              {waitingOptionRows.length > 4 ? ` and ${waitingOptionRows.length - 4} more` : ''}.
+              {' '}{waitingOptionRows.length === 1 ? 'It was' : 'They were'} added after{' '}
+              {waitingOptionRows.length === 1 ? 'its Lot' : 'their Lots'} reached Draw #
+              {schedule.optionsBillingDrawIndex + 1}, so {waitingOptionRows.length === 1 ? 'it goes' : 'they go'} on
+              a Lot / Draw cell of this Package from that Draw on. Select one (in any Phase) and{' '}
+              {waitingOptionRows.length === 1 ? 'the option appears' : 'the options appear'} here to include.
+            </Alert>
           )}
 
           {hasScope && summary.optionsAreDue && (

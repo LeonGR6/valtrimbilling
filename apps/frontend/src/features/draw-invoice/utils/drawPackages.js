@@ -36,7 +36,8 @@ export function optionSelectionKey(phaseId, lotId, optionId) {
   return `${phaseId}:${lotId}:${optionId}`
 }
 
-function optionBillingIdentity(lotId, optionId) {
+/** The key of an Option of a Lot, which is what a Package bills once: "lotId:optionId". */
+export function optionBillingIdentity(lotId, optionId) {
   return `${lotId}:${optionId}`
 }
 

@@ -9,7 +9,9 @@ import {
 } from './calendarDrawSuggestions.js'
 import {
   drawSelectionKey,
+  getOptionsBillingDrawIndex,
   hardwareChargeKey,
+  optionBillingIdentity,
   utilityChargeKey,
 } from './drawPackages.js'
 import {
@@ -102,13 +104,16 @@ const BILLING_EVENT_ORDER = ['EXT', 'DM', 'HW']
 /**
  * How much of a Phase / Building is still to be billed. A Phase is complete
  * when every Lot / Draw cell, every Utility charge and every Separate Hardware
- * charge it has is already in a Package (cancelled Packages do not count).
+ * charge it has is already in a Package (cancelled Packages do not count), and
+ * every Option selected on its Lots was charged too: an Option added after its Lot
+ * was billed leaves the Phase open, so it can be added to a Package to bill it.
  * A Phase with nothing to bill, or a Job without a usable schedule, is never
  * reported as complete, so it stays among the ones to review.
  *
  * @param usedSelections Map from `buildUsedDrawSelections`
  * @param billedUtilityCharges Map from `buildBilledUtilityCharges`
  * @param billedHardwareCharges Map from `buildBilledHardwareCharges`
+ * @param billedOptionIdentities Set of "lotId:optionId" already billed (`buildOptionChargeContext`)
  */
 export function phaseBillingProgress({
   job,
@@ -117,6 +122,7 @@ export function phaseBillingProgress({
   usedSelections,
   billedUtilityCharges,
   billedHardwareCharges,
+  billedOptionIdentities = new Set(),
 }) {
   const draws = schedule?.draws ?? []
   const rows = phase?.lots ?? []
@@ -155,8 +161,24 @@ export function phaseBillingProgress({
     billedHardwareCharges.has(hardwareChargeKey(lotId, 'BY_EVENT', eventType))
   )).length
 
-  const total = totalCells + totalUtility + phaseHardware.length
-  const billed = billedCells + billedUtility + billedHardware
+  // The Options selected on its Lots. A Builder that does not bill Options has none to wait for.
+  let totalOptions = 0
+  let billedOptions = 0
+  if (getOptionsBillingDrawIndex(null, schedule) !== null) {
+    const plans = job?.sequenceSheet?.plans ?? []
+    for (const row of lotRows) {
+      const selectedOptionIds = new Set((row.optionIds ?? []).map(String))
+      const plan = plans.find((candidate) => String(candidate.id) === String(row.planId))
+      for (const option of plan?.options ?? []) {
+        if (!selectedOptionIds.has(String(option.id))) continue
+        totalOptions += 1
+        if (billedOptionIdentities.has(optionBillingIdentity(row.id, option.id))) billedOptions += 1
+      }
+    }
+  }
+
+  const total = totalCells + totalUtility + phaseHardware.length + totalOptions
+  const billed = billedCells + billedUtility + billedHardware + billedOptions
 
   return {
     lotCount: lotRows.length,
@@ -168,6 +190,10 @@ export function phaseBillingProgress({
     billedUtility,
     totalHardware: phaseHardware.length,
     billedHardware,
+    totalOptions,
+    billedOptions,
+    // Selected on a Lot and not charged yet.
+    pendingOptions: totalOptions - billedOptions,
     remaining: total - billed,
     isComplete: total > 0 && billed === total,
   }

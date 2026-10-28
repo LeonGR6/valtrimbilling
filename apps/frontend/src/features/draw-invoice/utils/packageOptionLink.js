@@ -43,3 +43,27 @@ export function excludedOptionsAfterCellChange({
 
   return [...next]
 }
+
+/**
+ * The excluded Option keys after all of `optionKeys` are included or excluded at once, from the
+ * check in the "Include" column. Options that are not in `optionKeys` keep what was chosen.
+ */
+export function excludedOptionsAfterBulkChoice({ excludedKeys, optionKeys, included }) {
+  const chosen = new Set(optionKeys)
+  return included
+    ? excludedKeys.filter((key) => !chosen.has(key))
+    : [...new Set([...excludedKeys, ...optionKeys])]
+}
+
+/**
+ * The state of the check that includes or excludes all the Options in the table: checked when
+ * every one is included, empty when none is, and in between otherwise. Nothing to choose has no check.
+ */
+export function bulkOptionCheck(optionKeys, includedKeys) {
+  const included = optionKeys.filter((key) => includedKeys.has(key)).length
+  return {
+    visible: optionKeys.length > 0,
+    checked: optionKeys.length > 0 && included === optionKeys.length,
+    indeterminate: included > 0 && included < optionKeys.length,
+  }
+}

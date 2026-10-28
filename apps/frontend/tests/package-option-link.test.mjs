@@ -1,7 +1,11 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { optionSelectionKey } from '../src/features/draw-invoice/utils/drawPackages.js'
-import { excludedOptionsAfterCellChange } from '../src/features/draw-invoice/utils/packageOptionLink.js'
+import {
+  bulkOptionCheck,
+  excludedOptionsAfterBulkChoice,
+  excludedOptionsAfterCellChange,
+} from '../src/features/draw-invoice/utils/packageOptionLink.js'
 
 // Options are billed from Draw 3 on (index 2).
 const schedule = { optionsBillingDrawIndex: 2, draws: [{}, {}, {}, {}] }
@@ -74,4 +78,35 @@ test('nothing changes when the setup bills no Options', () => {
 
   assert.deepEqual(change([], [cell(7, 2)], excluded, { optionsBillingDrawIndex: null }), excluded)
   assert.deepEqual(change([cell(7, 2)], [], excluded, {}), excluded)
+})
+
+test('the check in the Include column includes or excludes every option of the table at once', () => {
+  const all = [key(1, 7, 10), key(1, 7, 11), key(1, 8, 10)]
+  const bulk = (excludedKeys, included, optionKeys = all) => (
+    excludedOptionsAfterBulkChoice({ excludedKeys, optionKeys, included }).sort()
+  )
+
+  // Excluding all leaves them all excluded, whatever was chosen before.
+  assert.deepEqual(bulk([], false), [...all].sort())
+  assert.deepEqual(bulk([key(1, 7, 10)], false), [...all].sort())
+  // Including all clears them all.
+  assert.deepEqual(bulk([...all], true), [])
+  assert.deepEqual(bulk([key(1, 7, 11)], true), [])
+  // Options that are not in the table keep what was chosen.
+  assert.deepEqual(bulk([key(2, 7, 10)], true), [key(2, 7, 10)])
+  assert.deepEqual(bulk([key(2, 7, 10)], false), [key(2, 7, 10), ...all].sort())
+})
+
+test('the check of the Include column is checked, empty or in between, and hidden with nothing to choose', () => {
+  const all = [key(1, 7, 10), key(1, 7, 11), key(1, 8, 10)]
+
+  assert.deepEqual(bulkOptionCheck(all, new Set(all)), { visible: true, checked: true, indeterminate: false })
+  assert.deepEqual(bulkOptionCheck(all, new Set()), { visible: true, checked: false, indeterminate: false })
+  assert.deepEqual(
+    bulkOptionCheck(all, new Set([key(1, 7, 10)])),
+    { visible: true, checked: false, indeterminate: true },
+  )
+  assert.deepEqual(bulkOptionCheck([], new Set()), { visible: false, checked: false, indeterminate: false })
+  // Included options of other rows do not count.
+  assert.equal(bulkOptionCheck(all, new Set([key(9, 9, 9)])).checked, false)
 })

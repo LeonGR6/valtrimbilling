@@ -20,8 +20,9 @@ import PurchaseOrderBackingChip from '../../../purchase-orders/components/Purcha
 import { countUnbacked } from '../../../purchase-orders/services/purchaseOrderRecord.js'
 import { formatPhaseBuilding } from '../../../sequence-sheets/utils/phaseBuildingCodes.js'
 import { formatCurrency, formatOptionPrice } from '../../utils/drawInvoiceFormatters.js'
+import { bulkOptionCheck } from '../../utils/packageOptionLink.js'
 
-export default function SelectableOptionsTable({ summary, onToggle, backing = null }) {
+export default function SelectableOptionsTable({ summary, onToggle, onSetIncluded, backing = null }) {
   const availableFromDrawLabel = `Draw #${summary.optionsBillingDrawIndex + 1}`
   const chargeDrawLabel = summary.optionChargeDrawIndex == null
     ? '—'
@@ -37,126 +38,150 @@ export default function SelectableOptionsTable({ summary, onToggle, backing = nu
   const pendingRows = summary.availableOptionRows.filter((option) => option.isBilled !== true)
   const billedRows = summary.availableOptionRows.filter((option) => option.isBilled === true)
 
-  // The same table for what is still to choose and for what was already billed.
-  const renderTable = (rows, { label, total = false }) => (
-    <TableContainer>
-      <Table size="small" aria-label={label}>
-        <TableHead>
-          <TableRow>
-            <TableCell padding="checkbox">Include</TableCell>
-            <TableCell>Phase</TableCell>
-            <TableCell>Lot</TableCell>
-            <TableCell>Plan</TableCell>
-            <TableCell>Option</TableCell>
-            <TableCell>Description</TableCell>
-            <TableCell>Charged with</TableCell>
-            <TableCell align="right">Price</TableCell>
-            <TableCell>Status</TableCell>
-            {showBacking && <TableCell>Purchase Order</TableCell>}
-          </TableRow>
-        </TableHead>
-        <TableBody>
-          {rows.map((option) => {
-            const included = selectedKeys.has(option.id)
-            const priceMissing = option.issue === 'PRICE_MISSING'
-            const billed = option.isBilled === true
+  // The same table for what is still to choose and for what was already billed. Only the one to
+  // choose from has the check that includes or excludes all its options at once.
+  const renderTable = (rows, { label, total = false, selectAll = false }) => {
+    const bulk = bulkOptionCheck(rows.map((option) => option.id), selectedKeys)
 
-            return (
-              <TableRow
-                key={option.id}
-                hover={!billed}
-                selected={included}
-                sx={billed ? { bgcolor: 'action.disabledBackground' } : undefined}
-              >
-                <TableCell padding="checkbox">
-                  <Checkbox
-                    size="small"
-                    checked={billed || included}
-                    disabled={billed}
-                    onChange={() => !billed && onToggle(option)}
-                    inputProps={{
-                      'aria-label': billed
-                        ? `Option ${option.optionCode} for lot ${option.lotNumber} was already billed`
-                        : `${included ? 'Exclude' : 'Include'} option ${option.optionCode} for lot ${option.lotNumber}`,
-                    }}
-                  />
-                </TableCell>
-                <TableCell>
-                  {formatPhaseBuilding(option.phaseCode, option.building, { separator: ' / ' })}
-                </TableCell>
-                <TableCell>
-                  <Typography color="error.main" fontWeight={850}>
-                    {option.lotNumber}
-                  </Typography>
-                </TableCell>
-                <TableCell>{option.planCode ?? '—'}</TableCell>
-                <TableCell>
-                  <Typography fontWeight={750}>{option.optionCode}</Typography>
-                </TableCell>
-                <TableCell>{option.description}</TableCell>
-                <TableCell>
-                  {(billed
-                    ? option.billingDrawIndex
-                    : summary.optionChargeDrawIndex) == null
-                    ? '—'
-                    : `Draw #${(billed
-                        ? option.billingDrawIndex
-                        : summary.optionChargeDrawIndex) + 1}`}
+    return (
+      <TableContainer>
+        <Table size="small" aria-label={label}>
+          <TableHead>
+            <TableRow>
+              <TableCell padding="checkbox" sx={{ whiteSpace: 'nowrap', pr: 1.5 }}>
+                {selectAll && bulk.visible ? (
+                  <Stack direction="row" sx={{ alignItems: 'center' }}>
+                    <Checkbox
+                      size="small"
+                      checked={bulk.checked}
+                      indeterminate={bulk.indeterminate}
+                      onChange={() => onSetIncluded?.(rows, !bulk.checked)}
+                      slotProps={{
+                        input: {
+                          'aria-label': bulk.checked
+                            ? 'Exclude all options'
+                            : 'Include all options',
+                        },
+                      }}
+                    />
+                    Include
+                  </Stack>
+                ) : 'Include'}
+              </TableCell>
+              <TableCell>Phase</TableCell>
+              <TableCell>Lot</TableCell>
+              <TableCell>Plan</TableCell>
+              <TableCell>Option</TableCell>
+              <TableCell>Description</TableCell>
+              <TableCell>Charged with</TableCell>
+              <TableCell align="right">Price</TableCell>
+              <TableCell>Status</TableCell>
+              {showBacking && <TableCell>Purchase Order</TableCell>}
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            {rows.map((option) => {
+              const included = selectedKeys.has(option.id)
+              const priceMissing = option.issue === 'PRICE_MISSING'
+              const billed = option.isBilled === true
+
+              return (
+                <TableRow
+                  key={option.id}
+                  hover={!billed}
+                  selected={included}
+                  sx={billed ? { bgcolor: 'action.disabledBackground' } : undefined}
+                >
+                  <TableCell padding="checkbox">
+                    <Checkbox
+                      size="small"
+                      checked={billed || included}
+                      disabled={billed}
+                      onChange={() => !billed && onToggle(option)}
+                      inputProps={{
+                        'aria-label': billed
+                          ? `Option ${option.optionCode} for lot ${option.lotNumber} was already billed`
+                          : `${included ? 'Exclude' : 'Include'} option ${option.optionCode} for lot ${option.lotNumber}`,
+                      }}
+                    />
+                  </TableCell>
+                  <TableCell>
+                    {formatPhaseBuilding(option.phaseCode, option.building, { separator: ' / ' })}
+                  </TableCell>
+                  <TableCell>
+                    <Typography color="error.main" fontWeight={850}>
+                      {option.lotNumber}
+                    </Typography>
+                  </TableCell>
+                  <TableCell>{option.planCode ?? '—'}</TableCell>
+                  <TableCell>
+                    <Typography fontWeight={750}>{option.optionCode}</Typography>
+                  </TableCell>
+                  <TableCell>{option.description}</TableCell>
+                  <TableCell>
+                    {(billed
+                      ? option.billingDrawIndex
+                      : summary.optionChargeDrawIndex) == null
+                      ? '—'
+                      : `Draw #${(billed
+                          ? option.billingDrawIndex
+                          : summary.optionChargeDrawIndex) + 1}`}
+                  </TableCell>
+                  <TableCell align="right">
+                    <Typography
+                      color={included && priceMissing ? 'error' : 'text.primary'}
+                      fontWeight={750}
+                    >
+                      {billed
+                        ? formatOptionPrice(option.billedPrice, option.billedPriceNotApplicable)
+                        : (priceMissing
+                          ? 'Price missing'
+                          : formatOptionPrice(option.price, option.priceNotApplicable))}
+                    </Typography>
+                  </TableCell>
+                  <TableCell>
+                    <Chip
+                      size="small"
+                      color={billed || included
+                        ? (priceMissing && !billed ? 'error' : 'success')
+                        : 'default'}
+                      variant={billed || included ? 'filled' : 'outlined'}
+                      label={billed
+                        ? `Billed · ${option.billedPackageNumber ?? 'previous package'}`
+                        : (included
+                            ? (priceMissing ? 'Needs price' : 'Included in package')
+                            : 'Not included')}
+                    />
+                  </TableCell>
+                  {showBacking && (
+                    <TableCell>
+                      <PurchaseOrderBackingChip result={backing.lookup(option)} />
+                    </TableCell>
+                  )}
+                </TableRow>
+              )
+            })}
+          </TableBody>
+          {total && (
+            <TableFooter>
+              <TableRow>
+                <TableCell colSpan={7}>
+                  <Typography fontWeight={850}>Selected options total</Typography>
                 </TableCell>
                 <TableCell align="right">
-                  <Typography
-                    color={included && priceMissing ? 'error' : 'text.primary'}
-                    fontWeight={750}
-                  >
-                    {billed
-                      ? formatOptionPrice(option.billedPrice, option.billedPriceNotApplicable)
-                      : (priceMissing
-                        ? 'Price missing'
-                        : formatOptionPrice(option.price, option.priceNotApplicable))}
+                  <Typography fontWeight={900}>
+                    {formatCurrency(summary.optionsTotal)}
                   </Typography>
                 </TableCell>
-                <TableCell>
-                  <Chip
-                    size="small"
-                    color={billed || included
-                      ? (priceMissing && !billed ? 'error' : 'success')
-                      : 'default'}
-                    variant={billed || included ? 'filled' : 'outlined'}
-                    label={billed
-                      ? `Billed · ${option.billedPackageNumber ?? 'previous package'}`
-                      : (included
-                          ? (priceMissing ? 'Needs price' : 'Included in package')
-                          : 'Not included')}
-                  />
-                </TableCell>
-                {showBacking && (
-                  <TableCell>
-                    <PurchaseOrderBackingChip result={backing.lookup(option)} />
-                  </TableCell>
-                )}
+                <TableCell />
+                {showBacking && <TableCell />}
               </TableRow>
-            )
-          })}
-        </TableBody>
-        {total && (
-          <TableFooter>
-            <TableRow>
-              <TableCell colSpan={7}>
-                <Typography fontWeight={850}>Selected options total</Typography>
-              </TableCell>
-              <TableCell align="right">
-                <Typography fontWeight={900}>
-                  {formatCurrency(summary.optionsTotal)}
-                </Typography>
-              </TableCell>
-              <TableCell />
-              {showBacking && <TableCell />}
-            </TableRow>
-          </TableFooter>
-        )}
-      </Table>
-    </TableContainer>
-  )
+            </TableFooter>
+          )}
+        </Table>
+      </TableContainer>
+    )
+  }
 
   return (
     <Card variant="outlined" sx={{ overflow: 'hidden' }}>
@@ -222,6 +247,7 @@ export default function SelectableOptionsTable({ summary, onToggle, backing = nu
           {pendingRows.length > 0 ? renderTable(pendingRows, {
             label: 'Options to charge in this package',
             total: true,
+            selectAll: Boolean(onSetIncluded),
           }) : (
             <Alert severity="info" sx={{ m: 2 }}>
               Every option of the lots that reached {availableFromDrawLabel} was already billed.

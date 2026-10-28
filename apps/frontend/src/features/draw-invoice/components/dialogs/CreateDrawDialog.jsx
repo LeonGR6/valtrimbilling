@@ -67,7 +67,10 @@ import {
   hardwareChargeKeyOfCell,
   hardwareChargesAfterCellChange,
 } from '../../utils/packageHardwareLink.js'
-import { excludedOptionsAfterCellChange } from '../../utils/packageOptionLink.js'
+import {
+  excludedOptionsAfterBulkChoice,
+  excludedOptionsAfterCellChange,
+} from '../../utils/packageOptionLink.js'
 import { formatLag } from '../../../builder-draw-schedules/utils/drawLag.js'
 import {
   initialShownPhaseIds,
@@ -593,6 +596,14 @@ export default function CreateDrawDialog({
       ? current.filter((key) => key !== option.id)
       : [...current, option.id])
   }
+  // The check of the "Include" column: every option of the table at once.
+  const setOptionsIncluded = (options, included) => {
+    setExcludedOptionKeys((current) => excludedOptionsAfterBulkChoice({
+      excludedKeys: current,
+      optionKeys: options.map((option) => option.id),
+      included,
+    }))
+  }
   const selectedPhaseIds = new Set(
     [
       ...selectedSelections,
@@ -1100,6 +1111,7 @@ export default function CreateDrawDialog({
             <SelectableOptionsTable
               summary={summary}
               onToggle={toggleOption}
+              onSetIncluded={setOptionsIncluded}
               backing={purchaseOrderBacking}
             />
           )}

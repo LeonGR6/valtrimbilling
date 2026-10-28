@@ -137,6 +137,39 @@ test('DRAFT retention is projected, including Utility and Options, but is not re
   assert.equal(buildingOne.status, 'PROJECTED')
 })
 
+test('a Job whose Packages are all Drafts has no suggestion until one is Awaiting payment', () => {
+  const draftsOnly = [
+    drawPackage({
+      id: 1,
+      status: 'DRAFT',
+      packageDate: '2026-09-15',
+      lines: [line({ lotId: 101, drawId: 1, retentionAmount: 55 })],
+    }),
+    drawPackage({
+      id: 2,
+      status: 'DRAFT',
+      packageDate: '2026-09-16',
+      lines: [line({ lotId: 102, drawId: 2, retentionAmount: 30 })],
+    }),
+  ]
+  const suggestionsFor = (packages) => buildRetentionSuggestions({
+    jobs: [job()],
+    jobBillingSetupVersions: [schedule()],
+    packages,
+    asOfDate: '2026-10-20',
+  })
+
+  assert.deepEqual(suggestionsFor(draftsOnly), [])
+
+  // Once one of them is Awaiting payment the Job shows, and the other is still projected.
+  const [first, second] = draftsOnly
+  const shown = suggestionsFor([{ ...first, status: 'AWAITING_PAYMENT' }, second])
+    .find(({ phaseId }) => phaseId === 21)
+  assert.equal(shown.releasableRetention, 55)
+  assert.equal(shown.draftRetention, 30)
+  assert.equal(shown.status, 'PROJECTED')
+})
+
 test('Per Building becomes ready one clamped calendar month after final Hardware cutoff', () => {
   const packages = [
     drawPackage({

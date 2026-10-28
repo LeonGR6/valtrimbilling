@@ -259,7 +259,9 @@ export function buildRetentionSuggestions({
         .filter(({ record }) => record.status === 'DRAFT')
         .reduce((total, { amount }) => total + amount, 0))
 
-      if (projectedRetention <= 0 && releasableRetention <= 0) return []
+      // A Draft only counts once something of the Job is Awaiting payment or Paid: a Job
+      // whose Packages are all Drafts has no suggestion yet.
+      if (releasableRetention <= 0) return []
 
       const requiredParts = requiredHardwareParts(schedule)
       const projectedPartsByLot = new Map()

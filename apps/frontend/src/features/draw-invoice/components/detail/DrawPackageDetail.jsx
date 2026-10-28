@@ -71,6 +71,7 @@ import QuickbooksInvoiceDialog from './QuickbooksInvoiceDialog.jsx'
 import QuickbooksPackageNotice from './QuickbooksPackageNotice.jsx'
 import QuickbooksStatusCard from '../shared/QuickbooksStatusCard.jsx'
 import {
+  PackageEnvironmentLabel,
   PackageStatusChip,
   PackageStatusControl,
   PackageSummaryPanel,
@@ -367,36 +368,51 @@ export default function DrawPackageDetail() {
                 ? `Retention Release · ${focusedJob.builder} / ${focusedJob.community}`
                 : `${focusedJob.builder} / ${focusedJob.community}`}
             </Typography>
+            {/* Each item of the first line is as tall as the status field, so the Test or
+                Production label can hang under the status without moving the rest. */}
             <Stack
               direction="row"
               spacing={1.25}
               useFlexGap
-              sx={{ alignItems: 'center', flexWrap: 'wrap', mt: 0.25 }}
+              sx={{ alignItems: 'flex-start', flexWrap: 'wrap', mt: 0.25 }}
             >
-              <Typography variant="h5" component="h1" fontWeight={850} letterSpacing="-0.01em">
+              <Typography
+                variant="h5"
+                component="h1"
+                fontWeight={850}
+                letterSpacing="-0.01em"
+                sx={{ lineHeight: '40px' }}
+              >
                 {focusedPackage?.packageNumber ?? `Job #${focusedJob.code} Draw worksheet`}
               </Typography>
-              {focusedPackage ? (
-                canManageDrawInvoicePackages && focusedPackage.status !== 'CANCELLED' ? (
-                  <PackageStatusControl
-                    status={focusedPackage.status}
-                    disabled={saving}
-                    onChange={handlePackageStatusChange}
-                  />
-                ) : (
-                  <PackageStatusChip status={focusedPackage.status} />
-                )
-              ) : (
-                <ReadinessChip worksheet={worksheet} />
-              )}
+              <Box>
+                <Box sx={{ minHeight: 40, display: 'flex', alignItems: 'center' }}>
+                  {focusedPackage ? (
+                    canManageDrawInvoicePackages && focusedPackage.status !== 'CANCELLED' ? (
+                      <PackageStatusControl
+                        status={focusedPackage.status}
+                        disabled={saving}
+                        onChange={handlePackageStatusChange}
+                      />
+                    ) : (
+                      <PackageStatusChip status={focusedPackage.status} />
+                    )
+                  ) : (
+                    <ReadinessChip worksheet={worksheet} />
+                  )}
+                </Box>
+                <PackageEnvironmentLabel record={focusedPackage} />
+              </Box>
               {isMultiPhase && (
-                <Chip
-                  size="small"
-                  color="warning"
-                  icon={<LayersRoundedIcon />}
-                  label={`Multi-phase · ${packageSummary.phaseCount} Phases / Buildings`}
-                  sx={{ fontWeight: 750 }}
-                />
+                <Box sx={{ minHeight: 40, display: 'flex', alignItems: 'center' }}>
+                  <Chip
+                    size="small"
+                    color="warning"
+                    icon={<LayersRoundedIcon />}
+                    label={`Multi-phase · ${packageSummary.phaseCount} Phases / Buildings`}
+                    sx={{ fontWeight: 750 }}
+                  />
+                </Box>
               )}
             </Stack>
             {(packageContext || focusedInvoiceNumber) && (

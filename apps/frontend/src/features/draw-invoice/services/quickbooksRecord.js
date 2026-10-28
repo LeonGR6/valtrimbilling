@@ -576,6 +576,21 @@ export function canVoidQuickbooksInvoice(record, role) {
     && !record.submittedAt
 }
 
+/**
+ * The mode a Package belongs to, for the label under its status: Test or Production,
+ * from the QuickBooks company it was last sent to. Null for a Package that was never
+ * sent (it has no mode yet) and for one that is never invoiced (a Retention Release).
+ */
+export function quickbooksPackageEnvironmentView(record) {
+  const environment = record?.quickbooksEnvironment
+  if (!isInvoicedThroughQuickbooks(record) || !ENVIRONMENT_LABELS[environment]) return null
+
+  return {
+    label: ENVIRONMENT_LABELS[environment],
+    tone: environment === 'sandbox' ? 'warning' : 'neutral',
+  }
+}
+
 /** The Package was invoiced (or attempted) in the QuickBooks Test company: nothing about it is real. */
 export function isQuickbooksTestPackage(record) {
   return record?.quickbooksEnvironment === 'sandbox'

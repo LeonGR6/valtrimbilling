@@ -44,7 +44,7 @@ import { canDeleteDraftPackage } from '../../utils/packageCatalog.js'
 import { PACKAGE_SORT_COLUMNS } from '../../utils/packageCatalog.js'
 import { isMultiPhasePackage } from '../../utils/packagePhaseScope.js'
 import { quickbooksTableStatusView } from '../../services/quickbooksRecord.js'
-import { PackageStatusChip } from '../shared/PackageUi.jsx'
+import { PackageEnvironmentLabel, PackageStatusChip } from '../shared/PackageUi.jsx'
 
 const packageTableColumns = [
   { key: 'package', width: 240 },
@@ -373,7 +373,10 @@ export default function PackageTable({
                       Created: {formatLongDate(record.createdAt)}
                     </Typography>
                   </TableCell>
-                  <TableCell><PackageStatusChip status={record.status} /></TableCell>
+                  <TableCell>
+                    <PackageStatusChip status={record.status} />
+                    <PackageEnvironmentLabel record={record} />
+                  </TableCell>
                   <TableCell>
                     <Typography color="text.primary" sx={{ fontWeight: 'medium'}}>{job.builder}</Typography>
                     <Typography variant="body2" color="text.secondary">{job.community}</Typography>

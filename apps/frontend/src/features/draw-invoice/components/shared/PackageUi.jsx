@@ -14,6 +14,7 @@ import {
   DRAW_PACKAGE_STATUSES,
   DRAW_PACKAGE_STATUS_LABELS,
 } from '../../services/drawInvoicePackageRecord.js'
+import { quickbooksPackageEnvironmentView } from '../../services/quickbooksRecord.js'
 import { readinessLabel } from '../../utils/drawInvoiceFormatters.js'
 
 export function ReadinessChip({ worksheet }) {
@@ -55,6 +56,23 @@ export function PackageStatusChip({ status }) {
       label={DRAW_PACKAGE_STATUS_LABELS[status] ?? status}
       sx={{ fontWeight: 750 }}
     />
+  )
+}
+
+/** Test or Production, under the status of a Package that was sent to QuickBooks. */
+export function PackageEnvironmentLabel({ record }) {
+  const view = quickbooksPackageEnvironmentView(record)
+  if (!view) return null
+
+  return (
+    <Typography
+      variant="caption"
+      component="div"
+      fontWeight={750}
+      sx={{ mt: 0.5, color: view.tone === 'warning' ? 'warning.main' : 'text.secondary' }}
+    >
+      {view.label}
+    </Typography>
   )
 }
 

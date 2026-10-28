@@ -14,6 +14,7 @@ import {
   quickbooksTokenDaysLeft,
   isQuickbooksTestPackage,
   canResetQuickbooksTestInvoice,
+  quickbooksPackageEnvironmentView,
 } from '../src/features/draw-invoice/services/quickbooksRecord.js'
 
 const row = {
@@ -712,4 +713,25 @@ test('only a Test Package that was never submitted can move back to Production',
   assert.equal(canResetQuickbooksTestInvoice({ ...testPackage, submissionStatus: 'SUBMITTED' }, 'ADMIN'), false)
   assert.equal(canResetQuickbooksTestInvoice({ ...testPackage, submittedAt: '2026-10-20T00:00:00Z' }, 'ADMIN'), false)
   assert.equal(canResetQuickbooksTestInvoice({ ...testPackage, status: 'PAID' }, 'ADMIN'), false)
+})
+
+test('a Package sent to QuickBooks says whether it is Test or Production', () => {
+  assert.deepEqual(
+    quickbooksPackageEnvironmentView({ packageType: 'DRAW', quickbooksEnvironment: 'sandbox' }),
+    { label: 'Test', tone: 'warning' },
+  )
+  assert.deepEqual(
+    quickbooksPackageEnvironmentView({ packageType: 'PRICE_ADJUSTMENT', quickbooksEnvironment: 'production' }),
+    { label: 'Production', tone: 'neutral' },
+  )
+  // A record without a type is a Draw.
+  assert.equal(quickbooksPackageEnvironmentView({ quickbooksEnvironment: 'sandbox' }).label, 'Test')
+})
+
+test('a Package that was never sent, or never invoiced, has no mode to show', () => {
+  assert.equal(quickbooksPackageEnvironmentView({ packageType: 'DRAW', quickbooksEnvironment: null }), null)
+  assert.equal(quickbooksPackageEnvironmentView({ packageType: 'DRAW' }), null)
+  assert.equal(quickbooksPackageEnvironmentView({ packageType: 'DRAW', quickbooksEnvironment: 'other' }), null)
+  assert.equal(quickbooksPackageEnvironmentView({ packageType: 'RETENTION_RELEASE', quickbooksEnvironment: 'sandbox' }), null)
+  assert.equal(quickbooksPackageEnvironmentView(null), null)
 })

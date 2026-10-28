@@ -4,6 +4,7 @@ import {
   Box,
   Card,
   Chip,
+  Divider,
   Stack,
   Table,
   TableBody,
@@ -364,6 +365,91 @@ export function PackageOptionsTable({ summary, backing = null }) {
     ? 'Not configured'
     : `Draw #${summary.optionsBillingDrawIndex + 1}`
   const chargedOptionRows = summary.chargedOptionRows ?? summary.selectedOptionRows
+  // What this package charges comes first, then what earlier packages charged.
+  const currentRows = chargedOptionRows.filter((option) => option.chargedInCurrentPackage)
+  const previousRows = chargedOptionRows.filter((option) => !option.chargedInCurrentPackage)
+
+  const renderTable = (rows, { label, total = false }) => (
+    <TableContainer>
+      <Table size="small" aria-label={label} sx={packageTableSx}>
+        <TableHead>
+          <TableRow>
+            <TableCell>Phase</TableCell>
+            <TableCell>Lot</TableCell>
+            <TableCell>Plan</TableCell>
+            <TableCell>Option</TableCell>
+            <TableCell>Description</TableCell>
+            <TableCell>Charged with</TableCell>
+            <TableCell align="right">Price</TableCell>
+            <TableCell>Status</TableCell>
+            {showBacking && <TableCell>Purchase Order</TableCell>}
+          </TableRow>
+        </TableHead>
+        <TableBody>
+          {rows.map((option) => {
+            const priceMissing = option.issue === 'PRICE_MISSING'
+
+            return (
+              <TableRow key={option.id} hover>
+                <TableCell>
+                  {formatPhaseBuilding(option.phaseCode, option.building, { separator: ' / ' })}
+                </TableCell>
+                <TableCell>
+                  <Typography color="error.main" fontWeight={850}>
+                    {option.lotNumber}
+                  </Typography>
+                </TableCell>
+                <TableCell>{option.planCode ?? '—'}</TableCell>
+                <TableCell><Typography fontWeight={750}>{option.optionCode}</Typography></TableCell>
+                <TableCell>{option.description}</TableCell>
+                <TableCell>
+                  <Typography fontWeight={750}>
+                    {option.chargedPackageNumber ?? '—'}
+                  </Typography>
+                </TableCell>
+                <TableCell align="right">
+                  <Typography color={priceMissing ? 'error' : 'text.primary'} fontWeight={750}>
+                    {priceMissing ? 'Price missing' : formatOptionPrice(option.price, option.priceNotApplicable)}
+                  </Typography>
+                </TableCell>
+                <TableCell>
+                  <Chip
+                    size="small"
+                    color={priceMissing ? 'error' : 'success'}
+                    variant={option.chargedInCurrentPackage ? 'filled' : 'outlined'}
+                    label={priceMissing
+                      ? 'Needs price'
+                      : option.chargedInCurrentPackage
+                        ? 'Included in this package'
+                        : 'Charged previously'}
+                  />
+                </TableCell>
+                {showBacking && (
+                  <TableCell>
+                    <PurchaseOrderBackingChip result={backing.lookup(option)} />
+                  </TableCell>
+                )}
+              </TableRow>
+            )
+          })}
+        </TableBody>
+        {total && (
+          <TableFooter>
+            <TableRow>
+              <TableCell colSpan={6}>
+                <Typography fontWeight={850}>Options total in this package</Typography>
+              </TableCell>
+              <TableCell align="right">
+                <Typography fontWeight={900}>{formatCurrency(summary.optionsTotal)}</Typography>
+              </TableCell>
+              <TableCell />
+              {showBacking && <TableCell />}
+            </TableRow>
+          </TableFooter>
+        )}
+      </Table>
+    </TableContainer>
+  )
 
   return (
     <Card variant="outlined" sx={{ overflow: 'hidden' }}>
@@ -388,83 +474,30 @@ export function PackageOptionsTable({ summary, backing = null }) {
           No options had been charged for this Job when this package was created.
         </Alert>
       ) : (
-        <TableContainer>
-          <Table size="small" aria-label="Options charged through this package" sx={packageTableSx}>
-            <TableHead>
-              <TableRow>
-                <TableCell>Phase</TableCell>
-                <TableCell>Lot</TableCell>
-                <TableCell>Plan</TableCell>
-                <TableCell>Option</TableCell>
-                <TableCell>Description</TableCell>
-                <TableCell>Charged with</TableCell>
-                <TableCell align="right">Price</TableCell>
-                <TableCell>Status</TableCell>
-                {showBacking && <TableCell>Purchase Order</TableCell>}
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {chargedOptionRows.map((option) => {
-                const priceMissing = option.issue === 'PRICE_MISSING'
-
-                return (
-                  <TableRow key={option.id} hover>
-                    <TableCell>
-                      {formatPhaseBuilding(option.phaseCode, option.building, { separator: ' / ' })}
-                    </TableCell>
-                    <TableCell>
-                      <Typography color="error.main" fontWeight={850}>
-                        {option.lotNumber}
-                      </Typography>
-                    </TableCell>
-                    <TableCell>{option.planCode ?? '—'}</TableCell>
-                    <TableCell><Typography fontWeight={750}>{option.optionCode}</Typography></TableCell>
-                    <TableCell>{option.description}</TableCell>
-                    <TableCell>
-                      <Typography fontWeight={750}>
-                        {option.chargedPackageNumber ?? '—'}
-                      </Typography>
-                    </TableCell>
-                    <TableCell align="right">
-                      <Typography color={priceMissing ? 'error' : 'text.primary'} fontWeight={750}>
-                        {priceMissing ? 'Price missing' : formatOptionPrice(option.price, option.priceNotApplicable)}
-                      </Typography>
-                    </TableCell>
-                    <TableCell>
-                      <Chip
-                        size="small"
-                        color={priceMissing ? 'error' : 'success'}
-                        variant={option.chargedInCurrentPackage ? 'filled' : 'outlined'}
-                        label={priceMissing
-                          ? 'Needs price'
-                          : option.chargedInCurrentPackage
-                            ? 'Included in this package'
-                            : 'Charged previously'}
-                      />
-                    </TableCell>
-                    {showBacking && (
-                      <TableCell>
-                        <PurchaseOrderBackingChip result={backing.lookup(option)} />
-                      </TableCell>
-                    )}
-                  </TableRow>
-                )
-              })}
-            </TableBody>
-            <TableFooter>
-              <TableRow>
-                <TableCell colSpan={6}>
-                  <Typography fontWeight={850}>Options total in this package</Typography>
-                </TableCell>
-                <TableCell align="right">
-                  <Typography fontWeight={900}>{formatCurrency(summary.optionsTotal)}</Typography>
-                </TableCell>
-                <TableCell />
-                {showBacking && <TableCell />}
-              </TableRow>
-            </TableFooter>
-          </Table>
-        </TableContainer>
+        <>
+          {currentRows.length > 0 ? renderTable(currentRows, {
+            label: 'Options charged through this package',
+            total: true,
+          }) : (
+            <Alert severity="info" sx={{ m: 2 }}>
+              This package does not charge any option.
+            </Alert>
+          )}
+          {previousRows.length > 0 && (
+            <>
+              <Divider />
+              <Box sx={{ px: { xs: 2, sm: 2.5 }, py: 1.5, bgcolor: 'action.hover' }}>
+                <Typography fontWeight={800}>Charged previously</Typography>
+                <Typography variant="body2" color="text.secondary">
+                  {previousRows.length} {previousRows.length === 1 ? 'option' : 'options'} billed
+                  in earlier packages of this Job. They are not part of this package's total.
+                </Typography>
+              </Box>
+              <Divider />
+              {renderTable(previousRows, { label: 'Options charged in earlier packages' })}
+            </>
+          )}
+        </>
       )}
     </Card>
   )

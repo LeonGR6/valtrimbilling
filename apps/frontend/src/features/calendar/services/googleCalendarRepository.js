@@ -3,6 +3,7 @@ import {
   toGoogleCalendarConnection,
   toGoogleCalendarSyncResult,
 } from './googleCalendarRecord.js'
+import { functionErrorMessage } from '../../../services/functionErrors.js'
 
 const OAUTH_START_FUNCTION = 'google-calendar-oauth-start'
 const SYNC_FUNCTION = 'google-calendar-sync'
@@ -24,18 +25,6 @@ const CONNECTION_COLUMNS = [
   'updated_at',
 ].join(', ')
 
-async function functionErrorMessage(error, data) {
-  if (data?.error) return data.error
-
-  const response = error?.context
-  if (response && typeof response.clone === 'function') {
-    const responsePayload = await response.clone().json().catch(() => null)
-    if (responsePayload?.error) return responsePayload.error
-  }
-
-  return error?.message || 'The Google Calendar request failed.'
-}
-
 export async function getGoogleCalendarConnection() {
   const client = await requireSupabase()
   const { data, error } = await client
@@ -53,7 +42,7 @@ export async function startGoogleCalendarOAuth() {
   })
 
   if (error || data?.error) {
-    throw new Error(await functionErrorMessage(error, data), { cause: error })
+    throw new Error(await functionErrorMessage(error, data, 'The Google Calendar request failed.'), { cause: error })
   }
 
   if (!data?.authorizationUrl) {
@@ -74,7 +63,7 @@ export async function syncGoogleCalendarNow() {
   })
 
   if (error) {
-    throw new Error(await functionErrorMessage(error, data), { cause: error })
+    throw new Error(await functionErrorMessage(error, data, 'The Google Calendar request failed.'), { cause: error })
   }
 
   return toGoogleCalendarSyncResult(data)

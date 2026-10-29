@@ -1,22 +1,13 @@
 import { requireSupabase } from '../../../services/api.js'
+import { functionErrorMessage } from '../../../services/functionErrors.js'
 
 const FUNCTION_NAME = 'dm-reminder-email'
-
-async function functionErrorMessage(error, data) {
-  if (data?.error) return data.error
-  const response = error?.context
-  if (response && typeof response.clone === 'function') {
-    const payload = await response.clone().json().catch(() => null)
-    if (payload?.error) return payload.error
-  }
-  return error?.message || 'The DM reminder request failed.'
-}
 
 async function invoke(body) {
   const client = await requireSupabase()
   const { data, error } = await client.functions.invoke(FUNCTION_NAME, { body })
   if (error || data?.error) {
-    throw new Error(await functionErrorMessage(error, data), { cause: error })
+    throw new Error(await functionErrorMessage(error, data, 'The DM reminder request failed.'), { cause: error })
   }
   return data
 }

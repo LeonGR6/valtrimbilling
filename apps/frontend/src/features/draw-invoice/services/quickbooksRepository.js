@@ -9,6 +9,7 @@ import {
   toQuickbooksInvoiceResult,
   toQuickbooksInvoiceSync,
 } from './quickbooksRecord.js'
+import { functionErrorMessage } from '../../../services/functionErrors.js'
 
 const OAUTH_START_FUNCTION = 'quickbooks-oauth-start'
 const INVOICE_FUNCTION = 'quickbooks-invoice-create'
@@ -45,18 +46,6 @@ const CONNECTION_COLUMNS = [
   'last_error',
   'refresh_token_expires_at',
 ].join(', ')
-
-async function functionErrorMessage(error, data) {
-  if (data?.error) return data.error
-
-  const response = error?.context
-  if (response && typeof response.clone === 'function') {
-    const responsePayload = await response.clone().json().catch(() => null)
-    if (responsePayload?.error) return responsePayload.error
-  }
-
-  return error?.message || 'The QuickBooks request failed.'
-}
 
 /** Both QuickBooks connections (Test and Production), whichever exist. */
 export async function getQuickbooksConnections() {
@@ -96,7 +85,7 @@ export async function startQuickbooksOAuth(environment) {
   })
 
   if (error || data?.error) {
-    throw new Error(await functionErrorMessage(error, data), { cause: error })
+    throw new Error(await functionErrorMessage(error, data, 'The QuickBooks request failed.'), { cause: error })
   }
 
   if (!data?.authorizationUrl) {

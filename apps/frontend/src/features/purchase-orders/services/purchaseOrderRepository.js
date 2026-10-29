@@ -7,6 +7,7 @@ import {
   toPurchaseOrderAnalysis,
   toUncoveredOption,
 } from './purchaseOrderRecord.js'
+import { functionErrorMessage } from '../../../services/functionErrors.js'
 
 const ANALYZE_FUNCTION = 'purchase-order-analyze'
 const PAGE_SIZE = 1000
@@ -23,16 +24,6 @@ const ANALYSIS_COLUMNS = [
   'analyzed_at',
   'updated_at',
 ].join(', ')
-
-async function functionErrorMessage(error, data, fallback) {
-  if (data?.error) return data.error
-  const response = error?.context
-  if (response && typeof response.clone === 'function') {
-    const payload = await response.clone().json().catch(() => null)
-    if (payload?.error) return payload.error
-  }
-  return error?.message || fallback
-}
 
 async function invoke(body, fallback) {
   const client = await requireSupabase()

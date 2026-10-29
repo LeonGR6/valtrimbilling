@@ -7,6 +7,7 @@ import {
   toBuilderFollowUpRescheduleRequest,
   toFollowUpEmailResult,
 } from './builderFollowUpRecord.js'
+import { functionErrorMessage } from '../../../services/functionErrors.js'
 
 const EMAIL_FUNCTION = 'builder-follow-up-email'
 const QUEUE_COLUMNS = [
@@ -136,21 +137,11 @@ function repositoryError(error) {
   })
 }
 
-async function functionErrorMessage(error, data) {
-  if (data?.error) return data.error
-  const response = error?.context
-  if (response && typeof response.clone === 'function') {
-    const payload = await response.clone().json().catch(() => null)
-    if (payload?.error) return payload.error
-  }
-  return error?.message || 'The Builder follow-up email request failed.'
-}
-
 async function invokeEmail(body) {
   const client = await requireSupabase()
   const { data, error } = await client.functions.invoke(EMAIL_FUNCTION, { body })
   if (error || data?.error) {
-    throw new Error(await functionErrorMessage(error, data), { cause: error })
+    throw new Error(await functionErrorMessage(error, data, 'The Builder follow-up email request failed.'), { cause: error })
   }
   return toFollowUpEmailResult(data)
 }

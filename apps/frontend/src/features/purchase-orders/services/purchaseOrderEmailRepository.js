@@ -1,4 +1,5 @@
 import { requireSupabase } from '../../../services/api.js'
+import { functionErrorMessage } from '../../../services/functionErrors.js'
 
 // Three emails tell Purchasing and the Job Coordinator how the options of a Sequence
 // Sheet changed: the ones a Purchase Order added, the ones someone added by editing a
@@ -9,16 +10,6 @@ const FUNCTIONS = {
   removed: 'sequence-sheet-options-removed-email',
 }
 
-async function functionErrorMessage(error, data) {
-  if (data?.error) return data.error
-  const response = error?.context
-  if (response && typeof response.clone === 'function') {
-    const payload = await response.clone().json().catch(() => null)
-    if (payload?.error) return payload.error
-  }
-  return error?.message || 'The email request failed.'
-}
-
 async function invokeEmail(kind, body) {
   const name = FUNCTIONS[kind]
   if (!name) throw new Error('Select a supported email.')
@@ -26,7 +17,7 @@ async function invokeEmail(kind, body) {
   const client = await requireSupabase()
   const { data, error } = await client.functions.invoke(name, { body })
   if (error || data?.error) {
-    throw new Error(await functionErrorMessage(error, data), { cause: error })
+    throw new Error(await functionErrorMessage(error, data, 'The email request failed.'), { cause: error })
   }
   return data
 }

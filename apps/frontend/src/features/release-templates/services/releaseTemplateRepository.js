@@ -1,5 +1,6 @@
 import { requireSupabase } from '../../../services/api.js'
 import { toReleaseTemplate } from './releaseTemplateRecord.js'
+import { functionErrorMessage } from '../../../services/functionErrors.js'
 
 const ANALYZE_FUNCTION = 'release-template-analyze'
 
@@ -22,16 +23,6 @@ const TEMPLATE_COLUMNS = [
   'created_at',
   'updated_at',
 ].join(', ')
-
-async function functionErrorMessage(error, data) {
-  if (data?.error) return data.error
-  const response = error?.context
-  if (response && typeof response.clone === 'function') {
-    const payload = await response.clone().json().catch(() => null)
-    if (payload?.error) return payload.error
-  }
-  return error?.message || 'The Release analysis failed.'
-}
 
 function toConfirmError(error) {
   if (error.code === '42501') {
@@ -90,7 +81,7 @@ export async function analyzeReleaseTemplate(documentId, { force = false } = {})
   })
 
   if (error || data?.error) {
-    throw new Error(await functionErrorMessage(error, data), { cause: error })
+    throw new Error(await functionErrorMessage(error, data, 'The Release analysis failed.'), { cause: error })
   }
   return toReleaseTemplate(data.template)
 }

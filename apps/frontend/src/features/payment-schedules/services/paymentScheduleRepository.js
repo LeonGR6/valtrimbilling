@@ -1,5 +1,6 @@
 import { requireSupabase } from '../../../services/api.js'
 import { toPaymentScheduleTemplate } from './paymentScheduleRecord.js'
+import { functionErrorMessage } from '../../../services/functionErrors.js'
 
 const ANALYZE_FUNCTION = 'payment-schedule-analyze'
 
@@ -22,16 +23,6 @@ const TEMPLATE_COLUMNS = [
   'created_at',
   'updated_at',
 ].join(', ')
-
-async function functionErrorMessage(error, data) {
-  if (data?.error) return data.error
-  const response = error?.context
-  if (response && typeof response.clone === 'function') {
-    const payload = await response.clone().json().catch(() => null)
-    if (payload?.error) return payload.error
-  }
-  return error?.message || 'The Payment Schedule analysis failed.'
-}
 
 function toConfirmError(error) {
   if (error.code === '42501') {
@@ -84,7 +75,7 @@ export async function analyzePaymentSchedule(documentId, { force = false } = {})
   })
 
   if (error || data?.error) {
-    throw new Error(await functionErrorMessage(error, data), { cause: error })
+    throw new Error(await functionErrorMessage(error, data, 'The Payment Schedule analysis failed.'), { cause: error })
   }
   return toPaymentScheduleTemplate(data.template)
 }

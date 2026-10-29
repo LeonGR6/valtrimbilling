@@ -2,18 +2,9 @@
 
 import { requireSupabase } from '../../../services/api.js'
 import { bytesToBase64, toPackageSubmission } from './packageSubmissionRecord.js'
+import { functionErrorMessage } from '../../../services/functionErrors.js'
 
 const FUNCTION_NAME = 'package-submission-email'
-
-async function functionErrorMessage(error, data) {
-  if (data?.error) return data.error
-  const response = error?.context
-  if (response && typeof response.clone === 'function') {
-    const payload = await response.clone().json().catch(() => null)
-    if (payload?.error) return payload.error
-  }
-  return error?.message || 'The Package email could not be sent.'
-}
 
 export async function sendPackageSubmissionEmail({
   packageId,
@@ -37,7 +28,7 @@ export async function sendPackageSubmissionEmail({
     },
   })
   if (error || data?.error) {
-    throw new Error(await functionErrorMessage(error, data), { cause: error })
+    throw new Error(await functionErrorMessage(error, data, 'The Package email could not be sent.'), { cause: error })
   }
   return data
 }

@@ -55,16 +55,7 @@ import {
 } from '../data/people.js'
 import { usePeople } from '../context/usePeople.js'
 import { personSchema } from '../schemas/personSchema.js'
-
-function getInitials(name) {
-  return name
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0])
-    .join('')
-    .toUpperCase()
-}
+import { getInitials } from '../../../utils/initials.js'
 
 function getPersonFormValues(person) {
   if (!person) {

@@ -51,16 +51,7 @@ import ContactTypeField from './ContactTypeField.jsx'
 import { useBuilders } from '../../builders/context/useBuilders.js'
 import { useBuilderContacts } from '../context/useBuilderContacts.js'
 import { createBuilderContactSchema } from '../schemas/builderContactSchema.js'
-
-function getInitials(name) {
-  return name
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0])
-    .join('')
-    .toUpperCase()
-}
+import { getInitials } from '../../../utils/initials.js'
 
 function getContactFormValues(contact) {
   if (!contact) {

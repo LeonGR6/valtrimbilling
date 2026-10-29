@@ -69,16 +69,7 @@ import {
   setUserActive,
   updateUser,
 } from '../services/usersRepository.js'
-
-function getInitials(name) {
-  return name
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0])
-    .join('')
-    .toUpperCase()
-}
+import { getInitials } from '../../../utils/initials.js'
 
 function getUserFormValues(user) {
   if (!user) return { ...emptyUser, phoneCountry: 'US' }

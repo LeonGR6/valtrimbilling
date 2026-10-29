@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useAuth } from '../../auth/context/useAuth.js'
 import {
+  addDrawPackageNote as addDrawPackageNoteRecord,
   cancelDrawInvoicePackage as cancelDrawInvoicePackageRecord,
   createDrawInvoicePackage as createDrawInvoicePackageRecord,
   createPriceAdjustmentPackage as createPriceAdjustmentPackageRecord,
@@ -154,6 +155,15 @@ export function DrawInvoicePackagesProvider({ children }) {
     [runCorrection],
   )
 
+  // A note does not block the page: the box that wrote it shows its own progress and errors, and
+  // only the notes of that Package are replaced.
+  const addDrawPackageNote = useCallback(async (packageId, body) => {
+    const noteEntries = await addDrawPackageNoteRecord(packageId, body)
+    setDrawInvoicePackages((current) => current.map((record) => (
+      String(record.id) === String(packageId) ? { ...record, noteEntries } : record
+    )))
+  }, [])
+
   const value = useMemo(
     () => ({
       drawInvoicePackages,
@@ -169,8 +179,10 @@ export function DrawInvoicePackagesProvider({ children }) {
       editDrawInvoicePackage,
       transferDrawPackageCells,
       cancelDrawInvoicePackage,
+      addDrawPackageNote,
     }),
     [
+      addDrawPackageNote,
       canManageDrawInvoicePackages,
       createDrawInvoicePackage,
       createRetentionReleasePackage,

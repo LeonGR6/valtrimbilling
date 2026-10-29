@@ -9,6 +9,12 @@ import {
   toPackageStatusRpc,
   toTransferDrawPackageRpc,
 } from './drawInvoicePackageRecord.js'
+import {
+  packageNoteErrorMessage,
+  sortPackageNotes,
+  toAddPackageNoteRpc,
+  toPackageNote,
+} from './packageNotesRecord.js'
 import { inBatches, listAllRows as listPagedRows } from '../../../services/pagedQuery.js'
 
 const PACKAGE_COLUMNS = [
@@ -160,6 +166,15 @@ const CORRECTION_COLUMNS = [
   'reason',
   'changed_by',
   'changed_at',
+].join(', ')
+
+const NOTE_COLUMNS = [
+  'id',
+  'package_id',
+  'body',
+  'created_by',
+  'author_name',
+  'created_at',
 ].join(', ')
 
 const RETENTION_RELEASE_COLUMNS = [
@@ -343,6 +358,7 @@ export async function listDrawInvoicePackages() {
     priceAdjustments,
     priceAdjustmentLines,
     retentionReleaseAdjustmentLines,
+    notes,
   ] = await Promise.all([
     listRowsInBatches(
       client,
@@ -433,6 +449,13 @@ export async function listDrawInvoicePackages() {
       RETENTION_RELEASE_ADJUSTMENT_LINE_COLUMNS,
       [['package_id', true], ['source_adjustment_line_id', true]],
     ),
+    listRowsInBatches(
+      client,
+      packageIds,
+      'draw_package_notes',
+      NOTE_COLUMNS,
+      [['package_id', true], ['created_at', false], ['id', false]],
+    ),
   ])
 
   const invoicesByPackage = new Map(
@@ -470,28 +493,33 @@ export async function listDrawInvoicePackages() {
   const retentionReleaseAdjustmentLinesByPackage = groupByPackage(
     retentionReleaseAdjustmentLines,
   )
+  const notesByPackage = groupByPackage(notes)
 
-  return packages.map((packageRow) => toDrawInvoicePackage(
-    packageRow,
-    invoicesByPackage.get(packageRow.id),
-    (drawsByPackage.get(packageRow.id) ?? []).map((draw) => ({
-      ...draw,
-      event_type: billingDrawsById.get(draw.draw_id)?.event_type ?? null,
-    })),
-    optionsByPackage.get(packageRow.id) ?? [],
-    setupVersionsById.get(packageRow.setup_version_id),
-    [
-      ...(correctionsByPackage.get(packageRow.id) ?? []),
-      ...(correctionsBySource.get(packageRow.id) ?? []),
-    ].sort((left, right) => right.changed_at.localeCompare(left.changed_at)),
-    retentionReleasesByPackage.get(packageRow.id),
-    retentionReleaseLinesByPackage.get(packageRow.id) ?? [],
-    hardwareLinesByPackage.get(packageRow.id) ?? [],
-    retentionReleaseHardwareLinesByPackage.get(packageRow.id) ?? [],
-    priceAdjustmentsByPackage.get(packageRow.id),
-    priceAdjustmentLinesByPackage.get(packageRow.id) ?? [],
-    retentionReleaseAdjustmentLinesByPackage.get(packageRow.id) ?? [],
-  ))
+  return packages.map((packageRow) => ({
+    ...toDrawInvoicePackage(
+      packageRow,
+      invoicesByPackage.get(packageRow.id),
+      (drawsByPackage.get(packageRow.id) ?? []).map((draw) => ({
+        ...draw,
+        event_type: billingDrawsById.get(draw.draw_id)?.event_type ?? null,
+      })),
+      optionsByPackage.get(packageRow.id) ?? [],
+      setupVersionsById.get(packageRow.setup_version_id),
+      [
+        ...(correctionsByPackage.get(packageRow.id) ?? []),
+        ...(correctionsBySource.get(packageRow.id) ?? []),
+      ].sort((left, right) => right.changed_at.localeCompare(left.changed_at)),
+      retentionReleasesByPackage.get(packageRow.id),
+      retentionReleaseLinesByPackage.get(packageRow.id) ?? [],
+      hardwareLinesByPackage.get(packageRow.id) ?? [],
+      retentionReleaseHardwareLinesByPackage.get(packageRow.id) ?? [],
+      priceAdjustmentsByPackage.get(packageRow.id),
+      priceAdjustmentLinesByPackage.get(packageRow.id) ?? [],
+      retentionReleaseAdjustmentLinesByPackage.get(packageRow.id) ?? [],
+    ),
+    // The internal notes of the Package, newest first.
+    noteEntries: sortPackageNotes((notesByPackage.get(packageRow.id) ?? []).map(toPackageNote)),
+  }))
 }
 
 export async function createDrawInvoicePackage(input) {
@@ -608,4 +636,24 @@ export function cancelDrawInvoicePackage(packageId, reason) {
     'cancel_draw_invoice_package',
     toCancelDrawPackageRpc(packageId, reason),
   )
+}
+
+/**
+ * Adds a note to a Package as the signed-in user and returns the Package's notes, newest first: only
+ * that Package's notes are read again, not every Package.
+ */
+export async function addDrawPackageNote(packageId, body) {
+  const client = await requireSupabase()
+  const { error } = await client.rpc('add_draw_package_note', toAddPackageNoteRpc(packageId, body))
+
+  if (error) throw new Error(packageNoteErrorMessage(error), { cause: error })
+
+  const rows = await listAllRows(() => client
+    .from('draw_package_notes')
+    .select(NOTE_COLUMNS)
+    .eq('package_id', Number(packageId))
+    .order('created_at', { ascending: false })
+    .order('id', { ascending: false }))
+
+  return sortPackageNotes(rows.map(toPackageNote))
 }

@@ -8,6 +8,7 @@ import {
   ListItemIcon,
   Menu,
   MenuItem,
+  Stack,
   Table,
   TableBody,
   TableCell,
@@ -15,10 +16,12 @@ import {
   TableHead,
   TableRow,
   TableSortLabel,
+  Tooltip,
   Typography,
   Chip,
 } from '@mui/material'
 import ArrowDropDownRoundedIcon from '@mui/icons-material/ArrowDropDownRounded'
+import ChatBubbleOutlineRoundedIcon from '@mui/icons-material/ChatBubbleOutlineRounded'
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
 import EditRoundedIcon from '@mui/icons-material/EditRounded'
 import LayersRoundedIcon from '@mui/icons-material/LayersRounded'
@@ -38,8 +41,10 @@ import {
 import {
   formatBillingPeriod,
   formatCurrency,
+  formatDateTime,
   formatLongDate,
 } from '../../utils/drawInvoiceFormatters.js'
+import { packageNoteAuthor, summarizePackageNotes } from '../../services/packageNotesRecord.js'
 import { canDeleteDraftPackage } from '../../utils/packageCatalog.js'
 import { PACKAGE_SORT_COLUMNS } from '../../utils/packageCatalog.js'
 import { isMultiPhasePackage } from '../../utils/packagePhaseScope.js'
@@ -171,6 +176,40 @@ function PackageDocumentProgress({ job, documentState }) {
         {progress.statusLabel}
       </Typography>
     </Box>
+  )
+}
+
+// The last note of the Package in one line, so a note is seen without opening it.
+function PackageLatestNote({ record }) {
+  const { count, latest } = summarizePackageNotes(record)
+
+  if (!latest) return null
+
+  return (
+    <Tooltip
+      title={(
+        <Box>
+          <Typography variant="caption" component="div" fontWeight={800}>
+            {packageNoteAuthor(latest)} · {formatDateTime(latest.createdAt)}
+          </Typography>
+          <Typography variant="caption" component="div" sx={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>
+            {latest.body}
+          </Typography>
+        </Box>
+      )}
+      slotProps={{ tooltip: { sx: { maxWidth: 360 } } }}
+    >
+      <Stack
+        direction="row"
+        spacing={0.5}
+        sx={{ mt: 0.5, alignItems: 'center', color: 'text.secondary', minWidth: 0 }}
+      >
+        <ChatBubbleOutlineRoundedIcon sx={{ fontSize: 14, flexShrink: 0 }} />
+        <Typography variant="caption" noWrap sx={{ minWidth: 0 }}>
+          {count > 1 ? `${count} notes · ` : ''}{packageNoteAuthor(latest)}: {latest.body}
+        </Typography>
+      </Stack>
+    </Tooltip>
   )
 }
 
@@ -372,6 +411,7 @@ export default function PackageTable({
                     >
                       Created: {formatLongDate(record.createdAt)}
                     </Typography>
+                    <PackageLatestNote record={record} />
                   </TableCell>
                   <TableCell>
                     <PackageStatusChip status={record.status} />

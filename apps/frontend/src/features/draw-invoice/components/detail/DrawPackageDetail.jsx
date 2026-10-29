@@ -43,6 +43,7 @@ import {
   canCorrectDrawPackage,
   draftLockReason,
 } from '../../services/drawInvoicePackageRecord.js'
+import { canAddPackageNotes } from '../../services/packageNotesRecord.js'
 import {
   canCreateQuickbooksInvoice,
   quickbooksPackageStatusView,
@@ -82,6 +83,7 @@ import {
   ReadinessChip,
 } from '../shared/PackageUi.jsx'
 import PackageCorrectionHistory from './PackageCorrectionHistory.jsx'
+import PackageNotes from './PackageNotes.jsx'
 import PackagePriceAdjustmentTable from './PackagePriceAdjustmentTable.jsx'
 import PackagePriceDifferenceNotice from './PackagePriceDifferenceNotice.jsx'
 import PackageHeaderActions from './PackageHeaderActions.jsx'
@@ -136,6 +138,7 @@ export default function DrawPackageDetail() {
     editDrawInvoicePackage,
     transferDrawPackageCells,
     cancelDrawInvoicePackage,
+    addDrawPackageNote,
   } = useDrawInvoicePackages()
   const [createDialogOpen, setCreateDialogOpen] = useState(false)
   const [correctionDialog, setCorrectionDialog] = useState(null)
@@ -724,6 +727,14 @@ export default function DrawPackageDetail() {
                 This is the worksheet overview. Use New Package to select lots and
                 one or more available draws for a new package.
               </Alert>
+            )}
+
+            {focusedPackage?.id != null && (
+              <PackageNotes
+                package={focusedPackage}
+                canAdd={canAddPackageNotes(profile?.role)}
+                onAdd={(body) => addDrawPackageNote(focusedPackage.id, body)}
+              />
             )}
 
             {isMultiPhase && (

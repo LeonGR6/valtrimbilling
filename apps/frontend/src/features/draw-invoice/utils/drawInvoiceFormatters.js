@@ -44,6 +44,14 @@ export function formatLongDate(value) {
   })
 }
 
+// A moment (a timestamp), as the person reading it lives it: date and time in their own time zone.
+export function formatDateTime(value) {
+  const date = value ? new Date(value) : null
+  if (!date || Number.isNaN(date.getTime())) return '—'
+
+  return date.toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })
+}
+
 export function formatBillingPeriod(record) {
   if (record.billingCutoffAnyDate) return 'Any date'
   if (!record.billingCutoffDate) return 'Not set'

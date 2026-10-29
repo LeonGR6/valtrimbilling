@@ -557,6 +557,7 @@ test('an invoice sent to the Test QuickBooks says so, whatever QuickBooks report
 })
 
 import {
+  assignedInvoiceNumber,
   canSwitchQuickbooksMode,
   pickQuickbooksConnection,
   quickbooksEnvironmentLabel,
@@ -783,4 +784,56 @@ test('there is no next invoice number when nothing was used or the last one is n
   assert.equal(nextInvoiceNumber(''), null)
   assert.equal(nextInvoiceNumber('INV-14879'), null)
   assert.equal(nextInvoiceNumber('14.879'), null)
+})
+
+test('the invoice number is assigned, never typed: the one after the last used', () => {
+  const check = (overrides) => ({
+    number: null,
+    inDatabase: false,
+    inQuickbooks: false,
+    last: '14879',
+    current: null,
+    ...overrides,
+  })
+
+  // The first preview has no number yet: the one after the last used goes in the field.
+  assert.deepEqual(assignedInvoiceNumber(check({})), { number: '14880' })
+  // A retry keeps the number of the earlier attempt, even when it is not the next one.
+  assert.deepEqual(assignedInvoiceNumber(check({ current: '14850', number: null })), { number: '14850' })
+  assert.deepEqual(assignedInvoiceNumber(check({ current: '14850', number: '14850' })), { number: '14850' })
+  // Once the assigned number is checked and free, the field is left as it is.
+  assert.equal(assignedInvoiceNumber(check({ number: '14880' })), null)
+})
+
+test('an assigned invoice number that turns out taken moves on to the next one', () => {
+  const taken = (overrides) => ({
+    number: '14880',
+    inDatabase: false,
+    inQuickbooks: false,
+    last: '14879',
+    current: null,
+    ...overrides,
+  })
+
+  // Another Package took it meanwhile: the last used is now that number.
+  assert.deepEqual(
+    assignedInvoiceNumber(taken({ inDatabase: true, last: '14880' })),
+    { number: '14881' },
+  )
+  // An invoice made straight in QuickBooks is not in the last used here: count from the number itself.
+  assert.deepEqual(assignedInvoiceNumber(taken({ inQuickbooks: true })), { number: '14881' })
+  // The length is kept.
+  assert.deepEqual(
+    assignedInvoiceNumber(taken({ number: '0099', last: '0098', inQuickbooks: true })),
+    { number: '0100' },
+  )
+})
+
+test('with nothing to count from, the invoice number is left to be typed', () => {
+  const none = { number: null, inDatabase: false, inQuickbooks: false, current: null }
+
+  // The first invoice of an environment has no last number.
+  assert.deepEqual(assignedInvoiceNumber({ ...none, last: null }), { manual: true })
+  // Neither do numbers that are not all digits.
+  assert.deepEqual(assignedInvoiceNumber({ ...none, last: 'INV-14879' }), { manual: true })
 })

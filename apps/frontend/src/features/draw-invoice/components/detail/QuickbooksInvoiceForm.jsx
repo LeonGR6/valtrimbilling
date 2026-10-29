@@ -5,6 +5,7 @@ import {
   Chip,
   CircularProgress,
   FormControlLabel,
+  InputAdornment,
   Stack,
   Table,
   TableBody,
@@ -14,14 +15,15 @@ import {
   TextField,
   Typography,
 } from '@mui/material'
+import LockOutlinedIcon from '@mui/icons-material/LockOutlined'
 import { formatCurrency, formatDate } from '../../utils/drawInvoiceFormatters.js'
 
 const NUMBER_COLORS = { success: 'success.main', error: 'error.main', neutral: 'text.secondary' }
 
 /**
- * What a person fills in and checks before a Package's QuickBooks invoice is created: its
- * number (offered as the one after the last used), its date, the Customer, the lines and, in
- * Production, the confirmation that it is real. `draft` is `useQuickbooksInvoiceDraft`.
+ * What a person checks before a Package's QuickBooks invoice is created: its number (the one
+ * after the last used, locked), its date, the Customer, the lines and, in Production, the
+ * confirmation that it is real. `draft` is `useQuickbooksInvoiceDraft`.
  */
 export default function QuickbooksInvoiceForm({ draft, showLastFailure = true }) {
   const {
@@ -31,6 +33,7 @@ export default function QuickbooksInvoiceForm({ draft, showLastFailure = true })
     submitting,
     submitError,
     numberStatus,
+    numberLocked,
     isProduction,
     typed,
   } = draft
@@ -52,11 +55,23 @@ export default function QuickbooksInvoiceForm({ draft, showLastFailure = true })
           error={numberStatus.tone === 'error'}
           helperText={(
             <Box component="span" sx={{ color: NUMBER_COLORS[numberStatus.tone] }}>
-              {numberStatus.message}
+              {numberLocked && !typed
+                ? (previewError ? 'No number yet: the invoice could not be prepared.' : 'Getting the next number…')
+                : numberStatus.message}
               {draft.lastNumber ? ` Last used here: ${draft.lastNumber}.` : ''}
             </Box>
           )}
-          slotProps={{ htmlInput: { maxLength: 21, autoComplete: 'off' } }}
+          slotProps={{
+            input: {
+              readOnly: numberLocked,
+              endAdornment: numberLocked ? (
+                <InputAdornment position="end">
+                  <LockOutlinedIcon fontSize="small" color="disabled" titleAccess="Assigned automatically" />
+                </InputAdornment>
+              ) : undefined,
+            },
+            htmlInput: { maxLength: 21, autoComplete: 'off' },
+          }}
           sx={{ minWidth: 240 }}
         />
         <TextField

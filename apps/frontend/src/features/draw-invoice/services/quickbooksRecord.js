@@ -302,6 +302,33 @@ export function nextInvoiceNumber(last) {
   return String(BigInt(value) + 1n).padStart(value.length, '0')
 }
 
+function highestInvoiceNumber(...numbers) {
+  return numbers
+    .map((value) => String(value ?? '').trim())
+    .filter((value) => /^[0-9]+$/u.test(value))
+    .reduce((highest, value) => (highest == null || BigInt(value) > BigInt(highest) ? value : highest), null)
+}
+
+/**
+ * What to do with the invoice number field after a preview, since the person does not type it:
+ * `{ number }` fills it, `{ manual: true }` leaves it to be typed, null leaves it as it is.
+ *
+ * It is the number after the last one used, or the one an earlier attempt of the Package kept.
+ * One that turns out taken (another Package, or an invoice made in QuickBooks meanwhile) moves on
+ * to the next. With nothing to count from (the first invoice of an environment, which has no last
+ * number) there is nothing to offer, so it has to be typed.
+ */
+export function assignedInvoiceNumber(numberCheck) {
+  const { current, last, number, inDatabase, inQuickbooks } = numberCheck
+  if (current) return { number: current }
+
+  const taken = number != null && Boolean(inDatabase || inQuickbooks)
+  if (number != null && !taken) return null
+
+  const next = nextInvoiceNumber(taken ? highestInvoiceNumber(last, number) : last)
+  return next ? { number: next } : { manual: true }
+}
+
 /**
  * What to tell the person about the invoice number they typed: free, taken by
  * another Package, or already in QuickBooks. `checking` is while the preview is

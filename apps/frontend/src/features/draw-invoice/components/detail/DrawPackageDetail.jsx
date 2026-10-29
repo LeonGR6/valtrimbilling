@@ -851,6 +851,8 @@ export default function DrawPackageDetail() {
             job={focusedJob}
             packages={drawInvoicePackages}
             optionRows={currentOptionRows}
+            canCreateInvoice={canSendToQuickbooks}
+            onInvoiceCreated={refreshDrawInvoicePackages}
             submission={{
               method: jobSetup?.submissionMethod,
               destination: jobSetup?.submissionDestination,

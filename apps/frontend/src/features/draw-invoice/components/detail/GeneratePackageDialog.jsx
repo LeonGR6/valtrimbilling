@@ -50,6 +50,15 @@ import {
   saveQuickbooksInvoicePdf,
 } from '../../services/quickbooksRepository.js'
 import { isQuickbooksTestPackage } from '../../services/quickbooksRecord.js'
+import { useQuickbooksInvoiceDraft } from '../../hooks/useQuickbooksInvoiceDraft.js'
+import {
+  createsInvoiceWhileGenerating,
+  describeCreatedInvoice,
+  describeInvoiceCreationFailure,
+  describeMissingInvoicePdf,
+} from '../../services/packageGenerateRecord.js'
+import QuickbooksEnvironmentChip from './QuickbooksEnvironmentChip.jsx'
+import QuickbooksInvoiceForm from './QuickbooksInvoiceForm.jsx'
 import { downloadPurchaseOrderPdf } from '../../services/packagePurchaseOrders.js'
 import { usePackagePurchaseOrders } from '../../hooks/usePackagePurchaseOrders.js'
 import {
@@ -68,6 +77,7 @@ const STEP_LABELS = {
   orders: 'Reading the Purchase Orders…',
   release: 'Generating the Release…',
   schedule: 'Generating the Payment Schedule…',
+  creating: 'Creating the invoice in QuickBooks…',
   merging: 'Joining the documents…',
 }
 
@@ -157,7 +167,7 @@ function DocumentCard({
                       onChange={(event) => include.onChange(event.target.checked)}
                     />
                   )}
-                  label={<Typography variant="body2" fontWeight={650}>In the PDF</Typography>}
+                  label={<Typography variant="body2" fontWeight={650}>{include.label ?? 'In the PDF'}</Typography>}
                 />
               </span>
             </Tooltip>
@@ -215,6 +225,11 @@ const FIXES = {
  * previewed, downloaded and left out on its own, and the ones that are in are
  * generated, saved to the Package and downloaded together as a single PDF. Generating a Draft
  * Package also moves it to Awaiting payment (not when it was invoiced in QuickBooks Test).
+ *
+ * A Package with no QuickBooks invoice, for someone who may create it, creates it as part of
+ * generating: the invoice form (number offered as the next one, date, confirmation in Production)
+ * is the card of the invoice. The Release and the Payment Schedule are generated first, so the
+ * invoice, the one thing that cannot be taken back, is created last and only if they are ready.
  */
 export default function GeneratePackageDialog({
   packageRecord,
@@ -228,6 +243,11 @@ export default function GeneratePackageDialog({
   requiresPaymentSchedule = true,
   // The options this Package charges now: the Purchase Orders behind them go into the PDF.
   optionRows = [],
+  // Whether the person may create this Package's QuickBooks invoice (it has none yet): generating
+  // then creates it too. Unticked, the PDF is generated without one, as before.
+  canCreateInvoice = false,
+  // Called once the invoice attempt finished, successful or not, to refresh the Package.
+  onInvoiceCreated = null,
   // The emails of this Package already sent, newest first, and a way to refresh them.
   submissions = [],
   onSent = null,
@@ -249,6 +269,9 @@ export default function GeneratePackageDialog({
     purchaseOrders: true,
   })
   const [step, setStep] = useState(null)
+  // What the run in progress does. Creating the invoice refreshes the Package under it, so its plan
+  // is fixed when it starts and the progress list does not change halfway.
+  const [run, setRun] = useState(null)
   const [completedSteps, setCompletedSteps] = useState([])
   const [error, setError] = useState(null)
   const [done, setDone] = useState(null)
@@ -267,6 +290,16 @@ export default function GeneratePackageDialog({
   const invoicePdf = useQuickbooksInvoicePdf(packageRecord)
   const purchaseOrders = usePackagePurchaseOrders({ jobId: job.id, rows: optionRows })
   const hasQuickbooksInvoice = packageRecord.quickbooksStatus === 'CREATED'
+  // A Package with no invoice, for someone who may create it, creates it while generating.
+  const invoiceCanBeCreated = canCreateInvoice && !hasQuickbooksInvoice
+  const willCreateInvoice = createsInvoiceWhileGenerating({
+    canCreateInvoice: invoiceCanBeCreated,
+    includeInvoice: included.invoice,
+  })
+  const invoiceDraft = useQuickbooksInvoiceDraft(packageRecord, {
+    enabled: willCreateInvoice,
+    onSettled: onInvoiceCreated,
+  })
   // An invoice in the QuickBooks Test company is not real: the Package can be
   // generated to review it, but never sent or marked as submitted.
   const isTestPackage = isQuickbooksTestPackage(packageRecord)
@@ -363,16 +396,27 @@ export default function GeneratePackageDialog({
     return saved
   }
   const loadInvoiceBytes = async () => (useInvoice ? (await loadInvoice()).bytes : null)
+  // QuickBooks' PDF is saved when the invoice is created. If that did not work, it is asked for once more.
+  const readCreatedInvoicePdf = async () => {
+    const read = () => downloadQuickbooksInvoicePdf(packageRecord.id).catch(() => null)
+    const saved = await read()
+    if (saved) return saved
+
+    await saveQuickbooksInvoicePdf(packageRecord.id).catch(() => {})
+    return read()
+  }
   const loadOrderBytes = async () => (useOrders ? Promise.all(orders.map(downloadPurchaseOrderPdf)) : [])
 
   // A part can be busy on its own too (building its own preview).
   const busy = step !== null || invoiceBusy !== null || orderBusy !== null
     || release.generating || schedule.generating
-  const anythingIncluded = useInvoice || useRelease || useSchedule || useOrders
+  const anythingIncluded = useInvoice || willCreateInvoice || useRelease || useSchedule || useOrders
   // The Purchase Orders are looked up first, so the PDF is never joined without ones that are there.
+  // An invoice to create is ready when its number is free and, in Production, it was confirmed.
   const canGenerate = anythingIncluded
     && (!useRelease || release.canGenerate)
     && (!useSchedule || schedule.canGenerate)
+    && (!willCreateInvoice || invoiceDraft.canCreate)
     && purchaseOrders.status !== 'loading'
     && !busy
 
@@ -448,6 +492,11 @@ export default function GeneratePackageDialog({
     setGenerated(null)
     setCompletedSteps([])
     const finish = (name) => setCompletedSteps((current) => [...current, name])
+    const createsInvoice = willCreateInvoice
+    setRun({ createsInvoice, readsInvoice: useInvoice })
+    // What is saved on the Package before the invoice is created, and the invoice once it is.
+    const savedDocuments = []
+    let createdInvoice = null
     try {
       const documents = []
 
@@ -474,6 +523,7 @@ export default function GeneratePackageDialog({
           return
         }
         documents.push(generatedRelease.bytes)
+        savedDocuments.push('Release')
         finish('release')
       }
 
@@ -489,7 +539,30 @@ export default function GeneratePackageDialog({
           return
         }
         documents.push(generatedSchedule.bytes)
+        savedDocuments.push('Payment Schedule')
         finish('schedule')
+      }
+
+      // The invoice comes last because it cannot be taken back: it is only created once everything
+      // else is ready. Its PDF goes first in the Package.
+      if (createsInvoice) {
+        setStep('creating')
+        try {
+          createdInvoice = await invoiceDraft.create()
+        } catch (creationError) {
+          setError(describeInvoiceCreationFailure(creationError.message, { savedDocuments }))
+          return
+        }
+        finish('creating')
+
+        setStep('invoice')
+        const createdPdf = await readCreatedInvoicePdf()
+        if (!createdPdf) {
+          setError(describeMissingInvoicePdf(createdInvoice))
+          return
+        }
+        documents.unshift(createdPdf.bytes)
+        finish('invoice')
       }
 
       documents.push(...orderPdfs)
@@ -502,7 +575,11 @@ export default function GeneratePackageDialog({
       // A Package that is generated, with everything it needs, is on its way to the Builder: a Draft
       // becomes Awaiting payment, as it does when it is emailed, printed or downloaded for the portal.
       // The PDF is already downloaded, so a failure here only says so.
-      const statusResult = { attempted: movesToAwaitingPaymentOnGenerate(packageRecord, { isTestInvoice: isTestPackage }) }
+      const statusResult = {
+        attempted: movesToAwaitingPaymentOnGenerate(packageRecord, {
+          isTestInvoice: isTestPackage || createdInvoice?.environment === 'sandbox',
+        }),
+      }
       if (statusResult.attempted) {
         try {
           statusResult.workflowStatus = await markPackageSubmitted(packageRecord.id)
@@ -515,16 +592,18 @@ export default function GeneratePackageDialog({
       setDone({
         fileName: bundleFileName,
         pageCount,
-        invoice: useInvoice,
+        invoice: useInvoice || createdInvoice != null,
         release: useRelease,
         schedule: useSchedule,
         purchaseOrders: orderPdfs.length,
+        createdNote: describeCreatedInvoice(createdInvoice),
         statusNote: describeStatusAfterGenerate(statusResult),
       })
     } catch (generationError) {
       setError(generationError.message)
     } finally {
       setStep(null)
+      setRun(null)
     }
   }
 
@@ -554,13 +633,22 @@ export default function GeneratePackageDialog({
 
   // --- What each card shows -----------------------------------------------
 
-  const invoiceStatus = !hasQuickbooksInvoice
-    ? { tone: 'default', label: 'Not in QuickBooks' }
-    : invoicePdf.loading
-      ? { tone: 'default', label: 'Checking…' }
-      : invoicePdf.pdf
-        ? { tone: 'success', label: 'Ready' }
-        : { tone: 'warning', label: 'PDF not saved' }
+  const invoiceToCreateStatus = !willCreateInvoice
+    ? { tone: 'default', label: 'Left out' }
+    : invoiceDraft.canCreate
+      ? { tone: 'success', label: 'Ready to create' }
+      : invoiceDraft.loading || (invoiceDraft.previewData == null && invoiceDraft.previewError == null)
+        ? { tone: 'default', label: 'Checking…' }
+        : { tone: 'warning', label: 'Needs attention' }
+  const invoiceStatus = invoiceCanBeCreated
+    ? invoiceToCreateStatus
+    : !hasQuickbooksInvoice
+      ? { tone: 'default', label: 'Not in QuickBooks' }
+      : invoicePdf.loading
+        ? { tone: 'default', label: 'Checking…' }
+        : invoicePdf.pdf
+          ? { tone: 'success', label: 'Ready' }
+          : { tone: 'warning', label: 'PDF not saved' }
   // A document the setup does not ask for, that is left out and cannot be generated, only says so.
   // Ticking "In the PDF" brings it back like any other.
   const isNotNeeded = (required, isIncluded, state) => (
@@ -588,10 +676,12 @@ export default function GeneratePackageDialog({
     summaryRow(
       'Invoice',
       invoiceStatus,
-      useInvoice,
-      !hasQuickbooksInvoice
-        ? 'No QuickBooks invoice'
-        : invoicePdf.pdf ? 'QuickBooks PDF' : 'Not included until its PDF is saved',
+      useInvoice || willCreateInvoice,
+      willCreateInvoice
+        ? `Created in QuickBooks${invoiceDraft.typed ? ` as ${invoiceDraft.typed}` : ''}`
+        : !hasQuickbooksInvoice
+          ? 'No QuickBooks invoice'
+          : invoicePdf.pdf ? 'QuickBooks PDF' : 'Not included until its PDF is saved',
     ),
     summaryRow(
       'Release',
@@ -616,11 +706,15 @@ export default function GeneratePackageDialog({
     ),
   ].filter(Boolean)
 
+  // The plan of the run in progress, not of the page: creating the invoice changes the page.
+  const plan = run ?? { createsInvoice: willCreateInvoice, readsInvoice: useInvoice }
   const progressSteps = [
-    useInvoice && { key: 'invoice', label: 'Read the invoice' },
+    plan.readsInvoice && { key: 'invoice', label: 'Read the invoice' },
     useOrders && { key: 'orders', label: 'Read the Purchase Orders' },
     useRelease && { key: 'release', label: 'Generate the Release' },
     useSchedule && { key: 'schedule', label: 'Generate the Payment Schedule' },
+    plan.createsInvoice && { key: 'creating', label: 'Create the invoice in QuickBooks' },
+    plan.createsInvoice && { key: 'invoice', label: 'Read the new invoice' },
     { key: 'merging', label: 'Join and download' },
   ].filter(Boolean)
   const showProgress = step !== null && step !== 'previewing'
@@ -689,14 +783,22 @@ export default function GeneratePackageDialog({
             <DocumentCard
               number={1}
               title="Invoice"
-              description="The QuickBooks invoice PDF saved on this Package."
+              description={invoiceCanBeCreated
+                ? 'Created in QuickBooks when you generate the Package; its PDF goes first.'
+                : 'The QuickBooks invoice PDF saved on this Package.'}
               status={invoiceStatus}
-              include={{
-                checked: useInvoice,
-                disabled: !hasQuickbooksInvoice || !invoicePdf.pdf,
-                hint: hasQuickbooksInvoice && invoicePdf.pdf ? undefined : 'There is no invoice PDF to include',
-                onChange: setInclude('invoice'),
-              }}
+              include={invoiceCanBeCreated
+                ? {
+                  checked: included.invoice,
+                  label: 'Create and include',
+                  onChange: setInclude('invoice'),
+                }
+                : {
+                  checked: useInvoice,
+                  disabled: !hasQuickbooksInvoice || !invoicePdf.pdf,
+                  hint: hasQuickbooksInvoice && invoicePdf.pdf ? undefined : 'There is no invoice PDF to include',
+                  onChange: setInclude('invoice'),
+                }}
               actions={hasQuickbooksInvoice && invoicePdf.pdf && (
                 <>
                   <Button
@@ -735,10 +837,17 @@ export default function GeneratePackageDialog({
               )}
             >
               <Stack spacing={1.5}>
-                {!hasQuickbooksInvoice && (
+                {willCreateInvoice && (
+                  <>
+                    <QuickbooksEnvironmentChip environment={invoiceDraft.environment} sx={{ alignSelf: 'flex-start' }} />
+                    <QuickbooksInvoiceForm draft={invoiceDraft} />
+                  </>
+                )}
+                {!hasQuickbooksInvoice && !willCreateInvoice && (
                   <Typography variant="body2" color="text.secondary">
-                    This Package has no QuickBooks invoice, so there is no invoice to include.
-                    The Release and the Payment Schedule are generated as usual.
+                    {invoiceCanBeCreated
+                      ? 'The invoice is left out, so it is not created and the PDF is generated without it. Tick Create and include to create it with the Package.'
+                      : 'This Package has no QuickBooks invoice, so there is no invoice to include. The Release and the Payment Schedule are generated as usual.'}
                   </Typography>
                 )}
                 {hasQuickbooksInvoice && invoicePdf.loading && (
@@ -1080,11 +1189,18 @@ export default function GeneratePackageDialog({
                 differences are checked, if it lists any). Fix it, or leave it out of the PDF.
               </Alert>
             )}
+            {willCreateInvoice && !invoiceDraft.canCreate && !invoiceDraft.loading && !busy && (
+              <Alert severity="info" sx={{ mt: 2 }}>
+                The Package can be generated when the invoice is ready: its number is free and, in
+                Production, the confirmation under Invoice is ticked. Fix it, or leave the invoice out.
+              </Alert>
+            )}
             {error && <Alert severity="error" sx={{ mt: 2 }}>{error}</Alert>}
             {done && (
               <Alert severity="success" icon={<TaskAltRoundedIcon />} sx={{ mt: 2 }}>
                 Downloaded “{done.fileName}” ({done.pageCount} {done.pageCount === 1 ? 'page' : 'pages'})
                 {includedList.length > 0 ? ` with ${includedList.join(', ')}` : ''}.
+                {done.createdNote}
                 {done.release || done.schedule ? ' The generated documents were saved to this Package.' : ''}
                 {done.statusNote}
               </Alert>
@@ -1120,6 +1236,9 @@ export default function GeneratePackageDialog({
           title="Package"
           subtitle={preview.fileName}
           bytes={preview.bytes}
+          statusNote={willCreateInvoice
+            ? 'nothing has been saved yet, and the invoice is not in it: it is created when you generate'
+            : undefined}
           confirmLabel="Generate package"
           onConfirm={() => {
             setPreview(null)

@@ -10,17 +10,9 @@ import { buildStoredPackageBundle, listStoredPackageDocuments } from '../../serv
 import { loadPackagePurchaseOrders } from '../../services/packagePurchaseOrders.js'
 import { joinableOrders } from '../../utils/packagePurchaseOrders.js'
 import { packageDocumentNumber } from '../../utils/packageInvoiceLabel.js'
+import { savePdfToDisk } from '../../../../utils/downloadFile.js'
 
 const PdfPreviewDialog = lazy(() => import('../../../release-templates/components/PdfPreviewDialog.jsx'))
-
-function saveToDisk(bytes, fileName) {
-  const url = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }))
-  const link = document.createElement('a')
-  link.href = url
-  link.download = fileName
-  link.click()
-  setTimeout(() => URL.revokeObjectURL(url), 10_000)
-}
 
 /**
  * Opens the Package that was already generated, without generating it again. It shows up only
@@ -100,7 +92,7 @@ export default function ViewGeneratedPackageButton({ packageRecord, job, optionR
             subtitle={bundle.fileName}
             statusNote={describeStoredBundle(bundle.parts)}
             bytes={bundle.bytes}
-            onDownload={() => saveToDisk(bundle.bytes, bundle.fileName)}
+            onDownload={() => savePdfToDisk(bundle.bytes, bundle.fileName)}
             onClose={() => setBundle(null)}
           />
         </Suspense>

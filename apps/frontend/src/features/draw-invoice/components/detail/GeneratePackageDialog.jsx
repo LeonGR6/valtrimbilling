@@ -58,6 +58,7 @@ import {
   joinableOrders,
 } from '../../utils/packagePurchaseOrders.js'
 import PackagePurchaseOrderWarning from '../shared/PackagePurchaseOrderWarning.jsx'
+import { saveToDisk } from '../../../../utils/downloadFile.js'
 
 const NOT_READY = { canGenerate: false, generating: false, previewing: false, loading: true }
 
@@ -68,15 +69,6 @@ const STEP_LABELS = {
   release: 'Generating the Release…',
   schedule: 'Generating the Payment Schedule…',
   merging: 'Joining the documents…',
-}
-
-function saveToDisk(blob, fileName) {
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.href = url
-  link.download = fileName
-  link.click()
-  setTimeout(() => URL.revokeObjectURL(url), 10_000)
 }
 
 const STATUS_ICONS = {

@@ -45,6 +45,7 @@ import {
 } from '../services/packageReleaseRepository.js'
 import { getReleaseVariable, releaseTypeLabel } from '../services/releaseTemplateRecord.js'
 import { formatReleaseValue, printedReleaseValues } from '../services/releaseValueFormat.js'
+import { saveToDisk } from '../../../utils/downloadFile.js'
 
 // The three values a person can correct before generating. The two Exceptions
 // lines are edited as rows (one per unpaid earlier Package, or added by hand).
@@ -62,15 +63,6 @@ function formatStamp(value) {
   return value
     ? new Date(value).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
     : ''
-}
-
-function saveToDisk(blob, fileName) {
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.href = url
-  link.download = fileName
-  link.click()
-  setTimeout(() => URL.revokeObjectURL(url), 10_000)
 }
 
 // What the Package supplies, as the text of the inputs.

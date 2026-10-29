@@ -47,6 +47,7 @@ import {
   listPackagePaymentSchedules,
   savePackagePaymentSchedule,
 } from '../services/packageScheduleRepository.js'
+import { saveToDisk } from '../../../utils/downloadFile.js'
 
 const LIST_LIMIT = 8
 
@@ -54,15 +55,6 @@ function formatStamp(value) {
   return value
     ? new Date(value).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
     : ''
-}
-
-function saveToDisk(blob, fileName) {
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.href = url
-  link.download = fileName
-  link.click()
-  setTimeout(() => URL.revokeObjectURL(url), 10_000)
 }
 
 function ShortList({ title, items }) {

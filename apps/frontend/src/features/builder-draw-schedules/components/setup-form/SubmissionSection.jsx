@@ -15,6 +15,7 @@ import {
   finalReleaseScopeOptions,
   invoiceLineFormatOptions,
   isNamedSubmissionMethod,
+  singleInvoiceScopeOptions,
   submissionMethodOptions,
 } from '../../data/builderDrawSchedules.js'
 import { Section } from './formParts.jsx'
@@ -36,6 +37,7 @@ export default function SubmissionSection() {
   const { control, register, setValue, formState: { errors } } = useFormContext()
   const requiresRelease = useWatch({ control, name: 'requiresRelease' })
   const submissionMethod = useWatch({ control, name: 'submissionMethod' })
+  const singleInvoiceScope = useWatch({ control, name: 'singleInvoiceScope' })
   const destination = DESTINATIONS[submissionMethod] ?? DESTINATIONS.PORTAL
   // Supply Pro, Textura, KB IE and KB LA are the destination themselves: there is nothing to type.
   const hasDestination = !isNamedSubmissionMethod(submissionMethod)
@@ -151,6 +153,27 @@ export default function SubmissionSection() {
                 <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>
               ))}
             </Select>
+          </FormControl>
+        )}
+      />
+
+      <Controller
+        name="singleInvoiceScope"
+        control={control}
+        render={({ field }) => (
+          <FormControl error={Boolean(errors.singleInvoiceScope)} sx={{ maxWidth: 560 }}>
+            <InputLabel id="setup-single-invoice-label">Single invoice</InputLabel>
+            <Select {...field} labelId="setup-single-invoice-label" label="Single invoice">
+              {singleInvoiceScopeOptions.map((option) => (
+                <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>
+              ))}
+            </Select>
+            <FormHelperText>
+              {errors.singleInvoiceScope?.message
+                ?? (singleInvoiceScope
+                  ? `Everything available of each ${singleInvoiceScope === 'PHASE' ? 'Phase' : 'Building'} goes in one Package and one invoice. A selection of several makes one Package for each.`
+                  : 'A Package can bill several Phases and Buildings together.')}
+            </FormHelperText>
           </FormControl>
         )}
       />

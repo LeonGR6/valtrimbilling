@@ -7,6 +7,7 @@ import {
   frequencyLabels,
   invoiceLineFormatLabels,
   retentionReleaseScopeLabels,
+  singleInvoiceScopeLabels,
   submissionMethodLabels,
   weekdayOptions,
 } from '../data/builderDrawSchedules.js'
@@ -140,6 +141,7 @@ export function describeSetupDetails(setup) {
         : `Draw ${Number(setup.optionsBillingDrawIndex) + 1}`,
     },
     { label: 'Invoice lines', value: invoiceLineFormatLabels[setup.invoiceLineFormat] ?? '—' },
+    { label: 'Single invoice', value: singleInvoiceScopeLabels[setup.singleInvoiceScope ?? ''] ?? 'No' },
     { label: 'Submitted by', value: describeSubmission(setup) },
     { label: 'Required documents', value: describeDocuments(setup) },
     ...(String(setup.notes ?? '').trim() ? [{ label: 'Notes', value: String(setup.notes).trim() }] : []),

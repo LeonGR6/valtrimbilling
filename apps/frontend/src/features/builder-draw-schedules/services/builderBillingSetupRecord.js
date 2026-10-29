@@ -114,6 +114,9 @@ export function toBuilderDrawSchedule(version, draws = [], documents = []) {
       && ['PHASE', 'BUILDING', 'PROJECT'].includes(version.final_release_scope)
       ? version.final_release_scope
       : '',
+    singleInvoiceScope: ['PHASE', 'BUILDING'].includes(version.single_invoice_scope)
+      ? version.single_invoice_scope
+      : '',
     requiresBackup: documentTypes.has('BACKUP'),
     invoiceLineFormat: normalizeInvoiceLineFormat(version.invoice_line_format),
     submissionMethod,
@@ -188,6 +191,9 @@ export function toBuilderBillingSetupRpc(schedule) {
       finalReleaseScope: schedule.requiresRelease
         && ['PHASE', 'BUILDING', 'PROJECT'].includes(schedule.finalReleaseScope)
         ? schedule.finalReleaseScope
+        : null,
+      singleInvoiceScope: ['PHASE', 'BUILDING'].includes(schedule.singleInvoiceScope)
+        ? schedule.singleInvoiceScope
         : null,
       wrapEnabled: Boolean(schedule.ocipWrapEnabled),
       wrapPercentage: schedule.ocipWrapEnabled

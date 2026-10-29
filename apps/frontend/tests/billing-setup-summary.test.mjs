@@ -103,6 +103,11 @@ test('the rest of the setup is described in plain words', () => {
   assert.equal(details['Utility building'], 'Off')
   assert.equal(details['Options are billed in'], 'Draw 2')
   assert.equal(details['Invoice lines'], 'One line per lot and scope')
+  assert.equal(details['Single invoice'], 'No')
+  for (const [scope, label] of [['PHASE', 'Per Phase'], ['BUILDING', 'Per Building']]) {
+    const single = Object.fromEntries(describeSetupDetails(setup({ singleInvoiceScope: scope })).map((row) => [row.label, row.value]))
+    assert.equal(single['Single invoice'], label)
+  }
   assert.equal(details['Submitted by'], 'Portal · Tri Pointe portal')
   assert.equal(details['Required documents'], 'Purchase order · Payment schedule · Release (final per phase)')
   assert.equal('Notes' in details, false)

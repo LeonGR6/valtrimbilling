@@ -31,6 +31,7 @@ const VERSION_COLUMNS = [
   'retention_percentage',
   'retention_release_scope',
   'final_release_scope',
+  'single_invoice_scope',
   'wrap_enabled',
   'wrap_percentage',
   'invoice_line_format',

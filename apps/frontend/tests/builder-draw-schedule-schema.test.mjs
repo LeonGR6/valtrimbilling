@@ -536,3 +536,14 @@ test('percentageFromFraction only answers for values above 0 and under 1', () =>
     assert.equal(percentageFromFraction(value), null)
   }
 })
+
+test('the single invoice scope is Phase or Building, and optional', () => {
+  const schema = createBuilderDrawScheduleSchema([], null)
+
+  assert.equal(schema.parse(validSetup()).singleInvoiceScope, '')
+  for (const scope of ['', 'PHASE', 'BUILDING']) {
+    assert.equal(schema.parse(validSetup({ singleInvoiceScope: scope })).singleInvoiceScope, scope)
+  }
+  assert.equal(schema.safeParse(validSetup({ singleInvoiceScope: 'PROJECT' })).success, false)
+})
+

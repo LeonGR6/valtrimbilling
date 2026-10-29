@@ -20,6 +20,7 @@ import LayersRoundedIcon from '@mui/icons-material/LayersRounded'
 import { formatPhaseBuilding } from '../../sequence-sheets/utils/phaseBuildingCodes.js'
 import { canCorrectDrawPackage } from '../services/drawInvoicePackageRecord.js'
 import { buildDrawCalendarHeadings } from '../utils/calendarDrawSuggestions.js'
+import { packageInvoiceUnits, phaseFitsPackageInvoice } from '../utils/packageSplit.js'
 import DrawSelectionGrid from './dialogs/DrawSelectionGrid.jsx'
 import { usePackageReleases } from '../hooks/usePackageReleases.js'
 import PackageReleasesNotice from './PackageReleasesNotice.jsx'
@@ -85,6 +86,12 @@ export function EditDrawPackageDialog({
   const shownPhases = availablePhases.filter(
     (candidate) => shownPhaseIdSet.has(String(candidate.id)),
   )
+  // A Builder that takes a single invoice per Phase (or Building) bills one of them in a Package:
+  // cells from another one are not offered here.
+  const ownInvoice = packageInvoiceUnits(schedule, job, [
+    ...record.selections.map(({ phaseId }) => phaseId),
+    ...(record.selections.length === 0 && phase?.id != null ? [phase.id] : []),
+  ])
   const occupied = useMemo(
     () => buildUsedDrawSelections(packages, record.id),
     [packages, record.id],
@@ -285,8 +292,11 @@ export function EditDrawPackageDialog({
             Keep at least one cell. Yellow cells belong to another Package;
             use “Move cells here” to transfer them. Unchanged cells retain
             their saved prices, while newly added cells are priced using this
-            Package’s date ({record.packageDate}). You may add cells from any
-            Phase in this Job. Job, Billing Setup and Package date cannot be edited.
+            Package’s date ({record.packageDate}).{' '}
+            {ownInvoice
+              ? `This Builder takes a single invoice per ${ownInvoice.scope === 'PHASE' ? 'Phase' : 'Building'}, so you may add cells from ${[...ownInvoice.units.values()].join(' and ')} only.`
+              : 'You may add cells from any Phase in this Job.'}{' '}
+            Job, Billing Setup and Package date cannot be edited.
           </Alert>
           <PackageReleasesNotice state={releases} action="edit this draft" />
           {error && <Alert severity="error">{error}</Alert>}
@@ -301,6 +311,7 @@ export function EditDrawPackageDialog({
               {availablePhases.map((candidate) => {
                 const id = String(candidate.id)
                 const shown = shownPhaseIdSet.has(id)
+                const outsideInvoice = !phaseFitsPackageInvoice(ownInvoice, candidate)
                 const cellCount = selections.filter(
                   (selection) => String(selection.phaseId) === id,
                 ).length
@@ -314,13 +325,15 @@ export function EditDrawPackageDialog({
                     color={shown ? 'primary' : 'default'}
                     variant={shown ? 'filled' : 'outlined'}
                     icon={shown ? <CheckRoundedIcon /> : <AddRoundedIcon />}
-                    disabled={submitting || (shown && cellCount > 0)}
+                    disabled={submitting || (shown && cellCount > 0) || (!shown && outsideInvoice)}
                     onClick={() => setShownPhaseIds((current) => (shown
                       ? current.filter((value) => value !== id)
                       : [...current, id]))}
                     title={shown && cellCount > 0
                       ? 'This Phase has cells in the Package. Uncheck its cells to take it out.'
-                      : shown
+                      : !shown && outsideInvoice
+                        ? 'This Builder takes a single invoice, so this Package bills only its own Phase.'
+                        : shown
                         ? 'Hide this Phase'
                         : 'Add this Phase to the edit'}
                     label={[
@@ -466,15 +479,23 @@ export function EditDrawPackageDialog({
 
 export function TransferDrawPackageCellsDialog({
   target,
+  job = null,
+  schedule = null,
   packages,
   onClose,
   onTransfer,
 }) {
+  // With a single invoice per Phase (or Building), only cells of the Phase (or Building) the
+  // Package bills can be moved to it.
+  const ownInvoice = packageInvoiceUnits(schedule, job, target.selections.map(({ phaseId }) => phaseId))
+  const phaseById = new Map((job?.sequenceSheet?.phases ?? []).map((item) => [String(item.id), item]))
+  const lineFits = (line) => phaseFitsPackageInvoice(ownInvoice, phaseById.get(String(line.phaseId)))
   const sources = packages.filter((candidate) => candidate.id !== target.id
     && String(candidate.jobId) === String(target.jobId)
     && String(candidate.setupVersionId) === String(target.setupVersionId)
     && canCorrectDrawPackage(candidate)
-    && candidate.selections.length > 0)
+    && candidate.selections.length > 0
+    && candidate.persistedDrawLines.some(lineFits))
   const [sourceId, setSourceId] = useState(sources[0]?.id ?? '')
   const [selections, setSelections] = useState([])
   const [reason, setReason] = useState('')
@@ -516,6 +537,7 @@ export function TransferDrawPackageCellsDialog({
             The selected Lot / Draw cells leave the source and are calculated
             again using {target.packageNumber}’s date ({target.packageDate}).
             If the source becomes empty, it is cancelled automatically.
+            {ownInvoice && ` This Builder takes a single invoice per ${ownInvoice.scope === 'PHASE' ? 'Phase' : 'Building'}: only cells of ${[...ownInvoice.units.values()].join(' and ')} can be moved.`}
           </Alert>
           {error && <Alert severity="error">{error}</Alert>}
           {sources.length === 0 ? (
@@ -540,7 +562,7 @@ export function TransferDrawPackageCellsDialog({
                 ))}
               </TextField>
               <Box sx={{ border: 1, borderColor: 'divider', borderRadius: 1 }}>
-                {source?.persistedDrawLines.map((line) => {
+                {source?.persistedDrawLines.filter(lineFits).map((line) => {
                   const selection = {
                     phaseId: line.phaseId,
                     lotId: line.lotId,

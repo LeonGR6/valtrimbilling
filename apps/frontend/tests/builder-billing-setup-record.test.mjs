@@ -34,6 +34,7 @@ test('billing setup records map database columns and one-based draws to the form
     retention_percentage: '5.25',
     retention_release_scope: 'BUILDING',
     final_release_scope: 'PHASE',
+    single_invoice_scope: 'BUILDING',
     wrap_enabled: true,
     wrap_percentage: '2.50',
     invoice_line_format: 'LOT',
@@ -78,6 +79,7 @@ test('billing setup records map database columns and one-based draws to the form
   assert.equal(schedule.requiresPo, true)
   assert.equal(schedule.requiresRelease, true)
   assert.equal(schedule.finalReleaseScope, 'PHASE')
+  assert.equal(schedule.singleInvoiceScope, 'BUILDING')
   assert.equal(schedule.requiresBackup, false)
   assert.equal(schedule.invoiceLineFormat, 'LOT_SCOPE')
   assert.equal(schedule.submissionMethod, 'PORTAL')
@@ -367,3 +369,34 @@ test('a refused save keeps what the database says about a rule it checks, and no
   assert.equal(setupSaveErrorMessage({}), 'The Builder billing setup request failed.')
   assert.equal(setupSaveErrorMessage(null), 'The Builder billing setup request failed.')
 })
+
+test('the single invoice scope is read and saved only as Phase or Building', () => {
+  const read = (single_invoice_scope) => toBuilderDrawSchedule(
+    { id: 1, builder_id: 7, version_number: 1, single_invoice_scope },
+    [],
+    [],
+  ).singleInvoiceScope
+
+  assert.equal(read('PHASE'), 'PHASE')
+  assert.equal(read('BUILDING'), 'BUILDING')
+  // A setup made before the option, or an unknown value, is not configured.
+  assert.equal(read(null), '')
+  assert.equal(read(undefined), '')
+  assert.equal(read('PROJECT'), '')
+
+  const saved = (singleInvoiceScope) => toBuilderBillingSetupRpc({
+    builderId: 7,
+    frequency: 'MONTHLY',
+    draws: [],
+    submissionMethod: 'PORTAL',
+    submissionDestination: '',
+    singleInvoiceScope,
+    notes: '',
+  }).p_config.singleInvoiceScope
+  assert.equal(saved('PHASE'), 'PHASE')
+  assert.equal(saved('BUILDING'), 'BUILDING')
+  assert.equal(saved(''), null)
+  assert.equal(saved('PROJECT'), null)
+  assert.equal(saved(undefined), null)
+})
+

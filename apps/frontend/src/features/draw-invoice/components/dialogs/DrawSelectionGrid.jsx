@@ -70,6 +70,8 @@ export default function DrawSelectionGrid({
   // Optional: a cell that cannot be chosen for a reason other than belonging to
   // another Package, and the rows that the "select all" checkboxes may touch.
   cellDisabled = () => false,
+  // Said on a cell that cannot be changed because the Package needs it.
+  cellDisabledReason = null,
   rowAllowsGroupSelection = () => true,
 }) {
   const selectedLotKeys = [...new Set(
@@ -289,7 +291,9 @@ export default function DrawSelectionGrid({
                         <TableCell
                           key={key}
                           align="center"
-                          title={calendarSuggested
+                          title={disabled && cellDisabledReason
+                            ? cellDisabledReason
+                            : calendarSuggested
                             ? 'Suggested from Calendar'
                             : calendarReady
                               ? 'Calendar work is ready; available for manual selection'
@@ -310,7 +314,7 @@ export default function DrawSelectionGrid({
                                     ? 'primary.light'
                                     : undefined,
                             cursor: owner || disabled ? 'default' : 'pointer',
-                            opacity: disabled ? 0.5 : 1,
+                            opacity: disabled ? (cellDisabledReason ? 0.8 : 0.5) : 1,
                           }}
                         >
                           {owner ? (

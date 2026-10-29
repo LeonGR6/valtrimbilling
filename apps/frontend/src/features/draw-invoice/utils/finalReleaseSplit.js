@@ -33,7 +33,8 @@ export function finalReleaseSplitScope(schedule, builderSchedule = null) {
   return scope
 }
 
-function scopeOf(scope, phase) {
+/** The Phase or Building a phase row belongs to, as a Final Release scope. */
+export function scopeOf(scope, phase) {
   return scope === 'PHASE'
     ? { key: `phase:${phase.name}`, label: formatPhase(phase.name) || String(phase.name) }
     : { key: `building:${phase.id}`, label: formatPhaseBuilding(phase.name, phase.building) }

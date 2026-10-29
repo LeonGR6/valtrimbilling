@@ -46,8 +46,9 @@ import {
   summarizeDrawPackage,
   utilityChargeKey,
 } from '../../utils/drawPackages.js'
-import { planFinalReleaseSplit, splitPackageInput } from '../../utils/finalReleaseSplit.js'
-import FinalReleaseSplitNotice from './FinalReleaseSplitNotice.jsx'
+import { splitPackageInput } from '../../utils/finalReleaseSplit.js'
+import { planPackageSplit, singleInvoiceScope as singleInvoiceScopeOf } from '../../utils/packageSplit.js'
+import PackageSplitNotice from './PackageSplitNotice.jsx'
 import {
   buildDrawWorksheet,
   getHardwareBillingMode,
@@ -213,7 +214,17 @@ export default function CreateDrawDialog({
   const suggestedSelections = calendarSuggestion.suggestedSelections.filter(
     ({ phaseId }) => shownPhaseIdSet.has(String(phaseId)),
   )
-  const selectedSelections = selectionOverrides ?? suggestedSelections
+  // With a single invoice per Phase (or Building), everything the Calendar has ready for the Phases
+  // on screen goes in the Package and cannot be left out cell by cell: to leave it out, the Phase goes.
+  const invoiceScope = singleInvoiceScopeOf(schedule)
+  const requiredSelections = invoiceScope ? suggestedSelections : []
+  const requiredSelectionKeys = new Set(requiredSelections.map(cellKey))
+  const chosenSelections = selectionOverrides ?? suggestedSelections
+  const chosenSelectionKeys = new Set(chosenSelections.map(cellKey))
+  const selectedSelections = [
+    ...chosenSelections,
+    ...requiredSelections.filter((selection) => !chosenSelectionKeys.has(cellKey(selection))),
+  ]
   const calendarReadySelectionKeys = new Set(
     calendarSuggestion.eligibleSelections.map(cellKey),
   )
@@ -332,9 +343,14 @@ export default function CreateDrawDialog({
       hardwareChargeKey(lotId, 'BY_EVENT', eventType)
     )),
   )
-  const selectedSplitHardwareChargeKeys = new Set(
-    splitHardwareSelectionKeys ?? suggestedSplitHardwareChargeKeys,
-  )
+  // The same holds for the Separate Hardware the Calendar has ready.
+  const requiredSplitHardwareChargeKeys = invoiceScope
+    ? suggestedSplitHardwareChargeKeys
+    : new Set()
+  const selectedSplitHardwareChargeKeys = new Set([
+    ...(splitHardwareSelectionKeys ?? suggestedSplitHardwareChargeKeys),
+    ...requiredSplitHardwareChargeKeys,
+  ])
   // The Hardware portions whose Lot Draw is selected.
   const drawHardwareChargeKeys = new Set(
     selectedSelections.map((cell) => hardwareChargeKeyOfCell(schedule, cell)),
@@ -433,9 +449,29 @@ export default function CreateDrawDialog({
     resetPackageChoices()
   }
 
+  // With a single invoice per Phase, adding a Building brings the other Buildings of its Phase that
+  // have something ready, so the Phase goes in one Package whole.
+  const withPhaseSiblings = (ids) => {
+    if (invoiceScope !== 'PHASE') return ids
+
+    const names = new Set(phases
+      .filter((candidate) => ids.includes(String(candidate.id)))
+      .map((candidate) => candidate.name))
+    const readyIds = new Set([
+      ...calendarSuggestion.suggestedSelections,
+      ...calendarSuggestion.suggestedHardwareSelections,
+    ].map(({ phaseId }) => String(phaseId)))
+    return [...new Set([
+      ...ids,
+      ...phases
+        .filter((candidate) => names.has(candidate.name) && readyIds.has(String(candidate.id)))
+        .map((candidate) => String(candidate.id)),
+    ])]
+  }
+
   // Adding Phases brings the Calendar's suggested cells for them along.
   const addPhases = (phaseIds) => {
-    const ids = phaseIds.map(String).filter((id) => !shownPhaseIdSet.has(id))
+    const ids = withPhaseSiblings(phaseIds.map(String)).filter((id) => !shownPhaseIdSet.has(id))
     if (ids.length === 0) return
 
     setShownPhaseIds((current) => [...current, ...ids])
@@ -454,20 +490,28 @@ export default function CreateDrawDialog({
     }
   }
 
-  // Removing a Phase also removes the cells and charges it contributed.
+  // Removing a Phase also removes the cells and charges it contributed. With a single invoice per
+  // Phase the Phase leaves whole, every Building of it on screen.
   const removePhase = (candidate) => {
-    const id = String(candidate.id)
-    const lotIds = new Set((candidate.lots ?? []).map((lot) => String(lot.id)))
+    const leaving = invoiceScope === 'PHASE'
+      ? phases.filter((other) => other.name === candidate.name && shownPhaseIdSet.has(String(other.id)))
+      : [candidate]
+    const ids = new Set(leaving.map((other) => String(other.id)))
+    const lotIds = new Set(leaving.flatMap(
+      (other) => (other.lots ?? []).map((lot) => String(lot.id)),
+    ))
     const nextSelections = selectedSelections.filter(
-      (selection) => String(selection.phaseId) !== id,
+      (selection) => !ids.has(String(selection.phaseId)),
     )
 
-    setShownPhaseIds((current) => current.filter((value) => value !== id))
+    setShownPhaseIds((current) => current.filter((value) => !ids.has(value)))
     setSelectedSelections(nextSelections)
     setSplitHardwareSelectionKeys((current) => current === null
       ? null
       : current.filter((key) => !lotIds.has(key.split(':')[0])))
-    setExcludedOptionKeys((current) => current.filter((key) => !key.startsWith(`${id}:`)))
+    setExcludedOptionKeys((current) => current.filter(
+      (key) => ![...ids].some((id) => key.startsWith(`${id}:`)),
+    ))
     pruneHardwareSelections(nextSelections)
   }
 
@@ -475,6 +519,8 @@ export default function CreateDrawDialog({
     if (selectionIsUsed(candidate.id, lotId, drawIndex)) return
 
     const key = `${candidate.id}:${lotId}:${drawIndex}`
+    if (requiredSelectionKeys.has(key)) return
+
     const nextSelections = selectedSelections.some(
       (selection) => cellKey(selection) === key,
     )
@@ -504,7 +550,8 @@ export default function CreateDrawDialog({
       : [...current, key])
   }
 
-  const toggleSelectionGroup = (available) => {
+  const toggleSelectionGroup = (everyCell) => {
+    const available = everyCell.filter((selection) => !requiredSelectionKeys.has(cellKey(selection)))
     const availableKeys = new Set(available.map(cellKey))
     const allSelected = available.length > 0 && available.every(
       (selection) => selectedSelectionKeys.has(cellKey(selection)),
@@ -533,6 +580,7 @@ export default function CreateDrawDialog({
       hardware.hardwareEventType ?? hardware.eventType,
     )
     if (billedHardwareCharges.has(chargeKey)) return
+    if (requiredSplitHardwareChargeKeys.has(chargeKey)) return
 
     if (hardwareBillingMode === 'BY_EVENT') {
       setSplitHardwareSelectionKeys((current) => {
@@ -613,13 +661,15 @@ export default function CreateDrawDialog({
     })),
     optionsBillingDrawIndex: summary.optionsBillingDrawIndex,
   }
-  // With a Final Release per Phase (or Building), a Phase that these cells finish needs a Package of
-  // its own, apart from the Phases that still have something left. When the selection mixes them it
-  // is divided here, so the Phase that finishes gets its Final Release.
+  // A Builder with a single invoice per Phase (or Building) takes a Package for each Phase (or
+  // Building) the selection touches. With a Final Release per Phase (or Building), a Phase that these
+  // cells finish needs a Package of its own, apart from the Phases that still have something left,
+  // so the Phase that finishes gets its Final Release. When the selection mixes them it is divided
+  // here.
   const builderSchedule = job
     ? schedules.find((candidate) => String(candidate.builderId) === String(getJobBuilderId(job)))
     : null
-  const finalReleasePlan = planFinalReleaseSplit({
+  const splitPlan = planPackageSplit({
     job,
     schedule,
     builderSchedule,
@@ -628,8 +678,8 @@ export default function CreateDrawDialog({
     selections: packageSelections,
     hardwareCharges: createInput.hardwareSelections,
   })
-  const split = finalReleasePlan.needsSplit
-    ? splitPackageInput({ plan: finalReleasePlan, job, input: createInput })
+  const split = splitPlan.needsSplit
+    ? splitPackageInput({ plan: splitPlan, job, input: createInput })
     : null
 
   const toggleOption = (option) => {
@@ -1066,6 +1116,16 @@ export default function CreateDrawDialog({
                   </Alert>
                 )}
 
+                {invoiceScope && model.lotSelected.some(
+                  (selection) => requiredSelectionKeys.has(cellKey(selection)),
+                ) && (
+                  <Alert severity="info" icon={<LayersRoundedIcon />}>
+                    This Builder takes a single invoice per {invoiceScope === 'PHASE' ? 'Phase' : 'Building'}:
+                    {' '}everything the Calendar has ready for it is in this Package and stays selected.
+                    You can add more cells. To leave it out, remove it from the Package above.
+                  </Alert>
+                )}
+
                 {model.lotRows.length > 0 && (
                   <DrawSelectionGrid
                     job={job}
@@ -1087,6 +1147,10 @@ export default function CreateDrawDialog({
                     )}
                     toggleLotSelections={(lotId) => toggleLotSelections(model, lotId)}
                     toggleDrawSelections={(drawIndex) => toggleDrawSelections(model, drawIndex)}
+                    cellDisabled={(row, drawIndex) => requiredSelectionKeys.has(
+                      cellKey({ phaseId: phase.id, lotId: row.id, drawIndex }),
+                    )}
+                    cellDisabledReason="Required: this Builder takes a single invoice, so everything ready is in the Package"
                   />
                 )}
 
@@ -1113,6 +1177,11 @@ export default function CreateDrawDialog({
               summary={summary}
               billedHardwareCharges={billedHardwareCharges}
               onToggle={toggleHardwareSelection}
+              isRequired={(hardware) => requiredSplitHardwareChargeKeys.has(hardwareChargeKey(
+                hardware.lotId,
+                hardwareBillingMode,
+                hardware.hardwareEventType ?? hardware.eventType,
+              ))}
             />
           )}
 
@@ -1173,7 +1242,11 @@ export default function CreateDrawDialog({
           )}
 
           {split && (
-            <FinalReleaseSplitNotice split={split} scope={finalReleasePlan.scope} />
+            <PackageSplitNotice
+              split={split}
+              invoiceScope={splitPlan.invoiceScope}
+              finalScope={splitPlan.finalScope}
+            />
           )}
 
           {canCreate && (

@@ -57,6 +57,7 @@ export function setupFromFormValues(values = {}) {
     requiresPaymentSchedule: Boolean(values.requiresPaymentSchedule),
     requiresRelease: Boolean(values.requiresRelease),
     finalReleaseScope: values.finalReleaseScope ?? '',
+    singleInvoiceScope: values.singleInvoiceScope ?? '',
     requiresBackup: Boolean(values.requiresBackup),
     invoiceLineFormat: values.invoiceLineFormat,
     submissionMethod: values.submissionMethod,
@@ -81,6 +82,7 @@ const FIELD_LABELS = {
   retentionPercentage: 'Retention',
   ocipWrapPercentage: 'OCIP / WRAP',
   finalReleaseScope: 'Release',
+  singleInvoiceScope: 'Single invoice',
   submissionDestination: 'Submission',
   notes: 'Notes',
 }
@@ -208,6 +210,7 @@ const SERVER_REASONS = [
     (message) => (/needs release/iu.test(message)
       ? 'The Conditional Final Release needs a Release to be required.'
       : 'Select where the Conditional Final Release applies.')],
+  [/single invoice/iu, 'singleInvoiceScope', 'submission', () => 'Select Per Phase or Per Building for the single invoice.'],
 ]
 
 /**

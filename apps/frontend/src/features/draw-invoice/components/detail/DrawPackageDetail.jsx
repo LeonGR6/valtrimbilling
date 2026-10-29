@@ -37,6 +37,7 @@ import { formatBuilding, formatPhase, formatPhaseBuilding } from '../../../seque
 import { useDrawInvoicePackages } from '../../context/useDrawInvoicePackages.js'
 import { useQuickbooksInvoiceSync } from '../../hooks/useQuickbooksInvoiceSync.js'
 import { usePackageFinalReleaseSplit } from '../../hooks/usePackageFinalReleaseSplit.js'
+import { describeSavedInvoiceSplit } from '../../utils/packageSplit.js'
 import { refreshQuickbooksPayment } from '../../services/quickbooksRepository.js'
 import {
   canCorrectDrawPackage,
@@ -70,6 +71,7 @@ import {
 import CreateDrawDialog from '../dialogs/CreateDrawDialog.jsx'
 import QuickbooksInvoiceDialog from './QuickbooksInvoiceDialog.jsx'
 import PackageFinalReleaseNotice from './PackageFinalReleaseNotice.jsx'
+import PackageSingleInvoiceNotice from './PackageSingleInvoiceNotice.jsx'
 import QuickbooksPackageNotice from './QuickbooksPackageNotice.jsx'
 import QuickbooksStatusCard from '../shared/QuickbooksStatusCard.jsx'
 import {
@@ -259,6 +261,17 @@ export default function DrawPackageDetail() {
   ) ?? builderDrawSchedules.find(
     (item) => String(item.builderId) === String(focusedBuilderId),
   )
+  // A draft that bills several Phases (or Buildings) although the Builder takes a single invoice for
+  // each. That division is the one asked for, and the Packages made after it have one Phase each, so
+  // the Final Release warning (which asks for a division of its own) is not shown.
+  const savedInvoiceSplit = focusedPackage?.status === 'DRAFT'
+    && (focusedPackage.packageType ?? 'DRAW') === 'DRAW'
+    ? describeSavedInvoiceSplit(schedule, focusedJob, [
+      ...(focusedPackage.persistedDrawLines ?? []),
+      ...(focusedPackage.persistedHardwareLines ?? []),
+    ].map(({ phaseId }) => phaseId))
+    : null
+  const finalReleaseSplitShown = schedule?.singleInvoiceScope ? null : finalReleaseSplit
   // What a Package bills stays with the setup it was made with. The documents it needs and how it
   // is delivered follow the setup the Job is on now: the same one, unless the Job was moved to
   // another version after it was billed.
@@ -563,7 +576,8 @@ export default function DrawPackageDetail() {
             jobId={focusedJob?.id}
           />
         )}
-        <PackageFinalReleaseNotice split={finalReleaseSplit} />
+        <PackageSingleInvoiceNotice split={savedInvoiceSplit} />
+        <PackageFinalReleaseNotice split={finalReleaseSplitShown} />
         <QuickbooksPackageNotice
           record={focusedPackage}
           sync={quickbooksSync}
@@ -898,6 +912,8 @@ export default function DrawPackageDetail() {
       {correctionDialog === 'transfer' && focusedPackage && (
         <TransferDrawPackageCellsDialog
           target={focusedPackage}
+          job={focusedJob}
+          schedule={schedule}
           packages={drawInvoicePackages}
           onClose={() => setCorrectionDialog(null)}
           onTransfer={transferDrawPackageCells}

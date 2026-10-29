@@ -102,6 +102,18 @@ export const finalReleaseScopeLabels = Object.fromEntries(
   finalReleaseScopeOptions.map(({ value, label }) => [value, label]),
 )
 
+// A Builder that takes one invoice per Phase or per Building: a Package carries everything
+// available of each one it bills, and never mixes them.
+export const singleInvoiceScopeOptions = [
+  { value: '', label: 'No' },
+  { value: 'PHASE', label: 'Per Phase' },
+  { value: 'BUILDING', label: 'Per Building' },
+]
+
+export const singleInvoiceScopeLabels = Object.fromEntries(
+  singleInvoiceScopeOptions.map(({ value, label }) => [value, label]),
+)
+
 export const defaultBillingSettings = {
   separateHardwarePrice: false,
   hardwareBillingMode: 'FULL',
@@ -125,6 +137,7 @@ export const defaultBillingSettings = {
   requiresPaymentSchedule: false,
   requiresRelease: false,
   finalReleaseScope: '',
+  singleInvoiceScope: '',
   requiresBackup: false,
   invoiceLineFormat: 'BUILDING_SCOPE',
   submissionMethod: 'PORTAL',

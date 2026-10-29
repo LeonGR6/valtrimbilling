@@ -183,6 +183,7 @@ export function createBuilderDrawScheduleSchema(schedules, currentScheduleId) {
       requiresPaymentSchedule: z.boolean(),
       requiresRelease: z.boolean(),
       finalReleaseScope: z.enum(['', 'PHASE', 'BUILDING', 'PROJECT']).default(''),
+      singleInvoiceScope: z.enum(['', 'PHASE', 'BUILDING']).default(''),
       requiresBackup: z.boolean(),
       invoiceLineFormat: z.enum(['LOT_SCOPE', 'BUILDING_SCOPE']),
       submissionMethod: z.enum(submissionMethodOptions.map((option) => option.value)),

@@ -10,12 +10,14 @@ function joinNames(names) {
 }
 
 /**
- * Says why the selection needs more than one Package and which ones: with a Final Release per Phase
- * (or per Building), each Phase the cells finish goes in a Package of its own, with the Final Release
- * and its own invoice, and what still has something to bill stays together with the Progress Release.
- * `split` is the result of `splitPackageInput`; `scope` is `PHASE` or `BUILDING`.
+ * Says why the selection needs more than one Package and which ones. A Builder with a single invoice
+ * per Phase (or Building) gets a Package for each one, with its own invoice. With a Final Release per
+ * Phase (or per Building), each Phase the cells finish goes in a Package of its own, with the Final
+ * Release and its own invoice, and what still has something to bill stays together with the
+ * Progress Release. `split` is the result of `splitPackageInput`; `invoiceScope` and `finalScope`
+ * are `PHASE`, `BUILDING` or null.
  */
-export default function FinalReleaseSplitNotice({ split, scope }) {
+export default function PackageSplitNotice({ split, invoiceScope = null, finalScope = null }) {
   const finals = split.packages.filter(({ group }) => group.type === 'FINAL')
   const hasProgress = split.packages.some(({ group }) => group.type === 'PROGRESS')
   const finished = joinNames(finals.map(({ group }) => group.label))
@@ -24,11 +26,23 @@ export default function FinalReleaseSplitNotice({ split, scope }) {
     <Alert severity="warning">
       <AlertTitle>This selection needs {split.packages.length} Packages</AlertTitle>
       <Typography variant="body2">
-        This Builder asks for a Final Release per {SCOPE_NAMES[scope] ?? 'Phase'}. {finished}{' '}
-        {finals.length === 1 ? 'is' : 'are'} finished by these cells, so{' '}
-        {finals.length === 1 ? 'it goes' : 'each goes'} in a Package of its own, with the Final Release
-        and its own invoice.
-        {hasProgress ? ' What still has something left to bill goes together in another Package, with the Progress Release.' : ''}
+        {invoiceScope ? (
+          <>
+            This Builder takes a single invoice per {SCOPE_NAMES[invoiceScope]}, so everything available
+            of each {SCOPE_NAMES[invoiceScope]} goes in a Package of its own, with its own invoice.
+            {finals.length > 0
+              ? ` ${finished} ${finals.length === 1 ? 'is' : 'are'} finished by these cells, so ${finals.length === 1 ? 'its Package gets' : 'their Packages get'} the Final Release.`
+              : ''}
+          </>
+        ) : (
+          <>
+            This Builder asks for a Final Release per {SCOPE_NAMES[finalScope] ?? 'Phase'}. {finished}{' '}
+            {finals.length === 1 ? 'is' : 'are'} finished by these cells, so{' '}
+            {finals.length === 1 ? 'it goes' : 'each goes'} in a Package of its own, with the Final Release
+            and its own invoice.
+            {hasProgress ? ' What still has something left to bill goes together in another Package, with the Progress Release.' : ''}
+          </>
+        )}
         {' '}They are created together.
       </Typography>
       <Stack component="ol" spacing={0.75} sx={{ m: 0, mt: 1.25, p: 0, listStyle: 'none' }}>
@@ -43,12 +57,14 @@ export default function FinalReleaseSplitNotice({ split, scope }) {
               <Typography variant="body2" fontWeight={750}>
                 Package {index + 1}: {group.label}
               </Typography>
-              <Chip
-                size="small"
-                color={group.type === 'FINAL' ? 'success' : 'default'}
-                variant={group.type === 'FINAL' ? 'filled' : 'outlined'}
-                label={TYPE_LABELS[group.type]}
-              />
+              {group.type && (
+                <Chip
+                  size="small"
+                  color={group.type === 'FINAL' ? 'success' : 'default'}
+                  variant={group.type === 'FINAL' ? 'filled' : 'outlined'}
+                  label={TYPE_LABELS[group.type]}
+                />
+              )}
               <Typography variant="body2" color="text.secondary">
                 {plural(items, 'cell or charge', 'cells and charges')}
               </Typography>

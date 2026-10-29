@@ -404,7 +404,8 @@ export default function GeneratePackageReleaseDialog({
                 </Typography>
                 <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
                   One line per unpaid Package of this Job from an earlier cut-off, filled with
-                  its {showExceptionDates ? 'cut-off date and ' : ''}net amount.
+                  its {showExceptionDates ? 'cut-off date and ' : ''}unpaid amount: the net amount, or
+                  what is still owed when part of it was paid.
                   {isFilled('disputed_claims_amount')
                     ? ' Their total goes in "Disputed claims for extras".'
                     : ''}{' '}
@@ -444,6 +445,15 @@ export default function GeneratePackageReleaseDialog({
                           </Typography>
                           {item && (
                             <Chip size="small" variant="outlined" label={describePendingPackage(item).workflowLabel} />
+                          )}
+                          {item && describePendingPackage(item).partlyPaid && (
+                            <Chip
+                              size="small"
+                              color="warning"
+                              variant="outlined"
+                              label={`Partly paid · ${formatCurrency(item.balanceAmount)} of ${formatCurrency(item.netAmount)} owed`}
+                              sx={{ ml: 0.5 }}
+                            />
                           )}
                         </Box>
                         {showExceptionDates && (

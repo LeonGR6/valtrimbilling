@@ -61,6 +61,11 @@ function toPendingPackage(row) {
     cutoffDate: row.cutoff_date,
     cutoffSource: row.cutoff_source,
     netAmount: toNumberOrNull(row.net_amount),
+    // What is still owed: the balance QuickBooks reports for the open invoice (a Package that was
+    // partly paid is still unpaid), else the whole net amount, which is also what an older answer
+    // without a balance means. 'quickbooks' or 'invoice' says which it is.
+    balanceAmount: toNumberOrNull(row.balance_amount) ?? toNumberOrNull(row.net_amount),
+    balanceSource: row.balance_source === 'quickbooks' ? 'quickbooks' : 'invoice',
     status: row.status,
     workflowStatus: row.workflow_status,
   }
@@ -197,6 +202,11 @@ export function buildFinalReleaseNote({ scope, closing = [], jobCode = '' }) {
 export function describePendingPackage(pending) {
   return {
     workflowLabel: WORKFLOW_LABELS[pending.workflowStatus] ?? pending.workflowStatus,
+    // Part of the invoice was paid: what is still owed is less than its net amount.
+    partlyPaid: pending.balanceSource === 'quickbooks'
+      && pending.balanceAmount !== null
+      && pending.netAmount !== null
+      && pending.balanceAmount < pending.netAmount,
   }
 }
 
@@ -207,9 +217,9 @@ export function describePendingPackage(pending) {
  *  - Date of Signature: the same date as Through Date.
  *  - Date(s) of waiver and release: the cut-off date of each unpaid earlier
  *    Package of the Job.
- *  - Amount(s) of unpaid progress payment(s): the net amount of each of them.
- *  - Disputed claims for extras (Conditional Final form): their net amounts
- *    added up.
+ *  - Amount(s) of unpaid progress payment(s): what is still owed of each of them (the whole
+ *    net amount, less what was already paid when QuickBooks says so).
+ *  - Disputed claims for extras (Conditional Final form): those amounts added up.
  *
  * `pending` is the part of `values.pendingPackages` to include, in order. Dates
  * and amounts are lists; a Package without an invoice amount adds only its date.
@@ -221,15 +231,15 @@ export function buildPackageFillValues(values, pending = values.pendingPackages 
     signature_date: values.cutoffDate ?? '',
     waiver_release_dates: pending.map((item) => item.cutoffDate).filter(Boolean),
     unpaid_progress_amount: pending
-      .map((item) => item.netAmount)
+      .map((item) => item.balanceAmount)
       .filter((amount) => amount !== null),
-    disputed_claims_amount: sumAmounts(pending.map((item) => item.netAmount)),
+    disputed_claims_amount: sumAmounts(pending.map((item) => item.balanceAmount)),
   }
 }
 
 /**
  * The editable Exceptions lines a Package starts with: one per unpaid earlier
- * Package (included, with its cut-off date and net amount as input text). A
+ * Package (included, with its cut-off date and what is still owed as input text). A
  * person can edit them, leave one out or add lines by hand before generating.
  */
 export function buildExceptionRows(values) {
@@ -238,7 +248,7 @@ export function buildExceptionRows(values) {
     packageId: item.id,
     include: true,
     date: item.cutoffDate ?? '',
-    amount: item.netAmount === null ? '' : String(item.netAmount),
+    amount: item.balanceAmount === null ? '' : String(item.balanceAmount),
   }))
 }
 

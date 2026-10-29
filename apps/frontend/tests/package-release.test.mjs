@@ -89,6 +89,8 @@ test('the values row maps to the model the screen uses', () => {
         cutoffDate: '2026-09-20',
         cutoffSource: 'builder_setup',
         netAmount: 1200,
+        balanceAmount: 1200,
+        balanceSource: 'invoice',
         status: 'SUBMITTED',
         workflowStatus: 'AWAITING_PAYMENT',
       },
@@ -99,6 +101,8 @@ test('the values row maps to the model the screen uses', () => {
         cutoffDate: '2026-10-05',
         cutoffSource: 'package_date',
         netAmount: 845.5,
+        balanceAmount: 845.5,
+        balanceSource: 'invoice',
         status: 'DRAFT',
         workflowStatus: 'AWAITING_PAYMENT',
       },
@@ -599,4 +603,62 @@ test('a Price Adjustment Package has no Release to generate', () => {
   )
   assert.equal(choice.state, 'price_adjustment')
   assert.equal(choice.template, null)
+})
+
+// --- What is still owed of an unpaid earlier Package ---------------------------
+
+const partlyPaid = () => toPackageReleaseValues({
+  ...row,
+  pending_packages: [
+    { ...row.pending_packages[0], net_amount: '10.00', balance_amount: '5.00', balance_source: 'quickbooks' },
+    row.pending_packages[1],
+  ],
+})
+
+test('a Package that was partly paid lists what is still owed, not its whole invoice', () => {
+  const values = partlyPaid()
+  const [first, second] = values.pendingPackages
+
+  assert.equal(first.netAmount, 10)
+  assert.equal(first.balanceAmount, 5)
+  assert.equal(first.balanceSource, 'quickbooks')
+  // One without payment data owes its whole amount.
+  assert.equal(second.balanceAmount, 845.5)
+  assert.equal(second.balanceSource, 'invoice')
+
+  const fill = buildPackageFillValues(values)
+  assert.deepEqual(fill.unpaid_progress_amount, [5, 845.5])
+  assert.equal(formatReleaseValues('unpaid_progress_amount', 'currency', fill.unpaid_progress_amount), '$5.00, $845.50')
+  // The Final form adds up what is owed, too.
+  assert.equal(fill.disputed_claims_amount, 850.5)
+})
+
+test('the Exceptions rows start from what is still owed, and it can still be edited', () => {
+  const rows = buildExceptionRows(partlyPaid())
+  assert.deepEqual(rows.map(({ amount }) => amount), ['5', '845.5'])
+
+  assert.deepEqual(buildExceptionFillValues([{ ...rows[0], amount: '10' }, rows[1]]).unpaid_progress_amount, ['10', '845.5'])
+})
+
+test('an answer without a balance, or without an invoice amount, falls back to the net amount', () => {
+  // An older answer has no balance key at all.
+  const older = toPackageReleaseValues(row).pendingPackages
+  assert.deepEqual(older.map(({ balanceAmount }) => balanceAmount), [1200, 845.5])
+
+  // No invoice amount and no balance: nothing to print but the date.
+  const none = toPackageReleaseValues({
+    ...row,
+    pending_packages: [{ ...row.pending_packages[0], net_amount: null }],
+  }).pendingPackages[0]
+  assert.equal(none.balanceAmount, null)
+  assert.equal(buildExceptionRows({ pendingPackages: [none] })[0].amount, '')
+})
+
+test('the list marks a Package that was partly paid', () => {
+  const [first, second] = partlyPaid().pendingPackages
+  assert.equal(describePendingPackage(first).partlyPaid, true)
+  assert.equal(describePendingPackage(second).partlyPaid, false)
+  // The balance QuickBooks gives equal to the invoice is not a partial payment.
+  assert.equal(describePendingPackage({ netAmount: 10, balanceAmount: 10, balanceSource: 'quickbooks' }).partlyPaid, false)
+  assert.equal(describePendingPackage({ netAmount: null, balanceAmount: null, balanceSource: 'invoice' }).partlyPaid, false)
 })

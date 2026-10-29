@@ -54,6 +54,7 @@ import { PackageEnvironmentLabel, PackageStatusChip } from '../shared/PackageUi.
 const packageTableColumns = [
   { key: 'package', width: 240 },
   { key: 'status', width: 140 },
+  { key: 'quickbooks', width: 150 },
   { key: 'builder', width: 170 },
   { key: 'billing-period', width: 130 },
   { key: 'lots', width: 105 },
@@ -61,7 +62,6 @@ const packageTableColumns = [
   { key: 'retention-wrap', width: 180 },
   { key: 'invoice-amount', width: 140 },
   { key: 'documents', width: 125 },
-  { key: 'quickbooks', width: 150 },
   { key: 'action', width: 120 },
 ]
 
@@ -303,6 +303,7 @@ export default function PackageTable({
               >
                 <SortableHeader column="created" label="Package" sort={sort} onSort={onSort} />
                 <TableCell>Status</TableCell>
+                <TableCell>QuickBooks</TableCell>
                 <SortableHeader column="builder" label="Builder/Community" sort={sort} onSort={onSort} />
                 <SortableHeader column="period" label="Billing Period" sort={sort} onSort={onSort} />
                 <TableCell>Lots/Scopes</TableCell>
@@ -310,7 +311,6 @@ export default function PackageTable({
                 <TableCell>Retention / WRAP Insurance</TableCell>
                 <SortableHeader column="invoice" label="Invoice Amount" sort={sort} onSort={onSort} />
                 <TableCell>Documents</TableCell>
-                <TableCell>QuickBooks</TableCell>
                 <TableCell>Action</TableCell>
               </TableRow>
             </TableHead>
@@ -417,6 +417,7 @@ export default function PackageTable({
                     <PackageStatusChip status={record.status} />
                     <PackageEnvironmentLabel record={record} />
                   </TableCell>
+                  <TableCell><PackageQuickbooksStatus record={record} /></TableCell>
                   <TableCell>
                     <Typography color="text.primary" sx={{ fontWeight: 'medium'}}>{job.builder}</Typography>
                     <Typography variant="body2" color="text.secondary">{job.community}</Typography>
@@ -494,7 +495,6 @@ export default function PackageTable({
                   <TableCell>
                     <PackageDocumentProgress job={job} documentState={documentState} />
                   </TableCell>
-                  <TableCell><PackageQuickbooksStatus record={record} /></TableCell>
                   <TableCell onClick={(event) => event.stopPropagation()}>
                     <PackageActionMenu
                       context={{ record, job, phase, phases, summary }}

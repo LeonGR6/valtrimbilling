@@ -29,7 +29,6 @@ import {
   TableCell,
   TableContainer,
   TableHead,
-  TablePagination,
   TableRow,
   TextField,
   Typography,
@@ -143,8 +142,6 @@ export default function UsersCatalog() {
   const [search, setSearch] = useState('')
   const [roleFilter, setRoleFilter] = useState('all')
   const [statusFilter, setStatusFilter] = useState('all')
-  const [page, setPage] = useState(0)
-  const [rowsPerPage, setRowsPerPage] = useState(5)
   const [menuAnchor, setMenuAnchor] = useState(null)
   const [selectedUser, setSelectedUser] = useState(null)
   const [dialogState, setDialogState] = useState(null)
@@ -243,11 +240,6 @@ export default function UsersCatalog() {
     })
   }, [users, search, roleFilter, statusFilter])
 
-  const visibleUsers = filteredUsers.slice(
-    page * rowsPerPage,
-    page * rowsPerPage + rowsPerPage,
-  )
-
   const handleMenuOpen = (event, user) => {
     setMenuAnchor(event.currentTarget)
     setSelectedUser(user)
@@ -286,7 +278,6 @@ export default function UsersCatalog() {
       } else {
         const invited = await inviteUser(form)
         setUsers((current) => [invited, ...current])
-        setPage(0)
         setNotice({
           severity: 'success',
           message: `Invitation sent to ${invited.email}.`,
@@ -441,10 +432,7 @@ export default function UsersCatalog() {
           >
             <TextField
               value={search}
-              onChange={(event) => {
-                setSearch(event.target.value)
-                setPage(0)
-              }}
+              onChange={(event) => setSearch(event.target.value)}
               size="small"
               placeholder="Search users by name, email or phone..."
               sx={{ width: { xs: '100%', md: 380 } }}
@@ -464,10 +452,7 @@ export default function UsersCatalog() {
                 labelId="user-role-filter-label"
                 label="Role"
                 value={roleFilter}
-                onChange={(event) => {
-                  setRoleFilter(event.target.value)
-                  setPage(0)
-                }}
+                onChange={(event) => setRoleFilter(event.target.value)}
                 startAdornment={
                   <InputAdornment position="start">
                     <FilterListRoundedIcon fontSize="small" color="action" />
@@ -488,10 +473,7 @@ export default function UsersCatalog() {
                 labelId="user-status-filter-label"
                 label="Status"
                 value={statusFilter}
-                onChange={(event) => {
-                  setStatusFilter(event.target.value)
-                  setPage(0)
-                }}
+                onChange={(event) => setStatusFilter(event.target.value)}
               >
                 <MenuItem value="all">All statuses</MenuItem>
                 {userStatusOptions.map((status) => (
@@ -504,7 +486,12 @@ export default function UsersCatalog() {
           </Stack>
 
           <TableContainer>
-            <Table sx={{ minWidth: 1250 }}>
+            <Table
+              sx={{
+                minWidth: 1250,
+                '& tbody tr:last-of-type .MuiTableCell-root': { borderBottom: 0 },
+              }}
+            >
               <TableHead>
                 <TableRow
                   sx={{
@@ -539,7 +526,7 @@ export default function UsersCatalog() {
                   </TableRow>
                 )}
 
-                {!loading && visibleUsers.map((user) => (
+                {!loading && filteredUsers.map((user) => (
                   <TableRow
                     key={user.id}
                     hover
@@ -640,7 +627,7 @@ export default function UsersCatalog() {
                   </TableRow>
                 ))}
 
-                {!loading && !loadError && visibleUsers.length === 0 && (
+                {!loading && !loadError && filteredUsers.length === 0 && (
                   <TableRow>
                     <TableCell colSpan={7} sx={{ py: 8, textAlign: 'center' }}>
                       <SearchRoundedIcon color="action" sx={{ fontSize: 40, mb: 1 }} />
@@ -654,19 +641,6 @@ export default function UsersCatalog() {
               </TableBody>
             </Table>
           </TableContainer>
-
-          <TablePagination
-            component="div"
-            count={filteredUsers.length}
-            page={page}
-            onPageChange={(_, nextPage) => setPage(nextPage)}
-            rowsPerPage={rowsPerPage}
-            onRowsPerPageChange={(event) => {
-              setRowsPerPage(Number(event.target.value))
-              setPage(0)
-            }}
-            rowsPerPageOptions={[5, 10, 25]}
-          />
         </Box>
       </Box>
 

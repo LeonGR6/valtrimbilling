@@ -156,10 +156,10 @@ export default function RetentionSuggestionsPanel({
               </Box>
 
               <Button
-                variant="contained"
+                variant={suggestion.isReady ? 'contained' : 'outlined'}
                 color="success"
                 size="small"
-                disabled={disabled || !suggestion.isReady}
+                disabled={disabled || !suggestion.canReview}
                 onClick={() => onReview(suggestion)}
                 aria-label={`Review Retention Package for Job #${suggestion.job.code}`}
                 disableElevation

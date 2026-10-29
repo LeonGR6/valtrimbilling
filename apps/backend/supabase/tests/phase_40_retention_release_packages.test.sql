@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(18);
+select plan(20);
 
 select has_column(
   'valtrim', 'billing_setup_versions', 'retention_release_scope',
@@ -54,7 +54,7 @@ select ok(coalesce((
   select procedure.prosrc like '%READY_TO_SUBMIT%'
     and procedure.prosrc like '%AWAITING_PAYMENT%'
     and procedure.prosrc like '%PAID_CLOSED%'
-    and procedure.prosrc not like '%package.workflow_status in (%DRAFT%'
+    and procedure.prosrc !~ 'workflow_status in \([^)]*DRAFT'
   from pg_proc procedure
   where procedure.oid =
     'private.create_retention_release_package(bigint,bigint,text)'::regprocedure
@@ -62,7 +62,7 @@ select ok(coalesce((
 
 select ok(coalesce((
   select procedure.prosrc like '%not lot.is_utility_building%'
-    and procedure.prosrc like '%sum(line.retention_amount)%'
+    and procedure.prosrc like '%sum(source.retention_amount)%'
   from pg_proc procedure
   where procedure.oid =
     'private.create_retention_release_package(bigint,bigint,text)'::regprocedure
@@ -75,6 +75,23 @@ select ok(coalesce((
   where procedure.oid =
     'private.create_retention_release_package(bigint,bigint,text)'::regprocedure
 ), false), 'Release creation enforces the one-month cutoff hold');
+
+select ok(coalesce((
+  select procedure.prosrc not like '%if false and%'
+  from pg_proc procedure
+  where procedure.oid =
+    'private.create_retention_release_package(bigint,bigint,text)'::regprocedure
+), false), 'The release date check is not switched off');
+
+select is(
+  array[
+    private.add_one_month_clamped(date '2026-09-20'),
+    private.add_one_month_clamped(date '2026-01-31'),
+    private.add_one_month_clamped(date '2026-12-25')
+  ],
+  array[date '2026-10-20', date '2026-02-28', date '2027-01-25'],
+  'The release is available one calendar month after the cutoff, clamped to short months'
+);
 
 select ok(coalesce((
   select procedure.prosrc like '%retention_release_lines%'

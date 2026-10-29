@@ -32,7 +32,12 @@ export default function CreateRetentionReleaseDialog({
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState(null)
 
+  // Before the available date the release can be reviewed but not created; the database refuses it
+  // too.
+  const waitingForDate = !suggestion.isReady
+
   const handleCreate = async () => {
+    if (waitingForDate) return
     setSubmitting(true)
     setError(null)
     try {
@@ -55,6 +60,12 @@ export default function CreateRetentionReleaseDialog({
       <DialogContent>
         <Stack spacing={2} sx={{ pt: 0.5 }}>
           {error && <Alert severity="error">{error}</Alert>}
+          {waitingForDate && (
+            <Alert severity="info">
+              Retention can be created from {formatLongDate(suggestion.availableDate)}, one month
+              after the final Hardware cutoff. You can review it now.
+            </Alert>
+          )}
           <Typography variant="body2" color="text.secondary">
             The database will revalidate Hardware completion, source Package
             statuses, cutoff timing, and the unreleased balance before creation.
@@ -100,12 +111,14 @@ export default function CreateRetentionReleaseDialog({
         </Stack>
       </DialogContent>
       <DialogActions>
-        <Button onClick={onClose} disabled={submitting}>Cancel</Button>
+        <Button onClick={onClose} disabled={submitting}>
+          {waitingForDate ? 'Close' : 'Cancel'}
+        </Button>
         <Button
           variant="contained"
           color="success"
           onClick={handleCreate}
-          disabled={submitting}
+          disabled={submitting || waitingForDate}
           disableElevation
         >
           {submitting ? 'Creating…' : 'Create Retention Package'}

@@ -190,14 +190,12 @@ test('Per Building becomes ready one clamped calendar month after final Hardware
     jobBillingSetupVersions: [schedule()],
     packages,
     asOfDate: '2026-10-19',
-    holdOneMonth: true,
   }).find(({ phaseId }) => phaseId === 21)
   const ready = buildRetentionSuggestions({
     jobs: [job()],
     jobBillingSetupVersions: [schedule()],
     packages,
     asOfDate: '2026-10-20',
-    holdOneMonth: true,
   }).find(({ phaseId }) => phaseId === 21)
 
   assert.equal(before.sourceCutoffDate, '2026-09-20')
@@ -207,7 +205,7 @@ test('Per Building becomes ready one clamped calendar month after final Hardware
   assert.equal(ready.releasableRetention, 85)
 })
 
-test('with the one-month hold lifted, retention is ready as soon as the Hardware is billed', () => {
+test('retention waiting for its date can be reviewed but not created', () => {
   const packages = [
     drawPackage({
       id: 1,
@@ -222,37 +220,32 @@ test('with the one-month hold lifted, retention is ready as soon as the Hardware
       lines: [line({ lotId: 102, drawId: 2, retentionAmount: 30 })],
     }),
   ]
-  const suggestion = (asOfDate, holdOneMonth) => buildRetentionSuggestions({
+  const suggestion = (asOfDate, sourcePackages = packages) => buildRetentionSuggestions({
     jobs: [job()],
     jobBillingSetupVersions: [schedule()],
-    packages,
+    packages: sourcePackages,
     asOfDate,
-    holdOneMonth,
   }).find(({ phaseId }) => phaseId === 21)
 
-  // A day after the cutoff: held a month with the rule, ready without it.
-  assert.equal(suggestion('2026-09-21', true).status, 'WAITING_FOR_DATE')
-  const unlocked = suggestion('2026-09-21', false)
-  assert.equal(unlocked.status, 'READY')
-  assert.equal(unlocked.availableDate, '2026-09-20')
-  assert.equal(unlocked.releasableRetention, 85)
+  // The day after the cutoff, and even the day before the month is up: reviewable, not creatable.
+  for (const asOfDate of ['2026-09-21', '2026-10-19']) {
+    const waiting = suggestion(asOfDate)
+    assert.equal(waiting.status, 'WAITING_FOR_DATE')
+    assert.equal(waiting.isReady, false)
+    assert.equal(waiting.canReview, true)
+    assert.equal(waiting.availableDate, '2026-10-20')
+    assert.equal(waiting.releasableRetention, 85)
+  }
 
-  // Even with the last cutoff still ahead the release is ready, available from today.
-  const beforeCutoff = suggestion('2026-09-18', false)
-  assert.equal(beforeCutoff.sourceCutoffDate, '2026-09-20')
-  assert.equal(beforeCutoff.availableDate, '2026-09-18')
-  assert.equal(beforeCutoff.status, 'READY')
-  assert.equal(suggestion('2026-09-18', true).status, 'WAITING_FOR_DATE')
+  const ready = suggestion('2026-10-20')
+  assert.equal(ready.isReady, true)
+  assert.equal(ready.canReview, true)
 
-  // Hardware still missing keeps it waiting: only the date hold is lifted.
-  const noHardware = buildRetentionSuggestions({
-    jobs: [job()],
-    jobBillingSetupVersions: [schedule()],
-    packages: [packages[0]],
-    asOfDate: '2026-09-21',
-    holdOneMonth: false,
-  }).find(({ phaseId }) => phaseId === 21)
-  assert.notEqual(noHardware.status, 'READY')
+  // Hardware still missing: nothing to review yet, whatever the date.
+  const noHardware = suggestion('2026-12-01', [packages[0]])
+  assert.equal(noHardware.status, 'WAITING_FOR_HARDWARE')
+  assert.equal(noHardware.isReady, false)
+  assert.equal(noHardware.canReview, false)
 })
 
 test('Per Job waits for every Building and excludes amounts allocated to an active release', () => {

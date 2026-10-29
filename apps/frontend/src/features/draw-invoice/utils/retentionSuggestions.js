@@ -1,11 +1,5 @@
 import { resolveJobBillingSchedule } from './packageSuggestions.js'
 
-// TEMPORARY: the release date is not waited for. A Retention Release is ready as soon as the Hardware
-// is billed and its Packages qualify, even when the cutoff of the last one is still ahead. Set this
-// back to true to hold it one month after that cutoff again. The database lifts it the same way
-// (migrations 20261107120000 and 20261108120000), so all go back together.
-export const HOLD_RETENTION_ONE_MONTH = false
-
 const QUALIFYING_STATUSES = new Set([
   'AWAITING_PAYMENT',
   'PAID_CLOSED',
@@ -153,7 +147,6 @@ export function buildRetentionSuggestions({
   jobBillingSetupVersions = [],
   packages = [],
   asOfDate,
-  holdOneMonth = HOLD_RETENTION_ONE_MONTH,
 }) {
   if (!parseDateKey(asOfDate)) return []
 
@@ -306,11 +299,9 @@ export function buildRetentionSuggestions({
       const sourceCutoffDate = hasMissingCutoff || cutoffDates.length === 0
         ? null
         : [...cutoffDates].sort().at(-1)
-      // Without the hold the release is available from the last cutoff, or from today when that
-      // cutoff is still ahead.
-      const availableDate = holdOneMonth || !sourceCutoffDate
-        ? addOneMonthClamped(sourceCutoffDate)
-        : (sourceCutoffDate > asOfDate ? asOfDate : sourceCutoffDate)
+      // The release is held one month after the cutoff of the last Hardware Package, the same date
+      // the database refuses to create it before.
+      const availableDate = addOneMonthClamped(sourceCutoffDate)
 
       let status = 'WAITING_FOR_HARDWARE'
       if (remainingHardwareLots > 0 && projectedRemainingHardwareLots === 0) {
@@ -332,7 +323,10 @@ export function buildRetentionSuggestions({
         phase,
         phaseId: phase?.id ?? null,
         status,
+        // Only READY can be created. WAITING_FOR_DATE has everything but the date, so it can be
+        // reviewed ahead of time.
         isReady: status === 'READY',
+        canReview: status === 'READY' || status === 'WAITING_FOR_DATE',
         projectedRetention,
         releasableRetention,
         draftRetention,

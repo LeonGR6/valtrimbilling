@@ -9,6 +9,7 @@ import {
   toPackageStatusRpc,
   toTransferDrawPackageRpc,
 } from './drawInvoicePackageRecord.js'
+import { inBatches, listAllRows as listPagedRows } from '../../../services/pagedQuery.js'
 
 const PACKAGE_COLUMNS = [
   'id',
@@ -235,9 +236,6 @@ const PRICE_ADJUSTMENT_LINE_COLUMNS = [
   'net',
 ].join(', ')
 
-const PAGE_SIZE = 1000
-const FILTER_BATCH_SIZE = 200
-
 function throwRepositoryError(error, operation = 'write') {
   if (!error) return
 
@@ -291,31 +289,8 @@ function throwRepositoryError(error, operation = 'write') {
   })
 }
 
-function inBatches(values) {
-  const batches = []
-  for (let index = 0; index < values.length; index += FILTER_BATCH_SIZE) {
-    batches.push(values.slice(index, index + FILTER_BATCH_SIZE))
-  }
-  return batches
-}
-
-async function listAllRows(queryFactory) {
-  const rows = []
-  let start = 0
-
-  while (true) {
-    const { data, error } = await queryFactory().range(
-      start,
-      start + PAGE_SIZE - 1,
-    )
-    throwRepositoryError(error, 'read')
-
-    const page = data ?? []
-    rows.push(...page)
-    if (page.length < PAGE_SIZE) return rows
-    start += PAGE_SIZE
-  }
-}
+// Every row of a query, page by page, throwing this repository's error.
+const listAllRows = (queryFactory) => listPagedRows(queryFactory, (error) => throwRepositoryError(error, 'read'))
 
 function groupByPackage(rows) {
   return rows.reduce((grouped, row) => {

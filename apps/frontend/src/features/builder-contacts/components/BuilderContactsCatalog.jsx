@@ -23,7 +23,6 @@ import {
   TableCell,
   TableContainer,
   TableHead,
-  TablePagination,
   TableRow,
   TextField,
   Typography,
@@ -63,8 +62,6 @@ export default function BuilderContactsCatalog() {
   const [typeFilter, setTypeFilter] = useState('all')
   const [builderFilter, setBuilderFilter] = useState('all')
   const [statusFilter, setStatusFilter] = useState('all')
-  const [page, setPage] = useState(0)
-  const [rowsPerPage, setRowsPerPage] = useState(5)
   const [menuAnchor, setMenuAnchor] = useState(null)
   const [selectedContact, setSelectedContact] = useState(null)
   const [dialogState, setDialogState] = useState(null)
@@ -109,11 +106,6 @@ export default function BuilderContactsCatalog() {
     })
   }, [builderFilter, buildersById, contacts, search, statusFilter, typeFilter])
 
-  const visibleContacts = filteredContacts.slice(
-    page * rowsPerPage,
-    page * rowsPerPage + rowsPerPage,
-  )
-
   const handleMenuOpen = (event, contact) => {
     setMenuAnchor(event.currentTarget)
     setSelectedContact(contact)
@@ -142,7 +134,6 @@ export default function BuilderContactsCatalog() {
         setNotice({ severity: 'success', message: 'Contact updated.' })
       } else {
         await createBuilderContact(form)
-        setPage(0)
         setNotice({ severity: 'success', message: 'Contact created.' })
       }
 
@@ -159,7 +150,6 @@ export default function BuilderContactsCatalog() {
     try {
       await deactivateBuilderContact(deactivateTarget.id)
       setDeactivateTarget(null)
-      setPage(0)
       setNotice({ severity: 'success', message: 'Contact deactivated.' })
     } catch (deactivateError) {
       setNotice({ severity: 'error', message: deactivateError.message })
@@ -224,10 +214,7 @@ export default function BuilderContactsCatalog() {
           >
             <TextField
               value={search}
-              onChange={(event) => {
-                setSearch(event.target.value)
-                setPage(0)
-              }}
+              onChange={(event) => setSearch(event.target.value)}
               size="small"
               placeholder="Search contacts, builders or phone numbers..."
               sx={{ width: { xs: '100%', md: 340 } }}
@@ -247,10 +234,7 @@ export default function BuilderContactsCatalog() {
                 labelId="contact-builder-filter-label"
                 label="Builder"
                 value={builderFilter}
-                onChange={(event) => {
-                  setBuilderFilter(event.target.value)
-                  setPage(0)
-                }}
+                onChange={(event) => setBuilderFilter(event.target.value)}
                 startAdornment={
                   <InputAdornment position="start">
                     <FilterListRoundedIcon fontSize="small" color="action" />
@@ -271,10 +255,7 @@ export default function BuilderContactsCatalog() {
                 labelId="contact-type-filter-label"
                 label="Contact type"
                 value={typeFilter}
-                onChange={(event) => {
-                  setTypeFilter(event.target.value)
-                  setPage(0)
-                }}
+                onChange={(event) => setTypeFilter(event.target.value)}
               >
                 <MenuItem value="all">All types</MenuItem>
                 {typeNames.map((typeName) => (
@@ -290,10 +271,7 @@ export default function BuilderContactsCatalog() {
                 labelId="contact-status-filter-label"
                 label="Status"
                 value={statusFilter}
-                onChange={(event) => {
-                  setStatusFilter(event.target.value)
-                  setPage(0)
-                }}
+                onChange={(event) => setStatusFilter(event.target.value)}
               >
                 <MenuItem value="all">All contacts</MenuItem>
                 <MenuItem value="active">Active</MenuItem>
@@ -349,7 +327,7 @@ export default function BuilderContactsCatalog() {
                 </TableRow>
               </TableHead>
               <TableBody>
-                {visibleContacts.map((contact) => (
+                {filteredContacts.map((contact) => (
                   <TableRow
                     key={contact.id}
                     hover
@@ -428,7 +406,7 @@ export default function BuilderContactsCatalog() {
                   </TableRow>
                 ))}
 
-                {visibleContacts.length === 0 && (
+                {filteredContacts.length === 0 && (
                   <TableRow>
                     <TableCell
                       colSpan={canManageBuilderContacts ? 6 : 5}
@@ -449,19 +427,6 @@ export default function BuilderContactsCatalog() {
               </TableBody>
             </Table>
           </TableContainer>
-
-          <TablePagination
-            component="div"
-            count={filteredContacts.length}
-            page={page}
-            onPageChange={(_, nextPage) => setPage(nextPage)}
-            rowsPerPage={rowsPerPage}
-            onRowsPerPageChange={(event) => {
-              setRowsPerPage(Number(event.target.value))
-              setPage(0)
-            }}
-            rowsPerPageOptions={[5, 10, 25]}
-          />
         </Box>
       </Box>
 

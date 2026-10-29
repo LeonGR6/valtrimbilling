@@ -23,7 +23,6 @@ import {
   TableCell,
   TableContainer,
   TableHead,
-  TablePagination,
   TableRow,
   TextField,
   Typography,
@@ -53,8 +52,6 @@ export default function PeopleCatalog() {
   } = usePeople()
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState('all')
-  const [page, setPage] = useState(0)
-  const [rowsPerPage, setRowsPerPage] = useState(5)
   const [menuAnchor, setMenuAnchor] = useState(null)
   const [selectedPerson, setSelectedPerson] = useState(null)
   const [dialogState, setDialogState] = useState(null)
@@ -87,11 +84,6 @@ export default function PeopleCatalog() {
     })
   }, [people, search, status])
 
-  const visiblePeople = filteredPeople.slice(
-    page * rowsPerPage,
-    page * rowsPerPage + rowsPerPage,
-  )
-
   const handleMenuOpen = (event, person) => {
     setMenuAnchor(event.currentTarget)
     setSelectedPerson(person)
@@ -120,7 +112,6 @@ export default function PeopleCatalog() {
         setNotice({ severity: 'success', message: 'Contact updated.' })
       } else {
         await createContact(form)
-        setPage(0)
         setNotice({ severity: 'success', message: 'Contact created.' })
       }
 
@@ -137,7 +128,6 @@ export default function PeopleCatalog() {
     try {
       await deactivateContact(deactivateTarget.id)
       setDeactivateTarget(null)
-      setPage(0)
       setNotice({ severity: 'success', message: 'Contact deactivated.' })
     } catch (deactivateError) {
       setNotice({ severity: 'error', message: deactivateError.message })
@@ -195,10 +185,7 @@ export default function PeopleCatalog() {
           >
             <TextField
               value={search}
-              onChange={(event) => {
-                setSearch(event.target.value)
-                setPage(0)
-              }}
+              onChange={(event) => setSearch(event.target.value)}
               size="small"
               placeholder="Search contacts, types or contact information..."
               sx={{ width: { xs: '100%', md: 380 } }}
@@ -218,10 +205,7 @@ export default function PeopleCatalog() {
                 labelId="supervisor-status-filter-label"
                 label="Status"
                 value={status}
-                onChange={(event) => {
-                  setStatus(event.target.value)
-                  setPage(0)
-                }}
+                onChange={(event) => setStatus(event.target.value)}
                 startAdornment={(
                   <InputAdornment position="start">
                     <FilterListRoundedIcon fontSize="small" color="action" />
@@ -276,7 +260,7 @@ export default function PeopleCatalog() {
                 </TableRow>
               </TableHead>
               <TableBody>
-                {visiblePeople.map((person) => (
+                {filteredPeople.map((person) => (
                   <TableRow
                     key={person.id}
                     hover
@@ -375,7 +359,7 @@ export default function PeopleCatalog() {
                   </TableRow>
                 ))}
 
-                {loading && visiblePeople.length === 0 && (
+                {loading && filteredPeople.length === 0 && (
                   <TableRow>
                     <TableCell
                       colSpan={6 + Number(canManageContacts)}
@@ -386,7 +370,7 @@ export default function PeopleCatalog() {
                   </TableRow>
                 )}
 
-                {!loading && visiblePeople.length === 0 && (
+                {!loading && filteredPeople.length === 0 && (
                   <TableRow>
                     <TableCell
                       colSpan={6 + Number(canManageContacts)}
@@ -405,19 +389,6 @@ export default function PeopleCatalog() {
               </TableBody>
             </Table>
           </TableContainer>
-
-          <TablePagination
-            component="div"
-            count={filteredPeople.length}
-            page={page}
-            onPageChange={(_, nextPage) => setPage(nextPage)}
-            rowsPerPage={rowsPerPage}
-            onRowsPerPageChange={(event) => {
-              setRowsPerPage(Number(event.target.value))
-              setPage(0)
-            }}
-            rowsPerPageOptions={[5, 10, 25]}
-          />
         </Box>
       </Box>
 

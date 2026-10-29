@@ -36,6 +36,7 @@ import {
 import { formatBuilding, formatPhase, formatPhaseBuilding } from '../../../sequence-sheets/utils/phaseBuildingCodes.js'
 import { useDrawInvoicePackages } from '../../context/useDrawInvoicePackages.js'
 import { useQuickbooksInvoiceSync } from '../../hooks/useQuickbooksInvoiceSync.js'
+import { usePackageFinalReleaseSplit } from '../../hooks/usePackageFinalReleaseSplit.js'
 import { refreshQuickbooksPayment } from '../../services/quickbooksRepository.js'
 import {
   canCorrectDrawPackage,
@@ -68,6 +69,7 @@ import {
 } from '../DrawPackageCorrectionDialogs.jsx'
 import CreateDrawDialog from '../dialogs/CreateDrawDialog.jsx'
 import QuickbooksInvoiceDialog from './QuickbooksInvoiceDialog.jsx'
+import PackageFinalReleaseNotice from './PackageFinalReleaseNotice.jsx'
 import QuickbooksPackageNotice from './QuickbooksPackageNotice.jsx'
 import QuickbooksStatusCard from '../shared/QuickbooksStatusCard.jsx'
 import {
@@ -147,6 +149,7 @@ export default function DrawPackageDetail() {
   const [refreshingPayment, setRefreshingPayment] = useState(false)
   const [paymentError, setPaymentError] = useState(null)
   const quickbooksSync = useQuickbooksInvoiceSync(focusedPackageRecord, paymentRefresh)
+  const finalReleaseSplit = usePackageFinalReleaseSplit(focusedPackageRecord)
 
   // Asks QuickBooks how the invoice stands (open, overdue, paid...). A Package
   // that is paid there becomes Paid / Closed here. Admin and Accounting only:
@@ -560,6 +563,7 @@ export default function DrawPackageDetail() {
             jobId={focusedJob?.id}
           />
         )}
+        <PackageFinalReleaseNotice split={finalReleaseSplit} />
         <QuickbooksPackageNotice
           record={focusedPackage}
           sync={quickbooksSync}

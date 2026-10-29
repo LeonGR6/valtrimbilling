@@ -46,6 +46,8 @@ import {
   summarizeDrawPackage,
   utilityChargeKey,
 } from '../../utils/drawPackages.js'
+import { planFinalReleaseSplit, splitPackageInput } from '../../utils/finalReleaseSplit.js'
+import FinalReleaseSplitNotice from './FinalReleaseSplitNotice.jsx'
 import {
   buildDrawWorksheet,
   getHardwareBillingMode,
@@ -123,6 +125,8 @@ export default function CreateDrawDialog({
   initialPhaseId,
   onClose,
   onCreate,
+  // Creates several Packages one after the other, for a selection that has to be divided.
+  onCreateMany,
 }) {
   // Nothing is preselected when the dialog opens from "Create Package": the
   // user picks the Job and every Phase / Building the Package should cover.
@@ -591,6 +595,43 @@ export default function CreateDrawDialog({
     ? []
     : summary.availableOptionRows.filter((option) => !option.isBilled)
 
+  // What the Package is made of, as it goes to the database.
+  const createInput = {
+    jobId: job?.id,
+    selections: packageSelections,
+    hardwareSelections: summary.hardwareRows
+      .filter((row) => row.chargeHardware)
+      .map(({ phaseId, lotId, drawIndex, hardwareEventType }) => ({
+        phaseId,
+        lotId,
+        drawIndex,
+        eventType: hardwareEventType,
+      })),
+    optionSelections: summary.selectedOptionRows.map((option) => ({
+      lotId: option.lotId,
+      optionId: option.optionId,
+    })),
+    optionsBillingDrawIndex: summary.optionsBillingDrawIndex,
+  }
+  // With a Final Release per Phase (or Building), a Phase that these cells finish needs a Package of
+  // its own, apart from the Phases that still have something left. When the selection mixes them it
+  // is divided here, so the Phase that finishes gets its Final Release.
+  const builderSchedule = job
+    ? schedules.find((candidate) => String(candidate.builderId) === String(getJobBuilderId(job)))
+    : null
+  const finalReleasePlan = planFinalReleaseSplit({
+    job,
+    schedule,
+    builderSchedule,
+    usedSelections,
+    billedHardwareCharges,
+    selections: packageSelections,
+    hardwareCharges: createInput.hardwareSelections,
+  })
+  const split = finalReleasePlan.needsSplit
+    ? splitPackageInput({ plan: finalReleasePlan, job, input: createInput })
+    : null
+
   const toggleOption = (option) => {
     setExcludedOptionKeys((current) => current.includes(option.id)
       ? current.filter((key) => key !== option.id)
@@ -637,23 +678,11 @@ export default function CreateDrawDialog({
     setSubmitting(true)
     setSubmitError(null)
     try {
-      await onCreate({
-        jobId: job.id,
-        selections: packageSelections,
-        hardwareSelections: summary.hardwareRows
-          .filter((row) => row.chargeHardware)
-          .map(({ phaseId, lotId, drawIndex, hardwareEventType }) => ({
-            phaseId,
-            lotId,
-            drawIndex,
-            eventType: hardwareEventType,
-          })),
-        optionSelections: summary.selectedOptionRows.map((option) => ({
-          lotId: option.lotId,
-          optionId: option.optionId,
-        })),
-        optionsBillingDrawIndex: summary.optionsBillingDrawIndex,
-      })
+      if (split) {
+        await onCreateMany(split.packages.map(({ input }) => input))
+      } else {
+        await onCreate(createInput)
+      }
     } catch (error) {
       setSubmitError(error.message)
       setSubmitting(false)
@@ -719,7 +748,7 @@ export default function CreateDrawDialog({
           <Typography variant="h6" component="div" fontWeight={800}>
             Create Draw Package
           </Typography>
-          {isMultiPhase && (
+          {isMultiPhase && !split && (
             <Chip
               size="small"
               color="warning"
@@ -872,7 +901,7 @@ export default function CreateDrawDialog({
           </Stack>
           </Paper>
 
-          {isMultiPhase && (
+          {isMultiPhase && !split && (
             <Alert severity="warning" icon={<LayersRoundedIcon />}>
               <strong>Multi-phase Package.</strong> This Package bills{' '}
               {summary.phaseCount} Phases / Buildings together on one invoice:{' '}
@@ -1143,6 +1172,10 @@ export default function CreateDrawDialog({
             )
           )}
 
+          {split && (
+            <FinalReleaseSplitNotice split={split} scope={finalReleasePlan.scope} />
+          )}
+
           {canCreate && (
             <Card variant="outlined" sx={{ bgcolor: 'action.hover' }}>
               <CardContent sx={{ p: '16px !important' }}>
@@ -1153,7 +1186,7 @@ export default function CreateDrawDialog({
                   sx={{ alignItems: 'center', flexWrap: 'wrap' }}
                 >
                   <Typography fontWeight={800}>Package preview</Typography>
-                  {isMultiPhase && (
+                  {isMultiPhase && !split && (
                     <Chip
                       size="small"
                       color="warning"
@@ -1242,7 +1275,9 @@ export default function CreateDrawDialog({
           {canCreate
             ? (
                 <>
-                  {isMultiPhase ? `${summary.phaseCount} Phases / Buildings · ` : ''}
+                  {split
+                    ? `${split.packages.length} Packages · `
+                    : isMultiPhase ? `${summary.phaseCount} Phases / Buildings · ` : ''}
                   Net amount <strong>{formatCurrency(summary.invoiceAmount)}</strong>
                 </>
               )
@@ -1257,7 +1292,7 @@ export default function CreateDrawDialog({
           disableElevation
           onClick={handleSubmit}
         >
-          {submitting ? 'Creating…' : 'Create package'}
+          {submitting ? 'Creating…' : split ? `Create ${split.packages.length} packages` : 'Create package'}
         </Button>
         </Stack>
       </DialogActions>

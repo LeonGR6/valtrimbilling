@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Box, CircularProgress, Stack, Typography } from '@mui/material'
+import { Alert, Box, CircularProgress, Snackbar, Stack, Typography } from '@mui/material'
 import { useBuilderDrawSchedules } from '../../../builder-draw-schedules/context/useBuilderDrawSchedules.js'
 import { useProductionActivities } from '../../../calendar/context/useProductionActivities.js'
 import { useAuth } from '../../../auth/context/useAuth.js'
@@ -64,6 +64,7 @@ export default function DrawInvoiceCatalog() {
   }, [canCheckPayments, refreshDrawInvoicePackages])
   const [createDialogContext, setCreateDialogContext] = useState(null)
   const [retentionSuggestion, setRetentionSuggestion] = useState(null)
+  const [notice, setNotice] = useState(null)
 
   const handleCreate = async (input) => {
     const record = await createDrawInvoicePackage(input)
@@ -77,6 +78,32 @@ export default function DrawInvoiceCatalog() {
         record.id,
       ),
     )
+  }
+
+  // A selection that has to be divided (a Phase finishes while others still have something to bill)
+  // becomes several Packages, created one after the other. If one fails after the first, the ones
+  // already made stay: the dialog closes and says so, and reopening it offers what is left.
+  const handleCreateMany = async (inputs) => {
+    const created = []
+    const numbers = () => created.map((record) => record.packageNumber).join(', ')
+
+    for (const input of inputs) {
+      try {
+        created.push(await createDrawInvoicePackage(input))
+      } catch (error) {
+        if (created.length === 0) throw error
+
+        setCreateDialogContext(null)
+        setNotice({
+          severity: 'error',
+          message: `${numbers()} ${created.length === 1 ? 'was' : 'were'} created, but the next Package could not be: ${error.message} Open Create Package again to bill what is left.`,
+        })
+        return
+      }
+    }
+
+    setCreateDialogContext(null)
+    setNotice({ severity: 'success', message: `Created ${numbers()}.` })
   }
 
   const handleCreateRetention = async (input) => {
@@ -170,6 +197,7 @@ export default function DrawInvoiceCatalog() {
           initialPhaseId={createDialogContext.phaseId}
           onClose={() => setCreateDialogContext(null)}
           onCreate={handleCreate}
+          onCreateMany={handleCreateMany}
         />
       )}
       {retentionSuggestion && (
@@ -179,6 +207,16 @@ export default function DrawInvoiceCatalog() {
           onCreate={handleCreateRetention}
         />
       )}
+      <Snackbar
+        open={Boolean(notice)}
+        autoHideDuration={notice?.severity === 'error' ? 12000 : 6000}
+        onClose={() => setNotice(null)}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+      >
+        <Alert severity={notice?.severity ?? 'success'} onClose={() => setNotice(null)} variant="filled">
+          {notice?.message}
+        </Alert>
+      </Snackbar>
     </>
   )
 }

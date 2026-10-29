@@ -325,6 +325,15 @@ test('the QuickBooks card speaks in QuickBooks words once the payment is known',
   )
   assert.deepEqual([view({ qbo_state: 'OVERDUE', qbo_overdue: true }).status, view({ qbo_state: 'OVERDUE', qbo_overdue: true }).tone], ['Overdue', 'error'])
   assert.equal(view({ qbo_state: 'PARTIALLY_PAID', qbo_balance: 400, qbo_overdue: true }).status, 'Partially paid · Overdue')
+  // A partial payment says how much of the invoice is still due.
+  assert.equal(
+    view({ qbo_state: 'PARTIALLY_PAID', qbo_balance: 400 }).detail,
+    'Invoice DP-00000004 · $400.00 of $1,000.00 still due · due Nov 12',
+  )
+  assert.equal(
+    view({ qbo_state: 'PARTIALLY_PAID', qbo_balance: 400, qbo_total: null }).detail,
+    'Invoice DP-00000004 · $400.00 still due · due Nov 12',
+  )
   assert.equal(view({ qbo_state: 'PAID', qbo_balance: 0 }).status, 'Paid')
   assert.equal(view({ qbo_state: 'CLOSED', qbo_balance: 0 }).detail.includes('Settled'), true)
   assert.equal(view({ qbo_state: 'VOIDED' }).status, 'Voided')
@@ -837,3 +846,44 @@ test('with nothing to count from, the invoice number is left to be typed', () =>
   // Neither do numbers that are not all digits.
   assert.deepEqual(assignedInvoiceNumber({ ...none, last: 'INV-14879' }), { manual: true })
 })
+
+test('the Packages table speaks in QuickBooks words once the payment is known', () => {
+  const created = {
+    packageType: 'DRAW',
+    status: 'AWAITING_PAYMENT',
+    quickbooksStatus: 'CREATED',
+    quickbooksReference: '15001',
+    quickbooksEnvironment: 'production',
+  }
+
+  // Before QuickBooks was asked, as it always was.
+  assert.deepEqual(quickbooksTableStatusView({ ...created, paymentState: null }), {
+    tone: 'success', status: 'Invoice created', detail: 'Invoice 15001',
+  })
+  assert.deepEqual(
+    quickbooksTableStatusView({
+      ...created,
+      paymentState: 'PARTIALLY_PAID',
+      paymentBalance: 5,
+      paymentTotal: 10,
+      paymentDueDate: '2026-11-28',
+    }),
+    { tone: 'warning', status: 'Partially paid', detail: 'Invoice 15001 · $5.00 of $10.00 still due · due Nov 28' },
+  )
+  const overdue = quickbooksTableStatusView({
+    ...created, paymentState: 'PARTIALLY_PAID', paymentOverdue: true, paymentBalance: 5, paymentTotal: 10,
+  })
+  assert.deepEqual([overdue.tone, overdue.status], ['error', 'Partially paid · Overdue'])
+  assert.equal(
+    quickbooksTableStatusView({ ...created, paymentState: 'OPEN', paymentBalance: 10, paymentTotal: 10, paymentDueDate: '2026-11-28' }).status,
+    'Open',
+  )
+  assert.equal(quickbooksTableStatusView({ ...created, paymentState: 'PAID', paymentBalance: 0, paymentTotal: 10 }).status, 'Paid')
+
+  // An invoice of the Test QuickBooks stays a Test invoice, with its payment.
+  assert.deepEqual(
+    quickbooksTableStatusView({ ...created, quickbooksEnvironment: 'sandbox', paymentState: 'PARTIALLY_PAID', paymentBalance: 5, paymentTotal: 10 }),
+    { tone: 'warning', status: 'Test invoice', detail: 'Invoice 15001 · Test · Partially paid' },
+  )
+})
+

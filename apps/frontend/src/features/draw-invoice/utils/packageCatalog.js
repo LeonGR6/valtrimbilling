@@ -69,18 +69,39 @@ export function filterPackageCatalogContexts(contexts, {
   })
 }
 
+const OPEN_PAYMENT_STATES = new Set(['OPEN', 'OVERDUE', 'PARTIALLY_PAID'])
+
+/**
+ * What is still owed of a Package's invoice, in cents: the balance QuickBooks reports while the
+ * invoice is open (a partial payment leaves the Package Awaiting payment), never more than the
+ * invoice, and the whole invoice when QuickBooks was not asked or has no open balance.
+ */
+export function packageOwedCents(record, invoiceCents) {
+  if (!OPEN_PAYMENT_STATES.has(record?.paymentState) || record.paymentBalance == null) {
+    return invoiceCents
+  }
+  return Math.min(invoiceCents, Math.max(0, Math.round(Number(record.paymentBalance) * 100)))
+}
+
+/**
+ * Count, invoice total and what is still owed of the Packages of each status. `owed` is less than
+ * `total` when an open invoice was partly paid.
+ */
 export function summarizePackageCatalogStatuses(contexts) {
   const summary = Object.fromEntries(
-    DRAW_PACKAGE_STATUSES.map((status) => [status, { count: 0, total: 0 }]),
+    DRAW_PACKAGE_STATUSES.map((status) => [status, { count: 0, total: 0, owed: 0 }]),
   )
   for (const { record, summary: financials } of contexts) {
     const bucket = summary[record.status]
     if (!bucket) continue
+    const invoiceCents = Math.round((Number(financials?.invoiceAmount) || 0) * 100)
     bucket.count += 1
-    bucket.total += Math.round((Number(financials?.invoiceAmount) || 0) * 100)
+    bucket.total += invoiceCents
+    bucket.owed += packageOwedCents(record, invoiceCents)
   }
   for (const bucket of Object.values(summary)) {
     bucket.total /= 100
+    bucket.owed /= 100
   }
   return summary
 }

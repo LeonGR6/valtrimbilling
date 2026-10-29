@@ -132,7 +132,10 @@ function SummaryIcon({ children, color, bgcolor }) {
   )
 }
 
-function PackageSummaryCard({ status, icon, color, count, total, selected, onSelect }) {
+function PackageSummaryCard({ status, icon, color, count, total, owed, selected, onSelect }) {
+  // Awaiting payment says what is still owed when an invoice was partly paid.
+  const partlyOwed = status === 'AWAITING_PAYMENT' && Math.round(owed * 100) < Math.round(total * 100)
+
   return (
     <ButtonBase
       onClick={onSelect}
@@ -151,7 +154,9 @@ function PackageSummaryCard({ status, icon, color, count, total, selected, onSel
           </Typography>
         </Stack>
         <Typography variant="caption" color="text.secondary" noWrap component="div" sx={{ fontVariantNumeric: 'tabular-nums' }}>
-          {formatCurrency(total)} invoice total
+          {partlyOwed
+            ? `${formatCurrency(owed)} owed · ${formatCurrency(total)} invoiced`
+            : `${formatCurrency(total)} invoice total`}
         </Typography>
       </Box>
     </ButtonBase>
@@ -538,6 +543,7 @@ export default function PackageCatalog({
                 color={color}
                 count={statusSummary[status].count}
                 total={statusSummary[status].total}
+                owed={statusSummary[status].owed}
                 selected={statusTab === status}
                 onSelect={() => setStatusTab(statusTab === status ? 'ALL' : status)}
               />

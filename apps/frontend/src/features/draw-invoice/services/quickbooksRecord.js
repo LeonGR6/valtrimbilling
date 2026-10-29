@@ -419,7 +419,10 @@ export function quickbooksPaymentView(sync) {
       return {
         tone: sync.overdue ? 'error' : 'warning',
         status: sync.overdue ? 'Partially paid · Overdue' : 'Partially paid',
-        detail: `${money(sync.paymentBalance ?? 0)} still due${due ? ` · due ${due}` : ''}`,
+        // "$5.00 of $10.00 still due" when the total is known, so a partial payment reads as one.
+        detail: `${sync.paymentTotal != null && sync.paymentTotal > (sync.paymentBalance ?? 0)
+          ? `${money(sync.paymentBalance ?? 0)} of ${money(sync.paymentTotal)}`
+          : money(sync.paymentBalance ?? 0)} still due${due ? ` · due ${due}` : ''}`,
       }
     case 'OVERDUE':
       return {
@@ -535,18 +538,31 @@ export function quickbooksTableStatusView(record) {
   if (!record || !isInvoicedThroughQuickbooks(record)) return null
 
   switch (record.quickbooksStatus) {
-    case 'CREATED':
-      return record.quickbooksEnvironment === 'sandbox'
-        ? {
+    case 'CREATED': {
+      // The same words as the card of the Package, once QuickBooks was asked about the payment.
+      const payment = quickbooksPaymentView({
+        paymentState: record.paymentState,
+        overdue: record.paymentOverdue,
+        paymentBalance: record.paymentBalance ?? null,
+        paymentTotal: record.paymentTotal ?? null,
+        dueDate: record.paymentDueDate ?? null,
+      })
+      const invoice = record.quickbooksReference ? `Invoice ${record.quickbooksReference} · ` : ''
+      if (record.quickbooksEnvironment === 'sandbox') {
+        return {
           tone: 'warning',
           status: 'Test invoice',
-          detail: record.quickbooksReference ? `Invoice ${record.quickbooksReference} · Test` : 'Test',
+          detail: `${invoice}Test${payment ? ` · ${payment.status}` : ''}`,
         }
+      }
+      return payment
+        ? { tone: payment.tone, status: payment.status, detail: `${invoice}${payment.detail}` }
         : {
           tone: 'success',
           status: 'Invoice created',
           detail: record.quickbooksReference ? `Invoice ${record.quickbooksReference}` : '',
         }
+    }
     case 'SYNC_ERROR':
       return { tone: 'warning', status: 'Sync error', detail: 'Last attempt failed' }
     case 'VOIDED':

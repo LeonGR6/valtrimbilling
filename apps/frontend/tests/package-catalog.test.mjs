@@ -7,6 +7,7 @@ import {
   packageCatalogBuilderOptions,
   packageCatalogCommunityOptions,
   isValidPackageSort,
+  packageOwedCents,
   packageBillingPeriodDate,
   nextPackageSort,
   sortPackageCatalogContexts,
@@ -56,10 +57,43 @@ test('cancelled Packages stay out of the catalog and all status totals', () => {
   const active = filterPackageCatalogContexts(contexts)
   assert.deepEqual(active.map(({ record }) => record.id), [1, 2, 3, 4])
   assert.deepEqual(summarizePackageCatalogStatuses(active), {
-    DRAFT: { count: 2, total: 150.75 },
-    AWAITING_PAYMENT: { count: 1, total: 25.1 },
-    PAID_CLOSED: { count: 1, total: 10.3 },
+    DRAFT: { count: 2, total: 150.75, owed: 150.75 },
+    AWAITING_PAYMENT: { count: 1, total: 25.1, owed: 25.1 },
+    PAID_CLOSED: { count: 1, total: 10.3, owed: 10.3 },
   })
+})
+
+test('what is still owed follows the balance QuickBooks reports, never more than the invoice', () => {
+  const owed = (record, invoiceAmount) => packageOwedCents(record, Math.round(invoiceAmount * 100)) / 100
+
+  // Not asked yet: the whole invoice.
+  assert.equal(owed({ paymentState: null, paymentBalance: null }, 10), 10)
+  assert.equal(owed({}, 10), 10)
+  // Partly paid: what is left.
+  assert.equal(owed({ paymentState: 'PARTIALLY_PAID', paymentBalance: 5 }, 10), 5)
+  assert.equal(owed({ paymentState: 'OVERDUE', paymentBalance: 7.5 }, 10), 7.5)
+  // Open and unpaid, or a balance above the invoice: the invoice.
+  assert.equal(owed({ paymentState: 'OPEN', paymentBalance: 10 }, 10), 10)
+  assert.equal(owed({ paymentState: 'OPEN', paymentBalance: 99 }, 10), 10)
+  // A state that is not an open invoice has no balance to trust.
+  assert.equal(owed({ paymentState: 'VOIDED', paymentBalance: 0 }, 10), 10)
+  assert.equal(owed({ paymentState: 'PARTIALLY_PAID', paymentBalance: null }, 10), 10)
+})
+
+test('the status totals say what is owed when an Awaiting payment invoice was partly paid', () => {
+  const awaiting = (id, invoiceAmount, payment = {}) => ({
+    record: { id, builderId: 11, status: 'AWAITING_PAYMENT', packageNumber: `DP-${id}`, ...payment },
+    job: { code: '1', builder: 'Acme', community: 'Deerfield' },
+    phase: { name: 'Phase 1', building: 'P1' },
+    summary: { invoiceAmount },
+  })
+  const summary = summarizePackageCatalogStatuses([
+    awaiting(1, 10, { paymentState: 'PARTIALLY_PAID', paymentBalance: 5 }),
+    awaiting(2, 20.1),
+    awaiting(3, 30, { paymentState: 'OVERDUE', paymentBalance: 30 }),
+  ])
+
+  assert.deepEqual(summary.AWAITING_PAYMENT, { count: 3, total: 60.1, owed: 55.1 })
 })
 
 test('Builder, Community, search and status filters compose without mixing names', () => {

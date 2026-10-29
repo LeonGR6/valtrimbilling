@@ -975,3 +975,46 @@ test('a Retention Release records what Price Adjustments retained, signed', () =
     { sourceAdjustmentLineId: 2, sourcePackageId: 301, phaseId: 21, retentionAmount: -5 },
   ])
 })
+
+test('a Package carries what QuickBooks reports of its invoice payment', () => {
+  const packageRow = {
+    id: 12,
+    package_number: 'DP-00000012',
+    package_type: 'DRAW',
+    builder_id: 2,
+    job_id: 11,
+    phase_id: null,
+    setup_version_id: 31,
+    package_date: '2026-10-20',
+    invoice_line_format: 'LOT_SCOPE',
+    workflow_status: 'AWAITING_PAYMENT',
+    status: 'AWAITING_PAYMENT',
+    quickbooks_status: 'CREATED',
+    created_at: '2026-10-20T12:00:00Z',
+    updated_at: '2026-10-20T12:00:00Z',
+    status_changed_at: '2026-10-20T12:00:00Z',
+  }
+  const withSync = (sync) => toDrawInvoicePackage({ ...packageRow, quickbooks_invoice_syncs: sync }, null)
+
+  const partly = withSync({
+    qbo_state: 'PARTIALLY_PAID',
+    qbo_overdue: false,
+    qbo_balance: '5.00',
+    qbo_total: '10.00',
+    qbo_due_date: '2026-11-28',
+  })
+  assert.deepEqual(
+    [partly.paymentState, partly.paymentBalance, partly.paymentTotal, partly.paymentDueDate],
+    ['PARTIALLY_PAID', 5, 10, '2026-11-28'],
+  )
+
+  // Not asked yet: nothing is known, and nothing is made up.
+  for (const empty of [null, { qbo_state: null, qbo_balance: null, qbo_total: null, qbo_due_date: null }]) {
+    const record = withSync(empty)
+    assert.deepEqual(
+      [record.paymentState, record.paymentBalance, record.paymentTotal, record.paymentDueDate],
+      [null, null, null, null],
+    )
+  }
+})
+

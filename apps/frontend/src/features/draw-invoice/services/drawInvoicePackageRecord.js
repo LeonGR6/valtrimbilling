@@ -269,6 +269,14 @@ export function toDrawInvoicePackage(
     quickbooksEnvironment: packageRow.quickbooks_environment ?? null,
     paymentState: packageRow.quickbooks_invoice_syncs?.qbo_state ?? null,
     paymentOverdue: Boolean(packageRow.quickbooks_invoice_syncs?.qbo_overdue),
+    // What QuickBooks reports of the invoice: what is still owed, its total and when it is due.
+    paymentBalance: packageRow.quickbooks_invoice_syncs?.qbo_balance == null
+      ? null
+      : Number(packageRow.quickbooks_invoice_syncs.qbo_balance),
+    paymentTotal: packageRow.quickbooks_invoice_syncs?.qbo_total == null
+      ? null
+      : Number(packageRow.quickbooks_invoice_syncs.qbo_total),
+    paymentDueDate: packageRow.quickbooks_invoice_syncs?.qbo_due_date ?? null,
     submissionStatus: packageRow.submission_status ?? 'NOT_SUBMITTED',
     submittedAt: packageRow.submitted_at ?? null,
     // "Ready to submit" no longer exists: a Package still stored in it is a Draft.

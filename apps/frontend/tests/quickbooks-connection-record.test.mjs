@@ -14,6 +14,7 @@ import {
   quickbooksTokenDaysLeft,
   isQuickbooksTestPackage,
   canResetQuickbooksTestInvoice,
+  canStartNewQuickbooksInvoice,
   quickbooksPackageEnvironmentView,
 } from '../src/features/draw-invoice/services/quickbooksRecord.js'
 
@@ -714,6 +715,37 @@ test('only a Test Package that was never submitted can move back to Production',
   assert.equal(canResetQuickbooksTestInvoice({ ...testPackage, submissionStatus: 'SUBMITTED' }, 'ADMIN'), false)
   assert.equal(canResetQuickbooksTestInvoice({ ...testPackage, submittedAt: '2026-10-20T00:00:00Z' }, 'ADMIN'), false)
   assert.equal(canResetQuickbooksTestInvoice({ ...testPackage, status: 'PAID' }, 'ADMIN'), false)
+})
+
+test('a Production Package with a voided invoice can get a new one until it is submitted', () => {
+  const voided = {
+    packageType: 'DRAW',
+    quickbooksEnvironment: 'production',
+    quickbooksStatus: 'VOIDED',
+    status: 'DRAFT',
+    submissionStatus: 'NOT_SUBMITTED',
+    submittedAt: null,
+  }
+
+  assert.equal(canStartNewQuickbooksInvoice(voided, 'ACCOUNTING'), true)
+  assert.equal(canStartNewQuickbooksInvoice(voided, 'ADMIN'), true)
+  assert.equal(canStartNewQuickbooksInvoice({ ...voided, packageType: 'PRICE_ADJUSTMENT' }, 'ADMIN'), true)
+  assert.equal(canStartNewQuickbooksInvoice({ ...voided, status: 'AWAITING_PAYMENT' }, 'ADMIN'), true)
+
+  assert.equal(canStartNewQuickbooksInvoice(voided, 'PROJECT_MANAGEMENT'), false)
+  assert.equal(canStartNewQuickbooksInvoice(voided, 'READ_ONLY'), false)
+  assert.equal(canStartNewQuickbooksInvoice(null, 'ADMIN'), false)
+  // An invoice that stands is voided, not detached.
+  assert.equal(canStartNewQuickbooksInvoice({ ...voided, quickbooksStatus: 'CREATED' }, 'ADMIN'), false)
+  assert.equal(canStartNewQuickbooksInvoice({ ...voided, quickbooksStatus: 'NOT_CREATED' }, 'ADMIN'), false)
+  // A Test Package moves back to Production instead.
+  assert.equal(canStartNewQuickbooksInvoice({ ...voided, quickbooksEnvironment: 'sandbox' }, 'ADMIN'), false)
+  // A cancelled or submitted Package gets no new invoice.
+  assert.equal(canStartNewQuickbooksInvoice({ ...voided, status: 'CANCELLED' }, 'ADMIN'), false)
+  assert.equal(canStartNewQuickbooksInvoice({ ...voided, submissionStatus: 'SUBMITTED' }, 'ADMIN'), false)
+  assert.equal(canStartNewQuickbooksInvoice({ ...voided, submittedAt: '2026-10-20T00:00:00Z' }, 'ADMIN'), false)
+  // A retention release is not invoiced through QuickBooks.
+  assert.equal(canStartNewQuickbooksInvoice({ ...voided, packageType: 'RETENTION_RELEASE' }, 'ADMIN'), false)
 })
 
 test('a Package sent to QuickBooks says whether it is Test or Production', () => {

@@ -46,7 +46,8 @@ export default function QuickbooksVoidDialog({ record, onClose, onVoided }) {
         <Stack spacing={2} sx={{ pt: 1 }}>
           {outcome ? (
             <Alert severity="success">
-              {OUTCOMES[outcome] ?? OUTCOMES.voided} You can now delete this draft Package.
+              {OUTCOMES[outcome] ?? OUTCOMES.voided} You can now create a new invoice for this
+              Package, or delete it as a draft.
             </Alert>
           ) : (
             <>
@@ -56,8 +57,8 @@ export default function QuickbooksVoidDialog({ record, onClose, onVoided }) {
               </Typography>
               <Typography color="text.secondary">
                 It can only be voided while nothing was paid or credited against it and the
-                Package was not submitted. To invoice these cells again, delete this draft and
-                create a new Package.
+                Package was not submitted. To invoice these cells again, create a new invoice
+                for the Package afterwards, or delete the draft.
               </Typography>
               {error && <Alert severity="error">{error}</Alert>}
             </>

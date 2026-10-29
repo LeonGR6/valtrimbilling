@@ -3,12 +3,14 @@ import { Alert, Box, Button, Stack } from '@mui/material'
 import { useQuickbooksInvoicePdf } from '../../hooks/useQuickbooksInvoicePdf.js'
 import {
   canResetQuickbooksTestInvoice,
+  canStartNewQuickbooksInvoice,
   canVoidQuickbooksInvoice,
   isInvoicedThroughQuickbooks,
   isQuickbooksTestPackage,
 } from '../../services/quickbooksRecord.js'
 import { saveQuickbooksInvoicePdf } from '../../services/quickbooksRepository.js'
 import { formatCurrency } from '../../utils/drawInvoiceFormatters.js'
+import QuickbooksNewInvoiceDialog from './QuickbooksNewInvoiceDialog.jsx'
 import QuickbooksResetDialog from './QuickbooksResetDialog.jsx'
 import QuickbooksVoidDialog from './QuickbooksVoidDialog.jsx'
 
@@ -16,9 +18,10 @@ const savedDate = (value) => (value ? new Date(value).toLocaleDateString('en-US'
 
 /**
  * What the Package page says about its QuickBooks invoice: already invoiced
- * (with its saved PDF and the option to void it), voided, or the last attempt
- * failed. A Package invoiced in the QuickBooks Test company says so and can be
- * moved back to Production. Shows nothing for a Package that was never sent.
+ * (with its saved PDF and the option to void it), voided (with the option to
+ * create a new invoice), or the last attempt failed. A Package invoiced in the
+ * QuickBooks Test company says so and can be moved back to Production. Shows
+ * nothing for a Package that was never sent.
  */
 export default function QuickbooksPackageNotice({
   record,
@@ -34,10 +37,12 @@ export default function QuickbooksPackageNotice({
   const [pdfError, setPdfError] = useState('')
   const [voidOpen, setVoidOpen] = useState(false)
   const [resetOpen, setResetOpen] = useState(false)
+  const [newInvoiceOpen, setNewInvoiceOpen] = useState(false)
 
   if (!record || !isInvoicedThroughQuickbooks(record)) return null
 
   const canVoid = canVoidQuickbooksInvoice(record, role)
+  const canStartNewInvoice = canStartNewQuickbooksInvoice(record, role)
   const isTest = isQuickbooksTestPackage(record)
   const canReset = canResetQuickbooksTestInvoice(record, role)
   const resetButton = canReset && (
@@ -67,16 +72,30 @@ export default function QuickbooksPackageNotice({
   }
 
   if (record.quickbooksStatus === 'VOIDED') {
+    const newInvoiceButton = canStartNewInvoice && (
+      <Button color="inherit" size="small" onClick={() => setNewInvoiceOpen(true)} sx={{ whiteSpace: 'nowrap' }}>
+        Create a new invoice
+      </Button>
+    )
+
     return (
       <>
-        <Alert severity="info" action={resetButton || undefined}>
+        <Alert severity="info" action={resetButton || newInvoiceButton || undefined}>
           <strong>The {isTest ? 'Test ' : ''}QuickBooks invoice was voided.</strong>
           {record.quickbooksReference ? ` Invoice ${record.quickbooksReference} stays in QuickBooks with its amounts at $0.` : ''}
           {isTest
             ? ' This was a test: move the Package back to Production to send it for real, or delete it as a draft.'
-            : ' This Package can be deleted as a draft; to invoice its cells again, create a new Package.'}
+            : ' Create a new invoice to send this Package again, or delete it as a draft.'}
         </Alert>
         {resetDialog}
+        {newInvoiceOpen && (
+          <QuickbooksNewInvoiceDialog
+            record={record}
+            onClose={() => setNewInvoiceOpen(false)}
+            onDetached={onChanged}
+            onSend={onSend}
+          />
+        )}
       </>
     )
   }

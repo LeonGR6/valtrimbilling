@@ -16,6 +16,7 @@ const INVOICE_FUNCTION = 'quickbooks-invoice-create'
 const CUSTOMERS_FUNCTION = 'quickbooks-customers'
 const VOID_FUNCTION = 'quickbooks-invoice-void'
 const RESET_FUNCTION = 'quickbooks-invoice-reset'
+const DETACH_FUNCTION = 'quickbooks-invoice-detach'
 const PDF_FUNCTION = 'quickbooks-invoice-pdf'
 const SYNC_COLUMNS = [
   'status',
@@ -229,6 +230,15 @@ export async function voidQuickbooksInvoice(packageId) {
 export async function resetQuickbooksTestInvoice(packageId) {
   const data = await functionRequest(RESET_FUNCTION, { packageId })
   return { removedPdf: Boolean(data?.removedPdf) }
+}
+
+/**
+ * Lets a Package go of its voided invoice so it can get a new one. The voided invoice
+ * stays in QuickBooks with its number; only the Package stops pointing at it.
+ */
+export async function detachVoidedQuickbooksInvoice(packageId) {
+  const data = await functionRequest(DETACH_FUNCTION, { packageId })
+  return { voidedInvoiceNumber: data?.voidedInvoiceNumber ?? null }
 }
 
 /** Downloads QuickBooks' PDF of the invoice and saves it as the Package's INVOICE document. */

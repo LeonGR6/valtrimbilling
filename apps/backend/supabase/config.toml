@@ -440,6 +440,10 @@ verify_jwt = true
 [functions.quickbooks-invoice-reset]
 verify_jwt = true
 
+# Lets a Package whose invoice was voided get a new one. Same role check.
+[functions.quickbooks-invoice-detach]
+verify_jwt = true
+
 [functions.quickbooks-invoice-pdf]
 verify_jwt = true
 

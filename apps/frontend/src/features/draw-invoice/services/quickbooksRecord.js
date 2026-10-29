@@ -291,6 +291,18 @@ export function toQuickbooksInvoicePreview(data) {
 }
 
 /**
+ * The invoice number that follows the last one used ("14879" gives "14880"), to offer it in the
+ * field so the numbers keep their order. Only all-digit numbers have a next one; its length
+ * is kept ("0099" gives "0100"). Null when there is none.
+ */
+export function nextInvoiceNumber(last) {
+  const value = String(last ?? '').trim()
+  if (!/^[0-9]+$/u.test(value)) return null
+
+  return String(BigInt(value) + 1n).padStart(value.length, '0')
+}
+
+/**
  * What to tell the person about the invoice number they typed: free, taken by
  * another Package, or already in QuickBooks. `checking` is while the preview is
  * being read again for the number just typed.

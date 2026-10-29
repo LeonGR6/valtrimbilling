@@ -66,7 +66,8 @@ function harness(overrides: Partial<InvoiceSyncDeps> = {}, pkg: LoadedPackage = 
       })
     },
     isNumberTaken: () => Promise.resolve(false),
-    lastInvoiceNumber: () => Promise.resolve('15026'),
+    numberCandidates: () => Promise.resolve([{ number: '15026', voided: false }]),
+    releaseVoidedNumber: () => Promise.resolve(false),
     findInvoiceByNumber: () => Promise.resolve(null),
     getCustomerMapping: () => Promise.resolve(null),
     saveCustomerMapping: () => {
@@ -447,6 +448,123 @@ Deno.test('a preview reports whether the typed number is free, and the last one 
   const blank = await run(harness().deps, true, { invoiceNumber: null })
   assertEquals(blank.dryRun && blank.numberCheck.number, null)
   assertEquals(blank.dryRun && blank.invoice.DocNumber, undefined)
+})
+
+Deno.test('a voided invoice deleted in QuickBooks no longer counts as the last number used, and its number is freed', async () => {
+  const released: string[] = []
+  const { deps } = harness({
+    numberCandidates: () => Promise.resolve([
+      { number: '16002', voided: true },
+      { number: '14879', voided: false },
+      { number: '14878', voided: false },
+    ]),
+    findInvoiceByNumber: () => Promise.resolve(null),
+    releaseVoidedNumber: (_environment, number) => {
+      released.push(number)
+      return Promise.resolve(true)
+    },
+  })
+
+  const result = await run(deps, true, { environment: 'production', invoiceNumber: '14880' })
+
+  assertEquals(result.dryRun && result.numberCheck.last, '14879')
+  assertEquals(released, ['16002'])
+})
+
+Deno.test('a voided invoice that QuickBooks still has keeps its number as the last one used', async () => {
+  const { deps } = harness({
+    numberCandidates: () => Promise.resolve([
+      { number: '16002', voided: true },
+      { number: '14879', voided: false },
+    ]),
+    findInvoiceByNumber: (_api, number) => Promise.resolve(number === '16002' ? { id: '12' } : null),
+    releaseVoidedNumber: () => Promise.reject(new Error('should not release a voided invoice QuickBooks still has')),
+  })
+
+  const result = await run(deps, true, { environment: 'production', invoiceNumber: '14880' })
+
+  assertEquals(result.dryRun && result.numberCheck.last, '16002')
+})
+
+Deno.test('QuickBooks is only asked about voided numbers, from the highest down to the first that is real', async () => {
+  const asked: string[] = []
+  const { deps } = harness({
+    numberCandidates: () => Promise.resolve([
+      { number: '16004', voided: true },
+      { number: '16003', voided: true },
+      { number: '14879', voided: false },
+      { number: '14700', voided: true },
+    ]),
+    findInvoiceByNumber: (_api, number) => {
+      asked.push(number)
+      return Promise.resolve(null)
+    },
+    releaseVoidedNumber: () => Promise.resolve(true),
+  })
+
+  const result = await run(deps, true, { environment: 'production', invoiceNumber: null })
+
+  assertEquals(result.dryRun && result.numberCheck.last, '14879')
+  assertEquals(asked, ['16004', '16003'])
+})
+
+Deno.test('with every number voided and deleted there is no last number', async () => {
+  const { deps } = harness({
+    numberCandidates: () => Promise.resolve([{ number: '16002', voided: true }]),
+    findInvoiceByNumber: () => Promise.resolve(null),
+    releaseVoidedNumber: () => Promise.resolve(true),
+  })
+
+  const result = await run(deps, true, { invoiceNumber: null })
+
+  assertEquals(result.dryRun && result.numberCheck.last, null)
+})
+
+Deno.test('a number held by a voided invoice that was deleted in QuickBooks can be used again', async () => {
+  const released: string[] = []
+  const { deps, calls } = harness({
+    isNumberTaken: () => Promise.resolve(true),
+    findInvoiceByNumber: () => Promise.resolve(null),
+    releaseVoidedNumber: (_environment, number) => {
+      released.push(number)
+      return Promise.resolve(true)
+    },
+  })
+
+  const preview = await run(deps, true, { environment: 'production', invoiceNumber: '16002' })
+  assertEquals(preview.dryRun && preview.numberCheck.inDatabase, false)
+  assertEquals(preview.dryRun && preview.numberCheck.inQuickbooks, false)
+
+  const sent = await run(deps, false, { environment: 'production', invoiceNumber: '16002' })
+  assertEquals(sent.dryRun, false)
+  assertEquals(calls.includes('createInvoice'), true)
+  assertEquals(released.includes('16002'), true)
+})
+
+Deno.test('a number held by an invoice that is not voided stays taken', async () => {
+  const { deps, calls } = harness({
+    isNumberTaken: () => Promise.resolve(true),
+    findInvoiceByNumber: () => Promise.resolve(null),
+    releaseVoidedNumber: () => Promise.resolve(false),
+  })
+
+  const error = await assertRejects(() => run(deps), QuickbooksSyncConflictError)
+
+  assertEquals(error.reason, 'NUMBER_IN_USE')
+  assertEquals(calls.includes('claim'), false)
+})
+
+Deno.test('a number QuickBooks still has is never released, voided or not', async () => {
+  const { deps } = harness({
+    isNumberTaken: () => Promise.resolve(true),
+    findInvoiceByNumber: () => Promise.resolve({ id: '88' }),
+    releaseVoidedNumber: () => Promise.reject(new Error('should not release a number QuickBooks has')),
+  })
+
+  const preview = await run(deps, true)
+
+  assertEquals(preview.dryRun && preview.numberCheck.inDatabase, true)
+  assertEquals(preview.dryRun && preview.numberCheck.inQuickbooks, true)
 })
 
 Deno.test('the Package own number from an earlier attempt is not a clash when it is retried', async () => {

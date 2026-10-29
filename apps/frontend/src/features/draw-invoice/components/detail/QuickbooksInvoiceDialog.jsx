@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   Alert,
   Box,
@@ -26,6 +26,7 @@ import {
   previewQuickbooksInvoice,
 } from '../../services/quickbooksRepository.js'
 import {
+  nextInvoiceNumber,
   quickbooksEnvironmentLabel,
   quickbooksInvoiceDate,
   quickbooksInvoiceNumberStatus,
@@ -52,6 +53,8 @@ export default function QuickbooksInvoiceDialog({ record, onClose, onSettled }) 
   const [suggestedDate] = useState(() => quickbooksInvoiceDate(record, localDateKey(new Date())))
   const [txnDate, setTxnDate] = useState(suggestedDate.date)
   const [invoiceNumber, setInvoiceNumber] = useState('')
+  // The field is filled with the next number once, when the first preview tells the last one used.
+  const offeredNextNumber = useRef(false)
   const [settledNumber, setSettledNumber] = useState('')
   const [preview, setPreview] = useState(null)
   const [shownEnvironment, setShownEnvironment] = useState(null)
@@ -94,7 +97,13 @@ export default function QuickbooksInvoiceDialog({ record, onClose, onSettled }) 
         // A retry keeps the number of the earlier attempt: offer it when nothing was typed.
         if (data.numberCheck.current) {
           setInvoiceNumber((current) => current || data.numberCheck.current)
+        } else if (!offeredNextNumber.current) {
+          // Otherwise offer the number after the last one used, so the numbers keep their order.
+          // It is only a suggestion: it can be changed, or cleared and typed again.
+          const next = nextInvoiceNumber(data.numberCheck.last)
+          if (next) setInvoiceNumber((current) => current || next)
         }
+        offeredNextNumber.current = true
       })
       .catch((error) => {
         if (!cancelled) setPreview({ key: previewKey, data: null, error })

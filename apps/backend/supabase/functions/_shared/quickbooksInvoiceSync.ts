@@ -94,8 +94,16 @@ export interface InvoiceSyncDeps {
   getCustomFieldDefinitions(api: QuickbooksApiOptions): Promise<CustomFieldDefinition[]>
   /** Whether another Package already uses this invoice number in this environment. */
   isNumberTaken(environment: string, invoiceNumber: string, packageId: number): Promise<boolean>
-  /** The highest numeric invoice number used in this environment, for reference. */
-  lastInvoiceNumber(environment: string): Promise<string | null>
+  /**
+   * The numeric invoice numbers used in this environment, highest first, and whether each one is
+   * a voided invoice's.
+   */
+  numberCandidates(environment: string): Promise<{ number: string; voided: boolean }[]>
+  /**
+   * Frees the number of a voided invoice that QuickBooks no longer has (it was deleted there).
+   * Returns whether a number was freed.
+   */
+  releaseVoidedNumber(environment: string, invoiceNumber: string): Promise<boolean>
   /** The QuickBooks invoice that already has this number, if any. */
   findInvoiceByNumber(api: QuickbooksApiOptions, invoiceNumber: string): Promise<{ id: string } | null>
   claim(
@@ -166,7 +174,8 @@ export function realDeps(
     | 'saveCustomerMapping'
     | 'clearCustomerMapping'
     | 'isNumberTaken'
-    | 'lastInvoiceNumber'
+    | 'numberCandidates'
+    | 'releaseVoidedNumber'
     | 'claim'
     | 'complete'
     | 'saveInvoicePdf'
@@ -181,6 +190,24 @@ export function realDeps(
     findInvoiceByNumber: (api, invoiceNumber) => findQuickbooksInvoiceByDocNumber(api, invoiceNumber),
     createInvoice: (api, payload, requestId) => createQuickbooksInvoice(api, payload, requestId),
   }
+}
+
+/**
+ * The highest numeric invoice number still in use in this environment, to show beside the field. A
+ * voided invoice keeps its number while QuickBooks has it; one that was deleted there is released
+ * (its number is free again) and no longer counts.
+ */
+async function lastNumberInUse(
+  deps: Pick<InvoiceSyncDeps, 'numberCandidates' | 'findInvoiceByNumber' | 'releaseVoidedNumber'>,
+  api: QuickbooksApiOptions,
+  environment: string,
+): Promise<string | null> {
+  for (const candidate of await deps.numberCandidates(environment)) {
+    if (!candidate.voided) return candidate.number
+    if (await deps.findInvoiceByNumber(api, candidate.number)) return candidate.number
+    await deps.releaseVoidedNumber(environment, candidate.number)
+  }
+  return null
 }
 
 export async function createPackageInvoice(
@@ -261,15 +288,23 @@ export async function createPackageInvoice(
   // an earlier attempt is not a clash: it is the same invoice being retried.
   const current = loaded.syncEnvironment === environment ? loaded.syncInvoiceNumber : null
   const ownNumber = typedNumber != null && typedNumber === current
+  const inQuickbooks = typedNumber != null && !ownNumber
+    ? (await deps.findInvoiceByNumber(api, typedNumber)) != null
+    : false
+  let inDatabase = typedNumber != null && !ownNumber
+    ? await deps.isNumberTaken(environment, typedNumber, packageId)
+    : false
+  // A voided invoice keeps its number only while QuickBooks has it: one that was deleted there
+  // gives its number back.
+  if (inDatabase && !inQuickbooks && typedNumber != null
+    && await deps.releaseVoidedNumber(environment, typedNumber)) {
+    inDatabase = false
+  }
   const numberCheck: InvoiceNumberCheck = {
     number: typedNumber,
-    inDatabase: typedNumber != null && !ownNumber
-      ? await deps.isNumberTaken(environment, typedNumber, packageId)
-      : false,
-    inQuickbooks: typedNumber != null && !ownNumber
-      ? (await deps.findInvoiceByNumber(api, typedNumber)) != null
-      : false,
-    last: await deps.lastInvoiceNumber(environment),
+    inDatabase,
+    inQuickbooks,
+    last: await lastNumberInUse(deps, api, environment),
     current,
   }
 

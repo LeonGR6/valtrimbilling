@@ -559,6 +559,7 @@ import {
   canSwitchQuickbooksMode,
   pickQuickbooksConnection,
   quickbooksEnvironmentLabel,
+  nextInvoiceNumber,
   quickbooksInvoiceNumberStatus,
   toQuickbooksSettings,
 } from '../src/features/draw-invoice/services/quickbooksRecord.js'
@@ -734,4 +735,20 @@ test('a Package that was never sent, or never invoiced, has no mode to show', ()
   assert.equal(quickbooksPackageEnvironmentView({ packageType: 'DRAW', quickbooksEnvironment: 'other' }), null)
   assert.equal(quickbooksPackageEnvironmentView({ packageType: 'RETENTION_RELEASE', quickbooksEnvironment: 'sandbox' }), null)
   assert.equal(quickbooksPackageEnvironmentView(null), null)
+})
+
+test('the next invoice number follows the last one used, keeping its length', () => {
+  assert.equal(nextInvoiceNumber('14879'), '14880')
+  assert.equal(nextInvoiceNumber(' 14879 '), '14880')
+  assert.equal(nextInvoiceNumber('99999'), '100000')
+  assert.equal(nextInvoiceNumber('0099'), '0100')
+  assert.equal(nextInvoiceNumber('9007199254740993'), '9007199254740994')
+})
+
+test('there is no next invoice number when nothing was used or the last one is not all digits', () => {
+  assert.equal(nextInvoiceNumber(null), null)
+  assert.equal(nextInvoiceNumber(undefined), null)
+  assert.equal(nextInvoiceNumber(''), null)
+  assert.equal(nextInvoiceNumber('INV-14879'), null)
+  assert.equal(nextInvoiceNumber('14.879'), null)
 })

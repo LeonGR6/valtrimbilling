@@ -141,12 +141,23 @@ Deno.serve(async (req) => {
           if (error) throw error
           return (data?.length ?? 0) > 0
         },
-        lastInvoiceNumber: async (numberEnvironment) => {
-          const { data, error } = await admin.rpc('last_quickbooks_invoice_number', {
+        numberCandidates: async (numberEnvironment) => {
+          const { data, error } = await admin.rpc('quickbooks_invoice_number_candidates', {
             p_environment: numberEnvironment,
           })
           rpcFailure(error)
-          return (data as string | null) ?? null
+          return ((data ?? []) as { invoice_number: string; voided: boolean }[]).map((row) => ({
+            number: row.invoice_number,
+            voided: row.voided,
+          }))
+        },
+        releaseVoidedNumber: async (numberEnvironment, invoiceNumber) => {
+          const { data, error } = await admin.rpc('release_quickbooks_voided_invoice_number', {
+            p_environment: numberEnvironment,
+            p_invoice_number: invoiceNumber,
+          })
+          rpcFailure(error)
+          return data === true
         },
         claim: async (id, claimEnvironment, realmId, invoiceNumber) => {
           const { data, error } = await admin.rpc('claim_quickbooks_invoice_sync', {

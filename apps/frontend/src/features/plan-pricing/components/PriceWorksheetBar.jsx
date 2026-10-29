@@ -10,10 +10,7 @@ import {
   Typography,
 } from '@mui/material'
 import SaveRoundedIcon from '@mui/icons-material/SaveRounded'
-
-function plural(count, singular, pluralForm = `${singular}s`) {
-  return `${count} ${count === 1 ? singular : pluralForm}`
-}
+import { plural } from '../../../utils/plural.js'
 
 /**
  * Stays at the top while prices are being edited: how many changed, what still

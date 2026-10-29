@@ -3,6 +3,7 @@
 // Nothing here touches the network or React.
 
 import { compareOptionCodes, sortOptionsByCode } from '../../../utils/optionOrder.js'
+import { plural } from '../../../utils/plural.js'
 
 // What each comparison status means for the reviewer. `severity` orders them, the
 // most urgent first. Every status only informs: nothing blocks a Package.
@@ -165,10 +166,6 @@ export function summarizeByDocument(lines) {
   return Object.fromEntries(
     [...grouped].map(([documentId, documentLines]) => [documentId, summarizeComparison(documentLines)]),
   )
-}
-
-function plural(count, one, many) {
-  return `${count} ${count === 1 ? one : many}`
 }
 
 /** What the card of a Purchase Order PDF shows: a status chip and what was found. */

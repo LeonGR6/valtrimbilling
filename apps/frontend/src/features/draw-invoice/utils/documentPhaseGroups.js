@@ -13,6 +13,7 @@
 import { normalizeCodeKey, suggestJobPhase } from '../../payment-schedules/services/paymentScheduleRecord.js'
 import { summarizeComparison } from '../../purchase-orders/services/purchaseOrderRecord.js'
 import { formatLotRange } from './drawPackages.js'
+import { plural } from '../../../utils/plural.js'
 
 // --- Phases ------------------------------------------------------------------
 
@@ -60,10 +61,6 @@ export function jobPhaseList(job) {
 
 function phaseOfId(phases, id) {
   return phases.find((phase) => phase.ids.includes(Number(id))) ?? null
-}
-
-function plural(count, one, many) {
-  return `${count} ${count === 1 ? one : many}`
 }
 
 // --- Purchase Orders -----------------------------------------------------------

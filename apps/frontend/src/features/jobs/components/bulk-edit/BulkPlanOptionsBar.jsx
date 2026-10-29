@@ -12,10 +12,7 @@ import {
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
 import SaveRoundedIcon from '@mui/icons-material/SaveRounded'
 import { describeBulkSummary } from '../../utils/bulkPlanOptions.js'
-
-function plural(count, singular, pluralForm = `${singular}s`) {
-  return `${count} ${count === 1 ? singular : pluralForm}`
-}
+import { plural } from '../../../../utils/plural.js'
 
 /**
  * Stays at the top while Plans and Options are being edited: what saving would do, what still needs

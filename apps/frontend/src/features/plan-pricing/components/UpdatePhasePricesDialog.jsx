@@ -29,6 +29,7 @@ import {
   summarizePhasePriceRequest,
   toPhasePriceChanges,
 } from '../utils/phasePriceChanges.js'
+import { plural } from '../../../utils/plural.js'
 
 const currencyFormatter = new Intl.NumberFormat('en-US', {
   style: 'currency',
@@ -44,10 +45,6 @@ function formatMoney(value) {
 
 function formatOption(price, notApplicable) {
   return notApplicable ? 'NA' : formatMoney(price)
-}
-
-function plural(count, singular, pluralForm = `${singular}s`) {
-  return `${count} ${count === 1 ? singular : pluralForm}`
 }
 
 function packageNumbers(packages) {

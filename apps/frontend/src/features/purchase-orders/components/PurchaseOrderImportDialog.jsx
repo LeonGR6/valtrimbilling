@@ -20,10 +20,7 @@ import {
 import PlaylistAddRoundedIcon from '@mui/icons-material/PlaylistAddRounded'
 import { formatCurrency, formatOptionPrice } from '../../draw-invoice/utils/drawInvoiceFormatters.js'
 import { describeImportAction, summarizeImport } from '../services/purchaseOrderRecord.js'
-
-function plural(count, one, many) {
-  return `${count} ${count === 1 ? one : many}`
-}
+import { plural } from '../../../utils/plural.js'
 
 /**
  * Asks before the Purchase Order changes the Job: the options its PDF prints that

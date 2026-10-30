@@ -601,3 +601,135 @@ Deno.test('an Options Package whose retention adds up to a negative amount is re
   const error = assertThrows(() => mapPackageToCharges(optionsPackage(rows, '10.50')), QuickbooksInvoiceError)
   assertEquals(error.code, 'INVALID_INPUT')
 })
+
+// A Draw Package that carries price differences of earlier Packages next to its own lines: one
+// "PRICE ADJUSTMENT" row for each, named after its Phase, Lot and Draw.
+const drawWithDifferences = (
+  lines: PackageAdjustmentLineRow[],
+  netAmount: string,
+  format = 'LOT_SCOPE',
+): PackageInvoiceSource => ({
+  package: { ...header, invoice_line_format: format },
+  draws: [
+    draw({ phase_code: 'MODELS', building: null, lot_number: '2', draw_number: 2, base_draw_amount: '2683.85' }),
+    draw({ phase_code: 'MODELS', building: null, lot_number: '4', draw_number: 2, base_draw_amount: '2973.10' }),
+  ],
+  hardwareLines: [],
+  adjustmentLines: lines,
+  invoice: { net_amount: netAmount },
+})
+
+const priceDifference = (patch: Partial<PackageAdjustmentLineRow>): PackageAdjustmentLineRow =>
+  adjustmentLine({ phase_code: 'MODELS', building: null, draw_number: 1, ...patch })
+
+Deno.test('a Draw Package adds one row for each price difference it carries, after its own lines', () => {
+  const payload = invoiceFor(drawWithDifferences([
+    priceDifference({ lot_number: '2', gross: '-75.00' }),
+    priceDifference({ lot_number: '4', gross: '-79.75' }),
+  ], '5502.20'))
+
+  assertEquals(
+    payload.Line.map((row) => [row.Description, row.Amount]),
+    [
+      ['PHASE MODELS LOTS #2, 4\nDRAW 2', 5656.95],
+      ['PRICE ADJUSTMENT PHASE MODELS LOT 2 · DRAW 1', -75],
+      ['PRICE ADJUSTMENT PHASE MODELS LOT 4 · DRAW 1', -79.75],
+    ],
+  )
+})
+
+Deno.test('the rows of price differences are never grouped, even for lots in the same Draw', () => {
+  const payload = invoiceFor(drawWithDifferences([
+    priceDifference({ lot_number: '2', gross: '10.00' }),
+    priceDifference({ lot_number: '4', gross: '10.00' }),
+  ], '5676.95'))
+
+  assertEquals(payload.Line.length, 3)
+})
+
+Deno.test('the retention and WRAP of the differences join the Package totals', () => {
+  const source = drawWithDifferences([
+    priceDifference({ lot_number: '2', gross: '100.00', retention: '10.00', wrap: '5.00' }),
+  ], '5721.95')
+  source.draws[0].retention_amount = '20.00'
+
+  const mapped = mapPackageToCharges(source)
+  assertEquals([mapped.retentionAmount, mapped.wrapAmount], [30, 5])
+
+  const payload = invoiceFor(source)
+  assertEquals(
+    payload.Line.map((row) => [row.Description, row.Amount]),
+    [
+      ['PHASE MODELS LOTS #2, 4\nDRAW 2', 5656.95],
+      ['PRICE ADJUSTMENT PHASE MODELS LOT 2 · DRAW 1', 100],
+      ['RETENTION', -30],
+      ['WRAP', -5],
+    ],
+  )
+})
+
+Deno.test('a difference of Separate Hardware names its event, and one of a Utility row its name', () => {
+  const payload = invoiceFor(drawWithDifferences([
+    priceDifference({
+      lot_number: '2',
+      line_kind: 'HARDWARE_EVENT',
+      draw_number: null,
+      hardware_event_type: 'EXT',
+      gross: '20.00',
+    }),
+    priceDifference({
+      lot_number: 'UTILITY-1',
+      is_utility_building: true,
+      utility_name: 'B1',
+      gross: '30.00',
+    }),
+  ], '5706.95'))
+
+  assertEquals(
+    payload.Line.map((row) => row.Description).slice(1),
+    [
+      'PRICE ADJUSTMENT PHASE MODELS LOT 2 · HARDWARE EXT',
+      'PRICE ADJUSTMENT PHASE MODELS B1 · DRAW 1',
+    ],
+  )
+})
+
+Deno.test('a Builder that bills by building also names the building of each difference', () => {
+  const payload = invoiceFor(drawWithDifferences([
+    priceDifference({ phase_code: '1', building: 'C5', lot_number: '2', gross: '-75.00' }),
+  ], '5581.95', 'BUILDING_SCOPE'))
+
+  assertEquals(
+    payload.Line.map((row) => row.Description).slice(0, 1),
+    ['PRICE ADJUSTMENT PHASE 1 BUILDING C5 LOT 2 · DRAW 1'],
+  )
+})
+
+Deno.test('a Utility row difference without a name is refused', () => {
+  const error = assertThrows(() =>
+    mapPackageToCharges(drawWithDifferences([
+      priceDifference({ lot_number: 'UTILITY-1', is_utility_building: true, utility_name: null, gross: '30.00' }),
+    ], '5686.95'))
+  ) as QuickbooksInvoiceError
+  assertEquals(error.code, 'INVALID_INPUT')
+})
+
+Deno.test('a Draw Package whose differences leave a negative retention is refused', () => {
+  const error = assertThrows(() =>
+    mapPackageToCharges(drawWithDifferences([
+      priceDifference({ lot_number: '2', gross: '-75.00', retention: '-5.00' }),
+    ], '5586.95'))
+  ) as QuickbooksInvoiceError
+  assertEquals(error.code, 'INVALID_INPUT')
+})
+
+Deno.test('a Price Adjustment Package keeps naming the Package each difference comes from', () => {
+  const payload = invoiceFor(adjustmentPackage([
+    adjustmentLine({ lot_number: '12', gross: '100.00' }),
+  ], '100.00'))
+
+  assertEquals(
+    payload.Line.map((row) => row.Description),
+    ['PHASE 1 LOT #12\nPRICE ADJUSTMENT DP-00000035 · DRAW 2'],
+  )
+})

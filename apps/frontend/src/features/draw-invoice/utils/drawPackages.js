@@ -287,6 +287,20 @@ export function formatLotRange(lotNumbers = []) {
   return ranges.join(', ')
 }
 
+/**
+ * What the Package that owns a cell billed for it: the amount the cell had when its invoice was
+ * made, which a later price change of the Plan leaves as it was. Null when the Package does not
+ * keep that line (the cell then shows its price today).
+ */
+export function billedCellAmount(owner, lotId, drawIndex) {
+  const line = owner?.persistedDrawLines?.find((candidate) => (
+    String(candidate.lotId) === String(lotId) && candidate.drawIndex === drawIndex
+  ))
+  if (!line) return null
+
+  return line.isUtilityBuilding ? line.utilityAmount : line.baseDrawAmount
+}
+
 export function buildUsedDrawSelections(packages = [], excludedPackageId = null) {
   const used = new Map()
 

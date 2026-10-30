@@ -604,3 +604,37 @@ test('the retention of Options billed on their own is projected, and not counted
   assert.equal(suggest([source, optionsPackage('CANCELLED')]).projectedRetention, 55)
 })
 
+
+test('the retention of price changes a Draw Package collects is released with the rest', () => {
+  const carrier = {
+    ...drawPackage({
+      id: 3,
+      status: 'AWAITING_PAYMENT',
+      packageDate: '2026-09-17',
+      lines: [line({ lotId: 103, drawId: 3, retentionAmount: 20 })],
+    }),
+    priceDifferences: {
+      lines: [
+        { id: 7, phaseId: 21, retention: 12 },
+        { id: 8, phaseId: 21, retention: -2 },
+        // Another Building: not part of this scope.
+        { id: 9, phaseId: 22, retention: 99 },
+      ],
+    },
+  }
+  const base = suggestionFor([...hardwareReadyPackages(), { ...carrier, priceDifferences: null }])
+  const withChanges = suggestionFor([...hardwareReadyPackages(), carrier])
+
+  assert.equal(base.releasableRetention, 105)
+  assert.equal(withChanges.releasableRetention, 115)
+  // What a release already holds is not counted again, and a cancelled Package gives nothing.
+  assert.equal(
+    suggestionFor([...hardwareReadyPackages(), carrier, releasePackage({ id: 400, adjustmentLineIds: [7] })])
+      .releasableRetention,
+    103,
+  )
+  assert.equal(
+    suggestionFor([...hardwareReadyPackages(), { ...carrier, status: 'CANCELLED' }]).releasableRetention,
+    85,
+  )
+})

@@ -186,13 +186,24 @@ export function planOptionsPackages({ job, schedule, optionSelections = [], note
  * were asked to be billed alone, which is what a Lot that already reached the Options Draw needs
  * for an Option added since.
  *
+ * The price differences chosen to be collected ride on the Draw Package that bills their Phase (a
+ * Package that is one invoice per Phase never takes another Phase's).
+ *
  * @param splitPlan  result of `planPackageSplit`
  * @param input      { jobId, selections, hardwareSelections, optionSelections, optionsBillingDrawIndex,
  *                   notes }, where `optionSelections` are the Options that ride on a Draw
  * @param ownOptions the Options { lotId, optionId } to bill on their own
+ * @param priceDifferences the pending differences { id, phaseId } to collect with the Draw Packages
  * @returns {{ kind: 'DRAW' | 'OPTIONS', group, input }[]}
  */
-export function planCreatedPackages({ job, schedule, splitPlan, input, ownOptions = [] }) {
+export function planCreatedPackages({
+  job,
+  schedule,
+  splitPlan,
+  input,
+  ownOptions = [],
+  priceDifferences = [],
+}) {
   const hasDrawContent = (input.selections?.length ?? 0) > 0
     || (input.hardwareSelections?.length ?? 0) > 0
   const alone = [...ownOptions]
@@ -207,6 +218,22 @@ export function planCreatedPackages({ job, schedule, splitPlan, input, ownOption
     } else {
       drawPackages = [{ kind: 'DRAW', group: splitPlan.groups[0] ?? null, input }]
     }
+  }
+
+  if (priceDifferences.length > 0) {
+    drawPackages = drawPackages.map((drawPackage) => {
+      const billedPhaseIds = new Set([
+        ...(drawPackage.input.selections ?? []),
+        ...(drawPackage.input.hardwareSelections ?? []),
+      ].map(({ phaseId }) => String(phaseId)))
+      const priceDifferenceIds = priceDifferences
+        .filter(({ phaseId }) => billedPhaseIds.has(String(phaseId)))
+        .map(({ id }) => id)
+
+      return priceDifferenceIds.length === 0
+        ? drawPackage
+        : { ...drawPackage, input: { ...drawPackage.input, priceDifferenceIds } }
+    })
   }
 
   return [

@@ -7,13 +7,20 @@
 // and Wrap are separate negative lines so the invoice total equals the Package
 // net amount. A Price Adjustment Package has PRICE_ADJUSTMENT lines instead: the
 // gross price difference of the Package it comes from, which may be negative (a
-// credit that the other lines of the same invoice outweigh).
+// credit that the other lines of the same invoice outweigh). A Draw Package that carries price
+// differences adds one PRICE_CHANGE line for each, named after its Phase, Lot and Draw.
 
 import type { InvoiceCustomField } from './quickbooksCustomFields.ts'
 
 export type InvoiceLineFormat = 'LOT_SCOPE' | 'BUILDING_SCOPE'
 
-export type PackageChargeKind = 'DRAW' | 'HARDWARE' | 'OPTIONS' | 'UTILITY' | 'PRICE_ADJUSTMENT'
+export type PackageChargeKind =
+  | 'DRAW'
+  | 'HARDWARE'
+  | 'OPTIONS'
+  | 'UTILITY'
+  | 'PRICE_ADJUSTMENT'
+  | 'PRICE_CHANGE'
 
 export interface PackageCharge {
   phaseCode: string
@@ -25,7 +32,9 @@ export interface PackageCharge {
   drawNumber?: number
   /** Overrides the default scope text (e.g. a utility or hardware event). */
   scopeLabel?: string
-  /** Gross amount in dollars. Negative only for a credit in a Price Adjustment. */
+  /** A PRICE_CHANGE line names its Lot as "LOT 2" unless this says otherwise (a Utility row). */
+  lotLabel?: string
+  /** Gross amount in dollars. Negative only for a credit of a price difference. */
   amount: number
 }
 
@@ -105,6 +114,7 @@ const KIND_RANK: Record<PackageChargeKind, number> = {
   OPTIONS: 2,
   UTILITY: 3,
   PRICE_ADJUSTMENT: 4,
+  PRICE_CHANGE: 5,
 }
 
 const naturalCompare = (left: string, right: string) =>
@@ -180,6 +190,7 @@ interface LineGroup {
   kind: PackageChargeKind
   drawNumber: number
   scope: string
+  lotLabel: string | null
   lots: string[]
   cents: number
 }
@@ -203,7 +214,7 @@ function groupCharges(charges: PackageCharge[], format: InvoiceLineFormat) {
       byBuilding ? building : '',
       charge.kind,
       scope,
-      charge.kind === 'UTILITY' ? charge.lotNumber.trim() : '',
+      charge.kind === 'UTILITY' || charge.kind === 'PRICE_CHANGE' ? charge.lotNumber.trim() : '',
     ].join('|')
     const group = groups.get(key) ?? {
       phaseCode: charge.phaseCode.trim(),
@@ -211,6 +222,7 @@ function groupCharges(charges: PackageCharge[], format: InvoiceLineFormat) {
       kind: charge.kind,
       drawNumber: charge.drawNumber ?? 0,
       scope,
+      lotLabel: charge.lotLabel?.trim() || null,
       lots: [],
       cents: 0,
     }
@@ -226,12 +238,20 @@ function groupCharges(charges: PackageCharge[], format: InvoiceLineFormat) {
       || Number(left.kind === 'UTILITY') - Number(right.kind === 'UTILITY')
       || naturalCompare(left.building ?? '', right.building ?? '')
       || KIND_RANK[left.kind] - KIND_RANK[right.kind]
+      // The rows of price differences follow the Lots, each with its own line.
+      || (left.kind === 'PRICE_CHANGE' ? naturalCompare(left.lots[0], right.lots[0]) : 0)
       || left.drawNumber - right.drawNumber
       || naturalCompare(left.scope, right.scope),
   )
 }
 
 function describe(group: LineGroup) {
+  // One line for each difference, in a single row: "PRICE ADJUSTMENT PHASE MODELS LOT 2 · DRAW 1".
+  if (group.kind === 'PRICE_CHANGE') {
+    const building = group.building && !group.lotLabel ? `BUILDING ${group.building.toUpperCase()} ` : ''
+    const lot = group.lotLabel ? group.lotLabel.toUpperCase() : `LOT ${group.lots[0].trim()}`
+    return `PRICE ADJUSTMENT ${phaseText(group.phaseCode)} ${building}${lot} · ${group.scope}`
+  }
   if (group.kind === 'UTILITY') {
     return `${phaseText(group.phaseCode)} ${group.lots[0].trim().toUpperCase()}\n${group.scope}`
   }

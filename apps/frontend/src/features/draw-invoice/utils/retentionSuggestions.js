@@ -204,11 +204,12 @@ export function buildRetentionSuggestions({
     const jobPackages = packages.filter((record) => (
       String(record.jobId) === String(job.id) && isDrawPackage(record)
     ))
-    // Price Adjustments retain money too. Their lines are signed: a credit gives back
-    // less, which is what the Retention Release does with them.
+    // Price Adjustments retain money too, and so do the price changes a Draw Package collects.
+    // Their lines are signed: a credit gives back less, which is what the Retention Release does
+    // with them.
     const jobAdjustments = packages.filter((record) => (
       String(record.jobId) === String(job.id)
-      && record.packageType === 'PRICE_ADJUSTMENT'
+      && (record.packageType === 'PRICE_ADJUSTMENT' || record.priceDifferences != null)
       && record.status !== 'CANCELLED'
     ))
 
@@ -244,7 +245,7 @@ export function buildRetentionSuggestions({
         )
       })
       const outstandingAdjustments = jobAdjustments.flatMap((record) => (
-        (record.priceAdjustment?.lines ?? [])
+        (record.priceAdjustment?.lines ?? record.priceDifferences?.lines ?? [])
           .filter((line) => (
             phaseIds.has(String(line.phaseId))
             && Number(line.retention) !== 0

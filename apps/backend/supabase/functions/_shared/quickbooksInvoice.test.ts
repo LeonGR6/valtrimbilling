@@ -353,3 +353,21 @@ Deno.test('a negative charge is allowed and a group that cancels out is dropped'
     ['PHASE 1 LOT #15\nPRICE ADJUSTMENT DP-1 · DRAW 4', 90],
   ])
 })
+
+Deno.test('a price change reads "PRICE ADJUSTMENT PHASE ... LOT ... · DRAW ..." on a row of its own', () => {
+  const payload = buildQuickbooksInvoicePayload({
+    ...base,
+    charges: [
+      { phaseCode: 'MODELS', lotNumber: '2', kind: 'PRICE_CHANGE', scopeLabel: 'DRAW 1', amount: -75 },
+      { phaseCode: 'MODELS', lotNumber: '4', kind: 'PRICE_CHANGE', scopeLabel: 'DRAW 1', amount: -79.75 },
+      { phaseCode: 'MODELS', lotNumber: '2', kind: 'DRAW', drawNumber: 2, amount: 2683.85 },
+    ],
+    expectedNetAmount: 2529.1,
+  })
+
+  assertEquals(payload.Line.map((row) => [row.Description, row.Amount]), [
+    ['PHASE MODELS LOT #2\nDRAW 2', 2683.85],
+    ['PRICE ADJUSTMENT PHASE MODELS LOT 2 · DRAW 1', -75],
+    ['PRICE ADJUSTMENT PHASE MODELS LOT 4 · DRAW 1', -79.75],
+  ])
+})

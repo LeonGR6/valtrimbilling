@@ -386,10 +386,13 @@ export default function DrawPackageDetail() {
     && !billingSetupsLoading
     && jobBillingSetupIsAvailable
   // Why a Draft cannot be edited, moved or deleted, so the button explains itself.
+  const carriesPriceChanges = (focusedPackage?.priceDifferences?.lineCount ?? 0) > 0
   const editLockedReason = canManageDrawInvoicePackages && !canCorrectFocusedPackage
     && !canDeleteFocusedPackage
     ? draftLockReason(focusedPackage)
-    : null
+    : canManageDrawInvoicePackages && !canCorrectFocusedPackage && carriesPriceChanges
+      ? 'This Package collects price changes, so its cells cannot be edited or moved. Cancel it to give them back as pending, then create it again.'
+      : null
 
   return (
     <Box sx={{ minHeight: '100%', bgcolor: 'background.default' }}>
@@ -914,6 +917,14 @@ export default function DrawPackageDetail() {
             )}
             {focusedPackage && isPriceAdjustment && (
               <PackagePriceAdjustmentTable adjustment={focusedPackage.priceAdjustment} />
+            )}
+            {focusedPackage && carriesPriceChanges && (
+              <PackagePriceAdjustmentTable
+                adjustment={focusedPackage.priceDifferences}
+                title="Change Price"
+                description="What this Package also charges for earlier Packages whose Phases changed price: what the same Draws would have billed at the new price, minus what those Packages billed. Each one is a row of the invoice."
+                totalLabel="Total of the price changes"
+              />
             )}
             {focusedPackage?.corrections?.length > 0 && (
               <PackageCorrectionHistory package={focusedPackage} />

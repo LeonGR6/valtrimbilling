@@ -47,8 +47,6 @@ export async function loadPackageSource(admin: Admin, packageId: number): Promis
   )
   if (!header) throw new PackageNotFoundError()
 
-  const isAdjustment = header.package_type === 'PRICE_ADJUSTMENT'
-
   const [draws, hardwareLines, optionLines, adjustmentLines, invoice, builder, job, setup, sync] = await Promise.all([
     admin
       .from('package_draws')
@@ -72,16 +70,15 @@ export async function loadPackageSource(admin: Admin, packageId: number): Promis
       .eq('package_id', packageId)
       .order('lot_id')
       .order('option_id'),
-    // Only a Price Adjustment Package has difference lines.
-    isAdjustment
-      ? admin
-        .from('price_adjustment_lines')
-        .select(
-          'lot_id, source_package_number, line_kind, lot_number, phase_code, building, draw_number, hardware_event_type, gross, retention, wrap',
-        )
-        .eq('package_id', packageId)
-        .order('id')
-      : Promise.resolve({ data: [], error: null }),
+    // The price differences the Package collected: a Price Adjustment Package is made of them, and
+    // a Draw Package can carry some next to its own lines.
+    admin
+      .from('price_adjustment_lines')
+      .select(
+        'lot_id, source_package_number, line_kind, lot_number, phase_code, building, draw_number, hardware_event_type, gross, retention, wrap',
+      )
+      .eq('package_id', packageId)
+      .order('id'),
     admin.from('invoices').select('net_amount').eq('package_id', packageId).maybeSingle(),
     admin.from('builders').select('id, name').eq('id', header.builder_id).single(),
     admin.from('jobs').select('code, community').eq('id', header.job_id).single(),

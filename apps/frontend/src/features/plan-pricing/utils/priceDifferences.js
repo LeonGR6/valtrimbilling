@@ -32,6 +32,7 @@ export function toPriceDifference(row) {
     recalculationId: Number(row.recalculation_id),
     kind: row.line_kind,
     lotId: Number(row.lot_id),
+    phaseId: row.phase_id == null ? null : Number(row.phase_id),
     phaseCode: row.phase_code,
     building: row.building ?? '',
     lotNumber: row.lot_number,
@@ -42,6 +43,8 @@ export function toPriceDifference(row) {
       ? `Lot ${row.lot_number} · Hardware ${row.hardware_event_type}`
       : `Lot ${row.lot_number} · Draw ${row.draw_number}`,
     phaseLabel: row.building ? `${row.phase_code} · ${row.building}` : String(row.phase_code),
+    billedGross: money(row.billed_gross),
+    newGross: money(row.new_gross),
     billedNet: money(row.billed_net),
     newNet: money(row.new_net),
     base: money(row.delta_base),

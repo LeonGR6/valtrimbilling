@@ -2,8 +2,8 @@ import { requireSupabase } from '../../../services/api.js'
 
 const DIFFERENCE_COLUMNS = [
   'id', 'recalculation_id', 'package_id', 'package_number', 'line_kind', 'lot_id',
-  'draw_number', 'hardware_event_type', 'phase_code', 'building', 'lot_number',
-  'plan_code', 'billed_net', 'new_net', 'delta_base', 'delta_hardware',
+  'draw_number', 'hardware_event_type', 'phase_id', 'phase_code', 'building', 'lot_number',
+  'plan_code', 'billed_gross', 'new_gross', 'billed_net', 'new_net', 'delta_base', 'delta_hardware',
   'delta_utility', 'delta_options', 'delta_gross', 'delta_retention', 'delta_wrap',
   'delta_net', 'created_at',
 ].join(', ')

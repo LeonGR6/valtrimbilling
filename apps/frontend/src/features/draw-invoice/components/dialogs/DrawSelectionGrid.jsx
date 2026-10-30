@@ -15,7 +15,11 @@ import {
 } from '@mui/material'
 import LockRoundedIcon from '@mui/icons-material/LockRounded'
 import { formatLag, formatLagShort } from '../../../builder-draw-schedules/utils/drawLag.js'
-import { drawSelectionKey, summarizeSelectedDrawCells } from '../../utils/drawPackages.js'
+import {
+  billedCellAmount,
+  drawSelectionKey,
+  summarizeSelectedDrawCells,
+} from '../../utils/drawPackages.js'
 import { calendarSelectionKey } from '../../utils/calendarDrawSuggestions.js'
 import {
   formatCurrency,
@@ -275,6 +279,10 @@ export default function DrawSelectionGrid({
                         drawIndex,
                       )
                       const owner = usedSelections.get(key)
+                      // What the Package that owns the cell billed, not the price it has today.
+                      const billedAmount = owner
+                        ? billedCellAmount(owner, row.id, drawIndex) ?? row.drawAmounts[drawIndex]
+                        : null
                       const selected = selectionIsSelected(row.id, drawIndex)
                       const calendarKey = calendarSelectionKey(
                         phase?.id,
@@ -293,7 +301,9 @@ export default function DrawSelectionGrid({
                             ? 'Suggested from Calendar'
                             : calendarReady
                               ? 'Calendar work is ready; available for manual selection'
-                              : undefined}
+                              : owner && billedAmount !== row.drawAmounts[drawIndex]
+                                ? `Billed at ${formatCurrency(billedAmount)}; ${formatCurrency(row.drawAmounts[drawIndex])} at today's price`
+                                : undefined}
                           onClick={() => !owner && !disabled && toggleSelection(row.id, drawIndex)}
                           sx={{
                             borderLeft: 1,
@@ -326,7 +336,7 @@ export default function DrawSelectionGrid({
                                 </Typography>
                               </Stack>
                               <Typography variant="caption" component="div">
-                                {formatCurrency(row.drawAmounts[drawIndex])}
+                                {formatCurrency(billedAmount)}
                               </Typography>
                             </Box>
                           ) : (

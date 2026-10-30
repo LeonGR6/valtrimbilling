@@ -547,9 +547,14 @@ export async function listDrawInvoicePackages() {
 
 export async function createDrawInvoicePackage(input) {
   const client = await requireSupabase()
+  const payload = toCreateDrawPackageRpc(input)
+  // A Package that collects price differences is created by its own function; any other keeps
+  // using the creation it always had.
   const { data: packageId, error } = await client.rpc(
-    'create_draw_invoice_package_with_hardware_events',
-    toCreateDrawPackageRpc(input),
+    payload.p_difference_ids
+      ? 'create_draw_package_with_price_differences'
+      : 'create_draw_invoice_package_with_hardware_events',
+    payload,
   )
 
   throwRepositoryError(error)

@@ -30,18 +30,23 @@ function lineLabel(line) {
  * amounts with Retention and WRAP. A negative amount is a credit inside an
  * adjustment that adds up to a positive total.
  */
-export default function PackagePriceAdjustmentTable({ adjustment }) {
+export default function PackagePriceAdjustmentTable({
+  adjustment,
+  title = 'Price differences',
+  description = 'What the same Draws would have billed at the new price of their Phases, minus what the source Packages billed.',
+  totalLabel = 'Total of this adjustment',
+}) {
   const lines = adjustment?.lines ?? []
 
   return (
     <Card variant="outlined" sx={{ overflow: 'hidden' }}>
       <TableCardHeader
-        title="Price differences"
-        description="What the same Draws would have billed at the new price of their Phases, minus what the source Packages billed."
+        title={title}
+        description={description}
         chip={<Chip size="small" variant="outlined" label={`${lines.length} ${lines.length === 1 ? 'line' : 'lines'}`} />}
       />
       <TableContainer>
-        <Table size="small" aria-label="Price differences in this adjustment" sx={packageTableSx}>
+        <Table size="small" aria-label={`${title} in this Package`} sx={packageTableSx}>
           <TableHead>
             <TableRow>
               <TableCell>Source Package</TableCell>
@@ -89,7 +94,7 @@ export default function PackagePriceAdjustmentTable({ adjustment }) {
           <TableFooter>
             <TableRow>
               <TableCell colSpan={5}>
-                <Typography fontWeight={850}>Total of this adjustment</Typography>
+                <Typography fontWeight={850}>{totalLabel}</Typography>
               </TableCell>
               <TableCell align="right" sx={{ fontWeight: 900 }}>
                 {formatSignedMoney(adjustment?.grossAmount ?? 0)}

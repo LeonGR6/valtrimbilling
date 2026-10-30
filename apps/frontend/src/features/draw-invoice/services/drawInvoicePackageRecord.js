@@ -185,6 +185,48 @@ export function resolvePreviousBillingCutoffDate(packageDate, setupVersion) {
   return null
 }
 
+/** One price difference a Package collected, as the Package shows it. */
+function toPriceDifferenceLine(row) {
+  return {
+    id: row.id,
+    sourcePackageId: row.source_package_id,
+    sourcePackageNumber: row.source_package_number,
+    kind: row.line_kind,
+    lotId: row.lot_id,
+    lotNumber: row.lot_number,
+    phaseId: row.phase_id,
+    phaseCode: row.phase_code,
+    building: row.building ?? '',
+    planCode: row.plan_code,
+    drawNumber: row.draw_number == null ? null : Number(row.draw_number),
+    hardwareEventType: row.hardware_event_type ?? null,
+    base: toNumber(row.delta_base),
+    hardware: toNumber(row.delta_hardware),
+    utility: toNumber(row.delta_utility),
+    options: toNumber(row.delta_options),
+    gross: toNumber(row.gross),
+    retention: toNumber(row.retention),
+    wrap: toNumber(row.wrap),
+    net: toNumber(row.net),
+  }
+}
+
+/** The lines a Draw Package carries and what they add up to, in cents so the sums are exact. */
+function toCarriedPriceDifferences(lineRows) {
+  const lines = lineRows.map(toPriceDifferenceLine)
+  const sum = (field) => lines.reduce((total, line) => total + Math.round(line[field] * 100), 0) / 100
+
+  return {
+    lineCount: lines.length,
+    sourcePackageCount: new Set(lines.map((line) => line.sourcePackageId)).size,
+    grossAmount: sum('gross'),
+    retentionAmount: sum('retention'),
+    wrapAmount: sum('wrap'),
+    netAmount: sum('net'),
+    lines,
+  }
+}
+
 export function toDrawInvoicePackage(
   packageRow,
   invoiceRow,
@@ -348,29 +390,13 @@ export function toDrawInvoicePackage(
           retentionAmount: toNumber(priceAdjustmentRow.retention_amount),
           wrapAmount: toNumber(priceAdjustmentRow.wrap_amount),
           netAmount: toNumber(priceAdjustmentRow.net_amount),
-          lines: priceAdjustmentLineRows.map((row) => ({
-            id: row.id,
-            sourcePackageId: row.source_package_id,
-            sourcePackageNumber: row.source_package_number,
-            kind: row.line_kind,
-            lotId: row.lot_id,
-            lotNumber: row.lot_number,
-            phaseId: row.phase_id,
-            phaseCode: row.phase_code,
-            building: row.building ?? '',
-            planCode: row.plan_code,
-            drawNumber: row.draw_number == null ? null : Number(row.draw_number),
-            hardwareEventType: row.hardware_event_type ?? null,
-            base: toNumber(row.delta_base),
-            hardware: toNumber(row.delta_hardware),
-            utility: toNumber(row.delta_utility),
-            options: toNumber(row.delta_options),
-            gross: toNumber(row.gross),
-            retention: toNumber(row.retention),
-            wrap: toNumber(row.wrap),
-            net: toNumber(row.net),
-          })),
+          lines: priceAdjustmentLineRows.map(toPriceDifferenceLine),
         }
+      : null,
+    // The price differences of earlier Packages that this Draw Package collects, one invoice row
+    // each (a Price Adjustment keeps its own in `priceAdjustment`).
+    priceDifferences: priceAdjustmentRow == null && priceAdjustmentLineRows.length > 0
+      ? toCarriedPriceDifferences(priceAdjustmentLineRows)
       : null,
     lotIds: uniqueSortedNumbers([
       ...sortedDrawRows.map((row) => row.lot_id),
@@ -525,9 +551,11 @@ export function toCreateDrawPackageRpc({
   hardwareSelections = [],
   optionSelections,
   optionsBillingDrawIndex,
+  priceDifferenceIds = [],
   notes = null,
 }) {
   const note = String(notes ?? '').trim()
+  const differenceIds = [...new Set(priceDifferenceIds.map(Number))].sort((left, right) => left - right)
   const parsedOptionsBillingDrawIndex = Number(optionsBillingDrawIndex)
   const hasExplicitOptionSelection = Array.isArray(optionSelections)
     && optionsBillingDrawIndex !== null
@@ -602,6 +630,8 @@ export function toCreateDrawPackageRpc({
     ...(eventHardwareSelections.length > 0
       ? { p_hardware_selections: eventHardwareSelections }
       : {}),
+    // The pending price differences of earlier Packages that this one collects, one invoice row each.
+    ...(differenceIds.length > 0 ? { p_difference_ids: differenceIds } : {}),
     // The database keeps it as the first note of the Package, with the author and the time.
     ...(note ? { p_notes: note } : {}),
   }
@@ -755,6 +785,8 @@ export function draftLockReason(record) {
 export function canCorrectDrawPackage(record) {
   return canManageDraftDrawPackage(record)
     && (record.persistedHardwareLines?.length ?? 0) === 0
+    // The amounts it collected were worked out against its cells: cancel it and create it again.
+    && (record.priceDifferences?.lineCount ?? 0) === 0
 }
 
 export function toEditDrawPackageRpc({

@@ -57,7 +57,7 @@ export interface PackageHardwareLineRow {
   wrap_amount: Numeric
 }
 
-/** One price difference collected by a Price Adjustment Package. Amounts are signed. */
+/** One price difference collected by a Package. Amounts are signed. */
 export interface PackageAdjustmentLineRow {
   /** The Package that billed the difference, e.g. DP-00000035. */
   source_package_number: string
@@ -88,7 +88,10 @@ export interface PackageInvoiceSource {
    * these rows and nothing else.
    */
   optionLines?: PackageOptionRow[]
-  /** Only a Price Adjustment Package has them. */
+  /**
+   * The price differences the Package collected: all of a Price Adjustment Package, and the ones a
+   * Draw Package carries next to its own lines.
+   */
   adjustmentLines?: PackageAdjustmentLineRow[]
   invoice: PackageInvoiceRow | null
 }
@@ -112,6 +115,36 @@ function cents(value: Numeric, field: string) {
 
 function eventScope(base: string, eventType: string | null) {
   return eventType ? `${base} - ${eventType}` : undefined
+}
+
+/**
+ * The invoice row of a price difference a Draw Package carries: its Phase, Lot and Draw, with no
+ * other Package named, one for each difference.
+ */
+function priceChangeCharge(row: PackageAdjustmentLineRow): PackageCharge {
+  const scopeLabel = row.line_kind === 'HARDWARE_EVENT'
+    ? `HARDWARE${row.hardware_event_type ? ` ${row.hardware_event_type}` : ''}`
+    : `DRAW ${row.draw_number}`
+  const charge: PackageCharge = {
+    phaseCode: row.phase_code,
+    building: row.building,
+    lotNumber: row.lot_number,
+    kind: 'PRICE_CHANGE',
+    scopeLabel,
+    amount: Number(row.gross),
+  }
+
+  if (row.is_utility_building) {
+    const label = row.utility_name?.trim()
+    if (!label) {
+      throw new QuickbooksInvoiceError(
+        'INVALID_INPUT',
+        `Utility row ${row.lot_number} has no utility name.`,
+      )
+    }
+    return { ...charge, lotNumber: label, lotLabel: label }
+  }
+  return charge
 }
 
 /**
@@ -347,6 +380,19 @@ export function mapPackageToCharges(source: PackageInvoiceSource): PackageInvoic
       scopeLabel: eventScope('HARDWARE', row.hardware_event_type),
       amount: Number(row.hardware_amount),
     })
+  }
+
+  // The price differences the Package carries add their own retention and WRAP to its totals.
+  for (const row of adjustmentLines) {
+    retentionCents += cents(row.retention, 'retention')
+    wrapCents += cents(row.wrap, 'wrap')
+    charges.push(priceChangeCharge(row))
+  }
+  if (adjustmentLines.length > 0 && (retentionCents < 0 || wrapCents < 0)) {
+    throw new QuickbooksInvoiceError(
+      'INVALID_INPUT',
+      'The retention or WRAP of the Package adds up to a negative amount.',
+    )
   }
 
   return {

@@ -51,6 +51,8 @@ import {
 import { NEW_PACKAGE_NOTE_MAX_LENGTH, newPackageNoteHelp } from '../../services/packageNotesRecord.js'
 import { optionsPackageAmounts } from '../../utils/optionsPackage.js'
 import { planCreatedPackages, planPackageSplit } from '../../utils/packageSplit.js'
+import { priceChangeIssue, priceChangeRows, priceChangeTotals } from '../../utils/priceChanges.js'
+import { usePendingPriceDifferences } from '../../hooks/usePendingPriceDifferences.js'
 import PackageSplitNotice from './PackageSplitNotice.jsx'
 import {
   buildDrawWorksheet,
@@ -90,6 +92,7 @@ import { usePurchaseOrderBacking } from '../../../purchase-orders/hooks/usePurch
 import { usePreliminaryNoticeGate } from '../../hooks/usePreliminaryNoticeGate.js'
 import DrawSelectionGrid from './DrawSelectionGrid.jsx'
 import CreatePackageHardwareTable from './CreatePackageHardwareTable.jsx'
+import CreatePackagePriceChangesTable from './CreatePackagePriceChangesTable.jsx'
 import CreatePackageTotals from './CreatePackageTotals.jsx'
 import CreatePackageUtilityTable from './CreatePackageUtilityTable.jsx'
 import SelectableOptionsTable from './SelectableOptionsTable.jsx'
@@ -158,6 +161,8 @@ export default function CreateDrawDialog({
   const [excludedOptionKeys, setExcludedOptionKeys] = useState([])
   // Options no Draw of the Package carries are only billed when they are chosen.
   const [ownOptionKeys, setOwnOptionKeys] = useState([])
+  // The pending price differences of earlier Packages that this one collects. None until chosen.
+  const [priceChangeIds, setPriceChangeIds] = useState([])
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState(null)
   const [notes, setNotes] = useState('')
@@ -168,6 +173,7 @@ export default function CreateDrawDialog({
 
   const job = jobs.find((candidate) => String(candidate.id) === selectedJobId)
   const purchaseOrderBacking = usePurchaseOrderBacking(job?.id ?? null)
+  const pendingPriceDifferences = usePendingPriceDifferences(job?.id ?? null)
   const phases = sortPhasesForPicking(job?.sequenceSheet?.phases ?? [])
   const shownPhaseIdSet = new Set(shownPhaseIds)
   const shownPhases = phases.filter(
@@ -652,12 +658,31 @@ export default function CreateDrawDialog({
     selections: packageSelections,
     hardwareCharges: createInput.hardwareSelections,
   })
+  // The price changes of the Phases this Package bills; the ones checked are collected with it.
+  const priceChangePhaseIds = new Set([
+    ...packageSelections,
+    ...createInput.hardwareSelections,
+  ].map(({ phaseId }) => String(phaseId)))
+  const priceChangeOptions = priceChangeRows(pendingPriceDifferences, priceChangePhaseIds)
+  const priceChangeIdSet = new Set(priceChangeIds)
+  const chosenPriceChanges = priceChangeOptions.filter((row) => priceChangeIdSet.has(row.id))
+  const chosenPriceChangeTotals = priceChangeTotals(chosenPriceChanges)
+  const priceChangeProblem = priceChangeIssue(
+    {
+      gross: summary.grossAmount,
+      retention: summary.retention,
+      wrap: summary.wrapInsurance,
+      net: summary.invoiceAmount,
+    },
+    chosenPriceChangeTotals,
+  )
   const createdPackages = planCreatedPackages({
     job,
     schedule,
     splitPlan,
     input: createInput,
     ownOptions: ownOptionRows.map(({ lotId, optionId }) => ({ lotId, optionId })),
+    priceDifferences: chosenPriceChanges,
   })
   const split = createdPackages.length > 1 ? { packages: createdPackages } : null
   const optionRowOf = new Map(summary.availableOptionRows.map((option) => [
@@ -688,6 +713,17 @@ export default function CreateDrawDialog({
     setExcludedOptionKeys((current) => current.includes(option.id)
       ? current.filter((key) => key !== option.id)
       : [...current, option.id])
+  }
+  const togglePriceChange = (row) => {
+    setPriceChangeIds((current) => current.includes(row.id)
+      ? current.filter((id) => id !== row.id)
+      : [...current, row.id])
+  }
+  const setPriceChangesIncluded = (rows, included) => {
+    const ids = new Set(rows.map((row) => row.id))
+    setPriceChangeIds((current) => included
+      ? [...new Set([...current, ...ids])]
+      : current.filter((id) => !ids.has(id)))
   }
   const toggleOwnOption = (option) => {
     setOwnOptionKeys((current) => current.includes(option.id)
@@ -726,7 +762,8 @@ export default function CreateDrawDialog({
     selectedPhasesAreReady &&
     (hasDrawContent || ownOptionRows.length > 0) &&
     summary.unpricedOptionCount === 0 &&
-    !ownOptionRows.some((option) => option.issue === 'PRICE_MISSING')
+    !ownOptionRows.some((option) => option.issue === 'PRICE_MISSING') &&
+    priceChangeProblem === null
 
   const hasLotRows = phaseModels.some((model) => model.lotRows.length > 0)
   const calendarIsReady = hasScope && hasLotRows && !productionActivitiesLoading
@@ -1245,6 +1282,17 @@ export default function CreateDrawDialog({
             )
           )}
 
+          {hasScope && priceChangeOptions.length > 0 && (
+            <CreatePackagePriceChangesTable
+              rows={priceChangeOptions}
+              selectedIds={priceChangeIds}
+              totals={chosenPriceChangeTotals}
+              issue={priceChangeProblem}
+              onToggle={togglePriceChange}
+              onSetIncluded={setPriceChangesIncluded}
+            />
+          )}
+
           {split && (
             <PackageSplitNotice
               packages={split.packages}
@@ -1359,7 +1407,11 @@ export default function CreateDrawDialog({
                     </Typography>
                   )}
                 </Stack>
-                <CreatePackageTotals summary={summary} schedule={schedule} />
+                <CreatePackageTotals
+                  summary={summary}
+                  schedule={schedule}
+                  priceChanges={chosenPriceChangeTotals}
+                />
               </CardContent>
             </Card>
           )}
@@ -1404,7 +1456,7 @@ export default function CreateDrawDialog({
                     : isMultiPhase ? `${summary.phaseCount} Phases / Buildings · ` : ''}
                   Net amount{' '}
                   <strong>
-                    {formatCurrency(Math.round(((Number(summary.invoiceAmount) || 0) + ownOptionsNet) * 100) / 100)}
+                    {formatCurrency(Math.round(((Number(summary.invoiceAmount) || 0) + ownOptionsNet + chosenPriceChangeTotals.net) * 100) / 100)}
                   </strong>
                 </>
               )

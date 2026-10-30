@@ -68,7 +68,7 @@ export async function loadPackageSource(admin: Admin, packageId: number): Promis
     // The options of the Package, with the Lot each one belongs to.
     admin
       .from('package_options')
-      .select('lot_number, phase_code, building, option_price')
+      .select('lot_number, phase_code, building, option_price, retention_amount, wrap_amount')
       .eq('package_id', packageId)
       .order('lot_id')
       .order('option_id'),

@@ -10,6 +10,11 @@ import {
   jobDrawInvoicePath,
 } from '../../../jobs/utils/jobRoutes.js'
 import { useDrawInvoicePackages } from '../../context/useDrawInvoicePackages.js'
+import {
+  createPackagesInOrder,
+  describeCreatedPackages,
+  packageCreator,
+} from '../../utils/createPackagesInOrder.js'
 import CreateDrawDialog from '../dialogs/CreateDrawDialog.jsx'
 import CreateRetentionReleaseDialog from '../dialogs/CreateRetentionReleaseDialog.jsx'
 import { refreshAllQuickbooksPayments } from '../../services/quickbooksRepository.js'
@@ -47,6 +52,7 @@ export default function DrawInvoiceCatalog() {
     canManageDrawInvoicePackages,
     refreshDrawInvoicePackages,
     createDrawInvoicePackage,
+    createOptionsPackage,
     createRetentionReleasePackage,
     editDrawInvoicePackage,
     transferDrawPackageCells,
@@ -80,30 +86,18 @@ export default function DrawInvoiceCatalog() {
     )
   }
 
-  // A selection that has to be divided (a Phase finishes while others still have something to bill)
-  // becomes several Packages, created one after the other. If one fails after the first, the ones
-  // already made stay: the dialog closes and says so, and reopening it offers what is left.
+  // A selection that has to be divided (the Builder takes a single invoice per Phase or Building, or a
+  // Phase finishes while others still have something to bill) or that bills Options on a Package of
+  // their own becomes several Packages, created one after the other. If one fails after the first, the ones already made stay: the dialog closes and
+  // says so, and reopening it offers what is left.
   const handleCreateMany = async (inputs) => {
-    const created = []
-    const numbers = () => created.map((record) => record.packageNumber).join(', ')
-
-    for (const input of inputs) {
-      try {
-        created.push(await createDrawInvoicePackage(input))
-      } catch (error) {
-        if (created.length === 0) throw error
-
-        setCreateDialogContext(null)
-        setNotice({
-          severity: 'error',
-          message: `${numbers()} ${created.length === 1 ? 'was' : 'were'} created, but the next Package could not be: ${error.message} Open Create Package again to bill what is left.`,
-        })
-        return
-      }
-    }
+    const result = await createPackagesInOrder(
+      packageCreator({ createDraw: createDrawInvoicePackage, createOptions: createOptionsPackage }),
+      inputs,
+    )
 
     setCreateDialogContext(null)
-    setNotice({ severity: 'success', message: `Created ${numbers()}.` })
+    setNotice(describeCreatedPackages(result))
   }
 
   const handleCreateRetention = async (input) => {

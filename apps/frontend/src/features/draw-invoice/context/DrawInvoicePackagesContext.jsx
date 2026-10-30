@@ -4,6 +4,7 @@ import {
   addDrawPackageNote as addDrawPackageNoteRecord,
   cancelDrawInvoicePackage as cancelDrawInvoicePackageRecord,
   createDrawInvoicePackage as createDrawInvoicePackageRecord,
+  createOptionsPackage as createOptionsPackageRecord,
   createPriceAdjustmentPackage as createPriceAdjustmentPackageRecord,
   createRetentionReleasePackage as createRetentionReleasePackageRecord,
   editDrawInvoicePackage as editDrawInvoicePackageRecord,
@@ -78,6 +79,21 @@ export function DrawInvoicePackagesProvider({ children }) {
     setSaving(true)
     try {
       const { created, packages } = await createRetentionReleasePackageRecord(input)
+      setDrawInvoicePackages(packages)
+      setError(null)
+      return created
+    } catch (saveError) {
+      setError(saveError.message)
+      throw saveError
+    } finally {
+      setSaving(false)
+    }
+  }, [])
+
+  const createOptionsPackage = useCallback(async (input) => {
+    setSaving(true)
+    try {
+      const { created, packages } = await createOptionsPackageRecord(input)
       setDrawInvoicePackages(packages)
       setError(null)
       return created
@@ -174,6 +190,7 @@ export function DrawInvoicePackagesProvider({ children }) {
       refreshDrawInvoicePackages,
       createDrawInvoicePackage,
       createRetentionReleasePackage,
+      createOptionsPackage,
       createPriceAdjustmentPackage,
       updateDrawInvoicePackageStatus,
       editDrawInvoicePackage,
@@ -186,6 +203,7 @@ export function DrawInvoicePackagesProvider({ children }) {
       canManageDrawInvoicePackages,
       createDrawInvoicePackage,
       createRetentionReleasePackage,
+      createOptionsPackage,
       createPriceAdjustmentPackage,
       editDrawInvoicePackage,
       drawInvoicePackages,

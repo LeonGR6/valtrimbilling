@@ -163,7 +163,10 @@ export function planFinalReleaseSplit({
  * The Package inputs a divided Package becomes, one per group in the order they are created. Each
  * cell, Hardware charge and Option goes with its Phase. An Option of a Lot is billed with a Draw at
  * or after the Options billing Draw of its own Package; when its group has none, it goes with the
- * first group that does, and when no group has one it is left out and counted in `unplacedOptions`.
+ * first group that does, and when no group has one it is left out and listed in `unplaced` (counted
+ * in `unplacedOptions`). With a single invoice per Phase (or Building) an Option never goes on
+ * another one's invoice, so it is left out as well. What is left out is not lost: it is billed on a
+ * Package of its own (an Options Package), which `planCreatedPackages` adds.
  *
  * @param plan  result of `planFinalReleaseSplit`
  * @param input { jobId, selections, hardwareSelections, optionSelections, optionsBillingDrawIndex }
@@ -195,21 +198,21 @@ export function splitPackageInput({ plan, job, input }) {
   const hasCarrier = (part) => optionsDrawIndex !== null
     && optionsDrawIndex !== undefined
     && part.selections.some(({ drawIndex }) => Number(drawIndex) >= Number(optionsDrawIndex))
-  let unplacedOptions = 0
+  const unplaced = []
   for (const option of input.optionSelections ?? []) {
     const own = groupOfPhase.get(phaseOfLot.get(String(option.lotId)))
-    const target = own !== undefined && hasCarrier(parts[own])
-      ? own
-      : parts.findIndex(hasCarrier)
+    const elsewhere = plan.invoiceScope ? -1 : parts.findIndex(hasCarrier)
+    const target = own !== undefined && hasCarrier(parts[own]) ? own : elsewhere
     if (target === -1) {
-      unplacedOptions += 1
+      unplaced.push(option)
     } else {
       parts[target].optionSelections.push(option)
     }
   }
 
   return {
-    unplacedOptions,
+    unplaced,
+    unplacedOptions: unplaced.length,
     packages: plan.groups.map((group, index) => ({
       group,
       input: {

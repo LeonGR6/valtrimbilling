@@ -34,6 +34,7 @@ import {
   jobPlanPricingPath,
 } from '../../../jobs/utils/jobRoutes.js'
 import { formatPhaseBuilding } from '../../../sequence-sheets/utils/phaseBuildingCodes.js'
+import { plural } from '../../../../utils/plural.js'
 import {
   buildBilledHardwareCharges,
   buildBilledUtilityCharges,
@@ -42,13 +43,14 @@ import {
   drawSelectionKey,
   hardwareChargeKey,
   hardwareSelectionKey,
+  optionBillingIdentity,
   optionSelectionKey,
   summarizeDrawPackage,
   utilityChargeKey,
 } from '../../utils/drawPackages.js'
 import { NEW_PACKAGE_NOTE_MAX_LENGTH, newPackageNoteHelp } from '../../services/packageNotesRecord.js'
-import { splitPackageInput } from '../../utils/finalReleaseSplit.js'
-import { planPackageSplit, singleInvoiceScope as singleInvoiceScopeOf } from '../../utils/packageSplit.js'
+import { optionsPackageAmounts } from '../../utils/optionsPackage.js'
+import { planCreatedPackages, planPackageSplit } from '../../utils/packageSplit.js'
 import PackageSplitNotice from './PackageSplitNotice.jsx'
 import {
   buildDrawWorksheet,
@@ -127,7 +129,8 @@ export default function CreateDrawDialog({
   initialPhaseId,
   onClose,
   onCreate,
-  // Creates several Packages one after the other, for a selection that has to be divided.
+  // Creates several Packages one after the other: a selection that has to be divided, and the
+  // Options that are billed on a Package of their own.
   onCreateMany,
 }) {
   // Nothing is preselected when the dialog opens from "Create Package": the
@@ -153,6 +156,8 @@ export default function CreateDrawDialog({
   const [fullUtilityRowIds, setFullUtilityRowIds] = useState([])
   const [excludedUtilityChargeKeys, setExcludedUtilityChargeKeys] = useState([])
   const [excludedOptionKeys, setExcludedOptionKeys] = useState([])
+  // Options no Draw of the Package carries are only billed when they are chosen.
+  const [ownOptionKeys, setOwnOptionKeys] = useState([])
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState(null)
   const [notes, setNotes] = useState('')
@@ -216,17 +221,7 @@ export default function CreateDrawDialog({
   const suggestedSelections = calendarSuggestion.suggestedSelections.filter(
     ({ phaseId }) => shownPhaseIdSet.has(String(phaseId)),
   )
-  // With a single invoice per Phase (or Building), everything the Calendar has ready for the Phases
-  // on screen goes in the Package and cannot be left out cell by cell: to leave it out, the Phase goes.
-  const invoiceScope = singleInvoiceScopeOf(schedule)
-  const requiredSelections = invoiceScope ? suggestedSelections : []
-  const requiredSelectionKeys = new Set(requiredSelections.map(cellKey))
-  const chosenSelections = selectionOverrides ?? suggestedSelections
-  const chosenSelectionKeys = new Set(chosenSelections.map(cellKey))
-  const selectedSelections = [
-    ...chosenSelections,
-    ...requiredSelections.filter((selection) => !chosenSelectionKeys.has(cellKey(selection))),
-  ]
+  const selectedSelections = selectionOverrides ?? suggestedSelections
   const calendarReadySelectionKeys = new Set(
     calendarSuggestion.eligibleSelections.map(cellKey),
   )
@@ -345,14 +340,9 @@ export default function CreateDrawDialog({
       hardwareChargeKey(lotId, 'BY_EVENT', eventType)
     )),
   )
-  // The same holds for the Separate Hardware the Calendar has ready.
-  const requiredSplitHardwareChargeKeys = invoiceScope
-    ? suggestedSplitHardwareChargeKeys
-    : new Set()
-  const selectedSplitHardwareChargeKeys = new Set([
-    ...(splitHardwareSelectionKeys ?? suggestedSplitHardwareChargeKeys),
-    ...requiredSplitHardwareChargeKeys,
-  ])
+  const selectedSplitHardwareChargeKeys = new Set(
+    splitHardwareSelectionKeys ?? suggestedSplitHardwareChargeKeys,
+  )
   // The Hardware portions whose Lot Draw is selected.
   const drawHardwareChargeKeys = new Set(
     selectedSelections.map((cell) => hardwareChargeKeyOfCell(schedule, cell)),
@@ -451,29 +441,9 @@ export default function CreateDrawDialog({
     resetPackageChoices()
   }
 
-  // With a single invoice per Phase, adding a Building brings the other Buildings of its Phase that
-  // have something ready, so the Phase goes in one Package whole.
-  const withPhaseSiblings = (ids) => {
-    if (invoiceScope !== 'PHASE') return ids
-
-    const names = new Set(phases
-      .filter((candidate) => ids.includes(String(candidate.id)))
-      .map((candidate) => candidate.name))
-    const readyIds = new Set([
-      ...calendarSuggestion.suggestedSelections,
-      ...calendarSuggestion.suggestedHardwareSelections,
-    ].map(({ phaseId }) => String(phaseId)))
-    return [...new Set([
-      ...ids,
-      ...phases
-        .filter((candidate) => names.has(candidate.name) && readyIds.has(String(candidate.id)))
-        .map((candidate) => String(candidate.id)),
-    ])]
-  }
-
   // Adding Phases brings the Calendar's suggested cells for them along.
   const addPhases = (phaseIds) => {
-    const ids = withPhaseSiblings(phaseIds.map(String)).filter((id) => !shownPhaseIdSet.has(id))
+    const ids = phaseIds.map(String).filter((id) => !shownPhaseIdSet.has(id))
     if (ids.length === 0) return
 
     setShownPhaseIds((current) => [...current, ...ids])
@@ -492,28 +462,20 @@ export default function CreateDrawDialog({
     }
   }
 
-  // Removing a Phase also removes the cells and charges it contributed. With a single invoice per
-  // Phase the Phase leaves whole, every Building of it on screen.
+  // Removing a Phase also removes the cells and charges it contributed.
   const removePhase = (candidate) => {
-    const leaving = invoiceScope === 'PHASE'
-      ? phases.filter((other) => other.name === candidate.name && shownPhaseIdSet.has(String(other.id)))
-      : [candidate]
-    const ids = new Set(leaving.map((other) => String(other.id)))
-    const lotIds = new Set(leaving.flatMap(
-      (other) => (other.lots ?? []).map((lot) => String(lot.id)),
-    ))
+    const id = String(candidate.id)
+    const lotIds = new Set((candidate.lots ?? []).map((lot) => String(lot.id)))
     const nextSelections = selectedSelections.filter(
-      (selection) => !ids.has(String(selection.phaseId)),
+      (selection) => String(selection.phaseId) !== id,
     )
 
-    setShownPhaseIds((current) => current.filter((value) => !ids.has(value)))
+    setShownPhaseIds((current) => current.filter((value) => value !== id))
     setSelectedSelections(nextSelections)
     setSplitHardwareSelectionKeys((current) => current === null
       ? null
       : current.filter((key) => !lotIds.has(key.split(':')[0])))
-    setExcludedOptionKeys((current) => current.filter(
-      (key) => ![...ids].some((id) => key.startsWith(`${id}:`)),
-    ))
+    setExcludedOptionKeys((current) => current.filter((key) => !key.startsWith(`${id}:`)))
     pruneHardwareSelections(nextSelections)
   }
 
@@ -521,8 +483,6 @@ export default function CreateDrawDialog({
     if (selectionIsUsed(candidate.id, lotId, drawIndex)) return
 
     const key = `${candidate.id}:${lotId}:${drawIndex}`
-    if (requiredSelectionKeys.has(key)) return
-
     const nextSelections = selectedSelections.some(
       (selection) => cellKey(selection) === key,
     )
@@ -552,8 +512,7 @@ export default function CreateDrawDialog({
       : [...current, key])
   }
 
-  const toggleSelectionGroup = (everyCell) => {
-    const available = everyCell.filter((selection) => !requiredSelectionKeys.has(cellKey(selection)))
+  const toggleSelectionGroup = (available) => {
     const availableKeys = new Set(available.map(cellKey))
     const allSelected = available.length > 0 && available.every(
       (selection) => selectedSelectionKeys.has(cellKey(selection)),
@@ -582,7 +541,6 @@ export default function CreateDrawDialog({
       hardware.hardwareEventType ?? hardware.eventType,
     )
     if (billedHardwareCharges.has(chargeKey)) return
-    if (requiredSplitHardwareChargeKeys.has(chargeKey)) return
 
     if (hardwareBillingMode === 'BY_EVENT') {
       setSplitHardwareSelectionKeys((current) => {
@@ -639,11 +597,20 @@ export default function CreateDrawDialog({
   const summary = summarizeDrawPackage(draftRecord, job, phases, schedule)
   const packagePhaseLabelList = packagePhaseLabels(summary.phaseSummaries)
   const isMultiPhase = isMultiPhasePackage(summary.phaseCount)
-  // Options selected on a Lot whose Draws are already billed. They are billed on a Draw of this
-  // Package at or after the Options billing Draw, so they wait until one is selected.
+  // Options of a Lot whose Draws are already billed. They ride on a Draw of this Package at or after
+  // the Options billing Draw; until one is selected they can be billed on a Package of their own.
   const waitingOptionRows = summary.optionsAreDue || schedule?.optionsBillingDrawIndex == null
     ? []
     : summary.availableOptionRows.filter((option) => !option.isBilled)
+  const ownOptionKeySet = new Set(ownOptionKeys)
+  const ownOptionRows = waitingOptionRows.filter((option) => ownOptionKeySet.has(option.id))
+  const ownOptionsSummary = {
+    ...summary,
+    availableOptionRows: waitingOptionRows,
+    selectedOptionRows: ownOptionRows,
+    optionsTotal: optionsPackageAmounts(ownOptionRows, schedule).gross,
+    billedOptionCount: 0,
+  }
 
   // What the Package is made of, as it goes to the database.
   const createInput = {
@@ -657,10 +624,14 @@ export default function CreateDrawDialog({
         drawIndex,
         eventType: hardwareEventType,
       })),
-    optionSelections: summary.selectedOptionRows.map((option) => ({
-      lotId: option.lotId,
-      optionId: option.optionId,
-    })),
+    // The Options that ride on a Draw of the Package: only when a cell at or after the Options Draw is
+    // selected. The others are billed on a Package of their own, when they are chosen.
+    optionSelections: summary.optionsAreDue
+      ? summary.selectedOptionRows.map((option) => ({
+          lotId: option.lotId,
+          optionId: option.optionId,
+        }))
+      : [],
     optionsBillingDrawIndex: summary.optionsBillingDrawIndex,
     notes,
   }
@@ -681,14 +652,53 @@ export default function CreateDrawDialog({
     selections: packageSelections,
     hardwareCharges: createInput.hardwareSelections,
   })
-  const split = splitPlan.needsSplit
-    ? splitPackageInput({ plan: splitPlan, job, input: createInput })
-    : null
+  const createdPackages = planCreatedPackages({
+    job,
+    schedule,
+    splitPlan,
+    input: createInput,
+    ownOptions: ownOptionRows.map(({ lotId, optionId }) => ({ lotId, optionId })),
+  })
+  const split = createdPackages.length > 1 ? { packages: createdPackages } : null
+  const optionRowOf = new Map(summary.availableOptionRows.map((option) => [
+    optionBillingIdentity(option.lotId, option.optionId),
+    option,
+  ]))
+  // What each Options Package would invoice, Option by Option as the database does.
+  const optionsPackagePreviews = createdPackages
+    .filter(({ kind }) => kind === 'OPTIONS')
+    .map(({ group, input }) => ({
+      label: group.label,
+      count: input.optionSelections.length,
+      amounts: optionsPackageAmounts(
+        input.optionSelections.map(
+          ({ lotId, optionId }) => optionRowOf.get(optionBillingIdentity(lotId, optionId)) ?? {},
+        ),
+        schedule,
+      ),
+    }))
+  // The net of the Options billed on their own that the summary does not already count: the ones that
+  // ride on a Draw are in the summary whichever Package they end up in.
+  const ownOptionsNet = summary.optionsAreDue
+    ? 0
+    : optionsPackageAmounts(ownOptionRows, schedule).net
+  const hasDrawContent = packageSelections.length > 0 || summary.hardwareIsDue
 
   const toggleOption = (option) => {
     setExcludedOptionKeys((current) => current.includes(option.id)
       ? current.filter((key) => key !== option.id)
       : [...current, option.id])
+  }
+  const toggleOwnOption = (option) => {
+    setOwnOptionKeys((current) => current.includes(option.id)
+      ? current.filter((key) => key !== option.id)
+      : [...current, option.id])
+  }
+  const setOwnOptionsIncluded = (options, included) => {
+    const ids = new Set(options.map((option) => option.id))
+    setOwnOptionKeys((current) => included
+      ? [...new Set([...current, ...ids])]
+      : current.filter((key) => !ids.has(key)))
   }
   // The check of the "Include" column: every option of the table at once.
   const setOptionsIncluded = (options, included) => {
@@ -714,8 +724,9 @@ export default function CreateDrawDialog({
     !noticeGate.blocked &&
     hasScope &&
     selectedPhasesAreReady &&
-    (packageSelections.length > 0 || summary.hardwareIsDue) &&
-    summary.unpricedOptionCount === 0
+    (hasDrawContent || ownOptionRows.length > 0) &&
+    summary.unpricedOptionCount === 0 &&
+    !ownOptionRows.some((option) => option.issue === 'PRICE_MISSING')
 
   const hasLotRows = phaseModels.some((model) => model.lotRows.length > 0)
   const calendarIsReady = hasScope && hasLotRows && !productionActivitiesLoading
@@ -731,10 +742,10 @@ export default function CreateDrawDialog({
     setSubmitting(true)
     setSubmitError(null)
     try {
-      if (split) {
-        await onCreateMany(split.packages.map(({ input }) => input))
+      if (createdPackages.length === 1 && createdPackages[0].kind === 'DRAW') {
+        await onCreate(createdPackages[0].input)
       } else {
-        await onCreate(createInput)
+        await onCreateMany(createdPackages.map(({ input }) => input))
       }
     } catch (error) {
       setSubmitError(error.message)
@@ -1119,16 +1130,6 @@ export default function CreateDrawDialog({
                   </Alert>
                 )}
 
-                {invoiceScope && model.lotSelected.some(
-                  (selection) => requiredSelectionKeys.has(cellKey(selection)),
-                ) && (
-                  <Alert severity="info" icon={<LayersRoundedIcon />}>
-                    This Builder takes a single invoice per {invoiceScope === 'PHASE' ? 'Phase' : 'Building'}:
-                    {' '}everything the Calendar has ready for it is in this Package and stays selected.
-                    You can add more cells. To leave it out, remove it from the Package above.
-                  </Alert>
-                )}
-
                 {model.lotRows.length > 0 && (
                   <DrawSelectionGrid
                     job={job}
@@ -1150,10 +1151,6 @@ export default function CreateDrawDialog({
                     )}
                     toggleLotSelections={(lotId) => toggleLotSelections(model, lotId)}
                     toggleDrawSelections={(drawIndex) => toggleDrawSelections(model, drawIndex)}
-                    cellDisabled={(row, drawIndex) => requiredSelectionKeys.has(
-                      cellKey({ phaseId: phase.id, lotId: row.id, drawIndex }),
-                    )}
-                    cellDisabledReason="Required: this Builder takes a single invoice, so everything ready is in the Package"
                   />
                 )}
 
@@ -1180,32 +1177,36 @@ export default function CreateDrawDialog({
               summary={summary}
               billedHardwareCharges={billedHardwareCharges}
               onToggle={toggleHardwareSelection}
-              isRequired={(hardware) => requiredSplitHardwareChargeKeys.has(hardwareChargeKey(
-                hardware.lotId,
-                hardwareBillingMode,
-                hardware.hardwareEventType ?? hardware.eventType,
-              ))}
             />
           )}
 
           {hasScope && waitingOptionRows.length > 0 && (
-            <Alert severity="info">
-              <strong>
-                {waitingOptionRows.length === 1
-                  ? '1 option is waiting to be billed'
-                  : `${waitingOptionRows.length} options are waiting to be billed`}
-              </strong>
-              {': '}
-              {waitingOptionRows.slice(0, 4)
-                .map((option) => `Lot ${option.lotNumber} · ${option.optionCode}`)
-                .join(', ')}
-              {waitingOptionRows.length > 4 ? ` and ${waitingOptionRows.length - 4} more` : ''}.
-              {' '}{waitingOptionRows.length === 1 ? 'It was' : 'They were'} added after{' '}
-              {waitingOptionRows.length === 1 ? 'its Lot' : 'their Lots'} reached Draw #
-              {schedule.optionsBillingDrawIndex + 1}, so {waitingOptionRows.length === 1 ? 'it goes' : 'they go'} on
-              a Lot / Draw cell of this Package from that Draw on. Select one (in any Phase) and{' '}
-              {waitingOptionRows.length === 1 ? 'the option appears' : 'the options appear'} here to include.
-            </Alert>
+            <>
+              <Alert severity="info">
+                <strong>
+                  {waitingOptionRows.length === 1
+                    ? '1 option is waiting to be billed'
+                    : `${waitingOptionRows.length} options are waiting to be billed`}
+                </strong>
+                {'. '}
+                {waitingOptionRows.length === 1 ? 'It was' : 'They were'} added after{' '}
+                {waitingOptionRows.length === 1 ? 'its Lot' : 'their Lots'} reached Draw #
+                {schedule.optionsBillingDrawIndex + 1}. Select a cell from that Draw on{' '}
+                {splitPlan.invoiceScope
+                  ? `of ${waitingOptionRows.length === 1 ? 'its' : 'their'} own ${splitPlan.invoiceScope === 'PHASE' ? 'Phase' : 'Building'}`
+                  : '(in any Phase)'}
+                {' '}to bill {waitingOptionRows.length === 1 ? 'it' : 'them'} with it, or check{' '}
+                {waitingOptionRows.length === 1 ? 'it' : 'the ones to bill now'} below to bill{' '}
+                {waitingOptionRows.length === 1 ? 'it' : 'them'} on a Package of their own.
+              </Alert>
+              <SelectableOptionsTable
+                standalone
+                summary={ownOptionsSummary}
+                onToggle={toggleOwnOption}
+                onSetIncluded={setOwnOptionsIncluded}
+                backing={purchaseOrderBacking}
+              />
+            </>
           )}
 
           {hasScope && summary.optionsAreDue && (
@@ -1246,13 +1247,43 @@ export default function CreateDrawDialog({
 
           {split && (
             <PackageSplitNotice
-              split={split}
+              packages={split.packages}
               invoiceScope={splitPlan.invoiceScope}
               finalScope={splitPlan.finalScope}
+              optionsDrawNumber={summary.optionsBillingDrawIndex == null
+                ? null
+                : summary.optionsBillingDrawIndex + 1}
             />
           )}
 
-          {canCreate && (
+          {canCreate && optionsPackagePreviews.length > 0 && (
+            <Card variant="outlined" sx={{ bgcolor: 'action.hover' }}>
+              <CardContent sx={{ p: '16px !important' }}>
+                <Typography fontWeight={800}>
+                  {optionsPackagePreviews.length === 1 ? 'Options Package preview' : 'Options Packages preview'}
+                </Typography>
+                <Stack spacing={0.75} sx={{ mt: 1 }}>
+                  {optionsPackagePreviews.map(({ label, count, amounts }) => (
+                    <Box key={label}>
+                      <Typography variant="body2" fontWeight={800}>
+                        {label} · {plural(count, 'option')}
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary" component="div">
+                        {[
+                          `Options ${formatCurrency(amounts.gross)}`,
+                          amounts.retention !== 0 ? `Retention ${formatCurrency(-amounts.retention)}` : null,
+                          amounts.wrap !== 0 ? `WRAP ${formatCurrency(-amounts.wrap)}` : null,
+                          `Net ${formatCurrency(amounts.net)}`,
+                        ].filter(Boolean).join(' · ')}
+                      </Typography>
+                    </Box>
+                  ))}
+                </Stack>
+              </CardContent>
+            </Card>
+          )}
+
+          {canCreate && hasDrawContent && (
             <Card variant="outlined" sx={{ bgcolor: 'action.hover' }}>
               <CardContent sx={{ p: '16px !important' }}>
                 <Stack
@@ -1371,7 +1402,10 @@ export default function CreateDrawDialog({
                   {split
                     ? `${split.packages.length} Packages · `
                     : isMultiPhase ? `${summary.phaseCount} Phases / Buildings · ` : ''}
-                  Net amount <strong>{formatCurrency(summary.invoiceAmount)}</strong>
+                  Net amount{' '}
+                  <strong>
+                    {formatCurrency(Math.round(((Number(summary.invoiceAmount) || 0) + ownOptionsNet) * 100) / 100)}
+                  </strong>
                 </>
               )
             : 'Select what to bill to see the net amount.'}
@@ -1385,7 +1419,11 @@ export default function CreateDrawDialog({
           disableElevation
           onClick={handleSubmit}
         >
-          {submitting ? 'Creating…' : split ? `Create ${split.packages.length} packages` : 'Create package'}
+          {submitting
+            ? 'Creating…'
+            : split
+              ? `Create ${split.packages.length} packages`
+              : createdPackages[0]?.kind === 'OPTIONS' ? 'Create options package' : 'Create package'}
         </Button>
         </Stack>
       </DialogActions>

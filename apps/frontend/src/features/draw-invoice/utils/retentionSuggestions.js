@@ -93,6 +93,10 @@ function sourceHardwareLineKey(hardwareLineId) {
   return String(hardwareLineId)
 }
 
+function sourceOptionLineKey(packageId, lotId, optionId) {
+  return `${packageId}:${lotId}:${optionId}`
+}
+
 function isDrawPackage(record) {
   return (record.packageType ?? 'DRAW') === 'DRAW'
     && record.status !== 'CANCELLED'
@@ -153,6 +157,7 @@ export function buildRetentionSuggestions({
   const activeReleaseLines = new Set()
   const activeReleaseHardwareLines = new Set()
   const activeReleaseAdjustmentLines = new Set()
+  const activeReleaseOptionLines = new Set()
   for (const record of packages) {
     if (record.packageType !== 'RETENTION_RELEASE' || record.status === 'CANCELLED') {
       continue
@@ -171,6 +176,13 @@ export function buildRetentionSuggestions({
     }
     for (const line of record.retentionRelease?.sourceAdjustmentLines ?? []) {
       activeReleaseAdjustmentLines.add(String(line.sourceAdjustmentLineId))
+    }
+    for (const line of record.retentionRelease?.sourceOptionLines ?? []) {
+      activeReleaseOptionLines.add(sourceOptionLineKey(
+        line.sourcePackageId,
+        line.sourceLotId,
+        line.sourceOptionId,
+      ))
     }
   }
 
@@ -197,6 +209,13 @@ export function buildRetentionSuggestions({
     const jobAdjustments = packages.filter((record) => (
       String(record.jobId) === String(job.id)
       && record.packageType === 'PRICE_ADJUSTMENT'
+      && record.status !== 'CANCELLED'
+    ))
+
+    // Options billed on a Package of their own retain on their own lines, signed like an adjustment's.
+    const jobOptionsPackages = packages.filter((record) => (
+      String(record.jobId) === String(job.id)
+      && record.packageType === 'OPTIONS'
       && record.status !== 'CANCELLED'
     ))
 
@@ -233,12 +252,24 @@ export function buildRetentionSuggestions({
           ))
           .map((line) => ({ record, amount: Number(line.retention) }))
       ))
+      const outstandingOptions = jobOptionsPackages.flatMap((record) => (
+        (record.persistedOptionLines ?? [])
+          .filter((line) => (
+            phaseIds.has(String(line.phaseId))
+            && Number(line.retentionAmount) !== 0
+            && !activeReleaseOptionLines.has(
+              sourceOptionLineKey(record.id, line.lotId, line.optionId),
+            )
+          ))
+          .map((line) => ({ record, amount: Number(line.retentionAmount) }))
+      ))
       const outstandingAmounts = [
         ...outstanding.map(({ record, line }) => ({
           record,
           amount: Number(line.retentionAmount),
         })),
         ...outstandingAdjustments,
+        ...outstandingOptions,
       ]
       const roundCents = (value) => Math.round(value * 100) / 100
       const projectedRetention = roundCents(outstandingAmounts.reduce(

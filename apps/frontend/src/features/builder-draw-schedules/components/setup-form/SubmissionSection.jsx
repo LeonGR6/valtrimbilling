@@ -170,9 +170,11 @@ export default function SubmissionSection() {
             </Select>
             <FormHelperText>
               {errors.singleInvoiceScope?.message
-                ?? (singleInvoiceScope
-                  ? `Everything available of each ${singleInvoiceScope === 'PHASE' ? 'Phase' : 'Building'} goes in one Package and one invoice. A selection of several makes one Package for each.`
-                  : 'A Package can bill several Phases and Buildings together.')}
+                ?? (singleInvoiceScope === 'PHASE'
+                  ? 'Creating a Package with several Phases makes one Package and one invoice for each Phase. The Buildings of a Phase stay together.'
+                  : singleInvoiceScope === 'BUILDING'
+                    ? 'Creating a Package with several Buildings makes one Package and one invoice for each Building.'
+                    : 'A Package can bill several Phases and Buildings together.')}
             </FormHelperText>
           </FormControl>
         )}

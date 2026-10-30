@@ -146,6 +146,8 @@ export function toPackageReleaseValues(row) {
  *    Conditional Final (`forRetention`) and the Draw Packages never are.
  *  - `price_adjustment`: a Price Adjustment Package; it bills no Lot or Draw, so
  *    there is no Release to fill.
+ *  - A Package of Options only has the Conditional Progress Release, as a Draw does, and is never
+ *    the Final: it finishes no Phase or Building (`optionsOnly`).
  *  - `missing_template`: the Job has no confirmed template of the type needed.
  *    A last Package is never filled with the Progress form instead.
  *  - `ready`: `template` is the one to fill.
@@ -173,6 +175,7 @@ export function chooseRelease(values, templates) {
     template,
     isFinal,
     forRetention,
+    optionsOnly: finalRelease.reason === 'OPTIONS' || values.packageType === 'OPTIONS',
     retentionFinal: finalRelease.retentionFinal,
     // Setups made before the Final option have no scope: every Package keeps
     // using the Progress form until the Builder setup is edited.

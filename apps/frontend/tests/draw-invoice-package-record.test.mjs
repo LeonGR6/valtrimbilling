@@ -6,6 +6,7 @@ import {
   canDeleteVoidedQuickbooksPackage,
   canManageDraftDrawPackage,
   draftLockReason,
+  toCreateOptionsPackageRpc,
   toCreatePriceAdjustmentPackageRpc,
   toCreateRetentionReleasePackageRpc,
   resolveBillingCutoffDate,
@@ -246,6 +247,9 @@ test('maps persisted package, invoice and calculated snapshots to the UI model',
     description: 'Door upgrade',
     price: 125,
     priceNotApplicable: false,
+    // A Draw Package withholds on its Draw lines, not on its Options.
+    retentionAmount: 0,
+    wrapAmount: 0,
     billingDrawIndex: 1,
     issue: null,
   })
@@ -647,6 +651,9 @@ test('maps a deferred Option from its own immutable Lot snapshot', () => {
     description: 'Door upgrade',
     price: 125,
     priceNotApplicable: false,
+    // A Draw Package withholds on its Draw lines, not on its Options.
+    retentionAmount: 0,
+    wrapAmount: 0,
     billingDrawIndex: 2,
     issue: null,
   })
@@ -1030,3 +1037,110 @@ test('a Package carries what QuickBooks reports of its invoice payment', () => {
   }
 })
 
+
+const optionsPackageRow = { ...packageRow, package_number: 'OP-00000007', package_type: 'OPTIONS', phase_id: null }
+const optionRow = (patch) => ({
+  package_id: 7,
+  billing_lot_id: null,
+  draw_id: null,
+  phase_id: 20,
+  phase_code: 'A',
+  building: 'Building 9',
+  plan_code: '2A',
+  option_name: 'Door upgrade',
+  option_not_applicable: false,
+  retention_amount: '0',
+  wrap_amount: '0',
+  ...patch,
+})
+
+test('an Options Package is its own type, with the Options it bills and what each withheld', () => {
+  const record = toDrawInvoicePackage(
+    optionsPackageRow,
+    { id: 101, status: 'DRAFT', paid_amount: '0', gross_amount: '1250', retention_amount: '62.5', wrap_amount: '18.75', net_amount: '1168.75' },
+    [],
+    [
+      optionRow({ lot_id: 41, option_id: 61, option_code: 'OPT-1', option_price: '1000', lot_number: '19', retention_amount: '50', wrap_amount: '15' }),
+      optionRow({ lot_id: 42, option_id: 62, option_code: 'OPT-2', option_price: '250', lot_number: '20', phase_id: 21, phase_code: 'B', retention_amount: '12.5', wrap_amount: '3.75' }),
+    ],
+  )
+
+  assert.equal(record.packageType, 'OPTIONS')
+  assert.deepEqual(record.lotIds, [], 'it has no Lot / Draw cell')
+  assert.deepEqual(record.selections, [])
+  // Its Phases are those of its Options, and the first is where the Package opens.
+  assert.deepEqual(record.phaseIds, [20, 21])
+  assert.equal(record.phaseId, 20)
+  assert.deepEqual(
+    record.persistedOptionLines.map(({ lotId, optionId, billingLotId, drawId, billingDrawIndex, price, retentionAmount, wrapAmount }) => (
+      { lotId, optionId, billingLotId, drawId, billingDrawIndex, price, retentionAmount, wrapAmount }
+    )),
+    [
+      { lotId: 41, optionId: 61, billingLotId: 41, drawId: null, billingDrawIndex: null, price: 1000, retentionAmount: 50, wrapAmount: 15 },
+      { lotId: 42, optionId: 62, billingLotId: 42, drawId: null, billingDrawIndex: null, price: 250, retentionAmount: 12.5, wrapAmount: 3.75 },
+    ],
+  )
+  assert.equal(record.persistedInvoice.netAmount, 1168.75)
+})
+
+test('a Draw Package does not take the Phases of its Options as its own', () => {
+  const record = toDrawInvoicePackage(
+    packageRow,
+    { id: 101, status: 'DRAFT', paid_amount: '0' },
+    [{ phase_id: 21, phase_code: '1', building: 'P1', lot_id: 42, draw_id: 52, lot_number: '20', plan_code: 'B', draw_number: 3 }],
+    [optionRow({ lot_id: 41, billing_lot_id: 42, draw_id: 52, option_id: 61, option_code: 'OPT-1', option_price: '125', lot_number: '19' })],
+  )
+
+  assert.equal(record.packageType, 'DRAW')
+  assert.deepEqual(record.phaseIds, [21])
+})
+
+test('the Options Package RPC lists each Option once, in order, and needs at least one', () => {
+  assert.deepEqual(toCreateOptionsPackageRpc({
+    jobId: '9',
+    optionSelections: [
+      { lotId: '42', optionId: '2' },
+      { lotId: 41, optionId: 5 },
+      { lotId: 42, optionId: 2 },
+      { lotId: 41, optionId: 1 },
+    ],
+    notes: ' late options ',
+  }), {
+    p_job_id: 9,
+    p_options: [
+      { lot_id: 41, option_id: 1 },
+      { lot_id: 41, option_id: 5 },
+      { lot_id: 42, option_id: 2 },
+    ],
+    p_notes: 'late options',
+  })
+  assert.deepEqual(toCreateOptionsPackageRpc({
+    jobId: 9, optionSelections: [{ lotId: 1, optionId: 1 }], packageDate: '2026-11-02',
+  }), {
+    p_job_id: 9,
+    p_options: [{ lot_id: 1, option_id: 1 }],
+    p_package_date: '2026-11-02',
+    p_notes: null,
+  })
+  assert.throws(() => toCreateOptionsPackageRpc({ jobId: 9, optionSelections: [] }), /at least one Option/u)
+})
+
+test('an Options Package Draft can be cancelled, or deleted once its QuickBooks invoice was voided, but not edited', () => {
+  const draft = {
+    packageType: 'OPTIONS',
+    status: 'DRAFT',
+    persistedInvoice: { status: 'DRAFT', paidAmount: 0 },
+    invoiceNumber: null,
+    invoiceDate: null,
+    quickbooksStatus: 'NOT_CREATED',
+    quickbooksReference: null,
+    submissionStatus: 'NOT_SUBMITTED',
+    submittedAt: null,
+    persistedHardwareLines: [],
+  }
+
+  assert.equal(canManageDraftDrawPackage(draft), false, 'a Draw Package edit does not apply to it')
+  assert.equal(canCorrectDrawPackage(draft), false)
+  assert.match(draftLockReason(draft), /Options Package cannot be edited/u)
+  assert.equal(canDeleteVoidedQuickbooksPackage({ ...draft, quickbooksStatus: 'VOIDED' }), true)
+})

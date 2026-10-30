@@ -17,6 +17,7 @@ export const PACKAGE_CATALOG_TABS = [
 const PACKAGE_TYPE_SEARCH_TERMS = {
   RETENTION_RELEASE: 'retention release',
   PRICE_ADJUSTMENT: 'price adjustment',
+  OPTIONS: 'options',
   DRAW: 'draw',
 }
 
@@ -163,8 +164,10 @@ export function packageBillingPeriodDate(record) {
   if (record?.packageType === 'RETENTION_RELEASE') {
     return record.retentionRelease?.availableDate ?? null
   }
-  // An adjustment has no cutoff of its own: it is dated when it was created.
-  if (record?.packageType === 'PRICE_ADJUSTMENT') return record.packageDate ?? null
+  // An adjustment, and Options billed on their own, have no cutoff: they are dated when created.
+  if (record?.packageType === 'PRICE_ADJUSTMENT' || record?.packageType === 'OPTIONS') {
+    return record.packageDate ?? null
+  }
   if (record?.billingCutoffAnyDate) return null
   return record?.billingCutoffDate ?? null
 }

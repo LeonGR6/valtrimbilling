@@ -22,7 +22,15 @@ import { formatPhaseBuilding } from '../../../sequence-sheets/utils/phaseBuildin
 import { formatCurrency, formatOptionPrice } from '../../utils/drawInvoiceFormatters.js'
 import { bulkOptionCheck } from '../../utils/packageOptionLink.js'
 
-export default function SelectableOptionsTable({ summary, onToggle, onSetIncluded, backing = null }) {
+// `standalone` is for Options that no Draw of the Package carries: they are billed on a Package of
+// their own (nothing is charged with a Draw), and none is included until it is chosen.
+export default function SelectableOptionsTable({
+  summary,
+  onToggle,
+  onSetIncluded,
+  backing = null,
+  standalone = false,
+}) {
   const availableFromDrawLabel = `Draw #${summary.optionsBillingDrawIndex + 1}`
   const chargeDrawLabel = summary.optionChargeDrawIndex == null
     ? '—'
@@ -121,8 +129,8 @@ export default function SelectableOptionsTable({ summary, onToggle, onSetInclude
                   <TableCell>
                     {(billed
                       ? option.billingDrawIndex
-                      : summary.optionChargeDrawIndex) == null
-                      ? '—'
+                      : standalone ? null : summary.optionChargeDrawIndex) == null
+                      ? (standalone && !billed ? 'Own Package' : '—')
                       : `Draw #${(billed
                           ? option.billingDrawIndex
                           : summary.optionChargeDrawIndex) + 1}`}
@@ -149,7 +157,7 @@ export default function SelectableOptionsTable({ summary, onToggle, onSetInclude
                       label={billed
                         ? `Billed · ${option.billedPackageNumber ?? 'previous package'}`
                         : (included
-                            ? (priceMissing ? 'Needs price' : 'Included in package')
+                            ? (priceMissing ? 'Needs price' : (standalone ? 'Included' : 'Included in package'))
                             : 'Not included')}
                     />
                   </TableCell>
@@ -192,11 +200,13 @@ export default function SelectableOptionsTable({ summary, onToggle, onSetInclude
           sx={{ justifyContent: 'space-between', alignItems: { sm: 'center' } }}
         >
           <Box>
-            <Typography fontWeight={800}>Options</Typography>
+            <Typography fontWeight={800}>
+              {standalone ? 'Options to bill on their own' : 'Options'}
+            </Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mt: 0.25 }}>
-              Selecting a Lot's cell from {availableFromDrawLabel} on selects its
-              pending options, and clearing it clears them. Any option can still be
-              changed here. Previously billed options cannot be selected again.
+              {standalone
+                ? `These Lots already reached ${availableFromDrawLabel}, so their options were added after their Draws were billed. Check the ones to bill now: they go on an Options Package, with no Lot / Draw cell. Previously billed options cannot be selected again.`
+                : `Selecting a Lot's cell from ${availableFromDrawLabel} on selects its pending options, and clearing it clears them. Any option can still be changed here. Previously billed options cannot be selected again.`}
             </Typography>
           </Box>
           <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
@@ -222,7 +232,7 @@ export default function SelectableOptionsTable({ summary, onToggle, onSetInclude
             <Chip
               size="small"
               variant="outlined"
-              label={`Charge with · ${chargeDrawLabel}`}
+              label={standalone ? 'Billed on · an Options Package' : `Charge with · ${chargeDrawLabel}`}
             />
           </Stack>
         </Stack>
@@ -245,7 +255,7 @@ export default function SelectableOptionsTable({ summary, onToggle, onSetInclude
       ) : (
         <>
           {pendingRows.length > 0 ? renderTable(pendingRows, {
-            label: 'Options to charge in this package',
+            label: standalone ? 'Options to bill on their own' : 'Options to charge in this package',
             total: true,
             selectAll: Boolean(onSetIncluded),
           }) : (

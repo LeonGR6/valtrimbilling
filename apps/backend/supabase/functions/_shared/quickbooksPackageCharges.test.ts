@@ -517,3 +517,87 @@ Deno.test('options of Lots in another Phase get their own OPTIONS line there', (
     ],
   )
 })
+
+// A Package of Options only: OP-… bills Options of Lots that already reached the Options Draw, with no
+// Lot / Draw cell. It withholds retention and WRAP Option by Option.
+const optionsHeader = { package_type: 'OPTIONS', status: 'DRAFT', invoice_line_format: 'LOT_SCOPE' }
+const optionsPackage = (
+  optionLines: PackageOptionRow[],
+  net: string,
+  patch: Partial<PackageInvoiceSource> = {},
+): PackageInvoiceSource => ({
+  package: optionsHeader,
+  draws: [],
+  hardwareLines: [],
+  optionLines,
+  invoice: { net_amount: net },
+  ...patch,
+})
+
+Deno.test('an Options Package is invoiced with an OPTIONS line per Phase naming its Lots, and what it withheld', () => {
+  const rows = [
+    optionRow({ lot_number: '26', phase_code: '1', option_price: 1000, retention_amount: '50.00', wrap_amount: '15.00' }),
+    optionRow({ lot_number: '26', phase_code: '1', option_price: 250, retention_amount: '12.50', wrap_amount: '3.75' }),
+    optionRow({ lot_number: '27', phase_code: '1', option_price: 750, retention_amount: '37.50', wrap_amount: '11.25' }),
+  ]
+
+  const mapped = mapPackageToCharges(optionsPackage(rows, '1870.00'))
+  assertEquals(mapped.retentionAmount, 100)
+  assertEquals(mapped.wrapAmount, 30)
+  assertEquals(mapped.expectedNetAmount, 1870)
+  assertEquals(mapped.charges.map((charge) => [charge.lotNumber, charge.kind, charge.amount]), [
+    ['26', 'OPTIONS', 1250],
+    ['27', 'OPTIONS', 750],
+  ])
+
+  const payload = invoiceFor(optionsPackage(rows, '1870.00'))
+  assertEquals(payload.Line.map((line) => [line.Description, line.Amount]), [
+    ['PHASE 1 LOTS #26-27\nOPTIONS', 2000],
+    ['RETENTION', -100],
+    ['WRAP', -30],
+  ])
+})
+
+Deno.test('an Options Package of Lots in several Phases gets a line in each', () => {
+  const rows = [
+    optionRow({ lot_number: '4', phase_code: '1', option_price: 500 }),
+    optionRow({ lot_number: '9', phase_code: '2', option_price: 300 }),
+  ]
+
+  const payload = invoiceFor(optionsPackage(rows, '800.00'))
+  assertEquals(payload.Line.map((line) => [line.Description, line.Amount]), [
+    ['PHASE 1 LOT #4\nOPTIONS', 500],
+    ['PHASE 2 LOT #9\nOPTIONS', 300],
+  ])
+})
+
+Deno.test('an Options Package that is not what its invoice says is refused', () => {
+  const rows = [optionRow({ lot_number: '26', phase_code: '1', option_price: 1000, retention_amount: '50.00' })]
+
+  const error = assertThrows(() => invoiceFor(optionsPackage(rows, '900.00')), QuickbooksInvoiceError)
+  assertEquals(error.code, 'TOTAL_MISMATCH')
+})
+
+Deno.test('an Options Package needs options and cannot carry Draw or Hardware lines', () => {
+  assertEquals(
+    assertThrows(() => mapPackageToCharges(optionsPackage([], '0')), QuickbooksInvoiceError).code,
+    'INVALID_INPUT',
+  )
+  const rows = [optionRow({ lot_number: '26', phase_code: '1', option_price: 1000 })]
+  assertEquals(
+    assertThrows(
+      () => mapPackageToCharges(optionsPackage(rows, '1000', { draws: [draw({ base_draw_amount: 10 })] })),
+      QuickbooksInvoiceError,
+    ).code,
+    'INVALID_INPUT',
+  )
+})
+
+Deno.test('an Options Package whose retention adds up to a negative amount is refused', () => {
+  const rows = [
+    optionRow({ lot_number: '26', phase_code: '1', option_price: 10, retention_amount: '-0.50' }),
+  ]
+
+  const error = assertThrows(() => mapPackageToCharges(optionsPackage(rows, '10.50')), QuickbooksInvoiceError)
+  assertEquals(error.code, 'INVALID_INPUT')
+})

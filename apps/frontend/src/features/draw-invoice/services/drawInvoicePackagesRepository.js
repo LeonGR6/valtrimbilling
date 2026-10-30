@@ -2,6 +2,7 @@ import { requireSupabase } from '../../../services/api.js'
 import {
   toCancelDrawPackageRpc,
   toCreateDrawPackageRpc,
+  toCreateOptionsPackageRpc,
   toCreatePriceAdjustmentPackageRpc,
   toCreateRetentionReleasePackageRpc,
   toDrawInvoicePackage,
@@ -127,6 +128,9 @@ const OPTION_COLUMNS = [
   'building',
   'lot_number',
   'plan_code',
+  // What an Options Package withholds of each Option (zero on a Draw Package).
+  'retention_amount',
+  'wrap_amount',
 ].join(', ')
 
 const SETUP_COLUMNS = [
@@ -212,6 +216,15 @@ const RETENTION_RELEASE_ADJUSTMENT_LINE_COLUMNS = [
   'package_id',
   'source_adjustment_line_id',
   'source_package_id',
+  'phase_id',
+  'retention_amount',
+].join(', ')
+
+const RETENTION_RELEASE_OPTION_LINE_COLUMNS = [
+  'package_id',
+  'source_package_id',
+  'source_lot_id',
+  'source_option_id',
   'phase_id',
   'retention_amount',
 ].join(', ')
@@ -358,6 +371,7 @@ export async function listDrawInvoicePackages() {
     priceAdjustments,
     priceAdjustmentLines,
     retentionReleaseAdjustmentLines,
+    retentionReleaseOptionLines,
     notes,
   ] = await Promise.all([
     listRowsInBatches(
@@ -452,6 +466,13 @@ export async function listDrawInvoicePackages() {
     listRowsInBatches(
       client,
       packageIds,
+      'retention_release_option_lines',
+      RETENTION_RELEASE_OPTION_LINE_COLUMNS,
+      [['package_id', true], ['source_package_id', true], ['source_lot_id', true], ['source_option_id', true]],
+    ),
+    listRowsInBatches(
+      client,
+      packageIds,
       'draw_package_notes',
       NOTE_COLUMNS,
       [['package_id', true], ['created_at', false], ['id', false]],
@@ -493,6 +514,7 @@ export async function listDrawInvoicePackages() {
   const retentionReleaseAdjustmentLinesByPackage = groupByPackage(
     retentionReleaseAdjustmentLines,
   )
+  const retentionReleaseOptionLinesByPackage = groupByPackage(retentionReleaseOptionLines)
   const notesByPackage = groupByPackage(notes)
 
   return packages.map((packageRow) => ({
@@ -516,6 +538,7 @@ export async function listDrawInvoicePackages() {
       priceAdjustmentsByPackage.get(packageRow.id),
       priceAdjustmentLinesByPackage.get(packageRow.id) ?? [],
       retentionReleaseAdjustmentLinesByPackage.get(packageRow.id) ?? [],
+      retentionReleaseOptionLinesByPackage.get(packageRow.id) ?? [],
     ),
     // The internal notes of the Package, newest first.
     noteEntries: sortPackageNotes((notesByPackage.get(packageRow.id) ?? []).map(toPackageNote)),
@@ -557,6 +580,26 @@ export async function createRetentionReleasePackage(input) {
   )
   if (!created) {
     throw new Error('The created Retention Package could not be reloaded.')
+  }
+
+  return { created, packages }
+}
+
+export async function createOptionsPackage(input) {
+  const client = await requireSupabase()
+  const { data: packageId, error } = await client.rpc(
+    'create_options_package',
+    toCreateOptionsPackageRpc(input),
+  )
+
+  throwRepositoryError(error)
+
+  const packages = await listDrawInvoicePackages()
+  const created = packages.find(
+    (record) => String(record.id) === String(packageId),
+  )
+  if (!created) {
+    throw new Error('The created Options Package could not be reloaded.')
   }
 
   return { created, packages }

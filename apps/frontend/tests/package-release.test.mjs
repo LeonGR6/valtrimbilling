@@ -605,6 +605,27 @@ test('a Price Adjustment Package has no Release to generate', () => {
   assert.equal(choice.template, null)
 })
 
+test('a Package of Options only gets the Conditional Progress Release and is never the Final', () => {
+  const choice = chooseRelease(
+    valuesWith(
+      { applicable: false, reason: 'OPTIONS', scope: null, is_final: false, scopes: [] },
+      'OPTIONS',
+    ),
+    [progressTemplate, finalTemplate],
+  )
+
+  assert.equal(choice.state, 'ready')
+  assert.equal(choice.template, progressTemplate)
+  assert.equal(choice.isFinal, false)
+  assert.equal(choice.optionsOnly, true)
+  assert.deepEqual(choice.closing, [])
+  assert.equal(
+    chooseRelease(valuesWith({ applicable: false, reason: 'OPTIONS', scope: null, is_final: false, scopes: [] }, 'OPTIONS'), [finalTemplate]).state,
+    'missing_template',
+    'a Job with no Progress form cannot fall back to the Final one',
+  )
+})
+
 // --- What is still owed of an unpaid earlier Package ---------------------------
 
 const partlyPaid = () => toPackageReleaseValues({

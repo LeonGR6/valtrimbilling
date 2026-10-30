@@ -362,7 +362,9 @@ export default function GeneratePackageReleaseDialog({
                   ? `${choice.forRetention ? 'Retention Release: last' : 'Last'} Package of ${choice.closing.join(' and ')}.`
                   : choice.retentionFinal
                     ? 'The Retention Release of this Job is the Conditional Final, so this Package uses the Progress form.'
-                    : choice.scopeConfigured
+                    : choice.optionsOnly
+                      ? 'This Package bills Options only, so it finishes no Phase, Building or Project and uses the Progress form.'
+                      : choice.scopeConfigured
                       ? 'This Package does not finish its Phase, Building or Project.'
                       : "The Builder's setup does not say where the Conditional Final Release applies, so the Progress form is used."}
               </Typography>

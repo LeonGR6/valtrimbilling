@@ -35,6 +35,7 @@ import { canCorrectDrawPackage } from '../../services/drawInvoicePackageRecord.j
 import { describeJobDocumentProgress } from '../../services/jobDocumentRecord.js'
 import {
   describeRetentionSource,
+  formatLotRange,
   formatPackageScopeEventTypes,
   summarizeRetentionSource,
 } from '../../utils/drawPackages.js'
@@ -351,6 +352,10 @@ export default function PackageTable({
                     <Typography variant="body2" color="text.secondary">
                       Job #{job.code} · {record.packageType === 'PRICE_ADJUSTMENT'
                         ? 'Price adjustment'
+                        : record.packageType === 'OPTIONS'
+                        ? (record.phaseIds?.length ?? 0) === 1
+                          ? formatPhaseBuilding(phase.name, phase.building, { separator: ' / ' })
+                          : `${record.phaseIds?.length ?? 0} Phases`
                         : record.packageType === 'RETENTION_RELEASE'
                         ? record.retentionRelease?.scopeType === 'JOB'
                           ? 'Per Job'
@@ -384,6 +389,15 @@ export default function PackageTable({
                         color="info"
                         variant="outlined"
                         label="Price Adjustment"
+                        sx={{ mt: 0.75, fontWeight: 750 }}
+                      />
+                    )}
+                    {record.packageType === 'OPTIONS' && (
+                      <Chip
+                        size="small"
+                        color="secondary"
+                        variant="outlined"
+                        label="Options only"
                         sx={{ mt: 0.75, fontWeight: 750 }}
                       />
                     )}
@@ -425,7 +439,7 @@ export default function PackageTable({
                   <TableCell>
                     {record.packageType === 'RETENTION_RELEASE'
                       ? `Available ${formatLongDate(record.retentionRelease?.availableDate)}`
-                      : record.packageType === 'PRICE_ADJUSTMENT'
+                      : record.packageType === 'PRICE_ADJUSTMENT' || record.packageType === 'OPTIONS'
                         ? `Dated ${formatLongDate(record.packageDate)}`
                         : formatBillingPeriod(record)}
                   </TableCell>
@@ -433,6 +447,8 @@ export default function PackageTable({
                     <Typography fontWeight={750}>
                       {record.packageType === 'PRICE_ADJUSTMENT'
                         ? `${record.priceAdjustment?.lineCount ?? 0} ${record.priceAdjustment?.lineCount === 1 ? 'line' : 'lines'}`
+                        : record.packageType === 'OPTIONS'
+                        ? `${record.persistedOptionLines.length} ${record.persistedOptionLines.length === 1 ? 'option' : 'options'}`
                         : record.packageType === 'RETENTION_RELEASE'
                         ? describeRetentionSource(summarizeRetentionSource(record.retentionRelease, allRecords))
                         : summary.lotCount > 0 ? summary.lotRange : 'No Lots'}
@@ -445,6 +461,8 @@ export default function PackageTable({
                     <Typography variant="caption" color="text.secondary">
                       {record.packageType === 'PRICE_ADJUSTMENT'
                         ? `From ${record.priceAdjustment?.sourcePackageCount ?? 0} ${record.priceAdjustment?.sourcePackageCount === 1 ? 'Package' : 'Packages'}`
+                        : record.packageType === 'OPTIONS'
+                        ? `Lots ${formatLotRange(record.persistedOptionLines.map((option) => option.lotNumber))}`
                         : record.packageType === 'RETENTION_RELEASE'
                         ? `Cutoff ${formatLongDate(record.retentionRelease?.sourceCutoffDate)}`
                         : formatPackageScopeEventTypes(summary.scopeEventTypes)}

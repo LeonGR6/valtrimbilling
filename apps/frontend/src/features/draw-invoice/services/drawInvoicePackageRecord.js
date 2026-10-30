@@ -15,6 +15,9 @@ export const DRAW_PACKAGE_STATUS_LABELS = {
   CANCELLED: 'Cancelled',
 }
 
+// Every Package is a Draw Package unless it is one of these.
+const PACKAGE_TYPES_OTHER_THAN_DRAW = ['RETENTION_RELEASE', 'PRICE_ADJUSTMENT', 'OPTIONS']
+
 function toNumber(value) {
   const number = Number(value)
   return Number.isFinite(number) ? number : 0
@@ -196,6 +199,7 @@ export function toDrawInvoicePackage(
   priceAdjustmentRow = null,
   priceAdjustmentLineRows = [],
   retentionReleaseAdjustmentLineRows = [],
+  retentionReleaseOptionLineRows = [],
 ) {
   const sortedDrawRows = [...drawRows].sort(
     (left, right) => String(left.phase_code ?? '').localeCompare(
@@ -227,9 +231,12 @@ export function toDrawInvoicePackage(
         String(right.hardware_event_type ?? ''),
       ),
   )
+  const isOptionsPackage = packageRow.package_type === 'OPTIONS'
   const phaseIds = uniqueSortedNumbers([
     ...sortedDrawRows.map((row) => row.phase_id),
     ...sortedHardwareRows.map((row) => row.phase_id),
+    // An Options Package has no Lot / Draw cells: its Phases are those of the Options it bills.
+    ...(isOptionsPackage ? optionRows.map((row) => row.phase_id) : []),
   ])
   const primaryPhaseId = packageRow.phase_id ?? phaseIds[0] ?? null
   const submissionMethod = submissionMethodOptions.some(
@@ -244,7 +251,7 @@ export function toDrawInvoicePackage(
   return {
     id: packageRow.id,
     packageNumber: packageRow.package_number,
-    packageType: ['RETENTION_RELEASE', 'PRICE_ADJUSTMENT'].includes(packageRow.package_type)
+    packageType: PACKAGE_TYPES_OTHER_THAN_DRAW.includes(packageRow.package_type)
       ? packageRow.package_type
       : 'DRAW',
     builderId: packageRow.builder_id,
@@ -319,6 +326,14 @@ export function toDrawInvoicePackage(
             sourcePackageId: row.source_package_id,
             sourceLotId: row.source_lot_id,
             hardwareEventType: row.hardware_event_type,
+            phaseId: row.phase_id,
+            retentionAmount: toNumber(row.retention_amount),
+          })),
+          // What Options billed on their own (an Options Package) retained.
+          sourceOptionLines: retentionReleaseOptionLineRows.map((row) => ({
+            sourcePackageId: row.source_package_id,
+            sourceLotId: row.source_lot_id,
+            sourceOptionId: row.source_option_id,
             phaseId: row.phase_id,
             retentionAmount: toNumber(row.retention_amount),
           })),
@@ -490,6 +505,10 @@ export function toDrawInvoicePackage(
         optionCode: row.option_code,
         description: row.option_name,
         price: toNumber(row.option_price),
+        // What an Options Package withholds of the Option; a Draw Package withholds it on the
+        // Draw line that carries the Option instead.
+        retentionAmount: toNumber(row.retention_amount),
+        wrapAmount: toNumber(row.wrap_amount),
         priceNotApplicable: row.option_not_applicable === true,
         billingDrawIndex: billingDrawRow == null
           ? null
@@ -611,6 +630,35 @@ export function toCreateRetentionReleasePackageRpc({
   }
 }
 
+/**
+ * Bills Options on a Package of their own, with no Lot / Draw cell: `optionSelections` are the
+ * { lotId, optionId } pairs, which the database checks are unbilled and belong to a Lot that already
+ * reached the Options billing Draw.
+ */
+export function toCreateOptionsPackageRpc({
+  jobId,
+  optionSelections,
+  packageDate = null,
+  notes = null,
+}) {
+  const options = [...new Map((optionSelections ?? []).map(({ lotId, optionId }) => {
+    const normalized = { lot_id: Number(lotId), option_id: Number(optionId) }
+    return [`${normalized.lot_id}:${normalized.option_id}`, normalized]
+  })).values()].sort(
+    (left, right) => left.lot_id - right.lot_id || left.option_id - right.option_id,
+  )
+  if (options.length === 0) {
+    throw new Error('Select at least one Option to bill.')
+  }
+
+  return {
+    p_job_id: Number(jobId),
+    p_options: options,
+    ...(packageDate ? { p_package_date: packageDate } : {}),
+    p_notes: String(notes ?? '').trim() || null,
+  }
+}
+
 export function toCreatePriceAdjustmentPackageRpc({
   jobId,
   sourcePackageIds,
@@ -658,7 +706,7 @@ export function canManageDraftDrawPackage(record) {
  */
 export function canDeleteVoidedQuickbooksPackage(record) {
   return record != null
-    && ['DRAW', 'PRICE_ADJUSTMENT'].includes(record.packageType)
+    && ['DRAW', 'PRICE_ADJUSTMENT', 'OPTIONS'].includes(record.packageType)
     && record.status === 'DRAFT'
     && record.quickbooksStatus === 'VOIDED'
     && record.persistedInvoice?.status === 'DRAFT'
@@ -682,6 +730,9 @@ export function draftLockReason(record) {
   }
   if (record.packageType === 'PRICE_ADJUSTMENT') {
     return 'A Price Adjustment cannot be edited. Cancel it from the Packages list to give its differences back.'
+  }
+  if (record.packageType === 'OPTIONS') {
+    return 'An Options Package cannot be edited. Cancel it from the Packages list to bill its Options again.'
   }
   if (record.submissionStatus !== 'NOT_SUBMITTED' || record.submittedAt) {
     return 'This Package was already sent to the Builder, so its cells are locked.'

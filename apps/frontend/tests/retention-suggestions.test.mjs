@@ -553,3 +553,54 @@ test('adjustments never satisfy the Hardware gate', () => {
   assert.equal(suggestion.remainingHardwareLots, 1)
   assert.equal(suggestion.status, 'WAITING_FOR_HARDWARE')
 })
+
+test('the retention of Options billed on their own is projected, and not counted again once released', () => {
+  const optionsPackage = (status) => ({
+    id: 30,
+    packageType: 'OPTIONS',
+    jobId: 11,
+    status,
+    packageDate: '2026-09-20',
+    persistedOptionLines: [
+      { phaseId: 21, lotId: 101, optionId: 7, retentionAmount: 12.5 },
+      { phaseId: 22, lotId: 201, optionId: 8, retentionAmount: 9 },
+      { phaseId: 21, lotId: 102, optionId: 9, retentionAmount: 0 },
+    ],
+  })
+  const source = drawPackage({
+    id: 1,
+    status: 'AWAITING_PAYMENT',
+    packageDate: '2026-09-15',
+    lines: [line({ lotId: 101, drawId: 1, retentionAmount: 55 })],
+  })
+  const suggest = (packages) => buildRetentionSuggestions({
+    jobs: [job()],
+    jobBillingSetupVersions: [schedule()],
+    packages,
+    asOfDate: '2026-10-20',
+  }).find(({ phaseId }) => phaseId === 21)
+
+  const projected = suggest([source, optionsPackage('AWAITING_PAYMENT')])
+  assert.equal(projected.projectedRetention, 67.5, 'Building 1 only counts the Options of its own Lots')
+  assert.equal(projected.releasableRetention, 67.5)
+
+  const drafted = suggest([source, optionsPackage('DRAFT')])
+  assert.equal(drafted.releasableRetention, 55)
+  assert.equal(drafted.draftRetention, 12.5)
+
+  const released = suggest([
+    source,
+    optionsPackage('AWAITING_PAYMENT'),
+    {
+      id: 90,
+      packageType: 'RETENTION_RELEASE',
+      jobId: 11,
+      status: 'DRAFT',
+      retentionRelease: { sourceOptionLines: [{ sourcePackageId: 30, sourceLotId: 101, sourceOptionId: 7 }] },
+    },
+  ])
+  assert.equal(released.projectedRetention, 55, 'what a Retention Release already takes is not counted again')
+
+  assert.equal(suggest([source, optionsPackage('CANCELLED')]).projectedRetention, 55)
+})
+

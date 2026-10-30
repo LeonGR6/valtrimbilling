@@ -23,8 +23,6 @@ export default function CreatePackageHardwareTable({
   summary,
   billedHardwareCharges,
   onToggle,
-  // A charge that has to stay in the Package (a single invoice takes everything ready).
-  isRequired = () => false,
 }) {
   const hardwareRows = summary.hardwareRows ?? []
 
@@ -69,7 +67,7 @@ export default function CreatePackageHardwareTable({
                   <Checkbox
                     size="small"
                     checked={hardware.chargeHardware}
-                    disabled={Boolean(billed) || isRequired(hardware)}
+                    disabled={Boolean(billed)}
                     onChange={() => onToggle(hardware)}
                     inputProps={{
                       'aria-label': `Charge Hardware for Lot ${hardware.lotNumber} from ${hardware.hardwareEventType ?? `Draw ${hardware.drawIndex + 1}`}`,

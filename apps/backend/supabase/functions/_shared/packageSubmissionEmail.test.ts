@@ -97,3 +97,16 @@ Deno.test("a Price Adjustment without an invoice number is named as one, and by 
   assertEquals(defaultSubmissionSubject({ ...context, packageType: "DRAW" }).startsWith("Draw Package"), true);
   assertEquals(defaultSubmissionSubject(context).startsWith("Draw Package"), true);
 });
+
+Deno.test("a Package of Options only is named as one until it has an invoice number", () => {
+  const options = { ...context, packageNumber: "OP-00000012", packageType: "OPTIONS" };
+
+  assertEquals(
+    defaultSubmissionSubject(options),
+    "Options Package OP-00000012 · Job #1319 · El Monte",
+  );
+  assertEquals(
+    defaultSubmissionSubject({ ...options, invoiceNumber: "15043" }),
+    "Invoice 15043 · Job #1319 · El Monte",
+  );
+});

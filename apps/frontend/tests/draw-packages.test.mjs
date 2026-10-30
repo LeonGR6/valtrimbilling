@@ -1479,3 +1479,68 @@ test('an Option added to a Lot of a completed Phase is billed on a cell of anoth
   // A cell before the Options billing Draw cannot carry it.
   assert.equal(summaryFor([{ phaseId: 4, lotId: 23, drawIndex: 1 }]).optionsAreDue, false)
 })
+
+test('an Options Package charges its Options and nothing else', () => {
+  const optionLine = (lotId, optionId, price) => ({
+    lotId, optionId, billingLotId: lotId, drawId: null, price, billingDrawIndex: null, issue: null,
+  })
+  const record = {
+    id: 30,
+    packageNumber: 'OP-00000030',
+    packageType: 'OPTIONS',
+    jobId: 1,
+    selections: [],
+    persistedInvoice: { grossAmount: 1250, retentionAmount: 62.5, wrapAmount: 18.75, netAmount: 1168.75 },
+    persistedDrawLines: [],
+    persistedOptionLines: [optionLine(41, 61, 1000), optionLine(42, 62, 250)],
+  }
+
+  const summary = summarizeDrawPackage(record, testJobs[0], [], null)
+  assert.equal(summary.optionsAreDue, true, 'it bills Options whatever the schedule says')
+  assert.equal(summary.optionsTotal, 1250)
+  assert.equal(summary.lotCount, 0)
+  assert.equal(summary.currentDraw, 1250)
+  assert.equal(summary.retention, 62.5)
+  assert.equal(summary.wrapInsurance, 18.75)
+  assert.equal(summary.invoiceAmount, 1168.75)
+  assert.deepEqual(summary.selectedOptionRows.map(({ optionId }) => optionId), [61, 62])
+  assert.equal(summary.optionChargeDrawIndex, null)
+})
+
+test('the Options an Options Package billed count as billed, so they are not offered again', () => {
+  const context = buildOptionChargeContext([
+    {
+      id: 30,
+      jobId: 1,
+      status: 'DRAFT',
+      selections: [],
+      persistedOptionLines: [{ lotId: 41, optionId: 61, price: 1000, billingDrawIndex: null }],
+    },
+    {
+      id: 31,
+      jobId: 1,
+      status: 'CANCELLED',
+      selections: [],
+      persistedOptionLines: [{ lotId: 41, optionId: 62, price: 10, billingDrawIndex: null }],
+    },
+  ], 1, 1)
+
+  assert.deepEqual(context.billedOptionEntries.map(({ identity }) => identity), ['41:61'])
+})
+
+test('a Retention Release counts the Options billed on a Package of their own', () => {
+  const release = {
+    sourceLines: [{ sourcePackageId: 10, sourceLotId: 101, sourceDrawId: 501 }],
+    sourceHardwareLines: [],
+    sourceOptionLines: [
+      { sourcePackageId: 30, sourceLotId: 101, sourceOptionId: 7 },
+      { sourcePackageId: 30, sourceLotId: 102, sourceOptionId: 8 },
+    ],
+  }
+
+  assert.deepEqual(
+    summarizeRetentionSource(release, [{ id: 10, persistedOptionLines: [{ lotId: 101, optionId: 1, billingLotId: 101, drawId: 501 }] }]),
+    { lotCount: 1, optionCount: 3 },
+  )
+})
+

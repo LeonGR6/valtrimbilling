@@ -220,6 +220,8 @@ test('Packages sort by Billing Period and keep undated ones last in both directi
   assert.deepEqual(ids('asc'), [3, 1, 4, 5, 2])
   assert.equal(packageBillingPeriodDate(periods[1].record), null)
   assert.equal(packageBillingPeriodDate(periods[3].record), '2026-11-05')
+  // Options billed on their own have no cutoff: they are dated when they were created.
+  assert.equal(packageBillingPeriodDate({ packageType: 'OPTIONS', packageDate: '2026-11-09', billingCutoffDate: '2026-11-20' }), '2026-11-09')
   assert.deepEqual(nextPackageSort(null, 'period'), { key: 'period', direction: 'desc' })
   assert.equal(isValidPackageSort({ key: 'period', direction: 'asc' }), true)
 })
@@ -270,3 +272,27 @@ test('an adjustment whose QuickBooks invoice was voided can still be cancelled',
   assert.equal(canDeleteDraftPackage({ ...draftAdjustment, quickbooksStatus: 'CREATED' }), false)
   assert.equal(canDeleteDraftPackage({ ...draftAdjustment, quickbooksReference: '15042' }), false)
 })
+
+test('a Package of Options only is found by searching for options, and can be cancelled while it is a Draft', () => {
+  const options = {
+    record: { id: 9, builderId: 11, status: 'DRAFT', packageNumber: 'OP-9', packageType: 'OPTIONS' },
+    job: { code: '1306', builder: 'Acme', community: 'Deerfield' },
+    phase: { name: '1', building: '1' },
+    summary: {},
+  }
+
+  assert.deepEqual(
+    filterPackageCatalogContexts([...contexts, options], { search: 'options' }).map(({ record }) => record.id),
+    [9],
+  )
+  assert.equal(canDeleteDraftPackage({
+    packageType: 'OPTIONS',
+    status: 'DRAFT',
+    persistedInvoice: { status: 'DRAFT', paidAmount: 0 },
+    invoiceNumber: null,
+    invoiceDate: null,
+    quickbooksStatus: 'NOT_CREATED',
+    submissionStatus: 'NOT_SUBMITTED',
+  }), true)
+})
+

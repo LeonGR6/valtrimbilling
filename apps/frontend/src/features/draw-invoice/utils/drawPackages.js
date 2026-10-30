@@ -51,7 +51,8 @@ const EVENT_TYPE_ORDER_INDEX = { EXT: 100, DM: 101, HW: 102 }
 
 /**
  * What a Retention Release gives back, in what a person bills: the Lots whose retention it
- * releases (draw and Hardware lines) and the Options that were billed in those same lines.
+ * releases (draw and Hardware lines) and the Options that were billed in those same lines or on
+ * a Package of their own.
  * `packages` are the Job's Packages, where the Options of the source Packages are read.
  */
 export function summarizeRetentionSource(retentionRelease, packages = []) {
@@ -66,6 +67,10 @@ export function summarizeRetentionSource(retentionRelease, packages = []) {
   )))
   const sourcePackageIds = new Set(drawLines.map((line) => String(line.sourcePackageId)))
   const options = new Set()
+  // Options billed on a Package of their own retained on their own line, not on a Draw line.
+  for (const line of retentionRelease?.sourceOptionLines ?? []) {
+    options.add(`${line.sourceLotId}:${line.sourceOptionId}`)
+  }
 
   for (const record of packages) {
     if (!sourcePackageIds.has(String(record.id))) continue
@@ -716,8 +721,9 @@ export function summarizeDrawPackage(record, job, phaseOrPhases, schedule) {
   const selectedDraftOptionRows = availableDraftOptionRows.filter(
     (option) => !option.isBilled && !excludedOptionKeys.has(option.id),
   )
-  const optionsAreDue = optionsBillingDrawIndex !== null
-    && optionBillingLotKeys.size > 0
+  // An Options Package bills Options and nothing else, so they are always what it charges.
+  const optionsAreDue = record?.packageType === 'OPTIONS'
+    || (optionsBillingDrawIndex !== null && optionBillingLotKeys.size > 0)
 
   if (record?.persistedInvoice) {
     const persistedLines = record.persistedDrawLines ?? []

@@ -1,7 +1,7 @@
-// Maps the database rows of a Draw Package, or of a Price Adjustment Package, to
-// the normalised charges consumed by `buildQuickbooksInvoicePayload`.
+// Maps the database rows of a Draw Package, of a Price Adjustment Package or of a Package of Options
+// only to the normalised charges consumed by `buildQuickbooksInvoicePayload`.
 //
-// Pure: callers fetch the rows (package_draws, package_hardware_lines,
+// Pure: callers fetch the rows (package_draws, package_hardware_lines, package_options,
 // price_adjustment_lines, invoice) and pass them in. PostgREST returns `numeric` columns as numbers, but SQL
 // clients may return strings, so amounts are accepted as either.
 
@@ -42,6 +42,9 @@ export interface PackageOptionRow {
   phase_code: string
   building: string | null
   option_price: Numeric
+  /** What an Options Package withholds of the Option; a Draw Package keeps it on its Draw lines. */
+  retention_amount?: Numeric
+  wrap_amount?: Numeric
 }
 
 export interface PackageHardwareLineRow {
@@ -81,7 +84,8 @@ export interface PackageInvoiceSource {
   hardwareLines: PackageHardwareLineRow[]
   /**
    * The options the Package bills, one row each. Their amount is charged on a single draw line, but
-   * they belong to several Lots, and the invoice names those Lots.
+   * they belong to several Lots, and the invoice names those Lots. A Package of Options only has
+   * these rows and nothing else.
    */
   optionLines?: PackageOptionRow[]
   /** Only a Price Adjustment Package has them. */
@@ -119,16 +123,7 @@ function eventScope(base: string, eventType: string | null) {
  * names the Lots of the options, so it takes them from the option rows. That is only done when the
  * rows add up to exactly what the lines bill, so the invoice total can never change because of it.
  */
-function optionCharges(
-  draws: PackageDrawRow[],
-  optionLines: PackageOptionRow[],
-): PackageCharge[] | null {
-  if (optionLines.length === 0) return null
-
-  const billed = draws.reduce((sum, row) => sum + cents(row.options_amount, 'options_amount'), 0)
-  const listed = optionLines.reduce((sum, row) => sum + cents(row.option_price, 'option_price'), 0)
-  if (billed !== listed) return null
-
+function optionChargesByLot(optionLines: PackageOptionRow[]): PackageCharge[] {
   const byLot = new Map<string, PackageCharge & { cents: number }>()
   for (const row of optionLines) {
     const key = [row.phase_code, row.building ?? '', row.lot_number].join('|')
@@ -147,12 +142,29 @@ function optionCharges(
   return [...byLot.values()].map(({ cents: _cents, ...charge }) => charge)
 }
 
+function optionCharges(
+  draws: PackageDrawRow[],
+  optionLines: PackageOptionRow[],
+): PackageCharge[] | null {
+  if (optionLines.length === 0) return null
+
+  const billed = draws.reduce((sum, row) => sum + cents(row.options_amount, 'options_amount'), 0)
+  const listed = optionLines.reduce((sum, row) => sum + cents(row.option_price, 'option_price'), 0)
+  if (billed !== listed) return null
+
+  return optionChargesByLot(optionLines)
+}
+
 export function mapPackageToCharges(source: PackageInvoiceSource): PackageInvoiceCharges {
   const { package: header, draws, hardwareLines, invoice } = source
   const adjustmentLines = source.adjustmentLines ?? []
 
   // A Retention Release is not sent to QuickBooks yet.
-  if (header.package_type !== 'DRAW' && header.package_type !== 'PRICE_ADJUSTMENT') {
+  if (
+    header.package_type !== 'DRAW'
+    && header.package_type !== 'PRICE_ADJUSTMENT'
+    && header.package_type !== 'OPTIONS'
+  ) {
     throw new QuickbooksInvoiceError(
       'UNSUPPORTED_PACKAGE',
       `${header.package_type} packages cannot be sent to QuickBooks yet.`,
@@ -231,6 +243,39 @@ export function mapPackageToCharges(source: PackageInvoiceSource): PackageInvoic
     return {
       invoiceLineFormat: header.invoice_line_format,
       charges,
+      retentionAmount: retentionCents / 100,
+      wrapAmount: wrapCents / 100,
+      expectedNetAmount: cents(invoice.net_amount, 'net_amount') / 100,
+    }
+  }
+
+  if (header.package_type === 'OPTIONS') {
+    const optionLines = source.optionLines ?? []
+    if (optionLines.length === 0) {
+      throw new QuickbooksInvoiceError('INVALID_INPUT', 'The Options Package has no options.')
+    }
+    if (draws.length > 0 || hardwareLines.length > 0) {
+      throw new QuickbooksInvoiceError(
+        'INVALID_INPUT',
+        'An Options Package cannot have Draw or Hardware lines.',
+      )
+    }
+
+    // The Package withholds retention and WRAP Option by Option, so they are summed over the rows.
+    for (const row of optionLines) {
+      retentionCents += cents(row.retention_amount ?? 0, 'retention_amount')
+      wrapCents += cents(row.wrap_amount ?? 0, 'wrap_amount')
+    }
+    if (retentionCents < 0 || wrapCents < 0) {
+      throw new QuickbooksInvoiceError(
+        'INVALID_INPUT',
+        'The Options Package retention or WRAP adds up to a negative amount.',
+      )
+    }
+
+    return {
+      invoiceLineFormat: header.invoice_line_format,
+      charges: optionChargesByLot(optionLines),
       retentionAmount: retentionCents / 100,
       wrapAmount: wrapCents / 100,
       expectedNetAmount: cents(invoice.net_amount, 'net_amount') / 100,

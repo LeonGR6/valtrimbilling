@@ -23,7 +23,7 @@ export function parseRecipients(value: unknown) {
 
 export interface PackageSubmissionContext {
   packageNumber: string;
-  /** DRAW (default), RETENTION_RELEASE or PRICE_ADJUSTMENT: only names the document. */
+  /** DRAW (default), RETENTION_RELEASE, PRICE_ADJUSTMENT or OPTIONS: only names the document. */
   packageType?: string | null;
   /** The serial invoice number (15001...), once the Package has an invoice. */
   invoiceNumber?: string | null;
@@ -58,6 +58,9 @@ function documentName(context: PackageSubmissionContext) {
   }
   if (context.packageType === "RETENTION_RELEASE") {
     return `Retention Release ${context.packageNumber}`;
+  }
+  if (context.packageType === "OPTIONS") {
+    return `Options Package ${context.packageNumber}`;
   }
   return `Draw Package ${context.packageNumber}`;
 }

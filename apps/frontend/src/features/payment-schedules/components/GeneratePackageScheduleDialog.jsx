@@ -141,9 +141,12 @@ export default function GeneratePackageScheduleDialog({
     setAttempt((current) => current + 1)
   }
 
-  // A Retention Release and a Price Adjustment bill no Lot or Draw of the schedule.
+  // A Retention Release, a Price Adjustment and a Package of Options only bill no Lot or Draw of the schedule.
   const isRetention = (packageRecord.packageType ?? 'DRAW') !== 'DRAW'
-  const isPriceAdjustment = packageRecord.packageType === 'PRICE_ADJUSTMENT'
+  const notScheduleBilling = {
+    PRICE_ADJUSTMENT: 'This Package is a Price Adjustment',
+    OPTIONS: 'This Package bills Options only',
+  }[packageRecord.packageType] ?? 'This Package is a Retention Release'
   const lines = packageScheduleLines(packageRecord)
   const plan = data ? matchPackageToSchedules(lines, data.templates) : null
   const summary = plan ? describeSchedulePlan(plan, lines.length) : null
@@ -309,7 +312,7 @@ export default function GeneratePackageScheduleDialog({
 
         {data && isRetention && (
           <Alert severity="info">
-            {isPriceAdjustment ? 'This Package is a Price Adjustment' : 'This Package is a Retention Release'}.
+            {notScheduleBilling}.
             It bills no Lot or draw of the schedule, so there is nothing to highlight.
           </Alert>
         )}

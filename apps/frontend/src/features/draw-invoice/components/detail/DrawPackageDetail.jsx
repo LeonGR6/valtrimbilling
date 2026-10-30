@@ -10,6 +10,7 @@ import {
   IconButton,
   Tooltip,
   MenuItem,
+  Snackbar,
   Stack,
   TextField,
   Typography,
@@ -37,6 +38,11 @@ import { formatBuilding, formatPhase, formatPhaseBuilding } from '../../../seque
 import { useDrawInvoicePackages } from '../../context/useDrawInvoicePackages.js'
 import { useQuickbooksInvoiceSync } from '../../hooks/useQuickbooksInvoiceSync.js'
 import { usePackageFinalReleaseSplit } from '../../hooks/usePackageFinalReleaseSplit.js'
+import {
+  createPackagesInOrder,
+  describeCreatedPackages,
+  packageCreator,
+} from '../../utils/createPackagesInOrder.js'
 import { describeSavedInvoiceSplit } from '../../utils/packageSplit.js'
 import { refreshQuickbooksPayment } from '../../services/quickbooksRepository.js'
 import {
@@ -134,6 +140,7 @@ export default function DrawPackageDetail() {
     canManageDrawInvoicePackages,
     refreshDrawInvoicePackages,
     createDrawInvoicePackage,
+    createOptionsPackage,
     updateDrawInvoicePackageStatus,
     editDrawInvoicePackage,
     transferDrawPackageCells,
@@ -144,6 +151,7 @@ export default function DrawPackageDetail() {
   const [correctionDialog, setCorrectionDialog] = useState(null)
   const [packageDialogOpen, setPackageDialogOpen] = useState(false)
   const [quickbooksDialogOpen, setQuickbooksDialogOpen] = useState(false)
+  const [createNotice, setCreateNotice] = useState(null)
   const { profile } = useAuth()
   const focusedPackageRecord = drawInvoicePackages.find(
     (record) =>
@@ -200,6 +208,28 @@ export default function DrawPackageDetail() {
         record.jobId,
         record.phaseId,
         record.id,
+      ),
+    )
+  }
+
+  // A selection that has to be divided, or that bills Options on a Package of their own, becomes
+  // several Packages, created one after the other. The page opens the first one and the notice says which were made; if one fails after the first, the
+  // ones already made stay and Create Package offers what is left.
+  const handleCreateMany = async (inputs) => {
+    const result = await createPackagesInOrder(
+      packageCreator({ createDraw: createDrawInvoicePackage, createOptions: createOptionsPackage }),
+      inputs,
+    )
+    const [first] = result.created
+    const job = jobs.find((candidate) => String(candidate.id) === String(first.jobId))
+    setCreateDialogOpen(false)
+    setCreateNotice(describeCreatedPackages(result))
+    navigate(
+      jobDrawInvoicePath(
+        getJobBuilderId(job),
+        first.jobId,
+        first.phaseId,
+        first.id,
       ),
     )
   }
@@ -291,11 +321,12 @@ export default function DrawPackageDetail() {
   )
   const isRetentionRelease = focusedPackage?.packageType === 'RETENTION_RELEASE'
   const isPriceAdjustment = focusedPackage?.packageType === 'PRICE_ADJUSTMENT'
+  const isOptionsPackage = focusedPackage?.packageType === 'OPTIONS'
   const retentionSource = isRetentionRelease
     ? summarizeRetentionSource(focusedPackage.retentionRelease, drawInvoicePackages)
     : null
-  // Neither has Lot / Draw cells: the Draw worksheet and its tables do not apply.
-  const hasNoDrawCells = isRetentionRelease || isPriceAdjustment
+  // None has Lot / Draw cells: the Draw worksheet and its tables do not apply.
+  const hasNoDrawCells = isRetentionRelease || isPriceAdjustment || isOptionsPackage
   const focusedPackagePhases = focusedPackage?.retentionRelease?.scopeType === 'JOB'
     ? phases
     : phases.filter((phase) => focusedPackagePhaseIds.has(String(phase.id)))
@@ -340,6 +371,8 @@ export default function DrawPackageDetail() {
 
   const packageContext = isPriceAdjustment
     ? `Job #${focusedJob.code} · Price adjustment`
+    : isOptionsPackage
+    ? `Job #${focusedJob.code} · Options only`
     : isRetentionRelease
     ? `Job #${focusedJob.code} · ${focusedPackage.retentionRelease?.scopeType === 'JOB'
       ? 'Per Job'
@@ -388,6 +421,8 @@ export default function DrawPackageDetail() {
             <Typography variant="body2" color="text.secondary">
               {isPriceAdjustment
                 ? `Price Adjustment · ${focusedJob.builder} / ${focusedJob.community}`
+                : isOptionsPackage
+                ? `Options Package · ${focusedJob.builder} / ${focusedJob.community}`
                 : isRetentionRelease
                 ? `Retention Release · ${focusedJob.builder} / ${focusedJob.community}`
                 : `${focusedJob.builder} / ${focusedJob.community}`}
@@ -566,6 +601,8 @@ export default function DrawPackageDetail() {
             This Package was cancelled on {formatDate(focusedPackage.cancelledAt?.slice(0, 10))}.
             {isPriceAdjustment
               ? ' Its price differences are pending again; the Package number remains for history.'
+              : isOptionsPackage
+              ? ' Its Options can be billed again; the Package number remains for history.'
               : isRetentionRelease
               ? ' Its retained source amounts are available for a new release; the Package number remains for history.'
               : ' Its Lot / Draw cells were released; the Package number remains for history.'}
@@ -609,6 +646,16 @@ export default function DrawPackageDetail() {
               </Alert>
             )}
 
+            {isOptionsPackage && focusedPackage.status !== 'CANCELLED' && (
+              <Alert severity="info">
+                This Package bills Options of Lots that already reached the Options Draw, with no
+                Lot / Draw cell. Retention and WRAP are deducted Option by Option, and the Retention
+                Release includes what was retained here. Its Release is the Conditional Progress
+                Release, like a Draw's, and it is sent to QuickBooks from the QuickBooks card, like
+                any other Package.
+              </Alert>
+            )}
+
             {isPriceAdjustment && focusedPackage.status !== 'CANCELLED' && (
               <Alert severity="info">
                 This Package invoices price differences of Packages that could not change. Retention
@@ -618,7 +665,30 @@ export default function DrawPackageDetail() {
               </Alert>
             )}
 
-            {isPriceAdjustment ? (
+            {isOptionsPackage ? (
+              <PackageSummaryPanel
+                facts={[
+                  {
+                    label: 'Options billed',
+                    value: focusedPackage.persistedOptionLines.length,
+                  },
+                  {
+                    label: 'Lots',
+                    value: new Set(focusedPackage.persistedOptionLines.map(({ lotId }) => lotId)).size,
+                  },
+                ]}
+                lines={[
+                  { label: 'Options', value: formatCurrency(packageSummary.currentDraw) },
+                  { label: 'Retention', value: formatCurrency(packageSummary.retention), tone: packageSummary.retention > 0 ? 'deduction' : 'muted' },
+                  { label: 'WRAP', value: formatCurrency(packageSummary.wrapInsurance), tone: packageSummary.wrapInsurance > 0 ? 'deduction' : 'muted' },
+                ]}
+                total={{
+                  label: 'Invoice Amount',
+                  value: formatCurrency(packageSummary.invoiceAmount),
+                  detail: focusedInvoiceNumber ? `Invoice ${focusedInvoiceNumber}` : 'Invoice pending',
+                }}
+              />
+            ) : isPriceAdjustment ? (
               <PackageSummaryPanel
                 facts={[
                   {
@@ -839,7 +909,7 @@ export default function DrawPackageDetail() {
 
             {focusedPackage && !hasNoDrawCells && <PackageHardwareTable summary={packageSummary} />}
             {focusedPackage && !hasNoDrawCells && <PackageUtilityTable summary={packageSummary} />}
-            {focusedPackage && !hasNoDrawCells && packageSummary.lotCount > 0 && (
+            {focusedPackage && (isOptionsPackage || (!hasNoDrawCells && packageSummary.lotCount > 0)) && (
               <PackageOptionsTable summary={packageSummary} backing={purchaseOrderBacking} />
             )}
             {focusedPackage && isPriceAdjustment && (
@@ -865,6 +935,7 @@ export default function DrawPackageDetail() {
           initialPhaseId={selectedPhase?.id}
           onClose={() => setCreateDialogOpen(false)}
           onCreate={handleCreate}
+          onCreateMany={handleCreateMany}
         />
       )}
       {packageDialogOpen && focusedPackage && (
@@ -937,6 +1008,16 @@ export default function DrawPackageDetail() {
           onCancel={cancelDrawInvoicePackage}
         />
       )}
+      <Snackbar
+        open={Boolean(createNotice)}
+        autoHideDuration={createNotice?.severity === 'error' ? 12000 : 6000}
+        onClose={() => setCreateNotice(null)}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+      >
+        <Alert severity={createNotice?.severity ?? 'success'} onClose={() => setCreateNotice(null)} variant="filled">
+          {createNotice?.message}
+        </Alert>
+      </Snackbar>
     </Box>
   )
 }

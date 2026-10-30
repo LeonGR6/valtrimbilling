@@ -408,6 +408,18 @@ test('builds Package creation RPC values from UI draw indexes', () => {
   })
 })
 
+test('the note written while creating a Package goes with it, trimmed, and only when there is one', () => {
+  const selections = [{ lotId: 41, drawIndex: 0 }]
+
+  assert.equal(
+    toCreateDrawPackageRpc({ jobId: 11, selections, notes: '  Call the builder before sending.  ' }).p_notes,
+    'Call the builder before sending.',
+  )
+  for (const notes of [undefined, null, '', '   \n ']) {
+    assert.equal('p_notes' in toCreateDrawPackageRpc({ jobId: 11, selections, notes }), false)
+  }
+})
+
 test('adds Hardware only to the explicitly selected Lot and Draw cells', () => {
   assert.deepEqual(toCreateDrawPackageRpc({
     jobId: 11,

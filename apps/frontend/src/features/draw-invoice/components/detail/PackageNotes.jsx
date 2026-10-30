@@ -33,16 +33,16 @@ function NoteEntry({ author, moment, body }) {
 }
 
 /**
- * The internal notes of a Package, newest first, each with who wrote it and when. Whoever can add
- * notes (`canAdd`) also sees the box to write one. `onAdd(body)` saves it; the notes are not printed
- * on the Package's documents and are not sent to QuickBooks.
+ * The internal notes of a Package, newest first, each with who wrote it and when. The note written
+ * while the Package was created is the first of them. Whoever can add notes (`canAdd`) also sees the
+ * box to write one. `onAdd(body)` saves it; the notes are not printed on the Package's documents and
+ * are not sent to QuickBooks.
  */
 export default function PackageNotes({ package: record, canAdd, onAdd }) {
   const [draft, setDraft] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
   const notes = record.noteEntries ?? []
-  const creationNote = record.notes?.trim() ?? ''
   const problem = packageNoteProblem(draft)
 
   const submit = async () => {
@@ -95,7 +95,7 @@ export default function PackageNotes({ package: record, canAdd, onAdd }) {
           </Box>
         </Stack>
       )}
-      {notes.length === 0 && !creationNote ? (
+      {notes.length === 0 ? (
         <Typography variant="body2" color="text.secondary" sx={{ px: { xs: 2, sm: 2.5 }, py: 1.5 }}>
           {canAdd
             ? 'No notes yet. Leave one so the next person knows what happened with this Package.'
@@ -111,13 +111,6 @@ export default function PackageNotes({ package: record, canAdd, onAdd }) {
               body={note.body}
             />
           ))}
-          {creationNote && (
-            <NoteEntry
-              author="When the Package was created"
-              moment={formatDateTime(record.createdAt)}
-              body={creationNote}
-            />
-          )}
         </Box>
       )}
     </Card>

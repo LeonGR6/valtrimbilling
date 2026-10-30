@@ -17,6 +17,7 @@ import {
   formatCurrency,
   formatLongDate,
 } from '../../utils/drawInvoiceFormatters.js'
+import { NEW_PACKAGE_NOTE_MAX_LENGTH, newPackageNoteHelp } from '../../services/packageNotesRecord.js'
 
 function scopeLabel(suggestion) {
   if (suggestion.scopeType === 'JOB') return 'Per Job'
@@ -99,13 +100,13 @@ export default function CreateRetentionReleaseDialog({
             </Alert>
           )}
           <TextField
-            label="Notes"
+            label="Note (optional)"
             value={notes}
             onChange={(event) => setNotes(event.target.value)}
             multiline
             minRows={3}
-            inputProps={{ maxLength: 500 }}
-            helperText={`${notes.length}/500`}
+            slotProps={{ htmlInput: { maxLength: NEW_PACKAGE_NOTE_MAX_LENGTH } }}
+            helperText={newPackageNoteHelp(notes)}
             disabled={submitting}
           />
         </Stack>

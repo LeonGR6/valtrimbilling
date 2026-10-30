@@ -199,6 +199,29 @@ test('a divided Package sends each cell and Hardware charge with its Phase', () 
   assert.deepEqual(split.packages.map(({ input }) => input.hardwareSelections.length), [0, 1, 0])
 })
 
+test('every Package of a division carries the note that was written', () => {
+  const selections = [...cells(47, 0), ...cells(49, 0), ...cells(53, 0)]
+  const plan = planPackageSplit({ job: job(), schedule: setup({ finalReleaseScope: '' }), selections })
+  const split = splitPackageInput({
+    plan,
+    job: job(),
+    input: {
+      jobId: JOB_ID,
+      selections,
+      hardwareSelections: [],
+      optionSelections: [],
+      optionsBillingDrawIndex: null,
+      notes: 'Builder asked for one invoice per Phase.',
+    },
+  })
+
+  assert.equal(split.packages.length, 3)
+  assert.deepEqual(
+    split.packages.map(({ input }) => input.notes),
+    Array(3).fill('Builder asked for one invoice per Phase.'),
+  )
+})
+
 test('a Hardware charge alone makes its Phase part of the selection', () => {
   const plan = planPackageSplit({
     job: job(),

@@ -218,6 +218,8 @@ export function splitPackageInput({ plan, job, input }) {
         hardwareSelections: parts[index].hardwareSelections,
         optionSelections: parts[index].optionSelections,
         optionsBillingDrawIndex: input.optionsBillingDrawIndex,
+        // Each Package of the division gets the note, since each is read on its own.
+        notes: input.notes,
       },
     })),
   }

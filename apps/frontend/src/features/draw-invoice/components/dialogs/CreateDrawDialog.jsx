@@ -46,6 +46,7 @@ import {
   summarizeDrawPackage,
   utilityChargeKey,
 } from '../../utils/drawPackages.js'
+import { NEW_PACKAGE_NOTE_MAX_LENGTH, newPackageNoteHelp } from '../../services/packageNotesRecord.js'
 import { splitPackageInput } from '../../utils/finalReleaseSplit.js'
 import { planPackageSplit, singleInvoiceScope as singleInvoiceScopeOf } from '../../utils/packageSplit.js'
 import PackageSplitNotice from './PackageSplitNotice.jsx'
@@ -154,6 +155,7 @@ export default function CreateDrawDialog({
   const [excludedOptionKeys, setExcludedOptionKeys] = useState([])
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState(null)
+  const [notes, setNotes] = useState('')
   const [asOfDate] = useState(() => localDateKey())
   const [noticeEditorOpen, setNoticeEditorOpen] = useState(false)
   const [completedOpen, setCompletedOpen] = useState(false)
@@ -660,6 +662,7 @@ export default function CreateDrawDialog({
       optionId: option.optionId,
     })),
     optionsBillingDrawIndex: summary.optionsBillingDrawIndex,
+    notes,
   }
   // A Builder with a single invoice per Phase (or Building) takes a Package for each Phase (or
   // Building) the selection touches. With a Final Release per Phase (or Building), a Phase that these
@@ -1328,6 +1331,23 @@ export default function CreateDrawDialog({
                 <CreatePackageTotals summary={summary} schedule={schedule} />
               </CardContent>
             </Card>
+          )}
+
+          {hasScope && (
+            <TextField
+              label="Note (optional)"
+              placeholder="A call, a promise to pay, a missing document…"
+              value={notes}
+              onChange={(event) => setNotes(event.target.value)}
+              disabled={submitting}
+              multiline
+              minRows={2}
+              maxRows={6}
+              fullWidth
+              helperText={newPackageNoteHelp(notes, split?.packages.length)}
+              slotProps={{ htmlInput: { maxLength: NEW_PACKAGE_NOTE_MAX_LENGTH } }}
+              sx={{ bgcolor: 'background.paper' }}
+            />
           )}
 
           {submitError && <Alert severity="error">{submitError}</Alert>}

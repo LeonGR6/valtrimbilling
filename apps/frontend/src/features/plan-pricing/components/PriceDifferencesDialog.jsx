@@ -25,6 +25,10 @@ import {
 } from '@mui/material'
 import ExpandMoreRoundedIcon from '@mui/icons-material/ExpandMoreRounded'
 import { useDrawInvoicePackages } from '../../draw-invoice/context/useDrawInvoicePackages.js'
+import {
+  NEW_PACKAGE_NOTE_MAX_LENGTH,
+  newPackageNoteHelp,
+} from '../../draw-invoice/services/packageNotesRecord.js'
 import { getJobBuilderId, jobDrawInvoicePath } from '../../jobs/utils/jobRoutes.js'
 import { listPendingPriceDifferences } from '../services/priceDifferencesRepository.js'
 import {
@@ -304,14 +308,15 @@ export default function PriceDifferencesDialog({ job, onClose }) {
                     </Alert>
                   )}
                   <TextField
-                    label="Notes (optional)"
+                    label="Note (optional)"
                     value={notes}
                     onChange={(event) => setNotes(event.target.value)}
                     multiline
                     minRows={2}
                     fullWidth
                     disabled={creating}
-                    slotProps={{ htmlInput: { maxLength: 500 } }}
+                    helperText={newPackageNoteHelp(notes)}
+                    slotProps={{ htmlInput: { maxLength: NEW_PACKAGE_NOTE_MAX_LENGTH } }}
                   />
                 </Stack>
               )}

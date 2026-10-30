@@ -2,7 +2,9 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   PACKAGE_NOTE_MAX_LENGTH,
+  NEW_PACKAGE_NOTE_MAX_LENGTH,
   canAddPackageNotes,
+  newPackageNoteHelp,
   packageNoteAuthor,
   packageNoteErrorMessage,
   packageNoteProblem,
@@ -109,4 +111,20 @@ test('the moment of a note shows the date and the time', () => {
   assert.match(shown, /\d{1,2}:\d{2}\s?(AM|PM)/u)
   assert.equal(formatDateTime(null), '—')
   assert.equal(formatDateTime('not a date'), '—')
+})
+
+test('the box of a new Package says how much is left and where the note goes', () => {
+  assert.equal(NEW_PACKAGE_NOTE_MAX_LENGTH, 500)
+  assert.equal(
+    newPackageNoteHelp('  Call AP.  '),
+    '8/500 · It becomes the first note of the Package, with your name and the time.',
+  )
+  assert.equal(
+    newPackageNoteHelp('', 1),
+    '0/500 · It becomes the first note of the Package, with your name and the time.',
+  )
+  assert.equal(
+    newPackageNoteHelp(undefined, 3),
+    '0/500 · It is added to the notes of each of the 3 Packages, with your name and the time.',
+  )
 })

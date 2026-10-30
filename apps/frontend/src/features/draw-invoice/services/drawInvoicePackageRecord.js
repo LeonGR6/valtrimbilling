@@ -506,7 +506,9 @@ export function toCreateDrawPackageRpc({
   hardwareSelections = [],
   optionSelections,
   optionsBillingDrawIndex,
+  notes = null,
 }) {
+  const note = String(notes ?? '').trim()
   const parsedOptionsBillingDrawIndex = Number(optionsBillingDrawIndex)
   const hasExplicitOptionSelection = Array.isArray(optionSelections)
     && optionsBillingDrawIndex !== null
@@ -581,6 +583,8 @@ export function toCreateDrawPackageRpc({
     ...(eventHardwareSelections.length > 0
       ? { p_hardware_selections: eventHardwareSelections }
       : {}),
+    // The database keeps it as the first note of the Package, with the author and the time.
+    ...(note ? { p_notes: note } : {}),
   }
 }
 

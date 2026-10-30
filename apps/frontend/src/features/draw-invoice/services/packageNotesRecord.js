@@ -3,8 +3,21 @@
 
 export const PACKAGE_NOTE_MAX_LENGTH = 1000
 
+// The note written while a Package is created travels with it and is saved as its first note, so it
+// is shorter; any other note is added afterwards from the Package page.
+export const NEW_PACKAGE_NOTE_MAX_LENGTH = 500
+
 // The same roles that can generate a Package's Release can leave a note; every active user reads them.
 export const PACKAGE_NOTE_ROLES = ['ADMIN', 'ACCOUNTING', 'PROJECT_MANAGEMENT']
+
+/** What sits under the note box of a dialog that creates Package(s): the count, and where it goes. */
+export function newPackageNoteHelp(note, packageCount = 1) {
+  const used = `${String(note ?? '').trim().length}/${NEW_PACKAGE_NOTE_MAX_LENGTH}`
+
+  return packageCount > 1
+    ? `${used} · It is added to the notes of each of the ${packageCount} Packages, with your name and the time.`
+    : `${used} · It becomes the first note of the Package, with your name and the time.`
+}
 
 export function canAddPackageNotes(role) {
   return PACKAGE_NOTE_ROLES.includes(role)

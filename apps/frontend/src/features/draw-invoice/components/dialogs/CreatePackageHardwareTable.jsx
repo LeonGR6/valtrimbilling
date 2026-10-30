@@ -1,0 +1,202 @@
+import {
+  Box,
+  Card,
+  Checkbox,
+  Chip,
+  Divider,
+  Stack,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableFooter,
+  TableHead,
+  TableRow,
+  Typography,
+} from '@mui/material'
+import BilledRowsAccordion from './BilledRowsAccordion.jsx'
+import { formatPhaseBuilding } from '../../../sequence-sheets/utils/phaseBuildingCodes.js'
+import { formatCurrency } from '../../utils/drawInvoiceFormatters.js'
+import { hardwareChargeKey } from '../../utils/drawPackages.js'
+
+export default function CreatePackageHardwareTable({
+  summary,
+  billedHardwareCharges,
+  onToggle,
+}) {
+  const hardwareRows = summary.hardwareRows ?? []
+
+  if (
+    !summary.separateHardwarePrice
+  ) return null
+  const selectedCount = hardwareRows.filter((row) => row.chargeHardware).length
+
+  // Each row with what an earlier Package billed of it, if anything.
+  const charges = hardwareRows.map((hardware) => ({
+    hardware,
+    billed: billedHardwareCharges.get(hardwareChargeKey(
+      hardware.lotId,
+      hardware.hardwareBillingMode,
+      hardware.hardwareEventType,
+    )),
+  }))
+  const pendingCharges = charges.filter(({ billed }) => !billed)
+  const billedCharges = charges.filter(({ billed }) => billed)
+
+  // The same table for what is still to choose and for what was already billed.
+  const renderTable = (rows, { label, total = false }) => (
+    <TableContainer>
+      <Table size="small" aria-label={label}>
+        <TableHead>
+          <TableRow>
+            <TableCell padding="checkbox">Charge</TableCell>
+            <TableCell>Phase</TableCell>
+            <TableCell>Lot</TableCell>
+            <TableCell>Plan</TableCell>
+            <TableCell>Billing trigger</TableCell>
+            <TableCell>Allocation</TableCell>
+            <TableCell align="right">Price</TableCell>
+            <TableCell>Status</TableCell>
+          </TableRow>
+        </TableHead>
+        <TableBody>
+          {rows.map(({ hardware, billed }) => {
+            return (
+              <TableRow key={hardware.selectionKey} hover>
+                <TableCell padding="checkbox">
+                  <Checkbox
+                    size="small"
+                    checked={hardware.chargeHardware}
+                    disabled={Boolean(billed)}
+                    onChange={() => onToggle(hardware)}
+                    inputProps={{
+                      'aria-label': `Charge Hardware for Lot ${hardware.lotNumber} from ${hardware.hardwareEventType ?? `Draw ${hardware.drawIndex + 1}`}`,
+                    }}
+                  />
+                </TableCell>
+                <TableCell>
+                  {formatPhaseBuilding(hardware.phaseCode, hardware.building, { separator: ' / ' })}
+                </TableCell>
+                <TableCell>
+                  <Typography color="error.main" fontWeight={850}>
+                    {hardware.lotNumber}
+                  </Typography>
+                </TableCell>
+                <TableCell>{hardware.planCode ?? '—'}</TableCell>
+                <TableCell>
+                  <Typography fontWeight={750}>
+                    {hardware.hardwareBillingMode === 'BY_EVENT'
+                      ? hardware.isCalendarSuggested
+                        ? `${hardware.hardwareEventType} Calendar event · Suggested`
+                        : hardware.isDrawSelected
+                          ? `${hardware.hardwareEventType} · Its Lot Draw is selected`
+                          : `${hardware.hardwareEventType} · Manual selection`
+                      : `Draw #${hardware.drawIndex + 1}${hardware.drawName?.trim()
+                        ? ` · ${hardware.drawName.trim()}`
+                        : ''}`}
+                  </Typography>
+                </TableCell>
+                <TableCell>
+                  {hardware.hardwareBillingMode === 'BY_EVENT'
+                    ? `${hardware.hardwareEventType} · ${hardware.hardwarePercentage}%`
+                    : '100% full'}
+                </TableCell>
+                <TableCell align="right">
+                  <Typography fontWeight={750}>
+                    {formatCurrency(hardware.hardwareAmount)}
+                  </Typography>
+                </TableCell>
+                <TableCell>
+                  {billed ? (
+                    <Chip
+                      size="small"
+                      color="default"
+                      label={`Already billed · ${billed.packageNumber}`}
+                    />
+                  ) : hardware.chargeHardware ? (
+                    <Chip size="small" color="success" label="Will be charged" />
+                  ) : (
+                    <Chip size="small" variant="outlined" label="Not charged" />
+                  )}
+                </TableCell>
+              </TableRow>
+            )
+          })}
+        </TableBody>
+        {total && (
+          <TableFooter>
+            <TableRow>
+              <TableCell colSpan={6}>
+                <Typography fontWeight={850}>Hardware total</Typography>
+              </TableCell>
+              <TableCell align="right">
+                <Typography fontWeight={900}>
+                  {formatCurrency(summary.hardwareTotal)}
+                </Typography>
+              </TableCell>
+              <TableCell />
+            </TableRow>
+          </TableFooter>
+        )}
+      </Table>
+    </TableContainer>
+  )
+
+  return (
+    <Card variant="outlined" sx={{ overflow: 'hidden' }}>
+      <Box sx={{ px: { xs: 2, sm: 2.5 }, py: 2, bgcolor: 'action.hover' }}>
+        <Stack
+          direction={{ xs: 'column', sm: 'row' }}
+          spacing={1}
+          sx={{ justifyContent: 'space-between', alignItems: { sm: 'center' } }}
+        >
+          <Box>
+            <Typography fontWeight={800}>Hardware</Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.25 }}>
+              Every available Lot is listed. Selecting a Lot's Draw above selects
+              its Hardware portion for that event, and clearing the Draw clears
+              it. Upcoming Calendar portions are preselected, and any portion can
+              be changed here.
+            </Typography>
+          </Box>
+          <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+            <Chip
+              size="small"
+              color="primary"
+              variant="outlined"
+              label={`${selectedCount} selected`}
+            />
+            <Chip
+              size="small"
+              variant="outlined"
+              label={`Total · ${formatCurrency(summary.hardwareTotal)}`}
+            />
+          </Stack>
+        </Stack>
+      </Box>
+      <Divider />
+      {hardwareRows.length === 0 && (
+        <Box sx={{ px: { xs: 2, sm: 2.5 }, py: 2 }}>
+          <Typography variant="body2" color="text.secondary">
+            There are no configured Separate Hardware allocations for these Lots.
+          </Typography>
+        </Box>
+      )}
+      {pendingCharges.length > 0 && renderTable(pendingCharges, {
+        label: 'Choose separate hardware charges',
+        total: true,
+      })}
+      {hardwareRows.length > 0 && pendingCharges.length === 0 && (
+        <Box sx={{ px: { xs: 2, sm: 2.5 }, py: 2 }}>
+          <Typography variant="body2" color="text.secondary">
+            Every Separate Hardware charge of these Lots was already billed.
+            There is nothing pending.
+          </Typography>
+        </Box>
+      )}
+      <BilledRowsAccordion count={billedCharges.length} nouns={['Hardware charge', 'Hardware charges']}>
+        {renderTable(billedCharges, { label: 'Separate hardware charges already billed' })}
+      </BilledRowsAccordion>
+    </Card>
+  )
+}

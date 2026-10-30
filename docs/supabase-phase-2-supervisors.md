@@ -1,7 +1,7 @@
 # Supabase Phase 2: Supervisors
 
-Phase 2 persists Valtrim People with the `SUPERVISOR` role. Communities,
-jobsites, Jobs, and the other person roles remain outside this phase.
+Phase 2 persists Valtrim People with the `SUPERVISOR` role. Builder Contacts,
+Communities, Jobs, and the other person roles remain outside this phase.
 
 ## Included
 
@@ -39,8 +39,9 @@ jobsites, Jobs, and the other person roles remain outside this phase.
 The migration is deployed to `ValtrimBillingTestV2`. Its structural and
 behavioral checks confirmed atomic ADMIN creation, audit stamping, update and
 soft deactivation, SUPERVISOR-only visibility, denied READ_ONLY writes, and
-closed Communities and Jobs access. Validation transactions are rolled back so
-no sample People remain.
+closed Communities and Jobs access at the end of that historical phase.
+Validation transactions are rolled back so no sample People remain. Jobs were
+subsequently opened in Phase 5; Communities remains closed.
 
 For a local Supabase stack:
 
@@ -54,6 +55,7 @@ node --test --test-name-pattern="person|supervisor" \
 npm run build
 ```
 
-The next persistence slice is communities/jobsites and their Builder and
-Supervisor relationships. Jobs should remain closed until those parent records
-are stable.
+Builder Contacts are implemented in Phase 3, Billing Setup versions in Phase 4,
+and Jobs in Phase 5. Community is direct text on each Job, not a future catalog
+entity. The legacy Communities table remains closed pending removal of its
+remaining User Access and Customer Service dependencies.

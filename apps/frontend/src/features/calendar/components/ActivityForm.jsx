@@ -35,8 +35,10 @@ import {
   formatPhaseBuilding,
 } from './calendarSchedulerUtils.js'
 import {
+  countUnscheduledPhases,
   existingPhaseEvents,
   formatEventDay,
+  sortJobsForScheduling,
   sortPhasesForScheduling,
 } from '../utils/phaseCalendarCoverage.js'
 import {
@@ -86,7 +88,7 @@ export default function ActivityForm({
   builderContacts = [],
   events = [],
   dateMove = null,
-  phaseStatusOf = () => null,
+  phaseStatusOf,
   onOpenExisting,
   draft,
   isEditing,
@@ -102,18 +104,57 @@ export default function ActivityForm({
   const phases = (selectedJob?.sequenceSheet?.phases ?? []).filter(
     (phase) => (phase.lots ?? []).some((lot) => !lot.isUtilityBuilding),
   )
+  // Jobs with Phases still to schedule come first; the ones with everything on the Calendar follow,
+  // under their own heading, so it is clear what is left to schedule. Until the coverage has loaded
+  // the list stays as it is, with no headings.
+  const jobGroups = sortJobsForScheduling(jobs, phaseStatusOf)
+  const jobSections = [
+    { key: 'pending', title: 'Phases left to schedule', jobs: jobGroups.pending },
+    { key: 'scheduled', title: 'Already scheduled', jobs: jobGroups.scheduled },
+    { key: 'empty', title: 'No phases yet', jobs: jobGroups.empty },
+  ].filter((section) => section.jobs.length > 0)
+  const jobLabel = (job) => `#${job.code} · ${job.community} · ${job.builder}`
+  const jobOption = (job, sectionKey) => {
+    const left = phaseStatusOf && sectionKey === 'pending'
+      ? countUnscheduledPhases(job, phaseStatusOf)
+      : 0
+
+    return (
+      <MenuItem key={job.id} value={job.id}>
+        <Stack
+          direction="row"
+          spacing={1}
+          sx={{ width: '100%', alignItems: 'center', justifyContent: 'space-between' }}
+        >
+          <span>{jobLabel(job)}</span>
+          {left > 0 && (
+            <Chip
+              size="small"
+              color="primary"
+              variant="outlined"
+              label={`${left} ${left === 1 ? 'phase' : 'phases'} left`}
+            />
+          )}
+          {sectionKey === 'scheduled' && (
+            <Chip size="small" color="success" variant="outlined" label="Scheduled" />
+          )}
+        </Stack>
+      </MenuItem>
+    )
+  }
   // Phases that still have no events come first; the ones already on the
   // Calendar follow, marked, so it is clear what is left to schedule.
+  const statusOfPhase = phaseStatusOf ?? (() => null)
   const { pending: pendingPhases, scheduled: scheduledPhases } = sortPhasesForScheduling(
     phases,
-    (phase) => phaseStatusOf(selectedJob, phase),
+    (phase) => statusOfPhase(selectedJob, phase),
   )
   const selectedPhase = phases.find((phase) => phase.id === Number(draft.phaseId)) ?? null
   const selectedPhaseEvents = selectedJob && selectedPhase
     ? existingPhaseEvents(events, selectedJob.id, selectedPhase.id)
     : []
   const selectedPhaseIsScheduled = !isEditing && Boolean(selectedPhase) && (
-    phaseStatusOf(selectedJob, selectedPhase) === 'scheduled' || selectedPhaseEvents.length > 0
+    statusOfPhase(selectedJob, selectedPhase) === 'scheduled' || selectedPhaseEvents.length > 0
   )
   const totalLots = draft.lotNumbers.length
   const phaseLabel = (phase) => (
@@ -220,13 +261,25 @@ export default function ActivityForm({
                 onChange={(event) => changeJob(event.target.value)}
                 required
                 fullWidth
+                slotProps={{
+                  select: {
+                    renderValue: (value) => {
+                      const job = jobs.find((item) => item.id === Number(value))
+                      return job ? jobLabel(job) : ''
+                    },
+                  },
+                }}
               >
                 <MenuItem value="">Select a job</MenuItem>
-                {jobs.map((job) => (
-                  <MenuItem key={job.id} value={job.id}>
-                    #{job.code} · {job.community} · {job.builder}
-                  </MenuItem>
-                ))}
+                {jobSections.flatMap((section, index) => [
+                  ...(jobSections.length > 1
+                    ? [
+                        ...(index > 0 ? [<Divider key={`${section.key}-divider`} />] : []),
+                        <ListSubheader key={`${section.key}-heading`}>{section.title}</ListSubheader>,
+                      ]
+                    : []),
+                  ...section.jobs.map((job) => jobOption(job, section.key)),
+                ])}
               </TextField>
               <TextField
                 select

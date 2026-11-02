@@ -37,11 +37,49 @@ export async function listAllRows(queryFactory, onError, pageSize = PAGE_SIZE) {
   }
 }
 
-/** Every row of a query that filters on a list of ids: one batch after another, each in full. */
-export async function listAllRowsByIds(ids, queryFactory, onError, pageSize = PAGE_SIZE) {
-  const rows = []
-  for (const batch of inBatches(ids)) {
-    rows.push(...await listAllRows(() => queryFactory(batch), onError, pageSize))
+/** How many batches of ids are read at the same time. */
+export const FILTER_CONCURRENCY = 6
+
+// `mapper` over `items`, at most `limit` at a time, the results in the order of `items`. After a
+// failure no further item is started.
+async function mapWithLimit(items, limit, mapper) {
+  const results = new Array(items.length)
+  let next = 0
+  let failed = false
+
+  const work = async () => {
+    while (!failed && next < items.length) {
+      const index = next
+      next += 1
+      try {
+        results[index] = await mapper(items[index])
+      } catch (error) {
+        failed = true
+        throw error
+      }
+    }
   }
-  return rows
+
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, work))
+  return results
+}
+
+/**
+ * Every row of a query that filters on a list of ids: the ids go in batches, a few at a time, each
+ * batch read in full. The rows come back batch after batch in the order of `ids`, whatever the
+ * order the batches finished in.
+ */
+export async function listAllRowsByIds(
+  ids,
+  queryFactory,
+  onError,
+  pageSize = PAGE_SIZE,
+  concurrency = FILTER_CONCURRENCY,
+) {
+  const batches = await mapWithLimit(
+    inBatches(ids),
+    concurrency,
+    (batch) => listAllRows(() => queryFactory(batch), onError, pageSize),
+  )
+  return batches.flat()
 }

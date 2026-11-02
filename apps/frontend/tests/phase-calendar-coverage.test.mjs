@@ -2,9 +2,11 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
   buildPhaseCalendarCoverage,
+  countUnscheduledPhases,
   existingPhaseEvents,
   formatEventDay,
   getSchedulablePhases,
+  sortJobsForScheduling,
   sortPhasesForScheduling,
 } from '../src/features/calendar/utils/phaseCalendarCoverage.js'
 
@@ -152,6 +154,67 @@ test('phases without events are offered before the ones already scheduled', () =
 
   assert.deepEqual(pending.map((phase) => phase.id), [2, 4])
   assert.deepEqual(scheduled.map((phase) => phase.id), [1, 3])
+})
+
+test('jobs with phases left to schedule come before the ones with everything scheduled', () => {
+  const open = buildJob(1)
+  const partial = buildJob(2)
+  const done = buildJob(3)
+  const noPhases = buildJob(4, { sequenceSheet: { phases: [] } })
+  const utilityOnly = buildJob(5)
+  utilityOnly.sequenceSheet.phases = [
+    { id: 51, name: '1', building: 'A', lots: [lot(1, { isUtilityBuilding: true })] },
+  ]
+  const inactive = buildJob(6, { isActive: false })
+  const activities = [
+    buildActivity({ id: 1, jobId: 2, phaseId: 21 }),
+    buildActivity({ id: 2, jobId: 3, phaseId: 31 }),
+    buildActivity({ id: 3, jobId: 3, phaseId: 32 }),
+  ]
+  const jobs = [done, open, noPhases, partial, utilityOnly, inactive]
+  const { statusOf } = buildPhaseCalendarCoverage({ jobs, activities })
+
+  const groups = sortJobsForScheduling(jobs, statusOf)
+
+  assert.deepEqual(groups.pending.map(({ id }) => id), [1, 2])
+  assert.deepEqual(groups.scheduled.map(({ id }) => id), [3])
+  assert.deepEqual(groups.empty.map(({ id }) => id), [4, 5, 6])
+  assert.equal(countUnscheduledPhases(open, statusOf), 2)
+  assert.equal(countUnscheduledPhases(partial, statusOf), 1)
+  assert.equal(countUnscheduledPhases(done, statusOf), 0)
+})
+
+test('jobs keep their order inside each group', () => {
+  const jobs = [buildJob(3), buildJob(1), buildJob(2)]
+  const { statusOf } = buildPhaseCalendarCoverage({ jobs, activities: [] })
+
+  assert.deepEqual(
+    sortJobsForScheduling(jobs, statusOf).pending.map(({ id }) => id),
+    [3, 1, 2],
+  )
+})
+
+test('a cancelled activity leaves its job with phases left to schedule', () => {
+  const jobs = [buildJob(1)]
+  const { statusOf } = buildPhaseCalendarCoverage({
+    jobs,
+    activities: [
+      buildActivity({ id: 1, phaseId: 11, status: 'CANCELLED' }),
+      buildActivity({ id: 2, phaseId: 12 }),
+    ],
+  })
+
+  assert.deepEqual(sortJobsForScheduling(jobs, statusOf).pending.map(({ id }) => id), [1])
+})
+
+test('until the coverage has loaded no job is moved from its place', () => {
+  const jobs = [buildJob(2), buildJob(1, { sequenceSheet: { phases: [] } })]
+
+  assert.deepEqual(sortJobsForScheduling(jobs, undefined), {
+    pending: jobs,
+    scheduled: [],
+    empty: [],
+  })
 })
 
 test('the events a phase already has are listed once per type, earliest date first', () => {

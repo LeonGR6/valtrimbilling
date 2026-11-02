@@ -180,10 +180,14 @@ test('the Calendar headings say when a lagged Draw becomes available', () => {
     phase: jobWithLots([101]).sequenceSheet.phases[0],
     schedule: lagSchedule,
   })
-  assert.deepEqual(headings[0], { eventType: 'HW', eventDates: ['2026-09-10'] })
+  const divisions = [
+    { date: '2026-09-10', lotIds: [101], lotNumbers: ['101'], variants: [] },
+  ]
+  assert.deepEqual(headings[0], { eventType: 'HW', eventDates: ['2026-09-10'], divisions })
   assert.deepEqual(headings[1], {
     eventType: 'HW',
     eventDates: ['2026-09-10'],
+    divisions,
     lag: { value: 1, unit: 'MONTHS' },
     availableDates: ['2026-10-10'],
   })

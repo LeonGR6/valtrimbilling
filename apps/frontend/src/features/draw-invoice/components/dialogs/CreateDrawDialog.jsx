@@ -48,11 +48,13 @@ import {
   summarizeDrawPackage,
   utilityChargeKey,
 } from '../../utils/drawPackages.js'
+import { canUseJobNotes } from '../../services/jobNotesRecord.js'
 import { NEW_PACKAGE_NOTE_MAX_LENGTH, newPackageNoteHelp } from '../../services/packageNotesRecord.js'
 import { optionsPackageAmounts } from '../../utils/optionsPackage.js'
 import { planCreatedPackages, planPackageSplit } from '../../utils/packageSplit.js'
 import { priceChangeIssue, priceChangeRows, priceChangeTotals } from '../../utils/priceChanges.js'
 import { usePendingPriceDifferences } from '../../hooks/usePendingPriceDifferences.js'
+import JobNotesPanel from './JobNotesPanel.jsx'
 import PackageSplitNotice from './PackageSplitNotice.jsx'
 import {
   buildDrawWorksheet,
@@ -69,6 +71,7 @@ import {
   buildAvailableSeparateHardwareSelections,
   buildCalendarDrawSuggestion,
   buildDrawCalendarHeadings,
+  findLotEventDate,
   localDateKey,
 } from '../../utils/calendarDrawSuggestions.js'
 import {
@@ -314,6 +317,9 @@ export default function CreateDrawDialog({
     }
   }
   const phaseModels = shownPhases.map(buildPhaseModel)
+  // The date the Calendar gave an event for a lot, whichever Phase shown holds it.
+  const allHeadings = phaseModels.flatMap((model) => model.headings)
+  const eventDateFor = (lotId, eventType) => findLotEventDate(allHeadings, lotId, eventType)
   // Selected cells of a Draw billed some time after its event, before that time
   // has passed. They can still be packaged: the Calendar only suggests them later.
   const todayKey = localDateKey()
@@ -886,6 +892,10 @@ export default function CreateDrawDialog({
             ))}
           </TextField>
 
+          {job && canUseJobNotes(profile?.role) && (
+            <JobNotesPanel key={job.id} job={job} packages={packages} />
+          )}
+
           {job && noticeGate.status === 'missing' && (
             <Alert
               severity="warning"
@@ -1214,6 +1224,7 @@ export default function CreateDrawDialog({
               summary={summary}
               billedHardwareCharges={billedHardwareCharges}
               onToggle={toggleHardwareSelection}
+              eventDateFor={eventDateFor}
             />
           )}
 
@@ -1418,8 +1429,8 @@ export default function CreateDrawDialog({
 
           {hasScope && (
             <TextField
-              label="Note (optional)"
-              placeholder="A call, a promise to pay, a missing document…"
+              label="Note for this Package (optional)"
+              placeholder="Something about this Package only: a call, a missing document…"
               value={notes}
               onChange={(event) => setNotes(event.target.value)}
               disabled={submitting}

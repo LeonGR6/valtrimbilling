@@ -101,6 +101,42 @@ export function sortPhasesForScheduling(phases, statusOf) {
   return { pending, scheduled }
 }
 
+/** How many of a Job's Phases still have no events in the Calendar. */
+export function countUnscheduledPhases(job, statusOf) {
+  return getSchedulablePhases(job).filter(
+    (phase) => statusOf(job, phase) === 'unscheduled',
+  ).length
+}
+
+/**
+ * The Jobs to offer when scheduling, in three groups that each keep the order they came in:
+ * `pending` has at least one Phase with no events yet, `scheduled` has every Phase on the Calendar,
+ * and `empty` has nothing to schedule (no Phases with Lots, or an inactive Job). `statusOf` is the
+ * coverage lookup; without it (the data has not loaded) no Job can be told apart, so all of them
+ * stay in `pending` rather than being sorted by a guess.
+ */
+export function sortJobsForScheduling(jobs, statusOf) {
+  if (!statusOf) return { pending: [...jobs], scheduled: [], empty: [] }
+
+  const pending = []
+  const scheduled = []
+  const empty = []
+
+  for (const job of jobs) {
+    const phases = getSchedulablePhases(job)
+
+    if (countUnscheduledPhases(job, statusOf) > 0) {
+      pending.push(job)
+    } else if (phases.length > 0 && phases.every((phase) => statusOf(job, phase) === 'scheduled')) {
+      scheduled.push(job)
+    } else {
+      empty.push(job)
+    }
+  }
+
+  return { pending, scheduled, empty }
+}
+
 /**
  * The events a Phase already has in the Calendar, one entry per type (EXT,
  * Shutter, DM, HW) with its earliest date and how many dates it has. Install

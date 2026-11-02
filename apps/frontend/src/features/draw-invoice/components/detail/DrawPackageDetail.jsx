@@ -80,6 +80,7 @@ import QuickbooksInvoiceDialog from './QuickbooksInvoiceDialog.jsx'
 import PackageFinalReleaseNotice from './PackageFinalReleaseNotice.jsx'
 import PackageSingleInvoiceNotice from './PackageSingleInvoiceNotice.jsx'
 import QuickbooksPackageNotice from './QuickbooksPackageNotice.jsx'
+import { DrawPackageDetailSkeleton } from '../shared/PackageSkeletons.jsx'
 import QuickbooksStatusCard from '../shared/QuickbooksStatusCard.jsx'
 import {
   PackageEnvironmentLabel,
@@ -246,14 +247,7 @@ export default function DrawPackageDetail() {
   const error = jobsError || packagesError || billingSetupsError
 
   if (loading && (jobs.length === 0 || drawInvoicePackages.length === 0)) {
-    return (
-      <Box sx={{ minHeight: 320, display: 'grid', placeItems: 'center' }}>
-        <Stack spacing={1.5} sx={{ alignItems: 'center' }}>
-          <CircularProgress size={32} />
-          <Typography color="text.secondary">Loading Draw & Invoice Packages…</Typography>
-        </Stack>
-      </Box>
-    )
+    return <DrawPackageDetailSkeleton onBack={() => navigate('/draw-invoice')} />
   }
 
   const focusedJob = jobs.find(

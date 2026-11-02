@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   FILTER_BATCH_SIZE,
+  FILTER_CONCURRENCY,
   PAGE_SIZE,
   inBatches,
   listAllRows,
@@ -67,4 +68,62 @@ test('a filter on many ids goes in batches, and each batch is read in full', asy
   await listAllRowsByIds(many, (batch) => { sizes.push(batch.length); return fakeTable([])() }, never)
   assert.deepEqual(sizes, [200, 200, 50])
   assert.deepEqual(await listAllRowsByIds([], () => fakeTable(rows)(), never), [])
+})
+
+const wait = (milliseconds) => new Promise((resolve) => { setTimeout(resolve, milliseconds) })
+
+// A table whose every request takes `delayOf(batch)` and that counts the requests in flight.
+function slowTable({ delayOf = () => 5, failOn = () => false } = {}) {
+  const state = { inFlight: 0, mostInFlight: 0, started: [] }
+  const queryFor = (batch) => ({
+    async range() {
+      state.started.push(batch[0])
+      state.inFlight += 1
+      state.mostInFlight = Math.max(state.mostInFlight, state.inFlight)
+      await wait(delayOf(batch))
+      state.inFlight -= 1
+      return failOn(batch)
+        ? { data: null, error: { code: '42501', message: 'denied' } }
+        : { data: batch.map((id) => ({ id })), error: null }
+    },
+  })
+  return { state, queryFor }
+}
+const idsUpTo = (count) => Array.from({ length: count }, (_, index) => index + 1)
+
+test('batches are read in parallel but never more than the limit at once', async () => {
+  const { state, queryFor } = slowTable()
+
+  const read = await listAllRowsByIds(idsUpTo(2000), queryFor, never, PAGE_SIZE, 3)
+
+  assert.equal(read.length, 2000)
+  assert.equal(state.started.length, 10)
+  assert.equal(state.mostInFlight, 3)
+  assert.equal(FILTER_CONCURRENCY, 6)
+})
+
+test('the rows come back in the order of the ids, whichever batch finishes first', async () => {
+  // The later the batch, the sooner it answers.
+  const { queryFor } = slowTable({ delayOf: (batch) => Math.max(1, 30 - Math.floor(batch[0] / 10)) })
+
+  const read = await listAllRowsByIds(idsUpTo(1000), queryFor, never)
+
+  assert.deepEqual(read.map(({ id }) => id), idsUpTo(1000))
+})
+
+test('after a batch fails no new batch is started, and the error is the one reported', async () => {
+  // The failing batch answers first; the other one is still running when it does.
+  const { state, queryFor } = slowTable({
+    delayOf: (batch) => (batch[0] === 201 ? 1 : 15),
+    failOn: (batch) => batch[0] === 201,
+  })
+
+  await assert.rejects(
+    listAllRowsByIds(idsUpTo(2000), queryFor, (error) => { throw new Error(`failed ${error.code}`) }, PAGE_SIZE, 2),
+    /failed 42501/,
+  )
+  await wait(40)
+
+  // Two were running; the one that did not fail stopped instead of taking the next.
+  assert.deepEqual(state.started, [1, 201])
 })

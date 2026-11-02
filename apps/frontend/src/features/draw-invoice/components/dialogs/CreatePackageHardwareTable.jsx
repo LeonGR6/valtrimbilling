@@ -16,13 +16,15 @@ import {
 } from '@mui/material'
 import BilledRowsAccordion from './BilledRowsAccordion.jsx'
 import { formatPhaseBuilding } from '../../../sequence-sheets/utils/phaseBuildingCodes.js'
-import { formatCurrency } from '../../utils/drawInvoiceFormatters.js'
+import { formatCurrency, formatLongDate } from '../../utils/drawInvoiceFormatters.js'
 import { hardwareChargeKey } from '../../utils/drawPackages.js'
 
+// `eventDateFor(lotId, eventType)` is the date the Calendar gave that event for the lot, or null.
 export default function CreatePackageHardwareTable({
   summary,
   billedHardwareCharges,
   onToggle,
+  eventDateFor = () => null,
 }) {
   const hardwareRows = summary.hardwareRows ?? []
 
@@ -61,6 +63,9 @@ export default function CreatePackageHardwareTable({
         </TableHead>
         <TableBody>
           {rows.map(({ hardware, billed }) => {
+            const eventDate = hardware.hardwareBillingMode === 'BY_EVENT'
+              ? eventDateFor(hardware.lotId, hardware.hardwareEventType)
+              : null
             return (
               <TableRow key={hardware.selectionKey} hover>
                 <TableCell padding="checkbox">
@@ -95,6 +100,11 @@ export default function CreatePackageHardwareTable({
                         ? ` · ${hardware.drawName.trim()}`
                         : ''}`}
                   </Typography>
+                  {eventDate && (
+                    <Typography variant="caption" color="text.secondary" component="div">
+                      {hardware.hardwareEventType} on {formatLongDate(eventDate)}
+                    </Typography>
+                  )}
                 </TableCell>
                 <TableCell>
                   {hardware.hardwareBillingMode === 'BY_EVENT'

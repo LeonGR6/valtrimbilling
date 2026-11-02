@@ -158,6 +158,12 @@ export function buildAvailableSeparateHardwareSelections({ job, schedule }) {
   ))
 }
 
+/**
+ * What the Calendar says about each Draw of the schedule, to head its column: the event it waits for
+ * and the dates of that event in this Phase. `eventDates` lists them; `divisions` says which lots go
+ * with each date, so an event the Calendar divided (a Phase split in parts, or lots scheduled apart)
+ * shows every date with its own lots. A Draw with a lag also says when it becomes available.
+ */
 export function buildDrawCalendarHeadings({
   activities = [],
   job,
@@ -165,9 +171,8 @@ export function buildDrawCalendarHeadings({
   schedule,
 }) {
   const draws = schedule?.draws ?? []
-  const phaseLotIds = new Set(
-    (phase?.lots ?? []).map(({ id }) => String(id)),
-  )
+  const phaseLots = phase?.lots ?? []
+  const phaseLotIds = new Set(phaseLots.map(({ id }) => String(id)))
 
   return draws.map((draw) => {
     const eventType = EVENT_TYPE_ORDER.includes(draw.eventType)
@@ -175,10 +180,10 @@ export function buildDrawCalendarHeadings({
       : null
     const lag = normalizeLag(draw.lag)
     if (!job || !phase || !eventType || phaseLotIds.size === 0) {
-      return { eventType, eventDates: [] }
+      return { eventType, eventDates: [], divisions: [] }
     }
 
-    const eventDates = new Set()
+    const lotsByDate = new Map()
     for (const activity of activities) {
       if (
         activity.status !== 'ACTIVE'
@@ -194,28 +199,65 @@ export function buildDrawCalendarHeadings({
             productionSchedule.isActive === false
             || !countsForBilling(productionSchedule)
             || !parseDateKey(productionSchedule.date)
-            || !(productionSchedule.lotIds ?? []).some(
-              (lotId) => phaseLotIds.has(String(lotId)),
-            )
           ) continue
 
-          eventDates.add(productionSchedule.date)
+          const lotIds = (productionSchedule.lotIds ?? [])
+            .map(String)
+            .filter((lotId) => phaseLotIds.has(lotId))
+          if (lotIds.length === 0) continue
+
+          const onDate = lotsByDate.get(productionSchedule.date)
+            ?? { lotIds: new Set(), variants: new Set() }
+          lotIds.forEach((lotId) => onDate.lotIds.add(lotId))
+          if (productionSchedule.variant) onDate.variants.add(productionSchedule.variant)
+          lotsByDate.set(productionSchedule.date, onDate)
         }
       }
     }
 
-    const sortedDates = [...eventDates].sort()
+    const sortedDates = [...lotsByDate.keys()].sort()
+    const divisions = sortedDates.map((date) => {
+      const { lotIds, variants } = lotsByDate.get(date)
+      const lots = phaseLots.filter(({ id }) => lotIds.has(String(id)))
+      return {
+        date,
+        lotIds: lots.map(({ id }) => id),
+        lotNumbers: lots.map(({ lotNumber }) => String(lotNumber)),
+        variants: [...variants].sort(),
+      }
+    })
     // Only a Draw with a lag says when it becomes billable; the others keep the
     // plain event dates.
     return lag
       ? {
           eventType,
           eventDates: sortedDates,
+          divisions,
           lag,
           availableDates: sortedDates.map((date) => addLag(date, lag)),
         }
-      : { eventType, eventDates: sortedDates }
+      : { eventType, eventDates: sortedDates, divisions }
   })
+}
+
+/**
+ * The date of an event for one lot, the earliest one when the Calendar gave it several: the same date
+ * the suggestion bills from. `headings` are the ones of `buildDrawCalendarHeadings`. Null when the
+ * Calendar has no such event for the lot.
+ */
+export function findLotEventDate(headings, lotId, eventType) {
+  let earliest = null
+  for (const heading of headings) {
+    if (heading?.eventType !== eventType) continue
+
+    for (const { date, lotIds } of heading.divisions ?? []) {
+      if (
+        lotIds.some((id) => String(id) === String(lotId))
+        && (earliest === null || date < earliest)
+      ) earliest = date
+    }
+  }
+  return earliest
 }
 
 /**

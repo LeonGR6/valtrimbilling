@@ -2693,8 +2693,12 @@
   font-size: 12px;
 }
 
-.calendar-scope-filters .MuiTypography-caption {
+.calendar-scope-filters .calendar-status {
+  min-height: 24px;
   margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   white-space: nowrap;
 }
 
@@ -2867,8 +2871,80 @@
     flex: 1 1 calc(50% - 3px);
   }
 
-  .calendar-scope-filters .MuiTypography-caption {
+  .calendar-scope-filters .calendar-status {
     margin-left: 0;
     flex: 1 0 100%;
+  }
+}
+
+/* Events still loading: grey stand-ins in the cells where the events will be. They take their
+   colour from the calendar's own text and surface tones (so they work in both themes), pulse
+   gently, and stop pulsing for people who ask for less motion. */
+.calendar-canvas .fc .calendar-ghost {
+  pointer-events: none;
+  cursor: default;
+}
+
+.calendar-ghost__bar {
+  display: block;
+  height: 20px;
+  max-width: 100%;
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--calendar-muted-text) 34%, var(--calendar-surface));
+  opacity: 0.55;
+  animation: calendar-ghost-pulse 1.6s ease-in-out infinite;
+}
+
+.calendar-ghost__card {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 9px 8px;
+}
+
+.calendar-ghost__card .calendar-ghost__bar {
+  height: 10px;
+}
+
+.calendar-canvas .fc .calendar-ghost .fc-list-event-dot {
+  border-color: var(--calendar-grid-strong) !important;
+}
+
+@keyframes calendar-ghost-pulse {
+  0%,
+  100% {
+    opacity: 0.4;
+  }
+
+  50% {
+    opacity: 0.8;
+  }
+}
+
+/* The events that arrive after a visible load settle in; navigating the calendar does not. */
+.calendar-canvas--reveal .fc .fc-event,
+.calendar-canvas--reveal .fc .fc-list-event {
+  animation: calendar-event-reveal 180ms ease-out both;
+}
+
+@keyframes calendar-event-reveal {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .calendar-ghost__bar {
+    animation: none;
+    opacity: 0.6;
+  }
+
+  .calendar-canvas--reveal .fc .fc-event,
+  .calendar-canvas--reveal .fc .fc-list-event {
+    animation: none;
   }
 }

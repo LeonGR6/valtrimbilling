@@ -21,11 +21,13 @@ import {
   summarizeSelectedDrawCells,
 } from '../../utils/drawPackages.js'
 import { calendarSelectionKey } from '../../utils/calendarDrawSuggestions.js'
+import { headingDivisions } from '../../utils/calendarHeadingDates.js'
 import {
   formatCurrency,
   formatLongDate,
   formatPercentage,
 } from '../../utils/drawInvoiceFormatters.js'
+import HeadingDivisions from './HeadingDivisions.jsx'
 
 // The tones of the dark theme are translucent. A cell that sticks while the rows scroll needs a
 // solid base under its tone, or the rows going under it show through.
@@ -49,9 +51,14 @@ function calendarHeadingLabel(heading) {
   if (!heading?.eventType) return 'Event not set'
   if (heading.eventDates.length === 0) return heading.eventType
 
+  const lag = heading.lag ? ` ${formatLagShort(heading.lag)}` : ''
+  // A divided event lists its dates, each with its lots, under this line.
+  if (headingDivisions(heading).length > 0) {
+    return `${heading.eventType}${lag} (${heading.eventDates.length} dates)`
+  }
+
   const firstDate = formatLongDate(heading.eventDates[0])
   const additionalDateCount = heading.eventDates.length - 1
-  const lag = heading.lag ? ` ${formatLagShort(heading.lag)}` : ''
   return additionalDateCount > 0
     ? `${heading.eventType}${lag} (${firstDate} +${additionalDateCount} more)`
     : `${heading.eventType}${lag} (${firstDate})`
@@ -187,6 +194,9 @@ export default function DrawSelectionGrid({
                       >
                         {calendarHeadingLabel(drawCalendarHeadings[drawIndex])}
                       </Typography>
+                      <Box sx={{ color: 'primary.main' }}>
+                        <HeadingDivisions heading={drawCalendarHeadings[drawIndex]} />
+                      </Box>
                       <Typography color="primary.main" fontWeight={850}>
                         Draw #{drawIndex + 1}
                       </Typography>

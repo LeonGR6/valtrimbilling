@@ -135,7 +135,7 @@ export function EditDrawPackageDialog({
       headings: sheet.draws.map((draw, drawIndex) => (
         calendarHeadings[drawIndex]?.eventType
           ? calendarHeadings[drawIndex]
-          : { eventType: draw.eventType ?? null, eventDates: [] }
+          : { eventType: draw.eventType ?? null, eventDates: [], divisions: [] }
       )),
     }
   })

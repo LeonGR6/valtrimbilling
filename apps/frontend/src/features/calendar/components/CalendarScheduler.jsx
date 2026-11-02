@@ -26,6 +26,7 @@ import {
 } from '../data/calendarEvents.js'
 import { useProductionActivities } from '../context/useProductionActivities.js'
 import { getBuilderDateConfiguration } from '../../builders/data/builders.js'
+import { useLoadingPhase } from '../hooks/useLoadingPhase.js'
 import { usePhaseCalendarCoverage } from '../hooks/usePhaseCalendarCoverage.js'
 import { calendarEventSchema } from '../schemas/calendarEventSchema.js'
 import {
@@ -93,12 +94,18 @@ function defaultCalendarView() {
 export default function CalendarScheduler() {
   const calendarRef = useRef(null)
   const { profile } = useAuth()
-  const { jobs, refreshJobs } = useJobs()
+  const {
+    jobs,
+    loading: jobsLoading,
+    error: jobsError,
+    refreshJobs,
+  } = useJobs()
   const { builders } = useBuilders()
   const { people } = usePeople()
   const { contacts: builderContacts } = useBuilderContacts()
   const {
     events,
+    loaded: productionLoaded,
     loading: productionLoading,
     error: productionError,
     canManageProductionActivities,
@@ -107,6 +114,13 @@ export default function CalendarScheduler() {
     cancelProductionActivity,
   } = useProductionActivities()
   const phaseCoverage = usePhaseCalendarCoverage()
+  // An event is drawn from its Job's Phase and Lots, so none shows until both are in. Until then
+  // the Calendar shows stand-ins where the events will be, instead of a bar that is easy to miss.
+  const firstLoad = (productionLoading || jobsLoading || !productionLoaded)
+    && events.length === 0
+    && !productionError
+    && !jobsError
+  const { phase: loadingPhase, revealing } = useLoadingPhase(firstLoad)
   const [searchParams, setSearchParams] = useSearchParams()
   const { mode, systemMode } = useColorScheme()
   const resolvedColorMode = mode === 'system' ? systemMode : mode
@@ -582,7 +596,20 @@ export default function CalendarScheduler() {
         />
       ) : calendarMode === 'PRODUCTION' ? (
         <>
-          {productionLoading && <LinearProgress />}
+          {/* A refresh with events already on screen keeps the thin bar; the first load has stand-ins. */}
+          {(productionLoading || jobsLoading) && !firstLoad && <LinearProgress />}
+          {jobsError && (
+            <Alert
+              severity="error"
+              action={(
+                <Button color="inherit" size="small" onClick={() => refreshJobs().catch(() => {})}>
+                  Retry
+                </Button>
+              )}
+            >
+              The Jobs could not be loaded, so the events cannot be shown. {jobsError}
+            </Alert>
+          )}
           {productionError && (
             <Alert
               severity="error"
@@ -604,6 +631,8 @@ export default function CalendarScheduler() {
             calendarRef={calendarRef}
             events={filteredEvents}
             totalEventCount={events.length}
+            loadingPhase={loadingPhase}
+            revealing={revealing}
             scope={scope}
             onChangeScope={changeScope}
             onClearScope={clearScope}

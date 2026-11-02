@@ -5,6 +5,7 @@ import {
   buildCalendarDrawSuggestion,
   buildDrawCalendarHeadings,
   calendarSelectionKey,
+  findLotEventDate,
 } from '../src/features/draw-invoice/utils/calendarDrawSuggestions.js'
 
 function jobWithLots(lotIds) {
@@ -310,9 +311,137 @@ test('Draw headings expose their event type and matching Calendar dates', () => 
     phase,
     schedule,
   }), [
-    { eventType: 'EXT', eventDates: ['2026-10-01', '2026-10-08'] },
-    { eventType: 'DM', eventDates: [] },
+    {
+      eventType: 'EXT',
+      eventDates: ['2026-10-01', '2026-10-08'],
+      divisions: [
+        { date: '2026-10-01', lotIds: [101], lotNumbers: ['101'], variants: [] },
+        { date: '2026-10-08', lotIds: [102], lotNumbers: ['102'], variants: [] },
+      ],
+    },
+    { eventType: 'DM', eventDates: [], divisions: [] },
   ])
+})
+
+const splitHeadingSchedule = {
+  draws: [
+    { percentage: 30, eventType: 'DM' },
+    { percentage: 70, eventType: 'HW' },
+  ],
+}
+
+test('a Phase split in parts shows each date with the lots that go on it', () => {
+  const job = jobWithLots([1, 2, 3, 4, 5, 6])
+  const phase = job.sequenceSheet.phases[0]
+  const activities = [activity([
+    stage('DM', [
+      { ...productionSchedule(1, '2026-09-01', [1, 2, 3, 4, 5, 6]), variant: 'BASE', isActive: false },
+      { ...productionSchedule(2, '2026-10-08', [4, 5, 6]), variant: 'DIVISION' },
+      { ...productionSchedule(3, '2026-10-01', [1, 2, 3]), variant: 'DIVISION' },
+    ]),
+  ])]
+
+  const [dm] = buildDrawCalendarHeadings({ activities, job, phase, schedule: splitHeadingSchedule })
+
+  // The old whole-Phase date (inactive after the split) is not one of the dates.
+  assert.deepEqual(dm.eventDates, ['2026-10-01', '2026-10-08'])
+  assert.deepEqual(dm.divisions, [
+    { date: '2026-10-01', lotIds: [1, 2, 3], lotNumbers: ['1', '2', '3'], variants: ['DIVISION'] },
+    { date: '2026-10-08', lotIds: [4, 5, 6], lotNumbers: ['4', '5', '6'], variants: ['DIVISION'] },
+  ])
+})
+
+test('parts of a split that fall on the same day are one date', () => {
+  const job = jobWithLots([1, 2, 3, 4])
+  const phase = job.sequenceSheet.phases[0]
+  const activities = [activity([
+    stage('HW', [
+      { ...productionSchedule(1, '2026-10-05', [1, 2]), variant: 'DIVISION' },
+      { ...productionSchedule(2, '2026-10-05', [3, 4]), variant: 'DIVISION' },
+    ]),
+  ])]
+
+  const [, hw] = buildDrawCalendarHeadings({ activities, job, phase, schedule: splitHeadingSchedule })
+
+  assert.deepEqual(hw.eventDates, ['2026-10-05'])
+  assert.equal(hw.divisions.length, 1)
+  assert.deepEqual(hw.divisions[0].lotIds, [1, 2, 3, 4])
+})
+
+test('lots of other Phases and unlisted lots do not appear in the divisions', () => {
+  const job = jobWithLots([1, 2])
+  const phase = job.sequenceSheet.phases[0]
+  const activities = [activity([
+    stage('DM', [
+      { ...productionSchedule(1, '2026-10-01', [1, 99]), variant: 'DIVISION' },
+      { ...productionSchedule(2, '2026-10-08', [98]), variant: 'DIVISION' },
+    ]),
+  ])]
+
+  const [dm] = buildDrawCalendarHeadings({ activities, job, phase, schedule: splitHeadingSchedule })
+
+  assert.deepEqual(dm.eventDates, ['2026-10-01'])
+  assert.deepEqual(dm.divisions.map(({ lotIds }) => lotIds), [[1]])
+})
+
+test('an install-only or lock-up date is a date of its own for every lot', () => {
+  const job = jobWithLots([1, 2])
+  const phase = job.sequenceSheet.phases[0]
+  const activities = [activity([
+    stage('HW', [
+      { ...productionSchedule(1, '2026-10-01', [1, 2]), variant: 'BASE' },
+      { ...productionSchedule(2, '2026-10-12', [1, 2]), variant: 'LOCK_UP' },
+      // A baseboard install is no billing event, so it is not one of the dates.
+      { ...productionSchedule(3, '2026-10-20', [1, 2]), variant: 'BASEBOARD_INSTALL' },
+    ]),
+  ])]
+
+  const [, hw] = buildDrawCalendarHeadings({ activities, job, phase, schedule: splitHeadingSchedule })
+
+  assert.deepEqual(hw.divisions.map(({ date, variants }) => [date, variants]), [
+    ['2026-10-01', ['BASE']],
+    ['2026-10-12', ['LOCK_UP']],
+  ])
+})
+
+test('a lagged Draw keeps its divisions beside the dates it becomes available', () => {
+  const job = jobWithLots([1, 2])
+  const phase = job.sequenceSheet.phases[0]
+  const activities = [activity([
+    stage('DM', [
+      { ...productionSchedule(1, '2026-10-01', [1]), variant: 'DIVISION' },
+      { ...productionSchedule(2, '2026-10-08', [2]), variant: 'DIVISION' },
+    ]),
+  ])]
+
+  const [dm] = buildDrawCalendarHeadings({
+    activities,
+    job,
+    phase,
+    schedule: { draws: [{ percentage: 100, eventType: 'DM', lag: { value: 1, unit: 'WEEKS' } }] },
+  })
+
+  assert.deepEqual(dm.availableDates, ['2026-10-08', '2026-10-15'])
+  assert.deepEqual(dm.divisions.map(({ date }) => date), ['2026-10-01', '2026-10-08'])
+})
+
+test('the date of an event for a lot is the earliest one the Calendar gave it', () => {
+  const job = jobWithLots([1, 2, 3])
+  const phase = job.sequenceSheet.phases[0]
+  const activities = [activity([
+    stage('HW', [
+      { ...productionSchedule(1, '2026-10-01', [1]), variant: 'DIVISION' },
+      { ...productionSchedule(2, '2026-10-08', [2, 3]), variant: 'DIVISION' },
+      { ...productionSchedule(3, '2026-10-20', [1, 2, 3]), variant: 'LOCK_UP' },
+    ]),
+  ])]
+  const headings = buildDrawCalendarHeadings({ activities, job, phase, schedule: splitHeadingSchedule })
+
+  assert.equal(findLotEventDate(headings, 1, 'HW'), '2026-10-01')
+  assert.equal(findLotEventDate(headings, 3, 'HW'), '2026-10-08')
+  assert.equal(findLotEventDate(headings, '2', 'HW'), '2026-10-08')
+  assert.equal(findLotEventDate(headings, 1, 'DM'), null)
+  assert.equal(findLotEventDate(headings, 99, 'HW'), null)
 })
 
 test('Calendar suggestions ignore Utility Building rows inside a normal Phase', () => {

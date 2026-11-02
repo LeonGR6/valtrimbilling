@@ -14,6 +14,8 @@ import {
   Typography,
 } from '@mui/material'
 import BilledRowsAccordion from './BilledRowsAccordion.jsx'
+import HeadingDivisions from './HeadingDivisions.jsx'
+import { headingDivisions } from '../../utils/calendarHeadingDates.js'
 import { utilityChargeKey } from '../../utils/drawPackages.js'
 import {
   formatCurrency,
@@ -24,6 +26,10 @@ import {
 function eventLabel(heading, fallback) {
   if (!heading?.eventType) return fallback
   if (heading.eventDates.length === 0) return heading.eventType
+  // A divided event lists its dates, each with its lots, under this line.
+  if (headingDivisions(heading).length > 0) {
+    return `${heading.eventType} (${heading.eventDates.length} dates)`
+  }
   return `${heading.eventType} (${formatLongDate(heading.eventDates[0])})`
 }
 
@@ -95,6 +101,7 @@ export default function CreatePackageUtilityTable({
                     column.eventType,
                   )}
                 </Typography>
+                <HeadingDivisions heading={drawCalendarHeadings[column.configuredDrawIndex]} />
                 <Typography fontWeight={850}>
                   {formatPercentage(
                     worksheet.rows[0]?.utilityPercentages?.[

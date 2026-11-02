@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Alert, Box, CircularProgress, Snackbar, Stack, Typography } from '@mui/material'
+import { Alert, Snackbar } from '@mui/material'
 import { useBuilderDrawSchedules } from '../../../builder-draw-schedules/context/useBuilderDrawSchedules.js'
 import { useProductionActivities } from '../../../calendar/context/useProductionActivities.js'
 import { useAuth } from '../../../auth/context/useAuth.js'
@@ -18,6 +18,7 @@ import {
 import CreateDrawDialog from '../dialogs/CreateDrawDialog.jsx'
 import CreateRetentionReleaseDialog from '../dialogs/CreateRetentionReleaseDialog.jsx'
 import { refreshAllQuickbooksPayments } from '../../services/quickbooksRepository.js'
+import { PackageCatalogSkeleton } from '../shared/PackageSkeletons.jsx'
 import PackageCatalog from './PackageCatalog.jsx'
 
 // Opening the catalog asks QuickBooks how the open invoices stand, at most once
@@ -134,14 +135,7 @@ export default function DrawInvoiceCatalog() {
   const error = jobsError || packagesError || billingSetupsError
 
   if (loading && (jobs.length === 0 || drawInvoicePackages.length === 0)) {
-    return (
-      <Box sx={{ minHeight: 320, display: 'grid', placeItems: 'center' }}>
-        <Stack spacing={1.5} sx={{ alignItems: 'center' }}>
-          <CircularProgress size={32} />
-          <Typography color="text.secondary">Loading Draw & Invoice Packages…</Typography>
-        </Stack>
-      </Box>
-    )
+    return <PackageCatalogSkeleton />
   }
 
   return (

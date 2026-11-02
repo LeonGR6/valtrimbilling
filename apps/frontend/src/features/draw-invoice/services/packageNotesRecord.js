@@ -1,6 +1,8 @@
 // Internal notes on a Package: a thread of entries, each with who wrote it and when. A note is added
 // and never edited or removed, so the thread reads as a record of what was said about the Package.
 
+import { noteAuthor, noteProblem, sortNotes } from '../utils/noteThread.js'
+
 export const PACKAGE_NOTE_MAX_LENGTH = 1000
 
 // The note written while a Package is created travels with it and is saved as its first note, so it
@@ -34,17 +36,7 @@ export function toPackageNote(row) {
   }
 }
 
-function momentOf(note) {
-  const time = new Date(note.createdAt).getTime()
-  return Number.isNaN(time) ? 0 : time
-}
-
-// Newest first; two notes of the same moment keep the order they were written in.
-export function sortPackageNotes(notes) {
-  return [...notes].sort((left, right) => (
-    momentOf(right) - momentOf(left) || Number(right.id) - Number(left.id)
-  ))
-}
+export const sortPackageNotes = sortNotes
 
 /** What the thread of a Package amounts to: how many notes, and the last one written. */
 export function summarizePackageNotes(record) {
@@ -54,12 +46,7 @@ export function summarizePackageNotes(record) {
 
 /** Why a note cannot be saved yet, or an empty string when it can. */
 export function packageNoteProblem(body) {
-  const text = String(body ?? '').trim()
-  if (!text) return 'Write the note before saving it.'
-  if (text.length > PACKAGE_NOTE_MAX_LENGTH) {
-    return `A note can have up to ${PACKAGE_NOTE_MAX_LENGTH} characters.`
-  }
-  return ''
+  return noteProblem(body, PACKAGE_NOTE_MAX_LENGTH)
 }
 
 export function toAddPackageNoteRpc(packageId, body) {
@@ -70,9 +57,7 @@ export function toAddPackageNoteRpc(packageId, body) {
 }
 
 /** Who wrote a note, as it is shown next to it. */
-export function packageNoteAuthor(note) {
-  return String(note?.authorName ?? '').trim() || 'Unknown user'
-}
+export const packageNoteAuthor = noteAuthor
 
 /** What the person is told when a note could not be saved. */
 export function packageNoteErrorMessage(error) {

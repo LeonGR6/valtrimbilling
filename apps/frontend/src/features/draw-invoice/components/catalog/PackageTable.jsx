@@ -48,23 +48,10 @@ import {
 import { packageNoteAuthor, summarizePackageNotes } from '../../services/packageNotesRecord.js'
 import { canDeleteDraftPackage } from '../../utils/packageCatalog.js'
 import { PACKAGE_SORT_COLUMNS } from '../../utils/packageCatalog.js'
+import { PACKAGE_TABLE_COLUMNS, PACKAGE_TABLE_MIN_WIDTH } from '../../utils/packageTableColumns.js'
 import { isMultiPhasePackage } from '../../utils/packagePhaseScope.js'
 import { quickbooksTableStatusView } from '../../services/quickbooksRecord.js'
 import { PackageEnvironmentLabel, PackageStatusChip } from '../shared/PackageUi.jsx'
-
-const packageTableColumns = [
-  { key: 'package', width: 240 },
-  { key: 'status', width: 140 },
-  { key: 'quickbooks', width: 150 },
-  { key: 'builder', width: 170 },
-  { key: 'billing-period', width: 130 },
-  { key: 'lots', width: 105 },
-  { key: 'current-draw', width: 135 },
-  { key: 'retention-wrap', width: 180 },
-  { key: 'invoice-amount', width: 140 },
-  { key: 'documents', width: 125 },
-  { key: 'action', width: 120 },
-]
 
 // A thin bar on the row's left edge, so the status reads at a glance.
 const statusAccentPalettes = {
@@ -78,11 +65,6 @@ const quickbooksToneColors = {
   warning: 'warning.main',
   neutral: 'text.secondary',
 }
-
-const packageTableMinimumWidth = packageTableColumns.reduce(
-  (total, column) => total + column.width,
-  0,
-)
 
 function PackageActionMenu({ context, canManage, onOpen, onAction }) {
   const [anchorEl, setAnchorEl] = useState(null)
@@ -277,7 +259,7 @@ export default function PackageTable({
         <TableContainer>
           <Table
             sx={{
-              minWidth: packageTableMinimumWidth,
+              minWidth: PACKAGE_TABLE_MIN_WIDTH,
               tableLayout: 'fixed',
               '& .MuiTableCell-root': { px: 1.5, py: 1.1, verticalAlign: 'top' },
               '& .MuiTableCell-head': { py: 0.9 },
@@ -285,7 +267,7 @@ export default function PackageTable({
             }}
           >
             <colgroup>
-              {packageTableColumns.map((column) => (
+              {PACKAGE_TABLE_COLUMNS.map((column) => (
                 <col key={column.key} style={{ width: column.width }} />
               ))}
             </colgroup>

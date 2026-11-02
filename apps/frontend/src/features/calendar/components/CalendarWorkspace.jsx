@@ -8,6 +8,7 @@ import {
   Button,
   ButtonGroup,
   Checkbox,
+  CircularProgress,
   FormControlLabel,
   IconButton,
   InputAdornment,
@@ -26,17 +27,27 @@ import {
   activityTypeOptions,
   getActivityTone,
 } from '../data/calendarEvents.js'
+import { ghostEventSource } from '../utils/calendarLoading.js'
 import CalendarEventCard from './CalendarEventCard.jsx'
+import CalendarEventGhost from './CalendarEventGhost.jsx'
 import CalendarSearchResults from './CalendarSearchResults.jsx'
 
 function hasScope(scope) {
   return scope.builder !== 'ALL' || scope.community !== 'ALL' || scope.jobId !== 'ALL'
 }
 
+// What the line under the filters says while the events are on their way.
+const LOADING_MESSAGES = {
+  loading: 'Loading events…',
+  slow: 'Still loading. This is taking longer than usual.',
+}
+
 export default function CalendarWorkspace({
   calendarRef,
   events,
   totalEventCount,
+  loadingPhase = 'idle',
+  revealing = false,
   scope,
   onChangeScope,
   onClearScope,
@@ -59,6 +70,7 @@ export default function CalendarWorkspace({
   // The calendar stays mounted while searching so it comes back on the same
   // period; it is only hidden.
   const hiddenWhileSearching = searching ? { display: 'none' } : undefined
+  const loading = loadingPhase === 'loading' || loadingPhase === 'slow'
 
   return (
     <>
@@ -161,11 +173,15 @@ export default function CalendarWorkspace({
           {hasScope(scope) && (
             <Button size="small" color="inherit" onClick={onClearScope}>Clear filters</Button>
           )}
-          {!searching && (
-            <Typography variant="caption" color="text.secondary">
-              Showing {events.length} of {totalEventCount} events
-            </Typography>
-          )}
+          {/* Always in the page, so a screen reader hears the change from loading to the count. */}
+          <Box className="calendar-status" role="status" aria-live="polite">
+            {loading && <CircularProgress size={14} thickness={5} aria-hidden="true" />}
+            {(loading || (!searching && loadingPhase === 'idle')) && (
+              <Typography variant="caption" color="text.secondary">
+                {loading ? LOADING_MESSAGES[loadingPhase] : `Showing ${events.length} of ${totalEventCount} events`}
+              </Typography>
+            )}
+          </Box>
         </Box>
       </Box>
 
@@ -218,7 +234,11 @@ export default function CalendarWorkspace({
             </ButtonGroup>
           </Box>
 
-          <Box className="calendar-canvas" style={hiddenWhileSearching}>
+          <Box
+            className={`calendar-canvas${revealing ? ' calendar-canvas--reveal' : ''}`}
+            style={hiddenWhileSearching}
+            aria-busy={loading}
+          >
             <FullCalendar
               ref={calendarRef}
               plugins={[dayGridPlugin, interactionPlugin, listPlugin, multiMonthPlugin]}
@@ -259,20 +279,33 @@ export default function CalendarWorkspace({
               // A few pixels of wobble while clicking must not count as a drag.
               eventDragMinDistance={8}
               eventDurationEditable={false}
-              events={events}
-              eventClick={({ event }) => onEventClick(event.id)}
+              events={loading ? ghostEventSource : events}
+              eventClick={({ event }) => {
+                if (!event.extendedProps.ghost) onEventClick(event.id)
+              }}
               // A drag never changes the date by itself: the event goes back to
               // its day and the configuration opens to confirm the new one.
               eventDrop={(info) => {
                 info.revert()
                 onEventMove?.(info.event.id, info.event.startStr.slice(0, 10))
               }}
-              eventContent={(info) => <CalendarEventCard
-                event={info.event}
-                isList={info.view.type === 'listWeek'}
-                isMonth={info.view.type === 'dayGridMonth'}
-              />}
+              eventContent={(info) => (info.event.extendedProps.ghost
+                ? (
+                    <CalendarEventGhost
+                      width={info.event.extendedProps.width}
+                      isList={info.view.type === 'listWeek'}
+                      isMonth={info.view.type === 'dayGridMonth'}
+                    />
+                  )
+                : (
+                    <CalendarEventCard
+                      event={info.event}
+                      isList={info.view.type === 'listWeek'}
+                      isMonth={info.view.type === 'dayGridMonth'}
+                    />
+                  ))}
               eventClassNames={({ event }) => {
+                if (event.extendedProps.ghost) return ['calendar-ghost']
                 const tone = getActivityTone(
                   event.extendedProps.activityType,
                   event.extendedProps.orderMaterial,

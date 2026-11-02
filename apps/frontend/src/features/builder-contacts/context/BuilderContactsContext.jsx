@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useAuth } from '../../auth/context/useAuth.js'
+import { ADMIN_ROLES, canWork } from '../../auth/authorization/roleAccess.js'
 import {
   createBuilderContact as createBuilderContactRecord,
   deactivateBuilderContact as deactivateBuilderContactRecord,
@@ -31,7 +32,7 @@ export function BuilderContactsProvider({ children }) {
   const [contactTypes, setContactTypes] = useState([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
-  const canManageBuilderContacts = ['ADMIN', 'PROJECT_MANAGEMENT'].includes(profile?.role)
+  const canManageBuilderContacts = canWork(profile?.role, ADMIN_ROLES)
 
   const refreshBuilderContacts = useCallback(async () => {
     if (!profile?.id) {

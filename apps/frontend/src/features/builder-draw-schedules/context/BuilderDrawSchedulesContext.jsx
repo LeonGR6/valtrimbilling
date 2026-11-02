@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useAuth } from '../../auth/context/useAuth.js'
+import { BILLING_ROLES, canWork } from '../../auth/authorization/roleAccess.js'
 import { useJobs } from '../../jobs/context/useJobs.js'
 import {
   deactivateBuilderBillingSetup as deactivateBuilderBillingSetupRecord,
@@ -16,9 +17,7 @@ export function BuilderDrawSchedulesProvider({ children }) {
   const [jobBillingSetupVersions, setJobBillingSetupVersions] = useState([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
-  const canManageBuilderBillingSetups = ['ADMIN', 'PROJECT_MANAGEMENT'].includes(
-    profile?.role,
-  )
+  const canManageBuilderBillingSetups = canWork(profile?.role, BILLING_ROLES)
   const jobBillingSetupVersionKey = useMemo(() => [...new Set(
     jobs.map(({ billingSetupVersionId }) => Number(billingSetupVersionId))
       .filter((value) => Number.isInteger(value) && value > 0),

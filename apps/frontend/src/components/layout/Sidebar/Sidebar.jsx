@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import { useTheme } from '@mui/material/styles'
 import {
@@ -57,9 +57,14 @@ import valtrimLogoLight from '../../../assets/icons/Valtrim-Blue-Transparent.png
 import { navigationRoutes } from '../../../routes/navigation.jsx'
 import ColorModeToggle from '../../common/ColorModeToggle'
 import { useAuth } from '../../../features/auth/context/useAuth.js'
-import { isRoleAllowed } from '../../../features/auth/authorization/roleAccess.js'
+import {
+  PLANNING_ROLES,
+  canWork,
+  isRoleAllowed,
+} from '../../../features/auth/authorization/roleAccess.js'
 import { MANUAL_SIGN_OUT_STORAGE_KEY } from '../../../config/appConfig.js'
 import { useSidebarBadges } from './useSidebarBadges.js'
+import { hasAvailableItem as hasAvailableSectionItem, sectionsForRole } from './sidebarSections.js'
 
 const DRAWER_WIDTH = 256
 const RAIL_WIDTH = 72
@@ -319,14 +324,16 @@ function BrandLogo({ height }) {
 const sectionHeadingId = (label) =>
   `sidebar-section-${label.toLowerCase().replaceAll(' ', '-')}`
 
-// A section is worth a heading only if something inside it can be opened.
-function hasAvailableItem(section) {
-  return section.items.some((item) => item.path && availablePaths.has(item.path))
-}
+const hasAvailableItem = (section) => hasAvailableSectionItem(section, availablePaths)
 
 function SidebarContent({ onNavigate, collapsed = false, onToggleCollapsed, badges = {} }) {
   const navigate = useNavigate()
   const { profile, signOut, user } = useAuth()
+  const visibleSections = useMemo(() => sectionsForRole(navigationSections, profile?.role, {
+    accessByPath: routeAccessByPath,
+    availablePaths,
+  }), [profile?.role])
+  const canCreateJobs = canWork(profile?.role, PLANNING_ROLES)
   const [signOutDialogOpen, setSignOutDialogOpen] = useState(false)
   const [signingOut, setSigningOut] = useState(false)
   const [signOutError, setSignOutError] = useState(null)
@@ -404,28 +411,31 @@ function SidebarContent({ onNavigate, collapsed = false, onToggleCollapsed, badg
         )}
       </Box>
 
-      <Box sx={{ px: 1.5, pb: 1, display: 'flex', justifyContent: 'center' }}>
-        <Tooltip title={collapsed ? 'Create' : ''} placement="right">
-          <Button
-            component={NavLink}
-            startIcon={collapsed ? null : <AddIcon />}
-            to="/jobs?create=1"
-            onClick={onNavigate}
-            variant="contained"
-            color="primary"
-            fullWidth={!collapsed}
-            aria-label="Create"
-            sx={{
-              fontSize: 14,
-              fontWeight: 600,
-              textTransform: 'none',
-              ...(collapsed && { minWidth: 40, width: 40, height: 40, p: 0 }),
-            }}
-          >
-            {collapsed ? <AddIcon /> : 'Create'}
-          </Button>
-        </Tooltip>
-      </Box>
+      {/* Create starts a Job, which is the work of Project Management. */}
+      {canCreateJobs && (
+        <Box sx={{ px: 1.5, pb: 1, display: 'flex', justifyContent: 'center' }}>
+          <Tooltip title={collapsed ? 'Create' : ''} placement="right">
+            <Button
+              component={NavLink}
+              startIcon={collapsed ? null : <AddIcon />}
+              to="/jobs?create=1"
+              onClick={onNavigate}
+              variant="contained"
+              color="primary"
+              fullWidth={!collapsed}
+              aria-label="Create"
+              sx={{
+                fontSize: 14,
+                fontWeight: 600,
+                textTransform: 'none',
+                ...(collapsed && { minWidth: 40, width: 40, height: 40, p: 0 }),
+              }}
+            >
+              {collapsed ? <AddIcon /> : 'Create'}
+            </Button>
+          </Tooltip>
+        </Box>
+      )}
 
       {/* Navigation is organized by workflow; future modules stay visible but disabled. */}
       <Box
@@ -439,7 +449,7 @@ function SidebarContent({ onNavigate, collapsed = false, onToggleCollapsed, badg
         <List disablePadding>
         <NavigationItem {...homeItem} onNavigate={onNavigate} collapsed={collapsed} badge={badges[homeItem.path]} />
 
-        {navigationSections
+        {visibleSections
           .filter((section) => !collapsed || hasAvailableItem(section))
           .map((section) => (
             <Box component="li" key={section.label} sx={{ listStyle: 'none', mt: 1.5 }}>
@@ -461,10 +471,6 @@ function SidebarContent({ onNavigate, collapsed = false, onToggleCollapsed, badg
                   : { 'aria-labelledby': sectionHeadingId(section.label) })}
               >
                 {section.items
-                  .filter((item) => isRoleAllowed(
-                    profile?.role,
-                    routeAccessByPath.get(item.path),
-                  ))
                   .map((item) => (
                   item.children ? (
                     // Submenus cannot open inside a 72px rail, so they wait.

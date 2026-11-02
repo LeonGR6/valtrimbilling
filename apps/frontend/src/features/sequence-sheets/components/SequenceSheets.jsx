@@ -72,6 +72,8 @@ import { useProductionActivities } from '../../calendar/context/useProductionAct
 import { usePhaseCalendarCoverage } from '../../calendar/hooks/usePhaseCalendarCoverage.js'
 import JobModuleNavigation from '../../jobs/components/JobModuleNavigation.jsx'
 import { useJobs } from '../../jobs/context/useJobs.js'
+import { useAuth } from '../../auth/context/useAuth.js'
+import { SCHEDULING_ROLES, canWork } from '../../auth/authorization/roleAccess.js'
 import {
   getJobAssignedLotCount,
   getJobPhaseCount,
@@ -1053,15 +1055,17 @@ function NoticeSnackbar({ notice, onClose }) {
 export default function SequenceSheets() {
   const navigate = useNavigate()
   const { builderId, jobId, phaseId } = useParams()
+  const { profile } = useAuth()
   const {
     jobs,
     loading,
     error,
-    canManageJobs,
     refreshJobs,
     saveSequenceSheetPhase,
     deactivateSequenceSheetPhase,
   } = useJobs()
+  // Sequence Sheets belong to Scheduling, not to whoever manages the Jobs.
+  const canManageSequenceSheets = canWork(profile?.role, SCHEDULING_ROLES)
   const { jobBillingSetupVersions } = useBuilderDrawSchedules()
   const { canManageProductionActivities } = useProductionActivities()
   const calendarCoverage = usePhaseCalendarCoverage()
@@ -1096,7 +1100,7 @@ export default function SequenceSheets() {
     [focusedJob, jobId, jobs],
   )
   const visibleExpandedJobId = focusedJob?.id ?? expandedJobId
-  const canManageFocusedJob = canManageJobs && Boolean(focusedJob?.isActive)
+  const canManageFocusedJob = canManageSequenceSheets && Boolean(focusedJob?.isActive)
 
   const scope = useMemo(
     () => resolveJobScope(scopedJobs, {
@@ -1161,14 +1165,14 @@ export default function SequenceSheets() {
 
   const openCreate = (event, job) => {
     event.stopPropagation()
-    if (!canManageJobs || !job.isActive) return
+    if (!canManageSequenceSheets || !job.isActive) return
     setExpandedJobId(job.id)
     setDialogJobId(job.id)
     setDialogPhaseId(null)
   }
 
   const openEdit = (job, phase) => {
-    if (!canManageJobs || !job.isActive) return
+    if (!canManageSequenceSheets || !job.isActive) return
     setExpandedJobId(job.id)
     setDialogJobId(job.id)
     setDialogPhaseId(phase.id)
@@ -1187,7 +1191,7 @@ export default function SequenceSheets() {
   }
 
   const openEmail = (job, phase) => {
-    if (!canManageJobs || !job.isActive) return
+    if (!canManageSequenceSheets || !job.isActive) return
     setEmailTarget({ job, phase })
   }
 
@@ -1331,7 +1335,7 @@ export default function SequenceSheets() {
 
   const jobPhasesContent = (job) => {
     const phases = job.sequenceSheet?.phases ?? []
-    const canManageJob = canManageJobs && job.isActive
+    const canManageJob = canManageSequenceSheets && job.isActive
 
     if (phases.length === 0) {
       return (
@@ -1695,7 +1699,7 @@ export default function SequenceSheets() {
                           Open job
                         </Button>
                       )}
-                      {canManageJobs && job.isActive && (
+                      {canManageSequenceSheets && job.isActive && (
                         <Button
                           variant="contained"
                           size="small"

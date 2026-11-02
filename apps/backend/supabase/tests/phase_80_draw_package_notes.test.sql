@@ -56,13 +56,13 @@ select ok(
 
 select ok(coalesce((
   select procedure.prosecdef
-    and procedure.prosrc like '%has_app_role(''ADMIN'', ''ACCOUNTING'', ''PROJECT_MANAGEMENT'')%'
+    and procedure.prosrc like '%has_app_role(''ADMIN'', ''ACCOUNTING'')%'
     and procedure.prosrc like '%(select auth.uid())%'
     and procedure.prosrc like '%author.name%'
     and procedure.prosrc like '%char_length(v_body) > 1000%'
   from pg_proc procedure
   where procedure.oid = 'private.add_draw_package_note(bigint,text)'::regprocedure
-), false), 'Only the three roles add a note, as the signed-in user, with their name and a length limit');
+), false), 'Only ADMIN and ACCOUNTING add a note, as the signed-in user, with their name and a length limit');
 
 select ok(
   has_function_privilege('authenticated', 'valtrim.add_draw_package_note(bigint,text)', 'execute')

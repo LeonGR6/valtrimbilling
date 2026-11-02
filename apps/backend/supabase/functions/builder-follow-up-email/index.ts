@@ -93,7 +93,7 @@ async function authorizeUser(req: Request) {
 
   return Boolean(
     profile?.is_active
-      && ['ADMIN', 'PROJECT_MANAGEMENT', 'SCHEDULING'].includes(profile.role),
+      && ['ADMIN', 'SCHEDULING'].includes(profile.role),
   )
 }
 

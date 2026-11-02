@@ -58,7 +58,10 @@ export const appRouter = createBrowserRouter([
         ...(path === '/' ? { index: true } : { path: path.slice(1) }),
         element: withRoleAccess(element, allowedRoles),
       })),
-      ...contextualRoutes.map(({ path, element }) => ({ path: path.slice(1), element })),
+      ...contextualRoutes.map(({ path, element, allowedRoles }) => ({
+        path: path.slice(1),
+        element: withRoleAccess(element, allowedRoles),
+      })),
       { path: '*', element: <NotFound /> },
     ],
   },

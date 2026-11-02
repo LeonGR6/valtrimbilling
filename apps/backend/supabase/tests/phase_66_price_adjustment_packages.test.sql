@@ -125,12 +125,12 @@ select ok(
 
 select ok(
   pg_get_functiondef('private.create_price_adjustment_package(bigint,bigint[],text)'::regprocedure)
-    like '%has_app_role(''ADMIN'', ''PROJECT_MANAGEMENT'')%'
+    like '%has_app_role(''ADMIN'', ''ACCOUNTING'')%'
   and pg_get_functiondef('private.create_price_adjustment_package(bigint,bigint[],text)'::regprocedure)
     like '%''PA-''%'
   and pg_get_functiondef('private.create_price_adjustment_package(bigint,bigint[],text)'::regprocedure)
     like '%set status = ''COLLECTED''%',
-  'Only ADMIN and PROJECT_MANAGEMENT create it, with its own PA- number, collecting what it invoices'
+  'Only ADMIN and ACCOUNTING create it, with its own PA- number, collecting what it invoices'
 );
 
 select ok(

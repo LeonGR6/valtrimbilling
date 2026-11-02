@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useAuth } from '../../auth/context/useAuth.js'
+import { BILLING_ROLES, canWork } from '../../auth/authorization/roleAccess.js'
 import { findJobDocuments } from '../services/jobDocumentRecord.js'
 import { notifyJobDocumentsChanged, onJobDocumentsChanged } from '../services/jobDocumentEvents.js'
 import {
@@ -23,11 +24,7 @@ export function useJobDocuments(jobs) {
   const [openingDocumentId, setOpeningDocumentId] = useState(null)
   const [deletingDocumentId, setDeletingDocumentId] = useState(null)
   const [error, setError] = useState(null)
-  const canManageJobDocuments = [
-    'ADMIN',
-    'ACCOUNTING',
-    'PROJECT_MANAGEMENT',
-  ].includes(profile?.role)
+  const canManageJobDocuments = canWork(profile?.role, BILLING_ROLES)
 
   // Announces a change this hook made itself, so it does not reload twice.
   const announcing = useRef(false)

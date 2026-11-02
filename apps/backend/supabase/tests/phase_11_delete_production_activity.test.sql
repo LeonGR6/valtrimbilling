@@ -75,7 +75,7 @@ select ok(
 
 select is(
   obj_description('valtrim.cancel_production_activity(bigint)'::regprocedure, 'pg_proc'),
-  'Soft-cancels one complete Production calendar group while retaining its schedules and audit history. ADMIN, PROJECT_MANAGEMENT and SCHEDULING only.',
+  'Soft-cancels one complete Production calendar group while retaining its schedules and audit history. ADMIN and SCHEDULING only.',
   'Cancellation RPC documents its soft-delete and role boundary'
 );
 

@@ -94,7 +94,7 @@ async function authorizeUser(req: Request) {
   if (profileError) throw profileError;
   if (
     !profile?.is_active ||
-    !["ADMIN", "PROJECT_MANAGEMENT", "SCHEDULING"].includes(profile.role)
+    !["ADMIN", "SCHEDULING"].includes(profile.role)
   ) {
     return null;
   }

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useAuth } from '../../auth/context/useAuth.js'
+import { BILLING_ROLES, canWork } from '../../auth/authorization/roleAccess.js'
 import {
   addDrawPackageNote as addDrawPackageNoteRecord,
   cancelDrawInvoicePackage as cancelDrawInvoicePackageRecord,
@@ -20,10 +21,7 @@ export function DrawInvoicePackagesProvider({ children }) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const [saving, setSaving] = useState(false)
-  const canManageDrawInvoicePackages = [
-    'ADMIN',
-    'PROJECT_MANAGEMENT',
-  ].includes(profile?.role)
+  const canManageDrawInvoicePackages = canWork(profile?.role, BILLING_ROLES)
 
   const refreshDrawInvoicePackages = useCallback(async () => {
     if (!profile?.id) {

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useAuth } from '../../auth/context/useAuth.js'
+import { SCHEDULING_ROLES, canWork } from '../../auth/authorization/roleAccess.js'
 import { useJobs } from '../../jobs/context/useJobs.js'
 import { createProductionCalendarEvents } from '../data/calendarEvents.js'
 import {
@@ -24,11 +25,7 @@ export function ProductionActivitiesProvider({ children }) {
   const [loading, setLoading] = useState(false)
   const [loaded, setLoaded] = useState(false)
   const [error, setError] = useState(null)
-  const canManageProductionActivities = [
-    'ADMIN',
-    'PROJECT_MANAGEMENT',
-    'SCHEDULING',
-  ].includes(profile?.role)
+  const canManageProductionActivities = canWork(profile?.role, SCHEDULING_ROLES)
 
   const events = useMemo(
     () => activityRecords.flatMap((activity) => createActivityEvents(activity, jobs)),

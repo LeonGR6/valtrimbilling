@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useAuth } from '../../auth/context/useAuth.js'
 import {
+  PLANNING_ROLES,
+  SCHEDULING_ROLES,
+  canWork,
+} from '../../auth/authorization/roleAccess.js'
+import {
   createBuilder as createBuilderRecord,
   deactivateBuilder as deactivateBuilderRecord,
   listBuilders,
@@ -18,12 +23,9 @@ export function BuildersProvider({ children }) {
   const [builders, setBuilders] = useState([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
-  const canManageBuilders = ['ADMIN', 'PROJECT_MANAGEMENT'].includes(profile?.role)
-  const canManageBuilderDateConfiguration = [
-    'ADMIN',
-    'PROJECT_MANAGEMENT',
-    'SCHEDULING',
-  ].includes(profile?.role)
+  // Builders are created and edited from the Jobs screen.
+  const canManageBuilders = canWork(profile?.role, PLANNING_ROLES)
+  const canManageBuilderDateConfiguration = canWork(profile?.role, SCHEDULING_ROLES)
 
   const refreshBuilders = useCallback(async () => {
     if (!profile?.id) {

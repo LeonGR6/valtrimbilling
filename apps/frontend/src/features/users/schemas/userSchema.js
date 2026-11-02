@@ -9,6 +9,7 @@ export const userRoleSchema = z.enum([
   'ACCOUNTING',
   'PROJECT_MANAGEMENT',
   'SCHEDULING',
+  'CUSTOMER_SERVICE',
   'FIELD',
   'READ_ONLY',
 ])

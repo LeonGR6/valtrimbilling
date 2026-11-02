@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useAuth } from '../../auth/context/useAuth.js'
+import { ADMIN_ROLES, canWork } from '../../auth/authorization/roleAccess.js'
 import {
   createCompanyContact as createCompanyContactRecord,
   deactivateCompanyContact as deactivateCompanyContactRecord,
@@ -17,7 +18,7 @@ export function PeopleProvider({ children }) {
   const [people, setPeople] = useState([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
-  const canManageContacts = ['ADMIN', 'PROJECT_MANAGEMENT'].includes(profile?.role)
+  const canManageContacts = canWork(profile?.role, ADMIN_ROLES)
 
   const refreshPeople = useCallback(async () => {
     if (!profile?.id) {

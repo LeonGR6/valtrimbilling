@@ -20,6 +20,7 @@ import SyncRoundedIcon from '@mui/icons-material/SyncRounded'
 import MarkEmailReadRoundedIcon from '@mui/icons-material/MarkEmailReadRounded'
 import LayersRoundedIcon from '@mui/icons-material/LayersRounded'
 import { useAuth } from '../../../auth/context/useAuth.js'
+import { BILLING_ROLES } from '../../../auth/authorization/roleAccess.js'
 import { useBuilderDrawSchedules } from '../../../builder-draw-schedules/context/useBuilderDrawSchedules.js'
 import { displayInvoiceNumber } from '../../utils/packageInvoiceLabel.js'
 import { usePackageSubmissions } from '../../hooks/usePackageSubmissions.js'
@@ -108,7 +109,7 @@ import ViewGeneratedPackageButton from './ViewGeneratedPackageButton.jsx'
 const GeneratePackageDialog = lazy(() => import('./GeneratePackageDialog.jsx'))
 
 // The same roles that can save Job documents can generate a Package's Release.
-const RELEASE_ROLES = ['ADMIN', 'ACCOUNTING', 'PROJECT_MANAGEMENT']
+const RELEASE_ROLES = BILLING_ROLES
 
 export default function DrawPackageDetail() {
   const navigate = useNavigate()

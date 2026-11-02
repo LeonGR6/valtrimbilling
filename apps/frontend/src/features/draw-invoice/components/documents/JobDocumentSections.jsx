@@ -17,7 +17,10 @@ import {
   describePaymentScheduleDocument,
   normalizeCodeKey,
 } from '../../../payment-schedules/services/paymentScheduleRecord.js'
-import { describePurchaseOrderDocument } from '../../../purchase-orders/services/purchaseOrderRecord.js'
+import {
+  describePurchaseOrderDocument,
+  purchaseOrderRowAction,
+} from '../../../purchase-orders/services/purchaseOrderRecord.js'
 import {
   jobPhaseList,
   matchesDocumentFilter,
@@ -287,7 +290,7 @@ export default function JobDocumentSections({
             : []}
         primary={canManage || analysis
           ? {
-            label: analysis && analysis.status !== 'failed' ? 'Review' : 'Analyze',
+            label: purchaseOrderRowAction(analysis),
             ariaLabel: `Compare ${document.name} with the system`,
             busy: analyzing,
             onClick: () => onReviewPurchaseOrder(document),

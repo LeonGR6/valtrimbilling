@@ -11,6 +11,8 @@ import {
   statusBreakdown,
   workOrderNeedsLook,
   describePurchaseOrderDocument,
+  purchaseOrderRowAction,
+  purchaseOrdersOf,
   groupWorkOrders,
   priceDifference,
   summarizeByDocument,
@@ -588,4 +590,25 @@ test('an option missing from the sequence sheet says for which Lot', () => {
   assert.equal(lineStatusLabel({ status: 'MATCH', lotNumber: '27' }), 'Matches')
   assert.equal(lineStatusLabel({ status: 'MISSING_OPTION', lotNumber: '27' }), 'Not in the system')
   assert.equal(lineStatusLabel({ status: 'nope' }), '')
+})
+
+test('a Purchase Order is reviewed once it was read, and analyzed until then', () => {
+  assert.equal(purchaseOrderRowAction(null), 'Analyze')
+  assert.equal(purchaseOrderRowAction({ status: 'failed' }), 'Analyze')
+  assert.equal(purchaseOrderRowAction({ status: 'analyzing' }), 'Review')
+  assert.equal(purchaseOrderRowAction({ status: 'analyzed' }), 'Review')
+  assert.equal(purchaseOrderRowAction({ status: 'not_option_po' }), 'Review')
+})
+
+test('the Purchase Orders of a Job are picked out of its documents, in order', () => {
+  const documents = [
+    { id: 'a', documentType: 'RELEASE' },
+    { id: 'b', documentType: 'PURCHASE_ORDER' },
+    { id: 'c', documentType: 'PRELIMINARY_NOTICE' },
+    { id: 'd', documentType: 'PURCHASE_ORDER' },
+  ]
+
+  assert.deepEqual(purchaseOrdersOf(documents).map(({ id }) => id), ['b', 'd'])
+  assert.deepEqual(purchaseOrdersOf([]), [])
+  assert.deepEqual(purchaseOrdersOf(undefined), [])
 })

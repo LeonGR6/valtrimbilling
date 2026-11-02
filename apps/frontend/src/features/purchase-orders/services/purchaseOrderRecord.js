@@ -168,6 +168,16 @@ export function summarizeByDocument(lines) {
   )
 }
 
+/** The main action of a Purchase Order row: compare it once it was read, read it otherwise. */
+export function purchaseOrderRowAction(analysis) {
+  return analysis && analysis.status !== 'failed' ? 'Review' : 'Analyze'
+}
+
+/** The Purchase Orders among the documents of a Job, in the order they came. */
+export function purchaseOrdersOf(documents) {
+  return (documents ?? []).filter(({ documentType }) => documentType === 'PURCHASE_ORDER')
+}
+
 /** What the card of a Purchase Order PDF shows: a status chip and what was found. */
 export function describePurchaseOrderDocument(analysis, summary = null, analyzing = false) {
   if (analyzing || analysis?.status === 'analyzing') {

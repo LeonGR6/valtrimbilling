@@ -5,43 +5,25 @@ import FormatListBulletedRoundedIcon from '@mui/icons-material/FormatListBullete
 import ReceiptLongRoundedIcon from '@mui/icons-material/ReceiptLongRounded'
 import TableChartRoundedIcon from '@mui/icons-material/TableChartRounded'
 import { Link as RouterLink } from 'react-router-dom'
-import {
-  builderJobsPath,
-  jobDrawInvoicePath,
-  jobPlanPricingPath,
-  jobPlansOptionsPath,
-  jobSequenceSheetPath,
-} from '../utils/jobRoutes.js'
+import { useAuth } from '../../auth/context/useAuth.js'
+import { canOpenBuilderJobs, jobModulesForRole } from '../utils/jobModules.js'
+import { builderJobsPath } from '../utils/jobRoutes.js'
 
-const modules = [
-  {
-    id: 'plans-options',
-    label: 'Plans & Options',
-    icon: <FormatListBulletedRoundedIcon fontSize="small" />,
-    path: jobPlansOptionsPath,
-  },
-  {
-    id: 'sequence-sheet',
-    label: 'Sequence Sheet',
-    icon: <TableChartRoundedIcon fontSize="small" />,
-    path: jobSequenceSheetPath,
-  },
-  {
-    id: 'plan-pricing',
-    label: 'Plan Pricing',
-    icon: <AttachMoneyRoundedIcon fontSize="small" />,
-    path: jobPlanPricingPath,
-  },
-  {
-    id: 'draw-invoice',
-    label: 'Draws',
-    icon: <ReceiptLongRoundedIcon fontSize="small" />,
-    path: jobDrawInvoicePath,
-  },
-]
+const moduleIcons = {
+  'plans-options': <FormatListBulletedRoundedIcon fontSize="small" />,
+  'sequence-sheet': <TableChartRoundedIcon fontSize="small" />,
+  'plan-pricing': <AttachMoneyRoundedIcon fontSize="small" />,
+  'draw-invoice': <ReceiptLongRoundedIcon fontSize="small" />,
+}
 
 export default function JobModuleNavigation({ active, builderId, jobId, showBack = true }) {
+  const { profile } = useAuth()
+
   if (builderId == null || jobId == null) return null
+
+  // Each role sees the pages of the Job it can open, and the way back only if it can open the list.
+  const modules = jobModulesForRole(profile?.role)
+  const backAllowed = showBack && canOpenBuilderJobs(profile?.role)
 
   return (
     <Box
@@ -58,7 +40,7 @@ export default function JobModuleNavigation({ active, builderId, jobId, showBack
         columnGap: 2,
       }}
     >
-      {showBack && (
+      {backAllowed && (
         <Button
           component={RouterLink}
           to={builderJobsPath(builderId)}
@@ -77,7 +59,7 @@ export default function JobModuleNavigation({ active, builderId, jobId, showBack
         scrollButtons="auto"
         role="navigation"
         aria-label="Job modules"
-        sx={{ minHeight: 44, minWidth: 0, flex: 1, ml: showBack ? 0 : -1.5 }}
+        sx={{ minHeight: 44, minWidth: 0, flex: 1, ml: backAllowed ? 0 : -1.5 }}
       >
         {modules.map((module) => (
           <Tab
@@ -86,7 +68,7 @@ export default function JobModuleNavigation({ active, builderId, jobId, showBack
             component={RouterLink}
             to={module.path(builderId, jobId)}
             role="link"
-            icon={module.icon}
+            icon={moduleIcons[module.id]}
             iconPosition="start"
             label={module.label}
             aria-current={module.id === active ? 'page' : undefined}

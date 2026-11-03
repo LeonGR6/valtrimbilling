@@ -45,6 +45,7 @@ const row = (overrides = {}) => ({
     issues: [],
     expectedTotal: 3475.82,
     foundTotal: 3475.82,
+    totalTolerance: 0.06,
   },
   mapping: null,
   status: 'needs_review',
@@ -61,13 +62,14 @@ test('a database row becomes a template with safe defaults', () => {
   assert.equal(template.layout, 'matrix')
   assert.equal(template.detectedCells.length, 3)
   assert.equal(template.expectedTotal, 3475.82)
+  assert.equal(template.totalTolerance, 0.06)
 
   const bare = toPaymentScheduleTemplate(row({
     layout: null, page_sizes: null, detected_cells: null, analysis: null,
   }))
   assert.deepEqual(
-    [bare.layout, bare.pageSizes, bare.detectedCells, bare.draws, bare.issues, bare.expectedTotal],
-    [null, [], [], [], [], null],
+    [bare.layout, bare.pageSizes, bare.detectedCells, bare.draws, bare.issues, bare.expectedTotal, bare.totalTolerance],
+    [null, [], [], [], [], null, 0],
   )
 })
 
@@ -167,6 +169,16 @@ test('the printed total is compared in cents', () => {
   assert.equal(off.color, 'warning')
   assert.match(off.text, /\$70,268\.39.*\$70,268\.40/)
   assert.equal(describeTotals({ expectedTotal: null, foundTotal: 5 }).color, 'warning')
+})
+
+test('a total within the rounding of the schedule counts as matched, and says so', () => {
+  const rounded = describeTotals({ expectedTotal: 110723.96, foundTotal: 110723.95, tolerance: 0.4 })
+  assert.equal(rounded.color, 'success')
+  assert.match(rounded.text, /\$110,723\.96.*\$0\.01 of rounding/)
+  // Beyond the rounding it is still a mismatch, and without one nothing is forgiven.
+  assert.equal(describeTotals({ expectedTotal: 100, foundTotal: 99.5, tolerance: 0.4 }).color, 'warning')
+  assert.equal(describeTotals({ expectedTotal: 110723.96, foundTotal: 110723.95 }).color, 'warning')
+  assert.equal(describeTotals({ expectedTotal: 5, foundTotal: 5, tolerance: 0.4 }).text.includes('rounding'), false)
 })
 
 test('issues say where they are and long lists are cut', () => {

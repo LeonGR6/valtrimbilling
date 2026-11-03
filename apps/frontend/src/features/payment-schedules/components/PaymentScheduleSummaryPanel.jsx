@@ -132,6 +132,7 @@ export default function PaymentScheduleSummaryPanel({
   const totals = describeTotals({
     expectedTotal: template.expectedTotal,
     foundTotal: summary.total,
+    tolerance: template.totalTolerance,
   })
   const { shown, hidden } = visibleIssues(template.issues)
   const rows = lotRows(cells)

@@ -1,5 +1,6 @@
 import { assert, assertEquals } from "@std/assert";
 import { analyzePaymentSchedulePdf } from "./paymentScheduleAnalysis.ts";
+import type { PaymentScheduleHints } from "./paymentScheduleAnalysis.ts";
 import { normalizeCodeKey } from "./paymentScheduleTypes.ts";
 
 // Runs the real pipeline against the sample PDFs in
@@ -21,9 +22,10 @@ function available(name: string) {
   }
 }
 
-async function analyze(name: string) {
+async function analyze(name: string, hints?: PaymentScheduleHints) {
   return await analyzePaymentSchedulePdf(
     await Deno.readFile(new URL(name, FIXTURES)),
+    hints,
   );
 }
 
@@ -43,6 +45,15 @@ const LIST = "Example Payment Schedule 2 Template.pdf";
 const MATRIX_3 = "Example Payment Schedule 3 Template.pdf";
 // Phase 4 of Job 1317: only one of the ten Previously Invoiced / This Request cells prints a "$".
 const MATRIX_4 = "Example Payment Schedule 4 Without Dollar Signs.pdf";
+// Job 1295: DelCon's Exhibit B, twenty Lots with a column per stage instead of "1st Draw".
+const NAMED_COLUMNS = "Example Payment Schedule 5 Named Columns.pdf";
+// The draws of the Billing Setup of that Job.
+const NAMED_COLUMNS_DRAWS = [
+  { draw: 1, name: "EXT FRAMES" },
+  { draw: 2, name: "MATL INSTALL" },
+  { draw: 3, name: "HW INSTALLED" },
+  { draw: 4, name: "RETENTION" },
+];
 
 Deno.test({
   name: "fixture matrix 1: Phase 003, Lots 14 to 27, five draws",
@@ -220,5 +231,48 @@ Deno.test({
     // outside its box.
     assert(summaryRows.thisRequest[0].rect.x * width >= 182.3);
     assert(summaryRows.previouslyInvoiced[0].rect.x * width < 178);
+  },
+});
+
+Deno.test({
+  name: "fixture named columns: Job 1295, Phase 2, Lots 1 to 20, four draws named like the Billing Setup",
+  ignore: !available(NAMED_COLUMNS),
+  async fn() {
+    const analysis = await analyze(NAMED_COLUMNS, { drawNames: NAMED_COLUMNS_DRAWS });
+
+    assertEquals(analysis.layout, "matrix");
+    assertEquals(analysis.cells.length, 20 * 4);
+    assertEquals(analysis.issues, []);
+    assertEquals(analysis.pageCount, 1);
+    assertEquals(analysis.draws.map((draw) => [draw.draw, draw.name]), [
+      [1, "EXT. FRAMES"],
+      [2, "MATL INSTALL"],
+      [3, "HW INSTALLED"],
+      [4, "RETENTION"],
+    ]);
+    assertEquals(new Set(analysis.cells.map((c) => c.phase)), new Set(["2"]));
+    assertEquals(new Set(analysis.cells.map((c) => normalizeCodeKey(c.lot))).size, 20);
+    assertEquals(analysis.summaryRows, null);
+
+    // The contract total is printed above the table; the draws add up a cent under it.
+    assertEquals(analysis.expectedTotalCents, 11_072_396);
+    assertEquals(analysis.foundTotalCents, 11_072_395);
+
+    assertEquals(cell(analysis, "14", 1)!.amount, 1106.71);
+    assertEquals(cell(analysis, "14", 2)!.amount, 5164.64);
+    assertEquals(cell(analysis, "14", 3)!.amount, 368.9);
+    assertEquals(cell(analysis, "14", 4)!.amount, 737.81);
+    assertEquals(cell(analysis, "01", 4)!.amount, 737.81);
+    assertEquals(cell(analysis, "6", 2)!.amount, 3572.25);
+  },
+});
+
+Deno.test({
+  name: "fixture named columns: with fewer than two draw names the schedule is not recognized",
+  ignore: !available(NAMED_COLUMNS),
+  async fn() {
+    const failure = await analyze(NAMED_COLUMNS, { drawNames: NAMED_COLUMNS_DRAWS.slice(0, 1) })
+      .then(() => null, (error: Error) => error);
+    assertEquals(failure?.message, "The Lots and draws of this Payment Schedule could not be found.");
   },
 });

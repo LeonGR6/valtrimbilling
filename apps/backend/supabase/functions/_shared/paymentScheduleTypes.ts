@@ -72,6 +72,13 @@ export interface ScheduleIssue {
   draw?: number;
 }
 
+// A draw of the Billing Setup the Job bills with. Some schedules head their columns
+// with these names ("MATL INSTALL") instead of numbering them ("2nd Draw").
+export interface DrawName {
+  draw: number;
+  name: string;
+}
+
 // What one layout parser returns. Amounts are kept in cents until the end so
 // sums are exact.
 export interface ParsedSchedule {
@@ -84,6 +91,10 @@ export interface ParsedSchedule {
   // Total the document prints for the whole schedule, in cents, when it does.
   expectedTotalCents: number | null;
   foundTotalCents: number;
+  // How far the printed total may be from the cells before it counts as a mismatch,
+  // in cents. A schedule that splits each Lot's price into draws by percentage rounds
+  // every draw, so the draws can add up a cent away from the price. Zero when absent.
+  totalToleranceCents?: number;
 }
 
 export interface ScheduleRow {

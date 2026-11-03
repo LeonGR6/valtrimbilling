@@ -46,6 +46,9 @@ export function toPaymentScheduleTemplate(row) {
     summaryRows: analysis.summaryRows ?? null,
     expectedTotal: analysis.expectedTotal ?? null,
     foundTotal: analysis.foundTotal ?? null,
+    // Dollars the cells may be from the printed total: a schedule that splits prices
+    // into draws by percentage rounds each draw.
+    totalTolerance: analysis.totalTolerance ?? 0,
     mapping: row.mapping ?? null,
     status: row.status,
     error: row.error ?? null,
@@ -339,20 +342,29 @@ export function visibleIssues(issues) {
   }
 }
 
-/** The printed total against what the cells add up to, when the PDF prints one. */
-export function describeTotals(template) {
-  if (template.expectedTotal === null) {
+/**
+ * The printed total against what the cells add up to, when the PDF prints one. `tolerance`
+ * is the rounding the schedule carries, in dollars: within it the total counts as matched.
+ */
+export function describeTotals({ expectedTotal, foundTotal, tolerance = 0 }) {
+  if (expectedTotal === null) {
     return { color: 'warning', text: 'The document prints no total to check the amounts against.' }
   }
-  const matches = Math.round(template.expectedTotal * 100) === Math.round((template.foundTotal ?? 0) * 100)
-  return matches
+  const difference = Math.abs(Math.round(expectedTotal * 100) - Math.round((foundTotal ?? 0) * 100))
+  if (difference === 0) {
+    return {
+      color: 'success',
+      text: `The amounts add up to the printed total, ${formatMoney(expectedTotal)}.`,
+    }
+  }
+  return difference <= Math.round(tolerance * 100)
     ? {
         color: 'success',
-        text: `The amounts add up to the printed total, ${formatMoney(template.expectedTotal)}.`,
+        text: `The amounts add up to the printed total, ${formatMoney(expectedTotal)}, give or take ${formatMoney(difference / 100)} of rounding.`,
       }
     : {
         color: 'warning',
-        text: `The amounts add up to ${formatMoney(template.foundTotal)}, but the document prints ${formatMoney(template.expectedTotal)}.`,
+        text: `The amounts add up to ${formatMoney(foundTotal)}, but the document prints ${formatMoney(expectedTotal)}.`,
       }
 }
 

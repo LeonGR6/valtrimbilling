@@ -19,7 +19,7 @@
 import { handlePreflight, json } from '../_shared/cors.ts'
 import { analyzePaymentSchedulePdf } from '../_shared/paymentScheduleAnalysis.ts'
 import { templateAnalysisColumns } from '../_shared/paymentScheduleRecord.ts'
-import { PaymentScheduleError } from '../_shared/paymentScheduleTypes.ts'
+import { type DrawName, PaymentScheduleError } from '../_shared/paymentScheduleTypes.ts'
 import { decideAnalysis, type AnalysisStatus } from '../_shared/releaseAnalysisState.ts'
 import { ReleasePdfError } from '../_shared/releasePdf.ts'
 import { serviceClient, userClient } from '../_shared/supabase.ts'
@@ -115,6 +115,50 @@ async function downloadPdf(
   return bytes
 }
 
+/**
+ * The draws of the Billing Setup the Job bills with. Some builders head the columns of a
+ * schedule with these names instead of "1st Draw", and that is the only way to number
+ * them. A schedule that does not need them is analyzed without, so a failure to read
+ * them is not a failure of the analysis.
+ */
+async function loadDrawNames(db: AdminClient, jobId: number): Promise<DrawName[]> {
+  try {
+    const { data: job, error: jobError } = await db
+      .from('jobs')
+      .select('billing_setup_version_id')
+      .eq('id', jobId)
+      .maybeSingle()
+    if (jobError) throw jobError
+    if (!job?.billing_setup_version_id) return []
+
+    const { data: draws, error: drawsError } = await db
+      .from('billing_draws')
+      .select('draw_number, name')
+      .eq('setup_version_id', job.billing_setup_version_id)
+    if (drawsError) throw drawsError
+    return (draws ?? []).map((draw) => ({ draw: draw.draw_number, name: draw.name }))
+  } catch (error) {
+    // Class name and database code only, like every other failure here.
+    const code = (error as { code?: unknown })?.code
+    console.error(
+      'Billing Setup draws could not be read:',
+      `${(error as Error)?.name ?? 'Error'}${typeof code === 'string' ? ` ${code}` : ''}`,
+    )
+    return []
+  }
+}
+
+/** Downloads the PDF of a Job document and reads its Lots and draws. */
+async function analyzeDocument(
+  db: AdminClient,
+  document: { job_id: number; storage_bucket: string; storage_path: string },
+) {
+  const bytes = await downloadPdf(db, document)
+  return await analyzePaymentSchedulePdf(bytes, {
+    drawNames: await loadDrawNames(db, document.job_id),
+  })
+}
+
 async function markFailed(db: AdminClient, templateId: string, message: string) {
   const { data } = await db
     .from('payment_schedule_templates')
@@ -174,7 +218,7 @@ Deno.serve(async (req) => {
     // A confirmed schedule is refreshed in place: nothing is claimed, so a failure
     // cannot take it out of service.
     if (existing?.status === 'confirmed' && body?.force === true) {
-      const refreshed = await analyzePaymentSchedulePdf(await downloadPdf(db, document))
+      const refreshed = await analyzeDocument(db, document)
       // Status, error and the confirmed cells are not part of a refresh.
       const { status: _status, error: _error, ...detected } = templateAnalysisColumns(refreshed)
       const { data: saved, error: saveError } = await db
@@ -231,9 +275,7 @@ Deno.serve(async (req) => {
     }
     claimedId = asTemplateRow(claim.data)!.id
 
-    const bytes = await downloadPdf(db, document)
-
-    const analysis = await analyzePaymentSchedulePdf(bytes)
+    const analysis = await analyzeDocument(db, document)
 
     const { data: saved, error: saveError } = await db
       .from('payment_schedule_templates')

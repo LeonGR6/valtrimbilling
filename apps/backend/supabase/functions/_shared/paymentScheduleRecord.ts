@@ -20,6 +20,8 @@ export function templateAnalysisColumns(analysis: PaymentScheduleAnalysis) {
         ? null
         : centsToDollars(analysis.expectedTotalCents),
       foundTotal: centsToDollars(analysis.foundTotalCents),
+      // Rounding the schedule's own draws carry, so a cent apart is not a mismatch.
+      totalTolerance: centsToDollars(analysis.totalToleranceCents ?? 0),
     },
     status: "needs_review" as const,
     error: null,

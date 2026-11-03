@@ -37,8 +37,14 @@ Deno.test("an analysis becomes a needs_review template with dollars, not cents",
     summaryRows: null,
     expectedTotal: null,
     foundTotal: 1929.04,
+    totalTolerance: 0,
   });
   assertEquals(Number.isNaN(Date.parse(columns.analyzed_at)), false);
+});
+
+Deno.test("the rounding a schedule carries is stored in dollars", () => {
+  const columns = templateAnalysisColumns({ ...analysis, totalToleranceCents: 40 });
+  assertEquals(columns.analysis.totalTolerance, 0.4);
 });
 
 Deno.test("a printed total is stored in dollars", () => {

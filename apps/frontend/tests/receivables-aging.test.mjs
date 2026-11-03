@@ -8,6 +8,7 @@ import {
   agingBucketLabel,
   buildReceivableInvoices,
   californiaDateKey,
+  countPartiallyPaid,
   daysPastDue,
   filterReceivables,
   groupReceivables,
@@ -467,4 +468,37 @@ test('before QuickBooks reports a total the amount sent is the original, and mis
   assert.equal(record_.invoiceDate, null)
   assert.equal(record_.dueDate, null)
   assert.equal(isNaN(record_.originalAmount), false)
+})
+
+test('an invoice is marked partially paid when QuickBooks says so, and only then', () => {
+  const invoices = build([
+    record(101, 60, 10, { originalAmount: 100, paymentState: 'PARTIALLY_PAID' }),
+    record(101, 100, 10, { originalAmount: 100, paymentState: 'OPEN' }),
+    record(102, 100, 40, { originalAmount: 100, paymentState: 'OVERDUE' }),
+    record(201, 30, 100, { originalAmount: 100, paymentState: 'PARTIALLY_PAID' }),
+  ])
+
+  assert.deepEqual(invoices.map(({ partiallyPaid }) => partiallyPaid), [true, false, false, true])
+  assert.equal(countPartiallyPaid(invoices), 2)
+  assert.equal(countPartiallyPaid([]), 0)
+})
+
+test('the Partially paid filter keeps the invoices paid in part and composes with the others', () => {
+  const invoices = build([
+    record(101, 60, 10, { originalAmount: 100, paymentState: 'PARTIALLY_PAID' }),
+    record(101, 100, 40, { originalAmount: 100, paymentState: 'OPEN' }),
+    record(102, 40, 40, { originalAmount: 100, paymentState: 'PARTIALLY_PAID' }),
+    record(201, 30, 100, { originalAmount: 100, paymentState: 'PARTIALLY_PAID' }),
+  ])
+
+  assert.equal(filterReceivables(invoices, { partiallyPaid: true }).length, 3)
+  assert.equal(filterReceivables(invoices, { partiallyPaid: false }).length, 4)
+  assert.equal(filterReceivables(invoices, { partiallyPaid: true, builderId: '1' }).length, 2)
+  assert.equal(filterReceivables(invoices, { partiallyPaid: true, bucket: 'DAYS_31_60' }).length, 1)
+  assert.equal(filterReceivables(invoices, { partiallyPaid: true, jobId: '201' })[0].balanceCents, 3000)
+  assert.equal(filterReceivables(invoices, { partiallyPaid: true, search: 'builder b' }).length, 1)
+
+  // What is owed on them is only the balance, so the totals still add up.
+  const owed = filterReceivables(invoices, { partiallyPaid: true })
+  assert.equal(totalReceivables(owed).totalCents, 13000)
 })

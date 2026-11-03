@@ -2,7 +2,9 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   PACKAGE_CATALOG_TABS,
+  PARTIALLY_PAID_TAB,
   canDeleteDraftPackage,
+  countPartiallyPaidPackages,
   filterPackageCatalogContexts,
   packageCatalogBuilderOptions,
   packageCatalogCommunityOptions,
@@ -47,10 +49,14 @@ const contexts = [
   },
 ]
 
-test('catalog tabs use only the Package statuses actually persisted by the workflow', () => {
+test('catalog tabs are the Package statuses of the workflow, plus Partially paid after Awaiting payment', () => {
   assert.deepEqual(PACKAGE_CATALOG_TABS.map(({ value }) => value), [
-    'ALL', 'DRAFT', 'AWAITING_PAYMENT', 'PAID_CLOSED',
+    'ALL', 'DRAFT', 'AWAITING_PAYMENT', PARTIALLY_PAID_TAB, 'PAID_CLOSED',
   ])
+  assert.equal(
+    PACKAGE_CATALOG_TABS.find(({ value }) => value === PARTIALLY_PAID_TAB).label,
+    'Partially paid',
+  )
 })
 
 test('cancelled Packages stay out of the catalog and all status totals', () => {
@@ -296,3 +302,46 @@ test('a Package of Options only is found by searching for options, and can be ca
   }), true)
 })
 
+
+test('the Partially paid tab keeps only invoices QuickBooks says were paid in part', () => {
+  const withPayments = [
+    { ...contexts[0], record: { ...contexts[0].record, status: 'AWAITING_PAYMENT', paymentState: 'PARTIALLY_PAID' } },
+    { ...contexts[1], record: { ...contexts[1].record, status: 'AWAITING_PAYMENT', paymentState: 'OPEN' } },
+    { ...contexts[2], record: { ...contexts[2].record, paymentState: 'PARTIALLY_PAID', paymentOverdue: true } },
+    { ...contexts[3], record: { ...contexts[3].record, paymentState: 'PAID' } },
+    // A cancelled Package never reaches the catalog, whatever QuickBooks last said about it.
+    { ...contexts[4], record: { ...contexts[4].record, paymentState: 'PARTIALLY_PAID' } },
+  ]
+
+  assert.deepEqual(
+    filterPackageCatalogContexts(withPayments, { status: PARTIALLY_PAID_TAB }).map(({ record }) => record.id),
+    [1, 3],
+  )
+  assert.equal(filterPackageCatalogContexts(withPayments).length, 4)
+  assert.equal(countPartiallyPaidPackages(filterPackageCatalogContexts(withPayments)), 2)
+  assert.equal(countPartiallyPaidPackages([]), 0)
+})
+
+test('the Partially paid tab composes with the other filters and leaves Awaiting payment as it was', () => {
+  const withPayments = [
+    { ...contexts[0], record: { ...contexts[0].record, paymentState: 'PARTIALLY_PAID' } },
+    { ...contexts[2], record: { ...contexts[2].record, paymentState: 'PARTIALLY_PAID' } },
+  ]
+
+  assert.deepEqual(
+    filterPackageCatalogContexts(withPayments, { status: PARTIALLY_PAID_TAB, builderId: '22' })
+      .map(({ record }) => record.id),
+    [3],
+  )
+  assert.deepEqual(
+    filterPackageCatalogContexts(withPayments, { status: PARTIALLY_PAID_TAB, search: 'DP-1' })
+      .map(({ record }) => record.id),
+    [1],
+  )
+  // Awaiting payment still lists every Package of that status, partly paid or not.
+  assert.deepEqual(
+    filterPackageCatalogContexts(withPayments, { status: 'AWAITING_PAYMENT' })
+      .map(({ record }) => record.id),
+    [3],
+  )
+})

@@ -47,6 +47,8 @@ import { buildPackageSuggestions } from '../../utils/packageSuggestions.js'
 import { buildRetentionSuggestions } from '../../utils/retentionSuggestions.js'
 import {
   PACKAGE_CATALOG_TABS,
+  PARTIALLY_PAID_TAB,
+  countPartiallyPaidPackages,
   filterPackageCatalogContexts,
   isValidPackageSort,
   nextPackageSort,
@@ -307,10 +309,19 @@ export default function PackageCatalog({
     }),
     [activeContexts, search, builderFilter, communityFilter],
   )
+  const partiallyPaidCount = useMemo(
+    () => countPartiallyPaidPackages(scopedContexts),
+    [scopedContexts],
+  )
   const statusSummary = useMemo(
     () => summarizePackageCatalogStatuses(scopedContexts),
     [scopedContexts],
   )
+  const tabCount = (value) => {
+    if (value === 'ALL') return scopedContexts.length
+    if (value === PARTIALLY_PAID_TAB) return partiallyPaidCount
+    return statusSummary[value].count
+  }
   const missingDocumentsPackageCount = useMemo(() => {
     if (!jobDocuments.initialized) return null
 
@@ -580,9 +591,7 @@ export default function PackageCatalog({
                   <Tab
                     key={value}
                     value={value}
-                    label={`${label} (${value === 'ALL'
-                      ? scopedContexts.length
-                      : statusSummary[value].count})`}
+                    label={`${label} (${tabCount(value)})`}
                   />
                 ))}
               </Tabs>

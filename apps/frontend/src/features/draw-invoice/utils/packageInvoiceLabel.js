@@ -14,6 +14,14 @@ export const PAYMENT_STATE_LABELS = {
 }
 
 /**
+ * Whether QuickBooks says the invoice was paid in part: something was paid and something is still
+ * due. Works on a Package record and on a receivable record, which both carry `paymentState`.
+ */
+export function isPartiallyPaid(record) {
+  return record?.paymentState === 'PARTIALLY_PAID'
+}
+
+/**
  * The invoice number to show: the one saved on the invoice, else the one
  * QuickBooks was given. Null while the Package has no invoice yet.
  */

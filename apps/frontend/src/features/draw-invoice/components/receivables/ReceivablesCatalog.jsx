@@ -26,6 +26,7 @@ import {
   agingBucketLabel,
   buildReceivableInvoices,
   californiaDateKey,
+  countPartiallyPaid,
   filterReceivables,
   groupReceivables,
   isReportDateAllowed,
@@ -36,6 +37,7 @@ import {
   sortReceivableInvoices,
   totalReceivables,
 } from '../../utils/receivablesAging.js'
+import PartiallyPaidFilter from '../shared/PartiallyPaidFilter.jsx'
 import ReceivablesGroupTable from './ReceivablesGroupTable.jsx'
 import ReceivablesInvoiceTable from './ReceivablesInvoiceTable.jsx'
 import ReceivablesSummary from './ReceivablesSummary.jsx'
@@ -64,6 +66,7 @@ export default function ReceivablesCatalog({ jobs }) {
   const [builderFilter, setBuilderFilter] = useState('ALL')
   const [jobFilter, setJobFilter] = useState('ALL')
   const [bucket, setBucket] = useState('ALL')
+  const [partiallyPaidOnly, setPartiallyPaidOnly] = useState(false)
   const [invoiceSort, setInvoiceSort] = useState(DEFAULT_INVOICE_SORT)
   const [groupSort, setGroupSort] = useState(DEFAULT_GROUP_SORT)
 
@@ -83,10 +86,19 @@ export default function ReceivablesCatalog({ jobs }) {
   const jobOptions = useMemo(() => receivableJobOptions(invoices, builderId), [invoices, builderId])
   const jobId = jobFilter === 'ALL' || jobOptions.some(({ id }) => id === jobFilter) ? jobFilter : 'ALL'
 
-  // The bucket cards show every bucket of what is in scope, so they ignore the bucket choice.
-  const scoped = useMemo(
+  const inScope = useMemo(
     () => filterReceivables(invoices, { builderId, jobId, search }),
     [invoices, builderId, jobId, search],
+  )
+  // The count is of what pressing the chip would leave on screen, so it follows the bucket too.
+  const partiallyPaidCount = useMemo(
+    () => countPartiallyPaid(bucket === 'ALL' ? inScope : inScope.filter((invoice) => invoice.bucket === bucket)),
+    [inScope, bucket],
+  )
+  // The bucket cards show every bucket of what is in scope, so they ignore the bucket choice.
+  const scoped = useMemo(
+    () => (partiallyPaidOnly ? filterReceivables(inScope, { partiallyPaid: true }) : inScope),
+    [inScope, partiallyPaidOnly],
   )
   const scopedTotals = useMemo(() => totalReceivables(scoped), [scoped])
   const visible = useMemo(
@@ -106,6 +118,7 @@ export default function ReceivablesCatalog({ jobs }) {
 
   const rowCount = view === 'invoice' ? invoiceRows.length : groupRows.length
   const filtersActive = search !== '' || builderId !== 'ALL' || jobId !== 'ALL' || bucket !== 'ALL'
+    || partiallyPaidOnly
   const checkedAt = oldestPaymentCheck(invoices)
   const checkedLabel = quickbooksLastInvoiceLabel(checkedAt, now)
 
@@ -120,6 +133,7 @@ export default function ReceivablesCatalog({ jobs }) {
     setBuilderFilter('ALL')
     setJobFilter('ALL')
     setBucket('ALL')
+    setPartiallyPaidOnly(false)
   }
   // From an amount to the invoices that make it up.
   const drill = ({ builderId: nextBuilder, jobId: nextJob, bucket: nextBucket }) => {
@@ -261,6 +275,12 @@ export default function ReceivablesCatalog({ jobs }) {
               <MenuItem key={id} value={id}>{name}</MenuItem>
             ))}
           </TextField>
+          <PartiallyPaidFilter
+            active={partiallyPaidOnly}
+            count={partiallyPaidCount}
+            onToggle={() => setPartiallyPaidOnly((current) => !current)}
+            sx={{ mt: 0.5 }}
+          />
           <Button color="inherit" onClick={clearFilters} disabled={!filtersActive} sx={{ flexShrink: 0 }}>
             Clear filters
           </Button>

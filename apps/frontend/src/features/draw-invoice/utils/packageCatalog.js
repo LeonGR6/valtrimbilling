@@ -1,4 +1,4 @@
-import { displayInvoiceNumber } from './packageInvoiceLabel.js'
+import { displayInvoiceNumber, isPartiallyPaid } from './packageInvoiceLabel.js'
 import {
   DRAW_PACKAGE_STATUSES,
   DRAW_PACKAGE_STATUS_LABELS,
@@ -6,12 +6,18 @@ import {
   canManageDraftDrawPackage,
 } from '../services/drawInvoicePackageRecord.js'
 
+// A tab that is not a status of its own: the invoices QuickBooks says were paid in part. They are
+// Packages Awaiting payment, so it sits right after that tab.
+export const PARTIALLY_PAID_TAB = 'PARTIALLY_PAID'
+
 export const PACKAGE_CATALOG_TABS = [
   { value: 'ALL', label: 'All' },
-  ...DRAW_PACKAGE_STATUSES.map((value) => ({
-    value,
-    label: DRAW_PACKAGE_STATUS_LABELS[value],
-  })),
+  ...DRAW_PACKAGE_STATUSES.flatMap((value) => {
+    const tab = { value, label: DRAW_PACKAGE_STATUS_LABELS[value] }
+    return value === 'AWAITING_PAYMENT'
+      ? [tab, { value: PARTIALLY_PAID_TAB, label: 'Partially paid' }]
+      : [tab]
+  }),
 ]
 
 const PACKAGE_TYPE_SEARCH_TERMS = {
@@ -47,7 +53,11 @@ export function filterPackageCatalogContexts(contexts, {
   const normalizedSearch = String(search).trim().toLowerCase()
   return contexts.filter(({ record, job, phase, phases = [phase] }) => {
     if (record.status === 'CANCELLED') return false
-    if (status !== 'ALL' && record.status !== status) return false
+    if (status === PARTIALLY_PAID_TAB) {
+      if (!isPartiallyPaid(record)) return false
+    } else if (status !== 'ALL' && record.status !== status) {
+      return false
+    }
     if (builderId !== 'ALL' && String(record.builderId) !== String(builderId)) {
       return false
     }
@@ -68,6 +78,11 @@ export function filterPackageCatalogContexts(contexts, {
       ...phases.flatMap((candidate) => [candidate?.name, candidate?.building]),
     ].some((value) => String(value ?? '').toLowerCase().includes(normalizedSearch))
   })
+}
+
+/** How many of these Packages have an invoice that was paid in part. */
+export function countPartiallyPaidPackages(contexts) {
+  return contexts.filter(({ record }) => isPartiallyPaid(record)).length
 }
 
 const OPEN_PAYMENT_STATES = new Set(['OPEN', 'OVERDUE', 'PARTIALLY_PAID'])

@@ -91,6 +91,11 @@ export default function ReceivablesInvoiceTable({
               </TableCell>
               <TableCell align="right" sx={{ fontWeight: 850, fontVariantNumeric: 'tabular-nums' }}>
                 {formatCents(invoice.balanceCents)}
+                {invoice.partiallyPaid && (
+                  <Typography variant="caption" color="warning.dark" component="div" noWrap sx={{ fontWeight: 700 }}>
+                    Partially paid
+                  </Typography>
+                )}
               </TableCell>
               <TableCell align="right"><DaysPastDue invoice={invoice} /></TableCell>
               <TableCell><BucketChip bucket={invoice.bucket} /></TableCell>

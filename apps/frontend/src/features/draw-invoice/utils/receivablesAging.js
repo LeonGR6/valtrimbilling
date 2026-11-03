@@ -7,6 +7,7 @@
 // drifts by a cent.
 
 import { daysBetween } from '../../dashboard/utils/dashboardDates.js'
+import { isPartiallyPaid } from './packageInvoiceLabel.js'
 
 /** From the first day after the Due Date. A bucket never overlaps the next one. */
 export const AGING_BUCKETS = [
@@ -120,6 +121,7 @@ export function buildReceivableInvoices(records, { reportDate, jobs = [] }) {
       dueDate: record.dueDate ?? null,
       originalCents: toCents(record.originalAmount),
       balanceCents: toCents(record.balance),
+      partiallyPaid: isPartiallyPaid(record),
       daysPastDue: days,
       bucket: agingBucketKey(days),
       checkedAt: record.checkedAt ?? null,
@@ -166,10 +168,20 @@ export function groupReceivables(invoices, level) {
   return [...groups.values()].map((group) => ({ ...group, ...totalReceivables(group.invoices) }))
 }
 
-/** The Invoices that meet every filter. `bucket`, `builderId` and `jobId` are 'ALL' when unused. */
-export function filterReceivables(invoices, { builderId = 'ALL', jobId = 'ALL', bucket = 'ALL', search = '' } = {}) {
+/**
+ * The Invoices that meet every filter. `bucket`, `builderId` and `jobId` are 'ALL' when unused, and
+ * `partiallyPaid` keeps only the Invoices that were paid in part.
+ */
+export function filterReceivables(invoices, {
+  builderId = 'ALL',
+  jobId = 'ALL',
+  bucket = 'ALL',
+  search = '',
+  partiallyPaid = false,
+} = {}) {
   const needle = String(search).trim().toLowerCase()
   return invoices.filter((invoice) => {
+    if (partiallyPaid && !invoice.partiallyPaid) return false
     if (builderId !== 'ALL' && invoice.builderId !== String(builderId)) return false
     if (jobId !== 'ALL' && invoice.jobId !== String(jobId)) return false
     if (bucket !== 'ALL' && invoice.bucket !== bucket) return false
@@ -177,6 +189,11 @@ export function filterReceivables(invoices, { builderId = 'ALL', jobId = 'ALL', 
     return [invoice.invoiceNumber, invoice.packageNumber, invoice.builderName, invoice.jobName, invoice.community]
       .some((value) => String(value ?? '').toLowerCase().includes(needle))
   })
+}
+
+/** How many of these Invoices were paid in part. */
+export function countPartiallyPaid(invoices) {
+  return invoices.filter(({ partiallyPaid }) => partiallyPaid).length
 }
 
 export function receivableBuilderOptions(invoices) {

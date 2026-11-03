@@ -5,8 +5,8 @@ create extension if not exists pgtap with schema extensions;
 select plan(47);
 
 select ok(
-  to_regtype('valtrim.service_work_type') is not null,
-  'Customer Service has an HW/WS work type'
+  to_regtype('valtrim.service_work_category') is not null,
+  'Customer Service has the current work category catalog'
 );
 
 select ok(
@@ -67,7 +67,7 @@ select has_column(
 select has_column(
   'valtrim',
   'service_requests',
-  'work_type',
+  'work_category',
   'Service requests identify HW, WS or both'
 );
 
@@ -108,14 +108,14 @@ select has_function(
 
 select is(
   valtrim.calculate_business_due_date(date '2026-09-21', 5),
-  date '2026-09-25',
-  'A Monday request is due on Friday when the reported day counts as day one'
+  date '2026-09-28',
+  'A Monday report is due the following Monday when its date is excluded'
 );
 
 select is(
   valtrim.calculate_business_due_date(date '2026-09-19', 5),
   date '2026-09-25',
-  'A weekend request begins counting on the following Monday'
+  'A weekend report begins counting on the following Monday'
 );
 
 select is(
@@ -220,13 +220,13 @@ select ok(
 );
 
 select ok(
-  has_column_privilege(
+  not has_column_privilege(
     'authenticated',
     'valtrim.service_requests',
-    'work_type',
+    'work_category',
     'insert'
   ),
-  'Authorized clients can register the Customer Service work type'
+  'Browser clients must use the Customer Service RPC to register work category'
 );
 
 select ok(
@@ -352,19 +352,17 @@ insert into valtrim.service_requests (
   reported_on,
   homeowner_name,
   homeowner_email,
-  request_type,
   description,
-  work_type,
+  work_category,
   estimated_duration_minutes
 )
 select
   property.id,
-  date '2026-09-21',
+  current_date,
   'Foundation Customer',
   'foundation.customer@example.com',
-  'SERVICE_CALL',
   'Foundation scheduling test',
-  'HW',
+  'HARDWARE',
   60
 from valtrim.service_properties property
 where property.address = 'Foundation test property';
@@ -375,19 +373,12 @@ select is(
     from valtrim.service_requests request
     where request.description = 'Foundation scheduling test'
   ),
-  date '2026-09-25',
+  valtrim.calculate_business_due_date(current_date, 5),
   'The request trigger persists the calculated business deadline'
 );
 
-select is(
-  (
-    select overview.is_ready_to_schedule
-    from valtrim.service_request_overview overview
-    where overview.description = 'Foundation scheduling test'
-  ),
-  false,
-  'A request without customer availability is not ready to schedule'
-);
+select is((select workflow_stage::text from valtrim.service_requests where description = 'Foundation scheduling test'),
+  'NEEDS_REVIEW', 'A new request requires human review before planning');
 
 insert into valtrim.service_request_availability (
   request_id,
@@ -397,29 +388,22 @@ insert into valtrim.service_request_availability (
 )
 select
   request.id,
-  timestamptz '2026-09-22 09:00:00-07',
-  timestamptz '2026-09-22 12:00:00-07',
+  now() + interval '1 day',
+  now() + interval '1 day 3 hours',
   'Customer prefers the morning'
 from valtrim.service_requests request
 where request.description = 'Foundation scheduling test';
 
-select is(
-  (
-    select overview.is_ready_to_schedule
-    from valtrim.service_request_overview overview
-    where overview.description = 'Foundation scheduling test'
-  ),
-  true,
-  'Coordinates, duration, email and availability make a request ready'
-);
+select is((select workflow_stage::text from valtrim.service_requests where description = 'Foundation scheduling test'),
+  'NEEDS_REVIEW', 'Adding availability cannot bypass human review');
 
 select ok(
   exists (
     select 1
-    from valtrim.service_request_status_history history
+    from valtrim.service_request_workflow_history history
     join valtrim.service_requests request on request.id = history.request_id
     where request.description = 'Foundation scheduling test'
-      and history.new_status = 'NEW'
+      and history.new_stage = 'NEEDS_REVIEW'
   ),
   'Creating a request records its initial workflow status'
 );
@@ -464,27 +448,11 @@ select ok(
   'Creating a proposal records an appointment Activity History event'
 );
 
-select ok(
-  exists (
-    select 1
-    from information_schema.columns column_record
-    where column_record.table_schema = 'valtrim'
-      and column_record.table_name = 'service_request_overview'
-      and column_record.column_name = 'is_ready_to_schedule'
-  ),
-  'The overview exposes scheduling readiness'
-);
+select ok(to_regclass('valtrim.service_request_overview') is null,
+  'The old readiness view is retired');
 
-select ok(
-  exists (
-    select 1
-    from information_schema.columns column_record
-    where column_record.table_schema = 'valtrim'
-      and column_record.table_name = 'service_request_overview'
-      and column_record.column_name = 'is_overdue'
-  ),
-  'The overview exposes the SLA overdue indicator'
-);
+select has_column('valtrim', 'service_requests', 'due_on',
+  'The canonical request retains the deadline for derived overdue alerts');
 
 select * from finish();
 

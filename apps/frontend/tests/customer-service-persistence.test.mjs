@@ -6,8 +6,10 @@ import {
 } from '../src/features/customer-service/schemas/persistedCustomerServiceSchema.js'
 import {
   calculateDistanceMiles,
+  getSchedulingReadinessReasons,
   toCustomerServiceRequest,
   toCustomerServiceRpcPayload,
+  toServiceScheduleProposal,
   toZonedDateTimeInput,
   zonedDateTimeToIso,
 } from '../src/features/customer-service/services/customerServiceRecord.js'
@@ -17,13 +19,11 @@ function validRequest() {
   return {
     reportedAt: '2026-09-21',
     lotNumber: '24',
-    street: '123 Main Street',
     city: 'Riverside',
     state: 'ca',
     postalCode: '92507',
     plan: 'Plan 2',
-    latitude: '33.986588',
-    longitude: '-117.343021',
+    coordinates: '33.986588, -117.343021',
     contactName: 'Maria Lopez',
     contactPhone: '(951) 555-0123',
     contactPhoneCountry: 'US',
@@ -34,14 +34,9 @@ function validRequest() {
     workType: 'HW_WS',
     estimatedDurationMinutes: '90',
     internalNotes: 'Call before arrival.',
-    customerAvailabilityNotes: 'Mornings are preferred.',
-    availability: [
-      {
-        availableFrom: '2026-09-22T09:00',
-        availableUntil: '2026-09-22T11:00',
-        notes: 'Gate is open.',
-      },
-    ],
+    customerUnavailableDates: [{ date: '2026-09-23' }],
+    customerNeedsContact: true,
+    customerAvailabilityNotes: 'Call before sending another proposal.',
   }
 }
 
@@ -61,22 +56,29 @@ test('persisted request schema normalizes values required by the RPC', () => {
   assert.equal(result.estimatedDurationMinutes, 90)
 })
 
-test('a repair request does not need a production community', () => {
+test('a repair request uses coordinates instead of requiring an address field', () => {
   const result = createPersistedCustomerServiceSchema(5).parse(validRequest())
   const payload = toCustomerServiceRpcPayload(result, 'America/Los_Angeles')
 
   assert.equal(payload.property.communityId, null)
-  assert.equal(payload.property.address, '123 Main Street')
+  assert.equal(payload.property.address, '33.986588, -117.343021')
 })
 
-test('a request can be saved before the customer confirms any time window', () => {
+test('a request can be saved without scheduling restrictions', () => {
   const form = createPersistedCustomerServiceSchema(5, {
     startDate: '2026-09-21',
     dueDate: '2026-09-25',
-  }).parse({ ...validRequest(), availability: [] })
+  }).parse({
+    ...validRequest(),
+    customerUnavailableDates: [],
+    customerNeedsContact: false,
+    customerAvailabilityNotes: '',
+  })
   const payload = toCustomerServiceRpcPayload(form, 'America/Los_Angeles')
 
   assert.deepEqual(payload.availability, [])
+  assert.deepEqual(payload.request.customerUnavailableDates, [])
+  assert.equal(payload.request.customerNeedsContact, false)
 })
 
 test('suggestions use the creation date in Los Angeles and skip weekends', () => {
@@ -111,35 +113,50 @@ test('the current workday suggestion starts no earlier than the current time', (
   assert.equal(result.days[0].availableFrom, '2026-09-23T09:15')
 })
 
-test('persisted request schema requires coordinates and validates confirmed availability', () => {
+test('pasted coordinates are split into latitude and longitude', () => {
+  const result = createPersistedCustomerServiceSchema(5).parse({
+    ...validRequest(),
+    coordinates: '33.97788205770745, -117.34520765941319',
+  })
+
+  assert.equal(result.latitude, 33.97788205770745)
+  assert.equal(result.longitude, -117.34520765941319)
+  assert.equal('coordinates' in result, false)
+})
+
+test('persisted request schema validates coordinates and unavailable days', () => {
   const missingCoordinates = createPersistedCustomerServiceSchema(5).safeParse({
     ...validRequest(),
-    latitude: '',
-    longitude: '',
+    coordinates: '',
   })
-  const lateAvailability = createPersistedCustomerServiceSchema(5).safeParse({
+  const invalidCoordinates = createPersistedCustomerServiceSchema(5).safeParse({
     ...validRequest(),
-    availability: [{
-      availableFrom: '2026-09-28T09:00',
-      availableUntil: '2026-09-28T11:00',
-      notes: '',
-    }],
+    coordinates: '117.34520765941319, -233.97788205770745',
+  })
+  const invalidUnavailableDate = createPersistedCustomerServiceSchema(5).safeParse({
+    ...validRequest(),
+    customerUnavailableDates: [{ date: '2026-09-28' }],
   })
 
   assert.equal(missingCoordinates.success, false)
-  assert.ok(missingCoordinates.error.flatten().fieldErrors.latitude)
-  assert.ok(missingCoordinates.error.flatten().fieldErrors.longitude)
-  assert.equal(lateAvailability.success, false)
+  assert.ok(missingCoordinates.error.flatten().fieldErrors.coordinates)
+  assert.equal(invalidCoordinates.success, false)
+  assert.ok(invalidCoordinates.error.flatten().fieldErrors.coordinates)
+  assert.equal(invalidUnavailableDate.success, false)
+  assert.ok(invalidUnavailableDate.error.flatten().fieldErrors.customerUnavailableDates)
 })
 
-test('confirmed windows cannot precede creation even if reported on an older date', () => {
+test('unavailable days cannot precede the scheduling window', () => {
   const result = createPersistedCustomerServiceSchema(5, {
     startDate: '2026-09-23',
     dueDate: '2026-09-29',
-  }).safeParse(validRequest())
+  }).safeParse({
+    ...validRequest(),
+    customerUnavailableDates: [{ date: '2026-09-22' }],
+  })
 
   assert.equal(result.success, false)
-  assert.ok(result.error.flatten().fieldErrors.availability)
+  assert.ok(result.error.flatten().fieldErrors.customerUnavailableDates)
 })
 
 test('Los Angeles wall time is converted without using the browser timezone', () => {
@@ -155,14 +172,16 @@ test('Los Angeles wall time is converted without using the browser timezone', ()
   )
 })
 
-test('RPC payload keeps property, request and availability writes together', () => {
+test('RPC payload keeps property and scheduling restrictions together', () => {
   const form = createPersistedCustomerServiceSchema(5).parse(validRequest())
   const payload = toCustomerServiceRpcPayload(form, 'America/Los_Angeles')
 
   assert.equal(payload.property.communityId, null)
   assert.equal(payload.request.workType, 'HW_WS')
   assert.equal(payload.request.estimatedDurationMinutes, 90)
-  assert.equal(payload.availability[0].availableFrom, '2026-09-22T16:00:00.000Z')
+  assert.deepEqual(payload.request.customerUnavailableDates, ['2026-09-23'])
+  assert.equal(payload.request.customerNeedsContact, true)
+  assert.deepEqual(payload.availability, [])
 })
 
 test('distance is calculated in miles from stored coordinates', () => {
@@ -172,6 +191,24 @@ test('distance is calculated in miles from stored coordinates', () => {
   )
 
   assert.ok(miles > 50 && miles < 60)
+})
+
+test('proposal readiness explains missing data and requires an operational technician', () => {
+  const reasons = getSchedulingReadinessReasons({
+    status: 'NEW',
+    latitude: 33.986588,
+    longitude: -117.343021,
+    estimatedDurationMinutes: 60,
+    workType: 'HW',
+    priority: 'MEDIUM',
+    dueOn: '2026-09-25',
+    availability: [],
+  }, { hasOperationalTechnician: false })
+
+  assert.deepEqual(reasons, [
+    'No scheduling day remains after customer restrictions.',
+    'No active technician has complete work hours and start coordinates.',
+  ])
 })
 
 test('database detail rows map into the catalog without mock data', () => {
@@ -199,6 +236,8 @@ test('database detail rows map into the catalog without mock data', () => {
     homeowner_email: 'maria@example.com',
     homeowner_phone: '+19515550123',
     description: 'Door adjustment',
+    customer_unavailable_dates: ['2026-09-23'],
+    customer_needs_contact: true,
     community_id: 3,
     builder_id: 2,
     builder_name: 'Example Builder',
@@ -222,6 +261,8 @@ test('database detail rows map into the catalog without mock data', () => {
   assert.equal(request.appointmentState, 'NOT_SCHEDULED')
   assert.equal(request.distanceBand, 'GREEN')
   assert.equal(request.availability[0].availableFrom, '2026-09-22T09:00')
+  assert.deepEqual(request.customerUnavailableDates, ['2026-09-23'])
+  assert.equal(request.customerNeedsContact, true)
 })
 
 test('unlinked repair requests display without invented builder or community names', () => {
@@ -249,4 +290,47 @@ test('unlinked repair requests display without invented builder or community nam
   assert.equal(request.builderName, '')
   assert.equal(request.community, '')
   assert.equal(request.isReadyToSchedule, false)
+})
+
+test('automatic proposal rows retain route order and numeric metrics', () => {
+  const proposal = toServiceScheduleProposal({
+    id: 31,
+    requested_for_request_id: 42,
+    technician_id: 7,
+    technician_name: 'Ana Rivera',
+    proposed_on: '2026-09-25',
+    proposal_rank: 1,
+    status: 'PENDING',
+    score: '101220.50',
+    total_distance_miles: '13.40',
+    work_minutes: 150,
+    travel_buffer_minutes: 30,
+    remaining_work_minutes: 240,
+    explanation: {
+      reasons: ['Groups nearby request SR-00000043 at 4.2 miles.', null],
+      warnings: [],
+      previousRequest: 'SR-00000040',
+    },
+    generated_at: '2026-09-25T16:00:00.000Z',
+    stops: [{
+      id: 1,
+      requestId: 42,
+      folio: 'SR-00000042',
+      stopOrder: 1,
+      startsAt: '2026-09-25T16:00:00.000Z',
+      endsAt: '2026-09-25T17:00:00.000Z',
+      latitude: '33.986588',
+      longitude: '-117.343021',
+      distanceFromPreviousMiles: '4.20',
+      travelBufferMinutes: 15,
+      address: '123 Main Street',
+    }],
+  })
+
+  assert.equal(proposal.totalDistanceMiles, 13.4)
+  assert.equal(proposal.stops[0].distanceFromPreviousMiles, 4.2)
+  assert.deepEqual(proposal.reasons, [
+    'Groups nearby request SR-00000043 at 4.2 miles.',
+  ])
+  assert.equal(proposal.previousRequest, 'SR-00000040')
 })

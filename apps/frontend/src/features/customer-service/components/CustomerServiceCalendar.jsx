@@ -3,12 +3,12 @@ import FullCalendar from '@fullcalendar/react'
 import dayGridPlugin from '@fullcalendar/daygrid'
 import interactionPlugin from '@fullcalendar/interaction'
 import listPlugin from '@fullcalendar/list'
+import multiMonthPlugin from '@fullcalendar/multimonth'
 import timeGridPlugin from '@fullcalendar/timegrid'
 import {
   Box,
   Button,
   ButtonGroup,
-  Checkbox,
   Drawer,
   FormControl,
   FormControlLabel,
@@ -28,46 +28,88 @@ import EventAvailableRoundedIcon from '@mui/icons-material/EventAvailableRounded
 import { getActivityTone } from '../../calendar/data/calendarEvents.js'
 import CalendarEventCard from '../../calendar/components/CalendarEventCard.jsx'
 import { useProductionActivities } from '../../calendar/context/useProductionActivities.js'
-import { technicianOptions } from '../data/customerService.js'
 import {
+  createServiceCalendarEventsFromRequests,
+  filterServiceCalendarEvents,
+  getServiceCalendarEventDisplayMode,
+  getServiceCalendarViewDescription,
   getServiceEventTone,
+  getServiceWorkTypeFilterOptions,
   serviceAppointmentStatusOptions,
-  serviceWorkTypeOptions,
+  serviceCalendarViewOptions,
 } from '../data/serviceCalendarEvents.js'
-import { useCustomerServiceCalendar } from '../context/useCustomerServiceCalendar.js'
 import CustomerServiceCalendarDetail from './CustomerServiceCalendarDetail.jsx'
 import CustomerServiceEventCard from './CustomerServiceEventCard.jsx'
+import { customerServiceTimeZone, getCustomerServiceClock } from '../utils/dates.js'
 import '../../calendar/components/CalendarScheduler.css'
 import './CustomerServiceCalendar.css'
 
 const initialCalendarTitle = new Intl.DateTimeFormat('en-US', {
+  timeZone: customerServiceTimeZone,
   month: 'long',
-  day: 'numeric',
   year: 'numeric',
 }).format(new Date())
 
-export default function CustomerServiceCalendar({ onNotice }) {
+const serviceCalendarViews = {
+  dayGridMonth: {
+    dayHeaderFormat: { weekday: 'short' },
+    dayMaxEvents: 3,
+  },
+  timeGridWeek: {
+    dayHeaderFormat: { weekday: 'short', month: 'short', day: 'numeric' },
+  },
+  timeGridDay: {
+    dayHeaderFormat: { weekday: 'long', month: 'long', day: 'numeric' },
+  },
+  listWeek: {
+    listDayFormat: { weekday: 'long', month: 'short', day: 'numeric' },
+    listDaySideFormat: { year: 'numeric' },
+  },
+  multiMonthYear: {
+    dayHeaderFormat: { weekday: 'narrow' },
+    dayMaxEvents: 2,
+    multiMonthMaxColumns: 3,
+    multiMonthMinWidth: 270,
+  },
+}
+
+export default function CustomerServiceCalendar({ requests, settings, onViewRequest }) {
   const calendarRef = useRef(null)
-  const { serviceEvents } = useCustomerServiceCalendar()
+  const serviceEvents = useMemo(
+    () => createServiceCalendarEventsFromRequests(requests),
+    [requests],
+  )
   const { events: productionOverlayEvents } = useProductionActivities()
   const { mode, systemMode } = useColorScheme()
   const resolvedColorMode = mode === 'system' ? systemMode : mode
   const colorMode = resolvedColorMode === 'dark' ? 'dark' : 'light'
   const [viewTitle, setViewTitle] = useState(initialCalendarTitle)
-  const [viewType, setViewType] = useState('timeGridWeek')
+  const [viewType, setViewType] = useState('dayGridMonth')
   const [technicianFilter, setTechnicianFilter] = useState('all')
   const [statusFilter, setStatusFilter] = useState('all')
-  const [visibleWorkTypes, setVisibleWorkTypes] = useState(['HW', 'WS'])
+  const [workTypeFilter, setWorkTypeFilter] = useState('all')
   const [showProduction, setShowProduction] = useState(false)
   const [selectedId, setSelectedId] = useState(null)
-  const filteredServiceEvents = useMemo(() => serviceEvents.filter((event) => {
-    const props = event.extendedProps
-    const technicianMatches = technicianFilter === 'all'
-      || String(props.technicianId) === technicianFilter
-    const statusMatches = statusFilter === 'all' || props.status === statusFilter
-    const workTypeMatches = props.workTypes.every((type) => visibleWorkTypes.includes(type))
-    return technicianMatches && statusMatches && workTypeMatches
-  }), [serviceEvents, statusFilter, technicianFilter, visibleWorkTypes])
+  const technicianOptions = useMemo(() => {
+    const technicians = new Map()
+    for (const event of serviceEvents) {
+      const { technicianId, technician } = event.extendedProps
+      for (const person of event.extendedProps.assignedTechnicians ?? [{ id: technicianId, name: technician }]) {
+        if (person.id && person.name) technicians.set(String(person.id), person.name)
+      }
+    }
+    return [...technicians].map(([value, label]) => ({ value, label }))
+      .sort((left, right) => left.label.localeCompare(right.label))
+  }, [serviceEvents])
+  const workTypeOptions = useMemo(
+    () => getServiceWorkTypeFilterOptions(serviceEvents),
+    [serviceEvents],
+  )
+  const filteredServiceEvents = useMemo(() => filterServiceCalendarEvents(serviceEvents, {
+    technician: technicianFilter,
+    status: statusFilter,
+    workType: workTypeFilter,
+  }), [serviceEvents, statusFilter, technicianFilter, workTypeFilter])
 
   const visibleEvents = useMemo(() => (
     showProduction
@@ -82,7 +124,7 @@ export default function CustomerServiceCalendar({ onNotice }) {
     if (!api) return
     if (direction === 'prev') api.prev()
     if (direction === 'next') api.next()
-    if (direction === 'today') api.today()
+    if (direction === 'today') api.gotoDate(getCustomerServiceClock().date)
   }
 
   const changeView = (nextView) => {
@@ -90,10 +132,9 @@ export default function CustomerServiceCalendar({ onNotice }) {
     setViewType(nextView)
   }
 
-  const toggleWorkType = (workType) => {
-    setVisibleWorkTypes((current) => current.includes(workType)
-      ? current.filter((value) => value !== workType)
-      : [...current, workType])
+  const openDayView = (date) => {
+    calendarRef.current?.getApi().changeView('timeGridDay', date)
+    setViewType('timeGridDay')
   }
 
   return (
@@ -131,21 +172,22 @@ export default function CustomerServiceCalendar({ onNotice }) {
           </Select>
         </FormControl>
 
-        <Box className="service-calendar-work-types" aria-label="Filter work types">
-          {serviceWorkTypeOptions.map((workType) => (
-            <FormControlLabel
-              key={workType.value}
-              control={(
-                <Checkbox
-                  size="small"
-                  checked={visibleWorkTypes.includes(workType.value)}
-                  onChange={() => toggleWorkType(workType.value)}
-                />
-              )}
-              label={workType.label}
-            />
-          ))}
-        </Box>
+        <FormControl size="small" sx={{ minWidth: 190 }}>
+          <InputLabel id="service-calendar-work-type-label">Work type</InputLabel>
+          <Select
+            labelId="service-calendar-work-type-label"
+            label="Work type"
+            value={workTypeFilter}
+            onChange={(event) => setWorkTypeFilter(event.target.value)}
+          >
+            <MenuItem value="all">All work types</MenuItem>
+            {workTypeOptions.map((workType) => (
+              <MenuItem key={workType.value} value={workType.value}>
+                {workType.label}
+              </MenuItem>
+            ))}
+          </Select>
+        </FormControl>
 
         <FormControlLabel
           className="service-calendar-production-toggle"
@@ -183,50 +225,69 @@ export default function CustomerServiceCalendar({ onNotice }) {
             </Typography>
 
             <ButtonGroup className="calendar-view-switcher" size="small" variant="outlined" aria-label="Change service calendar view">
-              <Button className={viewType === 'dayGridMonth' ? 'is-active' : ''} onClick={() => changeView('dayGridMonth')}>Month</Button>
-              <Button className={viewType === 'timeGridWeek' ? 'is-active' : ''} onClick={() => changeView('timeGridWeek')}>Week</Button>
-              <Button className={viewType === 'listWeek' ? 'is-active' : ''} onClick={() => changeView('listWeek')}>List</Button>
+              {serviceCalendarViewOptions.map((view) => (
+                <Button
+                  key={view.value}
+                  className={viewType === view.value ? 'is-active' : ''}
+                  onClick={() => changeView(view.value)}
+                >
+                  {view.label}
+                </Button>
+              ))}
             </ButtonGroup>
           </Box>
 
           <Box className="calendar-all-day-note service-calendar-note">
             <EventAvailableRoundedIcon fontSize="small" />
-            <span>Service visits · Open an event to review the request and its last completed visit</span>
+            <span>
+              {getServiceCalendarViewDescription(viewType)}
+              {filteredServiceEvents.length === 0 && ' · No approved service visits match the current filters'}
+            </span>
           </Box>
 
-          <Box className="calendar-canvas service-calendar-canvas">
+          <Box className={`calendar-canvas service-calendar-canvas service-calendar-canvas--${viewType}`}>
             <FullCalendar
               ref={calendarRef}
-              plugins={[dayGridPlugin, interactionPlugin, listPlugin, timeGridPlugin]}
-              initialView="timeGridWeek"
-              initialDate={new Date()}
+              plugins={[dayGridPlugin, interactionPlugin, listPlugin, multiMonthPlugin, timeGridPlugin]}
+              initialView="dayGridMonth"
+              initialDate={getCustomerServiceClock().date}
+              now={() => {
+                const clock = getCustomerServiceClock()
+                const hour = String(Math.floor(clock.minutesSinceMidnight / 60)).padStart(2, '0')
+                const minute = String(clock.minutesSinceMidnight % 60).padStart(2, '0')
+                return `${clock.date}T${hour}:${minute}:00`
+              }}
               firstDay={1}
               weekends
               headerToolbar={false}
-              allDaySlot
+              views={serviceCalendarViews}
+              allDaySlot={showProduction}
               allDayText="Production"
-              slotMinTime="08:00:00"
-              slotMaxTime="18:00:00"
+              slotMinTime={settings.workdayStartsAt}
+              slotMaxTime={settings.workdayEndsAt}
               slotDuration="01:00:00"
               slotLabelInterval="01:00:00"
+              scrollTime={settings.workdayStartsAt}
+              nowIndicator
               displayEventTime={false}
-              dayHeaderFormat={{ weekday: 'short', month: 'short', day: 'numeric' }}
-              listDayFormat={{ weekday: 'long', month: 'short', day: 'numeric' }}
-              listDaySideFormat={{ year: 'numeric' }}
+              navLinks
+              navLinkDayClick={openDayView}
               noEventsContent="No service visits match these filters"
-              height="100%"
+              height={['timeGridWeek', 'timeGridDay'].includes(viewType)
+                ? 'var(--service-calendar-timegrid-height)'
+                : 'auto'}
               expandRows
               fixedWeekCount={false}
-              dayMaxEvents={false}
               editable={false}
               selectable={false}
               events={visibleEvents}
               eventClick={({ event }) => setSelectedId(event.id)}
-              eventContent={(info) => (
-                info.event.extendedProps.calendarType === 'CUSTOMER_SERVICE'
-                  ? <CustomerServiceEventCard event={info.event} isList={info.view.type === 'listWeek'} />
-                  : <CalendarEventCard event={info.event} isList={info.view.type === 'listWeek'} />
-              )}
+              eventContent={(info) => {
+                const displayMode = getServiceCalendarEventDisplayMode(info.view.type)
+                return info.event.extendedProps.calendarType === 'CUSTOMER_SERVICE'
+                  ? <CustomerServiceEventCard event={info.event} displayMode={displayMode} />
+                  : <CalendarEventCard event={info.event} displayMode={displayMode} />
+              }}
               eventClassNames={({ event }) => {
                 if (event.extendedProps.calendarType === 'CUSTOMER_SERVICE') {
                   const tone = getServiceEventTone(event.extendedProps.status)
@@ -253,7 +314,13 @@ export default function CustomerServiceCalendar({ onNotice }) {
         <CustomerServiceCalendarDetail
           event={selectedEvent}
           onClose={() => setSelectedId(null)}
-          onEdit={() => onNotice?.('Visit editing is visual-only in this frontend prototype.')}
+          onViewRequest={onViewRequest ? (event) => {
+            const request = requests.find((entry) => entry.id === event.extendedProps.requestId)
+            if (request) {
+              setSelectedId(null)
+              onViewRequest(request)
+            }
+          } : undefined}
         />
       </Drawer>
     </Box>

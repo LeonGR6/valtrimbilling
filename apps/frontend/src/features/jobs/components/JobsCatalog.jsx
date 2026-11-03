@@ -39,6 +39,7 @@ import BlockRoundedIcon from '@mui/icons-material/BlockRounded'
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined'
 import HomeWorkRoundedIcon from '@mui/icons-material/HomeWorkRounded'
 import LayersRoundedIcon from '@mui/icons-material/LayersRounded'
+import LocationOnOutlinedIcon from '@mui/icons-material/LocationOnOutlined'
 import MoreHorizRoundedIcon from '@mui/icons-material/MoreHorizRounded'
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
 import ResponsiveCreateButton from '../../../components/common/ResponsiveCreateButton'
@@ -61,6 +62,11 @@ import {
   getJobBuilderId,
   jobPlansOptionsPath,
 } from '../utils/jobRoutes.js'
+import {
+  formatJobCoordinates,
+  jobCoordinatesGoogleMapsUrl,
+  parseJobCoordinates,
+} from '../utils/jobCoordinates.js'
 
 const personName = (index, id) => index.get(id)?.name ?? 'Unassigned'
 
@@ -94,6 +100,10 @@ function JobDialog({
           code: job.code,
           builder: job.builder,
           community: job.community,
+          coordinates: formatJobCoordinates(
+            job.communityLatitude,
+            job.communityLongitude,
+          ),
           supervisorId: job.supervisorId ?? null,
           superintendentId: job.superintendentId ?? null,
         }
@@ -102,7 +112,12 @@ function JobDialog({
     reValidateMode: 'onChange',
   })
   const selectedBuilderName = useWatch({ control, name: 'builder' })
+  const coordinatesValue = useWatch({ control, name: 'coordinates' })
   const selectedBuilderId = builderIdsByName.get(selectedBuilderName)
+  const coordinates = parseJobCoordinates(coordinatesValue)
+  const coordinatesUrl = coordinates
+    ? jobCoordinatesGoogleMapsUrl(coordinates.latitude, coordinates.longitude)
+    : ''
   const availableSuperintendents = useMemo(
     () => superintendents.filter(
       (contact) =>
@@ -189,6 +204,35 @@ function JobDialog({
                   fullWidth
                   slotProps={{ htmlInput: { maxLength: 100 } }}
                 />
+              </Stack>
+              <Stack
+                direction={{ xs: 'column', sm: 'row' }}
+                spacing={2}
+                sx={{ alignItems: { sm: 'flex-start' } }}
+              >
+                <TextField
+                  label="Community coordinates"
+                  {...register('coordinates')}
+                  error={Boolean(errors.coordinates)}
+                  helperText={
+                    errors.coordinates?.message
+                    ?? 'Latitude and longitude, for example: 33.977882, -117.345208'
+                  }
+                  fullWidth
+                  required
+                />
+                <Button
+                  component="a"
+                  href={coordinatesUrl || undefined}
+                  target={coordinatesUrl ? '_blank' : undefined}
+                  rel={coordinatesUrl ? 'noreferrer' : undefined}
+                  variant="outlined"
+                  startIcon={<LocationOnOutlinedIcon />}
+                  disabled={!coordinatesUrl}
+                  sx={{ minWidth: 190, minHeight: 56, whiteSpace: 'nowrap' }}
+                >
+                  Open in Google Maps
+                </Button>
               </Stack>
             </Stack>
           </Box>
@@ -384,7 +428,6 @@ export default function JobsCatalog() {
         builder.name === selectedBuilder?.name ||
         builder.name === editTarget?.builder,
     )
-    .map((builder) => builder.name)
   const availableSupervisors = supervisors.filter(
     (supervisor) => supervisor.isActive || supervisor.id === editTarget?.supervisorId,
   )

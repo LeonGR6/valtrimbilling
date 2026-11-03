@@ -93,6 +93,7 @@ test('job schema normalizes the fields used to create a job', () => {
     code: ' job-1005 ',
     builder: ' KB Home ',
     community: ' Andara ',
+    coordinates: ' 33.561437, -117.194302 ',
     supervisorId: 2,
     superintendentId: 5,
   })
@@ -101,6 +102,8 @@ test('job schema normalizes the fields used to create a job', () => {
     code: 'JOB-1005',
     builder: 'KB Home',
     community: 'Andara',
+    communityLatitude: 33.561437,
+    communityLongitude: -117.194302,
     supervisorId: 2,
     superintendentId: 5,
   })
@@ -112,6 +115,7 @@ test('job schema requires a supervisor and a superintendent to be picked', () =>
     code: 'JOB-2001',
     builder: 'KB Home',
     community: 'Andara',
+    coordinates: '33.561437, -117.194302',
     supervisorId: 2,
     superintendentId: 5,
   }
@@ -131,6 +135,8 @@ test('job schema rejects a duplicate job number', () => {
     code: 'JOB-1005',
     builder: 'KB Home',
     community: 'Andara',
+    communityLatitude: 33.561437,
+    communityLongitude: -117.194302,
     supervisorId: 2,
     superintendentId: 5,
   }
@@ -140,12 +146,30 @@ test('job schema rejects a duplicate job number', () => {
     code: ' job-1005 ',
     builder: ' kb home ',
     community: 'andara',
+    coordinates: '33.561437, -117.194302',
     supervisorId: 2,
     superintendentId: 5,
   })
 
   assert.equal(duplicate.success, false)
   assert.ok(duplicate.error.flatten().fieldErrors.code)
+})
+
+test('job schema requires valid community coordinates', () => {
+  const schema = createJobSchema([], null)
+  const base = {
+    code: 'JOB-3001',
+    builder: 'KB Home',
+    community: 'Andara',
+    coordinates: '33.561437, -117.194302',
+    supervisorId: 2,
+    superintendentId: 5,
+  }
+
+  assert.equal(schema.safeParse({ ...base, coordinates: '' }).success, false)
+  assert.equal(schema.safeParse({ ...base, coordinates: '33.56' }).success, false)
+  assert.equal(schema.safeParse({ ...base, coordinates: '91, -117' }).success, false)
+  assert.equal(schema.safeParse({ ...base, coordinates: '33, -181' }).success, false)
 })
 
 test('job total lots are calculated from all phase lots', () => {

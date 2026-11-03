@@ -130,8 +130,8 @@ select has_table(
   'The legacy Communities table remains outside this change'
 );
 select ok(
-  not has_table_privilege('authenticated', 'valtrim.communities', 'select'),
-  'The legacy Communities table remains closed'
+  has_table_privilege('authenticated', 'valtrim.communities', 'select'),
+  'The legacy Communities table remains readable for Customer Service'
 );
 
 insert into valtrim.builders (code, name)
@@ -182,6 +182,8 @@ insert into valtrim.jobs (
   code,
   builder_id,
   community,
+  community_latitude,
+  community_longitude,
   supervisor_id,
   superintendent_id
 )
@@ -189,6 +191,8 @@ select
   'JOBIDENTITYPGTAP',
   builder.id,
   '  Job Identity Community  ',
+  33.980000,
+  -117.350000,
   supervisor.id,
   superintendent.id
 from valtrim.builders builder

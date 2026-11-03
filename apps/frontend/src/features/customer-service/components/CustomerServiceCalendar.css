@@ -23,20 +23,6 @@
   background: var(--calendar-panel);
 }
 
-.service-calendar-work-types {
-  display: flex;
-  align-items: center;
-  padding: 0 6px;
-  min-height: 40px;
-  border: 1px solid var(--calendar-border);
-  border-radius: 8px;
-}
-
-.service-calendar-work-types .MuiFormControlLabel-root {
-  margin-right: 8px;
-}
-
-.service-calendar-work-types .MuiFormControlLabel-label,
 .service-calendar-production-toggle .MuiFormControlLabel-label {
   font-size: 0.82rem;
   font-weight: 650;
@@ -56,7 +42,69 @@
 }
 
 .service-calendar-canvas.calendar-canvas {
-  min-height: 600px;
+  --service-calendar-timegrid-height: 600px;
+  min-height: var(--service-calendar-timegrid-height);
+}
+
+.service-calendar-canvas .fc {
+  height: auto;
+}
+
+.service-calendar-canvas--timeGridWeek.calendar-canvas,
+.service-calendar-canvas--timeGridDay.calendar-canvas {
+  height: var(--service-calendar-timegrid-height);
+}
+
+.service-calendar-canvas--multiMonthYear.calendar-canvas {
+  overflow: visible;
+}
+
+.customer-service-calendar .calendar-view-switcher {
+  flex-wrap: wrap;
+}
+
+.service-calendar-canvas .fc .fc-scrollgrid,
+.service-calendar-canvas .fc .fc-daygrid-day,
+.service-calendar-canvas .fc .fc-timegrid-col {
+  border-color: var(--calendar-grid-color) !important;
+}
+
+.service-calendar-canvas--dayGridMonth .fc .fc-daygrid-day-frame {
+  min-height: 118px;
+}
+
+.service-calendar-canvas .fc .fc-daygrid-more-link {
+  margin: 2px 5px;
+  color: var(--calendar-primary);
+  font-size: 0.68rem;
+  font-weight: 800;
+}
+
+.service-calendar-canvas .fc .fc-multimonth {
+  gap: 16px 0;
+  padding: 16px;
+  border: 0;
+  background: var(--calendar-muted-surface);
+}
+
+.service-calendar-canvas .fc .fc-multimonth-month {
+  overflow: hidden;
+  border: 1px solid var(--calendar-grid-strong);
+  border-radius: 10px;
+  background: var(--calendar-surface);
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--calendar-text) 7%, transparent);
+}
+
+.service-calendar-canvas .fc .fc-multimonth-title {
+  padding: 10px 8px;
+  border-bottom: 1px solid var(--calendar-grid-strong);
+  font-size: 0.78rem;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.service-calendar-canvas .fc .fc-multimonth .fc-daygrid-day-frame {
+  min-height: 54px;
 }
 
 .service-calendar-canvas .fc .fc-timegrid-slot {
@@ -94,6 +142,10 @@
 
 .service-calendar-canvas .fc .fc-timegrid-event .fc-event-main {
   padding: 0;
+}
+
+.service-calendar-canvas .fc .fc-timegrid .fc-daygrid-day-frame {
+  min-height: 42px;
 }
 
 .service-work-event {
@@ -151,6 +203,69 @@
   margin-top: auto;
   color: var(--calendar-muted);
   font-size: 0.64rem;
+}
+
+.service-compact-event {
+  --service-accent: #8b5cf6;
+  width: 100%;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--service-accent) 44%, transparent);
+  border-left: 3px solid var(--service-accent);
+  border-radius: 5px;
+  padding: 3px 5px;
+  background: color-mix(in srgb, var(--service-accent) 14%, var(--calendar-surface));
+  color: var(--calendar-text);
+  font-size: 0.62rem;
+  line-height: 1.2;
+}
+
+.service-compact-event__marker {
+  width: 6px;
+  height: 6px;
+  flex: 0 0 6px;
+  border-radius: 50%;
+  background: var(--service-accent);
+}
+
+.service-compact-event strong,
+.service-compact-event > span:last-child:not(.service-compact-event__marker) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.service-compact-event strong {
+  min-width: 0;
+}
+
+.service-compact-event > span:last-child:not(.service-compact-event__marker) {
+  margin-left: auto;
+  flex: 0 0 auto;
+  color: var(--calendar-muted-text);
+  font-size: 0.58rem;
+}
+
+.service-compact-event--production {
+  --service-accent: var(--activity-color, #2563eb);
+}
+
+.service-compact-event--year {
+  justify-content: center;
+  gap: 3px;
+  min-height: 16px;
+  border-left-width: 2px;
+  padding: 1px 2px;
+  font-size: 0.54rem;
+}
+
+.service-compact-event--year .service-compact-event__marker {
+  width: 4px;
+  height: 4px;
+  flex-basis: 4px;
 }
 
 .service-list-event {
@@ -230,7 +345,8 @@
 }
 
 .fc-event.is-selected .service-work-event,
-.fc-event.is-selected .service-list-event {
+.fc-event.is-selected .service-list-event,
+.fc-event.is-selected .service-compact-event {
   outline: 2px solid var(--service-accent);
   outline-offset: 1px;
 }
@@ -275,16 +391,43 @@
     padding: 14px;
   }
 
-  .service-calendar-work-types {
-    width: 100%;
-  }
-
   .service-calendar-workspace.calendar-workspace {
     min-height: 620px;
   }
 
   .service-calendar-canvas.calendar-canvas {
-    min-height: 540px;
+    --service-calendar-timegrid-height: 540px;
+  }
+
+  .customer-service-calendar .calendar-view-switcher {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .service-calendar-canvas--dayGridMonth .fc .fc-daygrid-day-frame {
+    min-height: 88px;
+  }
+
+  .service-calendar-canvas .fc .fc-daygrid-day-top {
+    padding-inline: 4px;
+  }
+
+  .service-calendar-canvas .fc .fc-event {
+    margin-inline: 2px;
+  }
+
+  .service-compact-event--compact {
+    border-left-width: 2px;
+    padding-inline: 3px;
+  }
+
+  .service-compact-event--compact .service-compact-event__marker,
+  .service-compact-event--compact > span:last-child:not(.service-compact-event__marker) {
+    display: none;
+  }
+
+  .service-calendar-canvas .fc .fc-multimonth {
+    gap: 12px 0;
+    padding: 10px;
   }
 
   .service-work-event__history,

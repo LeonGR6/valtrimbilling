@@ -32,12 +32,18 @@ function formatPreviousVisit(lastVisit) {
   return `Last visit: ${shortDateFormatter.format(date)} · ${formatWorkTypes(lastVisit.workTypes)}`
 }
 
-export default function CustomerServiceEventCard({ event, isList = false }) {
+export default function CustomerServiceEventCard({ event, displayMode = 'timed' }) {
   const props = event.extendedProps
   const tone = getServiceEventTone(props.status)
   const workTypes = formatWorkTypes(props.workTypes)
+  const accessibleTitle = [
+    props.requestNumber,
+    workTypes,
+    formatTimeRange(event),
+    props.community && props.lotNumber ? `${props.community} · Lot ${props.lotNumber}` : null,
+  ].filter(Boolean).join(' · ')
 
-  if (isList) {
+  if (displayMode === 'list') {
     return (
       <Box className={`service-list-event service-tone--${tone}`}>
         <Box className="service-list-event__identity">
@@ -55,6 +61,22 @@ export default function CustomerServiceEventCard({ event, isList = false }) {
     )
   }
 
+  if (displayMode === 'compact' || displayMode === 'year') {
+    const isYear = displayMode === 'year'
+
+    return (
+      <Box
+        className={`service-compact-event service-compact-event--${displayMode} service-tone--${tone}`}
+        title={accessibleTitle}
+        aria-label={accessibleTitle}
+      >
+        <span className="service-compact-event__marker" aria-hidden="true" />
+        <strong>{isYear ? 'CS' : `${props.requestNumber} · ${workTypes}`}</strong>
+        {!isYear && <span>{formatTimeRange(event)}</span>}
+      </Box>
+    )
+  }
+
   return (
     <Box className={`service-work-event service-tone--${tone}`}>
       <Box className="service-work-event__topline">
@@ -64,7 +86,10 @@ export default function CustomerServiceEventCard({ event, isList = false }) {
       <span className="service-work-event__property">
         {props.community} · Lot {props.lotNumber}
       </span>
-      <span className="service-work-event__time">{formatTimeRange(event)}</span>
+      <span className="service-work-event__time">
+        {formatTimeRange(event)}
+        {props.customerWindow?.exceptional ? ' · Exception window' : ''}
+      </span>
       <span className="service-work-event__history">
         {formatPreviousVisit(props.lastVisit)}
       </span>

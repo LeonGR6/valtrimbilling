@@ -24,21 +24,35 @@ export function calculateBusinessDueDate(startDate, businessDays = 5) {
   return `${year}-${month}-${day}`
 }
 
-const availabilitySchema = z.object({
-  availableFrom: z.string().min(1, 'Enter the beginning of this window.'),
-  availableUntil: z.string().min(1, 'Enter the end of this window.'),
-  notes: z.string().trim().max(300, 'Use 300 characters or fewer.'),
-})
+export const coordinatesSchema = z
+  .string()
+  .trim()
+  .min(1, 'Enter the coordinates.')
+  .transform((value, context) => {
+    const parts = value.split(',').map((part) => part.trim())
+    if (parts.length !== 2 || parts.some((part) => part === '')) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Paste latitude and longitude separated by a comma.',
+      })
+      return z.NEVER
+    }
 
-const requiredCoordinate = (label, minimum, maximum) => z.preprocess(
-  (value) => value === '' || value === null ? undefined : Number(value),
-  z.number({
-    required_error: `Enter the ${label}.`,
-    invalid_type_error: `Enter a valid ${label}.`,
+    const [latitude, longitude] = parts.map(Number)
+    if (
+      !Number.isFinite(latitude) || !Number.isFinite(longitude)
+      || latitude < -90 || latitude > 90
+      || longitude < -180 || longitude > 180
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Latitude must be from -90 to 90 and longitude from -180 to 180.',
+      })
+      return z.NEVER
+    }
+
+    return { latitude, longitude }
   })
-    .min(minimum, `${label[0].toUpperCase()}${label.slice(1)} must be at least ${minimum}.`)
-    .max(maximum, `${label[0].toUpperCase()}${label.slice(1)} must be at most ${maximum}.`),
-)
 
 export function createPersistedCustomerServiceSchema(
   businessDaysToComplete = 5,
@@ -52,11 +66,6 @@ export function createPersistedCustomerServiceSchema(
         .trim()
         .min(1, 'Enter the lot number.')
         .max(40, 'Use 40 characters or fewer.'),
-      street: z
-        .string()
-        .trim()
-        .min(1, 'Enter the property address.')
-        .max(240, 'Use 240 characters or fewer.'),
       city: z.string().trim().max(80, 'Use 80 characters or fewer.'),
       state: z
         .string()
@@ -65,8 +74,7 @@ export function createPersistedCustomerServiceSchema(
         .transform((value) => value.toUpperCase()),
       postalCode: z.string().trim().max(10, 'Use 10 characters or fewer.'),
       plan: z.string().trim().max(100, 'Use 100 characters or fewer.'),
-      latitude: requiredCoordinate('latitude', -90, 90),
-      longitude: requiredCoordinate('longitude', -180, 180),
+      coordinates: coordinatesSchema,
       contactName: z
         .string()
         .trim()
@@ -96,13 +104,16 @@ export function createPersistedCustomerServiceSchema(
         .min(15, 'The minimum duration is 15 minutes.')
         .max(720, 'The maximum duration is 720 minutes.'),
       internalNotes: z.string().trim().max(2000, 'Use 2,000 characters or fewer.'),
+      customerUnavailableDates: z
+        .array(z.object({
+          date: z.string().min(1, 'Choose an unavailable day.'),
+        }))
+        .max(5, 'Use five unavailable days or fewer.'),
+      customerNeedsContact: z.boolean(),
       customerAvailabilityNotes: z
         .string()
         .trim()
         .max(1000, 'Use 1,000 characters or fewer.'),
-      availability: z
-        .array(availabilitySchema)
-        .max(5, 'Use five availability windows or fewer.'),
     })
     .superRefine((data, context) => {
       const normalizedPhone = normalizePhoneNumber(
@@ -133,38 +144,38 @@ export function createPersistedCustomerServiceSchema(
         businessDaysToComplete,
       )
 
-      data.availability.forEach((window, index) => {
-        if (
-          window.availableFrom
-          && window.availableUntil
-          && window.availableUntil <= window.availableFrom
-        ) {
+      const unavailableDates = new Set()
+      data.customerUnavailableDates.forEach(({ date }, index) => {
+        if (unavailableDates.has(date)) {
           context.addIssue({
             code: z.ZodIssueCode.custom,
-            path: ['availability', index, 'availableUntil'],
-            message: 'The end must be after the beginning.',
+            path: ['customerUnavailableDates', index, 'date'],
+            message: 'This unavailable day is already listed.',
           })
         }
+        unavailableDates.add(date)
 
-        for (const [field, value] of [
-          ['availableFrom', window.availableFrom],
-          ['availableUntil', window.availableUntil],
-        ]) {
-          const date = value.slice(0, 10)
-          if (value && (date < windowStart || date > dueOn)) {
-            context.addIssue({
-              code: z.ZodIssueCode.custom,
-              path: ['availability', index, field],
-              message: `Use a date from ${windowStart} through ${dueOn}.`,
-            })
-          }
+        const day = parseIsoDate(date).getDay()
+        if (date && (date < windowStart || date > dueOn || day === 0 || day === 6)) {
+          context.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['customerUnavailableDates', index, 'date'],
+            message: `Choose a business day from ${windowStart} through ${dueOn}.`,
+          })
         }
       })
     })
     .transform((data) => {
-      const { contactPhoneCountry, ...request } = data
+      const {
+        contactPhoneCountry,
+        coordinates,
+        customerUnavailableDates,
+        ...request
+      } = data
       return {
         ...request,
+        ...coordinates,
+        customerUnavailableDates: customerUnavailableDates.map(({ date }) => date),
         contactPhone: normalizePhoneNumber(
           data.contactPhone,
           contactPhoneCountry,

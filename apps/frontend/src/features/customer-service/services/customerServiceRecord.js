@@ -87,6 +87,36 @@ function classifyDistance(distanceMiles, settings) {
   return 'RED'
 }
 
+export function getSchedulingReadinessReasons(
+  request,
+  { hasOperationalTechnician = true } = {},
+) {
+  const reasons = []
+  if (['COMPLETED', 'CLOSED'].includes(request.status)) {
+    reasons.push('The request is closed or completed.')
+  }
+  if (request.currentAppointmentId) {
+    reasons.push('The request already has a current appointment.')
+  }
+  if (request.latitude === null || request.longitude === null) {
+    reasons.push('Property coordinates are missing.')
+  }
+  if (!request.estimatedDurationMinutes) {
+    reasons.push('Estimated duration is missing.')
+  }
+  if (!request.workType) reasons.push('Work type is missing.')
+  if (!request.priority) reasons.push('Priority is missing.')
+  if (!request.dueOn) reasons.push('The five-day deadline is missing.')
+  if (request.isOverdue) reasons.push('The five-day deadline has expired.')
+  if (!request.availability.length) {
+    reasons.push('No scheduling day remains after customer restrictions.')
+  }
+  if (!hasOperationalTechnician) {
+    reasons.push('No active technician has complete work hours and start coordinates.')
+  }
+  return reasons
+}
+
 function appointmentDate(row, timeZone) {
   return row.starts_at
     ? toZonedDateTimeInput(row.starts_at, timeZone).slice(0, 10)
@@ -103,6 +133,7 @@ export function toCustomerServiceRequest(
   row,
   availabilityRows = [],
   settings,
+  readinessContext = {},
 ) {
   const latitude = numberOrNull(row.latitude)
   const longitude = numberOrNull(row.longitude)
@@ -114,7 +145,7 @@ export function toCustomerServiceRequest(
     { latitude, longitude },
   )
 
-  return {
+  const request = {
     id: row.id,
     requestNumber: row.folio,
     propertyId: row.property_id,
@@ -131,6 +162,8 @@ export function toCustomerServiceRequest(
     contactPhone: row.homeowner_phone ?? '',
     issue: row.description,
     internalNotes: row.internal_notes ?? '',
+    customerUnavailableDates: row.customer_unavailable_dates ?? [],
+    customerNeedsContact: Boolean(row.customer_needs_contact),
     customerAvailabilityNotes: row.customer_availability_notes ?? '',
     resolutionStatus: row.resolution_status ?? '',
     completionNotes: row.completion_notes ?? '',
@@ -144,7 +177,7 @@ export function toCustomerServiceRequest(
     builderName: row.builder_name ?? '',
     community: row.community_name ?? '',
     lotNumber: row.lot_number ?? '',
-    street: row.address,
+    street: row.address ?? '',
     city: row.city ?? '',
     state: row.state ?? '',
     postalCode: row.postal_code ?? '',
@@ -153,6 +186,7 @@ export function toCustomerServiceRequest(
     longitude,
     distanceMiles,
     distanceBand: classifyDistance(distanceMiles, settings),
+    currentAppointmentId: row.current_appointment_id ?? null,
     appointmentState: row.current_appointment_id
       ? row.appointment_state
       : row.is_overdue ? 'OVERDUE' : 'NOT_SCHEDULED',
@@ -162,7 +196,6 @@ export function toCustomerServiceRequest(
     technicianId: row.technician_id ?? '',
     technicianName: row.technician_name ?? '',
     confirmationStatus: row.confirmation_status ?? '',
-    isReadyToSchedule: Boolean(row.is_ready_to_schedule),
     isOverdue: Boolean(row.is_overdue),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -179,14 +212,24 @@ export function toCustomerServiceRequest(
       notes: window.notes ?? '',
     })),
   }
+
+  const readinessReasons = getSchedulingReadinessReasons(
+    request,
+    readinessContext,
+  )
+  return {
+    ...request,
+    isReadyToSchedule: readinessReasons.length === 0,
+    readinessReasons,
+  }
 }
 
-export function toCustomerServiceRpcPayload(form, timeZone) {
+export function toCustomerServiceRpcPayload(form) {
   return {
     property: {
       communityId: null,
       lotNumber: form.lotNumber,
-      address: form.street,
+      address: `${form.latitude}, ${form.longitude}`,
       city: form.city,
       state: form.state,
       postalCode: form.postalCode,
@@ -205,12 +248,38 @@ export function toCustomerServiceRpcPayload(form, timeZone) {
       internalNotes: form.internalNotes,
       workType: form.workType,
       estimatedDurationMinutes: Number(form.estimatedDurationMinutes),
+      customerUnavailableDates: form.customerUnavailableDates,
+      customerNeedsContact: form.customerNeedsContact,
       customerAvailabilityNotes: form.customerAvailabilityNotes,
     },
-    availability: form.availability.map((window) => ({
-      availableFrom: zonedDateTimeToIso(window.availableFrom, timeZone),
-      availableUntil: zonedDateTimeToIso(window.availableUntil, timeZone),
-      notes: window.notes,
+    availability: [],
+  }
+}
+
+export function toServiceScheduleProposal(row) {
+  return {
+    id: row.id,
+    requestedForRequestId: row.requested_for_request_id,
+    technicianId: row.technician_id,
+    technicianName: row.technician_name,
+    proposedOn: row.proposed_on,
+    rank: row.proposal_rank,
+    status: row.status,
+    score: Number(row.score),
+    totalDistanceMiles: Number(row.total_distance_miles),
+    workMinutes: row.work_minutes,
+    travelBufferMinutes: row.travel_buffer_minutes,
+    remainingWorkMinutes: row.remaining_work_minutes,
+    reasons: (row.explanation?.reasons ?? []).filter(Boolean),
+    warnings: (row.explanation?.warnings ?? []).filter(Boolean),
+    previousRequest: row.explanation?.previousRequest ?? '',
+    nextRequest: row.explanation?.nextRequest ?? '',
+    generatedAt: row.generated_at,
+    stops: (row.stops ?? []).map((stop) => ({
+      ...stop,
+      distanceFromPreviousMiles: Number(stop.distanceFromPreviousMiles),
+      latitude: Number(stop.latitude),
+      longitude: Number(stop.longitude),
     })),
   }
 }

@@ -1,9 +1,10 @@
 import { useMemo } from 'react'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { Controller, useFieldArray, useForm, useWatch } from 'react-hook-form'
+import { Controller, useFieldArray, useForm } from 'react-hook-form'
 import {
   Box,
   Button,
+  Checkbox,
   CircularProgress,
   Dialog,
   DialogActions,
@@ -11,6 +12,7 @@ import {
   DialogTitle,
   Divider,
   FormControl,
+  FormControlLabel,
   FormHelperText,
   IconButton,
   InputLabel,
@@ -29,7 +31,6 @@ import {
 } from '../../../utils/phoneNumbers.js'
 import { createPersistedCustomerServiceSchema } from '../schemas/persistedCustomerServiceSchema.js'
 import { priorityOptions, requestTypeOptions } from '../data/customerService.js'
-import { formatLongDate, formatTime } from '../utils/dates.js'
 import { suggestServiceWorkdays } from '../utils/suggestedServiceWindows.js'
 
 const workTypeOptions = [
@@ -38,19 +39,19 @@ const workTypeOptions = [
   { value: 'HW_WS', label: 'HW & WS' },
 ]
 
-function defaultValues(request, createdOn) {
+function defaultValues(request, createdOn, defaultDurationMinutes) {
   const phoneCountry = getPhoneCountry(request?.contactPhone)
 
   return {
     reportedAt: request?.reportedAt ?? createdOn,
     lotNumber: request?.lotNumber ?? '',
-    street: request?.street ?? '',
     city: request?.city ?? '',
     state: request?.state ?? 'CA',
     postalCode: request?.postalCode ?? '',
     plan: request?.plan ?? '',
-    latitude: request?.latitude ?? '',
-    longitude: request?.longitude ?? '',
+    coordinates: request?.latitude != null && request?.longitude != null
+      ? `${request.latitude}, ${request.longitude}`
+      : '',
     contactName: request?.contactName ?? '',
     contactPhoneCountry: phoneCountry,
     contactPhone: getNationalPhoneNumber(
@@ -62,14 +63,11 @@ function defaultValues(request, createdOn) {
     priority: request?.priority ?? 'MEDIUM',
     issue: request?.issue ?? '',
     workType: request?.workType ?? 'HW',
-    estimatedDurationMinutes: request?.estimatedDurationMinutes ?? 60,
+    estimatedDurationMinutes: request?.estimatedDurationMinutes ?? defaultDurationMinutes,
     internalNotes: request?.internalNotes ?? '',
+    customerUnavailableDates: request?.customerUnavailableDates?.map((date) => ({ date })) ?? [],
+    customerNeedsContact: request?.customerNeedsContact ?? false,
     customerAvailabilityNotes: request?.customerAvailabilityNotes ?? '',
-    availability: request?.availability?.map(({ availableFrom, availableUntil, notes }) => ({
-        availableFrom,
-        availableUntil,
-        notes,
-      })) ?? [],
   }
 }
 
@@ -97,16 +95,15 @@ export default function CustomerServiceRequestDialog({
     () => request?.createdAt ?? new Date().toISOString(),
     [request?.createdAt],
   )
-  const suggestions = useMemo(
-    () => suggestServiceWorkdays(createdAt, settings, new Date(), request?.dueOn),
-    [createdAt, request?.dueOn, settings],
+  const createdOn = useMemo(
+    () => suggestServiceWorkdays(createdAt, settings, new Date()).createdOn,
+    [createdAt, settings],
   )
   const schema = useMemo(
     () => createPersistedCustomerServiceSchema(
       settings.businessDaysToComplete,
-      { startDate: suggestions.startOn, dueDate: suggestions.dueOn },
     ),
-    [settings.businessDaysToComplete, suggestions.startOn, suggestions.dueOn],
+    [settings.businessDaysToComplete],
   )
   const {
     control,
@@ -115,15 +112,18 @@ export default function CustomerServiceRequestDialog({
     formState: { errors },
   } = useForm({
     resolver: zodResolver(schema),
-    defaultValues: defaultValues(request, suggestions.createdOn),
+    defaultValues: defaultValues(
+      request,
+      createdOn,
+      settings.defaultDurationMinutes ?? 60,
+    ),
     mode: 'onTouched',
     reValidateMode: 'onChange',
   })
   const { fields, append, remove } = useFieldArray({
     control,
-    name: 'availability',
+    name: 'customerUnavailableDates',
   })
-  const confirmedWindows = useWatch({ control, name: 'availability' }) ?? []
   const selectField = (name, label, options) => (
     <Controller
       name={name}
@@ -163,7 +163,7 @@ export default function CustomerServiceRequestDialog({
           {request ? `Edit ${request.requestNumber}` : 'New request'}
         </Typography>
         <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-          Save the request now; customer availability can be added later.
+          Save the request now; scheduling restrictions can be updated later.
         </Typography>
       </DialogTitle>
 
@@ -184,7 +184,7 @@ export default function CustomerServiceRequestDialog({
               type="date"
               {...register('reportedAt')}
               error={Boolean(errors.reportedAt)}
-              helperText={errors.reportedAt?.message ?? 'The five-business-day deadline starts when this request is created.'}
+              helperText={errors.reportedAt?.message ?? 'The reported business day counts as day 1 of the five-day deadline.'}
               fullWidth
               slotProps={{ inputLabel: { shrink: true } }}
             />
@@ -205,14 +205,6 @@ export default function CustomerServiceRequestDialog({
             {...register('lotNumber')}
             error={Boolean(errors.lotNumber)}
             helperText={errors.lotNumber?.message ?? ' '}
-            fullWidth
-          />
-
-          <TextField
-            label="Property address"
-            {...register('street')}
-            error={Boolean(errors.street)}
-            helperText={errors.street?.message ?? 'Coordinates remain required for new construction.'}
             fullWidth
           />
 
@@ -247,26 +239,15 @@ export default function CustomerServiceRequestDialog({
             />
           </Stack>
 
-          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
-            <TextField
-              label="Latitude"
-              type="number"
-              {...register('latitude')}
-              error={Boolean(errors.latitude)}
-              helperText={errors.latitude?.message ?? 'Example: 33.986588'}
-              fullWidth
-              slotProps={{ htmlInput: { step: 'any' } }}
-            />
-            <TextField
-              label="Longitude"
-              type="number"
-              {...register('longitude')}
-              error={Boolean(errors.longitude)}
-              helperText={errors.longitude?.message ?? 'Example: -117.343021'}
-              fullWidth
-              slotProps={{ htmlInput: { step: 'any' } }}
-            />
-          </Stack>
+          <TextField
+            label="Coordinates"
+            {...register('coordinates')}
+            error={Boolean(errors.coordinates)}
+            helperText={errors.coordinates?.message ?? 'Paste latitude and longitude together, for example: 33.97788205770745, -117.34520765941319'}
+            placeholder="33.97788205770745, -117.34520765941319"
+            fullWidth
+            slotProps={{ htmlInput: { inputMode: 'decimal' } }}
+          />
 
           <Divider />
           <SectionTitle>Customer</SectionTitle>
@@ -332,80 +313,30 @@ export default function CustomerServiceRequestDialog({
           />
 
           <Divider />
-          <SectionTitle>Suggested visit days</SectionTitle>
-          <Typography variant="body2" color="text.secondary">
-            Generated from the request creation date and the configured workday.
-            These are proposals, not customer-confirmed availability, and are not saved.
-          </Typography>
-          {suggestions.days.length ? (
-            <Stack spacing={1}>
-              {suggestions.days.map((day) => (
-                <Box
-                  key={day.date}
-                  sx={{
-                    border: 1,
-                    borderColor: 'divider',
-                    borderRadius: 2,
-                    p: 1.5,
-                    display: 'flex',
-                    alignItems: { xs: 'stretch', sm: 'center' },
-                    justifyContent: 'space-between',
-                    gap: 1.5,
-                    flexDirection: { xs: 'column', sm: 'row' },
-                  }}
-                >
-                  <Typography variant="body2">
-                    {formatLongDate(day.date)} · {formatTime(day.availableFrom.slice(11))}
-                    {' – '}{formatTime(day.availableUntil.slice(11))}
-                  </Typography>
-                  <Button
-                    size="small"
-                    onClick={() => append({
-                      availableFrom: day.availableFrom,
-                      availableUntil: day.availableUntil,
-                      notes: '',
-                    })}
-                    disabled={fields.length >= 5 || confirmedWindows.some(
-                      (window) => window.availableFrom === day.availableFrom
-                        && window.availableUntil === day.availableUntil,
-                    )}
-                  >
-                    Customer confirmed this window
-                  </Button>
-                </Box>
-              ))}
-            </Stack>
-          ) : (
-            <Typography variant="body2" color="warning.main">
-              No workday remains before the current deadline. Review this request manually.
-            </Typography>
-          )}
-
-          <Divider />
           <Stack direction="row" sx={{ alignItems: 'center', justifyContent: 'space-between' }}>
             <Box>
-              <SectionTitle>Customer availability</SectionTitle>
+              <SectionTitle>Scheduling restrictions</SectionTitle>
               <Typography variant="body2" color="text.secondary">
-                Optional. Record only windows the customer has confirmed.
+                Optional. Record only days the customer cannot receive service.
               </Typography>
             </Box>
             <Button
               startIcon={<AddRoundedIcon />}
-              onClick={() => append({ availableFrom: '', availableUntil: '', notes: '' })}
+              onClick={() => append({ date: '' })}
               disabled={fields.length >= 5}
             >
-              Add window
+              Add unavailable day
             </Button>
           </Stack>
 
           {fields.length === 0 && (
             <Typography variant="body2" color="text.secondary">
-              No customer availability recorded yet. You can still save the request.
+              No unavailable days recorded. Valtrim may propose any open business day.
             </Typography>
           )}
 
-          {typeof errors.availability?.message === 'string' && (
-            <FormHelperText error>{errors.availability.message}</FormHelperText>
+          {typeof errors.customerUnavailableDates?.message === 'string' && (
+            <FormHelperText error>{errors.customerUnavailableDates.message}</FormHelperText>
           )}
 
           {fields.map((field, index) => (
@@ -413,54 +344,45 @@ export default function CustomerServiceRequestDialog({
               key={field.id}
               sx={{ border: 1, borderColor: 'divider', borderRadius: 2, p: 2 }}
             >
-              <Stack direction="row" sx={{ justifyContent: 'space-between', mb: 1.5 }}>
-                <Typography variant="subtitle2" fontWeight={700}>
-                  Window {index + 1}
-                </Typography>
+              <Stack direction="row" spacing={1} sx={{ alignItems: 'flex-start' }}>
+                <TextField
+                  label={`Unavailable day ${index + 1}`}
+                  type="date"
+                  {...register(`customerUnavailableDates.${index}.date`)}
+                  error={Boolean(errors.customerUnavailableDates?.[index]?.date)}
+                  helperText={errors.customerUnavailableDates?.[index]?.date?.message ?? 'The proposal generator will skip this day.'}
+                  fullWidth
+                  slotProps={{ inputLabel: { shrink: true } }}
+                />
                 <IconButton
-                  aria-label={`Remove availability window ${index + 1}`}
+                  aria-label={`Remove unavailable day ${index + 1}`}
                   size="small"
                   color="error"
                   onClick={() => remove(index)}
+                  sx={{ mt: 1 }}
                 >
                   <DeleteOutlineRoundedIcon fontSize="small" />
                 </IconButton>
               </Stack>
-              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
-                <TextField
-                  label="Available from"
-                  type="datetime-local"
-                  {...register(`availability.${index}.availableFrom`)}
-                  error={Boolean(errors.availability?.[index]?.availableFrom)}
-                  helperText={errors.availability?.[index]?.availableFrom?.message ?? ' '}
-                  fullWidth
-                  slotProps={{ inputLabel: { shrink: true } }}
-                />
-                <TextField
-                  label="Available until"
-                  type="datetime-local"
-                  {...register(`availability.${index}.availableUntil`)}
-                  error={Boolean(errors.availability?.[index]?.availableUntil)}
-                  helperText={errors.availability?.[index]?.availableUntil?.message ?? ' '}
-                  fullWidth
-                  slotProps={{ inputLabel: { shrink: true } }}
-                />
-              </Stack>
-              <TextField
-                label="Window notes"
-                {...register(`availability.${index}.notes`)}
-                error={Boolean(errors.availability?.[index]?.notes)}
-                helperText={errors.availability?.[index]?.notes?.message ?? 'Optional'}
-                fullWidth
-              />
             </Box>
           ))}
 
+          <Controller
+            name="customerNeedsContact"
+            control={control}
+            render={({ field }) => (
+              <FormControlLabel
+                control={<Checkbox {...field} checked={field.value} />}
+                label="Customer needs to be contacted before receiving another proposal"
+              />
+            )}
+          />
+
           <TextField
-            label="General availability notes"
+            label="Additional comments"
             {...register('customerAvailabilityNotes')}
             error={Boolean(errors.customerAvailabilityNotes)}
-            helperText={errors.customerAvailabilityNotes?.message ?? 'Optional context that applies to every window.'}
+            helperText={errors.customerAvailabilityNotes?.message ?? 'Optional scheduling context from the customer.'}
             fullWidth
             multiline
             minRows={2}

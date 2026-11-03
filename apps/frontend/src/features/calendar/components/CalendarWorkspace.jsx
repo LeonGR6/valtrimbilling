@@ -159,7 +159,12 @@ export default function CalendarWorkspace({
               eventDurationEditable={false}
               events={events}
               eventClick={({ event }) => onEventClick(event.id)}
-              eventContent={(info) => <CalendarEventCard event={info.event} isList={info.view.type === 'listWeek'} />}
+              eventContent={(info) => (
+                <CalendarEventCard
+                  event={info.event}
+                  displayMode={info.view.type === 'listWeek' ? 'list' : 'timed'}
+                />
+              )}
               eventClassNames={({ event }) => {
                 if (event.extendedProps.calendarType === 'CUSTOMER_SERVICE') {
                   const serviceTone = getServiceEventTone(event.extendedProps.status)

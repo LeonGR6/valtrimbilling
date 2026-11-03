@@ -1,7 +1,21 @@
-// Dates travel as 'YYYY-MM-DD' strings everywhere in this feature, which is
-// what Postgres will hand back and what compares correctly as plain text.
-// Building the string by hand keeps it on the local day: toISOString() would
-// shift to UTC and land on the previous date west of Greenwich.
+export const customerServiceTimeZone = 'America/Los_Angeles'
+
+const operationalClock = new Intl.DateTimeFormat('en-US', {
+  timeZone: customerServiceTimeZone,
+  year: 'numeric', month: '2-digit', day: '2-digit',
+  hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+})
+
+export function getCustomerServiceClock(now = new Date()) {
+  const parts = Object.fromEntries(operationalClock.formatToParts(now).map(({ type, value }) => [type, value]))
+  return {
+    date: `${parts.year}-${parts.month}-${parts.day}`,
+    minutesSinceMidnight: Number(parts.hour) * 60 + Number(parts.minute),
+  }
+}
+
+// Calendar-only arithmetic keeps a YYYY-MM-DD day without converting it to UTC.
+// Use getCustomerServiceClock for the operational current day/time instead.
 export function toIsoDate(date) {
   const year = date.getFullYear()
   const month = String(date.getMonth() + 1).padStart(2, '0')
@@ -20,6 +34,26 @@ function parseDate(value) {
 
 export function formatShortDate(value) {
   return value ? parseDate(value).toLocaleDateString('en-US') : ''
+}
+
+export function formatUsDateInput(value) {
+  if (!/^\d{4}-\d{2}-\d{2}$/u.test(value ?? '') || toIsoDate(parseDate(value)) !== value) {
+    return value ?? ''
+  }
+
+  const [year, month, day] = value.split('-')
+  return `${month}/${day}/${year}`
+}
+
+export function parseUsDateInput(value) {
+  const match = /^(\d{2})\/(\d{2})\/(\d{4})$/u.exec(value ?? '')
+  if (!match) return ''
+
+  const [, month, day, year] = match
+  const isoDate = `${year}-${month}-${day}`
+  const parsed = parseDate(isoDate)
+
+  return toIsoDate(parsed) === isoDate ? isoDate : ''
 }
 
 export function formatLongDate(value) {

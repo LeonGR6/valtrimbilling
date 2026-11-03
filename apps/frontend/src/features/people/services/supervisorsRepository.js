@@ -43,7 +43,8 @@ export async function listSupervisors() {
   const client = await requireSupabase()
   const { data, error } = await client
     .from('people')
-    .select(SUPERVISOR_COLUMNS)
+    .select(`${SUPERVISOR_COLUMNS}, person_roles!inner(role)`)
+    .eq('person_roles.role', 'SUPERVISOR')
     .order('name', { ascending: true })
 
   throwRepositoryError(error)

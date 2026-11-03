@@ -15,6 +15,7 @@ coverage
 .env
 .env.*
 !.env.example
+/docs/pass.txt
 
 # Local Claude Code files (skills, preview config — not committed)
 .claude/

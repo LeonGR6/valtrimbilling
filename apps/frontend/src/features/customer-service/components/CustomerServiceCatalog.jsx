@@ -1,16 +1,20 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
+import { useBeforeUnload, useBlocker, useLocation, useNavigate } from 'react-router-dom'
 import {
   Alert,
   Badge,
   Box,
   Button,
+  Chip,
+  CircularProgress,
   Divider,
-  Drawer,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogContentText,
+  DialogTitle,
   FormControl,
   InputAdornment,
-  InputLabel,
-  LinearProgress,
-  Menu,
   MenuItem,
   Popover,
   Select,
@@ -20,248 +24,262 @@ import {
   Tabs,
   TextField,
   Typography,
-  useMediaQuery,
 } from '@mui/material'
 import CalendarMonthRoundedIcon from '@mui/icons-material/CalendarMonthRounded'
-import EditOutlinedIcon from '@mui/icons-material/EditOutlined'
+import EventNoteRoundedIcon from '@mui/icons-material/EventNoteRounded'
 import FilterListRoundedIcon from '@mui/icons-material/FilterListRounded'
-import LockOpenRoundedIcon from '@mui/icons-material/LockOpenRounded'
-import LockOutlinedIcon from '@mui/icons-material/LockOutlined'
-import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded'
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
 import ViewListRoundedIcon from '@mui/icons-material/ViewListRounded'
 import ResponsiveCreateButton from '../../../components/common/ResponsiveCreateButton'
 import { useAuth } from '../../auth/context/useAuth.js'
+import { useCustomerServicePrototype } from '../context/customerServicePrototypeContext.js'
+import { priorityOptions } from '../data/customerService.js'
+import {
+  canEditRequestInView,
+  filterAndSortRequestInbox,
+  findRequestForView,
+  customerServiceViewFromPath,
+  customerServiceViewPaths,
+  inboxFilterOptions,
+  inboxSortOptions,
+  paginateRequestInbox,
+  proposalWorkspacePath,
+  requestsForView,
+} from '../utils/requestInbox.js'
+import { createPrototypeProposalDraft, prototypePlanningHours } from '../utils/proposalDraft.js'
 import CustomerServiceCalendar from './CustomerServiceCalendar.jsx'
-import CustomerServiceRequestDialog from './CustomerServiceRequestDialog.jsx'
-import RequestDetailPanel from './RequestDetailPanel.jsx'
-import RequestStateDialog from './RequestStateDialog.jsx'
-import ServiceRequestsTable from './ServiceRequestsTable.jsx'
+import EmailInboxPanel from './EmailInboxPanel.jsx'
+import NewRequestPrototypeDialog from './NewRequestPrototypeDialog.jsx'
+import ProposalWorkspace from './ProposalWorkspace.jsx'
+import RequestInboxList from './RequestInboxList.jsx'
+import RequestViewDialog from './RequestViewDialog.jsx'
 import ServiceSummaryCards from './ServiceSummaryCards.jsx'
-import ServiceVisitDialog from './ServiceVisitDialog.jsx'
-import {
-  appointmentStateOptions,
-  isClosed,
-  openStatuses,
-  priorityOptions,
-  statusOptions,
-  statusesByValue,
-} from '../data/customerService.js'
-import {
-  closeCustomerServiceRequest,
-  createCustomerServiceRequest,
-  loadCustomerServiceCatalog,
-  reopenCustomerServiceRequest,
-  updateCustomerServiceRequest,
-} from '../services/customerServiceRepository.js'
-import { sortOptions, sortRequests } from '../utils/sorting.js'
+import SourcePdfPreviewDialog from './SourcePdfPreviewDialog.jsx'
 
-const ROWS_PER_PAGE = 6
-const DEFAULT_SETTINGS = {
-  businessDaysToComplete: 5,
-  workdayStartsAt: '08:00',
-  workdayEndsAt: '17:00',
-  timeZone: 'America/Los_Angeles',
-  companyAddress: '',
-  companyLatitude: null,
-  companyLongitude: null,
-  distanceGreenMaxMiles: 10,
-  distanceYellowMaxMiles: 20,
+const viewCopy = {
+  REQUESTS: {
+    title: 'Customer Service Requests',
+    description: 'Capture, complete and review requests before preparing appointment proposals.',
+  },
+  PROPOSALS: {
+    title: 'Proposal Workspace',
+    description: 'Prepare ready requests. Follow up on sent proposals or customers requiring contact.',
+  },
+  CALENDAR: {
+    title: 'Customer Service Calendar',
+    description: 'Confirmed service visits, technician schedules and completed work.',
+  },
 }
 
 export default function CustomerServiceCatalog() {
-  const { profile } = useAuth()
-  const [requests, setRequests] = useState([])
-  const [settings, setSettings] = useState(DEFAULT_SETTINGS)
-  const [loading, setLoading] = useState(true)
-  const [saving, setSaving] = useState(false)
-  const [loadError, setLoadError] = useState('')
-  const [activeView, setActiveView] = useState('REQUESTS')
-  const [visitDialogOpen, setVisitDialogOpen] = useState(false)
+  const location = useLocation()
+  const navigate = useNavigate()
+  const { profile, user } = useAuth()
+  const activeView = customerServiceViewFromPath(location.pathname)
+  const selectedWorkspaceId = new URLSearchParams(location.search).get('request')
+  const currentUserName = profile?.name || profile?.email || user?.email || 'Signed-in user'
+  const {
+    requests, loading, error, reloadRequests, emailAutomation, emailAutomationError, refreshEmailAutomation,
+    createRequest: persistRequest, updateRequest: persistUpdate, retrySourcePdf, pendingPdfIds,
+    recoverRequest: persistRecovery,
+    completeRecovery,
+    markRequestReady: persistApproval,
+    proposalDrafts, setProposalDrafts, technicians,
+  } = useCustomerServicePrototype()
+  const draftDirty = useRef(false)
+  const [pendingDraftNavigation, setPendingDraftNavigation] = useState(null)
+  const reportDraftDirty = useCallback((dirty) => { draftDirty.current = dirty }, [])
+  const blocker = useBlocker(useCallback(({ currentLocation, nextLocation }) => (
+    draftDirty.current && (currentLocation.pathname !== nextLocation.pathname
+      || currentLocation.search !== nextLocation.search)
+  ), []))
+  useBeforeUnload(useCallback((event) => {
+    if (!draftDirty.current) return
+    event.preventDefault()
+    event.returnValue = ''
+  }, []))
+  const beforeDraftNavigation = (action) => {
+    if (draftDirty.current) setPendingDraftNavigation(() => action)
+    else action()
+  }
+  const keepDraftEditing = () => {
+    setPendingDraftNavigation(null)
+    if (blocker.state === 'blocked') blocker.reset()
+  }
+  const discardDraftChanges = () => {
+    reportDraftDirty(false)
+    setPendingDraftNavigation(null)
+    if (blocker.state === 'blocked') blocker.proceed()
+    else pendingDraftNavigation?.()
+  }
   const [search, setSearch] = useState('')
-  const [builderFilter, setBuilderFilter] = useState('all')
-  const [statusFilter, setStatusFilter] = useState('open')
+  const [stageFilter, setStageFilter] = useState('all')
+  const [areaFilter, setAreaFilter] = useState('all')
   const [priorityFilter, setPriorityFilter] = useState('all')
-  const [appointmentFilter, setAppointmentFilter] = useState('all')
-  const [sortBy, setSortBy] = useState('FOLIO')
-  const [filtersAnchor, setFiltersAnchor] = useState(null)
+  const [sortBy, setSortBy] = useState('ACTION_REQUIRED')
+  const [requestDialog, setRequestDialog] = useState(null)
+  const [viewRequest, setViewRequest] = useState(null)
+  const [emailRequestId, setEmailRequestId] = useState(null)
+  const [pdfPreviewRequest, setPdfPreviewRequest] = useState(null)
   const [page, setPage] = useState(0)
-  const [menuAnchor, setMenuAnchor] = useState(null)
-  const [selectedRequest, setSelectedRequest] = useState(null)
-  const [selectedId, setSelectedId] = useState(null)
-  const [panelOpen, setPanelOpen] = useState(false)
-  const [dialogState, setDialogState] = useState(null)
-  const [stateDialog, setStateDialog] = useState(null)
+  const [rowsPerPage, setRowsPerPage] = useState(10)
+  const [filtersAnchor, setFiltersAnchor] = useState(null)
   const [notice, setNotice] = useState(null)
-  const isWide = useMediaQuery((theme) => theme.breakpoints.up('lg'))
+  const [importPanelRevision, setImportPanelRevision] = useState(0)
+  const visibleRequest = viewRequest != null
+    ? findRequestForView(requests, viewRequest.id, activeView)
+    : requests.find((entry) => String(entry.id) === String(emailRequestId)) ?? null
+  const editCandidate = findRequestForView(requests, requestDialog?.request?.id, activeView)
+  // Keep the record/version opened by the user. A later provider refresh must
+  // not turn stale form values into a write using the newest concurrency token.
+  const editableRequest = canEditRequestInView(editCandidate, activeView) ? requestDialog.request : null
+  const sourceRequest = emailRequestId != null && viewRequest == null
+    ? requests.find((entry) => String(entry.id) === String(pdfPreviewRequest?.id)) ?? null
+    : findRequestForView(requests, pdfPreviewRequest?.id, activeView)
 
-  const refreshCatalog = useCallback(async ({ background = false } = {}) => {
-    if (!background) setLoading(true)
-    setLoadError('')
-
-    try {
-      const catalog = await loadCustomerServiceCatalog()
-      setRequests(catalog.requests)
-      setSettings(catalog.settings)
-      setSelectedId((current) => (
-        catalog.requests.some((request) => request.id === current)
-          ? current
-          : catalog.requests[0]?.id ?? null
-      ))
-    } catch (error) {
-      setLoadError(error.message)
-    } finally {
-      setLoading(false)
-    }
-  }, [])
-
-  useEffect(() => {
-    // Supabase is the external source synchronized by this effect.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    refreshCatalog()
-  }, [refreshCatalog])
-
-  const panelRequest = requests.find((request) => request.id === selectedId) ?? null
-  const builderOptions = useMemo(() => {
-    const builders = new Map()
-    for (const request of requests) {
-      if (request.builderId) builders.set(request.builderId, request.builderName)
-    }
-    return [...builders.entries()]
-      .map(([value, label]) => ({ value, label }))
-      .sort((left, right) => left.label.localeCompare(right.label))
-  }, [requests])
-
-  const extraFilterCount =
-    (priorityFilter === 'all' ? 0 : 1) + (appointmentFilter === 'all' ? 0 : 1)
-
-  const filteredRequests = useMemo(() => {
-    const query = search.trim().toLowerCase()
-    const matching = requests.filter((request) => {
-      const matchesSearch = !query || [
-        request.requestNumber,
-        request.builderName,
-        request.community,
-        request.lotNumber,
-        request.street,
-        request.contactName,
-        request.contactPhone,
-        request.contactEmail,
-        request.issue,
-      ].filter(Boolean).join(' ').toLowerCase().includes(query)
-      const matchesBuilder =
-        builderFilter === 'all' || request.builderId === builderFilter
-      const matchesStatus =
-        statusFilter === 'all'
-        || (statusFilter === 'open'
-          ? openStatuses.includes(request.status)
-          : request.status === statusFilter)
-      const matchesPriority =
-        priorityFilter === 'all' || request.priority === priorityFilter
-      const matchesAppointment =
-        appointmentFilter === 'all'
-        || request.appointmentState === appointmentFilter
-
-      return matchesSearch
-        && matchesBuilder
-        && matchesStatus
-        && matchesPriority
-        && matchesAppointment
-    })
-
-    return sortRequests(matching, sortBy)
-  }, [
-    appointmentFilter,
-    builderFilter,
-    priorityFilter,
-    requests,
-    search,
-    sortBy,
-    statusFilter,
-  ])
-
-  const visibleRequests = filteredRequests.slice(
-    page * ROWS_PER_PAGE,
-    page * ROWS_PER_PAGE + ROWS_PER_PAGE,
+  const reviewRequests = useMemo(() => requestsForView(requests), [requests])
+  const areaOptions = useMemo(
+    () => [...new Set(reviewRequests.map((request) => request.community).filter(Boolean))].sort(),
+    [reviewRequests],
   )
 
-  const openPanel = (request) => {
-    setSelectedId(request.id)
-    setPanelOpen(true)
-  }
+  const visibleRequests = useMemo(
+    () => filterAndSortRequestInbox(requests, {
+      search,
+      stage: stageFilter,
+      area: areaFilter,
+      priority: priorityFilter,
+      sortBy,
+    }),
+    [areaFilter, priorityFilter, requests, search, sortBy, stageFilter],
+  )
 
-  const closeMenu = () => {
-    setMenuAnchor(null)
-    setSelectedRequest(null)
-  }
-
-  const openEditDialog = () => {
-    const request = selectedRequest
-    closeMenu()
-    setDialogState({ mode: 'edit', request })
-  }
-
-  const openStateDialog = (action) => {
-    const request = selectedRequest
-    closeMenu()
-    setStateDialog({ action, request })
-  }
-
-  const handleSave = async (form) => {
-    setSaving(true)
-    try {
-      const requestId = dialogState.mode === 'edit'
-        ? await updateCustomerServiceRequest(
-          dialogState.request.id,
-          form,
-          settings.timeZone,
-        )
-        : await createCustomerServiceRequest(form, settings.timeZone)
-
-      await refreshCatalog({ background: true })
-      setSelectedId(requestId)
-      setDialogState(null)
-      setPage(0)
-      setNotice({
-        severity: 'success',
-        message: dialogState.mode === 'edit'
-          ? 'Request updated in Supabase.'
-          : 'Request created in Supabase.',
-      })
-    } catch (error) {
-      setNotice({ severity: 'error', message: error.message })
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  const handleStateChange = async (note) => {
-    setSaving(true)
-    try {
-      if (stateDialog.action === 'close') {
-        await closeCustomerServiceRequest(stateDialog.request.id, note)
-      } else {
-        await reopenCustomerServiceRequest(stateDialog.request.id, note)
-      }
-
-      const action = stateDialog.action
-      await refreshCatalog({ background: true })
-      setStateDialog(null)
-      setNotice({
-        severity: 'success',
-        message: action === 'close' ? 'Request closed.' : 'Request reopened.',
-      })
-    } catch (error) {
-      setNotice({ severity: 'error', message: error.message })
-    } finally {
-      setSaving(false)
-    }
-  }
+  const paginatedRequests = useMemo(
+    () => paginateRequestInbox(visibleRequests, page, rowsPerPage),
+    [page, rowsPerPage, visibleRequests],
+  )
+  const extraFilterCount =
+    (priorityFilter === 'all' ? 0 : 1) +
+    (sortBy === 'ACTION_REQUIRED' ? 0 : 1)
 
   const clearFilters = () => {
+    setSearch('')
+    setStageFilter('all')
+    setAreaFilter('all')
     setPriorityFilter('all')
-    setAppointmentFilter('all')
+    setSortBy('ACTION_REQUIRED')
     setPage(0)
+  }
+
+  const changeView = (view, requestId) => {
+    setFiltersAnchor(null)
+    setRequestDialog(null)
+    setViewRequest(null)
+    setEmailRequestId(null)
+    setPdfPreviewRequest(null)
+    navigate(view === 'PROPOSALS' && requestId
+      ? proposalWorkspacePath(requestId)
+      : customerServiceViewPaths[view])
+  }
+
+  const openProposalWorkspace = (request) => {
+    if (!request) {
+      changeView('PROPOSALS')
+      return
+    }
+    const current = requests.find((entry) => entry.id === request.id)
+    if (!current || requestsForView([current], 'PROPOSALS').length === 0) {
+      setNotice({ severity: 'warning', message: 'Review this request before opening Proposal Workspace.' })
+      return
+    }
+    changeView('PROPOSALS', current.id)
+  }
+
+  const createRequest = async (values, attachmentNames, submissionKey) => {
+    const request = requestDialog?.mode === 'recover'
+      ? await persistRecovery(requestDialog.emailImport, values)
+      : await persistRequest(values, submissionKey)
+    if (requestDialog?.mode === 'recover') setImportPanelRevision((value) => value + 1)
+    setSearch('')
+    setStageFilter('all')
+    setAreaFilter('all')
+    setPriorityFilter('all')
+    setSortBy('NEWEST')
+    setPage(0)
+    setRequestDialog(null)
+    setViewRequest(request)
+    setNotice({
+      severity: 'success',
+      message: request.sourceDocument?.storage
+        ? `${request.requestNumber} was saved in Supabase and its private PDF was retained.`
+        : `${request.requestNumber} was saved in Supabase.`,
+    })
+  }
+
+  const openImportRecovery = async (receipt) => {
+    if (!receipt.requestId) {
+      setRequestDialog({ mode: 'recover', emailImport: receipt })
+      return
+    }
+    const refreshed = await reloadRequests()
+    const existing = refreshed?.find((entry) => String(entry.id) === String(receipt.requestId))
+    if (!existing) throw new Error('The linked request could not be loaded. Refresh the inbox.')
+    if (receipt.errorCode === 'RECOVERY_PDF_PENDING') {
+      if (existing.sourceDocument?.fileStatus === 'AVAILABLE') {
+        const completed = await completeRecovery(receipt.id)
+        setViewRequest(completed)
+        setImportPanelRevision((value) => value + 1)
+      } else setRequestDialog({ mode: 'recover', emailImport: receipt, recoveryRequest: existing })
+    } else setViewRequest(existing)
+  }
+
+  const openEmailRequest = async (requestId) => {
+    const refreshed = await reloadRequests()
+    const current = refreshed?.find((entry) => String(entry.id) === String(requestId))
+    if (!current) throw new Error('The request is no longer available. Refresh the email status.')
+    setEmailRequestId(current.id)
+    setViewRequest(null)
+  }
+
+  const updateRequest = async (values) => {
+    const originalRequest = requestDialog?.request
+    const current = findRequestForView(requests, originalRequest?.id, activeView)
+    if (!current || !canEditRequestInView(current, activeView)) {
+      throw new Error('This request can no longer be edited in this view. Close the editor and reload requests.')
+    }
+
+    const updatedRequest = await persistUpdate(originalRequest, values)
+    setSearch('')
+    setStageFilter('all')
+    setAreaFilter('all')
+    setPriorityFilter('all')
+    setPage(0)
+    setRequestDialog(null)
+    setViewRequest(updatedRequest)
+    setNotice({
+      severity: 'success',
+      message: originalRequest.workflowStage === 'READY_TO_PROPOSE'
+        && updatedRequest.workflowStage === 'NEEDS_REVIEW'
+        ? `${updatedRequest.requestNumber} saved. Important changes require a new review.`
+        : `${updatedRequest.requestNumber} changes saved.`,
+    })
+  }
+
+  const markReadyToPropose = async (request, reviewDetails) => {
+    // Approve the version actually displayed, never silently use a newer token.
+    const updatedRequest = await persistApproval(request, reviewDetails)
+    setViewRequest(updatedRequest)
+    setNotice({
+      severity: 'success',
+      message: `${updatedRequest.requestNumber} was reviewed and saved as Ready to propose.`,
+    })
+    return updatedRequest
+  }
+
+  const saveProposalDraft = (requestId, values) => {
+    const draft = createPrototypeProposalDraft({ requestId, values, requests, technicians })
+    setProposalDrafts((current) => ({ ...current, [requestId]: draft }))
+    setNotice({ severity: 'success', message: 'Proposal draft saved in session memory. The request remains Ready to propose; no appointment was created or email sent.' })
   }
 
   return (
@@ -273,231 +291,265 @@ export default function CustomerServiceCatalog() {
           bgcolor: 'background.paper',
           borderBottom: 1,
           borderColor: 'divider',
-          display: 'flex',
-          alignItems: { xs: 'flex-start', sm: 'center' },
-          justifyContent: 'space-between',
-          gap: 2,
-          flexDirection: { xs: 'column', sm: 'row' },
         }}
       >
-        <Box>
-          <Typography variant="h5" fontWeight={700} color="text.primary">
-            Customer Service
-          </Typography>
-          <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-            {activeView === 'REQUESTS'
-              ? 'Live requests, customer availability and service deadlines.'
-              : 'Schedule service visits and review completed work.'}
-          </Typography>
-        </Box>
-        <Stack direction="row" spacing={1}>
+        <Stack
+          direction={{ xs: 'column', sm: 'row' }}
+          spacing={2}
+          sx={{ alignItems: { xs: 'flex-start', sm: 'center' }, justifyContent: 'space-between' }}
+        >
+          <Box>
+            <Stack direction="row" spacing={1} useFlexGap sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
+              <Typography variant="h5" fontWeight={800} color="text.primary">
+                {viewCopy[activeView].title}
+              </Typography>
+              <Chip size="small" label="Requests saved" color="info" variant="outlined" />
+            </Stack>
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+              {viewCopy[activeView].description}
+            </Typography>
+          </Box>
           {activeView === 'REQUESTS' && (
-            <Button
-              color="inherit"
-              startIcon={<RefreshRoundedIcon />}
-              onClick={() => refreshCatalog()}
-              disabled={loading || saving}
-            >
-              Refresh
-            </Button>
+            <ResponsiveCreateButton
+              label="New request"
+              onClick={() => setRequestDialog({ mode: 'create' })}
+            />
           )}
-          <ResponsiveCreateButton
-            label={activeView === 'REQUESTS' ? 'New request' : 'New service visit'}
-            onClick={() => {
-              if (activeView === 'REQUESTS') setDialogState({ mode: 'create' })
-              else setVisitDialogOpen(true)
-            }}
-            disabled={loading || saving}
-          />
         </Stack>
       </Box>
 
-      <Box sx={{ px: { xs: 2.5, md: 4 }, bgcolor: 'background.paper', borderBottom: 1, borderColor: 'divider' }}>
-        <Tabs value={activeView} onChange={(_, value) => setActiveView(value)} aria-label="Customer Service views">
-          <Tab value="REQUESTS" icon={<ViewListRoundedIcon />} iconPosition="start" label="Requests" />
-          <Tab value="CALENDAR" icon={<CalendarMonthRoundedIcon />} iconPosition="start" label="Calendar" />
+      <Box
+        sx={{
+          px: { xs: 2.5, md: 4 },
+          bgcolor: 'background.paper',
+          borderBottom: 1,
+          borderColor: 'divider',
+        }}
+      >
+        <Tabs
+          value={activeView}
+          onChange={(_, value) => changeView(value)}
+          aria-label="Customer Service views"
+          variant="scrollable"
+          scrollButtons="auto"
+        >
+          <Tab
+            value="REQUESTS"
+            icon={<ViewListRoundedIcon />}
+            iconPosition="start"
+            label="Requests"
+          />
+          <Tab
+            value="PROPOSALS"
+            icon={<EventNoteRoundedIcon />}
+            iconPosition="start"
+            label="Proposal Workspace"
+          />
+          <Tab
+            value="CALENDAR"
+            icon={<CalendarMonthRoundedIcon />}
+            iconPosition="start"
+            label="Calendar"
+          />
         </Tabs>
       </Box>
 
-      {loading && <LinearProgress />}
-
       <Box sx={{ p: { xs: 2.5, md: 4 } }}>
-        {activeView === 'REQUESTS' ? (
+        <Alert severity="info" variant="outlined" sx={{ mb: 2 }}>
+          Requests, edits, review approval and original sources are saved. Proposal drafts and planning
+          are still session-only and reset when you reload. No email is sent or appointment created by approval.
+        </Alert>
+        {activeView === 'REQUESTS' && profile?.id && profile.isActive
+          && ['ADMIN', 'SCHEDULING'].includes(profile.role) && (
+          <EmailInboxPanel key={`${profile.id}-${profile.role}-${importPanelRevision}`}
+            requests={requests} automation={emailAutomation} automationError={emailAutomationError}
+            onRefreshAutomation={refreshEmailAutomation} onOpenRequest={openEmailRequest}
+            onRecover={openImportRecovery} onChanged={reloadRequests} />
+        )}
+        {loading ? (
+          <Stack role="status" direction="row" spacing={1.5} sx={{ alignItems: 'center', py: 4 }}>
+            <CircularProgress size={24} />
+            <Typography>Loading Customer Service requests…</Typography>
+          </Stack>
+        ) : error ? (
+          <Alert severity="error" action={<Button color="inherit" onClick={reloadRequests}>Retry</Button>}>
+            Requests could not be loaded. {error}
+          </Alert>
+        ) : activeView === 'CALENDAR' ? (
+          <CustomerServiceCalendar
+            requests={requests}
+            settings={prototypePlanningHours}
+            onViewRequest={setViewRequest}
+          />
+        ) : activeView === 'PROPOSALS' ? (
+          <ProposalWorkspace
+            requests={requests}
+            selectedRequestId={selectedWorkspaceId}
+            onSelectRequest={openProposalWorkspace}
+            onView={setViewRequest}
+            onViewSource={setPdfPreviewRequest}
+            onBackToRequests={() => changeView('REQUESTS')}
+            proposalDrafts={proposalDrafts}
+            onSaveDraft={saveProposalDraft}
+            technicians={technicians}
+            onDraftDirtyChange={reportDraftDirty}
+            onBeforeLeave={beforeDraftNavigation}
+          />
+        ) : (
           <>
-            {loadError && (
-              <Alert
-                severity="error"
-                sx={{ mb: 2.5 }}
-                action={<Button color="inherit" size="small" onClick={() => refreshCatalog()}>Retry</Button>}
-              >
-                {loadError}
-              </Alert>
-            )}
+            <ServiceSummaryCards
+              requests={reviewRequests}
+              activeFilter={stageFilter}
+              onFilterChange={(value) => {
+                setStageFilter(value)
+                setPage(0)
+              }}
+            />
 
-            <ServiceSummaryCards requests={requests} />
+            <Stack
+          direction={{ xs: 'column', md: 'row' }}
+          spacing={1.25}
+          useFlexGap
+          sx={{
+            flexWrap: 'wrap',
+            mb: 2,
+            p: 2,
+            bgcolor: 'background.paper',
+            border: 1,
+            borderColor: 'divider',
+            borderRadius: 2,
+          }}
+        >
+          <TextField
+            value={search}
+            onChange={(event) => {
+              setSearch(event.target.value)
+              setPage(0)
+            }}
+            size="small"
+            placeholder="Search request, customer, property, issue or coordinates..."
+            sx={{ flex: 1, minWidth: { md: 300 } }}
+            slotProps={{
+              input: {
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <SearchRoundedIcon fontSize="small" color="action" />
+                  </InputAdornment>
+                ),
+              },
+            }}
+          />
 
-            <Box sx={{ display: 'flex', gap: 2.5, alignItems: 'flex-start' }}>
-              <Box
+          <FormControl size="small" sx={{ minWidth: 190 }}>
+            <Select
+              value={stageFilter}
+              onChange={(event) => {
+                setStageFilter(event.target.value)
+                setPage(0)
+              }}
+              renderValue={(value) => (
+                `Stage: ${inboxFilterOptions.find((option) => option.value === value)?.label ?? 'All requests'}`
+              )}
+              inputProps={{ 'aria-label': 'Filter requests by workflow stage' }}
+            >
+              {inboxFilterOptions.map((option) => (
+                <MenuItem key={option.value} value={option.value}>
+                  {option.label}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+
+          <FormControl size="small" sx={{ minWidth: 210 }}>
+            <Select
+              value={areaFilter}
+              onChange={(event) => {
+                setAreaFilter(event.target.value)
+                setPage(0)
+              }}
+              renderValue={(value) => `Community: ${value === 'all' ? 'All' : value}`}
+              inputProps={{ 'aria-label': 'Filter requests by community' }}
+            >
+              <MenuItem value="all">All communities</MenuItem>
+              <Divider />
+              {areaOptions.map((area) => (
+                <MenuItem key={area} value={area}>{area}</MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+
+          <Badge badgeContent={extraFilterCount} color="primary">
+            <Button
+              aria-label="Open more request filters"
+              variant="outlined"
+              color="inherit"
+              startIcon={<FilterListRoundedIcon />}
+              onClick={(event) => setFiltersAnchor(event.currentTarget)}
+              sx={{ height: 40, whiteSpace: 'nowrap' }}
+            >
+              More filters
+            </Button>
+          </Badge>
+
+          {(search || stageFilter !== 'all' || areaFilter !== 'all' || extraFilterCount > 0) && (
+            <Button color="inherit" onClick={clearFilters}>Clear</Button>
+          )}
+            </Stack>
+
+            <Box
+              sx={{
+                width: '100%',
+                minWidth: 0,
+                bgcolor: 'background.paper',
+                border: 1,
+                borderColor: 'divider',
+                borderRadius: 2,
+                overflow: 'hidden',
+              }}
+            >
+              <Stack
+                direction={{ xs: 'column', sm: 'row' }}
+                spacing={1}
                 sx={{
-                  flex: 1,
-                  minWidth: 0,
-                  bgcolor: 'background.paper',
-                  border: 1,
+                  alignItems: { xs: 'flex-start', sm: 'center' },
+                  justifyContent: 'space-between',
+                  px: 2.5,
+                  py: 1.75,
+                  borderBottom: 1,
                   borderColor: 'divider',
-                  borderRadius: 2,
-                  overflow: 'hidden',
                 }}
               >
-                <Stack
-                  direction={{ xs: 'column', md: 'row' }}
-                  spacing={1.5}
-                  useFlexGap
-                  sx={{ flexWrap: 'wrap', p: 2.5, borderBottom: 1, borderColor: 'divider' }}
-                >
-                  <TextField
-                    value={search}
-                    onChange={(event) => {
-                      setSearch(event.target.value)
-                      setPage(0)
-                    }}
-                    size="small"
-                    placeholder="Search request #, address, lot, customer, issue..."
-                    sx={{ flex: 1 }}
-                    slotProps={{
-                      input: {
-                        startAdornment: (
-                          <InputAdornment position="start">
-                            <SearchRoundedIcon fontSize="small" color="action" />
-                          </InputAdornment>
-                        ),
-                      },
-                    }}
-                  />
-
-                  <FormControl size="small" sx={{ minWidth: 190 }}>
-                    <Select
-                      value={statusFilter}
-                      onChange={(event) => {
-                        setStatusFilter(event.target.value)
-                        setPage(0)
-                      }}
-                      renderValue={(value) => {
-                        if (value === 'all') return 'Status: All'
-                        if (value === 'open') return 'Status: Open'
-                        return `Status: ${statusesByValue[value].label}`
-                      }}
-                      inputProps={{ 'aria-label': 'Filter by status' }}
-                    >
-                      <MenuItem value="all">All statuses</MenuItem>
-                      <MenuItem value="open">Still open</MenuItem>
-                      <Divider />
-                      {statusOptions.map((option) => (
-                        <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>
-                      ))}
-                    </Select>
-                  </FormControl>
-
-                  {builderOptions.length > 0 && (
-                    <FormControl size="small" sx={{ minWidth: 200 }}>
-                      <Select
-                        value={builderFilter}
-                        onChange={(event) => {
-                          setBuilderFilter(event.target.value)
-                          setPage(0)
-                        }}
-                        renderValue={(value) => (
-                          `Builder: ${value === 'all'
-                            ? 'All'
-                            : builderOptions.find((option) => option.value === value)?.label ?? 'Unknown'}`
-                        )}
-                        inputProps={{ 'aria-label': 'Filter by builder' }}
-                      >
-                        <MenuItem value="all">All builders</MenuItem>
-                        <Divider />
-                        {builderOptions.map((option) => (
-                          <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>
-                        ))}
-                      </Select>
-                    </FormControl>
-                  )}
-
-                  <FormControl size="small" sx={{ minWidth: 190 }}>
-                    <Select
-                      value={sortBy}
-                      onChange={(event) => {
-                        setSortBy(event.target.value)
-                        setPage(0)
-                      }}
-                      renderValue={(value) => `Sort: ${sortOptions.find((option) => option.value === value).label}`}
-                      inputProps={{ 'aria-label': 'Sort requests' }}
-                    >
-                      {sortOptions.map((option) => (
-                        <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>
-                      ))}
-                    </Select>
-                  </FormControl>
-
-                  <Badge badgeContent={extraFilterCount} color="primary">
-                    <Button
-                      variant="outlined"
-                      color="inherit"
-                      startIcon={<FilterListRoundedIcon />}
-                      onClick={(event) => setFiltersAnchor(event.currentTarget)}
-                      sx={{ height: 40, whiteSpace: 'nowrap' }}
-                    >
-                      Filters
-                    </Button>
-                  </Badge>
-                </Stack>
-
-                <ServiceRequestsTable
-                  requests={visibleRequests}
-                  totalCount={filteredRequests.length}
-                  page={page}
-                  rowsPerPage={ROWS_PER_PAGE}
-                  selectedId={selectedId}
-                  onSelect={setSelectedId}
-                  onOpen={openPanel}
-                  onMenuOpen={(event, request) => {
-                    setMenuAnchor(event.currentTarget)
-                    setSelectedRequest(request)
-                  }}
-                  onPageChange={setPage}
-                />
-              </Box>
-
-              {isWide && panelOpen && panelRequest && (
-                <Box sx={{ width: 420, flexShrink: 0 }}>
-                  <RequestDetailPanel
-                    request={panelRequest}
-                    settings={settings}
-                    onClose={() => setPanelOpen(false)}
-                    onEdit={(request) => setDialogState({ mode: 'edit', request })}
-                  />
+                <Box>
+                  <Typography variant="subtitle1" fontWeight={800}>
+                    Request inbox
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    {visibleRequests.length} of {reviewRequests.length} requests in review
+                  </Typography>
                 </Box>
-              )}
+                <Typography variant="caption" color="text.secondary">
+                  View the full record, edit its details or open the source PDF.
+                </Typography>
+              </Stack>
+              <RequestInboxList
+                requests={paginatedRequests.items}
+                totalCount={visibleRequests.length}
+                page={paginatedRequests.page}
+                rowsPerPage={paginatedRequests.rowsPerPage}
+                onPageChange={setPage}
+                onRowsPerPageChange={(value) => {
+                  setRowsPerPage(value)
+                  setPage(0)
+                }}
+                onView={setViewRequest}
+                onEdit={(request) => setRequestDialog({ mode: 'edit', request })}
+                onViewPdf={setPdfPreviewRequest}
+                onOpenProposal={openProposalWorkspace}
+              />
             </Box>
           </>
-        ) : (
-          <CustomerServiceCalendar onNotice={(message) => setNotice({ severity: 'info', message })} />
         )}
       </Box>
-
-      <Drawer
-        anchor="right"
-        open={!isWide && panelOpen && Boolean(panelRequest)}
-        onClose={() => setPanelOpen(false)}
-        slotProps={{ paper: { sx: { width: { xs: '100%', sm: 440 } } } }}
-      >
-        {panelRequest && (
-          <RequestDetailPanel
-            request={panelRequest}
-            settings={settings}
-            onClose={() => setPanelOpen(false)}
-            onEdit={(request) => setDialogState({ mode: 'edit', request })}
-          />
-        )}
-      </Drawer>
 
       <Popover
         open={Boolean(filtersAnchor)}
@@ -505,119 +557,134 @@ export default function CustomerServiceCatalog() {
         onClose={() => setFiltersAnchor(null)}
         anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
         transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+        slotProps={{ paper: { sx: { width: 300, p: 2 } } }}
       >
-        <Stack spacing={2} sx={{ p: 2.5, width: 260 }}>
-          <Typography variant="subtitle2" fontWeight={700}>More filters</Typography>
+        <Typography variant="subtitle2" fontWeight={800}>More filters</Typography>
+        <Stack spacing={1.5} sx={{ mt: 1.5 }}>
           <FormControl size="small" fullWidth>
-            <InputLabel id="filter-priority-label">Priority</InputLabel>
             <Select
-              labelId="filter-priority-label"
-              label="Priority"
               value={priorityFilter}
               onChange={(event) => {
                 setPriorityFilter(event.target.value)
                 setPage(0)
               }}
+              renderValue={(value) => (
+                `Priority: ${value === 'all'
+                  ? 'All'
+                  : priorityOptions.find((option) => option.value === value)?.label}`
+              )}
+              inputProps={{ 'aria-label': 'Filter requests by priority' }}
             >
-              <MenuItem value="all">Any priority</MenuItem>
+              <MenuItem value="all">All priorities</MenuItem>
               {priorityOptions.map((option) => (
                 <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>
               ))}
             </Select>
           </FormControl>
+
           <FormControl size="small" fullWidth>
-            <InputLabel id="filter-appointment-label">Appointment</InputLabel>
             <Select
-              labelId="filter-appointment-label"
-              label="Appointment"
-              value={appointmentFilter}
+              value={sortBy}
               onChange={(event) => {
-                setAppointmentFilter(event.target.value)
+                setSortBy(event.target.value)
                 setPage(0)
               }}
+              renderValue={(value) => (
+                `Sort: ${inboxSortOptions.find((option) => option.value === value)?.label}`
+              )}
+              inputProps={{ 'aria-label': 'Sort requests' }}
             >
-              <MenuItem value="all">Any appointment</MenuItem>
-              {appointmentStateOptions.map((option) => (
+              {inboxSortOptions.map((option) => (
                 <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>
               ))}
             </Select>
           </FormControl>
-          <Button color="inherit" onClick={clearFilters} disabled={extraFilterCount === 0}>
-            Clear filters
+
+          <Button color="inherit" onClick={() => {
+            setPriorityFilter('all')
+            setSortBy('ACTION_REQUIRED')
+            setPage(0)
+          }}>
+            Reset advanced filters
           </Button>
         </Stack>
       </Popover>
 
-      <Menu
-        anchorEl={menuAnchor}
-        open={Boolean(menuAnchor)}
-        onClose={closeMenu}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-        transformOrigin={{ vertical: 'top', horizontal: 'right' }}
-      >
-        {selectedRequest && isClosed(selectedRequest) ? (
-          <MenuItem onClick={() => openStateDialog('reopen')}>
-            <LockOpenRoundedIcon fontSize="small" sx={{ mr: 1.25 }} />
-            Reopen
-          </MenuItem>
-        ) : [
-          <MenuItem key="edit" onClick={openEditDialog}>
-            <EditOutlinedIcon fontSize="small" sx={{ mr: 1.25 }} />
-            Edit
-          </MenuItem>,
-          <MenuItem key="close" onClick={() => openStateDialog('close')} sx={{ color: 'error.main' }}>
-            <LockOutlinedIcon fontSize="small" sx={{ mr: 1.25 }} />
-            Close request
-          </MenuItem>,
-        ]}
-      </Menu>
-
-      {dialogState && (
-        <CustomerServiceRequestDialog
-          key={dialogState.request?.id ?? 'new'}
-          request={dialogState.request}
-          settings={settings}
-          currentUserName={profile?.name}
-          saving={saving}
-          onClose={() => setDialogState(null)}
-          onSave={handleSave}
-        />
-      )}
-
-      {stateDialog && (
-        <RequestStateDialog
-          key={`${stateDialog.action}-${stateDialog.request.id}`}
-          {...stateDialog}
-          saving={saving}
-          onClose={() => setStateDialog(null)}
-          onConfirm={handleStateChange}
-        />
-      )}
-
-      {visitDialogOpen && (
-        <ServiceVisitDialog
+      {visibleRequest && (
+        <RequestViewDialog
+          key={`${visibleRequest.id}-${visibleRequest.workflowStage}-${visibleRequest.updatedAt}`}
+          request={visibleRequest}
           requests={requests}
-          onClose={() => setVisitDialogOpen(false)}
-          onCreated={(event) => {
-            setVisitDialogOpen(false)
-            setNotice({
-              severity: 'info',
-              message: `${event.extendedProps.requestNumber} is still a calendar prototype; appointment persistence comes in the next block.`,
-            })
-          }}
+          currentUserName={currentUserName}
+          onClose={() => { setViewRequest(null); setEmailRequestId(null) }}
+          onMarkReady={markReadyToPropose}
+          onViewSource={setPdfPreviewRequest}
+          onOpenProposal={openProposalWorkspace}
+          onEdit={canEditRequestInView(visibleRequest, activeView) ? (request) => {
+            setViewRequest(null)
+            setEmailRequestId(null)
+            setRequestDialog({ mode: 'edit', request })
+          } : undefined}
         />
       )}
+
+      {sourceRequest && (
+        <SourcePdfPreviewDialog
+          key={sourceRequest.id}
+          request={sourceRequest}
+          canRetryPdf={pendingPdfIds.includes(sourceRequest.id)}
+          onRetryPdf={async () => {
+            await retrySourcePdf(sourceRequest.id)
+            setImportPanelRevision((value) => value + 1)
+          }}
+          onClose={() => setPdfPreviewRequest(null)}
+        />
+      )}
+
+      {requestDialog && ((['create', 'recover'].includes(requestDialog.mode) && activeView === 'REQUESTS') || editableRequest) && (
+        <NewRequestPrototypeDialog
+          key={editableRequest ? `${editableRequest.id}-${editableRequest.workflowStage}` : requestDialog.emailImport?.id ?? 'new-request'}
+          request={editableRequest}
+          emailImport={requestDialog.emailImport}
+          recoveryRequest={requestDialog.recoveryRequest}
+          currentUserName={currentUserName}
+          onClose={() => setRequestDialog(null)}
+          onCreate={createRequest}
+          onSave={updateRequest}
+          onViewSource={setPdfPreviewRequest}
+        />
+      )}
+
+      <Dialog
+        open={Boolean(pendingDraftNavigation) || blocker.state === 'blocked'}
+        onClose={keepDraftEditing}
+        aria-labelledby="unsaved-proposal-title"
+        aria-describedby="unsaved-proposal-description"
+        maxWidth="xs" fullWidth
+      >
+        <DialogTitle id="unsaved-proposal-title">Unsaved proposal changes</DialogTitle>
+        <DialogContent>
+          <DialogContentText id="unsaved-proposal-description">
+            Leaving will discard your unsaved technician, date and time selections.
+            Any previously saved draft will remain available during this session.
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions sx={{ flexWrap: 'wrap', gap: 1, px: 3, pb: 2 }}>
+          <Button color="warning" onClick={discardDraftChanges}>Leave without saving</Button>
+          <Button variant="contained" autoFocus onClick={keepDraftEditing}>Keep editing</Button>
+        </DialogActions>
+      </Dialog>
 
       <Snackbar
-        open={Boolean(notice)}
-        autoHideDuration={notice?.severity === 'error' ? 6000 : 3000}
+        open={Boolean(notice) && ((!viewRequest && !requestDialog) || notice.severity === 'error')}
+        autoHideDuration={3500}
         onClose={() => setNotice(null)}
         anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
       >
         <Alert
-          severity={notice?.severity ?? 'success'}
-          onClose={() => setNotice(null)}
+          severity={notice?.severity ?? 'info'}
           variant="filled"
+          onClose={() => setNotice(null)}
         >
           {notice?.message}
         </Alert>

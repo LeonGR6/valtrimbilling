@@ -417,6 +417,36 @@ verify_jwt = false
 [functions.google-calendar-sync]
 verify_jwt = true
 
+# Customer Service staff send a PDF to Mistral OCR through this authenticated
+# boundary. The provider key never reaches the browser and no document is
+# persisted by ValtrimBilling during this first extraction phase.
+[functions.extract-customer-service-pdf]
+verify_jwt = true
+
+# Customer Service staff upload one private source PDF after the request has
+# been created and request short-lived signed URLs for review. The function
+# validates the caller before using service-role-only Storage and database RPCs.
+[functions.customer-service-source-pdf]
+verify_jwt = true
+
+# Read-only short-lived URLs for finalized email attachments. The caller RPC
+# checks active Customer Service roles; no uploads are exposed to the browser.
+[functions.customer-service-import-source]
+verify_jwt = true
+
+# Server-only worker: authenticates its own high-entropy secret before using
+# service role. Disabled by default; no browser JWT, cron or Graph is activated.
+[functions.customer-service-email-worker]
+verify_jwt = false
+
+[functions.customer-service-email-retry]
+verify_jwt = true
+
+# Server-only Graph intake. Its own secret is checked before service-role access;
+# both the global switch and the private connection must be explicitly enabled.
+[functions.customer-service-email-sync]
+verify_jwt = false
+
 # Browser requests are authorized inside the function, while scheduled runs use
 # a separate high-entropy FOLLOW_UP_CRON_SECRET. No request is trusted solely
 # because it reached this public endpoint.
@@ -427,6 +457,10 @@ verify_jwt = false
 # public at the gateway, then validates a signed one-time response token before
 # any service-role RPC. GET-style inspection is read-only; submission is POST.
 [functions.builder-follow-up-response]
+verify_jwt = false
+
+# Scheduled metadata inventory; authenticates with the existing sync secret.
+[functions.customer-service-email-reconcile]
 verify_jwt = false
 
 [analytics]

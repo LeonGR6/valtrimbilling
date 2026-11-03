@@ -25,6 +25,7 @@ export default function InternationalPhoneInput({
   error,
   helperText,
   size,
+  disabled = false,
 }) {
   const labelId = useId()
   const normalized = normalizePhoneNumber(value, country)
@@ -51,6 +52,7 @@ export default function InternationalPhoneInput({
           value={country}
           onChange={(event) => onCountryChange(event.target.value)}
           aria-label={`${label} country code`}
+          disabled={disabled}
         >
           {phoneCountryOptions.map((option) => (
             <MenuItem key={option.value} value={option.value}>
@@ -70,6 +72,7 @@ export default function InternationalPhoneInput({
         placeholder={country === 'MX' ? '55 1234 5678' : '714 555 0162'}
         fullWidth
         size={size}
+        disabled={disabled}
         slotProps={{ htmlInput: { maxLength: 30, inputMode: 'tel' } }}
       />
     </Stack>

@@ -54,7 +54,20 @@ function formatEventDate(event) {
   return `${dateFormatter.format(start)} · ${timeFormatter.format(start)}${end ? `–${timeFormatter.format(end)}` : ''}`
 }
 
-export default function CustomerServiceCalendarDetail({ event, onClose, onEdit }) {
+function formatInternalSlot(event) {
+  const slot = event.extendedProps.internalSlot
+  if (!slot?.start || !slot?.end) return ''
+  const date = event.start instanceof Date ? event.start : new Date(event.start)
+  const [startHours, startMinutes] = slot.start.split(':').map(Number)
+  const [endHours, endMinutes] = slot.end.split(':').map(Number)
+  const start = new Date(date)
+  const end = new Date(date)
+  start.setHours(startHours, startMinutes, 0, 0)
+  end.setHours(endHours, endMinutes, 0, 0)
+  return `${timeFormatter.format(start)}–${timeFormatter.format(end)}`
+}
+
+export default function CustomerServiceCalendarDetail({ event, onClose, onEdit, onViewRequest }) {
   if (!event) return null
 
   const props = event.extendedProps
@@ -121,9 +134,15 @@ export default function CustomerServiceCalendarDetail({ event, onClose, onEdit }
         <Field icon={<BuildOutlinedIcon fontSize="small" />} label="Work type">
           {formatWorkTypes(props.workTypes)}
         </Field>
-        <Field icon={<EventAvailableRoundedIcon fontSize="small" />} label="Scheduled visit">
+        <Field icon={<EventAvailableRoundedIcon fontSize="small" />} label="Customer arrival window">
           {formatEventDate(event)}
+          {props.customerWindow?.exceptional ? ' · Exception window' : ''}
         </Field>
+        {formatInternalSlot(event) && (
+          <Field icon={<BuildOutlinedIcon fontSize="small" />} label="Internal planned work">
+            {formatInternalSlot(event)}
+          </Field>
+        )}
         <Field icon={<PersonOutlineRoundedIcon fontSize="small" />} label="Technician">
           {props.technician}
         </Field>
@@ -153,14 +172,21 @@ export default function CustomerServiceCalendarDetail({ event, onClose, onEdit }
           <Typography variant="body2" sx={{ mt: 0.5 }}>{props.notes || 'No notes added.'}</Typography>
         </Box>
 
-        <Button
-          variant="outlined"
-          color="inherit"
-          startIcon={<EditOutlinedIcon />}
-          onClick={() => onEdit?.(event)}
-        >
-          Edit visit
-        </Button>
+        {onViewRequest && (
+          <Button variant="outlined" onClick={() => onViewRequest(event)}>
+            View full request
+          </Button>
+        )}
+        {onEdit && (
+          <Button
+            variant="outlined"
+            color="inherit"
+            startIcon={<EditOutlinedIcon />}
+            onClick={() => onEdit(event)}
+          >
+            Edit visit
+          </Button>
+        )}
       </Stack>
     </Box>
   )

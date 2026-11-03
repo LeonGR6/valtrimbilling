@@ -1,3 +1,5 @@
+-- Historical contract retired by 20261021141000. Current CRUD coverage lives in
+-- customer_service_request_intake_rpc/intake_update/request_ready.test.sql.
 begin;
 
 create extension if not exists pgtap with schema extensions;

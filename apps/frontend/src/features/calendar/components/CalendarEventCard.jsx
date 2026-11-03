@@ -8,18 +8,18 @@ import {
 } from '../data/calendarEvents.js'
 import CustomerServiceEventCard from '../../customer-service/components/CustomerServiceEventCard.jsx'
 
-export default function CalendarEventCard({ event, isList = false }) {
+export default function CalendarEventCard({ event, displayMode = 'timed' }) {
   const props = event.extendedProps
 
   if (props.calendarType === 'CUSTOMER_SERVICE') {
-    return <CustomerServiceEventCard event={event} isList={isList} />
+    return <CustomerServiceEventCard event={event} displayMode={displayMode} />
   }
 
   const type = activityTypeMap[props.activityType]
   const tone = getActivityTone(props.activityType, props.orderMaterial)
   const followUp = getFollowUpStatusMeta(props.followUp)
 
-  if (isList) {
+  if (displayMode === 'list') {
     return (
       <Box className={`list-event activity-tone--${tone}`}>
         <Box className="list-event__identity">
@@ -42,6 +42,22 @@ export default function CalendarEventCard({ event, isList = false }) {
             </span>
           )}
         </Box>
+      </Box>
+    )
+  }
+
+  if (displayMode === 'compact' || displayMode === 'year') {
+    const isYear = displayMode === 'year'
+    const accessibleTitle = `${type.label} · Job #${props.jobCode} · ${props.community}`
+
+    return (
+      <Box
+        className={`service-compact-event service-compact-event--production service-compact-event--${displayMode} activity-tone--${tone}`}
+        title={accessibleTitle}
+        aria-label={accessibleTitle}
+      >
+        <span className="service-compact-event__marker" aria-hidden="true" />
+        <strong>{isYear ? 'P' : `${type.shortLabel} · #${props.jobCode}`}</strong>
       </Box>
     )
   }

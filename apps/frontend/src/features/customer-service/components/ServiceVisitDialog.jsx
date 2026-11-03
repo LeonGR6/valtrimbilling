@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
   Alert,
   Button,
@@ -18,7 +18,7 @@ import {
   TextField,
   Typography,
 } from '@mui/material'
-import { technicianOptions } from '../data/customerService.js'
+import { listTechnicians } from '../services/techniciansRepository.js'
 import {
   createServiceCalendarEvent,
   serviceWorkTypeOptions,
@@ -36,17 +36,34 @@ function todayString() {
 export default function ServiceVisitDialog({ requests, onClose, onCreated }) {
   const { addServiceEvent } = useCustomerServiceCalendar()
   const availableRequests = requests.filter((request) => request.status !== 'CLOSED')
+  const [technicianOptions, setTechnicianOptions] = useState([])
+  const [techniciansLoading, setTechniciansLoading] = useState(true)
   const [values, setValues] = useState({
     requestId: availableRequests[0]?.id ? String(availableRequests[0].id) : '',
     date: todayString(),
     start: '09:00',
     end: '11:00',
-    technicianId: technicianOptions[0]?.value ? String(technicianOptions[0].value) : '',
-    workTypes: ['HW'],
+    technicianId: '',
+    workTypes: ['Hardware'],
     status: 'SCHEDULED',
     notes: '',
   })
   const [error, setError] = useState('')
+
+  useEffect(() => {
+    let active = true
+    listTechnicians().then((technicians) => {
+      if (!active) return
+      setTechnicianOptions(technicians.filter((technician) => technician.isActive)
+        .map((technician) => ({ value: technician.id, label: technician.name })))
+      setTechniciansLoading(false)
+    }).catch((loadError) => {
+      if (!active) return
+      setError(loadError.message)
+      setTechniciansLoading(false)
+    })
+    return () => { active = false }
+  }, [])
 
   const change = (name, value) => {
     setValues((current) => ({ ...current, [name]: value }))
@@ -139,7 +156,7 @@ export default function ServiceVisitDialog({ requests, onClose, onCreated }) {
                 />
               ))}
             </FormGroup>
-            <FormHelperText>Selecting both displays HW &amp; WS.</FormHelperText>
+            <FormHelperText>Select one or more work categories.</FormHelperText>
           </FormControl>
 
           <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
@@ -176,6 +193,7 @@ export default function ServiceVisitDialog({ requests, onClose, onCreated }) {
               label="Technician"
               value={values.technicianId}
               onChange={(event) => change('technicianId', event.target.value)}
+              disabled={techniciansLoading || technicianOptions.length === 0}
             >
               {technicianOptions.map((technician) => (
                 <MenuItem key={technician.value} value={String(technician.value)}>
@@ -183,6 +201,11 @@ export default function ServiceVisitDialog({ requests, onClose, onCreated }) {
                 </MenuItem>
               ))}
             </Select>
+            {!techniciansLoading && !error && technicianOptions.length === 0 && (
+              <Alert severity="warning" sx={{ mt: 1 }}>
+                Register an active technician in the Technicians tab before scheduling a visit.
+              </Alert>
+            )}
           </FormControl>
 
           <FormControl fullWidth>

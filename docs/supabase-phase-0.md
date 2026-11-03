@@ -77,22 +77,31 @@ Then fill in `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY`.
 
 ## Validation
 
-For a local Supabase stack:
+This project validates database changes against the linked remote Supabase
+project. A local Docker-based Supabase stack is not used:
 
 ```bash
-npx supabase start --workdir apps/backend
-npx supabase db reset --workdir apps/backend
 npm run db:test
 npm run lint
 npm test
 npm run build
 ```
 
-Before Phase 1, also validate the linked project:
+The `db:test` script runs each transactional pgTAP file through
+`supabase db query --linked`, because `supabase test db --linked` still needs a
+local Docker daemon for its `pg_prove` runner. A single test can be selected by
+filename:
+
+```bash
+npm run db:test -- customer_service_phase_1c.test.sql
+```
+
+Before applying a migration, also validate the linked project and inspect the
+push plan:
 
 ```bash
 npm run db:lint
-npm run db:test -- --linked
+npx supabase db push --dry-run --workdir apps/backend
 ```
 
 ## Phase 1 boundary

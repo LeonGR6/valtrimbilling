@@ -1669,6 +1669,7 @@
             "npm:@fullcalendar/list@6.1.21",
             "npm:@fullcalendar/multimonth@6.1.21",
             "npm:@fullcalendar/react@6.1.21",
+            "npm:@fullcalendar/timegrid@6.1.21",
             "npm:@hookform/resolvers@^5.8.0",
             "npm:@mui/icons-material@^9.3.1",
             "npm:@mui/material@^9.3.1",

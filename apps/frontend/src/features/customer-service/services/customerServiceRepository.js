@@ -1,62 +1,23 @@
 import { requireSupabase } from '../../../services/api.js'
-import {
-  toCustomerServiceRequest,
-  toCustomerServiceRpcPayload,
-} from './customerServiceRecord.js'
 
-const REQUEST_DETAIL_COLUMNS = [
-  'id',
-  'folio',
-  'property_id',
-  'reported_on',
-  'due_on',
-  'status',
-  'tag',
-  'priority',
-  'request_type',
-  'work_type',
-  'estimated_duration_minutes',
-  'homeowner_name',
-  'homeowner_email',
-  'homeowner_phone',
-  'description',
-  'internal_notes',
-  'customer_availability_notes',
-  'resolution_status',
-  'completion_notes',
-  'exception_reason',
-  'status_before_close',
-  'closed_at',
-  'close_reason',
-  'coordinator_user_id',
-  'community_id',
-  'builder_id',
-  'builder_name',
-  'community_name',
-  'lot_number',
-  'address',
-  'city',
-  'state',
-  'postal_code',
-  'plan_label',
-  'latitude',
-  'longitude',
-  'current_appointment_id',
-  'starts_at',
-  'ends_at',
-  'appointment_state',
-  'confirmation_status',
-  'technician_id',
-  'technician_name',
-  'created_at',
-  'updated_at',
-  'is_ready_to_schedule',
-  'is_overdue',
+const SETTINGS_COLUMNS = [
+  'business_days_to_complete',
+  'workday_starts_at',
+  'workday_ends_at',
+  'time_zone',
+  'company_address',
+  'company_latitude',
+  'company_longitude',
+  'distance_green_max_miles',
+  'distance_yellow_max_miles',
+  'travel_buffer_minutes',
+  'default_duration_minutes',
+  'requires_dispatcher_approval',
 ].join(', ')
 
 const DEFAULT_SETTINGS = {
   businessDaysToComplete: 5,
-  workdayStartsAt: '08:00',
+  workdayStartsAt: '07:00',
   workdayEndsAt: '17:00',
   timeZone: 'America/Los_Angeles',
   companyAddress: '',
@@ -64,6 +25,9 @@ const DEFAULT_SETTINGS = {
   companyLongitude: null,
   distanceGreenMaxMiles: 10,
   distanceYellowMaxMiles: 20,
+  travelBufferMinutes: 30,
+  defaultDurationMinutes: 60,
+  requiresDispatcherApproval: true,
 }
 
 function throwRepositoryError(error) {
@@ -84,9 +48,22 @@ function throwRepositoryError(error) {
   }
 
   if (error.code === '23505') {
+    if (/appointment|proposal|schedule/i.test(error.message ?? '')) {
+      throw new Error(
+        'The route is no longer available because its schedule changed. Recalculate the proposals.',
+        { cause: error },
+      )
+    }
     throw new Error('This availability window is already registered.', {
       cause: error,
     })
+  }
+
+  if (error.code === '23P01') {
+    throw new Error(
+      'The route conflicts with the current technician schedule. Recalculate the proposals.',
+      { cause: error },
+    )
   }
 
   throw new Error(error.message || 'The Customer Service request failed.', {
@@ -111,112 +88,33 @@ function toSettings(row) {
       : Number(row.company_longitude),
     distanceGreenMaxMiles: Number(row.distance_green_max_miles),
     distanceYellowMaxMiles: Number(row.distance_yellow_max_miles),
+    travelBufferMinutes: row.travel_buffer_minutes,
+    defaultDurationMinutes: row.default_duration_minutes,
+    requiresDispatcherApproval: row.requires_dispatcher_approval,
   }
 }
 
-export async function loadCustomerServiceCatalog() {
+export async function updateCustomerServiceSettings(settings) {
   const client = await requireSupabase()
-  const [detailsResult, availabilityResult, settingsResult] =
-    await Promise.all([
-      client
-        .from('service_request_detail')
-        .select(REQUEST_DETAIL_COLUMNS)
-        .order('created_at', { ascending: false }),
-      client
-        .from('service_request_availability')
-        .select('id, request_id, available_from, available_until, notes')
-        .order('available_from', { ascending: true }),
-      client
-        .from('service_scheduling_settings')
-        .select([
-          'business_days_to_complete',
-          'workday_starts_at',
-          'workday_ends_at',
-          'time_zone',
-          'company_address',
-          'company_latitude',
-          'company_longitude',
-          'distance_green_max_miles',
-          'distance_yellow_max_miles',
-        ].join(', '))
-        .eq('id', 1)
-        .maybeSingle(),
-    ])
-
-  for (const result of [
-    detailsResult,
-    availabilityResult,
-    settingsResult,
-  ]) throwRepositoryError(result.error)
-
-  const settings = toSettings(settingsResult.data)
-  const availabilityByRequest = new Map()
-  for (const window of availabilityResult.data ?? []) {
-    const windows = availabilityByRequest.get(window.request_id) ?? []
-    windows.push(window)
-    availabilityByRequest.set(window.request_id, windows)
-  }
-
-  return {
-    requests: (detailsResult.data ?? []).map((row) =>
-      toCustomerServiceRequest(
-        row,
-        availabilityByRequest.get(row.id) ?? [],
-        settings,
-      )),
-    settings,
-  }
-}
-
-export async function createCustomerServiceRequest(form, timeZone) {
-  const client = await requireSupabase()
-  const payload = toCustomerServiceRpcPayload(form, timeZone)
-  const { data, error } = await client.rpc('create_customer_service_request', {
-    p_property: payload.property,
-    p_request: payload.request,
-    p_availability: payload.availability,
-  })
+  const { data, error } = await client
+    .from('service_scheduling_settings')
+    .update({
+      workday_starts_at: settings.workdayStartsAt,
+      workday_ends_at: settings.workdayEndsAt,
+      time_zone: settings.timeZone,
+      company_address: settings.companyAddress,
+      company_latitude: settings.latitude,
+      company_longitude: settings.longitude,
+      distance_green_max_miles: settings.distanceGreenMaxMiles,
+      distance_yellow_max_miles: settings.distanceYellowMaxMiles,
+      travel_buffer_minutes: settings.travelBufferMinutes,
+      default_duration_minutes: settings.defaultDurationMinutes,
+      requires_dispatcher_approval: settings.requiresDispatcherApproval,
+    })
+    .eq('id', 1)
+    .select(SETTINGS_COLUMNS)
+    .single()
 
   throwRepositoryError(error)
-  return data
-}
-
-export async function updateCustomerServiceRequest(
-  requestId,
-  form,
-  timeZone,
-) {
-  const client = await requireSupabase()
-  const payload = toCustomerServiceRpcPayload(form, timeZone)
-  const { data, error } = await client.rpc('update_customer_service_request', {
-    p_request_id: requestId,
-    p_property: payload.property,
-    p_request: payload.request,
-    p_availability: payload.availability,
-  })
-
-  throwRepositoryError(error)
-  return data
-}
-
-export async function closeCustomerServiceRequest(requestId, reason) {
-  const client = await requireSupabase()
-  const { data, error } = await client.rpc('close_customer_service_request', {
-    p_request_id: requestId,
-    p_reason: reason,
-  })
-
-  throwRepositoryError(error)
-  return data
-}
-
-export async function reopenCustomerServiceRequest(requestId, note) {
-  const client = await requireSupabase()
-  const { data, error } = await client.rpc('reopen_customer_service_request', {
-    p_request_id: requestId,
-    p_note: note || '',
-  })
-
-  throwRepositoryError(error)
-  return data
+  return toSettings(data)
 }

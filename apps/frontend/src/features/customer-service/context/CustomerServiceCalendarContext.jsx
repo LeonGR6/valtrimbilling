@@ -1,11 +1,8 @@
 import { useMemo, useState } from 'react'
-import { createInitialServiceCalendarEvents } from '../data/serviceCalendarEvents.js'
 import { CustomerServiceCalendarContext } from './customerServiceCalendarContext.js'
 
 export function CustomerServiceCalendarProvider({ children }) {
-  const [serviceEvents, setServiceEvents] = useState(
-    () => createInitialServiceCalendarEvents(),
-  )
+  const [serviceEvents, setServiceEvents] = useState([])
 
   const value = useMemo(() => ({
     serviceEvents,

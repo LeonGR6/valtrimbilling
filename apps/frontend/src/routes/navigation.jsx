@@ -55,6 +55,20 @@ export const navigationRoutes = [
     element: <CustomerServicePage />,
     allowedRoles: ['ADMIN', 'SCHEDULING'],
   },
+  {
+    path: '/customer-service/proposals',
+    label: 'Customer Service Proposals',
+    icon: 'customer-service',
+    element: <CustomerServicePage />,
+    allowedRoles: ['ADMIN', 'SCHEDULING'],
+  },
+  {
+    path: '/customer-service/calendar',
+    label: 'Customer Service Calendar',
+    icon: 'customer-service',
+    element: <CustomerServicePage />,
+    allowedRoles: ['ADMIN', 'SCHEDULING'],
+  },
 
 ]
 

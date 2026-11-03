@@ -2,6 +2,7 @@ export const emptyJob = {
   code: '',
   builder: '',
   community: '',
+  coordinates: '',
   supervisorId: null,
   superintendentId: null,
 }

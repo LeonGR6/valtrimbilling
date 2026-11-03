@@ -134,6 +134,7 @@ const columns = [
   'Contact',
   'Issue',
   'Appointment',
+  'Proposal',
   'Status',
   'Priority',
   'Action',
@@ -279,6 +280,21 @@ export default function ServiceRequestsTable({
 
                   <TableCell sx={{ minWidth: 170 }}>
                     <AppointmentCell request={request} />
+                  </TableCell>
+
+                  <TableCell sx={{ minWidth: 150 }}>
+                    <Tooltip
+                      title={request.isReadyToSchedule
+                        ? 'All Phase 1A scheduling data is complete.'
+                        : request.readinessReasons.join(' ')}
+                    >
+                      <Box component="span">
+                        <Pill
+                          label={request.isReadyToSchedule ? 'Ready' : 'Not ready'}
+                          color={request.isReadyToSchedule ? 'success' : 'warning'}
+                        />
+                      </Box>
+                    </Tooltip>
                   </TableCell>
 
                   <TableCell>

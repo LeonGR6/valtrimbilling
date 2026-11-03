@@ -16,6 +16,7 @@ import {
 } from './lazyPages.jsx'
 import RequireAuth from '../features/auth/context/RequireAuth.jsx'
 import RequireRole from '../features/auth/context/RequireRole.jsx'
+import CustomerServicePrototypeProvider from '../features/customer-service/context/CustomerServicePrototypeProvider.jsx'
 
 function withRoleAccess(element, allowedRoles) {
   if (!allowedRoles?.length) return element
@@ -48,7 +49,9 @@ export const appRouter = createBrowserRouter([
     element: (
       <Suspense fallback={<RouteLoading />}>
         <RequireAuth>
-          <AppLayout />
+          <CustomerServicePrototypeProvider>
+            <AppLayout />
+          </CustomerServicePrototypeProvider>
         </RequireAuth>
       </Suspense>
     ),

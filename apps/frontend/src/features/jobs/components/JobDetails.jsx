@@ -43,6 +43,10 @@ import {
 } from '../schemas/jobSequenceSheetSchema.js'
 import { useJobs } from '../context/useJobs.js'
 import JobModuleNavigation from './JobModuleNavigation.jsx'
+import {
+  formatJobCoordinates,
+  jobCoordinatesGoogleMapsUrl,
+} from '../utils/jobCoordinates.js'
 
 function PlanDialog({ plans, plan, onClose, onSave, submitting }) {
   const schema = useMemo(
@@ -204,13 +208,26 @@ function DetailMetric({ icon, label, value }) {
   )
 }
 
-function JobField({ label, value }) {
+function JobField({ href, label, value }) {
   return (
     <Box sx={{ minWidth: 170 }}>
       <Typography variant="caption" color="text.secondary" component="div">
         {label}
       </Typography>
-      <Typography variant="body2" fontWeight={600} sx={{ mt: 0.25 }}>
+      <Typography
+        variant="body2"
+        fontWeight={600}
+        component={href ? 'a' : 'div'}
+        href={href || undefined}
+        target={href ? '_blank' : undefined}
+        rel={href ? 'noreferrer' : undefined}
+        sx={{
+          mt: 0.25,
+          color: href ? 'primary.main' : 'text.primary',
+          textDecoration: href ? 'none' : undefined,
+          '&:hover': href ? { textDecoration: 'underline' } : undefined,
+        }}
+      >
         {value || 'Unassigned'}
       </Typography>
     </Box>
@@ -467,6 +484,14 @@ function PlanCard({
 }
 
 export default function JobDetails({ builderId, job, onBack }) {
+  const coordinates = formatJobCoordinates(
+    job.communityLatitude,
+    job.communityLongitude,
+  )
+  const coordinatesUrl = jobCoordinatesGoogleMapsUrl(
+    job.communityLatitude,
+    job.communityLongitude,
+  )
   const {
     canManageJobs,
     createJobPlan,
@@ -668,6 +693,11 @@ export default function JobDetails({ builderId, job, onBack }) {
             >
               <JobField label="Builder" value={job.builder} />
               <JobField label="Community / Project" value={job.community} />
+              <JobField
+                label="Community coordinates"
+                value={coordinates}
+                href={coordinatesUrl}
+              />
               <JobField label="Supervisor" value={job.supervisor} />
               <JobField label="Jobsite Superintendent" value={job.jobsiteSuperintendent} />
             </Stack>

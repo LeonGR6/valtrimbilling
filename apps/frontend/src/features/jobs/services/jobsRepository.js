@@ -6,6 +6,8 @@ const JOB_COLUMNS = [
   'code',
   'builder_id',
   'community',
+  'community_latitude',
+  'community_longitude',
   'supervisor_id',
   'superintendent_id',
   'billing_setup_version_id',

@@ -151,20 +151,34 @@ function phaseText(phaseCode: string) {
   return `PHASE ${code}`.toUpperCase()
 }
 
-/** "97, 98, 99, 102, 12A" -> "97-99, 102, 12A". */
+const WHOLE_LOT = /^\d+$/u
+// 12 and 12.1 are different, related Lots.
+const NUMBERED_LOT = /^\d+(?:\.\d+)?$/u
+
+/**
+ * "97, 98, 99, 102, 12A" -> "97-99, 102, 12A". Only whole Lots run together: 12, 12.1 and 13
+ * stay "12, 12.1, 13", because "12-13" would hide the Lot between them.
+ */
 export function formatLotRanges(lotNumbers: string[]) {
   const unique = [...new Set(lotNumbers.map((lot) => lot.trim()))]
   const numeric = unique
-    .filter((lot) => /^\d+$/u.test(lot))
-    .map(Number)
-    .sort((left, right) => left - right)
-  const other = unique.filter((lot) => !/^\d+$/u.test(lot)).sort(naturalCompare)
+    .filter((lot) => NUMBERED_LOT.test(lot))
+    .map((lot) => ({ lot, value: Number(lot) }))
+    .sort((left, right) => left.value - right.value || naturalCompare(left.lot, right.lot))
+  const other = unique.filter((lot) => !NUMBERED_LOT.test(lot)).sort(naturalCompare)
+  // A whole Lot is written as a number ("06" is 6); a decimal Lot keeps the text it has.
+  const written = (entry: { lot: string; value: number }) =>
+    WHOLE_LOT.test(entry.lot) ? `${entry.value}` : entry.lot
 
   const parts: string[] = []
   for (let index = 0; index < numeric.length;) {
     let end = index
-    while (numeric[end + 1] === numeric[end] + 1) end += 1
-    parts.push(end > index ? `${numeric[index]}-${numeric[end]}` : `${numeric[index]}`)
+    while (
+      end + 1 < numeric.length &&
+      WHOLE_LOT.test(numeric[end].lot) && WHOLE_LOT.test(numeric[end + 1].lot) &&
+      numeric[end + 1].value === numeric[end].value + 1
+    ) end += 1
+    parts.push(end > index ? `${written(numeric[index])}-${written(numeric[end])}` : written(numeric[index]))
     index = end + 1
   }
   return [...parts, ...other].join(', ')

@@ -133,7 +133,8 @@ export function SplitScheduleEditor({ activityType, parts, totalLots, lotNumbers
                 onChange={(event) => onChange(parts.map((item) => item.id === part.id
                   ? { ...item, lotStart: event.target.value }
                   : item))}
-                slotProps={{ htmlInput: { min: 1 } }}
+                // "any": a Lot such as 12.1 is not a mistake of the step.
+                slotProps={{ htmlInput: { min: 1, step: 'any' } }}
                 required
               />
               <TextField
@@ -143,7 +144,7 @@ export function SplitScheduleEditor({ activityType, parts, totalLots, lotNumbers
                 onChange={(event) => onChange(parts.map((item) => item.id === part.id
                   ? { ...item, lotEnd: event.target.value }
                   : item))}
-                slotProps={{ htmlInput: { min: 1 } }}
+                slotProps={{ htmlInput: { min: 1, step: 'any' } }}
                 required
               />
               <DateField

@@ -196,3 +196,9 @@ Deno.test('a baseboard install is named in its Google Calendar event', () => {
 
   assertMatch(event.summary, /^DM BASEBOARD INSTALL • /u)
 })
+
+Deno.test('Lots with a decimal are listed on their own, not joined into a range', () => {
+  const event = buildGoogleCalendarEvent({ ...schedule, lotNumbers: ['12', '12.1', '13', '14'] })
+
+  assertEquals(event.summary, 'EXT FRAMES • Lots 12, 12.1, 13–14')
+})

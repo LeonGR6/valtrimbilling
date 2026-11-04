@@ -591,12 +591,25 @@ test('lot ranges generate every consecutive lot inclusively', () => {
   })
 })
 
-test('lot ranges reject invalid, reversed and oversized ranges', () => {
+test('a lot range can go down, and single lots and decimals can be mixed in', () => {
+  assert.deepEqual(parseLotRange('14-10'), {
+    success: true,
+    lotNumbers: ['14', '13', '12', '11', '10'],
+  })
+  assert.deepEqual(parseLotRange('5-1, 12, 12.1'), {
+    success: true,
+    lotNumbers: ['5', '4', '3', '2', '1', '12', '12.1'],
+  })
+  // A separator at the end ends a chip; it is not a mistake.
+  assert.equal(parseLotRange('9-14,').success, true)
+})
+
+test('lot ranges reject invalid, repeated and oversized ranges', () => {
+  assert.equal(parseLotRange('').success, false)
   assert.equal(parseLotRange('9 to 14').success, false)
-  assert.equal(parseLotRange('14-9').success, false)
   assert.equal(parseLotRange('1-501').success, false)
-  assert.equal(parseLotRange('9-14,').success, false)
   assert.equal(parseLotRange('9-14, 14-20').success, false)
+  assert.equal(parseLotRange('14-9, 12').success, false)
   assert.equal(parseLotRange('1-300, 400-600').success, false)
 })
 

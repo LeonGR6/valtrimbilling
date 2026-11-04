@@ -9,7 +9,11 @@ const requiredText = (message, max = 100) => z
   .max(max, `Use ${max} characters or fewer.`)
 
 const dateField = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Select a valid date.')
-const lotField = z.coerce.number().int('Use a whole lot number.').min(1, 'Lots must start at 1.')
+// A Lot can carry a decimal (12 and 12.1 are different, related Lots), so the From and To of a
+// division are numbers, not whole numbers.
+const lotField = z
+  .coerce.number({ invalid_type_error: 'Use a lot number.' })
+  .min(1, 'Lots must start at 1.')
 const dateOwnerValues = ['SUPERVISOR', 'JOBSITE_SUPERINTENDENT', 'TENTATIVE']
 const isDateOwner = (value) => dateOwnerValues.includes(value)
 const dateOwnerField = z.preprocess(

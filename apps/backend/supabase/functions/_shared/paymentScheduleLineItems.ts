@@ -26,8 +26,9 @@ import type { PageContent } from "./releaseTypes.ts";
 const DESCRIPTION_HEADER = /^description$/iu;
 const AMOUNT_HEADER = /^amount$/iu;
 const DRAW_TEXT = /\bdraw\s*(\d)\b\s*(?:(\d+(?:\.\d+)?)\s*%)?\s*(.*)$/iu;
-const LOT_TEXT = /\blot\s*#?\s*([A-Za-z0-9]+)/iu;
-const PHASE_TEXT = /\bphase\s*#?\s*([A-Za-z0-9]+)/iu;
+// "Lot 12.1" is Lot 12.1, not Lot 12; "Phase 2.1" is not Phase 2.
+const LOT_TEXT = /\blot\s*#?\s*([A-Za-z0-9]+(?:\.\d+)?)/iu;
+const PHASE_TEXT = /\bphase\s*#?\s*([A-Za-z0-9]+(?:\.\d+)?)/iu;
 const TOTAL_LABEL = /^total$/iu;
 
 function isHeader(texts: string[]) {

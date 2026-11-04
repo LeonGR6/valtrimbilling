@@ -101,7 +101,9 @@ export function getLotsLabel(lotStart, lotEnd, lotNumbers = []) {
     let rangeEnd = normalizedLots[0]
 
     normalizedLots.slice(1).forEach((lot) => {
-      if (lot === rangeEnd + 1) {
+      // Only whole Lots run together ("5–7"). A Lot such as 12.1 stands on its own, so 12, 12.1
+      // and 13 read as three Lots and not as "12–13".
+      if (Number.isInteger(lot) && Number.isInteger(rangeEnd) && lot === rangeEnd + 1) {
         rangeEnd = lot
         return
       }

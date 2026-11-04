@@ -37,7 +37,8 @@ const TOTAL_HEADER = /^total\s+price$/iu;
 const DRAW_LABEL = /^(\d)(?:st|nd|rd|th)\s+draw$/iu;
 const COST_CODE = /^\d{5,7}$/u;
 const TOTAL_ROW = /^total\b/iu;
-const LOT_VALUE = /^[A-Za-z0-9-]+$/u;
+// A Lot can carry a decimal: 12 and 12.1 are different Lots.
+const LOT_VALUE = /^[A-Za-z0-9-]+(?:\.\d+)?$/u;
 // How far a header's cost code can sit from its "Nth Draw" label, in points.
 const COST_CODE_REACH = 20;
 // A run farther than this share of the narrowest column gap belongs to no column.

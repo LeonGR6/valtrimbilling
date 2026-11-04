@@ -75,12 +75,14 @@ function headings(withPhase = false) {
   ];
 }
 
-function schedulePage(overrides: { rows?: LotRow[]; extra?: TextRun[]; withPhase?: boolean } = {}) {
+function schedulePage(
+  overrides: { rows?: LotRow[]; extra?: TextRun[]; withPhase?: boolean; printedPhase?: string } = {},
+) {
   const rows = overrides.rows ?? LOTS;
   return page([
     run("Exhibit B - Payment Schedule", 397, 761, 110),
     run("Phase:", 247, 677, 25),
-    run("2", 278, 677, 5),
+    run(overrides.printedPhase ?? "2", 278, 677, 5),
     // The summary of Plans above the table: how many Lots there are and what they come to.
     run("Plan", 331, 705, 17),
     run("Mix", 435, 705, 15),
@@ -250,4 +252,24 @@ Deno.test("a name two draws share does not tell either of them", () => {
       }),
     PaymentScheduleError,
   );
+});
+
+Deno.test("a Lot or a Phase with a decimal is read whole, not cut at the dot", () => {
+  // 12 and 12.1 are different, related Lots; so are Phase 2 and Phase 2.1.
+  const rows: LotRow[] = [
+    ["12", "1,000.03", "150.00", "700.02", "50.00", "100.00"],
+    ["12.1", "2,000.00", "300.00", "1,400.00", "100.00", "200.00"],
+    ["13", "1,200.00", "180.00", "840.00", "60.00", "120.00"],
+  ];
+  const analysis = analyzePaymentScheduleContent(
+    content(schedulePage({ rows, printedPhase: "2.1" })),
+    { drawNames: DRAWS },
+  );
+
+  assertEquals(analysis.issues, []);
+  assertEquals(analysis.cells.length, 12);
+  assertEquals(new Set(analysis.cells.map((candidate) => candidate.lot)), new Set(["12", "12.1", "13"]));
+  assertEquals(new Set(analysis.cells.map((candidate) => candidate.phase)), new Set(["2.1"]));
+  assertEquals(cell(analysis, "12", 2)?.amount, 700.02);
+  assertEquals(cell(analysis, "12.1", 2)?.amount, 1400);
 });

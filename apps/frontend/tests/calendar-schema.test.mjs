@@ -15,6 +15,7 @@ import {
   formatPhaseBuilding,
 } from '../src/features/calendar/components/calendarSchedulerUtils.js'
 import { calendarEventSchema } from '../src/features/calendar/schemas/calendarEventSchema.js'
+import { toProductionActivityRpc } from '../src/features/calendar/services/productionActivityRecord.js'
 
 const validActivity = {
   calendarType: 'PRODUCTION',
@@ -518,4 +519,72 @@ test('the DM baseboard install option creates a separate event', () => {
   // Without the option there is no such event.
   const plain = createProductionCalendarEvents(calendarEventSchema.parse(validActivity), 'production-plain', 131)
   assert.equal(plain.some((event) => event.extendedProps.variant === 'baseboard-install'), false)
+})
+
+// 12 and 12.1 are different, related Lots: a phase can end (or start) on one.
+const decimalLots = {
+  lotStart: '12',
+  lotEnd: '14.1',
+  lotNumbers: ['12', '12.1', '13', '14', '14.1'],
+  lotIds: [701, 702, 703, 704, 705],
+}
+
+test('a phase whose last Lot has a decimal can be scheduled', () => {
+  const values = calendarEventSchema.parse({ ...validActivity, ...decimalLots })
+
+  assert.equal(values.lotStart, 12)
+  assert.equal(values.lotEnd, 14.1)
+
+  const events = createProductionCalendarEvents(values, 'production-decimal-lots', 125)
+  assert.equal(events[0].title, 'EXT FRAMES • Lots 12, 12.1, 13–14, 14.1')
+})
+
+test('a Lot with a decimal is never joined into a range with the whole Lots around it', () => {
+  assert.equal(getLotsLabel(12, 13, ['12', '12.1', '13']), 'Lots 12, 12.1, 13')
+  assert.equal(getLotsLabel(6.1, 8.1, ['6.1', '7.1', '8.1']), 'Lots 6.1, 7.1, 8.1')
+  assert.equal(getLotsLabel(5, 7, ['5', '6', '7']), 'Lots 5–7')
+  assert.equal(getLotsLabel(1, 1.1, ['1.1']), 'Lot 1.1')
+})
+
+test('a split starts from the real Lots, decimals included', () => {
+  const parts = createDefaultSplitParts(decimalLots, 'SUPERVISOR')
+  assert.deepEqual(parts.map(({ lotStart, lotEnd }) => [lotStart, lotEnd]), [[12, 13], [14, 14.1]])
+
+  const added = addSplitDivision(parts, decimalLots.lotNumbers)
+  assert.deepEqual(added.map(({ lotStart, lotEnd }) => [lotStart, lotEnd]), [[12, 12.1], [13, 13], [14, 14.1]])
+})
+
+test('a split can start or end on a Lot with a decimal and still covers every Lot once', () => {
+  const split = (parts) => calendarEventSchema.safeParse({
+    ...validActivity,
+    ...decimalLots,
+    dmSplitPhase: true,
+    dmSplitParts: parts.map((part, index) => ({
+      id: `p${index}`, date: '2026-08-13', dateOwner: 'SUPERVISOR', ...part,
+    })),
+  })
+
+  assert.equal(split([{ lotStart: '12', lotEnd: '12.1' }, { lotStart: '13', lotEnd: '14.1' }]).success, true)
+  // 12 on its own and 12.1 with what follows: related Lots may be split apart.
+  assert.equal(split([{ lotStart: '12', lotEnd: '12' }, { lotStart: '12.1', lotEnd: '14.1' }]).success, true)
+
+  // 12.1 is left out.
+  const leftOut = split([{ lotStart: '12', lotEnd: '12' }, { lotStart: '13', lotEnd: '14.1' }])
+  assert.equal(leftOut.success, false)
+  assert.match(leftOut.error.issues[0].message, /Lots 12, 12\.1, 13–14, 14\.1 once/)
+})
+
+test('each division of a split saves the Lots between its From and its To, decimals included', () => {
+  const values = calendarEventSchema.parse({
+    ...validActivity,
+    ...decimalLots,
+    dmSplitPhase: true,
+    dmSplitParts: [
+      { id: 'a', lotStart: '12', lotEnd: '12', date: '2026-08-11', dateOwner: 'SUPERVISOR' },
+      { id: 'b', lotStart: '12.1', lotEnd: '14.1', date: '2026-08-13', dateOwner: 'TENTATIVE' },
+    ],
+  })
+  const dm = toProductionActivityRpc(values).p_stages.find((stage) => stage.type === 'DM')
+
+  assert.deepEqual(dm.schedules.map((schedule) => schedule.lotIds), [[701], [702, 703, 704, 705]])
 })

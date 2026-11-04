@@ -383,3 +383,27 @@ Deno.test("a border too far away to be the cell's is not used", () => {
   const [first] = rows.thisRequest.map((target) => points(target.rect));
   assert(first.right - first.left < 60, `${first.right - first.left} wide`);
 });
+
+Deno.test("a Lot with a decimal is its own Lot in a matrix", () => {
+  // 0014 and 12.1 are different Lots; the dot does not make the row unreadable.
+  const analysis = analyzePaymentScheduleContent(
+    content(matrixPage({ row2: ["12.1", "2B", "100.00", "50.00", "150.00"] })),
+  );
+
+  assertEquals(analysis.issues, []);
+  assertEquals(analysis.cells.length, 4);
+  assertEquals(analysis.cells.find((c) => c.lot === "12.1" && c.draw === 2)?.amount, 50);
+});
+
+Deno.test("a Lot with a decimal is its own Lot in a list", () => {
+  const analysis = analyzePaymentScheduleContent(content(lineItemsPage([
+    ["DRAW 1 15% Frames Delivered", "Lot 12 - 2653 ...", "1,735.05"],
+    ["DRAW 1 15% Frames Delivered", "Lot 12.1 - 2653 ...", "1,165.05"],
+  ], "$2,900.10")));
+
+  assertEquals(analysis.issues, []);
+  assertEquals(analysis.cells.map((c) => [c.lot, c.draw, c.amount]), [
+    ["12", 1, 1735.05],
+    ["12.1", 1, 1165.05],
+  ]);
+});

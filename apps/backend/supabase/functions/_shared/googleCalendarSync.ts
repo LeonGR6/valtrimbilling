@@ -244,7 +244,8 @@ function lotLabel(lotNumbers: string[]) {
     let start = numericLots[0]
     let end = numericLots[0]
     for (const lot of numericLots.slice(1)) {
-      if (lot === end + 1) {
+      // Only whole Lots run together: 12, 12.1 and 13 are three Lots, not "12–13".
+      if (Number.isInteger(lot) && Number.isInteger(end) && lot === end + 1) {
         end = lot
       } else {
         ranges.push(start === end ? `${start}` : `${start}–${end}`)

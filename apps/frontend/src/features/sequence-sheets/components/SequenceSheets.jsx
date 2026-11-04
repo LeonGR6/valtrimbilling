@@ -92,7 +92,8 @@ import {
   formatPhase,
   formatPhaseBuilding,
 } from '../utils/phaseBuildingCodes.js'
-import { parseLotRange } from '../utils/lotRange.js'
+import { addLotRanges, lotNumbersOfRanges } from '../utils/lotRange.js'
+import LotRangeField from './LotRangeField.jsx'
 import PhasesTable from './PhasesTable.jsx'
 import LotOptionPicker from './LotOptionPicker.jsx'
 import { getPhaseRowCounts, getSelectedOptionCount } from '../utils/phaseCounts.js'
@@ -634,7 +635,9 @@ function PhaseDialog({
   onClose,
   onSave,
 }) {
-  const [lotRange, setLotRange] = useState('')
+  // The chips of the Lots to add, what is being typed after them, and what is wrong with it.
+  const [lotRanges, setLotRanges] = useState([])
+  const [lotRangeInput, setLotRangeInput] = useState('')
   const [lotRangeError, setLotRangeError] = useState('')
   const schema = useMemo(
     () => createPhaseByLotSchema(job, phase?.id, utilityBuildingRequired),
@@ -680,7 +683,9 @@ function PhaseDialog({
   })
   const hasPlans = (job.sequenceSheet?.plans?.length ?? 0) > 0
 
-  const addLotRange = () => {
+  // What the Phase already holds and how many Lots it can still take. An empty first row is not a Lot:
+  // the new ones take its place.
+  const lotRangeContext = () => {
     const currentLots = getValues('lots') ?? []
     const ordinaryLots = currentLots.filter((lot) => !lot.isUtilityBuilding)
     const initialEmptyLot = ordinaryLots.length === 1 ? ordinaryLots[0] : null
@@ -691,53 +696,57 @@ function PhaseDialog({
       && !initialEmptyLot.reverse
       && (initialEmptyLot.optionIds?.length ?? 0) === 0,
     )
-    const initialEmptyLotIndex = hasReplaceableInitialLot
-      ? currentLots.indexOf(initialEmptyLot)
-      : -1
-    const remainingLotCapacity = hasReplaceableInitialLot
-      ? Math.max(500 - currentLots.length + 1, 0)
-      : Math.max(500 - currentLots.length, 0)
 
-    if (remainingLotCapacity === 0) {
+    return {
+      currentLots,
+      initialEmptyLotIndex: hasReplaceableInitialLot ? currentLots.indexOf(initialEmptyLot) : -1,
+      capacity: hasReplaceableInitialLot
+        ? Math.max(500 - currentLots.length + 1, 0)
+        : Math.max(500 - currentLots.length, 0),
+      existing: new Set(
+        currentLots
+          .filter((lot) => !lot.isUtilityBuilding)
+          .map((lot) => lot.lotNumber?.trim().toUpperCase())
+          .filter(Boolean),
+      ),
+    }
+  }
+
+  const addLotRange = () => {
+    const context = lotRangeContext()
+
+    if (context.capacity === 0) {
       setLotRangeError('A phase can contain up to 500 lots.')
       return
     }
 
-    const parsedRange = parseLotRange(lotRange, remainingLotCapacity)
-
-    if (!parsedRange.success) {
-      setLotRangeError(parsedRange.error)
+    // What is typed and not yet a chip is added too.
+    const batch = addLotRanges(lotRanges, lotRangeInput, context)
+    if (batch.error) {
+      setLotRangeError(batch.error)
       return
     }
 
-    const existingLotNumbers = new Set(
-      currentLots
-        .filter((lot) => !lot.isUtilityBuilding)
-        .map((lot) => lot.lotNumber?.trim().toUpperCase())
-        .filter(Boolean),
-    )
-    const duplicateLot = parsedRange.lotNumbers.find((lotNumber) =>
-      existingLotNumbers.has(lotNumber),
-    )
-
-    if (duplicateLot) {
-      setLotRangeError(`Lot ${duplicateLot} has already been added.`)
+    const lotNumbers = lotNumbersOfRanges(batch.ranges)
+    if (lotNumbers.length === 0) {
+      setLotRangeError('Type one or more lots or ranges.')
       return
     }
 
-    const generatedLots = parsedRange.lotNumbers.map((lotNumber) => ({
+    const generatedLots = lotNumbers.map((lotNumber) => ({
       ...emptyLot,
       lotNumber,
     }))
 
-    if (hasReplaceableInitialLot) {
-      replace(currentLots.flatMap((lot, index) =>
-        index === initialEmptyLotIndex ? generatedLots : [lot]))
+    if (context.initialEmptyLotIndex >= 0) {
+      replace(context.currentLots.flatMap((lot, index) =>
+        index === context.initialEmptyLotIndex ? generatedLots : [lot]))
     } else {
       append(generatedLots)
     }
 
-    setLotRange('')
+    setLotRanges([])
+    setLotRangeInput('')
     setLotRangeError('')
   }
 
@@ -868,32 +877,24 @@ function PhaseDialog({
               spacing={1.5}
               sx={{ alignItems: { sm: 'flex-start' } }}
             >
-              <Box sx={{ flex: 1 }}>
+              <Box sx={{ flex: { sm: '0 1 220px' } }}>
                 <Typography variant="subtitle2" fontWeight={750}>
-                  Add lot ranges
+                  Add lots or lot ranges
                 </Typography>
                 <Typography variant="caption" color="text.secondary">
-                  Separate multiple ranges with commas, then assign a plan, Reverse and options to each lot.
+                  Assign a plan, Reverse and options to each lot.
                 </Typography>
               </Box>
-              <TextField
-                label="Lot ranges"
-                placeholder="Example: 9-14, 20-25"
-                value={lotRange}
-                onChange={(event) => {
-                  setLotRange(event.target.value)
-                  if (lotRangeError) setLotRangeError('')
-                }}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter') {
-                    event.preventDefault()
-                    addLotRange()
-                  }
-                }}
-                error={Boolean(lotRangeError)}
-                helperText={lotRangeError || 'Separate ranges with commas'}
-                sx={{ width: { xs: '100%', sm: 280 } }}
-                slotProps={{ htmlInput: { maxLength: 255 } }}
+              <LotRangeField
+                sx={{ flex: 1, minWidth: 0, width: { xs: '100%', sm: 'auto' } }}
+                ranges={lotRanges}
+                onRangesChange={setLotRanges}
+                typed={lotRangeInput}
+                onTypedChange={setLotRangeInput}
+                error={lotRangeError}
+                onErrorChange={setLotRangeError}
+                getContext={lotRangeContext}
+                onSubmit={addLotRange}
               />
               <Button
                 type="button"
@@ -903,7 +904,7 @@ function PhaseDialog({
                 disableElevation
                 sx={{ minHeight: 56, whiteSpace: 'nowrap' }}
               >
-                Add ranges
+                Add lots
               </Button>
             </Stack>
             {utilityBuildingEnabled && (

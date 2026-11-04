@@ -82,6 +82,13 @@ Deno.test('formats lot ranges, gaps and non numeric lots', () => {
   assertEquals(formatLotRanges(['7']), '7')
 })
 
+Deno.test('a lot with a decimal stands on its own and is never hidden inside a range', () => {
+  assertEquals(formatLotRanges(['13', '12.1', '12']), '12, 12.1, 13')
+  assertEquals(formatLotRanges(['12', '12.1', '13', '14']), '12, 12.1, 13-14')
+  assertEquals(formatLotRanges(['6.1', '7.1', '8.1']), '6.1, 7.1, 8.1')
+  assertEquals(formatLotRanges(['12.10', '12.1']), '12.1, 12.10')
+})
+
 Deno.test('splits rows by draw and phase, in phase / draw / kind order', () => {
   const payload = buildQuickbooksInvoicePayload({
     ...base,

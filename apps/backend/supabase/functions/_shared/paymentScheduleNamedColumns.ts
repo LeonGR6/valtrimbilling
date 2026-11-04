@@ -35,9 +35,10 @@ const PHASE_HEADER = /^phase$/iu;
 // The Lot's whole price, which its draws split: "Price", "Total Price", "Contract Amount".
 const TOTAL_HEADER = /^(?:total\s+|contract\s+)?(?:price|amount|total)$/iu;
 const TOTAL_ROW = /^total\b/iu;
-const LOT_VALUE = /^[A-Za-z0-9-]+$/u;
+// A Lot or a Phase can carry a decimal: 12 and 12.1, Phase 2 and 2.1, are different.
+const LOT_VALUE = /^[A-Za-z0-9-]+(?:\.\d+)?$/u;
 const PHASE_LABEL = /^phase\s*:?$/iu;
-const PHASE_VALUE = /^[A-Za-z0-9-]{1,10}$/u;
+const PHASE_VALUE = /^(?=.{1,10}$)[A-Za-z0-9-]+(?:\.\d+)?$/u;
 const COUNT = /^\d{1,4}$/u;
 // A run farther than this share of the narrowest gap between amount columns belongs to none.
 const COLUMN_REACH = 0.6;

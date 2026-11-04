@@ -1406,6 +1406,7 @@
 
 .activity-drawer__footer {
   display: flex;
+  flex-wrap: wrap;
   justify-content: flex-end;
   gap: 10px;
   flex: 0 0 auto;
@@ -1424,6 +1425,71 @@
 
 .activity-drawer__footer--detail {
   flex-wrap: wrap;
+}
+
+/* Whether the save worked, kept next to the Save button so it is in view from any part of the
+   form: on top of the buttons in the footer. */
+.form-save-status {
+  flex: 1 0 100%;
+  align-items: flex-start;
+}
+
+.form-save-status .MuiAlert-message {
+  min-width: 0;
+  padding: 4px 0;
+}
+
+.form-save-status .MuiAlertTitle-root {
+  margin-bottom: 2px;
+}
+
+.form-save-status__list {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  max-height: min(9rem, 24vh);
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+  font-size: 0.8125rem;
+  line-height: 1.4;
+}
+
+.form-save-status__link {
+  padding: 0;
+  border-radius: 2px;
+  font: inherit;
+  text-align: left;
+  text-underline-offset: 2px;
+}
+
+.form-save-status__link:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+}
+
+.activity-drawer__notice {
+  flex: 0 0 auto;
+}
+
+@keyframes drawer-feedback-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .form-save-status,
+  .activity-drawer__notice {
+    animation: drawer-feedback-in 180ms ease-out;
+  }
 }
 
 .activity-drawer__delete-action {
@@ -1848,6 +1914,10 @@
   background: color-mix(in srgb, var(--activity-color) 4%, var(--drawer-surface)) !important;
 }
 
+.production-stage-card--error {
+  border-color: var(--mui-palette-error-main) !important;
+}
+
 .production-stage-card__header {
   display: flex;
   align-items: center;
@@ -2051,6 +2121,30 @@
   gap: 10px;
   padding: 12px 14px 14px;
   border-top: 1px solid color-mix(in srgb, var(--activity-color) 24%, var(--mui-palette-divider));
+}
+
+.stage-split-editor--error {
+  border-top-color: var(--mui-palette-error-main);
+}
+
+.stage-split-editor {
+  scroll-margin-top: 12px;
+}
+
+.stage-split-editor:focus-visible {
+  outline: 2px solid var(--mui-palette-error-main);
+  outline-offset: -2px;
+}
+
+.split-part__errors {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 6px;
+}
+
+.split-part__errors p {
+  margin: 0;
 }
 
 .lockup-label {

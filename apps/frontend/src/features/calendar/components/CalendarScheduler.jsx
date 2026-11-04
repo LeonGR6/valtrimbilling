@@ -30,6 +30,12 @@ import { useLoadingPhase } from '../hooks/useLoadingPhase.js'
 import { usePhaseCalendarCoverage } from '../hooks/usePhaseCalendarCoverage.js'
 import { calendarEventSchema } from '../schemas/calendarEventSchema.js'
 import {
+  classifySaveError,
+  collectFormErrors,
+  patchTouchesKey,
+  validateProductionDraft,
+} from '../utils/calendarFormErrors.js'
+import {
   getGoogleCalendarConnection,
   startGoogleCalendarOAuth,
   syncGoogleCalendarNow,
@@ -138,7 +144,17 @@ export default function CalendarScheduler() {
   const [selectedId, setSelectedId] = useState(null)
   const [drawerMode, setDrawerMode] = useState(null)
   const [draft, setDraft] = useState(createEmptyProductionDraft())
-  const [formError, setFormError] = useState('')
+  // What keeps the form from saving, shown in the field it belongs to and next to Save. The
+  // schema's findings are worked out from the draft, so they follow the edits once a Save has
+  // failed; what the server answered is kept as it came until the field it names changes.
+  const [validationShown, setValidationShown] = useState(false)
+  const [serverFailure, setServerFailure] = useState(null)
+  // Asks the form to take the person to the first thing to fix; `nonce` makes every failed Save a
+  // new request, even when it fails on the same field.
+  const [focusRequest, setFocusRequest] = useState(null)
+  const focusNonce = useRef(0)
+  // The result of a save, shown at the top of the detail the drawer goes to.
+  const [drawerNotice, setDrawerNotice] = useState('')
   const [duplicateWarning, setDuplicateWarning] = useState(null)
   // Set while the configuration is open because an event was dragged.
   const [dateMove, setDateMove] = useState(null)
@@ -246,11 +262,35 @@ export default function CalendarScheduler() {
 
   const selectedEvent = events.find((event) => event.id === selectedId) ?? null
 
+  const validationErrors = useMemo(
+    () => (validationShown ? validateProductionDraft(draft) : []),
+    [validationShown, draft],
+  )
+  const formErrors = useMemo(
+    () => (serverFailure ? [...validationErrors, serverFailure] : validationErrors),
+    [validationErrors, serverFailure],
+  )
+
+  const resetFormFeedback = () => {
+    setValidationShown(false)
+    setServerFailure(null)
+    setFocusRequest(null)
+    setDrawerNotice('')
+  }
+
+  const requestFocus = (errors) => {
+    focusNonce.current += 1
+    setFocusRequest({
+      nonce: focusNonce.current,
+      keys: errors.map((error) => error.key).filter(Boolean),
+    })
+  }
+
   const closeDrawer = () => {
     setDrawerMode(null)
     setSelectedId(null)
     setDateMove(null)
-    setFormError('')
+    resetFormFeedback()
   }
 
   const openCreateDrawer = () => {
@@ -258,7 +298,7 @@ export default function CalendarScheduler() {
     setDateMove(null)
     setSelectedId(null)
     setDraft(createEmptyProductionDraft())
-    setFormError('')
+    resetFormFeedback()
     setDrawerMode('create')
   }
 
@@ -278,7 +318,7 @@ export default function CalendarScheduler() {
       shutterDate: '',
       ...getPhasePatch(job, phase, people, builderContacts),
     })
-    setFormError('')
+    resetFormFeedback()
     setDrawerMode('create')
   }
 
@@ -327,7 +367,7 @@ export default function CalendarScheduler() {
     setDateMove(null)
     setSelectedId(eventId)
     setDraft(createDraftFromProductionEvent(calendarEvent))
-    setFormError('')
+    resetFormFeedback()
     setDrawerMode('detail')
   }
 
@@ -353,7 +393,7 @@ export default function CalendarScheduler() {
 
     setSelectedId(eventId)
     setDraft(moved)
-    setFormError('')
+    resetFormFeedback()
     setDateMove({ changes })
     setDrawerMode('edit')
   }
@@ -363,7 +403,7 @@ export default function CalendarScheduler() {
 
     setDateMove(null)
     setDraft(createDraftFromProductionEvent(selectedEvent))
-    setFormError('')
+    resetFormFeedback()
     setDrawerMode('edit')
   }
 
@@ -372,7 +412,11 @@ export default function CalendarScheduler() {
     const result = calendarEventSchema.safeParse(draft)
 
     if (!result.success) {
-      setFormError(result.error.issues[0]?.message ?? 'Review the production details.')
+      // Every problem is shown where it is, and the form goes to the first one; from here on the
+      // list follows the edits, so a field that is fixed stops being flagged.
+      setServerFailure(null)
+      setValidationShown(true)
+      requestFocus(collectFormErrors(result.error.issues))
       return
     }
 
@@ -419,15 +463,32 @@ export default function CalendarScheduler() {
         && !isExtraEventVariant(item.extendedProps.variant)
       )) ?? savedEvents[0]
 
+      const savedMessage = isEditing
+        ? 'Production activity updated.'
+        : 'Production activity created with EXT, DM and HW.'
       setSelectedId(nextSelectedEvent?.id ?? null)
       setDateMove(null)
       setDrawerMode(nextSelectedEvent ? 'detail' : null)
-      setFormError('')
-      setNotice(isEditing
-        ? 'Production activity updated.'
-        : 'Production activity created with EXT, DM and HW.')
+      setValidationShown(false)
+      setServerFailure(null)
+      // The detail shows the result at its top; with no detail to go to the drawer closes, and
+      // the message is the toast.
+      if (nextSelectedEvent) setDrawerNotice(savedMessage)
+      else setNotice(savedMessage)
     } catch (saveError) {
-      setFormError(saveError.message)
+      if (saveError.saved) {
+        // It is in: what failed was loading the calendar again. Staying on the form would invite
+        // saving it twice, so the drawer closes and the calendar loads again (a failure of that
+        // shows with its own Retry above the calendar).
+        closeDrawer()
+        setNotice('Production activity saved. Reloading the calendar…')
+        refreshProductionActivities().catch(() => {})
+        return
+      }
+
+      const failure = classifySaveError(saveError, { draft: result.data, isEditing })
+      setServerFailure(failure)
+      requestFocus([failure])
     } finally {
       setSaving(false)
     }
@@ -512,7 +573,9 @@ export default function CalendarScheduler() {
 
   const changeDraft = (draftPatch) => {
     setDraft((current) => ({ ...current, ...draftPatch }))
-    setFormError('')
+    // What the server said about a field goes away when that field changes; what it said about
+    // the save as a whole stays until the next Save, since no edit answers it.
+    setServerFailure((current) => (patchTouchesKey(current?.key, draftPatch) ? null : current))
   }
 
   const connectGoogleCalendar = async () => {
@@ -687,6 +750,8 @@ export default function CalendarScheduler() {
             onRemoveExtra={removeExtraEvent}
             canEdit={canManageProductionActivities}
             deleting={deleting}
+            notice={drawerNotice}
+            onDismissNotice={() => setDrawerNotice('')}
           />
         ) : (
           <ActivityForm
@@ -701,7 +766,8 @@ export default function CalendarScheduler() {
             draft={draft}
             isEditing={drawerMode === 'edit'}
             activeActivityType={selectedEvent?.extendedProps.activityType}
-            formError={formError}
+            errors={formErrors}
+            focusRequest={focusRequest}
             onChange={changeDraft}
             onClose={closeDrawer}
             onSave={saveActivity}

@@ -284,6 +284,15 @@ export async function listProductionActivities() {
   ))
 }
 
+// The RPC went through; what failed is loading the calendar again. The error says so (`saved`),
+// so the screen does not report "not saved" and the activity is not saved a second time.
+function savedButNotReloaded(cause) {
+  return Object.assign(
+    new Error('The activity was saved, but the calendar could not reload it.', { cause }),
+    { saved: true },
+  )
+}
+
 export async function saveProductionActivity(values) {
   const client = await requireSupabase()
   const { data: savedActivityId, error } = await client.rpc(
@@ -292,13 +301,16 @@ export async function saveProductionActivity(values) {
   )
   throwRepositoryError(error)
 
-  const activities = await listProductionActivities()
+  let activities
+  try {
+    activities = await listProductionActivities()
+  } catch (reloadError) {
+    throw savedButNotReloaded(reloadError)
+  }
   const saved = activities.find(
     (activity) => String(activity.id) === String(savedActivityId),
   )
-  if (!saved) {
-    throw new Error('The saved Production activity could not be reloaded.')
-  }
+  if (!saved) throw savedButNotReloaded()
 
   return { saved, activities }
 }

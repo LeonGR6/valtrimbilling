@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import {
   Alert,
+  AlertTitle,
   Box,
   Button,
   ButtonBase,
@@ -352,6 +353,8 @@ export default function ActivityDetail({
   onRemoveExtra,
   canEdit = true,
   deleting = false,
+  notice = '',
+  onDismissNotice,
 }) {
   const [contactTarget, setContactTarget] = useState(null)
   const [contactMessage, setContactMessage] = useState('')
@@ -401,6 +404,20 @@ export default function ActivityDetail({
       />
 
       <Box className="activity-drawer__scroll">
+        {/* The result of the save that brought the person here, at the top of a view that opens
+            at its top, so it is seen without looking for it. */}
+        {notice && (
+          <Alert
+            severity="success"
+            role="status"
+            className="activity-drawer__notice"
+            onClose={onDismissNotice}
+          >
+            <AlertTitle>Saved</AlertTitle>
+            {notice}
+          </Alert>
+        )}
+
         {extraLabel ? (
           <Box className={`activity-detail__hero activity-detail__hero--extra activity-tone--${tone}`}>
             <Box className="activity-detail__type-mark" aria-hidden="true">

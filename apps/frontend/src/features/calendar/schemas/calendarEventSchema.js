@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { getLotsLabel } from '../data/calendarEvents.js'
-import { findSplitCoverageProblem } from '../utils/splitLotGroups.js'
+import { findSplitCoverageIssue } from '../utils/splitLotGroups.js'
 
 const requiredText = (message, max = 100) => z
   .string()
@@ -11,9 +11,13 @@ const requiredText = (message, max = 100) => z
 const dateField = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Select a valid date.')
 // A Lot can carry a decimal (12 and 12.1 are different, related Lots), so the From and To of a
 // division are numbers, not whole numbers.
-const lotField = z
-  .coerce.number({ invalid_type_error: 'Use a lot number.' })
-  .min(1, 'Lots must start at 1.')
+// An empty box is not Lot 0: it reads as "no number", so the message says to enter one.
+const lotField = z.preprocess(
+  (value) => (typeof value === 'string' && value.trim() === '' ? Number.NaN : value),
+  z
+    .coerce.number({ invalid_type_error: 'Enter a lot number.' })
+    .min(1, 'Lots must start at 1.'),
+)
 const dateOwnerValues = ['SUPERVISOR', 'JOBSITE_SUPERINTENDENT', 'TENTATIVE']
 const isDateOwner = (value) => dateOwnerValues.includes(value)
 const dateOwnerField = z.preprocess(
@@ -62,8 +66,8 @@ function validateSplitParts(value, context, enabledField, partsField) {
 
   // The Phase can hold separate groups of Lots (11–14 and 21–23), so the
   // divisions are checked against its real Lots and not against first–last.
-  const problem = findSplitCoverageProblem(parts, value.lotNumbers)
-  if (!problem) return
+  const found = findSplitCoverageIssue(parts, value.lotNumbers)
+  if (!found) return
 
   const phaseLots = getLotsLabel(value.lotStart, value.lotEnd, value.lotNumbers)
   const messages = {
@@ -71,10 +75,12 @@ function validateSplitParts(value, context, enabledField, partsField) {
     'empty-division': `Every division needs at least one Lot of the phase (${phaseLots}).`,
     'uneven-coverage': `Split groups must cover ${phaseLots} once, with no Lot left out or repeated.`,
   }
+  // A problem of one division is reported on that division, so the form can point at it; a Lot
+  // left out or repeated belongs to the divisions as a whole and is reported on the split.
   context.addIssue({
     code: z.ZodIssueCode.custom,
-    path: [partsField],
-    message: messages[problem],
+    path: found.index === null ? [partsField] : [partsField, found.index, 'lotStart'],
+    message: messages[found.problem],
   })
 }
 

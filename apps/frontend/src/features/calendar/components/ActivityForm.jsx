@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react'
 import {
   Alert,
   AlertTitle,
@@ -22,6 +23,7 @@ import {
   getLotsLabel,
 } from '../data/calendarEvents.js'
 import DrawerHeader from './DrawerHeader.jsx'
+import FormSaveStatus from './FormSaveStatus.jsx'
 import {
   DateOwnerSelector,
   OptionCheckbox,
@@ -46,6 +48,8 @@ import {
   calculateShutterDate,
   getProductionDateCascade,
 } from '../utils/calendarDateRules.js'
+import { errorsByKey, fieldErrorProps } from '../utils/calendarFormErrors.js'
+import { focusFormError } from '../utils/formErrorFocus.js'
 
 function AutoField({ label, value }) {
   return (
@@ -93,12 +97,35 @@ export default function ActivityForm({
   draft,
   isEditing,
   activeActivityType,
-  formError,
+  errors = [],
+  focusRequest = null,
   onChange,
   onClose,
   onSave,
   saving = false,
 }) {
+  const scrollRef = useRef(null)
+  const errorByKey = errorsByKey(errors)
+  // A stage card is marked when anything inside it is wrong, so it shows from the card's edge too.
+  const stageHasError = (...prefixes) => errors.some(
+    (error) => error.key && prefixes.some((prefix) => error.key.startsWith(prefix)),
+  )
+
+  // After a Save that did not go through, the form takes the person to the first thing to fix:
+  // scrolled into view, with the focus on it.
+  useEffect(() => {
+    if (!focusRequest) return
+    focusRequest.keys.some((key) => focusFormError(scrollRef.current, key))
+  }, [focusRequest])
+
+  // The link in the list next to Save. A field that is not in this form (one of another event
+  // while a single event is open) has nothing to go to, so the form goes back to its top.
+  const jumpToField = (key) => {
+    if (!focusFormError(scrollRef.current, key)) {
+      scrollRef.current?.scrollTo({ top: 0 })
+    }
+  }
+
   const selectedJob = jobs.find((job) => job.id === Number(draft.jobId)) ?? null
   const builderDateConfiguration = getBuilderDateConfiguration(findJobBuilder(selectedJob, builders))
   const phases = (selectedJob?.sequenceSheet?.phases ?? []).filter(
@@ -218,7 +245,7 @@ export default function ActivityForm({
   }
 
   return (
-    <Box component="form" className="activity-drawer__layout" onSubmit={onSave}>
+    <Box component="form" noValidate className="activity-drawer__layout" onSubmit={onSave}>
       <DrawerHeader
         eyebrow={dateMove
           ? 'CONFIRM DATE CHANGE'
@@ -227,9 +254,7 @@ export default function ActivityForm({
         onClose={onClose}
       />
 
-      <Box className="activity-drawer__scroll">
-        {formError && <Alert severity="error">{formError}</Alert>}
-
+      <Box className="activity-drawer__scroll" ref={scrollRef}>
         {dateMove && (
           <Alert severity="warning" icon={<EventRepeatRoundedIcon />}>
             <AlertTitle>Confirm the new date</AlertTitle>
@@ -261,6 +286,7 @@ export default function ActivityForm({
                 onChange={(event) => changeJob(event.target.value)}
                 required
                 fullWidth
+                {...fieldErrorProps('jobId', errorByKey.jobId)}
                 slotProps={{
                   select: {
                     renderValue: (value) => {
@@ -289,6 +315,7 @@ export default function ActivityForm({
                 disabled={!selectedJob || phases.length === 0}
                 required
                 fullWidth
+                {...fieldErrorProps('phaseId', errorByKey.phaseId)}
                 slotProps={{
                   select: {
                     renderValue: (value) => {
@@ -379,6 +406,8 @@ export default function ActivityForm({
               <StageCard
                 activityType="EXT"
                 tone={getActivityTone('EXT', draft.extOrderMaterial)}
+                dateError={errorByKey.extDate}
+                hasError={stageHasError('ext')}
                 date={draft.extDate}
                 dateOwner={draft.extDateOwner}
                 note={draft.extDateNote}
@@ -422,6 +451,7 @@ export default function ActivityForm({
                           required
                           size="small"
                           className="activity-option-date"
+                          {...fieldErrorProps('extInstallDate', errorByKey.extInstallDate)}
                         />
                         <DateOwnerSelector
                           value={draft.extInstallDateOwner}
@@ -452,6 +482,8 @@ export default function ActivityForm({
               <StageCard
                 activityType="SHUTTER"
                 tone="shutter"
+                dateError={errorByKey.shutterDate}
+                hasError={stageHasError('shutter')}
                 date={draft.shutterDate}
                 dateOwner={draft.shutterDateOwner}
                 note={draft.shutterDateNote}
@@ -470,6 +502,8 @@ export default function ActivityForm({
               <StageCard
                 activityType="DM"
                 tone="dm"
+                dateError={errorByKey.dmDate}
+                hasError={stageHasError('dm')}
                 date={draft.dmDate}
                 dateOwner={draft.dmDateOwner}
                 note={draft.dmDateNote}
@@ -508,6 +542,7 @@ export default function ActivityForm({
                             required
                             size="small"
                             className="activity-option-date"
+                            {...fieldErrorProps('dmInstallDate', errorByKey.dmInstallDate)}
                           />
                           <DateOwnerSelector
                             value={draft.dmInstallDateOwner}
@@ -552,6 +587,7 @@ export default function ActivityForm({
                             required
                             size="small"
                             className="activity-option-date"
+                            {...fieldErrorProps('dmBaseboardInstallDate', errorByKey.dmBaseboardInstallDate)}
                           />
                           <DateOwnerSelector
                             value={draft.dmBaseboardInstallDateOwner}
@@ -598,6 +634,8 @@ export default function ActivityForm({
                     {draft.dmSplitPhase && (
                       <SplitScheduleEditor
                         activityType="DM"
+                        partsKey="dmSplitParts"
+                        errors={errorByKey}
                         parts={draft.dmSplitParts}
                         totalLots={totalLots}
                         lotNumbers={draft.lotNumbers}
@@ -616,6 +654,8 @@ export default function ActivityForm({
               <StageCard
                 activityType="HW"
                 tone="hw"
+                dateError={errorByKey.hwDate}
+                hasError={stageHasError('hw')}
                 date={draft.hwDate}
                 dateOwner={draft.hwDateOwner}
                 note={draft.hwDateNote}
@@ -661,6 +701,7 @@ export default function ActivityForm({
                             required
                             size="small"
                             className="activity-option-date"
+                            {...fieldErrorProps('hwLockUpDate', errorByKey.hwLockUpDate)}
                           />
                           <DateOwnerSelector
                             value={draft.hwLockUpDateOwner}
@@ -686,6 +727,8 @@ export default function ActivityForm({
                     {draft.hwSplitPhase && (
                       <SplitScheduleEditor
                         activityType="HW"
+                        partsKey="hwSplitParts"
+                        errors={errorByKey}
                         parts={draft.hwSplitParts}
                         totalLots={totalLots}
                         lotNumbers={draft.lotNumbers}
@@ -711,6 +754,7 @@ export default function ActivityForm({
             rows={3}
             fullWidth
             slotProps={{ htmlInput: { maxLength: 500 } }}
+            {...fieldErrorProps('notes', errorByKey.notes)}
           />
         </Box>
 
@@ -722,6 +766,7 @@ export default function ActivityForm({
       </Box>
 
       <Box className="activity-drawer__footer">
+        <FormSaveStatus errors={errors} onJump={jumpToField} />
         <Button variant="outlined" color="inherit" onClick={onClose} disabled={saving}>Cancel</Button>
         <Button type="submit" variant="contained" disabled={saving} disableElevation>
           {saving

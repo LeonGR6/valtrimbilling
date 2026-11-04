@@ -15,18 +15,27 @@ export function lotsInRange(lotNumbers, lotStart, lotEnd) {
 }
 
 // Returns the first problem that keeps the divisions from scheduling every Lot
-// of the Phase exactly once, or null when they do.
-export function findSplitCoverageProblem(parts, lotNumbers) {
+// of the Phase exactly once, as `{ problem, index }`, or null when they do.
+// `index` is the division that has the problem; it is null when the problem
+// belongs to the divisions as a whole (a Lot left out or repeated).
+export function findSplitCoverageIssue(parts, lotNumbers) {
   const lots = sortedLotNumbers(lotNumbers)
   const timesCovered = new Map(lots.map((lot) => [lot, 0]))
 
-  for (const part of parts) {
-    if (!(Number(part.lotEnd) >= Number(part.lotStart))) return 'invalid-range'
+  for (const [index, part] of parts.entries()) {
+    if (!(Number(part.lotEnd) >= Number(part.lotStart))) return { problem: 'invalid-range', index }
 
     const covered = lotsInRange(lots, part.lotStart, part.lotEnd)
-    if (covered.length === 0) return 'empty-division'
+    if (covered.length === 0) return { problem: 'empty-division', index }
     covered.forEach((lot) => timesCovered.set(lot, timesCovered.get(lot) + 1))
   }
 
-  return [...timesCovered.values()].every((times) => times === 1) ? null : 'uneven-coverage'
+  return [...timesCovered.values()].every((times) => times === 1)
+    ? null
+    : { problem: 'uneven-coverage', index: null }
+}
+
+// The same check, for callers that only need to know which problem it is.
+export function findSplitCoverageProblem(parts, lotNumbers) {
+  return findSplitCoverageIssue(parts, lotNumbers)?.problem ?? null
 }

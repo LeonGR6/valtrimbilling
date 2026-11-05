@@ -169,12 +169,23 @@ export function JobsProvider({ children }) {
   // Saves the whole grid in one go, then reads the Job's Plans again: Plans may have been created,
   // renamed, brought back or deleted, so the list on screen is not worked out from what was sent.
   const applyPlanOptionChanges = useCallback(async (jobId, changes) => {
-    const result = await applyPlanOptionChangesRecord(jobId, changes)
-    const reloaded = await listJobPlans([jobId])
-    const reloadedPlans = reloaded.get(Number(jobId)) ?? []
-    setJobRecords((current) => current.map((job) => (
-      job.id === jobId ? updateJobPlans(job, () => reloadedPlans) : job
-    )))
+    const reloadPlans = async () => {
+      const reloaded = await listJobPlans([jobId])
+      const reloadedPlans = reloaded.get(Number(jobId)) ?? []
+      setJobRecords((current) => current.map((job) => (
+        job.id === jobId ? updateJobPlans(job, () => reloadedPlans) : job
+      )))
+    }
+
+    let result
+    try {
+      result = await applyPlanOptionChangesRecord(jobId, changes)
+    } catch (failure) {
+      // A big save goes in several requests: the ones before the failure are saved, so show them.
+      if (failure.savedBatches > 0) await reloadPlans().catch(() => {})
+      throw failure
+    }
+    await reloadPlans()
     setError(null)
     return result
   }, [])

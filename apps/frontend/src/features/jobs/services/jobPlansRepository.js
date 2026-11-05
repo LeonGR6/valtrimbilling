@@ -10,6 +10,7 @@ import {
   toJobPricesRpc,
   toPlanPriceRpc,
 } from './jobPlanRecord.js'
+import { mergeBulkResults, splitBulkChanges } from '../utils/bulkChangeBatches.js'
 
 const PLAN_COLUMNS = [
   'id',
@@ -76,7 +77,10 @@ function throwRepositoryError(error) {
   }
 
   if (error.code === '23514') {
-    if (error.message?.includes('Plans changed')) {
+    // The functions word their own 23514 messages for the person ("Change at most 3000 Plans and
+    // Options at a time", "Option X needs a description"...). Only the database's own check-constraint
+    // message, which says nothing useful, becomes the generic price one.
+    if (error.message && !error.message.includes('violates check constraint')) {
       throw new Error(error.message, { cause: error })
     }
 
@@ -272,13 +276,32 @@ export async function createPlanOptions(planId, options) {
  */
 export async function applyPlanOptionChanges(jobId, changes) {
   const client = await requireSupabase()
-  const { data, error } = await client.rpc('apply_plan_option_changes', {
-    p_job_id: Number(jobId),
-    p_changes: changes,
-  })
+  // A big save goes in several requests (see splitBulkChanges), each one all-or-nothing. When one fails
+  // the earlier ones are already saved: the error says how many, so the page can reload what is there.
+  const batches = splitBulkChanges(changes)
+  const results = []
 
-  throwRepositoryError(error)
-  return toBulkChangeResult(data)
+  for (const [index, batch] of batches.entries()) {
+    const { data, error } = await client.rpc('apply_plan_option_changes', {
+      p_job_id: Number(jobId),
+      p_changes: batch,
+    })
+
+    if (error) {
+      try {
+        throwRepositoryError(error)
+      } catch (failure) {
+        if (index > 0) {
+          failure.message = `${failure.message} Part of the changes was already saved (${index} of ${batches.length} requests): refresh the grid to see what is there.`
+          failure.savedBatches = index
+        }
+        throw failure
+      }
+    }
+    results.push(toBulkChangeResult(data))
+  }
+
+  return mergeBulkResults(results)
 }
 
 export async function updatePlanOption(optionId, option) {

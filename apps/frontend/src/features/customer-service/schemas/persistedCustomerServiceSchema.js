@@ -8,14 +8,17 @@ function parseIsoDate(value) {
   return new Date(year, month - 1, day)
 }
 
+// Mirrors valtrim.calculate_business_due_date: the reported day does not count;
+// counting starts the next calendar day and skips Saturdays and Sundays.
+// A request reported on Monday is due the following Monday.
 export function calculateBusinessDueDate(startDate, businessDays = 5) {
   const date = parseIsoDate(startDate)
   let counted = 0
 
   while (counted < businessDays) {
+    date.setDate(date.getDate() + 1)
     const day = date.getDay()
     if (day >= 1 && day <= 5) counted += 1
-    if (counted < businessDays) date.setDate(date.getDate() + 1)
   }
 
   const year = date.getFullYear()

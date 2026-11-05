@@ -17,7 +17,7 @@ const SETTINGS_COLUMNS = [
 const DEFAULT_SETTINGS = {
   businessDaysToComplete: 5,
   workdayStartsAt: '07:00',
-  workdayEndsAt: '17:00',
+  workdayEndsAt: '15:30',
   timeZone: 'America/Los_Angeles',
   companyAddress: '',
   companyLatitude: null,

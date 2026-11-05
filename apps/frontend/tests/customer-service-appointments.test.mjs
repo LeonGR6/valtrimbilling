@@ -67,6 +67,7 @@ test('a saved appointment blocks capacity and registration waits for every trave
   const withTravel = { ...values, windowStart: '10:00', internalStart: '10:00', travelMinutes: { '10>20': 30 } }
   const complete = validatePrototypeProposalDraft({ requestId: 20, values: withTravel, requests, technicians, now })
   assert.equal(complete.travelPending, false)
+  assert.equal(complete.pastDue, false)
   assert.deepEqual(buildAppointmentRegistration({
     request: ready, values: withTravel, validation: complete, acceptance: 'COUNTER_PROPOSAL_ACCEPTED',
   }), {
@@ -74,4 +75,23 @@ test('a saved appointment blocks capacity and registration waits for every trave
     date: '2026-11-09', windowStart: '10:00', workStart: '10:00',
     travelMinutes: { '10>20': 30 }, acceptance: 'COUNTER_PROPOSAL_ACCEPTED',
   })
+})
+
+test('a late date blocks registration only while the request can still be done on time', () => {
+  const values = { technicianIds: ['4'], date: '2026-11-09', windowStart: '10:00', internalStart: '10:00', travelMinutes: { '10>20': 30 } }
+  const validate = (dueOn) => validatePrototypeProposalDraft({
+    requestId: 20, values, now, technicians,
+    requests: applyAppointmentsToRequests([confirmed, { ...ready, dueOn }], [appointment], roster),
+  })
+
+  // Due today (Friday 2026-11-06): Monday is late and on-time days remain.
+  const late = validate('2026-11-06')
+  assert.equal(late.isValid, true)
+  assert.equal(late.pastDue, true)
+  assert.ok(late.warnings.some((warning) => warning.message.startsWith('This date is after the due date 2026-11-06.')))
+
+  // Already overdue: only the late warning, registration stays possible.
+  const overdue = validate('2026-09-04')
+  assert.equal(overdue.pastDue, false)
+  assert.ok(overdue.warnings.some((warning) => warning.message === 'This request was due on 2026-09-04. The work will be completed late.'))
 })

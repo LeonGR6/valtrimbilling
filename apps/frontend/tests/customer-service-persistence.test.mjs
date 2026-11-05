@@ -39,9 +39,25 @@ function validRequest() {
   }
 }
 
-test('Customer Service counts the start weekday as day one', () => {
-  assert.equal(calculateBusinessDueDate('2026-09-21', 5), '2026-09-25')
-  assert.equal(calculateBusinessDueDate('2026-09-25', 5), '2026-10-01')
+test('the reported day does not count toward the business-day deadline', () => {
+  // Same results as valtrim.calculate_business_due_date.
+  assert.equal(calculateBusinessDueDate('2026-09-21', 5), '2026-09-28') // Monday → next Monday
+  assert.equal(calculateBusinessDueDate('2026-09-25', 5), '2026-10-02') // Friday → next Friday
+  assert.equal(calculateBusinessDueDate('2026-09-26', 5), '2026-10-02') // Saturday → Friday
+  assert.equal(calculateBusinessDueDate('2026-09-27', 5), '2026-10-02') // Sunday → Friday
+  assert.equal(calculateBusinessDueDate('2026-09-21', 7), '2026-09-30') // seven days: Monday → Wednesday
+})
+
+test('suggestions on a Monday within hours are due the following Monday', () => {
+  const result = suggestServiceWorkdays(
+    '2026-09-21T16:00:00.000Z',
+    { timeZone: 'America/Los_Angeles', businessDaysToComplete: 5 },
+    new Date('2026-09-21T16:00:00.000Z'),
+  )
+
+  assert.equal(result.startOn, '2026-09-21')
+  assert.equal(result.dueOn, '2026-09-28')
+  assert.equal(result.days.at(-1).date, '2026-09-28')
 })
 
 test('persisted request schema normalizes values required by the RPC', () => {
@@ -134,9 +150,15 @@ test('persisted request schema validates coordinates and unavailable days', () =
   })
   const invalidUnavailableDate = createPersistedCustomerServiceSchema(5).safeParse({
     ...validRequest(),
+    // Reported Monday 2026-09-21, due Monday 2026-09-28: Tuesday is outside the window.
+    customerUnavailableDates: [{ date: '2026-09-29' }],
+  })
+  const dueDayIsAllowed = createPersistedCustomerServiceSchema(5).safeParse({
+    ...validRequest(),
     customerUnavailableDates: [{ date: '2026-09-28' }],
   })
 
+  assert.equal(dueDayIsAllowed.success, true)
   assert.equal(missingCoordinates.success, false)
   assert.ok(missingCoordinates.error.flatten().fieldErrors.coordinates)
   assert.equal(invalidCoordinates.success, false)

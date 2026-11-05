@@ -32,7 +32,7 @@ export default function ProposalDraftPlanner({ request, requests, technicians: r
   const errorFor = (field) => validation.errors.find((error) => error.field === field)?.message
   const savedIsStale = savedDraft && savedDraft.requestSignature !== proposalPlanningSignature(request)
   const hasUnsavedChanges = proposalDraftHasChanges(values, savedDraft ? withStoredTravel(proposalDraftFormValues(savedDraft)) : initialValues)
-  const canRegister = validation.isValid && !validation.travelPending
+  const canRegister = validation.isValid && !validation.travelPending && !validation.pastDue
   const register = async () => {
     setRegistration((current) => ({ ...current, saving: true, error: '' }))
     try {
@@ -185,9 +185,11 @@ export default function ProposalDraftPlanner({ request, requests, technicians: r
               </Button>
             </Stack>
             <Typography variant="caption" color="text.secondary">
-              {validation.isValid && validation.travelPending
-                ? 'Enter every travel estimate before registering: a registered appointment reserves the technicians’ time.'
-                : 'Drafts are kept while navigating during the session; reloading removes them. Registered appointments are saved.'}
+              {validation.isValid && validation.pastDue
+                ? 'Choose a date on or before the due date to register this appointment.'
+                : validation.isValid && validation.travelPending
+                  ? 'Enter every travel estimate before registering: a registered appointment reserves the technicians’ time.'
+                  : 'Drafts are kept while navigating during the session; reloading removes them. Registered appointments are saved.'}
             </Typography>
           </Stack>
           <ProposalDayAgenda

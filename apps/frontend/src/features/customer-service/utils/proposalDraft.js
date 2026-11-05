@@ -157,6 +157,8 @@ export function validatePrototypeProposalDraft({ requestId, values, requests, te
     isValid: errors.length === 0, errors, warnings,
     // Registering reserves capacity, so every travel leg must be known first.
     travelPending: warnings.some((warning) => warning.travelPending),
+    // A date after the due date cannot be registered while on-time days remain.
+    pastDue: warnings.some((warning) => warning.pastDue),
     internalEnd: capacity.internalEnd, pickupEnd: capacity.pickupEnd, agenda,
     travelLegs: capacity.travelLegs, dateIsValid: dateCheck.dateIsValid,
   }

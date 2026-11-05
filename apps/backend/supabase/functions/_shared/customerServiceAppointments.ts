@@ -158,6 +158,11 @@ export function validateRegistration({ input, request, technicians, dayAppointme
     unavailableDates: request.customer_unavailable_dates ?? [], dueOn: request.due_on,
   });
   errors.push(...dateCheck.errors);
+  // A date after the due date is blocked while on-time days remain (approved
+  // 2026-11-05); an already overdue request keeps only the warning.
+  for (const warning of dateCheck.warnings) {
+    if (warning.pastDue) errors.push({ field: warning.field, message: warning.message });
+  }
 
   const ids = new Set(uniqueIds);
   const agenda = dayAppointments.flatMap((appointment) => appointment.technician_ids

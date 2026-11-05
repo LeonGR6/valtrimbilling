@@ -21,8 +21,8 @@ function formValues(settings) {
     coordinates: settings.companyLatitude != null && settings.companyLongitude != null
       ? `${settings.companyLatitude}, ${settings.companyLongitude}`
       : '',
-    workdayStartsAt: settings.workdayStartsAt?.slice(0, 5) ?? '08:00',
-    workdayEndsAt: settings.workdayEndsAt?.slice(0, 5) ?? '17:00',
+    workdayStartsAt: settings.workdayStartsAt?.slice(0, 5) ?? '07:00',
+    workdayEndsAt: settings.workdayEndsAt?.slice(0, 5) ?? '15:30',
     timeZone: settings.timeZone ?? 'America/Los_Angeles',
     defaultDurationMinutes: settings.defaultDurationMinutes ?? 60,
     distanceGreenMaxMiles: settings.distanceGreenMaxMiles ?? 10,

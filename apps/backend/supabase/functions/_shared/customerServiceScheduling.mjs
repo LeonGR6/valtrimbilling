@@ -94,8 +94,15 @@ export function checkVisitDate({ date, workStart, today, nowMinutes, unavailable
   else if (unavailableDates.includes(date)) {
     errors.push({ field: 'date', message: 'The customer has recorded this date as unavailable.' })
   }
+  // Approved 2026-11-05: a date after the due date blocks registration while
+  // on-time days remain (pastDue). A request that is already overdue can still
+  // be registered; it only carries the late warning. Drafts only warn.
   if (day && parseServiceDate(dueOn) && date > dueOn) {
-    warnings.push({ field: 'date', message: `This date is after the due date ${dueOn}. The work would be completed late.` })
+    if (today <= dueOn) {
+      warnings.push({ field: 'date', pastDue: true, message: `This date is after the due date ${dueOn}. Choose a date on or before the due date to register the appointment.` })
+    } else {
+      warnings.push({ field: 'date', message: `This request was due on ${dueOn}. The work will be completed late.` })
+    }
   }
   const start = timeToMinutes(workStart)
   if (day && date === today && start !== null && start <= nowMinutes) {

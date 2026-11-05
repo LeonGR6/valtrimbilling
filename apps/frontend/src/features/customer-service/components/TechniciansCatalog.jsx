@@ -15,6 +15,7 @@ import {
   formatPhoneNumber, getNationalPhoneNumber, getPhoneCountry,
 } from '../../../utils/phoneNumbers.js'
 import { technicianSchema } from '../schemas/technicianSchema.js'
+import { customerServiceWorkday } from '../utils/customerServiceScheduling.js'
 import {
   createTechnician, listTechnicians, updateTechnician,
 } from '../services/techniciansRepository.js'
@@ -28,8 +29,8 @@ function TechnicianDialog({ technician, onClose, onSave, saving }) {
       email: technician?.email ?? '',
       phone: getNationalPhoneNumber(technician?.phone ?? '', country),
       phoneCountry: country,
-      workdayStartsAt: technician?.workdayStartsAt ?? '08:00',
-      workdayEndsAt: technician?.workdayEndsAt ?? '17:00',
+      workdayStartsAt: technician?.workdayStartsAt ?? customerServiceWorkday.startsAt,
+      workdayEndsAt: technician?.workdayEndsAt ?? customerServiceWorkday.endsAt,
     },
     mode: 'onTouched',
   })

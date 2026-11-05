@@ -102,6 +102,24 @@ Deno.test("the server rejects conflicts, short travel, late pickup and the wrong
   }
 });
 
+Deno.test("a date after the due date is blocked only while on-time days remain", () => {
+  // Due Friday 2026-11-06 (today): Monday is late and on-time days remain → blocked.
+  const blocked = validateRegistration({
+    input: input({ travelMinutes: { "10>20": 30 } }), request: { ...request, due_on: "2026-11-06" },
+    technicians, dayAppointments: [earlier], now,
+  });
+  assert(!blocked.rpcArgs);
+  assert(blocked.errors.some((error) => error.message.startsWith("This date is after the due date 2026-11-06.")));
+
+  // Already overdue (due 2026-09-04): registering stays possible.
+  const overdue = validateRegistration({
+    input: input({ travelMinutes: { "10>20": 30 } }), request: { ...request, due_on: "2026-09-04" },
+    technicians, dayAppointments: [earlier], now,
+  });
+  assertEquals(overdue.errors, []);
+  assert(overdue.rpcArgs);
+});
+
 Deno.test("a crew of two is checked against both technicians' days", () => {
   const result = validateRegistration({
     input: input({ technicianIds: [4, 5], windowStart: "08:00", workStart: "08:00" }),

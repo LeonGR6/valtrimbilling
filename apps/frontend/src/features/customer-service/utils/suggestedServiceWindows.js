@@ -1,4 +1,5 @@
 import { calculateBusinessDueDate } from '../schemas/persistedCustomerServiceSchema.js'
+import { customerServiceWorkday } from './customerServiceScheduling.js'
 
 function zonedParts(instant, timeZone) {
   const parts = Object.fromEntries(
@@ -32,20 +33,23 @@ export function suggestServiceWorkdays(
   savedDueOn = null,
 ) {
   const timeZone = settings.timeZone ?? 'America/Los_Angeles'
-  const workdayStart = (settings.workdayStartsAt ?? '08:00').slice(0, 5)
-  const workdayEnd = (settings.workdayEndsAt ?? '17:00').slice(0, 5)
+  const workdayStart = (settings.workdayStartsAt ?? customerServiceWorkday.startsAt).slice(0, 5)
+  const workdayEnd = (settings.workdayEndsAt ?? customerServiceWorkday.endsAt).slice(0, 5)
   const created = zonedParts(new Date(createdAt), timeZone)
   const createdOn = created.date
   const deadlineStart = new Date(`${createdOn}T12:00:00Z`)
   if (created.time >= workdayEnd) {
     deadlineStart.setUTCDate(deadlineStart.getUTCDate() + 1)
   }
-  const startOn = calculateBusinessDueDate(
-    deadlineStart.toISOString().slice(0, 10),
-    1,
-  )
+  // First business day the request can be worked (the next one if it arrived
+  // after hours or on a weekend).
+  while (deadlineStart.getUTCDay() === 0 || deadlineStart.getUTCDay() === 6) {
+    deadlineStart.setUTCDate(deadlineStart.getUTCDate() + 1)
+  }
+  const startOn = deadlineStart.toISOString().slice(0, 10)
+  // Same base as the database trigger: counted from the reported day.
   const dueOn = savedDueOn ?? calculateBusinessDueDate(
-    startOn,
+    createdOn,
     settings.businessDaysToComplete ?? 5,
   )
   const current = zonedParts(now, timeZone)

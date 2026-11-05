@@ -56,8 +56,8 @@ select is(
     from valtrim.service_scheduling_settings settings
     where settings.id = 1
   ),
-  time '17:00',
-  'The Valtrim workday ends at 5:00 PM'
+  time '15:30',
+  'The Valtrim workday ends at 3:30 PM (confirmed 5 Nov 2026)'
 );
 
 select hasnt_column(
@@ -72,9 +72,9 @@ select ok(
     select 1
     from valtrim.service_technician_profiles profile
     where profile.workday_starts_at <> time '07:00'
-      or profile.workday_ends_at <> time '17:00'
+      or profile.workday_ends_at <> time '15:30'
   ),
-  'Existing technician profiles use the 7:00 AM to 5:00 PM workday'
+  'Existing technician profiles use the 7:00 AM to 3:30 PM workday'
 );
 
 select is(

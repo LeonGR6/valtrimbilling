@@ -18,6 +18,7 @@ import {
   UsersPage,
 } from './lazyPages.jsx'
 import { ADMIN_ROLES, PAGE_ROLES } from '../features/auth/authorization/roleAccess.js'
+import { CHANGE_ORDERS_ENABLED } from '../config/appConfig.js'
 
 // Who may open each page: the roles that work there, plus the observers
 // (FIELD, READ_ONLY) who only look. Home has no list, so everyone opens it.
@@ -31,6 +32,20 @@ const {
 
 // Single source of truth for the app's navigable routes.
 // Both AppRoutes and the Sidebar read from here.
+const changeOrdersRoute = {
+  path: '/change-orders',
+  label: 'Extra / Change Orders',
+  icon: 'change-orders',
+  element: <ChangeOrdersPage />,
+  allowedRoles: planningPage,
+}
+
+const changeOrdersContextualRoutes = [
+  { path: '/change-orders/new', element: <NewChangeOrderPage />, allowedRoles: planningPage },
+  { path: '/change-orders/:changeOrderId', element: <ChangeOrderDetailPage />, allowedRoles: planningPage },
+  { path: '/change-orders/:changeOrderId/edit', element: <EditChangeOrderPage />, allowedRoles: planningPage },
+]
+
 export const navigationRoutes = [
   { path: '/', label: 'Home', icon: 'home', element: <HomePage /> },
   {
@@ -55,13 +70,7 @@ export const navigationRoutes = [
     element: <DrawAndInvoicePage />,
     allowedRoles: billingPage,
   },
-  {
-    path: '/change-orders',
-    label: 'Extra / Change Orders',
-    icon: 'change-orders',
-    element: <ChangeOrdersPage />,
-    allowedRoles: planningPage,
-  },
+  ...(CHANGE_ORDERS_ENABLED ? [changeOrdersRoute] : []),
   {
     path: '/builder-draw-schedules',
     label: 'Builder Setup',
@@ -107,9 +116,7 @@ export const navigationRoutes = [
 // sidebar continues to link to each module's general entry point. They answer
 // to the same roles as the page they belong to.
 export const contextualRoutes = [
-  { path: '/change-orders/new', element: <NewChangeOrderPage />, allowedRoles: planningPage },
-  { path: '/change-orders/:changeOrderId', element: <ChangeOrderDetailPage />, allowedRoles: planningPage },
-  { path: '/change-orders/:changeOrderId/edit', element: <EditChangeOrderPage />, allowedRoles: planningPage },
+  ...(CHANGE_ORDERS_ENABLED ? changeOrdersContextualRoutes : []),
   { path: '/jobs/builder/:builderId', element: <JobsPage />, allowedRoles: planningPage },
   {
     path: '/jobs/builder/:builderId/job/:jobId/plans-options',

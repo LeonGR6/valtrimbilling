@@ -2,6 +2,9 @@ import { lazy } from 'react'
 
 export const CalendarPage = lazy(() => import('../pages/Calendar'))
 export const ChangeOrdersPage = lazy(() => import('../pages/ChangeOrders'))
+export const NewChangeOrderPage = lazy(() => import('../pages/ChangeOrders/NewChangeOrder.jsx'))
+export const EditChangeOrderPage = lazy(() => import('../pages/ChangeOrders/EditChangeOrder.jsx'))
+export const ChangeOrderDetailPage = lazy(() => import('../pages/ChangeOrders/ChangeOrderDetail.jsx'))
 export const BuilderDrawSchedulesPage = lazy(() => import('../pages/BuilderDrawSchedules'))
 export const FinancialsPage = lazy(() => import('../pages/Financials'))
 export const HomePage = lazy(() => import('../pages/Home'))

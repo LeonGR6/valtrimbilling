@@ -41,7 +41,6 @@ import PeopleAltRoundedIcon from '@mui/icons-material/PeopleAltRounded'
 import ApartmentRoundedIcon from '@mui/icons-material/ApartmentRounded'
 import HomeWorkRoundedIcon from '@mui/icons-material/HomeWorkRounded'
 import DomainRoundedIcon from '@mui/icons-material/DomainRounded'
-import AddIcon from '@mui/icons-material/Add'
 import ManageAccountsRoundedIcon from '@mui/icons-material/ManageAccountsRounded'
 import SettingsRoundedIcon from '@mui/icons-material/SettingsRounded'
 import BallotIcon from '@mui/icons-material/Ballot';
@@ -57,11 +56,7 @@ import valtrimLogoLight from '../../../assets/icons/Valtrim-Blue-Transparent.png
 import { navigationRoutes } from '../../../routes/navigation.jsx'
 import ColorModeToggle from '../../common/ColorModeToggle'
 import { useAuth } from '../../../features/auth/context/useAuth.js'
-import {
-  PLANNING_ROLES,
-  canWork,
-  isRoleAllowed,
-} from '../../../features/auth/authorization/roleAccess.js'
+import { isRoleAllowed } from '../../../features/auth/authorization/roleAccess.js'
 import { MANUAL_SIGN_OUT_STORAGE_KEY } from '../../../config/appConfig.js'
 import { useSidebarBadges } from './useSidebarBadges.js'
 import { hasAvailableItem as hasAvailableSectionItem, sectionsForRole } from './sidebarSections.js'
@@ -333,7 +328,6 @@ function SidebarContent({ onNavigate, collapsed = false, onToggleCollapsed, badg
     accessByPath: routeAccessByPath,
     availablePaths,
   }), [profile?.role])
-  const canCreateJobs = canWork(profile?.role, PLANNING_ROLES)
   const [signOutDialogOpen, setSignOutDialogOpen] = useState(false)
   const [signingOut, setSigningOut] = useState(false)
   const [signOutError, setSignOutError] = useState(null)
@@ -410,32 +404,6 @@ function SidebarContent({ onNavigate, collapsed = false, onToggleCollapsed, badg
           </Tooltip>
         )}
       </Box>
-
-      {/* Create starts a Job, which is the work of Project Management. */}
-      {canCreateJobs && (
-        <Box sx={{ px: 1.5, pb: 1, display: 'flex', justifyContent: 'center' }}>
-          <Tooltip title={collapsed ? 'Create' : ''} placement="right">
-            <Button
-              component={NavLink}
-              startIcon={collapsed ? null : <AddIcon />}
-              to="/jobs?create=1"
-              onClick={onNavigate}
-              variant="contained"
-              color="primary"
-              fullWidth={!collapsed}
-              aria-label="Create"
-              sx={{
-                fontSize: 14,
-                fontWeight: 600,
-                textTransform: 'none',
-                ...(collapsed && { minWidth: 40, width: 40, height: 40, p: 0 }),
-              }}
-            >
-              {collapsed ? <AddIcon /> : 'Create'}
-            </Button>
-          </Tooltip>
-        </Box>
-      )}
 
       {/* Navigation is organized by workflow; future modules stay visible but disabled. */}
       <Box

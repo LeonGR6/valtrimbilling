@@ -1,5 +1,5 @@
-import { CatalogPageHeader } from '../../components/common/CatalogPage'
+import { ChangeOrdersList } from '../../features/change-orders'
 
 export default function ChangeOrdersPage() {
-  return <CatalogPageHeader title="Extra / Change Orders" />
+  return <ChangeOrdersList />
 }

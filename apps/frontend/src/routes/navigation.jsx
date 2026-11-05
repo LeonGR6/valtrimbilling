@@ -1,6 +1,9 @@
 import {
   CalendarPage,
   ChangeOrdersPage,
+  NewChangeOrderPage,
+  ChangeOrderDetailPage,
+  EditChangeOrderPage,
   BuilderDrawSchedulesPage,
   FinancialsPage,
   HomePage,
@@ -104,6 +107,9 @@ export const navigationRoutes = [
 // sidebar continues to link to each module's general entry point. They answer
 // to the same roles as the page they belong to.
 export const contextualRoutes = [
+  { path: '/change-orders/new', element: <NewChangeOrderPage />, allowedRoles: planningPage },
+  { path: '/change-orders/:changeOrderId', element: <ChangeOrderDetailPage />, allowedRoles: planningPage },
+  { path: '/change-orders/:changeOrderId/edit', element: <EditChangeOrderPage />, allowedRoles: planningPage },
   { path: '/jobs/builder/:builderId', element: <JobsPage />, allowedRoles: planningPage },
   {
     path: '/jobs/builder/:builderId/job/:jobId/plans-options',

@@ -5,8 +5,8 @@ import {
 } from '@mui/material'
 import { serviceCustomerWindowOptions } from '../data/serviceCalendarEvents.js'
 import {
-  changePrototypeProposalWindow, getPrototypePlanningTechnicians, proposalDraftFormValues, proposalDraftHasChanges, proposalPlanningSignature,
-  validatePrototypeProposalDraft,
+  changePrototypeProposalWindow, changePrototypeTravelMinutes, getPrototypePlanningTechnicians, proposalDraftFormValues, proposalDraftHasChanges,
+  proposalPlanningSignature, validatePrototypeProposalDraft,
 } from '../utils/proposalDraft.js'
 import { getCustomerServiceClock } from '../utils/dates.js'
 import ProposalDayAgenda from './ProposalDayAgenda.jsx'
@@ -44,7 +44,7 @@ export default function ProposalDraftPlanner({ request, requests, technicians: r
         </Box>
         <Alert severity="info" variant="outlined">
           Technicians come from the independent simulation roster. This checks recorded Customer Service availability,
-          not the live technician roster, Production work or travel times. No fixed travel buffer is added.
+          not the live technician roster or Production work. Travel uses manual estimates only; no fixed travel buffer is added.
         </Alert>
         {technicians.length === 0 && <Alert severity="warning">No technicians are recorded in this simulation. A draft cannot be saved until technician data is available.</Alert>}
         {savedIsStale && <Alert severity="warning" variant="outlined">The request changed after this draft was saved. Review the selection and save it again using the current duration and crew.</Alert>}
@@ -90,7 +90,7 @@ export default function ProposalDraftPlanner({ request, requests, technicians: r
                   </MenuItem>
                 ))}
               </Select>
-              <FormHelperText>The full window must be available for every selected technician.</FormHelperText>
+              <FormHelperText>Work plus 10 minutes of pickup must finish before the window closes.</FormHelperText>
             </FormControl>
             <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
               <TextField
@@ -98,17 +98,55 @@ export default function ProposalDraftPlanner({ request, requests, technicians: r
                 onChange={(event) => change('internalStart', event.target.value)}
                 slotProps={{ inputLabel: { shrink: true } }}
                 error={Boolean(values.internalStart && errorFor('internalStart'))}
-                helperText={errorFor('internalStart') ?? 'Changing the window resets this start. Adjust it inside the window; reserved time stays blocked.'}
+                helperText={errorFor('internalStart') ?? 'Changing the window resets this start. Adjust it inside the window.'}
               />
               <TextField label="Internal work ends" type="time" value={validation.internalEnd} fullWidth
                 slotProps={{ inputLabel: { shrink: true }, htmlInput: { readOnly: true } }}
-                helperText="Calculated using the reviewed work duration, not the two-hour window." />
+                helperText={validation.pickupEnd
+                  ? `Reviewed work duration. Pickup until ${validation.pickupEnd}.`
+                  : 'Calculated using the reviewed work duration, not the two-hour window.'} />
             </Stack>
+            {validation.travelLegs.length > 0 && (
+              <Stack spacing={1.5}>
+                <Box>
+                  <Typography variant="subtitle2" fontWeight={800}>Travel between visits · Manual estimate</Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    Minutes from leaving one visit (after pickup) to starting the next. Not a Google Maps result. Leave blank if unknown.
+                  </Typography>
+                </Box>
+                {validation.travelLegs.map((leg) => (
+                  <TextField
+                    key={leg.key}
+                    label={`${leg.fromLabel} → ${leg.toLabel} (minutes)`}
+                    type="number"
+                    value={values.travelMinutes?.[leg.key] ?? ''}
+                    onChange={(event) => {
+                      setSaveError('')
+                      setValues((current) => changePrototypeTravelMinutes(current, leg.key, event.target.value))
+                    }}
+                    slotProps={{ htmlInput: { min: 0, max: 999, step: 1, inputMode: 'numeric' } }}
+                    helperText={leg.minutes === null
+                      ? `Travel time pending · ${leg.technicianNames.join(', ')}`
+                      : `Manual estimate · ${leg.technicianNames.join(', ')}`}
+                    fullWidth
+                  />
+                ))}
+              </Stack>
+            )}
             <Alert severity={validation.isValid ? 'success' : 'warning'} variant="outlined">
-              {validation.isValid ? 'No conflicts found in the recorded Customer Service schedule. The draft can be saved.' : (
-                <Box component="ul" sx={{ m: 0, pl: 2 }}>{validation.errors.map((error, index) => <li key={`${error.field}-${index}`}>{error.message}</li>)}</Box>
-              )}
+              {validation.isValid
+                ? (validation.warnings.length
+                  ? 'No conflicts found with the data available. The draft can be saved, but the items below are not verified.'
+                  : 'No conflicts found in the recorded Customer Service schedule. The draft can be saved.')
+                : (
+                  <Box component="ul" sx={{ m: 0, pl: 2 }}>{validation.errors.map((error, index) => <li key={`${error.field}-${index}`}>{error.message}</li>)}</Box>
+                )}
             </Alert>
+            {validation.warnings.length > 0 && (
+              <Alert severity="info" variant="outlined">
+                <Box component="ul" sx={{ m: 0, pl: 2 }}>{validation.warnings.map((warning, index) => <li key={`${warning.field}-${index}`}>{warning.message}</li>)}</Box>
+              </Alert>
+            )}
             {saveError && <Alert severity="error">{saveError}</Alert>}
             <Button variant="contained" onClick={save} disabled={!validation.isValid} sx={{ alignSelf: 'flex-start' }}>
               {savedDraft ? 'Update proposal draft' : 'Save proposal draft'}
@@ -117,7 +155,14 @@ export default function ProposalDraftPlanner({ request, requests, technicians: r
               Save to keep this selection while navigating during the session. Reloading restores the mocks and removes drafts.
             </Typography>
           </Stack>
-          <ProposalDayAgenda date={validation.dateIsValid ? values.date : ''} agenda={validation.agenda} hasTechnicians={values.technicianIds.length > 0} />
+          <ProposalDayAgenda
+            date={validation.dateIsValid ? values.date : ''}
+            agenda={validation.agenda}
+            hasTechnicians={values.technicianIds.length > 0}
+            proposedVisit={validation.internalEnd && validation.pickupEnd
+              ? { label: request.requestNumber, start: values.internalStart, workEnd: validation.internalEnd, end: validation.pickupEnd }
+              : null}
+          />
         </Box>
       </Stack>
     </Paper>

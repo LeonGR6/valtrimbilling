@@ -33,7 +33,7 @@ test('Proposal Workspace never permits editing, including its full request dialo
   for (const request of requests) {
     assert.equal(canEditRequestInView(request, 'PROPOSALS'), false)
     assert.equal(canEditRequestInView(request, 'REQUESTS'), ['NEEDS_REVIEW', 'READY_TO_PROPOSE'].includes(request.workflowStage))
-    assert.equal(canEditRequestInView(request, 'CALENDAR'), ['CONFIRMED', 'COMPLETED'].includes(request.workflowStage))
+    assert.equal(canEditRequestInView(request, 'CALENDAR'), ['CONFIRMED', 'WORKING', 'COMPLETED'].includes(request.workflowStage))
   }
   assert.equal(canEditRequestInView(null, 'REQUESTS'), false)
 })
@@ -166,7 +166,7 @@ test('list, selection and detail resolve the same current phase for each view', 
   assert.equal(findRequestForView(changed, reviewed.id, 'PROPOSALS'), null)
   assert.strictEqual(findRequestForView(changed, reviewed.id, 'REQUESTS'), pending)
   for (const request of requestsForView(requests, 'CALENDAR')) {
-    assert.ok(['CONFIRMED', 'COMPLETED'].includes(request.workflowStage))
+    assert.ok(['CONFIRMED', 'WORKING', 'COMPLETED'].includes(request.workflowStage))
     assert.equal(findRequestForView(requests, request.id, 'PROPOSALS'), null)
     assert.strictEqual(findRequestForView(requests, request.id, 'CALENDAR'), request)
   }

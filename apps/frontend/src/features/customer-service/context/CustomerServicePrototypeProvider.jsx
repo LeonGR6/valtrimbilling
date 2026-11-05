@@ -6,6 +6,12 @@ import { createCustomerServiceRequestStore } from './customerServiceRequestStore
 import { CustomerServicePrototypeContext } from './customerServicePrototypeContext.js'
 import { requireSupabase } from '../../../services/api.js'
 import { createCustomerServiceEmailAutomationMonitor } from '../services/customerServiceEmailAutomation.js'
+import { createCustomerServiceTestAppointments } from '../data/customerServiceTestAppointments.js'
+
+// Local planning checks only: never in a production build, and only with the flag set
+// in apps/frontend/.env.development.local.
+const showTestAppointments = import.meta.env.DEV
+  && import.meta.env.VITE_CUSTOMER_SERVICE_TEST_APPOINTMENTS === 'true'
 
 // Requests come from Supabase. Proposal drafts and technician planning remain in memory.
 export default function CustomerServicePrototypeProvider({ children }) {
@@ -16,6 +22,7 @@ export default function CustomerServicePrototypeProvider({ children }) {
     [profile?.id, profile?.role])
   const state = useSyncExternalStore(store.subscribe, store.getSnapshot)
   const [proposalDrafts, setProposalDrafts] = useState({})
+  const [testAppointments] = useState(() => (showTestAppointments ? createCustomerServiceTestAppointments() : []))
   const [emailAutomation, setEmailAutomation] = useState(null)
   const [emailAutomationError, setEmailAutomationError] = useState(null)
   const automationMonitor = useRef(null)
@@ -48,6 +55,7 @@ export default function CustomerServicePrototypeProvider({ children }) {
   }, [profile?.id, profile?.role, profile?.isActive, store])
   const value = useMemo(() => ({
     ...state,
+    requests: testAppointments.length ? [...state.requests, ...testAppointments] : state.requests,
     emailAutomation, emailAutomationError,
     refreshEmailAutomation: () => automationMonitor.current?.refresh(),
     setRequests: store.setRequests,
@@ -60,7 +68,7 @@ export default function CustomerServicePrototypeProvider({ children }) {
     retrySourcePdf: (id) => store.retrySourcePdf(id),
     proposalDrafts, setProposalDrafts,
     technicians: prototypeTechnicians,
-  }), [state, store, proposalDrafts, emailAutomation, emailAutomationError])
+  }), [state, store, proposalDrafts, emailAutomation, emailAutomationError, testAppointments])
   return (
     <CustomerServicePrototypeContext.Provider value={value}>
       {children}

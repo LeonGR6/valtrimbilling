@@ -162,6 +162,22 @@ test('a confirmed multi-technician prototype visit is shown once and filters for
   assert.equal(filterServiceCalendarEvents(events, { technician: 'not-assigned' }).length, 0)
 })
 
+test('an in-progress visit stays on the calendar and visits sharing a window keep their own work times', () => {
+  const shared = { workType: 'Doors', technicianIds: ['prototype-Jorge Murillo'], customerWindow: { date: '2026-10-14', start: '08:00', end: '10:00' } }
+  const events = createServiceCalendarEventsFromRequests([
+    { ...shared, id: 'working-visit', workflowStage: 'WORKING', internalSlot: { start: '08:00', end: '08:30' } },
+    { ...shared, id: 'later-visit', workflowStage: 'CONFIRMED', internalSlot: { start: '08:50', end: '09:20' } },
+    { ...shared, id: 'pending-visit', workflowStage: 'AWAITING_CUSTOMER', internalSlot: { start: '09:30', end: '09:50' } },
+  ])
+  assert.deepEqual(events.map((event) => event.extendedProps.status), ['WORKING', 'CONFIRMED'])
+  assert.ok(events.every((event) => event.start === '2026-10-14T08:00:00' && event.end === '2026-10-14T10:00:00'))
+  assert.deepEqual(events.map((event) => event.extendedProps.internalSlot), [
+    { start: '08:00', end: '08:30' }, { start: '08:50', end: '09:20' },
+  ])
+  assert.equal(getServiceEventTone('WORKING'), 'confirmed')
+  assert.equal(filterServiceCalendarEvents(events, { status: 'WORKING' }).length, 1)
+})
+
 test('work categories normalize current names and historical codes without guessing', () => {
   assert.deepEqual(normalizeServiceWorkTypes(' hardware '), ['Hardware'])
   assert.deepEqual(normalizeServiceWorkTypes('WS'), ['Woodwork'])

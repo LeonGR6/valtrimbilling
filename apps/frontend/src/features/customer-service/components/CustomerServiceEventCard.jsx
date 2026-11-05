@@ -26,6 +26,16 @@ function formatTimeRange(event) {
     : timeFormatter.format(start)
 }
 
+// Several visits can share a customer window; the work time tells them apart.
+function formatWorkSlot(slot) {
+  if (!/^\d{2}:\d{2}$/u.test(slot?.start ?? '') || !/^\d{2}:\d{2}$/u.test(slot?.end ?? '')) return ''
+  const at = (time) => {
+    const [hours, minutes] = time.split(':').map(Number)
+    return timeFormatter.format(new Date(2000, 0, 1, hours, minutes))
+  }
+  return `Work ${at(slot.start)} – ${at(slot.end)}`
+}
+
 function formatPreviousVisit(lastVisit) {
   if (!lastVisit?.date) return 'No previous visits'
   const date = new Date(`${lastVisit.date}T12:00:00`)
@@ -81,7 +91,7 @@ export default function CustomerServiceEventCard({ event, displayMode = 'timed' 
     <Box className={`service-work-event service-tone--${tone}`}>
       <Box className="service-work-event__topline">
         <strong>CS · {workTypes}</strong>
-        <span>{props.status === 'CONFIRMED' ? 'Confirmed' : props.status?.toLowerCase()}</span>
+        <span>{props.status === 'CONFIRMED' ? 'Confirmed' : props.status === 'WORKING' ? 'In progress' : props.status?.toLowerCase()}</span>
       </Box>
       <span className="service-work-event__property">
         {props.community} · Lot {props.lotNumber}
@@ -90,6 +100,9 @@ export default function CustomerServiceEventCard({ event, displayMode = 'timed' 
         {formatTimeRange(event)}
         {props.customerWindow?.exceptional ? ' · Exception window' : ''}
       </span>
+      {formatWorkSlot(props.internalSlot) && (
+        <span className="service-work-event__time">{formatWorkSlot(props.internalSlot)}</span>
+      )}
       <span className="service-work-event__history">
         {formatPreviousVisit(props.lastVisit)}
       </span>

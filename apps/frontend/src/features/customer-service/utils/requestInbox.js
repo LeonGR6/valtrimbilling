@@ -7,7 +7,7 @@ import { getCustomerServiceClock } from './dates.js'
 export const requestViewStages = {
   REQUESTS: ['NEEDS_REVIEW', 'READY_TO_PROPOSE'],
   PROPOSALS: ['READY_TO_PROPOSE', 'AWAITING_CUSTOMER', 'NEEDS_CONTACT'],
-  CALENDAR: ['CONFIRMED', 'COMPLETED'],
+  CALENDAR: ['CONFIRMED', 'WORKING', 'COMPLETED'],
 }
 
 export const defaultProposalStage = 'READY_TO_PROPOSE'
@@ -103,7 +103,8 @@ export function findRequestForView(requests, requestId, view = 'REQUESTS') {
 }
 
 export function canEditRequestInView(request, view = 'REQUESTS') {
-  return Boolean(request) && view !== 'PROPOSALS'
+  // Local test appointments are read-only: they do not exist in Supabase.
+  return Boolean(request) && !request.testFixture && view !== 'PROPOSALS'
     && requestsForView([request], view).length > 0
 }
 

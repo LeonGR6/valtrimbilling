@@ -1,5 +1,5 @@
 import { Alert, Box, Stack, Typography } from '@mui/material'
-import { useColorScheme } from '@mui/material/styles'
+import { useColorScheme, useTheme } from '@mui/material/styles'
 import FullCalendar from '@fullcalendar/react'
 import timeGridPlugin from '@fullcalendar/timegrid'
 import { formatLongDate, formatTime } from '../utils/dates.js'
@@ -7,7 +7,8 @@ import { prototypePlanningHours } from '../utils/proposalDraft.js'
 import '../../calendar/components/CalendarScheduler.css'
 import './CustomerServiceCalendar.css'
 
-export default function ProposalDayAgenda({ date, agenda, hasTechnicians }) {
+export default function ProposalDayAgenda({ date, agenda, hasTechnicians, proposedVisit = null }) {
+  const theme = useTheme()
   const { mode, systemMode } = useColorScheme()
   const colorMode = (mode === 'system' ? systemMode : mode) === 'dark' ? 'dark' : 'light'
   if (!hasTechnicians) return <Alert severity="info" variant="outlined">Select technicians to view their recorded daily agenda.</Alert>
@@ -19,12 +20,22 @@ export default function ProposalDayAgenda({ date, agenda, hasTechnicians }) {
     backgroundColor: entry.stage === 'AWAITING_CUSTOMER' ? '#9a6700' : entry.stage === 'COMPLETED' ? '#64748b' : '#1d4ed8',
     borderColor: 'transparent', extendedProps: entry,
   }))
+  // Preview of the visit being planned. It is not reserved until the proposal is sent.
+  if (proposedVisit) {
+    events.push({
+      id: 'proposed-visit',
+      title: `${proposedVisit.label} · Proposed`,
+      start: `${date}T${proposedVisit.start}:00`, end: `${date}T${proposedVisit.end}:00`,
+      backgroundColor: theme.palette.secondary.main, borderColor: 'transparent',
+      extendedProps: { proposed: true, ...proposedVisit },
+    })
+  }
   return (
     <Stack spacing={1.5}>
       <Typography variant="subtitle1" fontWeight={800}>Technician agenda · {formatLongDate(date)} · California time</Typography>
       <Typography variant="caption" color="text.secondary">
-        Confirmed visits and sent proposals reserve the full two-hour customer window, plus any internal work extending beyond it.
-        Moving the internal start does not free part of that window.
+        Confirmed, in-progress and sent visits reserve their work time plus 10 minutes of pickup, not the whole customer window.
+        A visit without recorded work time keeps its whole window reserved.
         Drafts do not reserve time or appear in Calendar.
       </Typography>
       {agenda.length === 0 && <Alert severity="info" variant="outlined">No Customer Service appointments or sent proposals are recorded for these technicians on this date.</Alert>}
@@ -51,14 +62,24 @@ export default function ProposalDayAgenda({ date, agenda, hasTechnicians }) {
             eventMinHeight={54}
             eventContent={({ event }) => {
               const entry = event.extendedProps
+              if (entry.proposed) {
+                return (
+                  <Box sx={{ px: 0.75, py: 0.25, overflow: 'hidden', fontSize: '0.72rem', color: 'secondary.contrastText' }}
+                    title={`${event.title} · Not reserved until the proposal is sent`}>
+                    <Typography component="div" variant="caption" fontWeight={800}>{event.title}</Typography>
+                    <div>Work: {formatTime(entry.start)}–{formatTime(entry.workEnd)} · Pickup until {formatTime(entry.end)}</div>
+                    <div>Preview · not reserved</div>
+                  </Box>
+                )
+              }
               return (
                 <Box sx={{ px: 0.75, py: 0.25, overflow: 'hidden', fontSize: '0.72rem', color: '#fff' }}
                   title={`${event.title} · ${entry.issue} · ${entry.stage === 'AWAITING_CUSTOMER' ? 'Reserved pending customer response' : entry.stage}`}>
                   <Typography component="div" variant="caption" fontWeight={800}>{event.title}</Typography>
                   <div>{formatTime(entry.start)}–{formatTime(entry.end)} · {entry.blocksAvailability ? 'Reserved time' : 'Visit time'}</div>
-                  <div>{entry.stage === 'AWAITING_CUSTOMER' ? 'Awaiting customer · Reserved' : entry.stage === 'COMPLETED' ? 'Completed' : 'Confirmed'}</div>
+                  <div>{entry.stage === 'AWAITING_CUSTOMER' ? 'Awaiting customer · Reserved' : entry.stage === 'COMPLETED' ? 'Completed' : entry.stage === 'WORKING' ? 'In progress' : 'Confirmed'}</div>
                   <div>Customer: {entry.windowUncertain ? 'Window missing or invalid' : `${formatTime(entry.customerWindow.start)}–${formatTime(entry.customerWindow.end)}`}</div>
-                  <div>Internal: {entry.timingUncertain ? 'Timing missing' : `${formatTime(entry.internalSlot.start)}–${formatTime(entry.internalSlot.end)}`}</div>
+                  <div>Work: {entry.timingUncertain ? 'Timing missing · whole window reserved' : `${formatTime(entry.internalSlot.start)}–${formatTime(entry.internalSlot.end)} · Pickup until ${formatTime(entry.end)}`}</div>
                 </Box>
               )
             }}

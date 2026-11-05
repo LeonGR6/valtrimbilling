@@ -38,6 +38,7 @@ export function filterServiceCalendarEvents(events, {
 export const serviceAppointmentStatusOptions = [
   { value: 'SCHEDULED', label: 'Scheduled' },
   { value: 'CONFIRMED', label: 'Confirmed' },
+  { value: 'WORKING', label: 'In progress' },
   { value: 'OVERDUE', label: 'Overdue' },
   { value: 'COMPLETED', label: 'Completed' },
   { value: 'CANCELLED', label: 'Cancelled' },
@@ -123,7 +124,7 @@ export function getServiceCalendarViewDescription(viewType) {
   if (viewType === 'timeGridDay') {
     return 'Daily route · Customer windows: 8–10, 10–12 and 12–2'
   }
-  return 'Weekly schedule · Requests occupy their complete two-hour customer window'
+  return 'Weekly schedule · Appointments are shown by their two-hour customer window'
 }
 
 export function formatWorkTypes(workTypes = []) {
@@ -135,12 +136,13 @@ export function getServiceEventTone(status) {
   if (status === 'COMPLETED') return 'completed'
   if (status === 'OVERDUE') return 'overdue'
   if (status === 'CANCELLED') return 'cancelled'
-  if (status === 'CONFIRMED') return 'confirmed'
+  // An in-progress visit is still a confirmed appointment; it shares that tone.
+  if (status === 'CONFIRMED' || status === 'WORKING') return 'confirmed'
   return 'scheduled'
 }
 
 function createPrototypeCalendarEvent(request) {
-  const isCalendarVisit = ['CONFIRMED', 'COMPLETED'].includes(request.workflowStage)
+  const isCalendarVisit = ['CONFIRMED', 'WORKING', 'COMPLETED'].includes(request.workflowStage)
   const date = request.customerWindow?.date
   const customerWindow = resolveServiceCustomerWindow(
     request.customerWindow?.start,
@@ -166,7 +168,7 @@ function createPrototypeCalendarEvent(request) {
       calendarType: 'CUSTOMER_SERVICE',
       requestId: request.id,
       requestNumber: request.requestNumber,
-      status: request.workflowStage === 'COMPLETED' ? 'COMPLETED' : 'CONFIRMED',
+      status: ['COMPLETED', 'WORKING'].includes(request.workflowStage) ? request.workflowStage : 'CONFIRMED',
       workTypes,
       technicianId,
       technicianIds,

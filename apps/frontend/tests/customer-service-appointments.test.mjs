@@ -1,0 +1,77 @@
+import test from 'node:test'
+import assert from 'node:assert/strict'
+import customerServiceMockDatabase from '../src/features/customer-service/data/customerServiceMockDatabase.js'
+import {
+  applyAppointmentsToRequests, toPlanningTechnicians, travelEstimatesToMinutes,
+} from '../src/features/customer-service/utils/appointmentRecords.js'
+import { buildAppointmentRegistration, validatePrototypeProposalDraft } from '../src/features/customer-service/utils/proposalDraft.js'
+import { createServiceCalendarEventsFromRequests } from '../src/features/customer-service/data/serviceCalendarEvents.js'
+
+const roster = [
+  { id: 4, name: 'Jorge Murillo', isActive: true },
+  { id: 5, name: 'Helper', isActive: true },
+  { id: 6, name: 'Former technician', isActive: false },
+]
+const technicians = toPlanningTechnicians(roster)
+const confirmed = { ...customerServiceMockDatabase.requests.find((request) => request.workflowStage === 'CONFIRMED'), id: 10, requestNumber: 'SR-10' }
+delete confirmed.technicianIds
+delete confirmed.customerWindow
+delete confirmed.internalSlot
+const ready = {
+  ...customerServiceMockDatabase.requests.find((request) => request.workflowStage === 'READY_TO_PROPOSE'),
+  id: 20, requestNumber: 'SR-20', customerUnavailableDates: [], dueOn: '2026-11-13', updatedAt: '2026-11-05T10:00:00Z',
+}
+// Monday 2026-11-09, 08:00–10:00 window (PST), work 08:00–08:30, crew of two.
+const appointment = {
+  id: 7, request_id: 10, technician_ids: [4, 5],
+  window_starts_at: '2026-11-09T16:00:00Z', window_ends_at: '2026-11-09T18:00:00Z',
+  starts_at: '2026-11-09T16:00:00Z', ends_at: '2026-11-09T16:30:00Z', pickup_minutes: 10,
+  state: 'SCHEDULED', acceptance: 'CUSTOMER_ACCEPTED_PROPOSAL', updated_at: '2026-11-05T11:00:00Z',
+}
+const now = new Date('2026-11-06T17:00:00Z')
+
+test('the planner uses active catalog technicians with string ids', () => {
+  assert.deepEqual(technicians, [{ id: '4', name: 'Jorge Murillo' }, { id: '5', name: 'Helper' }])
+})
+
+test('a saved appointment is shown in California time on its request', () => {
+  const [mapped, untouched] = applyAppointmentsToRequests([confirmed, ready], [appointment], roster)
+  assert.deepEqual(mapped.customerWindow, { date: '2026-11-09', start: '08:00', end: '10:00' })
+  assert.deepEqual(mapped.internalSlot, { start: '08:00', end: '08:30' })
+  assert.deepEqual(mapped.technicianIds, ['4', '5'])
+  assert.deepEqual(mapped.assignedTechnicians, [{ id: '4', name: 'Jorge Murillo' }, { id: '5', name: 'Helper' }])
+  assert.deepEqual(mapped.appointment, { id: 7, updatedAt: '2026-11-05T11:00:00Z', acceptance: 'CUSTOMER_ACCEPTED_PROPOSAL', state: 'SCHEDULED' })
+  assert.equal(untouched, ready)
+
+  const [event] = createServiceCalendarEventsFromRequests([mapped])
+  assert.equal(event.extendedProps.technician, 'Jorge Murillo, Helper')
+  assert.equal(event.extendedProps.appointment.id, 7)
+})
+
+test('stored travel estimates use the planner leg keys', () => {
+  assert.deepEqual(travelEstimatesToMinutes([{ from_request_id: 10, to_request_id: 20, minutes: 15, source: 'MANUAL' }]), { '10>20': 15 })
+})
+
+test('a saved appointment blocks capacity and registration waits for every travel leg', () => {
+  const requests = applyAppointmentsToRequests([confirmed, ready], [appointment], roster)
+  const values = { technicianIds: ['4'], date: '2026-11-09', windowStart: '08:00', internalStart: '08:15', travelMinutes: {} }
+  const conflict = validatePrototypeProposalDraft({ requestId: 20, values, requests, technicians, now })
+  assert.ok(conflict.errors.some((error) => error.message.startsWith('Jorge Murillo has an internal work conflict with the reserved schedule of SR-10')))
+
+  const later = validatePrototypeProposalDraft({
+    requestId: 20, values: { ...values, windowStart: '10:00', internalStart: '10:00' }, requests, technicians, now,
+  })
+  assert.equal(later.isValid, true)
+  assert.equal(later.travelPending, true)
+
+  const withTravel = { ...values, windowStart: '10:00', internalStart: '10:00', travelMinutes: { '10>20': 30 } }
+  const complete = validatePrototypeProposalDraft({ requestId: 20, values: withTravel, requests, technicians, now })
+  assert.equal(complete.travelPending, false)
+  assert.deepEqual(buildAppointmentRegistration({
+    request: ready, values: withTravel, validation: complete, acceptance: 'COUNTER_PROPOSAL_ACCEPTED',
+  }), {
+    requestId: 20, expectedRequestUpdatedAt: '2026-11-05T10:00:00Z', technicianIds: [4],
+    date: '2026-11-09', windowStart: '10:00', workStart: '10:00',
+    travelMinutes: { '10>20': 30 }, acceptance: 'COUNTER_PROPOSAL_ACCEPTED',
+  })
+})

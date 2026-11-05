@@ -16,11 +16,11 @@ select has_view(
   'The technician roster exposes contact and operational data together'
 );
 
-select has_column(
+select hasnt_column(
   'valtrim',
   'service_scheduling_settings',
   'travel_buffer_minutes',
-  'Scheduling settings store the travel buffer'
+  'The fixed travel buffer was retired in 20261105120000 (per-leg travel estimates)'
 );
 
 select has_column(
@@ -141,10 +141,10 @@ select ok(
   'Browser clients cannot change the fixed five-day deadline'
 );
 
-select is(
-  (select travel_buffer_minutes from valtrim.service_scheduling_settings where id = 1),
-  30::smallint,
-  'The minimum travel buffer is thirty minutes'
+select has_table(
+  'valtrim',
+  'service_travel_estimates',
+  'Travel minutes are stored per pair of visits'
 );
 
 select is(
@@ -164,9 +164,9 @@ select ok(
     select 1
     from pg_indexes index_record
     where index_record.schemaname = 'valtrim'
-      and index_record.indexname = 'service_appointments_technician_idx'
+      and index_record.indexname = 'service_appointments_technicians_idx'
   ),
-  'The existing appointment index supports technician schedule lookups'
+  'The appointment index supports technician schedule lookups'
 );
 
 select throws_ok(

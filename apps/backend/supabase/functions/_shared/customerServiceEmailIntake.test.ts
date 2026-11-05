@@ -99,7 +99,7 @@ Deno.test("three homeowners never block intake and preserve source order instead
     "Luis Rivera",
   ]);
   assertEquals(
-    result.warnings.some((warning) => warning.includes("primero identificado")),
+    result.warnings.some((warning) => warning.includes("first one identified")),
     true,
   );
   assertEquals(result.intakePayload?.contacts.map((contact) => contact.role), [
@@ -120,7 +120,7 @@ Deno.test("more than three customers remain visible in extraction with an explic
   assertEquals(result.structuredData.contacts.length, 4);
   assertEquals(
     result.warnings.some((warning) =>
-      warning.includes("admite tres customers")
+      warning.includes("supports three customers")
     ),
     true,
   );
@@ -148,7 +148,7 @@ Deno.test("all three US homeowners receive their own phone without altering the 
     numbers,
   );
   assertEquals(
-    result.warnings.some((warning) => warning.includes("Se añadió +1")),
+    result.warnings.some((warning) => warning.includes("+1 was added")),
     true,
   );
 });

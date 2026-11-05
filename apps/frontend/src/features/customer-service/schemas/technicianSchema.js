@@ -42,7 +42,6 @@ export const schedulingSettingsSchema = z.object({
   workdayStartsAt: timeSchema,
   workdayEndsAt: timeSchema,
   timeZone: z.string().trim().min(1, 'Enter the scheduling time zone.').max(80),
-  travelBufferMinutes: z.coerce.number().int().min(0).max(120),
   defaultDurationMinutes: z.coerce.number().int().min(15).max(720),
   distanceGreenMaxMiles: z.coerce.number().positive().max(999),
   distanceYellowMaxMiles: z.coerce.number().positive().max(999),

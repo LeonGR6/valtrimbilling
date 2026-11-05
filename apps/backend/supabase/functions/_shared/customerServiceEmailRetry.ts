@@ -22,8 +22,8 @@ export function createCustomerServiceEmailRetryHandler(options: {
     try {
       const actor = await options.authorize(request);
       if (actor instanceof Response) return actor;
-      if (!options.enabled) return reply(409, "WORKER_DISABLED: el procesamiento automático está deshabilitado.");
-      if (!options.hasProviderKey) return reply(503, "El proveedor de extracción no está configurado.");
+      if (!options.enabled) return reply(409, "WORKER_DISABLED: automatic processing is disabled.");
+      if (!options.hasProviderKey) return reply(503, "The extraction provider is not configured.");
       const reader = request.body?.getReader();
       const chunks: Uint8Array[] = [];
       let length = 0;
@@ -35,7 +35,7 @@ export function createCustomerServiceEmailRetryHandler(options: {
             length += value.length;
             if (length > 2048) {
               await reader.cancel();
-              return reply(413, "La solicitud de reintento es demasiado grande.");
+              return reply(413, "The retry request is too large.");
             }
             chunks.push(value);
           }
@@ -46,7 +46,7 @@ export function createCustomerServiceEmailRetryHandler(options: {
       for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length; }
       let body;
       try { body = JSON.parse(new TextDecoder().decode(bytes)); }
-      catch { return reply(400, "Envía una identidad y versión de importación válidas."); }
+      catch { return reply(400, "Send a valid import identity and version."); }
       if (!body || typeof body !== "object" || Array.isArray(body)
         || Object.keys(body).some((key) => !["importId", "expectedUpdatedAt"].includes(key))
         || typeof body.importId !== "string"
@@ -54,7 +54,7 @@ export function createCustomerServiceEmailRetryHandler(options: {
         || typeof body.expectedUpdatedAt !== "string"
         || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,6})?(Z|[+-]\d{2}:\d{2})$/.test(body.expectedUpdatedAt)
         || !Number.isFinite(Date.parse(body.expectedUpdatedAt))) {
-        return reply(400, "Envía una identidad y versión de importación válidas.");
+        return reply(400, "Send a valid import identity and version.");
       }
       const queued = await actor.queue(body.importId, body.expectedUpdatedAt);
       if (queued.requestId != null || queued.status !== "PENDING") {
@@ -75,12 +75,12 @@ export function createCustomerServiceEmailRetryHandler(options: {
         ? await actor.hold(body.importId) : result);
     } catch (error) {
       const code = (error as { code?: string })?.code;
-      if (code === "42501") return reply(403, "No tienes permiso para reintentar esta importación.");
-      if (code === "P0002") return reply(404, "La importación no está disponible.");
+      if (code === "42501") return reply(403, "You do not have permission to retry this import.");
+      if (code === "P0002") return reply(404, "The import is unavailable.");
       if (code === "40001" || code === "55000") {
-        return reply(409, "La importación cambió o no puede reintentarse. Actualiza la consulta; usa el formulario si la fuente fue rechazada.");
+        return reply(409, "The import changed or cannot be retried. Refresh the view; use the form if the source was rejected.");
       }
-      return reply(503, "No se confirmó el resultado del reintento. Actualiza la consulta antes de volver a intentarlo.");
+      return reply(503, "The retry result was not confirmed. Refresh the view before trying again.");
     }
   };
 }

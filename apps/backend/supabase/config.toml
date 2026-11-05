@@ -429,6 +429,12 @@ verify_jwt = true
 [functions.customer-service-source-pdf]
 verify_jwt = true
 
+# Registers an accepted appointment for ADMIN/SCHEDULING staff. The function
+# revalidates capacity with the shared planner rules before calling the
+# service-role-only register_customer_service_appointment RPC.
+[functions.customer-service-appointments]
+verify_jwt = true
+
 # Read-only short-lived URLs for finalized email attachments. The caller RPC
 # checks active Customer Service roles; no uploads are exposed to the browser.
 [functions.customer-service-import-source]

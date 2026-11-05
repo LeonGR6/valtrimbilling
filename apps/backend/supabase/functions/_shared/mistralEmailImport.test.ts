@@ -100,7 +100,7 @@ Deno.test("a person in sourceLabel is preserved for review without silently fill
   assertEquals(f.intake(result.structuredData).intakePayload, null);
   assertEquals(
     result.structuredData.warnings.some((warning) =>
-      warning.includes("datos extraídos")
+      warning.includes("extracted data")
     ),
     true,
   );

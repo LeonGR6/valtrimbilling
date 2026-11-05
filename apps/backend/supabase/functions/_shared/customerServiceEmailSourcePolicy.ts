@@ -37,7 +37,7 @@ export function assertEmailSourceWithoutBinary(value: unknown): void {
   if (containsEmailBinary(value)) {
     throw new EmailAttachmentValidationError(
       "SOURCE_METADATA",
-      "El correo contiene contenido binario incrustado que no puede conservarse como texto. Requiere recuperación manual; no se guardó su cuerpo ni sus archivos.",
+      "The email contains embedded binary content that cannot be kept as text. Manual recovery is required; its body and files were not saved.",
     );
   }
 }

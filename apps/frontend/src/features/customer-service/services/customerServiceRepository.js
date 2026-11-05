@@ -10,7 +10,6 @@ const SETTINGS_COLUMNS = [
   'company_longitude',
   'distance_green_max_miles',
   'distance_yellow_max_miles',
-  'travel_buffer_minutes',
   'default_duration_minutes',
   'requires_dispatcher_approval',
 ].join(', ')
@@ -25,7 +24,6 @@ const DEFAULT_SETTINGS = {
   companyLongitude: null,
   distanceGreenMaxMiles: 10,
   distanceYellowMaxMiles: 20,
-  travelBufferMinutes: 30,
   defaultDurationMinutes: 60,
   requiresDispatcherApproval: true,
 }
@@ -88,7 +86,6 @@ function toSettings(row) {
       : Number(row.company_longitude),
     distanceGreenMaxMiles: Number(row.distance_green_max_miles),
     distanceYellowMaxMiles: Number(row.distance_yellow_max_miles),
-    travelBufferMinutes: row.travel_buffer_minutes,
     defaultDurationMinutes: row.default_duration_minutes,
     requiresDispatcherApproval: row.requires_dispatcher_approval,
   }
@@ -107,7 +104,6 @@ export async function updateCustomerServiceSettings(settings) {
       company_longitude: settings.longitude,
       distance_green_max_miles: settings.distanceGreenMaxMiles,
       distance_yellow_max_miles: settings.distanceYellowMaxMiles,
-      travel_buffer_minutes: settings.travelBufferMinutes,
       default_duration_minutes: settings.defaultDurationMinutes,
       requires_dispatcher_approval: settings.requiresDispatcherApproval,
     })

@@ -103,8 +103,7 @@ export function findRequestForView(requests, requestId, view = 'REQUESTS') {
 }
 
 export function canEditRequestInView(request, view = 'REQUESTS') {
-  // Local test appointments are read-only: they do not exist in Supabase.
-  return Boolean(request) && !request.testFixture && view !== 'PROPOSALS'
+  return Boolean(request) && view !== 'PROPOSALS'
     && requestsForView([request], view).length > 0
 }
 

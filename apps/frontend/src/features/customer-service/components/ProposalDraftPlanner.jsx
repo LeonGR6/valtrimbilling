@@ -1,25 +1,51 @@
 import { useEffect, useState } from 'react'
 import {
-  Alert, Box, Button, Chip, FormControl, FormHelperText, InputLabel,
-  MenuItem, Paper, Select, Stack, TextField, Typography,
+  Alert, Box, Button, Chip, Dialog, DialogActions, DialogContent, DialogTitle, FormControl, FormControlLabel,
+  FormHelperText, InputLabel, MenuItem, Paper, Radio, RadioGroup, Select, Stack, TextField, Typography,
 } from '@mui/material'
 import { serviceCustomerWindowOptions } from '../data/serviceCalendarEvents.js'
 import {
-  changePrototypeProposalWindow, changePrototypeTravelMinutes, getPrototypePlanningTechnicians, proposalDraftFormValues, proposalDraftHasChanges,
-  proposalPlanningSignature, validatePrototypeProposalDraft,
+  buildAppointmentRegistration, changePrototypeProposalWindow, changePrototypeTravelMinutes, getPrototypePlanningTechnicians,
+  proposalDraftFormValues, proposalDraftHasChanges, proposalPlanningSignature, validatePrototypeProposalDraft,
 } from '../utils/proposalDraft.js'
 import { getCustomerServiceClock } from '../utils/dates.js'
+import { useCustomerServicePrototype } from '../context/customerServicePrototypeContext.js'
 import ProposalDayAgenda from './ProposalDayAgenda.jsx'
 
-export default function ProposalDraftPlanner({ request, requests, technicians: roster, savedDraft, onSave, onDirtyChange }) {
-  const [initialValues] = useState(() => proposalDraftFormValues(savedDraft))
+const acceptanceOptions = [
+  { value: 'CUSTOMER_ACCEPTED_PROPOSAL', label: 'Customer accepted the proposal' },
+  { value: 'COUNTER_PROPOSAL_ACCEPTED', label: 'Counter-proposal accepted' },
+]
+
+export default function ProposalDraftPlanner({ request, requests, technicians: roster, savedDraft, onSave, onDirtyChange, onRegistered }) {
+  const { registerAppointment, storedTravelMinutes } = useCustomerServicePrototype()
+  // Travel saved with earlier appointments fills the same legs; typed values win.
+  const withStoredTravel = (formValues) => ({
+    ...formValues, travelMinutes: { ...storedTravelMinutes, ...formValues.travelMinutes },
+  })
+  const [initialValues] = useState(() => withStoredTravel(proposalDraftFormValues(savedDraft)))
   const [values, setValues] = useState(initialValues)
   const [saveError, setSaveError] = useState('')
+  const [registration, setRegistration] = useState(null)
   const technicians = getPrototypePlanningTechnicians(roster)
   const validation = validatePrototypeProposalDraft({ requestId: request.id, requests, technicians, values })
   const errorFor = (field) => validation.errors.find((error) => error.field === field)?.message
   const savedIsStale = savedDraft && savedDraft.requestSignature !== proposalPlanningSignature(request)
-  const hasUnsavedChanges = proposalDraftHasChanges(values, savedDraft ? proposalDraftFormValues(savedDraft) : initialValues)
+  const hasUnsavedChanges = proposalDraftHasChanges(values, savedDraft ? withStoredTravel(proposalDraftFormValues(savedDraft)) : initialValues)
+  const canRegister = validation.isValid && !validation.travelPending
+  const register = async () => {
+    setRegistration((current) => ({ ...current, saving: true, error: '' }))
+    try {
+      await registerAppointment(buildAppointmentRegistration({
+        request, values, validation, acceptance: registration.acceptance,
+      }))
+      setRegistration(null)
+      onDirtyChange(false)
+      onRegistered?.(request)
+    } catch (error) {
+      setRegistration((current) => ({ ...current, saving: false, error: error.message }))
+    }
+  }
   useEffect(() => {
     onDirtyChange(hasUnsavedChanges)
   }, [hasUnsavedChanges, onDirtyChange])
@@ -39,14 +65,15 @@ export default function ProposalDraftPlanner({ request, requests, technicians: r
         <Box>
           <Typography variant="h6" fontWeight={800}>Prepare proposal · {request.requestNumber}</Typography>
           <Typography variant="body2" color="text.secondary">
-            Frontend draft only. Saving does not send a proposal, change Ready to propose or create an appointment.
+            Drafts stay in this session and are never saved. Register the appointment only after the customer
+            accepts the proposal, or after you accept the customer&apos;s counter-proposal.
           </Typography>
         </Box>
         <Alert severity="info" variant="outlined">
-          Technicians come from the independent simulation roster. This checks recorded Customer Service availability,
-          not the live technician roster or Production work. Travel uses manual estimates only; no fixed travel buffer is added.
+          Technicians come from the technician catalog in People. This checks registered Customer Service appointments,
+          not Production work. Travel uses manual estimates only; no fixed travel buffer is added.
         </Alert>
-        {technicians.length === 0 && <Alert severity="warning">No technicians are recorded in this simulation. A draft cannot be saved until technician data is available.</Alert>}
+        {technicians.length === 0 && <Alert severity="warning">No active technicians are registered. Add them in People → Technicians before planning.</Alert>}
         {savedIsStale && <Alert severity="warning" variant="outlined">The request changed after this draft was saved. Review the selection and save it again using the current duration and crew.</Alert>}
         {savedNeedsRevalidation && !savedIsStale && <Alert severity="warning" variant="outlined">The saved draft is no longer valid against the current date or recorded schedule. Review the conflicts below before using it.</Alert>}
         <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: 'wrap' }}>
@@ -148,11 +175,19 @@ export default function ProposalDraftPlanner({ request, requests, technicians: r
               </Alert>
             )}
             {saveError && <Alert severity="error">{saveError}</Alert>}
-            <Button variant="contained" onClick={save} disabled={!validation.isValid} sx={{ alignSelf: 'flex-start' }}>
-              {savedDraft ? 'Update proposal draft' : 'Save proposal draft'}
-            </Button>
+            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5}>
+              <Button variant="outlined" onClick={save} disabled={!validation.isValid}>
+                {savedDraft ? 'Update proposal draft' : 'Save proposal draft'}
+              </Button>
+              <Button variant="contained" disabled={!canRegister}
+                onClick={() => setRegistration({ acceptance: acceptanceOptions[0].value, saving: false, error: '' })}>
+                Register accepted appointment
+              </Button>
+            </Stack>
             <Typography variant="caption" color="text.secondary">
-              Save to keep this selection while navigating during the session. Reloading restores the mocks and removes drafts.
+              {validation.isValid && validation.travelPending
+                ? 'Enter every travel estimate before registering: a registered appointment reserves the technicians’ time.'
+                : 'Drafts are kept while navigating during the session; reloading removes them. Registered appointments are saved.'}
             </Typography>
           </Stack>
           <ProposalDayAgenda
@@ -165,6 +200,36 @@ export default function ProposalDraftPlanner({ request, requests, technicians: r
           />
         </Box>
       </Stack>
+      <Dialog open={Boolean(registration)} onClose={() => !registration?.saving && setRegistration(null)} fullWidth maxWidth="xs">
+        <DialogTitle>Register accepted appointment</DialogTitle>
+        <DialogContent>
+          <Stack spacing={2}>
+            <Typography variant="body2">
+              {request.requestNumber} · {values.date} · {values.internalStart}–{validation.internalEnd} ·{' '}
+              {values.technicianIds.map((id) => technicians.find((person) => person.id === id)?.name).filter(Boolean).join(', ')}
+            </Typography>
+            <FormControl>
+              <Typography variant="caption" color="text.secondary">How was it accepted?</Typography>
+              <RadioGroup value={registration?.acceptance ?? ''}
+                onChange={(event) => setRegistration((current) => ({ ...current, acceptance: event.target.value }))}>
+                {acceptanceOptions.map((option) => (
+                  <FormControlLabel key={option.value} value={option.value} control={<Radio />} label={option.label} />
+                ))}
+              </RadioGroup>
+            </FormControl>
+            <Typography variant="body2" color="text.secondary">
+              The schedule is checked again before saving. The request moves to Confirmed and the technicians&apos; time is reserved.
+            </Typography>
+            {registration?.error && <Alert severity="error">{registration.error}</Alert>}
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setRegistration(null)} disabled={registration?.saving}>Cancel</Button>
+          <Button variant="contained" onClick={register} disabled={registration?.saving}>
+            {registration?.saving ? 'Registering…' : 'Register appointment'}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Paper>
   )
 }

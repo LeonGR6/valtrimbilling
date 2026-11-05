@@ -45,7 +45,7 @@ export function customerServiceEmailSourceRecoveryStorage(
       );
       if (error) {
         if (error.code === "55000" && error.message === "The pinned original email source cannot be replaced") {
-          throw new EmailAttachmentValidationError("SOURCE_METADATA", "El adjunto recuperado no coincide con el manifiesto original; requiere revisión manual.");
+          throw new EmailAttachmentValidationError("SOURCE_METADATA", "The recovered attachment does not match the original manifest; manual review is required.");
         }
         throw error;
       }

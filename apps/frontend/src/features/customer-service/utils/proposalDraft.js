@@ -1,40 +1,21 @@
 import { serviceCustomerWindowOptions } from '../data/serviceCalendarEvents.js'
 import { requestToPrototypeFormValues } from './newRequestPrototype.js'
 import { buildRequestReviewSummary, effectiveRequestWorkflowStage } from './requestInbox.js'
-import { customerServiceTimeZone, getCustomerServiceClock, toIsoDate } from './dates.js'
+import { customerServiceTimeZone, getCustomerServiceClock } from './dates.js'
 import { assignedPrototypeTechnicianIds, prototypeTechnicians } from '../data/prototypeTechnicians.js'
+import {
+  checkVisitCapacity, checkVisitDate, customerServicePickupMinutes, customerServiceWorkday,
+  minutesToTime as timeFromMinutes, parseServiceDate as validDate, timeToMinutes as minutes,
+} from './customerServiceScheduling.js'
 
-export const prototypePlanningHours = { workdayStartsAt: '07:00', workdayEndsAt: '15:30' }
+export const prototypePlanningHours = {
+  workdayStartsAt: customerServiceWorkday.startsAt, workdayEndsAt: customerServiceWorkday.endsAt,
+}
 // Each visit keeps the technician busy for 10 minutes after the work to collect tools.
-export const prototypePickupMinutes = 10
+export const prototypePickupMinutes = customerServicePickupMinutes
 
 const busyStages = ['CONFIRMED', 'AWAITING_CUSTOMER', 'WORKING', 'COMPLETED']
 const reservedStages = ['CONFIRMED', 'AWAITING_CUSTOMER', 'WORKING']
-
-function minutes(time) {
-  if (!/^([01]\d|2[0-3]):[0-5]\d$/u.test(String(time ?? ''))) return null
-  const [hour, minute] = time.split(':').map(Number)
-  return hour * 60 + minute
-}
-
-function timeFromMinutes(value) {
-  if (!Number.isInteger(value) || value < 0 || value >= 1440) return ''
-  return `${String(Math.floor(value / 60)).padStart(2, '0')}:${String(value % 60).padStart(2, '0')}`
-}
-
-function validDate(value) {
-  if (!/^\d{4}-\d{2}-\d{2}$/u.test(String(value ?? ''))) return null
-  const [year, month, day] = value.split('-').map(Number)
-  const date = new Date(year, month - 1, day, 12)
-  return toIsoDate(date) === value ? date : null
-}
-
-// Manual travel estimates are keyed by "fromRequestId>toRequestId". A missing or invalid
-// value is unknown, never zero.
-function manualTravelMinutes(travel, fromId, toId) {
-  const value = travel?.[`${fromId}>${toId}`]
-  return Number.isInteger(value) && value >= 0 ? value : null
-}
 
 export function getPrototypePlanningTechnicians(technicians = prototypeTechnicians) {
   return technicians.map(({ id, name }) => ({ id: String(id), name }))
@@ -130,7 +111,6 @@ export function validatePrototypeProposalDraft({ requestId, values, requests, te
   const addError = (field, message) => errors.push({ field, message })
   // Warnings never claim viability, but they do not block a draft: drafts reserve nothing.
   const warnings = []
-  const addWarning = (field, message) => warnings.push({ field, message })
   if (!request || effectiveRequestWorkflowStage(request) !== 'READY_TO_PROPOSE') {
     addError('request', 'Only Ready to propose requests can have a planning draft.')
   } else if (!request.review?.valtrimItemsConfirmed || !buildRequestReviewSummary(request).isComplete) {
@@ -150,104 +130,51 @@ export function validatePrototypeProposalDraft({ requestId, values, requests, te
   }
 
   const clock = getCustomerServiceClock(now)
-  const date = validDate(values.date)
-  if (!date) addError('date', 'Select a valid service date.')
-  else if (values.date < clock.date) addError('date', 'The service date cannot be in the past (California time).')
-  else if ([0, 6].includes(date.getDay())) addError('date', 'Service appointments are Monday through Friday.')
-  else if (request?.customerUnavailableDates?.includes(values.date)) {
-    addError('date', 'The customer has recorded this date as unavailable.')
-  }
-  // Work should be completed by the due date. How late work is handled is still an open
-  // decision, so a later date is flagged without blocking an overdue request from planning.
-  const dueOn = validDate(request?.dueOn) ? request.dueOn : null
-  if (date && dueOn && values.date > dueOn) {
-    addWarning('date', `This date is after the due date ${dueOn}. The work would be completed late.`)
-  }
+  const dateCheck = checkVisitDate({
+    date: values.date, workStart: values.internalStart, today: clock.date,
+    nowMinutes: clock.minutesSinceMidnight,
+    unavailableDates: request?.customerUnavailableDates ?? [], dueOn: request?.dueOn ?? null,
+  })
+  errors.push(...dateCheck.errors)
+  warnings.push(...dateCheck.warnings)
 
-  const window = serviceCustomerWindowOptions.find((option) => option.start === values.windowStart)
-  if (!window) addError('windowStart', 'Select an allowed two-hour customer window.')
-  const start = minutes(values.internalStart)
-  const end = start !== null && Number.isInteger(duration) ? start + duration : null
-  const internalEnd = end === null ? '' : timeFromMinutes(end)
-  if (start === null) addError('internalStart', 'Select the internal work start time.')
-  else if (window && (start < minutes(window.start) || start >= minutes(window.end))) {
-    addError('internalStart', 'Work must start within the selected customer arrival window.')
-  }
-  if (start !== null && end !== null && (
-    start < minutes(prototypePlanningHours.workdayStartsAt)
-    || end > minutes(prototypePlanningHours.workdayEndsAt)
-  )) addError('internalStart', 'Internal work must fit within 7:00 AM–3:30 PM.')
-  if (window && end !== null && end + prototypePickupMinutes > minutes(window.end)) {
-    addError('internalStart', `Work and pickup must finish before the customer window closes at ${window.end}.`)
-  }
-  if (date && values.date === clock.date && start !== null
-    && start <= clock.minutesSinceMidnight) {
-    addError('internalStart', 'The internal work start time cannot be in the past (California time).')
-  }
-
-  // The new visit occupies [start, end + pickup]. Only its neighbours in each technician's day
-  // need travel checks: inserting it between A and B requires A→new and new→B, not A→B.
+  // The same capacity rules the server applies before registering an appointment.
   const agenda = getPrototypeTechnicianAgenda(requests, uniqueIds, values.date, technicians)
-  // One leg per origin→destination pair; technicians sharing a leg share its estimate.
-  const legs = new Map()
-  const addLeg = (fromRequestId, toRequestId, fromLabel, toLabel, name) => {
-    const key = `${fromRequestId}>${toRequestId}`
-    const leg = legs.get(key) ?? {
-      key, fromRequestId, toRequestId, fromLabel, toLabel, technicianNames: [],
-      minutes: manualTravelMinutes(values.travelMinutes, fromRequestId, toRequestId),
-    }
-    if (!leg.technicianNames.includes(name)) leg.technicianNames.push(name)
-    legs.set(key, leg)
-  }
-  const visitLabel = request?.requestNumber ?? 'This visit'
-  if (date && window && start !== null && end !== null) {
-    const visitStart = start
-    const visitEnd = end + prototypePickupMinutes
-    for (const id of uniqueIds) {
-      const name = technicians.find((person) => String(person.id) === id)?.name ?? 'Unknown technician'
-      const busy = agenda.filter((entry) => entry.technicianId === id && entry.blocksAvailability)
-      const known = []
-      for (const entry of busy) {
-        if (!entry.date || entry.windowUncertain || entry.start === null || entry.end === null) {
-          addError('agenda', `${entry.requestNumber}: the recorded date or two-hour window is incomplete; availability cannot be verified.`)
-        } else {
-          known.push({ ...entry, from: minutes(entry.start), to: minutes(entry.end) })
-        }
-      }
-      known.sort((left, right) => left.from - right.from)
-      for (const entry of known) {
-        if (visitStart < entry.to && entry.from < visitEnd) {
-          addError('agenda', `${name} has an internal work conflict with the reserved schedule of ${entry.requestNumber} (${entry.start}–${entry.end}). Choose another window, technician or day.`)
-        }
-      }
-      // The previous visit is the one this technician leaves last before the new start.
-      const before = known.filter((entry) => entry.to <= visitStart)
-        .reduce((latest, entry) => (!latest || entry.to > latest.to ? entry : latest), null)
-      const after = known.find((entry) => entry.from >= visitEnd)
-      if (before) {
-        addLeg(before.requestId, requestId, before.requestNumber, visitLabel, name)
-        const travel = manualTravelMinutes(values.travelMinutes, before.requestId, requestId)
-        if (travel === null) {
-          addWarning('agenda', `Travel time pending: enter the manual estimate from ${before.requestNumber} to this visit for ${name}.`)
-        } else if (before.to + travel > visitStart) {
-          addError('agenda', `${name} cannot reach this visit from ${before.requestNumber} in time, including the manual travel estimate.`)
-        }
-      }
-      if (after) {
-        addLeg(requestId, after.requestId, visitLabel, after.requestNumber, name)
-        const travel = manualTravelMinutes(values.travelMinutes, requestId, after.requestId)
-        if (travel === null) {
-          addWarning('agenda', `Travel time pending: enter the manual estimate from this visit to ${after.requestNumber} for ${name}.`)
-        } else if (visitEnd + travel > after.from) {
-          addError('agenda', `${name} cannot reach ${after.requestNumber} after this visit in time, including the manual travel estimate.`)
-        }
-      }
-    }
-  }
-  const pickupEnd = end === null ? '' : timeFromMinutes(end + prototypePickupMinutes)
+  const capacity = checkVisitCapacity({
+    visit: {
+      requestId, label: request?.requestNumber ?? 'This visit', windowStart: values.windowStart,
+      workStart: values.internalStart, durationMinutes: duration,
+    },
+    technicians: uniqueIds.map((id) => ({
+      id, name: technicians.find((person) => String(person.id) === id)?.name ?? 'Unknown technician',
+    })),
+    agenda: dateCheck.dateIsValid ? agenda : [],
+    travelMinutes: values.travelMinutes,
+  })
+  errors.push(...capacity.errors)
+  warnings.push(...capacity.warnings)
   return {
-    isValid: errors.length === 0, errors, warnings, internalEnd, pickupEnd, agenda,
-    travelLegs: [...legs.values()], dateIsValid: Boolean(date),
+    isValid: errors.length === 0, errors, warnings,
+    // Registering reserves capacity, so every travel leg must be known first.
+    travelPending: warnings.some((warning) => warning.travelPending),
+    internalEnd: capacity.internalEnd, pickupEnd: capacity.pickupEnd, agenda,
+    travelLegs: capacity.travelLegs, dateIsValid: dateCheck.dateIsValid,
+  }
+}
+
+// Body for the customer-service-appointments Edge Function, which revalidates it.
+// Only the travel legs of this sequence are sent, and all of them are known.
+export function buildAppointmentRegistration({ request, values, validation, acceptance }) {
+  return {
+    requestId: Number(request.id),
+    expectedRequestUpdatedAt: request.updatedAt,
+    technicianIds: values.technicianIds.map(Number),
+    date: values.date,
+    windowStart: values.windowStart,
+    workStart: values.internalStart,
+    travelMinutes: Object.fromEntries(validation.travelLegs
+      .filter((leg) => leg.minutes !== null).map((leg) => [leg.key, leg.minutes])),
+    acceptance,
   }
 }
 

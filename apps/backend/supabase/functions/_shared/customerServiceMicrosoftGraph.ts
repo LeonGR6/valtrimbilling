@@ -128,7 +128,7 @@ export function graphEmailSource(message: GraphMessage, includeBody = true) {
   function metadata(key: string, value: unknown) {
     if (value === undefined) return;
     if ((value !== null && typeof value !== "string") || containsEmailBinary(value)) {
-      if (includeBody) sourceError("Microsoft devolvió cabeceras no válidas para conservar como texto.");
+      if (includeBody) sourceError("Microsoft returned headers that cannot be kept as text.");
       return; // The initial receipt keeps only safe, typed technical metadata.
     }
     source[key] = value;
@@ -162,19 +162,19 @@ export function graphEmailSource(message: GraphMessage, includeBody = true) {
   }
   if (message.from !== undefined) {
     try { source.from = recipient(message.from); } catch {
-      if (includeBody) sourceError("Microsoft devolvió un remitente no válido para conservar como texto.");
+      if (includeBody) sourceError("Microsoft returned a sender that cannot be kept as text.");
     }
   }
   if (includeBody) {
     for (const key of ["toRecipients", "ccRecipients", "bccRecipients"]) {
       if (message[key] === undefined) continue;
-      if (!Array.isArray(message[key])) sourceError("Microsoft devolvió una lista de destinatarios no válida.");
-      try { source[key] = message[key].map(recipient); } catch { sourceError("Microsoft devolvió destinatarios no válidos para conservar como texto."); }
+      if (!Array.isArray(message[key])) sourceError("Microsoft returned an invalid recipient list.");
+      try { source[key] = message[key].map(recipient); } catch { sourceError("Microsoft returned recipients that cannot be kept as text."); }
     }
     if (
       !object(message.body) || typeof message.body.content !== "string" ||
       !["text", "html"].includes(String(message.body.contentType).toLowerCase())
-    ) sourceError("Microsoft no devolvió el cuerpo completo del correo.");
+    ) sourceError("Microsoft did not return the complete email body.");
     source.body = {
       contentType: String(message.body.contentType).toLowerCase(),
       content: message.body.content,
@@ -190,7 +190,7 @@ export function validateGraphAttachmentMetadata(
   if (value.length > MAX_IMPORT_ATTACHMENTS) {
     throw new EmailAttachmentValidationError(
       "ATTACHMENT_COUNT",
-      "El correo supera 10 archivos, incluyendo imágenes inline.",
+      "The email exceeds 10 files, including inline images.",
     );
   }
   const seen = new Set<string>();
@@ -207,7 +207,7 @@ export function validateGraphAttachmentMetadata(
     ) {
       throw new EmailAttachmentValidationError(
         "ATTACHMENT_METADATA",
-        "Microsoft devolvió metadatos de adjuntos incompletos o contradictorios.",
+        "Microsoft returned incomplete or contradictory attachment metadata.",
       );
     }
     seen.add(raw.id);
@@ -227,7 +227,7 @@ export function validateGraphAttachmentMetadata(
     ) {
       throw new EmailAttachmentValidationError(
         "ATTACHMENT_FORMAT",
-        "El correo contiene un archivo no admitido, un elemento de Outlook o un vínculo externo.",
+        "The email contains an unsupported file, an Outlook item, or an external link.",
       );
     }
   }
@@ -356,13 +356,13 @@ export function createCustomerServiceMicrosoftGraph(options: {
             ? "ATTACHMENT_TOTAL_SIZE"
             : "ATTACHMENT_SIZE",
           remainingAttachmentBytes < MAX_IMPORT_ATTACHMENT_BYTES
-            ? "Los adjuntos descargados superan 50 MB en total."
-            : "Un adjunto descargado supera 10 MB.",
+            ? "The downloaded attachments exceed 50 MB in total."
+            : "A downloaded attachment exceeds 10 MB.",
         );
       }
       if (kind === "source") {
         sourceError(
-          "No se pudo leer el correo completo dentro de la capacidad de transporte. No se recortó su contenido; requiere recuperación manual.",
+          "The complete email could not be read within the transport capacity. Its content was not truncated; manual recovery is required.",
         );
       }
       throw new MicrosoftGraphSyncError("SYNC_ERROR");
@@ -434,7 +434,7 @@ export function createCustomerServiceMicrosoftGraph(options: {
             [400, 404, 410, 413, 415].includes(response.status)
           ) {
             sourceError(
-              "El correo o uno de sus adjuntos no está disponible para su lectura completa en Microsoft.",
+              "The email or one of its attachments is unavailable for a complete read in Microsoft.",
             );
           }
           throw new MicrosoftGraphSyncError("SYNC_ERROR");
@@ -447,7 +447,7 @@ export function createCustomerServiceMicrosoftGraph(options: {
             await response.body?.cancel();
             throw new EmailAttachmentValidationError(
               "ATTACHMENT_SIZE",
-              "Microsoft no devolvió una descarga completa del adjunto.",
+              "Microsoft did not return a complete attachment download.",
             );
           }
           // Content-Length describes transport bytes. Compare it to the body
@@ -461,7 +461,7 @@ export function createCustomerServiceMicrosoftGraph(options: {
               await response.body?.cancel();
               throw new EmailAttachmentValidationError(
                 "ATTACHMENT_SIZE",
-                "Microsoft devolvió una longitud de descarga no válida.",
+                "Microsoft returned an invalid download length.",
               );
             }
             if (contentLength > maximum) {
@@ -474,7 +474,7 @@ export function createCustomerServiceMicrosoftGraph(options: {
         if (contentLength !== null && bytes.byteLength !== contentLength) {
           throw new EmailAttachmentValidationError(
             "ATTACHMENT_SIZE",
-            "El tamaño descargado no coincide con Content-Length de la respuesta de Microsoft.",
+            "The downloaded size does not match the Content-Length of the Microsoft response.",
           );
         }
         return bytes;
@@ -492,7 +492,7 @@ export function createCustomerServiceMicrosoftGraph(options: {
     } catch {
       if (kind === "source") {
         sourceError(
-          "Microsoft no devolvió una fuente completa que pueda interpretarse. Requiere recuperación manual.",
+          "Microsoft did not return a complete source that can be interpreted. Manual recovery is required.",
         );
       }
       throw new MicrosoftGraphSyncError("SYNC_ERROR");
@@ -608,7 +608,7 @@ export function createCustomerServiceMicrosoftGraph(options: {
       );
       if (value.id !== id || value.parentFolderId !== target.folderId) {
         sourceError(
-          "El mensaje recibido no coincide con el correo y la carpeta configurados.",
+          "The received message does not match the configured mailbox and folder.",
         );
       }
       return value as GraphMessage;
@@ -633,7 +633,7 @@ export function createCustomerServiceMicrosoftGraph(options: {
         if (value.value.length > MAX_IMPORT_ATTACHMENTS - files.length) {
           throw new EmailAttachmentValidationError(
             "ATTACHMENT_COUNT",
-            "El correo supera 10 archivos, incluyendo imágenes inline.",
+            "The email exceeds 10 files, including inline images.",
           );
         }
         files.push(...value.value);
@@ -668,7 +668,7 @@ export function createCustomerServiceMicrosoftGraph(options: {
         if (bytes.byteLength === 0) {
           throw new EmailAttachmentValidationError(
             "ATTACHMENT_SIZE",
-            "Un adjunto descargado está vacío.",
+            "A downloaded attachment is empty.",
           );
         }
         totalBytes += bytes.byteLength;

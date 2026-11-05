@@ -283,7 +283,9 @@ select ok(
         'service_communications',
         'service_scheduling_settings'
       )
-  ) >= 21,
+  -- 21 until 20261105120000 removed the unused browser insert/update policies on
+  -- appointments: only the service-role Edge Function writes them now.
+  ) >= 19,
   'Customer Service tables have at least the required RLS policies'
 );
 
@@ -421,32 +423,10 @@ select ok(
   'Creating a request records a business Activity History event'
 );
 
-insert into valtrim.service_appointments (
-  request_id,
-  starts_at,
-  ends_at,
-  notes
-)
-select
-  request.id,
-  timestamptz '2026-09-22 09:00:00-07',
-  timestamptz '2026-09-22 10:00:00-07',
-  'Foundation appointment proposal'
-from valtrim.service_requests request
-where request.description = 'Foundation scheduling test';
-
-select ok(
-  exists (
-    select 1
-    from valtrim.audit_events event
-    join valtrim.service_appointments appointment
-      on appointment.id::text = event.entity_id
-    where appointment.notes = 'Foundation appointment proposal'
-      and event.module = 'CUSTOMER_SERVICE'
-      and event.action = 'SERVICE_APPOINTMENT_PROPOSED'
-  ),
-  'Creating a proposal records an appointment Activity History event'
-);
+-- Appointment registration and its audit event are covered by
+-- customer_service_appointments.test.sql (20261105120000).
+select has_column('valtrim', 'service_appointments', 'technician_ids',
+  'Appointments store the full crew');
 
 select ok(to_regclass('valtrim.service_request_overview') is null,
   'The old readiness view is retired');

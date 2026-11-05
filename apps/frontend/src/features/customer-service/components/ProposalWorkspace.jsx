@@ -14,7 +14,7 @@ import ProposalDraftPlanner from './ProposalDraftPlanner.jsx'
 
 export default function ProposalWorkspace({
   requests, selectedRequestId, onSelectRequest, onView, onViewSource, onBackToRequests,
-  proposalDrafts, onSaveDraft, technicians, onDraftDirtyChange, onBeforeLeave,
+  proposalDrafts, onSaveDraft, technicians, onDraftDirtyChange, onBeforeLeave, onRegistered,
 }) {
   const [search, setSearch] = useState('')
   const [stage, setStage] = useState(() => {
@@ -154,6 +154,7 @@ export default function ProposalWorkspace({
           savedDraft={proposalDrafts[selected.id]}
           onSave={onSaveDraft}
           onDirtyChange={onDraftDirtyChange}
+          onRegistered={onRegistered}
         />
       )}
 

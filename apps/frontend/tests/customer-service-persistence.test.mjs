@@ -9,7 +9,6 @@ import {
   getSchedulingReadinessReasons,
   toCustomerServiceRequest,
   toCustomerServiceRpcPayload,
-  toServiceScheduleProposal,
   toZonedDateTimeInput,
   zonedDateTimeToIso,
 } from '../src/features/customer-service/services/customerServiceRecord.js'
@@ -290,47 +289,4 @@ test('unlinked repair requests display without invented builder or community nam
   assert.equal(request.builderName, '')
   assert.equal(request.community, '')
   assert.equal(request.isReadyToSchedule, false)
-})
-
-test('automatic proposal rows retain route order and numeric metrics', () => {
-  const proposal = toServiceScheduleProposal({
-    id: 31,
-    requested_for_request_id: 42,
-    technician_id: 7,
-    technician_name: 'Ana Rivera',
-    proposed_on: '2026-09-25',
-    proposal_rank: 1,
-    status: 'PENDING',
-    score: '101220.50',
-    total_distance_miles: '13.40',
-    work_minutes: 150,
-    travel_buffer_minutes: 30,
-    remaining_work_minutes: 240,
-    explanation: {
-      reasons: ['Groups nearby request SR-00000043 at 4.2 miles.', null],
-      warnings: [],
-      previousRequest: 'SR-00000040',
-    },
-    generated_at: '2026-09-25T16:00:00.000Z',
-    stops: [{
-      id: 1,
-      requestId: 42,
-      folio: 'SR-00000042',
-      stopOrder: 1,
-      startsAt: '2026-09-25T16:00:00.000Z',
-      endsAt: '2026-09-25T17:00:00.000Z',
-      latitude: '33.986588',
-      longitude: '-117.343021',
-      distanceFromPreviousMiles: '4.20',
-      travelBufferMinutes: 15,
-      address: '123 Main Street',
-    }],
-  })
-
-  assert.equal(proposal.totalDistanceMiles, 13.4)
-  assert.equal(proposal.stops[0].distanceFromPreviousMiles, 4.2)
-  assert.deepEqual(proposal.reasons, [
-    'Groups nearby request SR-00000043 at 4.2 miles.',
-  ])
-  assert.equal(proposal.previousRequest, 'SR-00000040')
 })

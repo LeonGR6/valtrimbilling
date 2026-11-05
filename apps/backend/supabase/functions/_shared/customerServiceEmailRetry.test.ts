@@ -122,6 +122,6 @@ Deno.test("unconfirmed execution failures surface no secrets and attempt safe re
   const { handler, calls } = fixture({ run: () => Promise.reject(new Error("provider secret and signed url")) });
   const response = await handler(request());
   assertEquals(response.status, 503);
-  assertStringIncludes((await response.json()).error, "No se confirmó");
+  assertStringIncludes((await response.json()).error, "was not confirmed");
   assertEquals(calls.at(-1), "hold");
 });

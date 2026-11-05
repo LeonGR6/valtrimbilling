@@ -133,7 +133,7 @@ insert into connection_tap select throws_ok(format('select valtrim.finish_custom
   '22023','Use a known sanitized connection error code','Raw provider errors or credentials cannot be stored') from connection_cases where label = 'main';
 update connection_cases set data = valtrim.finish_customer_service_email_sync((data ->> 'id')::uuid,(data ->> 'sync_token')::uuid,(data ->> 'revision')::bigint,'AUTH_FAILED') where label = 'main';
 insert into connection_tap select ok(data ->> 'cursor_url' = u.url and data -> 'sync_token' = 'null'::jsonb and data ->> 'last_error_code' = 'AUTH_FAILED'
-  and data ->> 'last_error_message' = 'Microsoft no pudo autenticar la aplicación. Revisa sus credenciales.'
+  and data ->> 'last_error_message' = 'Microsoft could not authenticate the application. Review its credentials.'
   and data -> 'last_success_at' = 'null'::jsonb,'Failure preserves last durable page and stores only a fixed diagnostic')
   from connection_cases c cross join connection_urls u where c.label = 'main' and u.label = 'NEXT';
 update connection_cases set data = valtrim.claim_customer_service_email_sync((data ->> 'id')::uuid) where label = 'main';

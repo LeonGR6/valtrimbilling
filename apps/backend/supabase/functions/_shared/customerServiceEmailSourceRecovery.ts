@@ -125,7 +125,7 @@ export async function recoverCustomerServiceEmailSource(options: {
         receipt.manifest !== null;
       if (pinned && receipt.sourceContractVersion === 1 &&
         receipt.manifest!.some((file) => file.mimeType !== "application/pdf")) {
-        throw new EmailAttachmentValidationError("HISTORICAL_IMAGES_REQUIRE_MANUAL_RECOVERY", "Las imágenes históricas pendientes requieren recuperación manual.");
+        throw new EmailAttachmentValidationError("HISTORICAL_IMAGES_REQUIRE_MANUAL_RECOVERY", "Pending legacy images require manual recovery.");
       }
       if (pinned && receipt.sourceContractVersion === 2 && receipt.sourceConnectionId !== claimed.id) {
         throw { code: "42501" };

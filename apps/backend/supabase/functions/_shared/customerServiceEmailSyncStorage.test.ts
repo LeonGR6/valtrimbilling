@@ -132,7 +132,7 @@ Deno.test("Graph storage reuses the existing durable rejection and pinned failur
   await f.sources.reject(
     importId,
     "ATTACHMENT_COUNT",
-    "El correo supera 10 archivos.",
+    "The email exceeds 10 files.",
   );
   await f.sources.failPinned(importId);
   assertEquals(f.calls.map((call) => call.name), [
@@ -145,7 +145,7 @@ Deno.test("Graph storage reuses the existing durable rejection and pinned failur
 
 Deno.test("Binary text in an invalid filename cannot leak through the technical rejection message", async () => {
   const f = fixture();
-  await f.sources.reject(importId, "ATTACHMENT_SIGNATURE", "El archivo data:image/png;base64,PRIVATE_IMAGE_PAYLOAD no coincide con su formato.");
+  await f.sources.reject(importId, "ATTACHMENT_SIGNATURE", "The file data:image/png;base64,PRIVATE_IMAGE_PAYLOAD does not match its format.");
   assertEquals(JSON.stringify(f.calls).includes("PRIVATE_IMAGE_PAYLOAD"), false);
   assertEquals(f.calls[0].args.p_error_code, "ATTACHMENT_SIGNATURE");
 });

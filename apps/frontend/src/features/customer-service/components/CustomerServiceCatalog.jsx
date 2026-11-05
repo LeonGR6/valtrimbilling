@@ -282,6 +282,16 @@ export default function CustomerServiceCatalog() {
     setNotice({ severity: 'success', message: 'Proposal draft saved in session memory. The request remains Ready to propose; no appointment was created or email sent.' })
   }
 
+  const appointmentRegistered = (request) => {
+    // The accepted appointment replaces the draft; drafts are never stored.
+    setProposalDrafts((current) => {
+      const next = { ...current }
+      delete next[request.id]
+      return next
+    })
+    setNotice({ severity: 'success', message: `${request.requestNumber} was registered as a confirmed appointment and appears in Calendar.` })
+  }
+
   return (
     <Box sx={{ minHeight: '100%', bgcolor: 'background.default' }}>
       <Box
@@ -394,6 +404,7 @@ export default function CustomerServiceCatalog() {
             technicians={technicians}
             onDraftDirtyChange={reportDraftDirty}
             onBeforeLeave={beforeDraftNavigation}
+            onRegistered={appointmentRegistered}
           />
         ) : (
           <>

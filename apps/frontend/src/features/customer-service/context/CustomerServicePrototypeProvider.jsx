@@ -1,19 +1,20 @@
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { useAuth } from '../../auth/context/useAuth.js'
-import { prototypeTechnicians } from '../data/prototypeTechnicians.js'
 import { customerServiceIntakeRepository } from '../services/customerServiceRequestIntake.js'
 import { createCustomerServiceRequestStore } from './customerServiceRequestStore.js'
 import { CustomerServicePrototypeContext } from './customerServicePrototypeContext.js'
 import { requireSupabase } from '../../../services/api.js'
 import { createCustomerServiceEmailAutomationMonitor } from '../services/customerServiceEmailAutomation.js'
-import { createCustomerServiceTestAppointments } from '../data/customerServiceTestAppointments.js'
+import { listTechnicians } from '../services/techniciansRepository.js'
+import {
+  cancelCustomerServiceAppointment, loadCustomerServiceSchedule, registerCustomerServiceAppointment,
+} from '../services/customerServiceAppointmentsRepository.js'
+import { applyAppointmentsToRequests, toPlanningTechnicians, travelEstimatesToMinutes } from '../utils/appointmentRecords.js'
 
-// Local planning checks only: never in a production build, and only with the flag set
-// in apps/frontend/.env.development.local.
-const showTestAppointments = import.meta.env.DEV
-  && import.meta.env.VITE_CUSTOMER_SERVICE_TEST_APPOINTMENTS === 'true'
+const emptySchedule = { roster: [], appointments: [], travelEstimates: [] }
 
-// Requests come from Supabase. Proposal drafts and technician planning remain in memory.
+// Requests, accepted appointments, travel estimates and technicians come from
+// Supabase. Proposal drafts stay in memory: they are never stored.
 export default function CustomerServicePrototypeProvider({ children }) {
   const { profile } = useAuth()
   const store = useMemo(() => createCustomerServiceRequestStore(customerServiceIntakeRepository),
@@ -22,12 +23,31 @@ export default function CustomerServicePrototypeProvider({ children }) {
     [profile?.id, profile?.role])
   const state = useSyncExternalStore(store.subscribe, store.getSnapshot)
   const [proposalDrafts, setProposalDrafts] = useState({})
-  const [testAppointments] = useState(() => (showTestAppointments ? createCustomerServiceTestAppointments() : []))
+  const [schedule, setSchedule] = useState(emptySchedule)
+  const [scheduleError, setScheduleError] = useState(null)
   const [emailAutomation, setEmailAutomation] = useState(null)
   const [emailAutomationError, setEmailAutomationError] = useState(null)
   const automationMonitor = useRef(null)
+  const canSchedule = Boolean(profile?.id && profile.isActive && ['ADMIN', 'SCHEDULING'].includes(profile.role))
+
+  const reloadSchedule = useCallback(async () => {
+    if (!canSchedule) return
+    try {
+      const [roster, loaded] = await Promise.all([listTechnicians(), loadCustomerServiceSchedule()])
+      setSchedule({ roster, ...loaded })
+      setScheduleError(null)
+    } catch (error) {
+      setScheduleError(error.message)
+    }
+  }, [canSchedule])
   useEffect(() => {
-    if (!profile?.id || !profile.isActive || !['ADMIN', 'SCHEDULING'].includes(profile.role)) return undefined
+    // Loading external data on mount; the state update happens after the request resolves.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void reloadSchedule()
+  }, [reloadSchedule])
+
+  useEffect(() => {
+    if (!canSchedule) return undefined
     const monitor = createCustomerServiceEmailAutomationMonitor({
       readStatus: async () => {
         const client = await requireSupabase()
@@ -52,23 +72,36 @@ export default function CustomerServicePrototypeProvider({ children }) {
       window.removeEventListener('focus', refresh)
       document.removeEventListener('visibilitychange', refresh)
     }
-  }, [profile?.id, profile?.role, profile?.isActive, store])
-  const value = useMemo(() => ({
-    ...state,
-    requests: testAppointments.length ? [...state.requests, ...testAppointments] : state.requests,
-    emailAutomation, emailAutomationError,
-    refreshEmailAutomation: () => automationMonitor.current?.refresh(),
-    setRequests: store.setRequests,
-    reloadRequests: () => store.reloadRequests(),
-    createRequest: (values, submissionKey) => store.createRequest(values, submissionKey),
-    recoverRequest: (receipt, values) => store.recoverRequest(receipt, values),
-    completeRecovery: (importId) => store.completeRecovery(importId),
-    updateRequest: (request, values) => store.updateRequest(request, values),
-    markRequestReady: (request, confirmation) => store.markRequestReady(request, confirmation),
-    retrySourcePdf: (id) => store.retrySourcePdf(id),
-    proposalDrafts, setProposalDrafts,
-    technicians: prototypeTechnicians,
-  }), [state, store, proposalDrafts, emailAutomation, emailAutomationError, testAppointments])
+  }, [canSchedule, store])
+
+  const value = useMemo(() => {
+    // After a write, both the request stages and the appointments change.
+    const afterScheduleChange = async (result) => {
+      await Promise.all([store.reloadRequests(), reloadSchedule()])
+      return result
+    }
+    return {
+      ...state,
+      requests: applyAppointmentsToRequests(state.requests, schedule.appointments, schedule.roster),
+      emailAutomation, emailAutomationError,
+      refreshEmailAutomation: () => automationMonitor.current?.refresh(),
+      setRequests: store.setRequests,
+      // Callers use the returned request list; the schedule refreshes alongside.
+      reloadRequests: async () => (await Promise.all([store.reloadRequests(), reloadSchedule()]))[0],
+      createRequest: (values, submissionKey) => store.createRequest(values, submissionKey),
+      recoverRequest: (receipt, values) => store.recoverRequest(receipt, values),
+      completeRecovery: (importId) => store.completeRecovery(importId),
+      updateRequest: (request, values) => store.updateRequest(request, values),
+      markRequestReady: (request, confirmation) => store.markRequestReady(request, confirmation),
+      retrySourcePdf: (id) => store.retrySourcePdf(id),
+      proposalDrafts, setProposalDrafts,
+      technicians: toPlanningTechnicians(schedule.roster),
+      storedTravelMinutes: travelEstimatesToMinutes(schedule.travelEstimates),
+      scheduleError,
+      registerAppointment: async (payload) => afterScheduleChange(await registerCustomerServiceAppointment(payload)),
+      cancelAppointment: async (payload) => afterScheduleChange(await cancelCustomerServiceAppointment(payload)),
+    }
+  }, [state, store, proposalDrafts, emailAutomation, emailAutomationError, schedule, scheduleError, reloadSchedule])
   return (
     <CustomerServicePrototypeContext.Provider value={value}>
       {children}

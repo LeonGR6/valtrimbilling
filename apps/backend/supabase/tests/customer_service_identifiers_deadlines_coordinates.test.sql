@@ -94,10 +94,10 @@ select has_table(
   'Sources remain available through the canonical intake contract'
 );
 
-select has_trigger(
+select hasnt_trigger(
   'valtrim', 'service_properties',
   'service_properties_supersede_proposals',
-  'Coordinate changes continue superseding stale schedule proposals'
+  'Legacy schedule proposals were retired in 20261105120000'
 );
 
 create temporary table point_two_fixture (

@@ -50,7 +50,6 @@ test('scheduling settings keep five-day inputs small and reject inverted ranges'
     workdayStartsAt: '08:00',
     workdayEndsAt: '17:00',
     timeZone: 'America/Los_Angeles',
-    travelBufferMinutes: '15',
     defaultDurationMinutes: '60',
     distanceGreenMaxMiles: '10',
     distanceYellowMaxMiles: '20',

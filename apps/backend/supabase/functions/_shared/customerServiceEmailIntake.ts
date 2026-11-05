@@ -190,7 +190,7 @@ export function buildEmailImportIntake(
     if (keys.size > 1) {
       conflicts.push({ path, candidates: provenance[path] });
       warnings.push(
-        `Datos contradictorios en ${path}; el campo queda pendiente de revisión.`,
+        `Contradictory data in ${path}; the field remains pending review.`,
       );
       return null;
     }
@@ -353,7 +353,7 @@ export function buildEmailImportIntake(
       else {
         if (itemGroups.some((group) => group.key === key)) {
           warnings.push(
-            "Hay ítems idénticos dentro de una fuente; se conservan para no perder trabajos distintos y requieren revisión.",
+            "Identical items appear within one source; they are kept so distinct work is not lost and require review.",
           );
         }
         itemGroups.push({ key, entries: [entry] });
@@ -395,7 +395,7 @@ export function buildEmailImportIntake(
   }
   if (excludedItemIndexes.length) {
     warnings.push(
-      "Los ítems asignados explícitamente a otro proveedor se conservan en la extracción, pero no se agregan a la request.",
+      "Items explicitly assigned to another vendor are kept in the extraction but not added to the request.",
     );
   }
 
@@ -422,7 +422,7 @@ export function buildEmailImportIntake(
   const homeowner = orderedHomeowners[0] ?? null;
   if (homeowners.length > 1) {
     warnings.push(
-      "Hay varios propietarios. Se usa el primero identificado en el correo como contacto principal; todos se conservan en la extracción para revisión.",
+      "Several homeowners were found. The first one identified in the email is used as the primary contact; all are kept in the extraction for review.",
     );
   }
   if (!homeowner || !homeowner.name || [...homeowner.name].length > 100) {
@@ -455,17 +455,17 @@ export function buildEmailImportIntake(
       : null;
     if (phone && candidate && /^\d{10}$/.test(candidate)) {
       warnings.push(
-        "Se añadió +1 al teléfono por la dirección de Estados Unidos; confirmar durante la revisión.",
+        "+1 was added to the phone because of the US address; confirm during review.",
       );
     }
     if (rawEmail && !email) {
       warnings.push(
-        "Un correo de contacto requiere corrección; se conserva el original en la extracción.",
+        "A contact email needs correction; the original is kept in the extraction.",
       );
     }
     if (phones.length && !phone) {
       warnings.push(
-        "El teléfono es ambiguo o requiere prefijo explícito +1/+52; no se supone un país.",
+        "The phone number is ambiguous or requires an explicit +1/+52 prefix; no country is assumed.",
       );
     }
     return {
@@ -490,7 +490,7 @@ export function buildEmailImportIntake(
   }
   if (additional.length > 2) {
     warnings.push(
-      "La request admite tres customers. Los demás contactos permanecen en la extracción y requieren revisión.",
+      "The request supports three customers. The other contacts remain in the extraction and require review.",
     );
   }
 
@@ -514,7 +514,7 @@ export function buildEmailImportIntake(
   ) issues.push("WORK_ITEMS_EXCEED_INTAKE_LIMIT");
   if (described.length !== included.length) {
     warnings.push(
-      "Un ítem sin descripción ni acción permanece en la extracción, pendiente de completar.",
+      "An item without a description or action remains in the extraction, pending completion.",
     );
   }
 
@@ -551,18 +551,18 @@ export function buildEmailImportIntake(
     : null;
   if (!job) {
     warnings.push(
-      "Project / Job y coordenadas quedan pendientes: no existe una coincidencia activa única con ubicación válida.",
+      "Project / Job and coordinates remain pending: there is no single active match with a valid location.",
     );
   }
   if (job && !builderValue && builder) {
     warnings.push(
-      "Builder identificado por coincidencia única del emisor con el catálogo; requiere revisión.",
+      "Builder identified by a unique sender match in the catalog; requires review.",
     );
   }
   const bounded = (value: string | null, limit: number, label: string) => {
     if (value && [...value].length > limit) {
       warnings.push(
-        `${label} supera el límite del formulario; no se recorta el original.`,
+        `${label} exceeds the form limit; the original is not truncated.`,
       );
       return null;
     }
@@ -599,7 +599,7 @@ export function buildEmailImportIntake(
     reportedOn = calendarDate(raw, today);
     if (reportedOn) reportedOnSource = source;
     else {warnings.push(
-        "La fecha fuente es inválida o futura; queda pendiente sin sustituirse por Created on.",
+        "The source date is invalid or in the future; it remains pending and is not replaced by Created on.",
       );}
     break;
   }

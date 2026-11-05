@@ -468,7 +468,7 @@ Deno.test("A failed attachment stores only a recoverable technical problem and s
   f.ports.graph.attachments = () => {
     throw new EmailAttachmentValidationError(
       "ATTACHMENT_COUNT",
-      "El correo supera 10 archivos.",
+      "The email exceeds 10 files.",
     );
   };
   const result = await f.run();

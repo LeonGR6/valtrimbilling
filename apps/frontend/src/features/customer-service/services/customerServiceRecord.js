@@ -256,30 +256,3 @@ export function toCustomerServiceRpcPayload(form) {
   }
 }
 
-export function toServiceScheduleProposal(row) {
-  return {
-    id: row.id,
-    requestedForRequestId: row.requested_for_request_id,
-    technicianId: row.technician_id,
-    technicianName: row.technician_name,
-    proposedOn: row.proposed_on,
-    rank: row.proposal_rank,
-    status: row.status,
-    score: Number(row.score),
-    totalDistanceMiles: Number(row.total_distance_miles),
-    workMinutes: row.work_minutes,
-    travelBufferMinutes: row.travel_buffer_minutes,
-    remainingWorkMinutes: row.remaining_work_minutes,
-    reasons: (row.explanation?.reasons ?? []).filter(Boolean),
-    warnings: (row.explanation?.warnings ?? []).filter(Boolean),
-    previousRequest: row.explanation?.previousRequest ?? '',
-    nextRequest: row.explanation?.nextRequest ?? '',
-    generatedAt: row.generated_at,
-    stops: (row.stops ?? []).map((stop) => ({
-      ...stop,
-      distanceFromPreviousMiles: Number(stop.distanceFromPreviousMiles),
-      latitude: Number(stop.latitude),
-      longitude: Number(stop.longitude),
-    })),
-  }
-}

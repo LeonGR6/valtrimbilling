@@ -50,7 +50,7 @@ export class EmailAttachmentValidationError extends Error {
 class EmailImportObjectConflictError extends Error {
   constructor() {
     super(
-      "Un archivo ya almacenado no coincide con el correo. No se reemplazó; requiere revisión manual.",
+      "A stored file does not match the email. It was not replaced; manual review is required.",
     );
     this.name = "EmailImportObjectConflictError";
   }
@@ -77,7 +77,7 @@ function mimeType(file: File): EmailImportFileManifest["mimeType"] {
   ) {
     invalid(
       "ATTACHMENT_FORMAT",
-      `El archivo ${file.name} no es un PDF, JPG/JPEG o PNG admitido.`,
+      `The file ${file.name} is not a supported PDF, JPG/JPEG or PNG.`,
     );
   }
   return expected;
@@ -100,12 +100,12 @@ export async function validateEmailImportAttachments(
   attachments: EmailImportAttachment[],
 ): Promise<EmailImportFileManifest[]> {
   if (!Array.isArray(attachments)) {
-    invalid("ATTACHMENT_METADATA", "La lista de adjuntos no es válida.");
+    invalid("ATTACHMENT_METADATA", "The attachment list is invalid.");
   }
   if (attachments.length > MAX_IMPORT_ATTACHMENTS) {
     invalid(
       "ATTACHMENT_COUNT",
-      "El correo supera el máximo de 10 archivos, incluyendo imágenes inline.",
+      "The email exceeds the maximum of 10 files, including inline images.",
     );
   }
   const identities = new Set<string>();
@@ -122,7 +122,7 @@ export async function validateEmailImportAttachments(
     ) {
       invalid(
         "ATTACHMENT_METADATA",
-        "Los adjuntos requieren una identidad única y metadatos válidos.",
+        "Attachments require a unique identity and valid metadata.",
       );
     }
     identities.add(attachment.id);
@@ -132,7 +132,7 @@ export async function validateEmailImportAttachments(
     ) {
       invalid(
         "ATTACHMENT_FORMAT",
-        "El correo contiene un adjunto incrustado o vinculado que no puede importarse como archivo.",
+        "The email contains an embedded or linked attachment that cannot be imported as a file.",
       );
     }
     const file = attachment.file;
@@ -145,14 +145,14 @@ export async function validateEmailImportAttachments(
     ) {
       invalid(
         "ATTACHMENT_METADATA",
-        "El nombre del archivo debe tener entre 1 y 255 caracteres sin controles.",
+        "The file name must be 1 to 255 characters with no control characters.",
       );
     }
     const type = mimeType(file);
     if (file.size === 0 || file.size > MAX_IMPORT_ATTACHMENT_BYTES) {
       invalid(
         "ATTACHMENT_SIZE",
-        `El archivo ${file.name} está vacío o supera 10 MB.`,
+        `The file ${file.name} is empty or exceeds 10 MB.`,
       );
     }
     if (
@@ -161,7 +161,7 @@ export async function validateEmailImportAttachments(
     ) {
       invalid(
         "ATTACHMENT_SIZE",
-        `El tamaño descargado de ${file.name} no coincide con el informado por el correo.`,
+        `The downloaded size of ${file.name} does not match the size reported by the email.`,
       );
     }
     totalBytes += file.size;
@@ -170,7 +170,7 @@ export async function validateEmailImportAttachments(
   if (totalBytes > MAX_IMPORT_TOTAL_BYTES) {
     invalid(
       "ATTACHMENT_TOTAL_SIZE",
-      "Los adjuntos del correo superan 50 MB en total.",
+      "The email attachments exceed 50 MB in total.",
     );
   }
   typed.sort((a, b) =>
@@ -281,7 +281,7 @@ export async function retainEmailImportSource({
     return await port.fail(
       error instanceof EmailImportObjectConflictError
         ? error.message
-        : "No se pudo completar el almacenamiento privado. Reintenta el mismo correo; no se creó una request.",
+        : "Private storage could not be completed. Retry the same email; no request was created.",
     );
   }
 }

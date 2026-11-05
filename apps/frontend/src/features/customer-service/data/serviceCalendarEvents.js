@@ -1,5 +1,6 @@
 import { normalizeServiceWorkTypes, serviceWorkTypeOptions } from './workTypes.js'
 import { assignedPrototypeTechnicianIds, prototypeTechnicians } from './prototypeTechnicians.js'
+import { customerServiceWindows } from '../utils/customerServiceScheduling.js'
 
 export { serviceWorkTypeOptions } from './workTypes.js'
 
@@ -56,11 +57,8 @@ export const serviceCalendarViewOptions = [
   { value: 'multiMonthYear', label: 'Year' },
 ]
 
-export const serviceCustomerWindowOptions = [
-  { start: '08:00', end: '10:00', label: '8:00 AM–10:00 AM', exceptional: false },
-  { start: '10:00', end: '12:00', label: '10:00 AM–12:00 PM', exceptional: false },
-  { start: '12:00', end: '14:00', label: '12:00 PM–2:00 PM', exceptional: false },
-]
+// The same windows the server validates against.
+export const serviceCustomerWindowOptions = customerServiceWindows
 
 function timeToMinutes(value) {
   const match = String(value ?? '').match(/^(\d{2}):(\d{2})$/u)
@@ -154,7 +152,7 @@ function createPrototypeCalendarEvent(request) {
   const workTypes = normalizeServiceWorkTypes(request.workType)
   const technicianIds = assignedPrototypeTechnicianIds(request)
   const technicianId = technicianIds[0] ?? null
-  const assignedTechnicians = technicianIds.map((id) => ({
+  const assignedTechnicians = request.assignedTechnicians ?? technicianIds.map((id) => ({
     id, name: prototypeTechnicians.find((person) => person.id === id)?.name ?? request.technicianName ?? 'Unknown technician',
   }))
 
@@ -183,6 +181,8 @@ function createPrototypeCalendarEvent(request) {
       lastVisit: null,
       customerWindow,
       internalSlot: request.internalSlot ?? null,
+      // Present only for appointments saved in Supabase; enables cancelling.
+      appointment: request.appointment ?? null,
     },
   }
 }

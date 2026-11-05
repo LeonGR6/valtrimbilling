@@ -112,20 +112,20 @@ function reviewTextContactNames(
       if (!normalized || contactLabels.has(label)) {
         name = null;
         warnings.add(
-          "Se extrajo una etiqueta como nombre de contacto; el nombre queda pendiente de revisión.",
+          "A label was extracted as a contact name; the name remains pending review.",
         );
       } else if (
         sourceKind === "EMAIL" && !source.includes(` ${normalized} `)
       ) {
         name = null;
         warnings.add(
-          "Un nombre de contacto no pudo verificarse en este texto; queda pendiente de revisión.",
+          "A contact name could not be verified in this text; it remains pending review.",
         );
       }
     }
     if (contact.role === "HOMEOWNER" && !name) {
       warnings.add(
-        "Falta el nombre del propietario en los datos extraídos; revisa el original antes de continuar.",
+        "The homeowner name is missing from the extracted data; review the original before continuing.",
       );
     }
     // Preserve sourceLabel and other evidence. A person-like label is never

@@ -22,7 +22,7 @@ const handler = createCustomerServiceEmailRetryHandler({
       !["ADMIN", "SCHEDULING"].includes(profile.role)
     ) {
       return Response.json({
-        error: "No tienes permiso para reintentar importaciones.",
+        error: "You do not have permission to retry imports.",
       }, { status: 403 });
     }
     return {

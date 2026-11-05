@@ -12,7 +12,7 @@ function receipt(overrides = {}) {
     id, subject: 'Solicitud de prueba', from: 'builder@example.com', status: 'NEEDS_ATTENTION',
     created_at: '2026-10-23T18:00:00Z', updated_at: '2026-10-23T18:05:00Z',
     attempt_count: 3, last_attempt_at: '2026-10-23T18:04:00Z',
-    error_code: 'ANALYSIS_FAILED', error_message: 'No se pudo leer el PDF.',
+    error_code: 'ANALYSIS_FAILED', error_message: 'Could not read the PDF.',
     request_id: null, request_folio: null,
     ...overrides,
   }

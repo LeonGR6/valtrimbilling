@@ -60,14 +60,11 @@ select is(
   'The Valtrim workday ends at 5:00 PM'
 );
 
-select is(
-  (
-    select settings.travel_buffer_minutes
-    from valtrim.service_scheduling_settings settings
-    where settings.id = 1
-  ),
-  30::smallint,
-  'The minimum travel buffer is 30 minutes'
+select hasnt_column(
+  'valtrim',
+  'service_scheduling_settings',
+  'travel_buffer_minutes',
+  'The fixed travel buffer was retired in 20261105120000'
 );
 
 select ok(

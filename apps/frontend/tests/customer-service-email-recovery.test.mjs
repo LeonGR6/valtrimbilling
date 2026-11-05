@@ -69,11 +69,11 @@ test('retry distinguishes unfinished work and rejects an unconfirmed success or 
 })
 
 test('endpoint errors become English product messages without exposing raw diagnostics or secrets', async () => {
-  const error = { context: new Response(JSON.stringify({ error: 'WORKER_DISABLED: deshabilitado PRIVATE_TOKEN' }), { status: 409 }) }
+  const error = { context: new Response(JSON.stringify({ error: 'WORKER_DISABLED: raw backend detail PRIVATE_TOKEN' }), { status: 409 }) }
   const repo = createCustomerServiceEmailImportRepository({ getClient: async () => ({ functions: { invoke: async () => ({ error }) } }) })
   await assert.rejects(repo.retry(receipt), (failure) => {
     assert.match(failure.message, /Automatic processing is disabled/)
-    assert.doesNotMatch(failure.message, /PRIVATE_TOKEN|deshabilitado/)
+    assert.doesNotMatch(failure.message, /PRIVATE_TOKEN|raw backend detail/)
     return true
   })
 })

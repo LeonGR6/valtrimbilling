@@ -214,7 +214,7 @@ export async function syncCustomerServiceEmailPage(options: {
         ) {
           throw new EmailAttachmentValidationError(
             "SOURCE_METADATA",
-            "La fuente pertenece a otra conexión de correo y requiere revisión.",
+            "The source belongs to another email connection and requires review.",
           );
         }
         let source: Record<string, unknown>;

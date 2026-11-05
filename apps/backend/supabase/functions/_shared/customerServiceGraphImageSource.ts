@@ -21,7 +21,7 @@ export type GraphImageCredentials = {
 const invalidOrigin = () =>
   new EmailAttachmentValidationError(
     "SOURCE_METADATA",
-    "El origen de la imagen no está disponible o no coincide con la importación.",
+    "The image origin is unavailable or does not match the import.",
   );
 
 // Only metadata is retained between calls. File bytes and the access token live

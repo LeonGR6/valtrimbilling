@@ -71,15 +71,15 @@ export function customerServiceEmailSyncStorage(
         p_import_id: importId,
         p_error_code: code,
         p_error_message: containsEmailBinary(message)
-          ? "El correo o sus adjuntos contienen datos binarios en metadatos; requiere recuperación manual."
+          ? "The email or its attachments contain binary data in metadata; manual recovery is required."
           : message,
       }) as ImportSourceResult,
     failPinned: async (importId, reason) =>
       await rpc("fail_customer_service_import_source", {
         p_import_id: importId,
         p_error_message: reason === "LEGACY_IMAGES"
-          ? "El correo tiene imágenes fijadas con el contrato histórico. Se conservaron sus archivos y manifiesto; requiere recuperación manual. No se subieron imágenes nuevas."
-          : "No se pudo recuperar el conjunto original de archivos ya fijado. Revisa el correo y completa la recuperación manual.",
+          ? "The email has images pinned under the legacy contract. Its files and manifest were kept; manual recovery is required. No new images were uploaded."
+          : "The original pinned file set could not be recovered. Review the email and complete the manual recovery.",
       }) as ImportSourceResult,
   };
 }

@@ -87,7 +87,7 @@ export async function retainGraphEmailSource(options: {
     if ((error as { code?: string })?.code === "22023") {
       throw new EmailAttachmentValidationError(
         "SOURCE_METADATA",
-        "La fuente completa no cumple el contrato de importación sin imágenes almacenadas.",
+        "The complete source does not meet the import contract without stored images.",
       );
     }
     if (
@@ -97,7 +97,7 @@ export async function retainGraphEmailSource(options: {
     ) {
       throw new EmailAttachmentValidationError(
         "SOURCE_METADATA",
-        "El adjunto recuperado no coincide con el manifiesto original; requiere revisión manual.",
+        "The recovered attachment does not match the original manifest; manual review is required.",
       );
     }
     throw error; // Lost responses/leases are reconciled, never downgraded to V1.
@@ -140,7 +140,7 @@ export async function retainGraphEmailSource(options: {
     // Includes a lost finalizer response. SQL keeps an already AVAILABLE source.
     // Never log SDK/provider responses, signed URLs or image transport payloads.
     return await port.fail(
-      "No se pudo completar la preparación del correo y sus PDF. Se conservó el manifiesto; reintenta la misma importación.",
+      "The email and its PDFs could not be prepared. The manifest was kept; retry the same import.",
     );
   }
 }

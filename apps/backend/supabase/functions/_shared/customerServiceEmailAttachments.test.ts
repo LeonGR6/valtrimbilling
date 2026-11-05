@@ -406,7 +406,7 @@ Deno.test("different existing bytes cannot be replaced or published", async () =
   assertEquals(result.status, "NEEDS_ATTENTION");
   assertEquals(f.state.commits, 0);
   assertEquals(f.objects.get(path), previous);
-  assertEquals(f.state.lastError.includes("requiere revisión manual"), true);
+  assertEquals(f.state.lastError.includes("manual review is required"), true);
 });
 
 Deno.test("lost finalize response does not degrade or delete the available source", async () => {

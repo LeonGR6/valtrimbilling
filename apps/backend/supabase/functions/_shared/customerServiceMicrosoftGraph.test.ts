@@ -455,7 +455,7 @@ Deno.test("Graph rejects repeated attachment pages and duplicate file identities
   await assertRejects(
     () => tooMany.client.attachments(target, "M"),
     EmailAttachmentValidationError,
-    "10 archivos",
+    "10 files",
   );
   assertEquals(tooMany.calls.length, 2);
   const duplicate = fixture([
@@ -465,7 +465,7 @@ Deno.test("Graph rejects repeated attachment pages and duplicate file identities
   await assertRejects(
     () => duplicate.client.attachments(target, "M"),
     EmailAttachmentValidationError,
-    "metadatos",
+    "metadata",
   );
   const initial =
     `${base}/M/attachments?$select=id,name,contentType,size,isInline`;
@@ -534,7 +534,7 @@ Deno.test("Graph accepts a completed download without Content-Length and still r
   await assertRejects(
     () => empty.client.files(target, "M", metadata),
     EmailAttachmentValidationError,
-    "vacío",
+    "is empty",
   );
 });
 
@@ -584,7 +584,7 @@ Deno.test("Graph rejects partial HTTP success and ranges even when their Content
     await assertRejects(
       () => client.files(target, "M", [attachment()]),
       EmailAttachmentValidationError,
-      "completa",
+      "complete",
     );
   }
 });
@@ -766,7 +766,7 @@ Deno.test("Graph source failures are recoverable problems while provider outages
   await assertRejects(
     () => missing.client.message(target, "M"),
     EmailAttachmentValidationError,
-    "no está disponible",
+    "is unavailable",
   );
   const unavailable = fixture([auth(), new Response(null, { status: 503 })]);
   await assertRejects(

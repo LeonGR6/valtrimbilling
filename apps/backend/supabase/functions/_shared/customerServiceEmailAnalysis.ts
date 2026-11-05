@@ -282,7 +282,7 @@ export async function analyzeCustomerServiceEmail(
       failed(
         entry,
         "ANALYSIS_FAILED",
-        "No se pudo extraer información válida de esta parte del correo.",
+        "No valid information could be extracted from this part of the email.",
         error,
       );
     }
@@ -322,7 +322,7 @@ export async function analyzeCustomerServiceEmail(
       failed(
         entry,
         "SOURCE_UNAVAILABLE",
-        "El adjunto original no está disponible o no coincide con el archivo validado.",
+        "The original attachment is unavailable or does not match the validated file.",
         error,
       );
       await onSource?.(entry);
@@ -343,7 +343,7 @@ export async function analyzeCustomerServiceEmail(
         failed(
           entry,
           "ANALYSIS_FAILED",
-          "No se pudo analizar la imagen; no se omite para crear una request parcial.",
+          "The image could not be analyzed; it was not omitted to create a partial request.",
           error,
         );
       }
@@ -390,7 +390,7 @@ export async function analyzeCustomerServiceEmail(
       failed(
         entry,
         "SOURCE_UNREADABLE",
-        "No se pudo leer el PDF completo (documento protegido, dañado, formulario incompatible o fallo del proveedor).",
+        "The complete PDF could not be read (protected or damaged document, incompatible form, or provider failure).",
         error,
       );
     }

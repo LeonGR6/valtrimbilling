@@ -24,7 +24,6 @@ function formValues(settings) {
     workdayStartsAt: settings.workdayStartsAt?.slice(0, 5) ?? '08:00',
     workdayEndsAt: settings.workdayEndsAt?.slice(0, 5) ?? '17:00',
     timeZone: settings.timeZone ?? 'America/Los_Angeles',
-    travelBufferMinutes: settings.travelBufferMinutes ?? 15,
     defaultDurationMinutes: settings.defaultDurationMinutes ?? 60,
     distanceGreenMaxMiles: settings.distanceGreenMaxMiles ?? 10,
     distanceYellowMaxMiles: settings.distanceYellowMaxMiles ?? 20,
@@ -110,10 +109,6 @@ export default function SchedulingSettings({ settings, canEdit, onSaved }) {
             disabled={disabled} error={Boolean(errors.defaultDurationMinutes)}
             helperText={errors.defaultDurationMinutes?.message ?? '15–720 minutes'} fullWidth
             slotProps={{ htmlInput: { min: 15, max: 720, step: 15 } }} />
-          <TextField label="Travel buffer minutes" type="number" {...register('travelBufferMinutes')}
-            disabled={disabled} error={Boolean(errors.travelBufferMinutes)}
-            helperText={errors.travelBufferMinutes?.message ?? '0–120 minutes'} fullWidth
-            slotProps={{ htmlInput: { min: 0, max: 120, step: 5 } }} />
         </Stack>
 
         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>

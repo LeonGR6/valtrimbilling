@@ -11,6 +11,10 @@ create temporary table co_results (
   detail text
 ) on commit drop;
 
+-- The Change Orders that were already there (real ones, once the team uses them): the checks count what this script adds.
+create temporary table co_baseline on commit drop as
+select count(*) as n from valtrim.change_orders;
+
 create temporary table co_ctx (
   admin_id uuid,
   pm_id uuid,
@@ -293,7 +297,7 @@ cross join co_ctx ctx;
 
 select pg_temp.check_that(
   'nothing was left behind by the refused calls',
-  (select count(*) = 1 from valtrim.change_orders),
+  (select count(*) = (select n from co_baseline) + 1 from valtrim.change_orders),
   (select count(*)::text from valtrim.change_orders)
 );
 
@@ -803,6 +807,78 @@ select pg_temp.check_that(
 select pg_temp.check_that(
   'two Change Orders never share a number',
   (select count(distinct change_order_number) = count(*) from valtrim.change_orders)
+);
+
+-- Deleting: only a Draft, with its lines and history -------------------------------------------------
+
+create temporary table co_delete (draft_id bigint, pending_id bigint, admin_draft_id bigint) on commit drop;
+
+insert into co_delete (draft_id, pending_id, admin_draft_id) values (
+  nullif(regexp_replace(
+    pg_temp.run_as((select pm_id from co_ctx), format(
+      $q$select valtrim.create_change_order(%s, 'Delete me', 'Carlos', '[{"lot_id": %s, "scope_of_work": "x", "amount": 10}]'::jsonb)::text$q$,
+      (select job_id from co_ctx), (select lot_ids[1] from co_ctx))),
+    '^ok:', ''), '')::bigint,
+  nullif(regexp_replace(
+    pg_temp.run_as((select pm_id from co_ctx), format(
+      $q$select valtrim.create_change_order(%s, 'Sent, not deletable', 'Carlos', '[{"lot_id": %s, "scope_of_work": "x", "amount": 10}]'::jsonb, p_status => 'PENDING')::text$q$,
+      (select job_id from co_ctx), (select lot_ids[1] from co_ctx))),
+    '^ok:', ''), '')::bigint,
+  nullif(regexp_replace(
+    pg_temp.run_as((select pm_id from co_ctx), format(
+      $q$select valtrim.create_change_order(%s, 'Admin deletes me', 'Carlos', '[{"lot_id": %s, "scope_of_work": "x", "amount": 10}]'::jsonb)::text$q$,
+      (select job_id from co_ctx), (select lot_ids[1] from co_ctx))),
+    '^ok:', ''), '')::bigint
+);
+
+select pg_temp.check_that(
+  'a read-only user cannot delete a Change Order',
+  pg_temp.run_as((select readonly_id from co_ctx), format('select valtrim.delete_change_order(%s)::text', (select draft_id from co_delete)))
+    like 'err:42501:%'
+);
+
+select pg_temp.check_that(
+  'a Pending Change Order cannot be deleted, and the message says to cancel it',
+  pg_temp.run_as((select pm_id from co_ctx), format('select valtrim.delete_change_order(%s)::text', (select pending_id from co_delete)))
+    like 'err:23514:Only a Draft%Cancel it instead'
+);
+
+select pg_temp.check_that(
+  'an Approved Change Order cannot be deleted either',
+  pg_temp.run_as((select admin_id from co_ctx), format('select valtrim.set_change_order_status(%s, ''APPROVED'')::text', (select pending_id from co_delete)))
+    like 'ok:%'
+  and pg_temp.run_as((select admin_id from co_ctx), format('select valtrim.delete_change_order(%s)::text', (select pending_id from co_delete)))
+    like 'err:23514:Only a Draft%'
+);
+
+select pg_temp.check_that(
+  'Project Management deletes a Draft',
+  pg_temp.run_as((select pm_id from co_ctx), format('select valtrim.delete_change_order(%s)::text', (select draft_id from co_delete)))
+    like 'ok:%'
+);
+
+select pg_temp.check_that(
+  'its header, lines and history are gone',
+  not exists (select 1 from valtrim.change_orders where id = (select draft_id from co_delete))
+  and not exists (select 1 from valtrim.change_order_lines where change_order_id = (select draft_id from co_delete))
+  and not exists (select 1 from valtrim.change_order_status_history where change_order_id = (select draft_id from co_delete))
+);
+
+select pg_temp.check_that(
+  'deleting it again says it no longer exists',
+  pg_temp.run_as((select pm_id from co_ctx), format('select valtrim.delete_change_order(%s)::text', (select draft_id from co_delete)))
+    like 'err:P0002:%'
+);
+
+select pg_temp.check_that(
+  'an Admin deletes a Draft too',
+  pg_temp.run_as((select admin_id from co_ctx), format('select valtrim.delete_change_order(%s)::text', (select admin_draft_id from co_delete)))
+    like 'ok:%'
+);
+
+select pg_temp.check_that(
+  'and it is gone',
+  not exists (select 1 from valtrim.change_orders where id = (select admin_draft_id from co_delete))
 );
 
 select step, name, ok, detail from co_results order by step;

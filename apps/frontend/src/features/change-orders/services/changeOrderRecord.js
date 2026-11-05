@@ -30,7 +30,8 @@ export function canApproveChangeOrders(role) {
  * and move it to another status. Each move says where it goes (`to`), what the button says (`label`),
  * whether the person must confirm it (`confirm`) and whether a reason is needed (`needsReason`).
  * The database allows the same: Project Management and Admin move it between Draft, Pending and
- * Cancelled; only Admin approves, or cancels an approved one.
+ * Cancelled; only Admin approves, or cancels an approved one. Only a Draft can be deleted (`canDelete`):
+ * what was sent is cancelled instead.
  */
 export function changeOrderActions(status, role) {
   const mayWrite = canEditChangeOrders(role)
@@ -47,7 +48,19 @@ export function changeOrderActions(status, role) {
     }
   }
 
-  return { canEdit: mayWrite && open, moves }
+  return { canEdit: mayWrite && open, canDelete: mayWrite && status === 'DRAFT', moves }
+}
+
+/** What is said once a move is done ("CO-0007 approved"); `to` is a status, or 'DELETE'. */
+export function changeOrderMoveNotice(number, to) {
+  switch (to) {
+    case 'PENDING': return `${number} sent for approval`
+    case 'DRAFT': return `${number} is a Draft again`
+    case 'APPROVED': return `${number} approved`
+    case 'CANCELLED': return `${number} cancelled`
+    case 'DELETE': return `${number} deleted`
+    default: return `${number} updated`
+  }
 }
 
 /** Why the reason for cancelling cannot be sent, or '' when it can. */
@@ -157,7 +170,8 @@ function mostCommon(values) {
   return best
 }
 
-const amountText = (amount) => String(Number(amount))
+// Always cents ("185.50"), as it is shown on the detail page.
+const amountText = (amount) => Number(amount).toFixed(2)
 
 /**
  * The form values to edit a saved Extra / CO (`order` from `toChangeOrderDetail`, `job` the Job it is
@@ -377,6 +391,79 @@ export function summarizeDetailLines(lines) {
   const places = lines.filter((line) => line.isPlace).length
 
   return { lots: lines.length - places, places, total: cents / 100 }
+}
+
+const isWholeLot = (lot) => /^\d+$/.test(lot)
+
+/**
+ * Lot numbers as short text: "1–6, 9, 12.1". Three or more whole numbers in a row become a range; a
+ * Lot with a decimal (12.1) always stands alone, in its place by value.
+ */
+export function formatLotRanges(lots) {
+  const sorted = [...new Set(lots.map(String))]
+    .sort((left, right) => (Number.parseFloat(left) - Number.parseFloat(right)) || left.localeCompare(right))
+  const parts = []
+
+  for (let index = 0; index < sorted.length;) {
+    let end = index
+    while (
+      isWholeLot(sorted[end]) && isWholeLot(sorted[end + 1] ?? '')
+      && Number(sorted[end + 1]) === Number(sorted[end]) + 1
+    ) end += 1
+
+    if (end - index >= 2) {
+      parts.push(`${sorted[index]}–${sorted[end]}`)
+      index = end + 1
+    } else {
+      parts.push(sorted[index])
+      index += 1
+    }
+  }
+
+  return parts.join(', ')
+}
+
+/**
+ * The lines of an Extra / CO as the work they are: every Lot with the same Scope of Work and Amount
+ * is one piece of `works` (with where it is, by Phase and Building, and its Plans), and each line
+ * without a Lot stays on its own in `places`. Both keep the order of the lines.
+ */
+export function groupDetailLines(lines) {
+  const byWork = new Map()
+  const places = []
+
+  for (const line of lines) {
+    if (line.isPlace) {
+      places.push({ id: line.id, location: line.location, scope: line.scope, amount: line.amount })
+      continue
+    }
+
+    const key = JSON.stringify([line.scope.trim(), Math.round(line.amount * 100)])
+    if (!byWork.has(key)) byWork.set(key, { key, scope: line.scope, amount: line.amount, lines: [] })
+    byWork.get(key).lines.push(line)
+  }
+
+  const works = [...byWork.values()].map(({ lines: group, ...work }) => {
+    const spots = new Map()
+    const plans = new Map()
+
+    for (const line of group) {
+      const spot = `${line.phase}\u0000${line.building}`
+      if (!spots.has(spot)) spots.set(spot, { phase: line.phase, building: line.building, lots: [] })
+      spots.get(spot).lots.push(line.lot)
+      if (line.plan) plans.set(line.plan, (plans.get(line.plan) ?? 0) + 1)
+    }
+
+    return {
+      ...work,
+      count: group.length,
+      subtotal: Math.round(work.amount * 100 * group.length) / 100,
+      locations: [...spots.values()].map((spot) => ({ ...spot, lots: formatLotRanges(spot.lots) })),
+      plans: [...plans].map(([plan, count]) => ({ plan, count })),
+    }
+  })
+
+  return { works, places }
 }
 
 // The list ---------------------------------------------------------------------------------------------

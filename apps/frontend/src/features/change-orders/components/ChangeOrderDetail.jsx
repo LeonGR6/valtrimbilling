@@ -13,8 +13,12 @@ import {
   TableContainer,
   TableHead,
   TableRow,
+  ToggleButton,
+  ToggleButtonGroup,
   Typography,
 } from '@mui/material'
+import TableRowsOutlinedIcon from '@mui/icons-material/TableRowsOutlined'
+import ViewAgendaOutlinedIcon from '@mui/icons-material/ViewAgendaOutlined'
 
 import {
   CatalogEmptyState,
@@ -26,8 +30,9 @@ import {
   formatDate,
   formatDateTime,
 } from '../../draw-invoice/utils/drawInvoiceFormatters.js'
+import { allChangeOrderStatuses } from '../data/changeOrders.js'
 import { useChangeOrder } from '../hooks/useChangeOrderData.js'
-import { summarizeDetailLines } from '../services/changeOrderRecord.js'
+import { groupDetailLines, summarizeDetailLines } from '../services/changeOrderRecord.js'
 import ChangeOrderActions from './ChangeOrderActions.jsx'
 import ChangeOrderStatusChip from './ChangeOrderStatusChip.jsx'
 
@@ -35,154 +40,283 @@ const plural = (count, singular) => `${count} ${singular}${count === 1 ? '' : 's
 
 const LIST = { label: 'Extra / Change Orders', to: '/change-orders' }
 
-function DetailItem({ label, children, wide = false }) {
-  const empty = children === '' || children == null
+// The colour of a status in the history; Draft has none of its own.
+const STATUS_COLORS = {
+  DRAFT: 'text.disabled',
+  PENDING: 'warning.main',
+  APPROVED: 'success.main',
+  CANCELLED: 'error.main',
+}
+
+const money = { fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }
+
+/** "3 lots and 2 lines without a lot" */
+function countsText({ lots, places }) {
+  return [
+    lots > 0 && plural(lots, 'lot'),
+    places > 0 && `${plural(places, 'line')} without a lot`,
+  ].filter(Boolean).join(' and ')
+}
+
+/** Who asked and when: one row under the title, only what was written. */
+function Facts({ order }) {
+  const facts = [
+    { label: 'Builder', value: order.builderName },
+    { label: 'Community', value: order.community },
+    { label: 'Job', value: order.jobCode ? `#${order.jobCode}` : '' },
+    { label: 'Requested by', value: order.requestedBy },
+    { label: 'Requested on', value: order.requestDate ? formatDate(order.requestDate) : '' },
+    { label: 'Needed by', value: order.neededByDate ? formatDate(order.neededByDate) : '' },
+    // The CO number is the internal one unless the office wrote its own.
+    {
+      label: 'Internal #',
+      value: order.internalNumber && order.internalNumber !== order.number ? order.internalNumber : '',
+    },
+  ].filter((fact) => fact.value)
 
   return (
-    <Box sx={wide ? { gridColumn: { sm: '1 / -1' } } : undefined}>
-      <Typography variant="caption" color="text.secondary" component="div">
-        {label}
-      </Typography>
-      <Typography
-        variant="body2"
-        fontWeight={500}
-        color={empty ? 'text.disabled' : 'text.primary'}
-        sx={{ overflowWrap: 'anywhere' }}
-      >
-        {empty ? '—' : children}
-      </Typography>
+    <Box
+      component="dl"
+      aria-label="Who asked and when"
+      sx={{ m: 0, mt: 2, display: 'flex', flexWrap: 'wrap', columnGap: { xs: 3, md: 5 }, rowGap: 1.5 }}
+    >
+      {facts.map((fact) => (
+        <Box key={fact.label} sx={{ minWidth: 0 }}>
+          <Typography component="dt" variant="caption" color="text.secondary">
+            {fact.label}
+          </Typography>
+          <Typography component="dd" variant="body2" fontWeight={600} sx={{ m: 0, overflowWrap: 'anywhere' }}>
+            {fact.value}
+          </Typography>
+        </Box>
+      ))}
     </Box>
   )
 }
 
-function DetailsCard({ order }) {
+function Row({ label, children }) {
   return (
-    <Paper variant="outlined" component="section" aria-label="Details" sx={{ p: { xs: 2, md: 3 }, borderRadius: 2 }}>
-      {order.status === 'CANCELLED' && (
-        <Alert severity="warning" sx={{ mb: 2 }}>
-          Cancelled on {formatDateTime(order.cancelledAt)}: {order.cancelReason}
-        </Alert>
-      )}
-      <Box
-        sx={{
-          display: 'grid',
-          gap: 2.5,
-          gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))', xl: 'repeat(3, minmax(0, 1fr))' },
-        }}
-      >
-        <DetailItem label="Title" wide>{order.title}</DetailItem>
-        <DetailItem label="Internal CO / Extra #">{order.internalNumber}</DetailItem>
-        <DetailItem label="Builder">{order.builderName}</DetailItem>
-        <DetailItem label="Community">{order.community}</DetailItem>
-        <DetailItem label="Job">{order.jobCode ? `#${order.jobCode}` : ''}</DetailItem>
-        <DetailItem label="Requested by">{order.requestedBy}</DetailItem>
-        <DetailItem label="Request date">{order.requestDate ? formatDate(order.requestDate) : ''}</DetailItem>
-        <DetailItem label="Needed by">{order.neededByDate ? formatDate(order.neededByDate) : ''}</DetailItem>
-        <DetailItem label="Created">{formatDateTime(order.createdAt)}</DetailItem>
-        {order.approvedAt && (
-          <DetailItem label="Approved">{formatDateTime(order.approvedAt)}</DetailItem>
+    <>
+      <Typography component="dt" variant="body2" color="text.secondary">
+        {label}
+      </Typography>
+      <Typography component="dd" variant="body2" fontWeight={600} sx={{ m: 0, overflowWrap: 'anywhere' }}>
+        {children}
+      </Typography>
+    </>
+  )
+}
+
+/** One piece of work: what is done, what each lot is charged and where. */
+function WorkGroup({ work }) {
+  const planText = work.plans.map(({ plan, count }) => `Plan ${plan} on ${plural(count, 'lot')}`).join(', ')
+
+  return (
+    <Box sx={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', columnGap: 3, rowGap: 1 }}>
+      <Typography variant="body1" fontWeight={600} sx={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>
+        {work.scope || <Box component="span" sx={{ color: 'text.disabled' }}>No Scope of Work</Box>}
+      </Typography>
+      <Box sx={{ textAlign: 'right' }}>
+        <Typography variant="body1" fontWeight={700} sx={money}>
+          {formatCurrency(work.subtotal)}
+        </Typography>
+        {work.count > 1 && (
+          <Typography variant="caption" color="text.secondary" sx={money} component="div">
+            {formatCurrency(work.amount)} × {work.count}
+          </Typography>
         )}
       </Box>
-    </Paper>
+
+      <Box sx={{ gridColumn: '1 / -1' }}>
+        <Box
+          component="dl"
+          sx={{ m: 0, display: 'grid', gridTemplateColumns: 'minmax(120px, auto) 1fr', columnGap: 2, rowGap: 0.5 }}
+        >
+          {work.locations.map((spot) => (
+            <Row key={`${spot.phase}-${spot.building}`} label={[
+              spot.phase && `Phase ${spot.phase}`,
+              spot.building && `Building ${spot.building}`,
+            ].filter(Boolean).join(', ') || 'Lots'}
+            >
+              {/[,–]/.test(spot.lots) ? `Lots ${spot.lots}` : `Lot ${spot.lots}`}
+            </Row>
+          ))}
+        </Box>
+        {planText && (
+          <Typography variant="caption" color="text.secondary" component="p" sx={{ mt: 0.75 }}>
+            {planText}
+          </Typography>
+        )}
+      </Box>
+    </Box>
   )
 }
 
-function LinesCard({ order, totals }) {
+/** A line that is not on a lot: the Sales Office, a restroom. */
+function PlaceGroup({ place }) {
   return (
-    <Paper variant="outlined" component="section" aria-label="Lines" sx={{ borderRadius: 2, overflow: 'hidden' }}>
-      <Box sx={{ px: { xs: 2, md: 3 }, pt: 2.5, pb: 1.5 }}>
-        <Typography variant="subtitle1" component="h2" fontWeight={700}>
-          Scope of Work &amp; Amount
-        </Typography>
-        <Typography variant="body2" color="text.secondary">
-          {[
-            totals.lots > 0 && plural(totals.lots, 'lot'),
-            totals.places > 0 && `${plural(totals.places, 'line')} without a lot`,
-          ].filter(Boolean).join(' · ')}
-        </Typography>
+    <Box sx={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', columnGap: 3, rowGap: 1 }}>
+      <Typography variant="body1" fontWeight={600} sx={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>
+        {place.scope}
+      </Typography>
+      <Typography variant="body1" fontWeight={700} sx={money}>
+        {formatCurrency(place.amount)}
+      </Typography>
+      <Box
+        component="dl"
+        sx={{
+          gridColumn: '1 / -1',
+          m: 0,
+          display: 'grid',
+          gridTemplateColumns: 'minmax(120px, auto) 1fr',
+          columnGap: 2,
+        }}
+      >
+        <Row label="Not on a lot">{place.location}</Row>
       </Box>
+    </Box>
+  )
+}
 
-      <TableContainer>
-        <Table size="small" aria-label="Order lines" sx={[{ minWidth: 900 }, catalogTableSx]}>
-          <TableHead>
-            <TableRow>
-              <TableCell width={48}>#</TableCell>
-              <TableCell>Phase</TableCell>
-              <TableCell>Building</TableCell>
-              <TableCell>Lot / Place</TableCell>
-              <TableCell>Plan Type</TableCell>
-              <TableCell sx={{ minWidth: 260 }}>Scope of Work</TableCell>
-              <TableCell>PO</TableCell>
-              <TableCell align="right">Amount</TableCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {order.lines.map((line) => (
-              <TableRow key={line.id} hover>
-                <TableCell>{line.lineNumber}</TableCell>
-                <TableCell>{line.phase || '—'}</TableCell>
-                <TableCell>{line.building || '—'}</TableCell>
-                <TableCell>
-                  {line.isPlace ? (
-                    <>
-                      <Typography variant="body2" fontWeight={600}>{line.location}</Typography>
-                      <Typography variant="caption" color="text.secondary" component="div">
-                        No lot
-                      </Typography>
-                    </>
-                  ) : line.lot}
-                </TableCell>
-                <TableCell>{line.plan ? `Plan ${line.plan}` : '—'}</TableCell>
-                <TableCell sx={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{line.scope}</TableCell>
-                <TableCell>{line.poNumber || '—'}</TableCell>
-                <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
-                  {formatCurrency(line.amount)}
-                </TableCell>
-              </TableRow>
-            ))}
-            <TableRow>
-              <TableCell colSpan={7} align="right" sx={{ fontWeight: 700 }}>Total</TableCell>
-              <TableCell align="right" sx={{ fontWeight: 800, whiteSpace: 'nowrap' }}>
-                {formatCurrency(totals.total)}
+function LinesTable({ order, totals }) {
+  return (
+    <TableContainer>
+      <Table size="small" aria-label="Every line" sx={[{ minWidth: 900 }, catalogTableSx]}>
+        <TableHead>
+          <TableRow>
+            <TableCell width={48}>#</TableCell>
+            <TableCell>Phase</TableCell>
+            <TableCell>Building</TableCell>
+            <TableCell>Lot / Place</TableCell>
+            <TableCell>Plan Type</TableCell>
+            <TableCell sx={{ minWidth: 260 }}>Scope of Work</TableCell>
+            <TableCell>PO</TableCell>
+            <TableCell align="right">Amount</TableCell>
+          </TableRow>
+        </TableHead>
+        <TableBody>
+          {order.lines.map((line) => (
+            <TableRow key={line.id} hover>
+              <TableCell>{line.lineNumber}</TableCell>
+              <TableCell>{line.phase || '—'}</TableCell>
+              <TableCell>{line.building || '—'}</TableCell>
+              <TableCell>
+                {line.isPlace ? (
+                  <>
+                    <Typography variant="body2" fontWeight={600}>{line.location}</Typography>
+                    <Typography variant="caption" color="text.secondary" component="div">
+                      No lot
+                    </Typography>
+                  </>
+                ) : line.lot}
+              </TableCell>
+              <TableCell>{line.plan ? `Plan ${line.plan}` : '—'}</TableCell>
+              <TableCell sx={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{line.scope}</TableCell>
+              <TableCell sx={{ whiteSpace: 'nowrap' }}>{line.poNumber || '—'}</TableCell>
+              <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
+                {formatCurrency(line.amount)}
               </TableCell>
             </TableRow>
-          </TableBody>
-        </Table>
-      </TableContainer>
-    </Paper>
+          ))}
+          <TableRow>
+            <TableCell colSpan={7} align="right" sx={{ fontWeight: 700 }}>Total</TableCell>
+            <TableCell align="right" sx={{ fontWeight: 800, whiteSpace: 'nowrap' }}>
+              {formatCurrency(totals.total)}
+            </TableCell>
+          </TableRow>
+        </TableBody>
+      </Table>
+    </TableContainer>
   )
 }
 
-function HistoryCard({ history }) {
-  // Newest first: what the Extra / CO is now comes first.
-  const steps = [...history].reverse()
+/**
+ * What is charged. By default the lines are read as the work they are (the same work on many lots is
+ * said once); "Every line" is the full list, one row per lot, with the PO of each.
+ */
+function WorkCard({ order, totals }) {
+  const [view, setView] = useState('work')
+  const { works, places } = useMemo(() => groupDetailLines(order.lines), [order.lines])
+  const pieces = works.length + places.length
 
   return (
-    <Paper variant="outlined" component="section" aria-label="Status history" sx={{ p: 2.5, borderRadius: 2 }}>
-      <Typography variant="subtitle1" component="h2" fontWeight={700} sx={{ mb: 1.5 }}>
-        Status history
-      </Typography>
-      <Box component="ol" sx={{ m: 0, p: 0, listStyle: 'none' }}>
-        {steps.map((step) => (
-          <Box
-            component="li"
-            key={step.id}
-            sx={{ py: 1.25, borderTop: 1, borderColor: 'divider', '&:first-of-type': { borderTop: 0, pt: 0 } }}
+    <Paper variant="outlined" component="section" aria-label="Work" sx={{ borderRadius: 2, overflow: 'hidden' }}>
+      <Stack
+        direction="row"
+        useFlexGap
+        spacing={2}
+        sx={{ px: { xs: 2, md: 3 }, py: 2, alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap' }}
+      >
+        <Box>
+          <Typography variant="subtitle1" component="h2" fontWeight={700}>
+            Work
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            {view === 'work'
+              ? `${plural(pieces, 'piece')} of work, ${countsText(totals)}`
+              : countsText(totals)}
+          </Typography>
+        </Box>
+        {/* Two ways to read the same lines: drawn as a control (outlined, the chosen one filled), not as a tab strip. */}
+        <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center' }}>
+          <Typography variant="body2" color="text.secondary" component="span" aria-hidden>
+            View
+          </Typography>
+          <ToggleButtonGroup
+            exclusive
+            value={view}
+            onChange={(_, next) => next && setView(next)}
+            aria-label="How to read the lines"
+            sx={{
+              '& .MuiToggleButton-root': {
+                textTransform: 'none',
+                fontWeight: 600,
+                px: 2,
+                py: 0.75,
+                gap: 0.75,
+                color: 'primary.main',
+                borderColor: 'primary.main',
+                '&:hover': { bgcolor: 'primary.light' },
+                '&.Mui-selected, &.Mui-selected:hover': {
+                  bgcolor: 'primary.main',
+                  color: 'primary.contrastText',
+                },
+                '&.Mui-focusVisible': { outline: 2, outlineColor: 'primary.main', outlineOffset: 2 },
+              },
+            }}
           >
-            <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
-              <ChangeOrderStatusChip status={step.to} />
-              <Typography variant="caption" color="text.secondary">
-                {formatDateTime(step.changedAt)}
-              </Typography>
-            </Stack>
-            {step.note && (
-              <Typography variant="body2" sx={{ mt: 0.5, overflowWrap: 'anywhere' }}>
-                {step.note}
-              </Typography>
-            )}
-          </Box>
-        ))}
-      </Box>
+            <ToggleButton value="work">
+              <ViewAgendaOutlinedIcon fontSize="small" />
+              By work
+            </ToggleButton>
+            <ToggleButton value="lines">
+              <TableRowsOutlinedIcon fontSize="small" />
+              Every line
+            </ToggleButton>
+          </ToggleButtonGroup>
+        </Stack>
+      </Stack>
+
+      {view === 'work' ? (
+        <Stack
+          component="ul"
+          divider={<Box component="li" aria-hidden sx={{ borderTop: 1, borderColor: 'divider', listStyle: 'none' }} />}
+          sx={{ m: 0, p: 0, listStyle: 'none', borderTop: 1, borderColor: 'divider' }}
+        >
+          {works.map((work) => (
+            <Box component="li" key={work.key} sx={{ px: { xs: 2, md: 3 }, py: 2.25 }}>
+              <WorkGroup work={work} />
+            </Box>
+          ))}
+          {places.map((place) => (
+            <Box component="li" key={place.id} sx={{ px: { xs: 2, md: 3 }, py: 2.25 }}>
+              <PlaceGroup place={place} />
+            </Box>
+          ))}
+        </Stack>
+      ) : (
+        <LinesTable order={order} totals={totals} />
+      )}
     </Paper>
   )
 }
@@ -190,26 +324,83 @@ function HistoryCard({ history }) {
 function TotalCard({ totals }) {
   return (
     <Paper variant="outlined" component="section" aria-label="Total" sx={{ p: 2.5, borderRadius: 2 }}>
-      <Typography variant="body2" color="text.secondary">Total Amount</Typography>
+      <Typography variant="body2" color="text.secondary">Total</Typography>
       <Typography
-        variant="h5"
         component="p"
-        fontWeight={800}
-        sx={{ fontVariantNumeric: 'tabular-nums', mt: 0.25 }}
+        sx={{ ...money, fontSize: 32, fontWeight: 800, lineHeight: 1.15, letterSpacing: '-0.02em', mt: 0.25 }}
       >
         {formatCurrency(totals.total)}
       </Typography>
-      <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-        {[
-          totals.lots > 0 && plural(totals.lots, 'lot'),
-          totals.places > 0 && `${plural(totals.places, 'line')} without a lot`,
-        ].filter(Boolean).join(' · ')}
+      <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75 }}>
+        {countsText(totals)}
       </Typography>
     </Paper>
   )
 }
 
-/** One Extra / Change Order: who asked, what it covers lot by lot, what it adds up to and how it got here. */
+/** Where the Extra / CO has been, newest first: what it is now comes first. */
+function HistoryCard({ history, cancelReason }) {
+  const steps = [...history].reverse()
+  const label = (status) => allChangeOrderStatuses.find((item) => item.value === status)?.label ?? status
+
+  return (
+    <Paper variant="outlined" component="section" aria-label="Status history" sx={{ p: 2.5, borderRadius: 2 }}>
+      <Typography variant="subtitle1" component="h2" fontWeight={700} sx={{ mb: 2 }}>
+        History
+      </Typography>
+      <Box component="ol" sx={{ m: 0, p: 0, listStyle: 'none' }}>
+        {steps.map((step, index) => {
+          const current = index === 0
+          const last = index === steps.length - 1
+          const color = STATUS_COLORS[step.to] ?? 'text.disabled'
+
+          return (
+            <Box
+              component="li"
+              key={step.id}
+              aria-current={current ? 'step' : undefined}
+              sx={{ position: 'relative', pl: 3.5, pb: last ? 0 : 2.5 }}
+            >
+              {!last && (
+                <Box
+                  aria-hidden
+                  sx={{ position: 'absolute', left: 5.5, top: 16, bottom: 0, width: '1px', bgcolor: 'divider' }}
+                />
+              )}
+              <Box
+                aria-hidden
+                sx={{
+                  position: 'absolute',
+                  left: 0,
+                  top: 5,
+                  width: 12,
+                  height: 12,
+                  borderRadius: '50%',
+                  border: 2,
+                  borderColor: color,
+                  bgcolor: current ? color : 'background.paper',
+                }}
+              />
+              <Typography variant="body2" fontWeight={current ? 700 : 500}>
+                {step.from === null ? `Created as ${label(step.to)}` : label(step.to)}
+              </Typography>
+              <Typography variant="caption" color="text.secondary" component="div">
+                {formatDateTime(step.changedAt)}
+              </Typography>
+              {step.note && step.note !== cancelReason && (
+                <Typography variant="body2" sx={{ mt: 0.5, overflowWrap: 'anywhere' }}>
+                  {step.note}
+                </Typography>
+              )}
+            </Box>
+          )
+        })}
+      </Box>
+    </Paper>
+  )
+}
+
+/** One Extra / Change Order: who asked, the work it charges, what it adds up to and how it got here. */
 export default function ChangeOrderDetail() {
   const { changeOrderId } = useParams()
   const { order, loading, error, reload, refresh } = useChangeOrder(changeOrderId)
@@ -265,31 +456,53 @@ export default function ChangeOrderDetail() {
         breadcrumbs={[LIST, { label: order.number }]}
         title={order.number}
         titleAdornment={<ChangeOrderStatusChip status={order.status} />}
-        subtitle={order.title}
+        subtitle={(
+          <Box component="span" sx={{ color: 'text.primary', fontSize: 16, fontWeight: 600 }}>
+            {order.title}
+          </Box>
+        )}
+        meta={<Facts order={order} />}
         actions={<ChangeOrderActions order={order} onChanged={refresh} onError={setActionError} />}
       />
 
-      <Box
-        sx={{
-          p: { xs: 2.5, md: 4 },
-          display: 'grid',
-          gap: 3,
-          alignItems: 'start',
-          gridTemplateColumns: { xs: 'minmax(0, 1fr)', lg: 'minmax(0, 1fr) 320px' },
-        }}
-      >
-        <Stack spacing={3} sx={{ minWidth: 0 }}>
-          {actionError && (
-            <Alert severity="error" onClose={() => setActionError('')}>{actionError}</Alert>
-          )}
-          <DetailsCard order={order} />
-          <LinesCard order={order} totals={totals} />
-        </Stack>
+      <Box sx={{ p: { xs: 2.5, md: 4 } }}>
+        {(actionError || order.status === 'CANCELLED') && (
+          <Stack spacing={2} sx={{ mb: 3 }}>
+            {actionError && (
+              <Alert severity="error" onClose={() => setActionError('')}>{actionError}</Alert>
+            )}
+            {order.status === 'CANCELLED' && (
+              <Alert severity="warning">
+                Cancelled on {formatDateTime(order.cancelledAt)}: {order.cancelReason}
+              </Alert>
+            )}
+          </Stack>
+        )}
 
-        <Stack spacing={3} sx={{ position: { lg: 'sticky' }, top: { lg: 24 } }}>
-          <TotalCard totals={totals} />
-          <HistoryCard history={order.history} />
-        </Stack>
+        {/* On a phone the total comes first; from lg the work is on the left, the total and history beside it. */}
+        <Box
+          sx={{
+            display: 'grid',
+            gap: 3,
+            alignItems: 'start',
+            gridTemplateColumns: { xs: 'minmax(0, 1fr)', lg: 'minmax(0, 1fr) 300px' },
+            gridTemplateRows: { lg: 'auto 1fr' },
+            gridTemplateAreas: {
+              xs: '"total" "work" "history"',
+              lg: '"work total" "work history"',
+            },
+          }}
+        >
+          <Box sx={{ gridArea: 'work', minWidth: 0 }}>
+            <WorkCard order={order} totals={totals} />
+          </Box>
+          <Box sx={{ gridArea: 'total' }}>
+            <TotalCard totals={totals} />
+          </Box>
+          <Box sx={{ gridArea: 'history' }}>
+            <HistoryCard history={order.history} cancelReason={order.cancelReason} />
+          </Box>
+        </Box>
       </Box>
     </Box>
   )

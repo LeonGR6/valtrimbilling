@@ -10,6 +10,8 @@ import {
   removePlaceLine,
   sanitizePriceInput,
   setLineOverride,
+  settleLineAmounts,
+  settlePriceText,
   summarizeChangeOrderLines,
   updatePlaceLine,
 } from '../src/features/change-orders/utils/pricing.js'
@@ -244,4 +246,31 @@ test('the summary counts the lines without a lot that miss a place, a scope or a
   assert.equal(total, 260)
   assert.equal(summarizeChangeOrderLines([]).places.count, 0)
   assert.equal(summarizeChangeOrderLines([]).total, null)
+})
+
+test('a typed amount settles into cents when the field is left; empty or unreadable text is left alone', () => {
+  assert.equal(settlePriceText('185.5'), '185.50')
+  assert.equal(settlePriceText('12'), '12.00')
+  assert.equal(settlePriceText('75.'), '75.00')
+  assert.equal(settlePriceText('-20'), '-20.00')
+  assert.equal(settlePriceText('1689.60'), '1689.60')
+  assert.equal(settlePriceText(''), '')
+  assert.equal(settlePriceText('-'), '-')
+})
+
+test('leaving an amount field settles every own amount into cents and drops the ones equal to the default', () => {
+  const overrides = {
+    1: { amount: '185.5' },
+    2: { amount: '240', scope: 'Add trim' },
+    3: { scope: 'Only the scope' },
+    4: { amount: '' },
+  }
+
+  assert.deepEqual(settleLineAmounts(overrides, '185.50'), {
+    2: { amount: '240.00', scope: 'Add trim' },
+    3: { scope: 'Only the scope' },
+    4: { amount: '' },
+  })
+  // Without a default nothing is equal to it
+  assert.deepEqual(settleLineAmounts({ 1: { amount: '9' } }, ''), { 1: { amount: '9.00' } })
 })

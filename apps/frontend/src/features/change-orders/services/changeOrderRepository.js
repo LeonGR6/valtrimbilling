@@ -162,3 +162,13 @@ export async function setChangeOrderStatus(payload) {
     throw new Error(changeOrderErrorMessage(error, 'The status could not be changed.'), { cause: error })
   }
 }
+
+/** Deletes a Draft Extra / CO with its lines and history; anything that was sent is cancelled instead. */
+export async function deleteChangeOrder(changeOrderId) {
+  const client = await requireSupabase()
+  const { error } = await client.rpc('delete_change_order', { p_change_order_id: changeOrderId })
+
+  if (error) {
+    throw new Error(changeOrderErrorMessage(error, 'The Extra / Change Order could not be deleted.'), { cause: error })
+  }
+}

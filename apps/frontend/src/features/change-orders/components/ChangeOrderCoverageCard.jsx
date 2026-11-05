@@ -3,12 +3,10 @@ import {
   Alert,
   Box,
   Button,
-  Chip,
   Divider,
   FormControlLabel,
   InputAdornment,
   MenuItem,
-  Paper,
   Radio,
   RadioGroup,
   Stack,
@@ -62,11 +60,7 @@ export default function ChangeOrderCoverageCard({ values, onChange, errors = {} 
   const selectAll = () => setSelected(new Set(treeNodes.flatMap((node) => node.leaves)))
 
   return (
-    <Paper variant="outlined" sx={{ p: { xs: 2, md: 3 }, borderRadius: 2 }}>
-      <Typography variant="subtitle1" fontWeight={700} sx={{ mb: 2 }}>
-        Coverage (Affected Locations)
-      </Typography>
-
+    <Box>
       <Field label="Job" required sx={{ maxWidth: 420, mb: 2.5 }}>
         <TextField
           select
@@ -168,12 +162,15 @@ export default function ChangeOrderCoverageCard({ values, onChange, errors = {} 
                 </Button>
               </>
             )}
-            <Chip
-              color="primary"
-              variant="outlined"
-              sx={{ ml: { md: 'auto' } }}
-              label={`Selected: ${plural(summary.lots, 'lot')} • ${plural(summary.phases, 'phase')} • ${plural(summary.buildings, 'building')}`}
-            />
+            <Typography
+              variant="body2"
+              aria-live="polite"
+              sx={{ ml: { md: 'auto' }, fontWeight: 600, color: summary.lots > 0 ? 'primary.main' : 'text.secondary' }}
+            >
+              {summary.lots === 0
+                ? 'Nothing selected yet'
+                : `${plural(summary.lots, 'lot')} in ${plural(summary.phases, 'phase')} and ${plural(summary.buildings, 'building')}`}
+            </Typography>
           </Stack>
 
           {mode === 'job' && (
@@ -210,6 +207,6 @@ export default function ChangeOrderCoverageCard({ values, onChange, errors = {} 
           )}
         </>
       )}
-    </Paper>
+    </Box>
   )
 }

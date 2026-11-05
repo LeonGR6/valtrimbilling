@@ -5,7 +5,6 @@ import {
   Checkbox,
   IconButton,
   InputAdornment,
-  Paper,
   Stack,
   Table,
   TableBody,
@@ -20,7 +19,6 @@ import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
 import RestartAltRoundedIcon from '@mui/icons-material/RestartAltRounded'
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
 
-import { formatCurrency } from '../../draw-invoice/utils/drawInvoiceFormatters.js'
 import { useChangeOrderCoverage } from '../hooks/useChangeOrderCoverage.js'
 import { filterCoverageRows } from '../utils/coverage.js'
 import {
@@ -28,6 +26,8 @@ import {
   dropAmountsEqualToDefault,
   sanitizePriceInput,
   setLineOverride,
+  settleLineAmounts,
+  settlePriceText,
 } from '../utils/pricing.js'
 import Field from './ChangeOrderField.jsx'
 import ChangeOrderPlaceLines from './ChangeOrderPlaceLines.jsx'
@@ -39,17 +39,6 @@ const dollarAdornment = { startAdornment: <InputAdornment position="start">$</In
 
 const plural = (count, singular) => `${count} ${singular}${count === 1 ? '' : 's'}`
 
-/** "3 lots · 2 lines without a lot · 1 with their own values · 1 without an amount" */
-function countsText(amounts) {
-  const withoutAmount = amounts.unpriced + amounts.places.unpriced
-  return [
-    amounts.lots > 0 && plural(amounts.lots, 'lot'),
-    amounts.places.count > 0 && `${plural(amounts.places.count, 'line')} without a lot`,
-    amounts.own > 0 && `${amounts.own} with their own values`,
-    withoutAmount > 0 && `${withoutAmount} without an amount`,
-  ].filter(Boolean).join(' · ')
-}
-
 /**
  * Every Lot the coverage reaches is a line of the order. The default Scope of
  * Work and Amount go to all of them; a line can be given its own, one by one
@@ -57,7 +46,7 @@ function countsText(amounts) {
  * Office) is added below as a line without a Lot.
  */
 export default function ChangeOrderLinesCard({ values, onChange }) {
-  const { job, lines, amounts } = useChangeOrderCoverage(values)
+  const { job, lines } = useChangeOrderCoverage(values)
   const [search, setSearch] = useState('')
   const [checked, setChecked] = useState(() => new Set())
   const [bulk, setBulk] = useState({ amount: '', scope: '' })
@@ -73,9 +62,9 @@ export default function ChangeOrderLinesCard({ values, onChange }) {
       amount: values.defaultAmount,
     }))
   )
-  // "1689.6" typed over a default of "1689.60" is the same price, not a value of its own.
+  // "1689.6" becomes "1689.60", and typed over a default of "1689.60" it is the same price, not a value of its own.
   const settleAmounts = () => {
-    const settled = dropAmountsEqualToDefault(values.lineOverrides, values.defaultAmount)
+    const settled = settleLineAmounts(values.lineOverrides, values.defaultAmount)
     if (JSON.stringify(settled) !== JSON.stringify(values.lineOverrides)) setOverrides(settled)
   }
 
@@ -101,7 +90,7 @@ export default function ChangeOrderLinesCard({ values, onChange }) {
     const defaults = { scope: values.defaultScope, amount: values.defaultAmount }
     let next = values.lineOverrides
     if (bulk.amount !== '') {
-      next = setLineOverride(next, selectedIds, 'amount', bulk.amount, defaults)
+      next = setLineOverride(next, selectedIds, 'amount', settlePriceText(bulk.amount), defaults)
     }
     if (bulk.scope.trim() !== '') {
       next = setLineOverride(next, selectedIds, 'scope', bulk.scope, defaults)
@@ -111,14 +100,11 @@ export default function ChangeOrderLinesCard({ values, onChange }) {
   }
 
   return (
-    <Paper variant="outlined" sx={{ p: { xs: 2, md: 3 }, borderRadius: 2 }}>
-      <Typography variant="subtitle1" fontWeight={700} sx={{ mb: 0.5 }}>
-        Scope of Work &amp; Amount
-      </Typography>
-      <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-        Every lot is a line of this order. What you type here goes to all of them; change a row
-        to give that lot something different. Charged as its own order: it does not change the
-        prices the Job already has.
+    <Box>
+      <Typography variant="body2" color="text.secondary" sx={{ mb: 2, maxWidth: 720 }}>
+        Every lot is a line of this order: what you write here goes to all of them, and a row
+        can be changed to give that lot something different. It is charged as its own order and
+        does not change the prices the Job already has.
       </Typography>
 
       <Box
@@ -149,6 +135,10 @@ export default function ChangeOrderLinesCard({ values, onChange }) {
             placeholder="0.00"
             value={values.defaultAmount}
             onChange={(event) => onChange({ defaultAmount: sanitizePriceInput(event.target.value) })}
+            onBlur={() => {
+              const settled = settlePriceText(values.defaultAmount)
+              if (settled !== values.defaultAmount) onChange({ defaultAmount: settled })
+            }}
             slotProps={{
               input: dollarAdornment,
               htmlInput: { 'aria-label': 'Amount per Lot' },
@@ -259,7 +249,7 @@ export default function ChangeOrderLinesCard({ values, onChange }) {
               borderRadius: 1.5,
             }}
           >
-            <Table size="small" stickyHeader aria-label="Order lines" sx={{ minWidth: 820 }}>
+            <Table size="small" stickyHeader aria-label="Order lines" sx={{ minWidth: 700 }}>
               <TableHead>
                 <TableRow>
                   <TableCell padding="checkbox">
@@ -271,11 +261,8 @@ export default function ChangeOrderLinesCard({ values, onChange }) {
                       slotProps={{ input: { 'aria-label': 'Select all lines' } }}
                     />
                   </TableCell>
-                  <TableCell>Phase</TableCell>
-                  <TableCell>Building</TableCell>
-                  <TableCell>Lot</TableCell>
-                  <TableCell>Plan Type</TableCell>
-                  <TableCell sx={{ minWidth: 260 }}>Scope of Work</TableCell>
+                  <TableCell sx={{ width: 240 }}>Lot</TableCell>
+                  <TableCell sx={{ minWidth: 300 }}>Scope of Work</TableCell>
                   <TableCell sx={{ width: 140 }}>Amount</TableCell>
                   <TableCell padding="checkbox" />
                 </TableRow>
@@ -283,7 +270,7 @@ export default function ChangeOrderLinesCard({ values, onChange }) {
               <TableBody>
                 {visible.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={8}>
+                    <TableCell colSpan={5}>
                       <Typography variant="body2" color="text.secondary">
                         Nothing matches the search.
                       </Typography>
@@ -300,14 +287,21 @@ export default function ChangeOrderLinesCard({ values, onChange }) {
                         slotProps={{ input: { 'aria-label': `Select lot ${line.lot}` } }}
                       />
                     </TableCell>
-                    <TableCell>{line.phase}</TableCell>
-                    <TableCell>{line.building || '—'}</TableCell>
-                    <TableCell>{line.lot}</TableCell>
-                    <TableCell>{line.plan ? `Plan ${line.plan}` : '—'}</TableCell>
+                    <TableCell sx={{ py: 1 }}>
+                      <Typography variant="body2" fontWeight={700}>Lot {line.lot}</Typography>
+                      <Typography variant="caption" color="text.secondary" component="div">
+                        {[
+                          line.phase,
+                          line.building,
+                          line.plan && `Plan ${line.plan}`,
+                        ].filter(Boolean).join(', ') || 'No phase'}
+                      </Typography>
+                    </TableCell>
                     <TableCell sx={{ py: 1 }}>
                       <TextField
                         fullWidth
                         multiline
+                        minRows={1}
                         maxRows={4}
                         size="small"
                         placeholder="Scope of Work"
@@ -374,25 +368,6 @@ export default function ChangeOrderLinesCard({ values, onChange }) {
         onChange={(placeLines) => onChange({ placeLines })}
       />
 
-      {(lines.length > 0 || values.placeLines.length > 0) && (
-        <Stack
-          direction="row"
-          spacing={2}
-          aria-live="polite"
-          sx={{ justifyContent: 'space-between', alignItems: 'baseline', mt: 2 }}
-        >
-          <Typography variant="body2" color="text.secondary">
-            {countsText(amounts)}
-          </Typography>
-          <Typography
-            variant="subtitle1"
-            fontWeight={800}
-            sx={{ fontVariantNumeric: 'tabular-nums' }}
-          >
-            Total {formatCurrency(amounts.total ?? 0)}
-          </Typography>
-        </Stack>
-      )}
-    </Paper>
+    </Box>
   )
 }

@@ -7,10 +7,13 @@ import {
   canEditChangeOrders,
   changeOrderActions,
   changeOrderErrorMessage,
+  changeOrderMoveNotice,
   changeOrderListDate,
   changeOrderProblems,
   changeOrderStatusTabs,
   filterChangeOrders,
+  formatLotRanges,
+  groupDetailLines,
   problemsByField,
   summarizeChangeOrders,
   summarizeDetailLines,
@@ -397,8 +400,8 @@ test('who can edit and where each role can move an Extra / CO, as the database a
     assert.equal(changeOrderActions('CANCELLED', role).canEdit, false, role)
   }
   for (const role of ['ACCOUNTING', 'SCHEDULING', 'CUSTOMER_SERVICE', 'FIELD', 'READ_ONLY', undefined]) {
-    assert.deepEqual(changeOrderActions('DRAFT', role), { canEdit: false, moves: [] }, String(role))
-    assert.deepEqual(changeOrderActions('APPROVED', role), { canEdit: false, moves: [] }, String(role))
+    assert.deepEqual(changeOrderActions('DRAFT', role), { canEdit: false, canDelete: false, moves: [] }, String(role))
+    assert.deepEqual(changeOrderActions('APPROVED', role), { canEdit: false, canDelete: false, moves: [] }, String(role))
   }
 
   assert.deepEqual(moveTargets('DRAFT', 'PROJECT_MANAGEMENT'), ['PENDING', 'CANCELLED'])
@@ -492,10 +495,10 @@ test('a saved Extra / CO opens with what most lots share as the default and the 
   const values = toChangeOrderFormValues(savedOrder())
 
   assert.equal(values.defaultScope, 'Add attic ladder')
-  assert.equal(values.defaultAmount, '10')
+  assert.equal(values.defaultAmount, '10.00')
   assert.deepEqual(values.lineOverrides, { 102: { amount: '-30.25' } })
   assert.deepEqual(values.placeLines, [
-    { id: 1, location: 'Sales Office', scope: 'Electronic locks', amount: '250.5' },
+    { id: 1, location: 'Sales Office', scope: 'Electronic locks', amount: '250.50' },
   ])
   assert.equal(values.internalNumber, 'E-2026-0047')
   assert.equal(values.builderId, 3)
@@ -541,4 +544,98 @@ test('an Extra / CO of only places opens with no lots and its places as they wer
   assert.deepEqual(values.lineOverrides, {})
   assert.equal(values.lotIds.size, 0)
   assert.equal(values.placeLines.length, 1)
+})
+
+test('amounts open in cents, so 185.5 is read as 185.50', () => {
+  const values = toChangeOrderFormValues(savedOrder({
+    lines: [
+      { isPlace: false, lotId: 101, scope: 'Add attic ladder', amount: 185.5 },
+      { isPlace: false, lotId: 102, scope: 'Add attic ladder', amount: 185.5 },
+      { isPlace: false, lotId: 103, scope: 'Add attic ladder', amount: 1689.6 },
+    ],
+  }))
+
+  assert.equal(values.defaultAmount, '185.50')
+  assert.deepEqual(values.lineOverrides, { 103: { amount: '1689.60' } })
+})
+
+test('lot numbers are written as short text: ranges of three or more, the rest one by one', () => {
+  assert.equal(formatLotRanges(['3', '1', '2', '4', '5', '6']), '1–6')
+  assert.equal(formatLotRanges(['1', '2']), '1, 2')
+  assert.equal(formatLotRanges(['1', '2', '3', '7', '9', '10', '11']), '1–3, 7, 9–11')
+  assert.equal(formatLotRanges(['12', '12.1', '13']), '12, 12.1, 13')
+  assert.equal(formatLotRanges(['10', '9', '9', '8']), '8–10')
+  assert.equal(formatLotRanges([]), '')
+})
+
+const detailLine = (id, phase, building, lot, plan, scope, amount, extra = {}) => ({
+  id, lineNumber: id, isPlace: false, phase, building, lot: String(lot), plan, location: '', scope, amount, ...extra,
+})
+const place = (id, location, scope, amount) => ({
+  id, lineNumber: id, isPlace: true, phase: '', building: '', lot: '', plan: '', location, scope, amount,
+})
+
+test('lots with the same Scope of Work and Amount are one piece of work, places stay apart', () => {
+  const door = 'Change laundry door'
+  const { works, places } = groupDetailLines([
+    detailLine(1, '1', 'A', 1, '3', door, 185.5),
+    detailLine(2, '1', 'A', 2, '4.1', door, 185.5),
+    detailLine(3, '1', 'A', 3, '3', door, 185.5),
+    detailLine(4, '2', 'B', 7, '3', `${door} `, 185.5),
+    detailLine(5, '2', 'B', 8, '4.1', door, 240),
+    place(6, 'Sales Office', 'Electronic locks', 250.5),
+    place(7, 'Restroom', 'Credit', -20),
+  ])
+
+  assert.equal(works.length, 2)
+  assert.equal(works[0].amount, 185.5)
+  assert.equal(works[0].count, 4)
+  assert.equal(works[0].subtotal, 742)
+  assert.deepEqual(works[0].locations, [
+    { phase: '1', building: 'A', lots: '1–3' },
+    { phase: '2', building: 'B', lots: '7' },
+  ])
+  assert.deepEqual(works[0].plans, [{ plan: '3', count: 3 }, { plan: '4.1', count: 1 }])
+  assert.equal(works[1].amount, 240)
+  assert.equal(works[1].count, 1)
+  assert.deepEqual(places, [
+    { id: 6, location: 'Sales Office', scope: 'Electronic locks', amount: 250.5 },
+    { id: 7, location: 'Restroom', scope: 'Credit', amount: -20 },
+  ])
+})
+
+test('the pieces of work add up to what the lines add up to, to the cent', () => {
+  const lines = [
+    detailLine(1, '1', '', 1, '', 'Paint', 0.1),
+    detailLine(2, '1', '', 2, '', 'Paint', 0.1),
+    detailLine(3, '1', '', 3, '', 'Paint', 0.1),
+    place(4, 'Office', 'Credit', -0.05),
+  ]
+  const { works, places } = groupDetailLines(lines)
+  const grouped = works.reduce((sum, work) => sum + Math.round(work.subtotal * 100), 0)
+    + places.reduce((sum, item) => sum + Math.round(item.amount * 100), 0)
+
+  assert.equal(grouped / 100, summarizeDetailLines(lines).total)
+  assert.deepEqual(groupDetailLines([]), { works: [], places: [] })
+})
+
+test('only a Draft can be deleted, by Project Management and Admin', () => {
+  for (const role of ['PROJECT_MANAGEMENT', 'ADMIN']) {
+    assert.equal(changeOrderActions('DRAFT', role).canDelete, true, role)
+    for (const status of ['PENDING', 'APPROVED', 'CANCELLED']) {
+      assert.equal(changeOrderActions(status, role).canDelete, false, `${role} ${status}`)
+    }
+  }
+  for (const role of ['ACCOUNTING', 'SCHEDULING', 'CUSTOMER_SERVICE', 'FIELD', 'READ_ONLY', undefined]) {
+    assert.equal(changeOrderActions('DRAFT', role).canDelete, false, String(role))
+  }
+})
+
+test('every move says what happened, with the number of the Extra / CO', () => {
+  assert.equal(changeOrderMoveNotice('CO-0007', 'PENDING'), 'CO-0007 sent for approval')
+  assert.equal(changeOrderMoveNotice('CO-0007', 'DRAFT'), 'CO-0007 is a Draft again')
+  assert.equal(changeOrderMoveNotice('CO-0007', 'APPROVED'), 'CO-0007 approved')
+  assert.equal(changeOrderMoveNotice('CO-0007', 'CANCELLED'), 'CO-0007 cancelled')
+  assert.equal(changeOrderMoveNotice('CO-0007', 'DELETE'), 'CO-0007 deleted')
+  assert.equal(changeOrderMoveNotice('CO-0007', 'SOMETHING'), 'CO-0007 updated')
 })

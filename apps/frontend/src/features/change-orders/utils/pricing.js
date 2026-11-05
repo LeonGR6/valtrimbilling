@@ -17,6 +17,12 @@ export function sanitizePriceInput(text) {
   return `${sign}${whole}.${rest.join('').slice(0, 2)}`
 }
 
+/** What was typed as an amount, in cents ("185.5" becomes "185.50"); empty or unreadable text stays as it is. */
+export function settlePriceText(text) {
+  const value = parseAmount(text)
+  return value === null ? text : value.toFixed(2)
+}
+
 /** An amount as a number, or null while it is empty or not a number. */
 export function parseAmount(text) {
   const value = Number.parseFloat(text)
@@ -82,6 +88,18 @@ export function dropAmountsEqualToDefault(overrides, defaultAmount) {
     if (Object.keys(keep).length > 0) next[id] = keep
   }
   return next
+}
+
+/**
+ * The overrides with every own amount settled into cents, and without the ones that then mean the same
+ * number as the default; meant for when the person leaves an amount field.
+ */
+export function settleLineAmounts(overrides, defaultAmount) {
+  const settled = {}
+  for (const [id, entry] of Object.entries(overrides)) {
+    settled[id] = entry.amount === undefined ? entry : { ...entry, amount: settlePriceText(entry.amount) }
+  }
+  return dropAmountsEqualToDefault(settled, defaultAmount)
 }
 
 /** The overrides without the Lots in `lotIds`: they go back to the defaults. */

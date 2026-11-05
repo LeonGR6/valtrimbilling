@@ -1,5 +1,5 @@
 import { useMemo, useRef } from 'react'
-import { Box, Button, Chip, MenuItem, Paper, Stack, TextField, Tooltip } from '@mui/material'
+import { Box, Button, Chip, MenuItem, Stack, TextField, Tooltip, Typography } from '@mui/material'
 import AddRoundedIcon from '@mui/icons-material/AddRounded'
 import InsertDriveFileOutlinedIcon from '@mui/icons-material/InsertDriveFileOutlined'
 
@@ -60,11 +60,8 @@ export default function ChangeOrderBasicsCard({
   const statuses = changeOrderStatuses.filter((status) => canApprove || status.value !== 'APPROVED')
 
   return (
-    <Paper
-      variant="outlined"
-      sx={{ p: { xs: 2, md: 3 }, borderRadius: 2, containerType: 'inline-size' }}
-    >
-      {/* Columns follow the width of the card, which shrinks when the summary is beside it. */}
+    <Box sx={{ containerType: 'inline-size' }}>
+      {/* Columns follow the width of the section, which shrinks when the recent list is beside it. */}
       <Box
         sx={{
           display: 'grid',
@@ -177,7 +174,7 @@ export default function ChangeOrderBasicsCard({
         </Field>
 
         <Field label="Attachments" sx={span(4)}>
-          <Stack direction="row" useFlexGap spacing={1} sx={{ flexWrap: 'wrap' }}>
+          <Stack direction="row" useFlexGap spacing={1} sx={{ flexWrap: 'wrap', alignItems: 'center' }}>
             {values.attachments.map((name, index) => (
               <Chip
                 key={`${name}-${index}`}
@@ -200,6 +197,11 @@ export default function ChangeOrderBasicsCard({
                 </Button>
               </span>
             </Tooltip>
+            {values.attachments.length === 0 && (
+              <Typography variant="body2" color="text.secondary">
+                Not available yet.
+              </Typography>
+            )}
             <input
               ref={fileInput}
               type="file"
@@ -210,6 +212,6 @@ export default function ChangeOrderBasicsCard({
           </Stack>
         </Field>
       </Box>
-    </Paper>
+    </Box>
   )
 }

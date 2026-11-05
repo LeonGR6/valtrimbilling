@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(19);
+select plan(20);
 
 select has_table('valtrim', 'change_orders', 'There is a table of Change Orders');
 select has_table('valtrim', 'change_order_lines', 'A Change Order has a table of lines');
@@ -251,6 +251,20 @@ select ok(
   and private.format_change_order_number(9999) = 'CO-9999'
   and private.format_change_order_number(10000) = 'CO-10000',
   'A number is written CO-0001, with more than four digits once it passes 9999'
+);
+
+select ok(
+  has_function_privilege('authenticated', 'valtrim.delete_change_order(bigint)', 'execute')
+  and not has_function_privilege('anon', 'valtrim.delete_change_order(bigint)', 'execute')
+  and coalesce((
+    select procedure.prosecdef
+      and procedure.prosrc like '%has_app_role(''ADMIN'', ''PROJECT_MANAGEMENT'')%'
+      and procedure.prosrc like '%(select auth.uid())%'
+      and procedure.prosrc like '%Only a Draft Change Order can be deleted%'
+    from pg_proc procedure
+    where procedure.oid = 'private.delete_change_order(bigint)'::regprocedure
+  ), false),
+  'ADMIN and PROJECT_MANAGEMENT delete a Change Order as the signed-in user, and only a Draft; anonymous users cannot'
 );
 
 select * from finish();

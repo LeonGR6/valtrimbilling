@@ -21,6 +21,7 @@ import {
   addPlaceLine,
   removePlaceLine,
   sanitizePriceInput,
+  settlePriceText,
   updatePlaceLine,
 } from '../utils/pricing.js'
 
@@ -47,9 +48,9 @@ export default function ChangeOrderPlaceLines({ places, canAdd, onChange }) {
       <Typography variant="subtitle2" component="h3" fontWeight={700} sx={{ mb: 0.5 }}>
         Lines without a lot
       </Typography>
-      <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+      <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5, maxWidth: 720 }}>
         For work that is not on a lot, such as the Sales Office or a restroom. Each line says
-        where it is and has its own Scope of Work and Amount; the values above are only for lots.
+        where it is and has its own Scope of Work and Amount.
       </Typography>
 
       {places.length > 0 && (
@@ -113,6 +114,10 @@ export default function ChangeOrderPlaceLines({ places, canAdd, onChange }) {
                       onChange={(event) => handleChange(place.id, {
                         amount: sanitizePriceInput(event.target.value),
                       })}
+                      onBlur={() => {
+                        const settled = settlePriceText(place.amount)
+                        if (settled !== place.amount) handleChange(place.id, { amount: settled })
+                      }}
                       slotProps={{
                         input: dollarAdornment,
                         htmlInput: { 'aria-label': `Amount, line without a lot ${index + 1}` },

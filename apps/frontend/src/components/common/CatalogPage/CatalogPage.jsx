@@ -4,6 +4,7 @@ import {
   Box,
   Breadcrumbs,
   Chip,
+  Divider,
   IconButton,
   Link,
   ListItemIcon,
@@ -250,7 +251,8 @@ export function CatalogSkeletonRows({ columns, rows = 4 }) {
 
 /**
  * The secondary actions of one row behind a "more" button.
- * items: [{ label, icon, onClick, color?, disabled? }]
+ * items: [{ label, icon, onClick, color?, disabled?, dividerBefore? }] - `dividerBefore` draws a line above
+ * the item, to set a group of actions apart.
  */
 export function RowActionsMenu({ label, items }) {
   const [anchor, setAnchor] = useState(null)
@@ -280,7 +282,8 @@ export function RowActionsMenu({ label, items }) {
         anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
         transformOrigin={{ vertical: 'top', horizontal: 'right' }}
       >
-        {items.map((item) => (
+        {items.flatMap((item) => [
+          item.dividerBefore && <Divider key={`${item.label}-divider`} component="li" />,
           <MenuItem
             key={item.label}
             disabled={item.disabled}
@@ -294,8 +297,8 @@ export function RowActionsMenu({ label, items }) {
               {item.icon}
             </ListItemIcon>
             <ListItemText>{item.label}</ListItemText>
-          </MenuItem>
-        ))}
+          </MenuItem>,
+        ]).filter(Boolean)}
       </Menu>
     </>
   )

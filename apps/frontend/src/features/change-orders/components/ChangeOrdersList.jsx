@@ -7,6 +7,7 @@ import {
   IconButton,
   InputAdornment,
   Link,
+  Snackbar,
   Stack,
   Table,
   TableBody,
@@ -35,23 +36,39 @@ import ResponsiveCreateButton from '../../../components/common/ResponsiveCreateB
 import { formatCurrency, formatDate } from '../../draw-invoice/utils/drawInvoiceFormatters.js'
 import { useAuth } from '../../auth/context/useAuth.js'
 import { useChangeOrders } from '../hooks/useChangeOrderData.js'
+import { useChangeOrderMoves } from '../hooks/useChangeOrderMoves.jsx'
 import {
   canEditChangeOrders,
   changeOrderListDate,
+  changeOrderMoveNotice,
   changeOrderStatusTabs,
   filterChangeOrders,
   summarizeChangeOrders,
 } from '../services/changeOrderRecord.js'
+import ChangeOrderRowActions from './ChangeOrderRowActions.jsx'
 import ChangeOrderStatusChip from './ChangeOrderStatusChip.jsx'
 
-const COLUMNS = 8
-
-/** Every Extra / Change Order, newest first; a row opens its detail. */
+/**
+ * Every Extra / Change Order, newest first; a row opens its detail. The last column has what can be done
+ * with each one without opening it (edit, move it between statuses, cancel, delete a Draft), for the
+ * roles that can write.
+ */
 export default function ChangeOrdersList() {
   const navigate = useNavigate()
   const { profile } = useAuth()
   const canEdit = canEditChangeOrders(profile?.role)
-  const { orders, loading, error, reload } = useChangeOrders()
+  const { orders, loading, error, reload, refresh } = useChangeOrders()
+  // What went wrong with a move made from the menu, and what was done once it worked.
+  const [actionError, setActionError] = useState('')
+  const [notice, setNotice] = useState('')
+  const { startMove, dialog } = useChangeOrderMoves({
+    onChanged: async (order, move) => {
+      await refresh()
+      if (move) setNotice(changeOrderMoveNotice(order.number, move.to))
+    },
+    onError: setActionError,
+  })
+  const columns = canEdit ? 9 : 8
 
   const [status, setStatus] = useState('ALL')
   const [search, setSearch] = useState('')
@@ -64,7 +81,9 @@ export default function ChangeOrdersList() {
     () => filterChangeOrders(orders, { status, search }),
     [orders, status, search],
   )
-  const visible = filtered.slice(page * rowsPerPage, (page + 1) * rowsPerPage)
+  // Deleting the last Extra / CO of the last page leaves that page empty: show the one before.
+  const currentPage = Math.min(page, Math.max(0, Math.ceil(filtered.length / rowsPerPage) - 1))
+  const visible = filtered.slice(currentPage * rowsPerPage, (currentPage + 1) * rowsPerPage)
 
   const changeStatus = (next) => {
     setStatus(next)
@@ -169,12 +188,18 @@ export default function ChangeOrdersList() {
             </Alert>
           )}
 
+          {actionError && (
+            <Alert severity="error" onClose={() => setActionError('')} sx={{ borderRadius: 0 }}>
+              {actionError}
+            </Alert>
+          )}
+
           <TableContainer>
             <Table
               size="small"
               aria-label="Extras / Change Orders"
               aria-busy={loading}
-              sx={[{ minWidth: 980 }, catalogTableSx]}
+              sx={[{ minWidth: canEdit ? 1060 : 980 }, catalogTableSx]}
             >
               <TableHead>
                 <TableRow>
@@ -186,10 +211,11 @@ export default function ChangeOrdersList() {
                   <TableCell align="right">Lines</TableCell>
                   <TableCell align="right">Total</TableCell>
                   <TableCell>Status</TableCell>
+                  {canEdit && <TableCell align="right" sx={{ width: 96 }}>Actions</TableCell>}
                 </TableRow>
               </TableHead>
               <TableBody>
-                {loading && <CatalogSkeletonRows columns={COLUMNS} />}
+                {loading && <CatalogSkeletonRows columns={columns} />}
                 {!loading && visible.map((order) => (
                   <TableRow
                     key={order.id}
@@ -242,11 +268,17 @@ export default function ChangeOrdersList() {
                     <TableCell>
                       <ChangeOrderStatusChip status={order.status} />
                     </TableCell>
+                    {canEdit && (
+                      // The menu is not part of the row's link: its clicks must not open the page.
+                      <TableCell align="right" onClick={(event) => event.stopPropagation()}>
+                        <ChangeOrderRowActions order={order} role={profile?.role} onMove={startMove} />
+                      </TableCell>
+                    )}
                   </TableRow>
                 ))}
                 {!loading && !error && filtered.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={COLUMNS} sx={{ p: 0 }}>
+                    <TableCell colSpan={columns} sx={{ p: 0 }}>
                       {orders.length === 0 ? (
                         <CatalogEmptyState
                           icon={<ReceiptLongOutlinedIcon color="disabled" sx={{ fontSize: 36 }} />}
@@ -281,7 +313,7 @@ export default function ChangeOrdersList() {
           <TablePagination
             component="div"
             count={filtered.length}
-            page={page}
+            page={currentPage}
             onPageChange={(_, nextPage) => setPage(nextPage)}
             rowsPerPage={rowsPerPage}
             onRowsPerPageChange={(event) => {
@@ -293,6 +325,18 @@ export default function ChangeOrdersList() {
           />
         </Box>
       </Box>
+
+      {dialog}
+      <Snackbar
+        open={Boolean(notice)}
+        autoHideDuration={4000}
+        onClose={(_, reason) => reason !== 'clickaway' && setNotice('')}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      >
+        <Alert severity="success" onClose={() => setNotice('')} sx={{ width: '100%' }}>
+          {notice}
+        </Alert>
+      </Snackbar>
     </Box>
   )
 }

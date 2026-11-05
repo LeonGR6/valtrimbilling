@@ -1,4 +1,5 @@
 import { requireSupabase } from '../../../services/api.js'
+import { upcomingAppointmentRequestIds } from '../utils/appointmentRecords.js'
 
 const APPOINTMENT_COLUMNS = [
   'id', 'request_id', 'technician_ids', 'window_starts_at', 'window_ends_at',
@@ -11,16 +12,24 @@ async function functionErrorMessage(error, data, fallback) {
   return payload?.error || error?.message || fallback
 }
 
-// Current (not cancelled) appointments and every stored travel estimate. Both are
-// small tables read by ADMIN/SCHEDULING under RLS.
-export async function loadCustomerServiceSchedule() {
+// Current (not cancelled) appointments, and the travel estimates that touch an
+// appointment from today onward (the only legs the planner can prefill).
+export async function loadCustomerServiceSchedule(now = new Date()) {
   const client = await requireSupabase()
-  const [appointments, travel] = await Promise.all([
-    client.from('service_appointments').select(APPOINTMENT_COLUMNS).eq('is_current', true),
-    client.from('service_travel_estimates').select('from_request_id, to_request_id, minutes, source'),
-  ])
-  for (const result of [appointments, travel]) {
-    if (result.error) throw new Error(result.error.message || 'The schedule could not be loaded.', { cause: result.error })
+  const appointments = await client.from('service_appointments').select(APPOINTMENT_COLUMNS).eq('is_current', true)
+  if (appointments.error) {
+    throw new Error(appointments.error.message || 'The schedule could not be loaded.', { cause: appointments.error })
+  }
+
+  const requestIds = upcomingAppointmentRequestIds(appointments.data, now)
+  if (!requestIds.length) return { appointments: appointments.data, travelEstimates: [] }
+
+  const list = requestIds.join(',')
+  const travel = await client.from('service_travel_estimates')
+    .select('from_request_id, to_request_id, minutes, source')
+    .or(`from_request_id.in.(${list}),to_request_id.in.(${list})`)
+  if (travel.error) {
+    throw new Error(travel.error.message || 'The schedule could not be loaded.', { cause: travel.error })
   }
   return { appointments: appointments.data, travelEstimates: travel.data }
 }

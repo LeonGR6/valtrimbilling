@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import customerServiceMockDatabase from '../src/features/customer-service/data/customerServiceMockDatabase.js'
 import {
-  applyAppointmentsToRequests, toPlanningTechnicians, travelEstimatesToMinutes,
+  applyAppointmentsToRequests, toPlanningTechnicians, travelEstimatesToMinutes, upcomingAppointmentRequestIds,
 } from '../src/features/customer-service/utils/appointmentRecords.js'
 import { buildAppointmentRegistration, validatePrototypeProposalDraft } from '../src/features/customer-service/utils/proposalDraft.js'
 import { createServiceCalendarEventsFromRequests } from '../src/features/customer-service/data/serviceCalendarEvents.js'
@@ -46,6 +46,20 @@ test('a saved appointment is shown in California time on its request', () => {
   const [event] = createServiceCalendarEventsFromRequests([mapped])
   assert.equal(event.extendedProps.technician, 'Jorge Murillo, Helper')
   assert.equal(event.extendedProps.appointment.id, 7)
+})
+
+test('travel estimates are loaded only for appointments from today onward (California)', () => {
+  const at = (id, requestId, windowStartsAt) => ({ ...appointment, id, request_id: requestId, window_starts_at: windowStartsAt })
+  const rows = [
+    at(1, 30, '2026-11-05T16:00:00Z'), // Thursday 08:00 PST: before today
+    at(2, 31, '2026-11-06T16:00:00Z'), // Friday 08:00: today
+    at(3, 10, '2026-11-09T16:00:00Z'), // Monday
+    at(4, 31, '2026-11-10T16:00:00Z'), // same request again
+  ]
+  assert.deepEqual(upcomingAppointmentRequestIds(rows, now), [10, 31])
+  // Friday 16:00 PST is already Saturday in UTC; California's date still decides.
+  assert.deepEqual(upcomingAppointmentRequestIds(rows, new Date('2026-11-07T00:00:00Z')), [10, 31])
+  assert.deepEqual(upcomingAppointmentRequestIds([], now), [])
 })
 
 test('stored travel estimates use the planner leg keys', () => {

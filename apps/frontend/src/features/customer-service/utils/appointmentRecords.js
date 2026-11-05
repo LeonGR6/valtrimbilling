@@ -6,6 +6,17 @@ export function toPlanningTechnicians(rows) {
   return rows.filter((row) => row.isActive).map((row) => ({ id: String(row.id), name: row.name }))
 }
 
+// The planner only needs travel to or from a neighbouring visit on the planned day,
+// and visits cannot be planned in the past: estimates touching appointments from
+// today (California) onward are enough.
+export function upcomingAppointmentRequestIds(appointments = [], now = new Date()) {
+  const today = californiaClockAt(now).date
+  return [...new Set(appointments
+    .filter((row) => californiaClockAt(new Date(row.window_starts_at)).date >= today)
+    .map((row) => Number(row.request_id)))]
+    .sort((left, right) => left - right)
+}
+
 export function travelEstimatesToMinutes(rows = []) {
   return Object.fromEntries(rows.map((row) => [travelLegKey(row.from_request_id, row.to_request_id), row.minutes]))
 }

@@ -13,7 +13,6 @@ function technician(overrides = {}) {
     phoneCountry: 'US',
     workdayStartsAt: '08:00',
     workdayEndsAt: '17:00',
-    coordinates: '33.986588, -117.343021',
     ...overrides,
   }
 }
@@ -30,8 +29,6 @@ test('technician registration normalizes email and selected-country phone', () =
     phone: '+19515550135',
     workdayStartsAt: '08:00',
     workdayEndsAt: '17:00',
-    latitude: 33.986588,
-    longitude: -117.343021,
   })
 })
 
@@ -40,7 +37,7 @@ test('technician registration validates optional contacts and operational data',
   assert.equal(technicianSchema.safeParse(technician({ email: 'not-an-email' })).success, false)
   assert.equal(technicianSchema.safeParse(technician({ phone: '123' })).success, false)
   assert.equal(technicianSchema.safeParse(technician({ workdayEndsAt: '07:59' })).success, false)
-  assert.equal(technicianSchema.safeParse(technician({ coordinates: '' })).success, false)
+  assert.equal('latitude' in technicianSchema.parse(technician({ coordinates: '33.98, -117.34' })), false)
 })
 
 test('scheduling settings keep five-day inputs small and reject inverted ranges', () => {

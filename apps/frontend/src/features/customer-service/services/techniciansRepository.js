@@ -8,8 +8,6 @@ const COLUMNS = [
   'is_active',
   'workday_starts_at',
   'workday_ends_at',
-  'start_latitude',
-  'start_longitude',
   'is_operational',
 ].join(', ')
 
@@ -22,8 +20,6 @@ function toTechnician(row) {
     isActive: row.is_active,
     workdayStartsAt: row.workday_starts_at?.slice(0, 5) ?? '',
     workdayEndsAt: row.workday_ends_at?.slice(0, 5) ?? '',
-    startLatitude: row.start_latitude == null ? null : Number(row.start_latitude),
-    startLongitude: row.start_longitude == null ? null : Number(row.start_longitude),
     isOperational: Boolean(row.is_operational),
   }
 }
@@ -37,7 +33,7 @@ function checkError(error) {
     throw new Error('You do not have permission to manage technicians.', { cause: error })
   }
   if (error.code === '22023' || error.code === '23514') {
-    throw new Error('Review the technician’s work hours and start coordinates.', { cause: error })
+    throw new Error('Review the technician’s work hours.', { cause: error })
   }
   throw new Error(error.message || 'The technicians request failed.', { cause: error })
 }
@@ -61,8 +57,6 @@ export async function createTechnician(technician) {
     p_phone: technician.phone || null,
     p_workday_starts_at: technician.workdayStartsAt,
     p_workday_ends_at: technician.workdayEndsAt,
-    p_start_latitude: technician.latitude ?? technician.startLatitude,
-    p_start_longitude: technician.longitude ?? technician.startLongitude,
   })
   checkError(error)
 
@@ -85,8 +79,6 @@ export async function updateTechnician(id, technician) {
     p_is_active: technician.isActive,
     p_workday_starts_at: technician.workdayStartsAt,
     p_workday_ends_at: technician.workdayEndsAt,
-    p_start_latitude: technician.latitude ?? technician.startLatitude,
-    p_start_longitude: technician.longitude ?? technician.startLongitude,
   })
   checkError(error)
 

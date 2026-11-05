@@ -14,7 +14,6 @@ export const technicianSchema = z.object({
   phoneCountry: z.enum(['US', 'MX']).default('US'),
   workdayStartsAt: timeSchema,
   workdayEndsAt: timeSchema,
-  coordinates: coordinatesSchema,
 }).superRefine((value, context) => {
   if (value.phone && !normalizePhoneNumber(value.phone, value.phoneCountry)) {
     context.addIssue({
@@ -30,10 +29,9 @@ export const technicianSchema = z.object({
       message: 'End time must be after start time.',
     })
   }
-}).transform(({ phoneCountry, coordinates, ...value }) => ({
+}).transform(({ phoneCountry, ...value }) => ({
   ...value,
   phone: normalizePhoneNumber(value.phone, phoneCountry),
-  ...coordinates,
 }))
 
 export const schedulingSettingsSchema = z.object({

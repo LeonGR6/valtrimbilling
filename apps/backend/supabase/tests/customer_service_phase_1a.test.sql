@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(21);
+select plan(24);
 
 select has_table(
   'valtrim',
@@ -42,9 +42,9 @@ select has_function(
   'create_service_technician',
   array[
     'text', 'text', 'text', 'time without time zone',
-    'time without time zone', 'numeric', 'numeric'
+    'time without time zone'
   ],
-  'Technician creation accepts work hours and coordinates'
+  'Technician creation accepts contact data and work hours'
 );
 
 select has_function(
@@ -52,7 +52,7 @@ select has_function(
   'update_service_technician',
   array[
     'bigint', 'text', 'text', 'text', 'boolean',
-    'time without time zone', 'time without time zone', 'numeric', 'numeric'
+    'time without time zone', 'time without time zone'
   ],
   'Technician updates are atomic'
 );
@@ -62,7 +62,7 @@ select has_function(
   'create_service_technician_internal',
   array[
     'text', 'text', 'text', 'time without time zone',
-    'time without time zone', 'numeric', 'numeric'
+    'time without time zone'
   ],
   'The privileged technician creation implementation stays private'
 );
@@ -72,7 +72,7 @@ select has_function(
   'update_service_technician_internal',
   array[
     'bigint', 'text', 'text', 'text', 'boolean',
-    'time without time zone', 'time without time zone', 'numeric', 'numeric'
+    'time without time zone', 'time without time zone'
   ],
   'The privileged technician update implementation stays private'
 );
@@ -110,7 +110,7 @@ select ok(
 select ok(
   has_function_privilege(
     'authenticated',
-    'valtrim.create_service_technician(text,text,text,time without time zone,time without time zone,numeric,numeric)',
+    'valtrim.create_service_technician(text,text,text,time without time zone,time without time zone)',
     'execute'
   ),
   'Authenticated users can call technician creation subject to its role check'
@@ -119,7 +119,7 @@ select ok(
 select ok(
   not has_function_privilege(
     'anon',
-    'valtrim.create_service_technician(text,text,text,time without time zone,time without time zone,numeric,numeric)',
+    'valtrim.create_service_technician(text,text,text,time without time zone,time without time zone)',
     'execute'
   ),
   'Anonymous users cannot create technicians'
@@ -176,14 +176,28 @@ select throws_ok(
       null,
       null,
       time '08:00',
-      time '17:00',
-      33.986588,
-      -117.343021
+      time '17:00'
     )
   $$,
   '42501',
   'You do not have permission to manage Customer Service requests',
   'Technician creation rejects callers without a scheduling role'
+);
+
+select hasnt_column(
+  'valtrim', 'service_technician_profiles', 'start_latitude',
+  'Technician start coordinates were retired in 20261105220000'
+);
+
+select hasnt_column(
+  'valtrim', 'service_technician_roster', 'start_longitude',
+  'The roster no longer exposes start coordinates'
+);
+
+select is(
+  (select count(*)::int from valtrim.people where id in (4, 5) and name in ('tecnico 1', 'tecnico 2')),
+  0,
+  'The test technicians were deleted in 20261105220000'
 );
 
 select * from finish();

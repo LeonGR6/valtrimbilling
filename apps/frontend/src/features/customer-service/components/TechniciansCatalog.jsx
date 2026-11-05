@@ -30,9 +30,6 @@ function TechnicianDialog({ technician, onClose, onSave, saving }) {
       phoneCountry: country,
       workdayStartsAt: technician?.workdayStartsAt ?? '08:00',
       workdayEndsAt: technician?.workdayEndsAt ?? '17:00',
-      coordinates: technician?.startLatitude != null && technician?.startLongitude != null
-        ? `${technician.startLatitude}, ${technician.startLongitude}`
-        : '',
     },
     mode: 'onTouched',
   })
@@ -62,11 +59,6 @@ function TechnicianDialog({ technician, onClose, onSave, saving }) {
               error={Boolean(errors.workdayEndsAt)} helperText={errors.workdayEndsAt?.message}
               fullWidth slotProps={{ inputLabel: { shrink: true } }} />
           </Stack>
-          <TextField label="Start coordinates" {...register('coordinates')} fullWidth required
-            error={Boolean(errors.coordinates)}
-            helperText={errors.coordinates?.message ?? 'Latitude and longitude, for example: 33.986588, -117.343021'}
-            placeholder="33.986588, -117.343021"
-            slotProps={{ htmlInput: { inputMode: 'decimal' } }} />
         </Stack>
       </DialogContent>
       <DialogActions sx={{ px: 3, pb: 2.5 }}>
@@ -176,10 +168,10 @@ export default function TechniciansCatalog() {
       </Stack>
       {error && <Alert severity="error" action={<Button color="inherit" onClick={refresh}>Retry</Button>}>{error}</Alert>}
       <TableContainer>
-        <Table sx={{ minWidth: 820 }}>
+        <Table sx={{ minWidth: 720 }}>
           <TableHead><TableRow sx={{ bgcolor: 'sidebar.bg' }}>
             <TableCell>Technician</TableCell><TableCell>Phone</TableCell>
-            <TableCell>Workday</TableCell><TableCell>Start coordinates</TableCell>
+            <TableCell>Workday</TableCell>
             <TableCell>Status</TableCell><TableCell align="right">Actions</TableCell>
           </TableRow></TableHead>
           <TableBody>
@@ -191,9 +183,6 @@ export default function TechniciansCatalog() {
               <TableCell>{technician.phone ? formatPhoneNumber(technician.phone) : '—'}</TableCell>
               <TableCell>{technician.workdayStartsAt && technician.workdayEndsAt
                 ? `${technician.workdayStartsAt} – ${technician.workdayEndsAt}`
-                : 'Incomplete'}</TableCell>
-              <TableCell>{technician.startLatitude != null && technician.startLongitude != null
-                ? `${technician.startLatitude}, ${technician.startLongitude}`
                 : 'Incomplete'}</TableCell>
               <TableCell><Chip size="small" label={technician.isActive ? 'Active' : 'Inactive'}
                 color={technician.isActive ? 'success' : 'default'} /></TableCell>
@@ -207,10 +196,10 @@ export default function TechniciansCatalog() {
                 </Button>
               </TableCell>
             </TableRow>)}
-            {!loading && visible.length === 0 && <TableRow><TableCell colSpan={6} align="center" sx={{ py: 6 }}>
+            {!loading && visible.length === 0 && <TableRow><TableCell colSpan={5} align="center" sx={{ py: 6 }}>
               {technicians.length ? 'No technicians match these filters.' : 'No technicians registered yet.'}
             </TableCell></TableRow>}
-            {loading && visible.length === 0 && <TableRow><TableCell colSpan={6} align="center" sx={{ py: 6 }}>Loading technicians...</TableCell></TableRow>}
+            {loading && visible.length === 0 && <TableRow><TableCell colSpan={5} align="center" sx={{ py: 6 }}>Loading technicians...</TableCell></TableRow>}
           </TableBody>
         </Table>
       </TableContainer>

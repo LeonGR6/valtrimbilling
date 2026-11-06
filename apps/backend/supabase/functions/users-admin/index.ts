@@ -16,6 +16,7 @@ const ROLES = [
   'ACCOUNTING',
   'PROJECT_MANAGEMENT',
   'SCHEDULING',
+  'CUSTOMER_SERVICE',
   'FIELD',
   'READ_ONLY',
 ] as const

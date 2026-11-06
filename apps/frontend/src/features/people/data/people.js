@@ -1,9 +1,41 @@
-// Valtrim's own field staff. Builder-side people — jobsite superintendents and
-// AP contacts — live in features/builder-contacts instead.
+// Company Contacts: the people who work for Valtrim. A contact can have several
+// types. Builder-side people — jobsite superintendents, AP contacts and the
+// contacts a builder's team typed in — live in features/builder-contacts.
 export const personTypeOptions = [
   {
     value: 'SUPERVISOR',
     label: 'Supervisor',
+    description: 'Valtrim field supervisor assigned to jobs. Needs a territory.',
+  },
+  {
+    value: 'ESTIMATOR',
+    label: 'Estimator',
+    description: 'Prices the scope of work.',
+  },
+  {
+    value: 'JOB_COORDINATOR',
+    label: 'Job Coordinator',
+    description: 'Coordinates the day-to-day details of each job.',
+  },
+  {
+    value: 'PURCHASING',
+    label: 'Purchasing',
+    description: 'Handles purchase orders and material buying.',
+  },
+  {
+    value: 'SCHEDULING',
+    label: 'Scheduling',
+    description: 'Sets and confirms the production schedule.',
+  },
+  {
+    value: 'OPTIONS_COORDINATOR',
+    label: 'Options Coordinator',
+    description: 'Manages the homebuyer options selected for each lot.',
+  },
+  {
+    value: 'PROJECT_MANAGER',
+    label: 'Project Manager',
+    description: 'Oversees projects and communities.',
   },
 ]
 
@@ -59,8 +91,7 @@ export const emptyPerson = {
   phone: '',
   officePhone: '',
   email: '',
-  // Supervisor is the only role this screen holds today, so it starts checked.
-  types: ['SUPERVISOR'],
+  types: [],
   territory: '',
   isActive: true,
 }

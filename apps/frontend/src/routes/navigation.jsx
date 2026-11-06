@@ -1,5 +1,9 @@
 import {
   CalendarPage,
+  ChangeOrdersPage,
+  NewChangeOrderPage,
+  ChangeOrderDetailPage,
+  EditChangeOrderPage,
   BuilderDrawSchedulesPage,
   FinancialsPage,
   HomePage,
@@ -13,67 +17,140 @@ import {
   CustomerServicePage,
   UsersPage,
 } from './lazyPages.jsx'
+import { ADMIN_ROLES, PAGE_ROLES } from '../features/auth/authorization/roleAccess.js'
+import { CHANGE_ORDERS_ENABLED } from '../config/appConfig.js'
+
+// Who may open each page: the roles that work there, plus the observers
+// (FIELD, READ_ONLY) who only look. Home has no list, so everyone opens it.
+const {
+  planning: planningPage,
+  billing: billingPage,
+  scheduling: schedulingPage,
+  customerService: customerServicePage,
+  admin: adminPage,
+} = PAGE_ROLES
 
 // Single source of truth for the app's navigable routes.
 // Both AppRoutes and the Sidebar read from here.
+const changeOrdersRoute = {
+  path: '/change-orders',
+  label: 'Extra / Change Orders',
+  icon: 'change-orders',
+  element: <ChangeOrdersPage />,
+  allowedRoles: planningPage,
+}
+
+const changeOrdersContextualRoutes = [
+  { path: '/change-orders/new', element: <NewChangeOrderPage />, allowedRoles: planningPage },
+  { path: '/change-orders/:changeOrderId', element: <ChangeOrderDetailPage />, allowedRoles: planningPage },
+  { path: '/change-orders/:changeOrderId/edit', element: <EditChangeOrderPage />, allowedRoles: planningPage },
+]
+
 export const navigationRoutes = [
   { path: '/', label: 'Home', icon: 'home', element: <HomePage /> },
-  { path: '/calendar', label: 'Calendar', icon: 'calendar', element: <CalendarPage /> },
-  { path: '/jobs', label: 'Jobs', icon: 'jobs', element: <JobsPage /> },
-  { path: '/sequence-sheets', label: 'Sequence Sheets', icon: 'sequence-sheets', element: <SequenceSheetsPage /> },
-  { path: '/draw-invoice', label: 'Draw & Invoice', icon: 'draw-invoice', element: <DrawAndInvoicePage /> },
+  {
+    path: '/calendar',
+    label: 'Calendar',
+    icon: 'calendar',
+    element: <CalendarPage />,
+    allowedRoles: schedulingPage,
+  },
+  { path: '/jobs', label: 'Jobs', icon: 'jobs', element: <JobsPage />, allowedRoles: planningPage },
+  {
+    path: '/sequence-sheets',
+    label: 'Sequence Sheets',
+    icon: 'sequence-sheets',
+    element: <SequenceSheetsPage />,
+    allowedRoles: schedulingPage,
+  },
+  {
+    path: '/draw-invoice',
+    label: 'Draw & Invoice',
+    icon: 'draw-invoice',
+    element: <DrawAndInvoicePage />,
+    allowedRoles: billingPage,
+  },
+  ...(CHANGE_ORDERS_ENABLED ? [changeOrdersRoute] : []),
   {
     path: '/builder-draw-schedules',
-    label: 'Builder Draw Schedules',
+    label: 'Builder Setup',
     icon: 'builder-draw-schedules',
     element: <BuilderDrawSchedulesPage />,
+    allowedRoles: billingPage,
   },
-  { path: '/people', label: 'People', icon: 'people', element: <PeoplePage /> },
-  { path: '/pricing', label: 'Pricing', icon: 'pricing', element: <PricingPage /> },
-  { path: '/invoice', label: 'Invoice', icon: 'invoice', element: <InvoicePage /> },
-  { path: '/financials', label: 'Financials', icon: 'financials', element: <FinancialsPage /> },
+  { path: '/people', label: 'People', icon: 'people', element: <PeoplePage />, allowedRoles: adminPage },
+  { path: '/pricing', label: 'Pricing', icon: 'pricing', element: <PricingPage />, allowedRoles: planningPage },
+  { path: '/invoice', label: 'Invoice', icon: 'invoice', element: <InvoicePage />, allowedRoles: adminPage },
+  {
+    path: '/financials',
+    label: 'Financials',
+    icon: 'financials',
+    element: <FinancialsPage />,
+    allowedRoles: adminPage,
+  },
   {
     path: '/users',
     label: 'Users',
     icon: 'users',
     element: <UsersPage />,
-    allowedRoles: ['ADMIN'],
+    allowedRoles: ADMIN_ROLES,
   },
-  { path: '/builder-contacts', label: 'Builder Contacts', icon: 'builder-contacts', element: <BuilderContactsPage /> },
-  { path: '/customer-service', label: 'Customer Service', icon: 'customer-service', element: <CustomerServicePage /> },
+  {
+    path: '/builder-contacts',
+    label: 'Builder Contacts',
+    icon: 'builder-contacts',
+    element: <BuilderContactsPage />,
+    allowedRoles: adminPage,
+  },
+  {
+    path: '/customer-service',
+    label: 'Customer Service',
+    icon: 'customer-service',
+    element: <CustomerServicePage />,
+    allowedRoles: customerServicePage,
+  },
 
 ]
 
 // Context routes keep the selected builder and Job in the URL while the
-// sidebar continues to link to each module's general entry point.
+// sidebar continues to link to each module's general entry point. They answer
+// to the same roles as the page they belong to.
 export const contextualRoutes = [
-  { path: '/jobs/builder/:builderId', element: <JobsPage /> },
+  ...(CHANGE_ORDERS_ENABLED ? changeOrdersContextualRoutes : []),
+  { path: '/jobs/builder/:builderId', element: <JobsPage />, allowedRoles: planningPage },
   {
     path: '/jobs/builder/:builderId/job/:jobId/plans-options',
     element: <JobsPage />,
+    allowedRoles: planningPage,
   },
   {
     path: '/sequence-sheets/builder/:builderId/job/:jobId',
     element: <SequenceSheetsPage />,
+    allowedRoles: schedulingPage,
   },
   {
     path: '/sequence-sheets/builder/:builderId/job/:jobId/phase/:phaseId',
     element: <SequenceSheetsPage />,
+    allowedRoles: schedulingPage,
   },
   {
     path: '/pricing/builder/:builderId/job/:jobId',
     element: <PricingPage />,
+    allowedRoles: planningPage,
   },
   {
     path: '/draw-invoice/builder/:builderId/job/:jobId',
     element: <DrawAndInvoicePage />,
+    allowedRoles: billingPage,
   },
   {
     path: '/draw-invoice/builder/:builderId/job/:jobId/phase/:phaseId',
     element: <DrawAndInvoicePage />,
+    allowedRoles: billingPage,
   },
   {
     path: '/draw-invoice/builder/:builderId/job/:jobId/phase/:phaseId/package/:packageId',
     element: <DrawAndInvoicePage />,
+    allowedRoles: billingPage,
   },
 ]

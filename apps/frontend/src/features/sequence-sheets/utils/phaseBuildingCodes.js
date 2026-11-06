@@ -27,3 +27,13 @@ export function formatBuilding(value, variant = 'long') {
   if (!code) return ''
   return variant === 'short' ? `B${code}` : `Building ${code}`
 }
+
+/**
+ * "Phase 2 · Building A", or just "Phase 2" for a Phase that has no Building.
+ * `separator` joins the two parts (" · " by default, " / " in tables).
+ */
+export function formatPhaseBuilding(phase, building, { variant = 'long', separator = ' · ' } = {}) {
+  return [formatPhase(phase, variant), formatBuilding(building, variant)]
+    .filter(Boolean)
+    .join(separator)
+}

@@ -80,6 +80,10 @@ export default function AppLayout() {
             borderRadius: 2,
             boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.05)',
             overflow: 'auto',
+            // The scroll lives here. Without a positioned ancestor, the absolutely positioned bits
+            // (radio inputs, screen-reader text) of a long page escape this box and make the whole
+            // window scrollable too: a second scroll, with an empty strip under the page.
+            position: 'relative',
           }}
         >
           <Outlet />

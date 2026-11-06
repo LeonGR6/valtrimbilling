@@ -7,7 +7,8 @@ import { requireSupabase } from '../../../services/api.js'
 import { createCustomerServiceEmailAutomationMonitor } from '../services/customerServiceEmailAutomation.js'
 import { listTechnicians } from '../services/techniciansRepository.js'
 import {
-  cancelCustomerServiceAppointment, loadCustomerServiceSchedule, registerCustomerServiceAppointment,
+  cancelCustomerServiceAppointment, estimateCustomerServiceTravel, loadCustomerServiceSchedule,
+  registerCustomerServiceAppointment,
 } from '../services/customerServiceAppointmentsRepository.js'
 import { applyAppointmentsToRequests, toPlanningTechnicians, travelEstimatesToMinutes } from '../utils/appointmentRecords.js'
 
@@ -97,6 +98,8 @@ export default function CustomerServicePrototypeProvider({ children }) {
       proposalDrafts, setProposalDrafts,
       technicians: toPlanningTechnicians(schedule.roster),
       storedTravelMinutes: travelEstimatesToMinutes(schedule.travelEstimates),
+      storedRoutesMinutes: travelEstimatesToMinutes(schedule.travelEstimates.filter((row) => row.source === 'ROUTES_API')),
+      estimateTravel: estimateCustomerServiceTravel,
       scheduleError,
       registerAppointment: async (payload) => afterScheduleChange(await registerCustomerServiceAppointment(payload)),
       cancelAppointment: async (payload) => afterScheduleChange(await cancelCustomerServiceAppointment(payload)),

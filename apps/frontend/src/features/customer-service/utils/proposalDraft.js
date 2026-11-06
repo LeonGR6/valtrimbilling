@@ -197,3 +197,55 @@ export function createPrototypeProposalDraft({ requestId, values, requests, tech
     requestSignature: proposalPlanningSignature(request), savedAt: now.toISOString(),
   }
 }
+
+// Business days searched when the request is already overdue (no on-time day left).
+export const proposalSuggestionSearchBusinessDays = 10
+const suggestionStepMinutes = 15
+
+// Proposes viable times for review (approved rule: suggest, never apply). It only reads
+// the schedule and returns plain values; filling the form is the user's choice and
+// registering still goes through the server. The first viable start of each window is
+// listed, earliest first, using the same validator as the form.
+export function suggestProposalTimes({ requestId, values, requests, technicians = prototypeTechnicians, now = new Date(), limit = 3 }) {
+  const request = requests.find((entry) => String(entry.id) === String(requestId))
+  const current = validatePrototypeProposalDraft({ requestId, values, requests, technicians, now })
+  // Request or technician problems make every time invalid; the form already explains them.
+  if (!request || current.errors.some((error) => ['request', 'technicianIds'].includes(error.field))) {
+    return { suggestions: [], searchedThrough: null }
+  }
+
+  const today = getCustomerServiceClock(now).date
+  const onTimeUntil = validDate(request.dueOn) && request.dueOn >= today ? request.dueOn : null
+  const suggestions = []
+  let searchedThrough = null
+  let businessDays = 0
+  for (const cursor = new Date(`${today}T12:00:00Z`); suggestions.length < limit; cursor.setUTCDate(cursor.getUTCDate() + 1)) {
+    const date = cursor.toISOString().slice(0, 10)
+    if (onTimeUntil && date > onTimeUntil) break
+    if ([0, 6].includes(cursor.getUTCDay())) continue
+    businessDays += 1
+    if (!onTimeUntil && businessDays > proposalSuggestionSearchBusinessDays) break
+    searchedThrough = date
+
+    for (const window of serviceCustomerWindowOptions) {
+      for (let start = minutes(window.start); start < minutes(window.end); start += suggestionStepMinutes) {
+        const internalStart = timeFromMinutes(start)
+        if (date === values.date && window.start === values.windowStart && internalStart === values.internalStart) continue
+        const candidate = { ...values, date, windowStart: window.start, internalStart }
+        const result = validatePrototypeProposalDraft({ requestId, values: candidate, requests, technicians, now })
+        if (!result.isValid || result.pastDue) continue
+        suggestions.push({
+          date, windowStart: window.start, windowLabel: window.label, internalStart,
+          internalEnd: result.internalEnd, pickupEnd: result.pickupEnd, travelPending: result.travelPending,
+        })
+        break
+      }
+      if (suggestions.length >= limit) break
+    }
+  }
+  return { suggestions, searchedThrough }
+}
+
+export function applyProposalSuggestion(values, suggestion) {
+  return { ...values, date: suggestion.date, windowStart: suggestion.windowStart, internalStart: suggestion.internalStart }
+}

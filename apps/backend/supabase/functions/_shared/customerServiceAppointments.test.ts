@@ -3,6 +3,7 @@ import {
   AppointmentInputError,
   type AppointmentRow,
   californiaDayRange,
+  changedTravelLegs,
   parseRegisterInput,
   type RegisterAppointmentInput,
   type RequestRow,
@@ -120,6 +121,16 @@ Deno.test("a date after the due date is blocked only while on-time days remain",
   assert(overdue.rpcArgs);
 });
 
+Deno.test("a completed window no longer blocks or needs travel, but stays in the fingerprint", () => {
+  const result = validateRegistration({
+    input: input({ windowStart: "08:00", workStart: "08:15" }), request, technicians,
+    dayAppointments: [{ ...earlier, state: "COMPLETED" }], now,
+  });
+  assertEquals(result.errors, []);
+  assertEquals(result.rpcArgs?.p_expected_appointment_ids, [7]);
+  assertEquals(result.rpcArgs?.p_travel, []);
+});
+
 Deno.test("a crew of two is checked against both technicians' days", () => {
   const result = validateRegistration({
     input: input({ technicianIds: [4, 5], windowStart: "08:00", workStart: "08:00" }),
@@ -127,6 +138,19 @@ Deno.test("a crew of two is checked against both technicians' days", () => {
   });
   assert(result.errors.some((error) => error.message.startsWith("Tech One has an internal work conflict")));
   assert(!result.errors.some((error) => error.message.startsWith("Tech Two")));
+});
+
+Deno.test("unchanged stored travel is not rewritten, so a Routes API source survives", () => {
+  const legs = [
+    { fromRequestId: 10, toRequestId: 20, minutes: 18 },
+    { fromRequestId: 20, toRequestId: 30, minutes: 25 },
+    { fromRequestId: 30, toRequestId: 40, minutes: 5 },
+  ];
+  const stored = [
+    { from_request_id: 10, to_request_id: 20, minutes: 18 },
+    { from_request_id: 20, to_request_id: 30, minutes: 22 },
+  ];
+  assertEquals(changedTravelLegs(legs, stored), [legs[1], legs[2]]);
 });
 
 Deno.test("database errors map to planner statuses", () => {

@@ -4,7 +4,9 @@ import customerServiceMockDatabase from '../src/features/customer-service/data/c
 import {
   applyAppointmentsToRequests, toPlanningTechnicians, travelEstimatesToMinutes, upcomingAppointmentRequestIds,
 } from '../src/features/customer-service/utils/appointmentRecords.js'
-import { buildAppointmentRegistration, validatePrototypeProposalDraft } from '../src/features/customer-service/utils/proposalDraft.js'
+import {
+  applyProposalSuggestion, buildAppointmentRegistration, suggestProposalTimes, validatePrototypeProposalDraft,
+} from '../src/features/customer-service/utils/proposalDraft.js'
 import { createServiceCalendarEventsFromRequests } from '../src/features/customer-service/data/serviceCalendarEvents.js'
 
 const roster = [
@@ -108,4 +110,54 @@ test('a late date blocks registration only while the request can still be done o
   const overdue = validate('2026-09-04')
   assert.equal(overdue.pastDue, false)
   assert.ok(overdue.warnings.some((warning) => warning.message === 'This request was due on 2026-09-04. The work will be completed late.'))
+})
+
+test('suggested times are the earliest viable start per window and only describe values', () => {
+  const requests = applyAppointmentsToRequests([confirmed, ready], [appointment], roster)
+  const values = { technicianIds: ['4'], date: '2026-11-06', windowStart: '', internalStart: '', travelMinutes: {} }
+  const snapshot = JSON.stringify({ requests, values })
+
+  const { suggestions } = suggestProposalTimes({ requestId: 20, values, requests, technicians, now })
+  // Friday 09:00 is now: the 08:00 window cannot fit 60 min + pickup anymore. Monday 08:00–08:40
+  // is SR-10 for Jorge, so the first free start is 08:45 (its travel leg is still unknown).
+  assert.deepEqual(suggestions.map(({ date, windowStart, internalStart, travelPending }) => (
+    [date, windowStart, internalStart, travelPending]
+  )), [
+    ['2026-11-06', '10:00', '10:00', false],
+    ['2026-11-06', '12:00', '12:00', false],
+    ['2026-11-09', '08:00', '08:45', true],
+  ])
+  assert.equal(suggestions[2].pickupEnd, '09:55')
+
+  // Suggesting changes nothing: not the requests, not their appointments, not the form.
+  assert.equal(JSON.stringify({ requests, values }), snapshot)
+  assert.equal(requests[0].appointment.id, 7)
+
+  // Using a suggestion only fills date, window and start; it is then a normal valid draft.
+  const used = applyProposalSuggestion(values, suggestions[0])
+  assert.deepEqual(used, { ...values, date: '2026-11-06', windowStart: '10:00', internalStart: '10:00' })
+  assert.equal(validatePrototypeProposalDraft({ requestId: 20, values: used, requests, technicians, now }).isValid, true)
+})
+
+test('suggestions stay within the due date while on time and look ahead when already overdue', () => {
+  const values = { technicianIds: ['4'], date: '2026-11-06', windowStart: '', internalStart: '', travelMinutes: {} }
+  const suggest = (dueOn) => suggestProposalTimes({
+    requestId: 20, values, technicians, now, limit: 100,
+    requests: applyAppointmentsToRequests([confirmed, { ...ready, dueOn }], [appointment], roster),
+  })
+
+  const onTime = suggest('2026-11-09')
+  assert.equal(onTime.searchedThrough, '2026-11-09')
+  assert.ok(onTime.suggestions.every((suggestion) => suggestion.date <= '2026-11-09'))
+
+  const overdue = suggest('2026-09-04')
+  assert.equal(overdue.searchedThrough, '2026-11-19') // ten business days from Friday 2026-11-06
+  // Three windows on each of the ten days, minus today's 08:00 window (it is already 09:00).
+  assert.equal(overdue.suggestions.length, 29)
+
+  const noTechnician = suggestProposalTimes({
+    requestId: 20, values: { ...values, technicianIds: [] }, technicians, now,
+    requests: applyAppointmentsToRequests([confirmed, ready], [appointment], roster),
+  })
+  assert.deepEqual(noTechnician, { suggestions: [], searchedThrough: null })
 })

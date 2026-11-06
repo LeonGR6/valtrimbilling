@@ -7,6 +7,7 @@ import { handlePreflight, json } from "../_shared/cors.ts";
 import {
   AppointmentInputError,
   californiaDayRange,
+  changedTravelLegs,
   parseRegisterInput,
   statusForDatabaseError,
   validateRegistration,
@@ -61,7 +62,7 @@ async function register(req: Request, actorId: string) {
       .select("id, name, is_active")
       .in("id", input.technicianIds),
     admin.from("service_appointments")
-      .select("id, request_id, technician_ids, window_starts_at, starts_at, ends_at, pickup_minutes, service_requests(folio)")
+      .select("id, request_id, technician_ids, window_starts_at, starts_at, ends_at, pickup_minutes, state, service_requests(folio)")
       .eq("is_current", true)
       .overlaps("technician_ids", input.technicianIds)
       .gte("window_starts_at", day.start)
@@ -82,9 +83,21 @@ async function register(req: Request, actorId: string) {
     throw new RequestError("The appointment cannot be registered.", 422, validation.errors);
   }
 
+  let travel = validation.rpcArgs.p_travel;
+  if (travel.length) {
+    const ids = [...new Set(travel.flatMap((leg) => [leg.fromRequestId, leg.toRequestId]))];
+    const stored = await admin.from("service_travel_estimates")
+      .select("from_request_id, to_request_id, minutes")
+      .in("from_request_id", ids)
+      .in("to_request_id", ids);
+    if (stored.error) throw stored.error;
+    travel = changedTravelLegs(travel, stored.data ?? []);
+  }
+
   const { data, error } = await admin.rpc("register_customer_service_appointment", {
     p_actor_id: actorId,
     ...validation.rpcArgs,
+    p_travel: travel,
   });
   if (error) {
     const status = statusForDatabaseError(error.code);

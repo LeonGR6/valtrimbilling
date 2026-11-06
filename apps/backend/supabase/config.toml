@@ -435,6 +435,16 @@ verify_jwt = true
 [functions.customer-service-appointments]
 verify_jwt = true
 
+# Travel minutes between visits from Google Routes API for ADMIN/SCHEDULING
+# staff. The GOOGLE_MAPS_API_KEY secret stays on the server.
+[functions.customer-service-travel-estimates]
+verify_jwt = true
+
+# Called by pg_cron every minute. No caller credential: it only applies the
+# transitions the server clock makes due, forward-only and idempotent.
+[functions.customer-service-appointment-transitions]
+verify_jwt = false
+
 # Read-only short-lived URLs for finalized email attachments. The caller RPC
 # checks active Customer Service roles; no uploads are exposed to the browser.
 [functions.customer-service-import-source]

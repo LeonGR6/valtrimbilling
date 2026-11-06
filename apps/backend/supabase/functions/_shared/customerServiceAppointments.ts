@@ -53,6 +53,8 @@ export interface AppointmentRow {
   starts_at: string;
   ends_at: string;
   pickup_minutes: number;
+  // SCHEDULED or COMPLETED (current appointments only). Omitted means SCHEDULED.
+  state?: string;
   service_requests: { folio: string } | null;
 }
 
@@ -175,7 +177,9 @@ export function validateRegistration({ input, request, technicians, dayAppointme
       start: californiaClockAt(new Date(appointment.starts_at)).time,
       end: californiaClockAt(plusMinutes(appointment.ends_at, appointment.pickup_minutes)).time,
       windowUncertain: false,
-      blocksAvailability: true,
+      // A COMPLETED window no longer reserves time (same rule as the planner); it
+      // still counts in the expected-ids fingerprint.
+      blocksAvailability: appointment.state !== "COMPLETED",
     })));
   const capacity = checkVisitCapacity({
     visit: {
@@ -216,6 +220,22 @@ export function validateRegistration({ input, request, technicians, dayAppointme
       })),
     },
   };
+}
+
+export interface TravelLegArg {
+  fromRequestId: number;
+  toRequestId: number;
+  minutes: number;
+}
+
+// The RPC writes every leg it receives as MANUAL. A leg whose stored minutes did
+// not change is left out so an unchanged Routes API estimate keeps its source.
+export function changedTravelLegs(
+  legs: TravelLegArg[],
+  stored: { from_request_id: number; to_request_id: number; minutes: number }[],
+) {
+  const storedMinutes = new Map(stored.map((row) => [`${row.from_request_id}>${row.to_request_id}`, Number(row.minutes)]));
+  return legs.filter((leg) => storedMinutes.get(`${leg.fromRequestId}>${leg.toRequestId}`) !== leg.minutes);
 }
 
 // Postgres error codes from the RPC mapped to HTTP statuses for the planner.

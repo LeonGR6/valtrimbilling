@@ -44,6 +44,17 @@ export async function registerCustomerServiceAppointment(payload) {
   return data
 }
 
+// Google Routes API runs on the server; the key never reaches the browser.
+// Each leg returns minutes or null (never zero on failure) with a status.
+export async function estimateCustomerServiceTravel(legs) {
+  const client = await requireSupabase()
+  const { data, error } = await client.functions.invoke('customer-service-travel-estimates', { body: { legs } })
+  if (error || data?.error || !Array.isArray(data?.legs)) {
+    throw new Error(await functionErrorMessage(error, data, 'Travel times could not be calculated. Enter them manually.'), { cause: error })
+  }
+  return data.legs
+}
+
 export async function cancelCustomerServiceAppointment({ appointmentId, expectedUpdatedAt, reason }) {
   const client = await requireSupabase()
   const { data, error } = await client.rpc('cancel_customer_service_appointment', {

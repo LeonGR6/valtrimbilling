@@ -5,12 +5,63 @@ import {
 } from '@mui/material'
 import { serviceCustomerWindowOptions } from '../data/serviceCalendarEvents.js'
 import {
-  buildAppointmentRegistration, changePrototypeProposalWindow, changePrototypeTravelMinutes, getPrototypePlanningTechnicians,
-  proposalDraftFormValues, proposalDraftHasChanges, proposalPlanningSignature, validatePrototypeProposalDraft,
+  applyProposalSuggestion, buildAppointmentRegistration, changePrototypeProposalWindow, changePrototypeTravelMinutes,
+  getPrototypePlanningTechnicians, proposalDraftFormValues, proposalDraftHasChanges, proposalPlanningSignature,
+  suggestProposalTimes, validatePrototypeProposalDraft,
 } from '../utils/proposalDraft.js'
+import {
+  applyTravelEstimates, routesMinutesByLeg, travelEstimateMessages, travelLegSource, travelLegsToEstimate,
+} from '../utils/travelEstimates.js'
 import { getCustomerServiceClock } from '../utils/dates.js'
 import { useCustomerServicePrototype } from '../context/customerServicePrototypeContext.js'
 import ProposalDayAgenda from './ProposalDayAgenda.jsx'
+
+const formatSuggestionDate = (date) => new Date(`${date}T12:00:00Z`).toLocaleDateString('en-US', {
+  weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC',
+})
+
+// Suggestions only fill the form; nothing is saved or registered from here.
+function ProposalSuggestions({ result, onSuggest, onUse, disabled }) {
+  return (
+    <Stack spacing={1}>
+      <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} sx={{ alignItems: { sm: 'center' }, justifyContent: 'space-between' }}>
+        <Box>
+          <Typography variant="subtitle2" fontWeight={800}>Suggested times</Typography>
+          <Typography variant="caption" color="text.secondary">
+            Earliest viable start per window for the selected technicians. Using one only fills this form.
+          </Typography>
+        </Box>
+        <Button variant="text" onClick={onSuggest} disabled={disabled} sx={{ flexShrink: 0 }}>
+          {result ? 'Refresh suggestions' : 'Suggest available times'}
+        </Button>
+      </Stack>
+      {result && result.suggestions.length === 0 && (
+        <Alert severity="info" variant="outlined">
+          {result.searchedThrough
+            ? `No available times found through ${formatSuggestionDate(result.searchedThrough)} for the selected technicians. Try other technicians.`
+            : 'No suggestions are possible until the request and technician issues above are resolved.'}
+        </Alert>
+      )}
+      {result?.suggestions.map((suggestion) => (
+        <Paper key={`${suggestion.date}-${suggestion.windowStart}`} variant="outlined"
+          sx={{ p: 1.5, display: 'flex', gap: 1.5, alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap' }}>
+          <Box>
+            <Typography variant="body2" fontWeight={700}>
+              {formatSuggestionDate(suggestion.date)} · {suggestion.windowLabel}
+            </Typography>
+            <Typography variant="caption" color="text.secondary">
+              Work {suggestion.internalStart}–{suggestion.internalEnd} · pickup until {suggestion.pickupEnd}
+            </Typography>
+          </Box>
+          <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+            {suggestion.travelPending && <Chip size="small" label="Travel time pending" color="warning" variant="outlined" />}
+            <Button size="small" variant="outlined" onClick={() => onUse(suggestion)}>Use this time</Button>
+          </Stack>
+        </Paper>
+      ))}
+    </Stack>
+  )
+}
 
 const acceptanceOptions = [
   { value: 'CUSTOMER_ACCEPTED_PROPOSAL', label: 'Customer accepted the proposal' },
@@ -18,7 +69,7 @@ const acceptanceOptions = [
 ]
 
 export default function ProposalDraftPlanner({ request, requests, technicians: roster, savedDraft, onSave, onDirtyChange, onRegistered }) {
-  const { registerAppointment, storedTravelMinutes } = useCustomerServicePrototype()
+  const { registerAppointment, storedTravelMinutes, storedRoutesMinutes, estimateTravel } = useCustomerServicePrototype()
   // Travel saved with earlier appointments fills the same legs; typed values win.
   const withStoredTravel = (formValues) => ({
     ...formValues, travelMinutes: { ...storedTravelMinutes, ...formValues.travelMinutes },
@@ -27,11 +78,43 @@ export default function ProposalDraftPlanner({ request, requests, technicians: r
   const [values, setValues] = useState(initialValues)
   const [saveError, setSaveError] = useState('')
   const [registration, setRegistration] = useState(null)
+  const [suggestionResult, setSuggestionResult] = useState(null)
   const technicians = getPrototypePlanningTechnicians(roster)
   const validation = validatePrototypeProposalDraft({ requestId: request.id, requests, technicians, values })
   const errorFor = (field) => validation.errors.find((error) => error.field === field)?.message
   const savedIsStale = savedDraft && savedDraft.requestSignature !== proposalPlanningSignature(request)
   const hasUnsavedChanges = proposalDraftHasChanges(values, savedDraft ? withStoredTravel(proposalDraftFormValues(savedDraft)) : initialValues)
+  // Suggestions depend on the selected crew and travel; any other edit keeps them visible.
+  const suggestionKey = JSON.stringify([values.technicianIds, values.travelMinutes])
+  const suggestions = suggestionResult?.key === suggestionKey ? suggestionResult.result : null
+  const suggest = () => setSuggestionResult({
+    key: suggestionKey,
+    result: suggestProposalTimes({ requestId: request.id, values, requests, technicians }),
+  })
+  const applySuggestion = (suggestion) => {
+    setSaveError('')
+    setValues((current) => applyProposalSuggestion(current, suggestion))
+  }
+  // Google Routes results fill only empty legs; a leg keeps its Google label until edited.
+  const [travelEstimate, setTravelEstimate] = useState({ loading: false, error: '', results: [], routes: {} })
+  const routesMinutes = { ...storedRoutesMinutes, ...travelEstimate.routes }
+  const legsToEstimate = travelLegsToEstimate(validation.travelLegs)
+  const pendingKeys = new Set(validation.travelLegs.filter((leg) => leg.minutes === null).map((leg) => leg.key))
+  const travelMessages = travelEstimateMessages(travelEstimate.results
+    .filter((result) => pendingKeys.has(`${result.fromRequestId}>${result.toRequestId}`)))
+  const calculateTravel = async () => {
+    setTravelEstimate((current) => ({ ...current, loading: true, error: '', results: [] }))
+    try {
+      const results = await estimateTravel(legsToEstimate)
+      setSaveError('')
+      setValues((current) => applyTravelEstimates(current, results))
+      setTravelEstimate((current) => ({
+        loading: false, error: '', results, routes: { ...current.routes, ...routesMinutesByLeg(results) },
+      }))
+    } catch (error) {
+      setTravelEstimate((current) => ({ ...current, loading: false, error: error.message }))
+    }
+  }
   const canRegister = validation.isValid && !validation.travelPending && !validation.pastDue
   const register = async () => {
     setRegistration((current) => ({ ...current, saving: true, error: '' }))
@@ -71,7 +154,7 @@ export default function ProposalDraftPlanner({ request, requests, technicians: r
         </Box>
         <Alert severity="info" variant="outlined">
           Technicians come from the technician catalog in People. This checks registered Customer Service appointments,
-          not Production work. Travel uses manual estimates only; no fixed travel buffer is added.
+          not Production work. Travel comes from Google Maps driving estimates or values you type; no fixed travel buffer is added.
         </Alert>
         {technicians.length === 0 && <Alert severity="warning">No active technicians are registered. Add them in People → Technicians before planning.</Alert>}
         {savedIsStale && <Alert severity="warning" variant="outlined">The request changed after this draft was saved. Review the selection and save it again using the current duration and crew.</Alert>}
@@ -135,12 +218,26 @@ export default function ProposalDraftPlanner({ request, requests, technicians: r
             </Stack>
             {validation.travelLegs.length > 0 && (
               <Stack spacing={1.5}>
-                <Box>
-                  <Typography variant="subtitle2" fontWeight={800}>Travel between visits · Manual estimate</Typography>
-                  <Typography variant="caption" color="text.secondary">
-                    Minutes from leaving one visit (after pickup) to starting the next. Not a Google Maps result. Leave blank if unknown.
-                  </Typography>
-                </Box>
+                <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} sx={{ alignItems: { sm: 'center' }, justifyContent: 'space-between' }}>
+                  <Box>
+                    <Typography variant="subtitle2" fontWeight={800}>Travel between visits</Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      Minutes from leaving one visit (after pickup) to starting the next. Calculate empty legs with
+                      Google Maps or type them; you can adjust any value. Leave blank if unknown.
+                    </Typography>
+                  </Box>
+                  {legsToEstimate.length > 0 && (
+                    <Button variant="text" onClick={calculateTravel} disabled={travelEstimate.loading} sx={{ flexShrink: 0 }}>
+                      {travelEstimate.loading ? 'Calculating…' : 'Calculate with Google Maps'}
+                    </Button>
+                  )}
+                </Stack>
+                {travelEstimate.error && <Alert severity="error" variant="outlined">{travelEstimate.error}</Alert>}
+                {travelMessages.length > 0 && (
+                  <Alert severity="warning" variant="outlined">
+                    <Box component="ul" sx={{ m: 0, pl: 2 }}>{travelMessages.map((message) => <li key={message}>{message}</li>)}</Box>
+                  </Alert>
+                )}
                 {validation.travelLegs.map((leg) => (
                   <TextField
                     key={leg.key}
@@ -154,7 +251,9 @@ export default function ProposalDraftPlanner({ request, requests, technicians: r
                     slotProps={{ htmlInput: { min: 0, max: 999, step: 1, inputMode: 'numeric' } }}
                     helperText={leg.minutes === null
                       ? `Travel time pending · ${leg.technicianNames.join(', ')}`
-                      : `Manual estimate · ${leg.technicianNames.join(', ')}`}
+                      : travelLegSource(leg.key, values.travelMinutes, routesMinutes) === 'ROUTES_API'
+                        ? `Google Maps driving estimate · ${leg.technicianNames.join(', ')}`
+                        : `Manual estimate · ${leg.technicianNames.join(', ')}`}
                     fullWidth
                   />
                 ))}
@@ -174,6 +273,8 @@ export default function ProposalDraftPlanner({ request, requests, technicians: r
                 <Box component="ul" sx={{ m: 0, pl: 2 }}>{validation.warnings.map((warning, index) => <li key={`${warning.field}-${index}`}>{warning.message}</li>)}</Box>
               </Alert>
             )}
+            <ProposalSuggestions result={suggestions} onSuggest={suggest} onUse={applySuggestion}
+              disabled={values.technicianIds.length === 0} />
             {saveError && <Alert severity="error">{saveError}</Alert>}
             <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5}>
               <Button variant="outlined" onClick={save} disabled={!validation.isValid}>

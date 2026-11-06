@@ -5,7 +5,7 @@ import {
   Typography,
 } from '@mui/material'
 import EventBusyRoundedIcon from '@mui/icons-material/EventBusyRounded'
-import SuggestionsCard from './SuggestionsCard.jsx'
+import CatalogSection from './CatalogSection.jsx'
 import SuggestionRow from './SuggestionRow.jsx'
 import SuggestionFilterBar, { NoSuggestionMatch } from './SuggestionFilterBar.jsx'
 import { useSuggestionFilter } from '../../hooks/useSuggestionFilter.js'
@@ -29,14 +29,22 @@ function groupByCutoff(suggestions) {
  * Work that was ready by a cutoff that has passed and is still unbilled, above Package
  * Suggestions. It is not shown when there is none.
  */
-export default function MissedCutoffsPanel({ suggestions, disabled, open, onToggle, onReview }) {
+export default function MissedCutoffsPanel({
+  suggestions,
+  disabled,
+  open,
+  onToggle,
+  focused,
+  onFocus,
+  onReview,
+}) {
   const filter = useSuggestionFilter(suggestions)
   if (suggestions.length === 0) return null
 
   const groups = groupByCutoff(filter.filtered)
 
   return (
-    <SuggestionsCard
+    <CatalogSection
       id="missed-cutoffs"
       icon={<EventBusyRoundedIcon />}
       iconSx={{ bgcolor: 'warning.main', color: 'warning.contrastText' }}
@@ -46,6 +54,8 @@ export default function MissedCutoffsPanel({ suggestions, disabled, open, onTogg
       hint="Ready by a cutoff that already passed and still unbilled."
       open={open}
       onToggle={onToggle}
+      focused={focused}
+      onFocus={onFocus}
     >
       <SuggestionFilterBar filter={filter} label="Missed cutoffs" />
       <NoSuggestionMatch filter={filter} />
@@ -83,6 +93,6 @@ export default function MissedCutoffsPanel({ suggestions, disabled, open, onTogg
           ))}
         </Box>
       ))}
-    </SuggestionsCard>
+    </CatalogSection>
   )
 }

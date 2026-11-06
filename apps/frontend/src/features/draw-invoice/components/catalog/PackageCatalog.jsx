@@ -57,6 +57,7 @@ import {
   sortPackageCatalogContexts,
   summarizePackageCatalogStatuses,
 } from '../../utils/packageCatalog.js'
+import CatalogSection from './CatalogSection.jsx'
 import MissedCutoffsPanel from './MissedCutoffsPanel.jsx'
 import PackageSuggestionsPanel from './PackageSuggestionsPanel.jsx'
 import RetentionSuggestionsPanel from './RetentionSuggestionsPanel.jsx'
@@ -370,6 +371,11 @@ export default function PackageCatalog({
     true,
     (value) => typeof value === 'boolean',
   )
+  const [listOpen, setListOpen] = usePersistentState(
+    'draw-invoice:packages:list-open',
+    true,
+    (value) => typeof value === 'boolean',
+  )
   // A link to the suggestions (from Home) always shows them.
   const linkedToSuggestions = location.hash === '#package-suggestions'
   const showSuggestions = suggestionsOpen || linkedToSuggestions
@@ -380,6 +386,44 @@ export default function PackageCatalog({
   }
   const missedCutoffSuggestions = packageSuggestions.filter((suggestion) => suggestion.isMissedCutoff)
   const upcomingSuggestions = packageSuggestions.filter((suggestion) => !suggestion.isMissedCutoff)
+  const packageListHint = [
+    `${statusSummary.DRAFT.count} Draft`,
+    `${statusSummary.AWAITING_PAYMENT.count} Awaiting payment`,
+    `${statusSummary.PAID_CLOSED.count} Paid / Closed`,
+  ].join(' · ')
+  // "Show only this section": the others fold, so it can take the whole screen, and a second
+  // click gives every section back the state it had.
+  const [layoutBeforeFocus, setLayoutBeforeFocus] = useState(null)
+  const sectionOpen = {
+    missed: missedCutoffSuggestions.length > 0 && missedOpen,
+    suggestions: showSuggestions,
+    retention: retentionSuggestions.length > 0 && retentionOpen,
+    list: listOpen,
+  }
+  const setSectionOpen = {
+    missed: setMissedOpen,
+    suggestions: setSuggestionsOpen,
+    retention: setRetentionOpen,
+    list: setListOpen,
+  }
+  const isOnlyOpenSection = (key) => sectionOpen[key]
+    && Object.entries(sectionOpen).every(([other, isOpen]) => other === key || !isOpen)
+  const focusSection = (key) => {
+    // A link to the suggestions would keep them open whatever is chosen here.
+    if (linkedToSuggestions) navigate({ hash: '' }, { replace: true })
+    if (isOnlyOpenSection(key)) {
+      const previous = layoutBeforeFocus ?? { missed: true, suggestions: true, retention: true, list: true }
+      for (const [section, setOpen] of Object.entries(setSectionOpen)) setOpen(previous[section])
+      setLayoutBeforeFocus(null)
+      return
+    }
+    // Moving the focus from one section to another keeps the layout from before the first one.
+    const alreadyFocused = Object.keys(sectionOpen).some(isOnlyOpenSection)
+    if (!alreadyFocused || layoutBeforeFocus == null) {
+      setLayoutBeforeFocus({ ...sectionOpen, missed: missedOpen, retention: retentionOpen })
+    }
+    for (const [section, setOpen] of Object.entries(setSectionOpen)) setOpen(section === key)
+  }
   const filtersActive = search !== '' || builderFilter !== 'ALL'
     || communityFilter !== 'ALL' || statusTab !== 'ALL'
 
@@ -523,6 +567,8 @@ export default function PackageCatalog({
             disabled={!canManage || createDisabled}
             open={missedOpen}
             onToggle={() => setMissedOpen((current) => !current)}
+            focused={isOnlyOpenSection('missed')}
+            onFocus={() => focusSection('missed')}
             onReview={onReviewSuggestion}
           />
           <PackageSuggestionsPanel
@@ -532,6 +578,8 @@ export default function PackageCatalog({
             disabled={!canManage || createDisabled}
             open={showSuggestions}
             onToggle={toggleSuggestions}
+            focused={isOnlyOpenSection('suggestions')}
+            onFocus={() => focusSection('suggestions')}
             onReview={onReviewSuggestion}
           />
           <RetentionSuggestionsPanel
@@ -539,148 +587,168 @@ export default function PackageCatalog({
             disabled={!canManage || createDisabled}
             open={retentionOpen}
             onToggle={() => setRetentionOpen((current) => !current)}
+            focused={isOnlyOpenSection('retention')}
+            onFocus={() => focusSection('retention')}
             onReview={onReviewRetention}
           />
-          <Box sx={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))',
-            gap: 1.5,
-          }}>
-            {packageSummaryCards.map(({ status, icon, color }) => (
-              <PackageSummaryCard
-                key={status}
-                status={status}
-                icon={icon}
-                color={color}
-                count={statusSummary[status].count}
-                total={statusSummary[status].total}
-                owed={statusSummary[status].owed}
-                selected={statusTab === status}
-                onSelect={() => setStatusTab(statusTab === status ? 'ALL' : status)}
-              />
-            ))}
-            <MissingDocumentsSummaryCard
-              count={missingDocumentsPackageCount ?? 0}
-              loading={jobDocuments.loading && !jobDocuments.initialized}
-              unavailable={!jobDocuments.loading && missingDocumentsPackageCount == null}
-            />
-          </Box>
-
-          <Box sx={{ bgcolor: 'background.paper', border: 1, borderColor: 'divider', borderRadius: 2, overflow: 'hidden' }}>
-            <Stack
-              direction={{ xs: 'column', lg: 'row' }}
-              sx={{ alignItems: { lg: 'center' } }}
+          <CatalogSection
+            id="package-list"
+            icon={<ReceiptLongRoundedIcon />}
+            iconSx={{ bgcolor: 'action.selected', color: 'text.primary' }}
+            title="Packages"
+            count={scopedContexts.length}
+            countColor="default"
+            hint={packageListHint}
+            open={listOpen}
+            onToggle={() => setListOpen((current) => !current)}
+            focused={isOnlyOpenSection('list')}
+            onFocus={() => focusSection('list')}
+          >
+            <Box
+              sx={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))',
+                gap: 1.5,
+                p: 1.5,
+              }}
             >
-              <Tabs
-                value={statusTab}
-                onChange={(_, value) => setStatusTab(value)}
-                variant="scrollable"
-                scrollButtons="auto"
-                aria-label="Filter Packages by status"
-                sx={{
-                  flexShrink: 0,
-                  minHeight: 44,
-                  px: 1,
-                  maxWidth: '100%',
-                  borderBottom: { xs: 1, lg: 0 },
-                  borderColor: 'divider',
-                  '& .MuiTab-root': { minHeight: 44, py: 0 },
-                }}
-              >
-                {PACKAGE_CATALOG_TABS.map(({ value, label }) => (
-                  <Tab
-                    key={value}
-                    value={value}
-                    label={`${label} (${tabCount(value)})`}
-                  />
-                ))}
-              </Tabs>
-              <Stack
-                direction={{ xs: 'column', md: 'row' }}
-                spacing={1}
-                sx={{ flex: 1, minWidth: 0, p: 1, alignItems: { md: 'center' } }}
-              >
-                <TextField
-                  value={search}
-                  onChange={(event) => setSearch(event.target.value)}
-                  placeholder="Search Package, Invoice, Job or Phase"
-                  size="small"
-                  aria-label="Search Packages"
-                  sx={{ flex: 2, minWidth: { md: 200 } }}
-                  slotProps={{
-                    input: {
-                      startAdornment: (
-                        <InputAdornment position="start">
-                          <SearchRoundedIcon color="action" />
-                        </InputAdornment>
-                      ),
-                    },
-                  }}
+              {packageSummaryCards.map(({ status, icon, color }) => (
+                <PackageSummaryCard
+                  key={status}
+                  status={status}
+                  icon={icon}
+                  color={color}
+                  count={statusSummary[status].count}
+                  total={statusSummary[status].total}
+                  owed={statusSummary[status].owed}
+                  selected={statusTab === status}
+                  onSelect={() => setStatusTab(statusTab === status ? 'ALL' : status)}
                 />
-                <TextField
-                  select
-                  size="small"
-                  label="Builder"
-                  value={builderFilter}
-                  onChange={(event) => {
-                    setBuilderFilter(event.target.value)
-                    setCommunityFilter('ALL')
-                  }}
-                  sx={{ flex: 1, minWidth: { md: 150 } }}
-                >
-                  <MenuItem value="ALL">All builders</MenuItem>
-                  {builderOptions.map(({ id, name }) => (
-                    <MenuItem key={id} value={id}>{name}</MenuItem>
-                  ))}
-                </TextField>
-                <TextField
-                  select
-                  size="small"
-                  label="Community"
-                  value={communityFilter}
-                  onChange={(event) => setCommunityFilter(event.target.value)}
-                  sx={{ flex: 1, minWidth: { md: 150 } }}
-                >
-                  <MenuItem value="ALL">All communities</MenuItem>
-                  {communityOptions.map((community) => (
-                    <MenuItem key={community} value={community}>{community}</MenuItem>
-                  ))}
-                </TextField>
-                <Button
-                  color="inherit"
-                  onClick={clearFilters}
-                  disabled={!filtersActive}
-                  sx={{ flexShrink: 0 }}
-                >
-                  Clear filters
-                </Button>
-                <Tooltip title="The cards follow the current filters. Missing Documents counts each Package whose Job still has pending requirements.">
-                  <IconButton
-                    size="small"
-                    aria-label="About the summary cards"
-                    sx={{ display: { xs: 'none', md: 'inline-flex' }, flexShrink: 0 }}
-                  >
-                    <InfoOutlinedIcon fontSize="small" />
-                  </IconButton>
-                </Tooltip>
-              </Stack>
-            </Stack>
-          </Box>
+              ))}
+              <MissingDocumentsSummaryCard
+                count={missingDocumentsPackageCount ?? 0}
+                loading={jobDocuments.loading && !jobDocuments.initialized}
+                unavailable={!jobDocuments.loading && missingDocumentsPackageCount == null}
+              />
+            </Box>
 
-          <PackageTable
-            filteredContexts={filteredContexts}
-            activeContexts={activeContexts}
-            documentState={jobDocuments}
-            canManage={canManage}
-            sort={packageSort}
-            onSort={(column) => setPackageSort((current) => nextPackageSort(current, column))}
-            onOpen={onOpen}
-            onAction={(action, selected) => setCatalogAction({
-              action,
-              packageId: selected.record.id,
-            })}
-            onClearFilters={clearFilters}
-          />
+            <Box sx={{ borderTop: 1, borderBottom: 1, borderColor: 'divider' }}>
+              <Stack
+                direction={{ xs: 'column', lg: 'row' }}
+                sx={{ alignItems: { lg: 'center' } }}
+              >
+                <Tabs
+                  value={statusTab}
+                  onChange={(_, value) => setStatusTab(value)}
+                  variant="scrollable"
+                  scrollButtons="auto"
+                  aria-label="Filter Packages by status"
+                  sx={{
+                    flexShrink: 0,
+                    minHeight: 44,
+                    px: 1,
+                    maxWidth: '100%',
+                    borderBottom: { xs: 1, lg: 0 },
+                    borderColor: 'divider',
+                    '& .MuiTab-root': { minHeight: 44, py: 0 },
+                  }}
+                >
+                  {PACKAGE_CATALOG_TABS.map(({ value, label }) => (
+                    <Tab
+                      key={value}
+                      value={value}
+                      label={`${label} (${tabCount(value)})`}
+                    />
+                  ))}
+                </Tabs>
+                <Stack
+                  direction={{ xs: 'column', md: 'row' }}
+                  spacing={1}
+                  sx={{ flex: 1, minWidth: 0, p: 1, alignItems: { md: 'center' } }}
+                >
+                  <TextField
+                    value={search}
+                    onChange={(event) => setSearch(event.target.value)}
+                    placeholder="Search Package, Invoice, Job or Phase"
+                    size="small"
+                    aria-label="Search Packages"
+                    sx={{ flex: 2, minWidth: { md: 200 } }}
+                    slotProps={{
+                      input: {
+                        startAdornment: (
+                          <InputAdornment position="start">
+                            <SearchRoundedIcon color="action" />
+                          </InputAdornment>
+                        ),
+                      },
+                    }}
+                  />
+                  <TextField
+                    select
+                    size="small"
+                    label="Builder"
+                    value={builderFilter}
+                    onChange={(event) => {
+                      setBuilderFilter(event.target.value)
+                      setCommunityFilter('ALL')
+                    }}
+                    sx={{ flex: 1, minWidth: { md: 150 } }}
+                  >
+                    <MenuItem value="ALL">All builders</MenuItem>
+                    {builderOptions.map(({ id, name }) => (
+                      <MenuItem key={id} value={id}>{name}</MenuItem>
+                    ))}
+                  </TextField>
+                  <TextField
+                    select
+                    size="small"
+                    label="Community"
+                    value={communityFilter}
+                    onChange={(event) => setCommunityFilter(event.target.value)}
+                    sx={{ flex: 1, minWidth: { md: 150 } }}
+                  >
+                    <MenuItem value="ALL">All communities</MenuItem>
+                    {communityOptions.map((community) => (
+                      <MenuItem key={community} value={community}>{community}</MenuItem>
+                    ))}
+                  </TextField>
+                  <Button
+                    color="inherit"
+                    onClick={clearFilters}
+                    disabled={!filtersActive}
+                    sx={{ flexShrink: 0 }}
+                  >
+                    Clear filters
+                  </Button>
+                  <Tooltip title="The cards follow the current filters. Missing Documents counts each Package whose Job still has pending requirements.">
+                    <IconButton
+                      size="small"
+                      aria-label="About the summary cards"
+                      sx={{ display: { xs: 'none', md: 'inline-flex' }, flexShrink: 0 }}
+                    >
+                      <InfoOutlinedIcon fontSize="small" />
+                    </IconButton>
+                  </Tooltip>
+                </Stack>
+              </Stack>
+            </Box>
+
+            <PackageTable
+              embedded
+              filteredContexts={filteredContexts}
+              activeContexts={activeContexts}
+              documentState={jobDocuments}
+              canManage={canManage}
+              sort={packageSort}
+              onSort={(column) => setPackageSort((current) => nextPackageSort(current, column))}
+              onOpen={onOpen}
+              onAction={(action, selected) => setCatalogAction({
+                action,
+                packageId: selected.record.id,
+              })}
+              onClearFilters={clearFilters}
+            />
+          </CatalogSection>
         </Stack>
       )}
 

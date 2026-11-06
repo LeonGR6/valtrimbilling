@@ -7,7 +7,7 @@ import {
 } from '@mui/material'
 import AutoAwesomeRoundedIcon from '@mui/icons-material/AutoAwesomeRounded'
 import EventRoundedIcon from '@mui/icons-material/EventRounded'
-import SuggestionsCard from './SuggestionsCard.jsx'
+import CatalogSection from './CatalogSection.jsx'
 import SuggestionRow from './SuggestionRow.jsx'
 import SuggestionFilterBar, { NoSuggestionMatch } from './SuggestionFilterBar.jsx'
 import { useSuggestionFilter } from '../../hooks/useSuggestionFilter.js'
@@ -41,6 +41,8 @@ export default function PackageSuggestionsPanel({
   disabled,
   open,
   onToggle,
+  focused,
+  onFocus,
   onReview,
 }) {
   const filter = useSuggestionFilter(suggestions)
@@ -48,7 +50,7 @@ export default function PackageSuggestionsPanel({
   const empty = !loading && !error && suggestions.length === 0
 
   return (
-    <SuggestionsCard
+    <CatalogSection
       id="package-suggestions"
       icon={<AutoAwesomeRoundedIcon />}
       iconSx={{ bgcolor: 'primary.main', color: 'primary.contrastText' }}
@@ -60,6 +62,8 @@ export default function PackageSuggestionsPanel({
       loading={loading}
       open={open}
       onToggle={onToggle}
+      focused={focused}
+      onFocus={onFocus}
     >
       {error && (
         <Box sx={{ p: 1.5 }}>
@@ -128,6 +132,6 @@ export default function PackageSuggestionsPanel({
           </Box>
         )
       })}
-    </SuggestionsCard>
+    </CatalogSection>
   )
 }

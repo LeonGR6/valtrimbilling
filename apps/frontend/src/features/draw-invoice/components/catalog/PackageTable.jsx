@@ -249,13 +249,21 @@ export default function PackageTable({
   onOpen,
   onAction,
   onClearFilters,
+  embedded = false,
 }) {
   // A Retention Release reads the options of the Packages it releases from.
   const allRecords = useMemo(() => activeContexts.map(({ record }) => record), [activeContexts])
 
   return (
     <>
-      <Box sx={{ bgcolor: 'background.paper', border: 1, borderColor: 'divider', borderRadius: 2, overflow: 'hidden' }}>
+      <Box
+        sx={{
+          bgcolor: 'background.paper',
+          overflow: 'hidden',
+          // Inside a section of the page the section draws the frame.
+          ...(!embedded && { border: 1, borderColor: 'divider', borderRadius: 2 }),
+        }}
+      >
         <TableContainer>
           <Table
             sx={{
@@ -513,7 +521,7 @@ export default function PackageTable({
       </Box>
 
       {filteredContexts.length === 0 && (
-        <Card variant="outlined" sx={{ p: 4, textAlign: 'center' }}>
+        <Card variant="outlined" sx={{ p: 4, textAlign: 'center', ...(embedded && { m: 1.5 }) }}>
           <ReceiptLongRoundedIcon color="disabled" sx={{ fontSize: 42 }} />
           <Typography fontWeight={750} sx={{ mt: 1 }}>
             {activeContexts.length === 0 ? 'No active Packages yet' : 'No Packages match these filters'}

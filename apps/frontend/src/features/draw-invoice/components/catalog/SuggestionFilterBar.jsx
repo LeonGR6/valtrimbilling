@@ -8,16 +8,13 @@ import {
 } from '@mui/material'
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
 
-/** The two fields, stuck to the top of the card body so they stay in view while the list scrolls. */
+/** The two fields at the top of a suggestions card. */
 export default function SuggestionFilterBar({ filter, label }) {
   if (!filter.visible) return null
 
   return (
     <Box
       sx={{
-        position: 'sticky',
-        top: 0,
-        zIndex: 2,
         px: { xs: 1.5, md: 2 },
         py: 1,
         bgcolor: 'background.paper',

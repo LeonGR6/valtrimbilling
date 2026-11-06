@@ -9,7 +9,7 @@ import {
 import AccountBalanceRoundedIcon from '@mui/icons-material/AccountBalanceRounded'
 import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded'
 import HourglassBottomRoundedIcon from '@mui/icons-material/HourglassBottomRounded'
-import SuggestionsCard from './SuggestionsCard.jsx'
+import CatalogSection from './CatalogSection.jsx'
 import SuggestionFilterBar, { NoSuggestionMatch } from './SuggestionFilterBar.jsx'
 import { useSuggestionFilter } from '../../hooks/useSuggestionFilter.js'
 import {
@@ -57,13 +57,15 @@ export default function RetentionSuggestionsPanel({
   disabled,
   open,
   onToggle,
+  focused,
+  onFocus,
   onReview,
 }) {
   const filter = useSuggestionFilter(suggestions)
   if (suggestions.length === 0) return null
 
   return (
-    <SuggestionsCard
+    <CatalogSection
       id="retention-suggestions"
       icon={<AccountBalanceRoundedIcon />}
       iconSx={{ bgcolor: 'success.light', color: 'success.dark' }}
@@ -73,6 +75,8 @@ export default function RetentionSuggestionsPanel({
       hint="Projected and releasable retention after Hardware completion."
       open={open}
       onToggle={onToggle}
+      focused={focused}
+      onFocus={onFocus}
     >
       <SuggestionFilterBar filter={filter} label="Retention Suggestions" />
       <NoSuggestionMatch filter={filter} />
@@ -176,6 +180,6 @@ export default function RetentionSuggestionsPanel({
           </Box>
         )
       })}
-    </SuggestionsCard>
+    </CatalogSection>
   )
 }

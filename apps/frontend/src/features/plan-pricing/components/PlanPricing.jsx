@@ -50,6 +50,7 @@ import UndoRoundedIcon from '@mui/icons-material/UndoRounded'
 import { useBuilderDrawSchedules } from '../../builder-draw-schedules/context/useBuilderDrawSchedules.js'
 import { useBuilderContacts } from '../../builder-contacts/context/useBuilderContacts.js'
 import JobModuleNavigation from '../../jobs/components/JobModuleNavigation.jsx'
+import PlanOptionNotes from '../../jobs/components/PlanOptionNotes.jsx'
 import PlanToggle from '../../jobs/components/PlanToggle.jsx'
 import { filterPlansByQuery } from '../../jobs/utils/planSearch.js'
 import { CatalogEmptyState } from '../../../components/common/CatalogPage'
@@ -1449,6 +1450,8 @@ export default function PlanPricing() {
             <JobContactsGrid contacts={jobContacts} />
           </CardContent>
         </Card>
+
+        <PlanOptionNotes job={job} canAdd={canManageJobs} />
 
         {worksheet.editing && (
           <PriceWorksheetBar

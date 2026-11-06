@@ -38,12 +38,14 @@ function resolveTestTarget(argument) {
 const requestedTargets = process.argv.slice(2)
 let previewMigration = null
 if (requestedTargets[0] === '--preview-migration') {
-  const migrationName = requestedTargets[1]
-  if (!/^\d{14}_[a-z0-9_]+\.sql$/u.test(migrationName ?? '') || requestedTargets.length < 3) {
-    throw new Error('Preview requires one migration filename and explicit test filenames')
+  // One migration, or several separated by commas, applied in the given order.
+  const migrationNames = (requestedTargets[1] ?? '').split(',')
+  if (migrationNames.some((name) => !/^\d{14}_[a-z0-9_]+\.sql$/u.test(name)) || requestedTargets.length < 3) {
+    throw new Error('Preview requires migration filenames (comma-separated) and explicit test filenames')
   }
-  previewMigration = readFileSync(join(backendDirectory, 'supabase', 'migrations', migrationName), 'utf8')
-  previewMigration = transactionBody(previewMigration, 'commit')
+  previewMigration = migrationNames
+    .map((name) => transactionBody(readFileSync(join(backendDirectory, 'supabase', 'migrations', name), 'utf8'), 'commit'))
+    .join('\n')
   requestedTargets.splice(0, 2)
   console.log('Preview: pending SQL and test fixtures run inside BEGIN / ROLLBACK; migration history is not changed.')
 }

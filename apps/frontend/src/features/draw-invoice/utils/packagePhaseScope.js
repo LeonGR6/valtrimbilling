@@ -1,3 +1,4 @@
+import { detailOf } from '../../sequence-sheets/utils/optionDetails.js'
 import {
   formatPhaseBuilding,
   normalizeBuildingCode,
@@ -113,7 +114,7 @@ const BILLING_EVENT_ORDER = ['EXT', 'DM', 'HW']
  * @param usedSelections Map from `buildUsedDrawSelections`
  * @param billedUtilityCharges Map from `buildBilledUtilityCharges`
  * @param billedHardwareCharges Map from `buildBilledHardwareCharges`
- * @param billedOptionIdentities Set of "lotId:optionId" already billed (`buildOptionChargeContext`)
+ * @param billedOptionIdentities Set of "lotId:optionId:unitNo" already billed (`buildOptionChargeContext`)
  */
 export function phaseBillingProgress({
   job,
@@ -171,8 +172,12 @@ export function phaseBillingProgress({
       const plan = plans.find((candidate) => String(candidate.id) === String(row.planId))
       for (const option of plan?.options ?? []) {
         if (!selectedOptionIds.has(String(option.id))) continue
-        totalOptions += 1
-        if (billedOptionIdentities.has(optionBillingIdentity(row.id, option.id))) billedOptions += 1
+        // Each unit of an Option (one for each place it goes) is billed on its own.
+        const { quantity } = detailOf(row.optionDetails, option.id)
+        for (let unitNo = 1; unitNo <= quantity; unitNo += 1) {
+          totalOptions += 1
+          if (billedOptionIdentities.has(optionBillingIdentity(row.id, option.id, unitNo))) billedOptions += 1
+        }
       }
     }
   }

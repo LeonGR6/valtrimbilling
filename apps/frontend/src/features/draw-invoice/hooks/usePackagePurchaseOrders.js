@@ -3,7 +3,7 @@ import { useAuth } from '../../auth/context/useAuth.js'
 import { loadPackagePurchaseOrders } from '../services/packagePurchaseOrders.js'
 
 const optionsKey = (rows) => rows
-  .map((row) => `${row.lotId}:${row.optionId}:${row.price}:${row.priceNotApplicable === true}`)
+  .map((row) => `${row.lotId}:${row.optionId}:${row.unitNo ?? 1}:${row.price}:${row.priceNotApplicable === true}`)
   .join('|')
 
 /**

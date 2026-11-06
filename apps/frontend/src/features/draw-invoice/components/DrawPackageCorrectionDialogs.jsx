@@ -44,6 +44,7 @@ import {
   phaseScopeLabel,
   sortPhasesForPicking,
 } from '../utils/packagePhaseScope.js'
+import { planWithElevation } from '../../sequence-sheets/utils/lotElevation.js'
 
 const NO_KEYS = new Set()
 
@@ -590,7 +591,7 @@ export function TransferDrawPackageCellsDialog({
                       />
                       <Typography variant="body2">
                         {formatPhaseBuilding(line.phaseCode, line.building, { separator: ' / ' })} ·{' '}
-                        {rowLabel} · Draw #{line.drawIndex + 1} · {line.planCode}
+                        {rowLabel} · Draw #{line.drawIndex + 1} · {planWithElevation(line.planCode, line.lotElevation)}
                       </Typography>
                     </Stack>
                   )

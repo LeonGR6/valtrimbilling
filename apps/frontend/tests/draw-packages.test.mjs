@@ -15,6 +15,7 @@ import {
   formatLotRange,
   formatPackageScopeEventTypes,
   makePackageSelections,
+  optionBillingIdentity,
   optionSelectionKey,
   summarizeDrawPackage,
   summarizeRetentionSource,
@@ -764,6 +765,7 @@ test('Package estimates include separated hardware only on checked Draw cells', 
     lotId: 1,
     lotNumber: '1',
     planCode: 'A',
+    lotElevation: '',
     drawIndex: 1,
     drawName: '',
     eventType: null,
@@ -1525,7 +1527,43 @@ test('the Options an Options Package billed count as billed, so they are not off
     },
   ], 1, 1)
 
-  assert.deepEqual(context.billedOptionEntries.map(({ identity }) => identity), ['41:61'])
+  assert.deepEqual(context.billedOptionEntries.map(({ identity }) => identity), ['41:61:1'])
+})
+
+test('each unit of an Option on a Lot is billed on its own, so one billed unit leaves the others open', () => {
+  assert.equal(optionBillingIdentity(41, 61, 2), '41:61:2')
+  assert.equal(optionBillingIdentity(41, 61), '41:61:1', 'an older row has the first unit')
+  assert.equal(optionSelectionKey(21, 41, 61, 3), '21:41:61:3')
+
+  const context = buildOptionChargeContext([{
+    id: 30,
+    jobId: 1,
+    status: 'DRAFT',
+    selections: [],
+    persistedOptionLines: [
+      { lotId: 41, optionId: 61, unitNo: 1, price: 125, billingDrawIndex: null },
+      { lotId: 41, optionId: 61, unitNo: 3, price: 125, billingDrawIndex: null },
+    ],
+  }], 1, 1)
+
+  assert.deepEqual(
+    context.billedOptionEntries.map(({ identity }) => identity),
+    ['41:61:1', '41:61:3'],
+    'the 2nd unit is not in the list',
+  )
+})
+
+test('a Retention Release counts every unit of an Option billed on a Package of their own', () => {
+  const release = {
+    sourceLines: [],
+    sourceHardwareLines: [],
+    sourceOptionLines: [
+      { sourcePackageId: 30, sourceLotId: 101, sourceOptionId: 7, sourceUnitNo: 1 },
+      { sourcePackageId: 30, sourceLotId: 101, sourceOptionId: 7, sourceUnitNo: 2 },
+    ],
+  }
+
+  assert.deepEqual(summarizeRetentionSource(release, []), { lotCount: 0, optionCount: 2 })
 })
 
 test('a Retention Release counts the Options billed on a Package of their own', () => {

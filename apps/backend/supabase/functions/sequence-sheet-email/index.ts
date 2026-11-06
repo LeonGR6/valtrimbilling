@@ -8,6 +8,7 @@ import {
   sendSequenceSheetWithResend,
 } from '../_shared/sequenceSheetEmail.ts'
 import { handlePreflight, json } from '../_shared/cors.ts'
+import { optionUnitsFields } from '../_shared/optionQuantity.ts'
 import { userClient } from '../_shared/supabase.ts'
 
 type Action = 'preview' | 'send'
@@ -135,7 +136,7 @@ async function loadSnapshot(
       .maybeSingle(),
     caller
       .from('lots')
-      .select('id, plan_id, lot_number, utility_name, is_reverse, is_utility_building, display_order')
+      .select('id, plan_id, lot_number, utility_name, is_reverse, elevation, is_utility_building, display_order')
       .eq('phase_id', phase.id)
       .order('display_order', { ascending: true })
       .order('id', { ascending: true }),
@@ -184,7 +185,7 @@ async function loadSnapshot(
       .limit(1)
       .maybeSingle(),
     caller.from('plans').select('id, code').in('id', planIds),
-    caller.from('lot_options').select('lot_id, option_id').in('lot_id', lotIds),
+    caller.from('lot_options').select('lot_id, option_id, quantity, locations').in('lot_id', lotIds),
   ])
   if (builderResult.error) throw builderResult.error
   if (recipientResult.error) throw recipientResult.error
@@ -212,10 +213,11 @@ async function loadSnapshot(
       description: String(option.description ?? option.name ?? ''),
     } satisfies SequenceSheetEmailOption]),
   )
-  const optionIdsByLot = new Map<string, string[]>()
+  // The rows of each Lot, which carry the quantity and places of each option.
+  const lotOptionsByLot = new Map<string, Record<string, unknown>[]>()
   for (const row of lotOptionsResult.data ?? []) {
     const key = String(row.lot_id)
-    optionIdsByLot.set(key, [...(optionIdsByLot.get(key) ?? []), String(row.option_id)])
+    lotOptionsByLot.set(key, [...(lotOptionsByLot.get(key) ?? []), row])
   }
 
   const contactsById = new Map(
@@ -235,11 +237,14 @@ async function loadSnapshot(
         : lot.lot_number ?? '',
     ),
     planCode: plansById.get(String(lot.plan_id)) ?? 'Plan unavailable',
+    elevation: String(lot.elevation ?? '').trim().toUpperCase(),
     reverse: Boolean(lot.is_reverse),
     isUtilityBuilding: Boolean(lot.is_utility_building),
-    options: (optionIdsByLot.get(String(lot.id)) ?? [])
-      .map((optionId) => optionsById.get(optionId))
-      .filter((option): option is SequenceSheetEmailOption => Boolean(option))
+    options: (lotOptionsByLot.get(String(lot.id)) ?? [])
+      .flatMap((lotOption) => {
+        const option = optionsById.get(String(lotOption.option_id))
+        return option ? [{ ...option, ...optionUnitsFields(lotOption) }] : []
+      })
       .sort((a, b) => a.code.localeCompare(b.code)),
   }))
 

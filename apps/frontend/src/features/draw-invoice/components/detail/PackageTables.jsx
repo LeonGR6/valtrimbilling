@@ -35,6 +35,7 @@ import { findUnbackedOptions } from '../../utils/packagePurchaseOrders.js'
 import PackagePurchaseOrderWarning from '../shared/PackagePurchaseOrderWarning.jsx'
 import { TableCardHeader } from '../shared/PackageUi.jsx'
 import { packageTableSx } from '../shared/packageTableStyles.js'
+import { planWithElevation } from '../../../sequence-sheets/utils/lotElevation.js'
 
 // The key to the worksheet's cell colours: a swatch and what it means.
 function LegendSwatch({ label, sx }) {
@@ -180,7 +181,7 @@ export function DrawWorksheetTable({
                   </Typography>
                 </TableCell>
                 <TableCell>
-                  <Typography fontWeight={750}>{row.planCode ?? '—'}</Typography>
+                  <Typography fontWeight={750}>{planWithElevation(row.planCode, row.lotElevation) || '—'}</Typography>
                 </TableCell>
                 <TableCell align="right">
                   <Typography fontWeight={750}>{formatCurrency(row.drawBasePrice)}</Typography>
@@ -325,7 +326,7 @@ export function PackageUtilityTable({ summary }) {
                   {formatPhaseBuilding(row.phaseCode, row.building, { separator: ' / ' })}
                 </TableCell>
                 <TableCell><Typography fontWeight={850}>{row.utilityLabel}</Typography></TableCell>
-                <TableCell>{row.planCode ?? '—'}</TableCell>
+                <TableCell>{planWithElevation(row.planCode, row.lotElevation) || '—'}</TableCell>
                 <TableCell>
                   <Typography fontWeight={750}>
                     Draw #{row.drawIndex + 1}
@@ -403,9 +404,16 @@ export function PackageOptionsTable({ summary, backing = null }) {
                     {option.lotNumber}
                   </Typography>
                 </TableCell>
-                <TableCell>{option.planCode ?? '—'}</TableCell>
+                <TableCell>{planWithElevation(option.planCode, option.lotElevation) || '—'}</TableCell>
                 <TableCell><Typography fontWeight={750}>{option.optionCode}</Typography></TableCell>
-                <TableCell>{option.description}</TableCell>
+                <TableCell>
+                  {option.description}
+                  {option.unitLabel && (
+                    <Typography component="span" variant="body2" fontWeight={750} sx={{ ml: 0.75, whiteSpace: 'nowrap' }}>
+                      · {option.unitLabel}
+                    </Typography>
+                  )}
+                </TableCell>
                 <TableCell>
                   <Typography fontWeight={750}>
                     {option.chargedPackageNumber ?? '—'}
@@ -554,7 +562,7 @@ export function PackageHardwareTable({ summary }) {
                     {hardware.lotNumber}
                   </Typography>
                 </TableCell>
-                <TableCell>{hardware.planCode ?? '—'}</TableCell>
+                <TableCell>{planWithElevation(hardware.planCode, hardware.lotElevation) || '—'}</TableCell>
                 <TableCell>
                   <Typography fontWeight={750}>
                     {hardware.hardwareBillingMode === 'BY_EVENT'

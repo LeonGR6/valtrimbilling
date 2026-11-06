@@ -1,18 +1,29 @@
 import { useState } from 'react'
 import { alpha } from '@mui/material/styles'
 import {
+  Autocomplete,
   Box,
   Button,
   Checkbox,
   Chip,
   FormControlLabel,
+  IconButton,
   InputAdornment,
   Stack,
   TextField,
   Typography,
 } from '@mui/material'
+import AddRoundedIcon from '@mui/icons-material/AddRounded'
 import ClearRoundedIcon from '@mui/icons-material/ClearRounded'
+import RemoveRoundedIcon from '@mui/icons-material/RemoveRounded'
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
+import {
+  MAX_LOCATION_LENGTH,
+  MAX_OPTION_QUANTITY,
+  detailOf,
+  setOptionLocations,
+  setOptionQuantity,
+} from '../utils/optionDetails.js'
 import {
   clearShown,
   isOptionMissingPrice,
@@ -23,6 +34,82 @@ import {
 
 // A search box earns its place once the list no longer fits in a glance.
 const SEARCH_FROM = 8
+
+// Places offered while typing a location; any other text is accepted too.
+const LOCATION_SUGGESTIONS = ['1st floor', '2nd floor', '3rd floor', 'Basement', 'Garage', 'Attic']
+
+/**
+ * How many units of a selected Option the Lot has and where they go. Outside the label of the Option, so
+ * typing here never ticks or unticks it.
+ */
+function OptionDetailFields({ option, detail, disabled, onChange }) {
+  return (
+    <Stack
+      direction={{ xs: 'column', sm: 'row' }}
+      spacing={1}
+      sx={{ px: 1.25, pb: 1, pl: 4.75, alignItems: { sm: 'flex-start' } }}
+    >
+      <Stack
+        direction="row"
+        role="group"
+        aria-label={`Quantity of ${option.code}`}
+        sx={{ alignItems: 'center', flexShrink: 0, height: 40 }}
+      >
+        <IconButton
+          size="small"
+          aria-label={`Fewer units of ${option.code}`}
+          disabled={disabled || detail.quantity <= 1}
+          onClick={() => onChange((details) => setOptionQuantity(details, option.id, detail.quantity - 1))}
+        >
+          <RemoveRoundedIcon fontSize="small" />
+        </IconButton>
+        <Typography
+          variant="body2"
+          fontWeight={700}
+          aria-live="polite"
+          sx={{ minWidth: 34, textAlign: 'center', fontVariantNumeric: 'tabular-nums' }}
+        >
+          ×{detail.quantity}
+        </Typography>
+        <IconButton
+          size="small"
+          aria-label={`More units of ${option.code}`}
+          disabled={disabled || detail.quantity >= MAX_OPTION_QUANTITY}
+          onClick={() => onChange((details) => setOptionQuantity(details, option.id, detail.quantity + 1))}
+        >
+          <AddRoundedIcon fontSize="small" />
+        </IconButton>
+      </Stack>
+
+      <Autocomplete
+        multiple
+        freeSolo
+        autoSelect
+        filterSelectedOptions
+        size="small"
+        sx={{ flex: 1, minWidth: 0 }}
+        disabled={disabled}
+        options={LOCATION_SUGGESTIONS}
+        value={detail.locations}
+        onChange={(_, next) => onChange((details) => setOptionLocations(details, option.id, next))}
+        renderInput={(params) => (
+          <TextField
+            {...params}
+            label="Locations"
+            placeholder={detail.locations.length === 0 ? '1st floor, 2nd floor…' : ''}
+            helperText={detail.quantity > 1 && detail.locations.length < detail.quantity
+              ? `${detail.quantity - detail.locations.length} of ${detail.quantity} without a location`
+              : undefined}
+            slotProps={{
+              ...params.slotProps,
+              htmlInput: { ...params.slotProps?.htmlInput, maxLength: MAX_LOCATION_LENGTH, 'aria-label': `Locations of ${option.code}` },
+            }}
+          />
+        )}
+      />
+    </Stack>
+  )
+}
 
 /**
  * The Options of the Plan chosen for a Lot. They sit in an aligned grid, one
@@ -37,6 +124,10 @@ export default function LotOptionPicker({
   onChange,
   error = false,
   disabled = false,
+  // The quantity and locations of the selected Options (by Option id). Without `onDetailsChange` the
+  // Options are just ticked, one unit each.
+  details = {},
+  onDetailsChange = null,
 }) {
   const [query, setQuery] = useState('')
   const [selectedOnly, setSelectedOnly] = useState(false)
@@ -160,15 +251,11 @@ export default function LotOptionPicker({
         {shown.map((option) => {
           const checked = value.includes(option.id)
           const missingPrice = isOptionMissingPrice(option)
+          const detail = detailOf(details, option.id)
           return (
-            <FormControlLabel
+            <Box
               key={option.id}
-              disabled={disabled || (missingPrice && !checked)}
               sx={(theme) => ({
-                m: 0,
-                pr: 1.25,
-                py: 0.5,
-                alignItems: 'flex-start',
                 border: 1,
                 borderColor: checked ? 'primary.main' : 'divider',
                 borderRadius: 1.5,
@@ -180,44 +267,63 @@ export default function LotOptionPicker({
                     ? alpha(theme.palette.primary.main, 0.14)
                     : 'action.hover',
                 },
-                '&:has(:focus-visible)': {
+                '&:has(input[type="checkbox"]:focus-visible)': {
                   outline: '2px solid',
                   outlineColor: 'primary.main',
                   outlineOffset: 1,
                 },
-                '& .MuiFormControlLabel-label': { minWidth: 0, pt: 0.75, flex: 1 },
               })}
-              control={(
-                <Checkbox
-                  size="small"
-                  checked={checked}
-                  onChange={(_, next) => onChange(toggleOption(value, option.id, next))}
+            >
+              <FormControlLabel
+                disabled={disabled || (missingPrice && !checked)}
+                sx={{
+                  m: 0,
+                  pr: 1.25,
+                  py: 0.5,
+                  width: '100%',
+                  alignItems: 'flex-start',
+                  '& .MuiFormControlLabel-label': { minWidth: 0, pt: 0.75, flex: 1 },
+                }}
+                control={(
+                  <Checkbox
+                    size="small"
+                    checked={checked}
+                    onChange={(_, next) => onChange(toggleOption(value, option.id, next))}
+                  />
+                )}
+                label={(
+                  <Box>
+                    <Typography
+                      variant="body2"
+                      fontWeight={800}
+                      sx={{ fontVariantNumeric: 'tabular-nums', letterSpacing: 0.2 }}
+                    >
+                      {option.code}
+                    </Typography>
+                    <Typography
+                      variant="body2"
+                      color="text.secondary"
+                      sx={{ overflowWrap: 'anywhere', lineHeight: 1.4 }}
+                    >
+                      {option.description}
+                    </Typography>
+                    {missingPrice && (
+                      <Typography variant="caption" color="warning.main" fontWeight={700}>
+                        No price yet
+                      </Typography>
+                    )}
+                  </Box>
+                )}
+              />
+              {checked && onDetailsChange && (
+                <OptionDetailFields
+                  option={option}
+                  detail={detail}
+                  disabled={disabled}
+                  onChange={(update) => onDetailsChange(update(details))}
                 />
               )}
-              label={(
-                <Box>
-                  <Typography
-                    variant="body2"
-                    fontWeight={800}
-                    sx={{ fontVariantNumeric: 'tabular-nums', letterSpacing: 0.2 }}
-                  >
-                    {option.code}
-                  </Typography>
-                  <Typography
-                    variant="body2"
-                    color="text.secondary"
-                    sx={{ overflowWrap: 'anywhere', lineHeight: 1.4 }}
-                  >
-                    {option.description}
-                  </Typography>
-                  {missingPrice && (
-                    <Typography variant="caption" color="warning.main" fontWeight={700}>
-                      No price yet
-                    </Typography>
-                  )}
-                </Box>
-              )}
-            />
+            </Box>
           )
         })}
       </Box>

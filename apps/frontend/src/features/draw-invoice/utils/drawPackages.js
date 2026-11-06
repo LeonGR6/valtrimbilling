@@ -32,13 +32,17 @@ export function utilityChargeKey(lotId, billingMode, eventType = null) {
     : `${lotId}:FULL`
 }
 
-export function optionSelectionKey(phaseId, lotId, optionId) {
-  return `${phaseId}:${lotId}:${optionId}`
+/** The key of one unit of an Option in a selection: "phaseId:lotId:optionId:unitNo". */
+export function optionSelectionKey(phaseId, lotId, optionId, unitNo = 1) {
+  return `${phaseId}:${lotId}:${optionId}:${unitNo ?? 1}`
 }
 
-/** The key of an Option of a Lot, which is what a Package bills once: "lotId:optionId". */
-export function optionBillingIdentity(lotId, optionId) {
-  return `${lotId}:${optionId}`
+/**
+ * The key of one unit of an Option of a Lot, which is what a Package bills once:
+ * "lotId:optionId:unitNo". An Option on a Lot more than once has a unit for each place it goes.
+ */
+export function optionBillingIdentity(lotId, optionId, unitNo = 1) {
+  return `${lotId}:${optionId}:${unitNo ?? 1}`
 }
 
 export function isAtOrAfterOptionsBillingDraw(drawIndex, optionsBillingDrawIndex) {
@@ -69,7 +73,7 @@ export function summarizeRetentionSource(retentionRelease, packages = []) {
   const options = new Set()
   // Options billed on a Package of their own retained on their own line, not on a Draw line.
   for (const line of retentionRelease?.sourceOptionLines ?? []) {
-    options.add(`${line.sourceLotId}:${line.sourceOptionId}`)
+    options.add(`${line.sourceLotId}:${line.sourceOptionId}:${line.sourceUnitNo ?? 1}`)
   }
 
   for (const record of packages) {
@@ -77,7 +81,7 @@ export function summarizeRetentionSource(retentionRelease, packages = []) {
     for (const option of record.persistedOptionLines ?? []) {
       const billingLotId = option.billingLotId ?? option.lotId
       if (sourceDraws.has(`${record.id}:${billingLotId}:${option.drawId}`)) {
-        options.add(`${option.lotId}:${option.optionId}`)
+        options.add(`${option.lotId}:${option.optionId}:${option.unitNo ?? 1}`)
       }
     }
   }
@@ -177,9 +181,10 @@ export function buildOptionChargeContext(
 
     for (const option of record.persistedOptionLines ?? []) {
       billedOptionEntries.push({
-        identity: optionBillingIdentity(option.lotId, option.optionId),
+        identity: optionBillingIdentity(option.lotId, option.optionId, option.unitNo),
         lotId: option.lotId,
         optionId: option.optionId,
+        unitNo: option.unitNo ?? 1,
         packageId: record.id,
         packageNumber: record.packageNumber,
         price: option.price,
@@ -527,16 +532,20 @@ export function getOptionsBillingDrawIndex(record, schedule) {
 function getSelectedOptionRows(selectedRows) {
   return selectedRows.flatMap((row) =>
     (row.selectedOptions ?? []).map((option) => ({
-      id: optionSelectionKey(row.phaseId, row.id, option.id),
+      id: optionSelectionKey(row.phaseId, row.id, option.id, option.unitNo),
       phaseId: row.phaseId,
       phaseCode: row.phaseCode,
       building: row.building,
       lotId: row.id,
       lotNumber: row.lotNumber,
       planCode: row.planCode,
+      lotElevation: row.lotElevation ?? '',
       optionId: option.id,
+      unitNo: option.unitNo ?? 1,
+      unitLabel: option.unitLabel ?? null,
       optionCode: option.code,
       description: option.description,
+      quantity: 1,
       price: option.price,
       priceNotApplicable: option.priceNotApplicable === true,
       issue: hasOptionPrice(option.price) ? null : 'PRICE_MISSING',
@@ -704,7 +713,7 @@ export function summarizeDrawPackage(record, job, phaseOrPhases, schedule) {
   }
   const billedOptionsByIdentity = new Map(
     (record?.billedOptionEntries ?? []).map((option) => [
-      option.identity ?? optionBillingIdentity(option.lotId, option.optionId),
+      option.identity ?? optionBillingIdentity(option.lotId, option.optionId, option.unitNo),
       option,
     ]),
   )
@@ -719,7 +728,7 @@ export function summarizeDrawPackage(record, job, phaseOrPhases, schedule) {
       }))),
   ).map((option) => {
     const billed = billedOptionsByIdentity.get(
-      optionBillingIdentity(option.lotId, option.optionId),
+      optionBillingIdentity(option.lotId, option.optionId, option.unitNo),
     )
     return billed == null ? option : {
       ...option,
@@ -900,6 +909,7 @@ export function summarizeDrawPackage(record, job, phaseOrPhases, schedule) {
             lotId: row.id,
             lotNumber: row.lotNumber,
             planCode: row.planCode,
+            lotElevation: row.lotElevation ?? '',
             drawIndex: null,
             drawName: '',
             eventType,
@@ -929,6 +939,7 @@ export function summarizeDrawPackage(record, job, phaseOrPhases, schedule) {
           lotId: row.id,
           lotNumber: row.lotNumber,
           planCode: row.planCode,
+          lotElevation: row.lotElevation ?? '',
           drawIndex: selection.drawIndex,
           drawName: schedule.draws?.[selection.drawIndex]?.name ?? '',
           eventType: schedule.draws?.[selection.drawIndex]?.eventType ?? null,
@@ -970,6 +981,7 @@ export function summarizeDrawPackage(record, job, phaseOrPhases, schedule) {
       lotNumber: row.lotNumber,
       utilityLabel: row.utilityLabel,
       planCode: row.planCode,
+      lotElevation: row.lotElevation ?? '',
       drawIndex: selection.drawIndex,
       drawName: schedule.draws?.[selection.drawIndex]?.name ?? '',
       eventType: schedule.draws?.[selection.drawIndex]?.eventType ?? null,

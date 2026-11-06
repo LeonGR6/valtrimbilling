@@ -11,44 +11,50 @@ export const COMPARISON_STATUSES = {
   HEADER_UNRESOLVED: {
     label: 'Lot not found',
     color: 'error',
-    severity: 6,
+    severity: 7,
     hint: 'The Lot printed in the PDF could not be matched with a Lot of this Job.',
   },
   PLAN_MISMATCH: {
     label: 'Plan differs',
     color: 'error',
-    severity: 5,
+    severity: 6,
     hint: 'The Lot exists, but its Plan is not the Plan printed in the PDF.',
   },
   MISSING_OPTION: {
     label: 'Not in the system',
     color: 'error',
-    severity: 4,
+    severity: 5,
     hint: 'The Plan of this Lot has no option with this code.',
   },
   AMBIGUOUS_OPTION: {
     label: 'Several options',
     color: 'warning',
-    severity: 3,
+    severity: 4,
     hint: 'The Plan has more than one option with this code and the description does not tell which one.',
   },
   NOT_IN_LOT: {
     label: 'Not in the sequence sheet',
     color: 'warning',
-    severity: 2,
+    severity: 3,
     hint: 'The option exists in the Plan, but the sequence sheet does not have it selected for that Lot.',
   },
   PRICE_DIFF: {
     label: 'Price differs',
     color: 'warning',
-    severity: 1,
+    severity: 2,
     hint: 'The price in the PDF is not the price this Lot bills.',
+  },
+  QUANTITY_DIFF: {
+    label: 'Quantity differs',
+    color: 'warning',
+    severity: 1,
+    hint: 'The price agrees, but the PDF prints another quantity than the sequence sheet has for this Lot.',
   },
   MATCH: {
     label: 'Matches',
     color: 'success',
     severity: 0,
-    hint: 'The option is in the Lot and its price agrees with the PDF.',
+    hint: 'The option is in the Lot and its price and quantity agree with the PDF.',
   },
 }
 
@@ -116,6 +122,9 @@ export function toComparisonLine(row) {
     optionName: row.option_name ?? null,
     systemPrice: toNumber(row.system_price),
     systemNotApplicable: row.system_not_applicable === true,
+    // How many units of the option the Lot has on the sequence sheet, and where (1st floor, ...).
+    systemQuantity: toNumber(row.system_quantity),
+    systemLocations: Array.isArray(row.system_locations) ? row.system_locations : [],
     conflictingPoPrices: row.conflicting_po_prices === true,
     status: row.status,
   }
@@ -639,6 +648,16 @@ export function countOptionsWithOrder(index, lots, optionsOf) {
 
 const ORDER_PRICE_STATUSES = new Set(['PRICE_DIFF'])
 
+/** "The PDF prints ×4; the sequence sheet has ×3 (1st floor, 2nd floor)." */
+export function describeQuantityDifference(line) {
+  if (line.systemQuantity === null || line.systemQuantity === undefined) return null
+  if (line.systemQuantity === line.quantity) return null
+  const places = (line.systemLocations ?? []).length > 0
+    ? ` (${line.systemLocations.join(', ')})`
+    : ''
+  return `The PDF prints ×${line.quantity}; the sequence sheet has ×${line.systemQuantity}${places}.`
+}
+
 /** What the card of one Purchase Order line says. */
 export function describeOptionOrder(line, formatMoney) {
   const status = COMPARISON_STATUSES[line.status] ?? COMPARISON_STATUSES.MATCH
@@ -646,13 +665,14 @@ export function describeOptionOrder(line, formatMoney) {
     ? `The PDF prints ${formatMoney(line.poUnitPrice)}${
       line.systemPrice === null ? '.' : `; this Lot bills ${formatMoney(line.systemPrice)}.`}`
     : null
+  const quantityDifference = line.status === 'QUANTITY_DIFF' ? describeQuantityDifference(line) : null
 
   return {
     workOrderNo: line.workOrderNo || null,
     referenceNo: line.referenceNo || null,
     quantity: line.quantity,
     status: { label: status.label, color: status.color },
-    hint: [status.hint, difference].filter(Boolean).join(' '),
+    hint: [status.hint, difference, quantityDifference].filter(Boolean).join(' '),
   }
 }
 
@@ -666,6 +686,7 @@ const STATUS_ADVICE = {
   AMBIGUOUS_OPTION: "Compare the PDF's description with the options of the Plan.",
   NOT_IN_LOT: 'Add to the sequence sheet selects it for that Lot.',
   PRICE_DIFF: "Use PDF price offers the PDF's price; nothing changes until you confirm.",
+  QUANTITY_DIFF: 'Change the quantity of the option for that Lot in the Sequence Sheet, or check the PDF.',
   MATCH: null,
 }
 
@@ -743,6 +764,9 @@ export function workOrderNeedsLook(group) {
 export function lineStatusLabel(line) {
   const info = COMPARISON_STATUSES[line.status]
   if (!info) return ''
+  if (line.status === 'QUANTITY_DIFF' && line.systemQuantity !== null && line.systemQuantity !== undefined) {
+    return `${info.label} · PDF ×${line.quantity}, sheet ×${line.systemQuantity}`
+  }
   return line.status === 'NOT_IN_LOT' && line.lotNumber
     ? `${info.label} (For Lot ${line.lotNumber})`
     : info.label

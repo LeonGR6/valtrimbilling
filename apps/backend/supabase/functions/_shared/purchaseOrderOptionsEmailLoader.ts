@@ -9,6 +9,7 @@
 // The emails carry no prices, so none is read or sent. Kept apart from the Edge Function
 // so it can be tested with a fake client.
 
+import { optionUnitsFields } from "./optionQuantity.ts";
 import {
   buildOptionsEmailSnapshot,
   type OptionsEmailAddition,
@@ -75,7 +76,8 @@ export async function loadOptionsEmailSnapshot(
       .maybeSingle(),
     caller.from("lots").select("id, lot_number, plan_id, phase_id")
       .eq("job_id", job.id).in("id", lotIds),
-    caller.from("lot_options").select("lot_id, option_id").in("lot_id", lotIds),
+    caller.from("lot_options").select("lot_id, option_id, quantity, locations")
+      .in("lot_id", lotIds),
     // Purchasing and the Job Coordinator are Company Contacts (people).
     caller.from("people").select("id, name, email")
       .in("id", [job.purchasing_id, job.job_coordinator_id].filter(Boolean)),
@@ -86,6 +88,11 @@ export async function loadOptionsEmailSnapshot(
     many(lotOptions).map((row) => `${row.lot_id}:${row.option_id}`),
   );
   const lotsById = indexBy(lotRows, (lot) => String(lot.id));
+  // How many units of the option each Lot has and where; only a selected option has a row.
+  const unitsByPair = indexBy(
+    many(lotOptions),
+    (row) => `${row.lot_id}:${row.option_id}`,
+  );
 
   // The pair has to be in the state the email describes: selected when it says
   // "added" (either way), not selected any more when it says "removed".
@@ -154,6 +161,8 @@ export async function loadOptionsEmailSnapshot(
       workOrderNo: poLine ? String(poLine.work_order_no) : null,
       referenceNo: poLine ? String(poLine.reference_no) : null,
       createdInPlan: kind === "added" && item.createdOption === true,
+      // A removed option no longer has its row, so it says nothing of units.
+      ...optionUnitsFields(unitsByPair.get(`${item.lotId}:${item.optionId}`)),
     }];
   });
 

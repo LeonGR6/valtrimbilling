@@ -1,4 +1,7 @@
-export interface SequenceSheetEmailOption {
+import { planHtmlWithElevation, planTextWithElevation } from "./lotElevation.ts";
+import { type OptionUnits, optionUnitsLabel } from "./optionQuantity.ts";
+
+export interface SequenceSheetEmailOption extends OptionUnits {
   code: string;
   description: string;
 }
@@ -6,6 +9,8 @@ export interface SequenceSheetEmailOption {
 export interface SequenceSheetEmailLot {
   lotNumber: string;
   planCode: string;
+  // The elevation of the Lot, apart from the Plan; empty or missing when it has none.
+  elevation?: string;
   reverse: boolean;
   options: SequenceSheetEmailOption[];
   isUtilityBuilding?: boolean;
@@ -93,8 +98,9 @@ function buildingLabel(value: string) {
 function optionLabel(option: SequenceSheetEmailOption) {
   const code = option.code.trim();
   const description = option.description.trim();
-  if (code && description) return `${code} · ${description}`;
-  return code || description || "Option unavailable";
+  const units = optionUnitsLabel(option);
+  const name = code && description ? `${code} · ${description}` : code || description || "Option unavailable";
+  return units ? `${name} ${units}` : name;
 }
 
 function optionHtml(option: SequenceSheetEmailOption) {
@@ -123,7 +129,7 @@ function lotRowHtml(lot: SequenceSheetEmailLot, index: number) {
   return `
     <tr style="background-color:${index % 2 === 0 ? "#ffffff" : "#f8fafc"};">
       <td style="width:64px;padding:12px 14px;border-bottom:1px solid #e2e8f0;color:#1e293b;font-size:14px;font-weight:700;vertical-align:top;">${escapeHtml(lot.lotNumber)}</td>
-      <td style="width:100px;padding:12px 14px;border-bottom:1px solid #e2e8f0;color:#1e293b;font-size:14px;vertical-align:top;">${escapeHtml(lot.planCode || "Plan unavailable")}</td>
+      <td style="width:100px;padding:12px 14px;border-bottom:1px solid #e2e8f0;color:#1e293b;font-size:14px;vertical-align:top;">${planHtmlWithElevation(escapeHtml(lot.planCode || "Plan unavailable"), lot.elevation, escapeHtml)}</td>
       <td align="center" style="width:82px;padding:12px 14px;border-bottom:1px solid #e2e8f0;vertical-align:top;">${reverse}</td>
       <td style="padding:10px 14px;border-bottom:1px solid #e2e8f0;color:#1e293b;font-size:14px;vertical-align:top;">${options}</td>
     </tr>`;
@@ -191,7 +197,7 @@ export function renderSequenceSheetEmail(
   const textRows = snapshot.lots.map((lot) => {
     return [
         lot.lotNumber,
-        lot.planCode || "Plan unavailable",
+        planTextWithElevation(lot.planCode || "Plan unavailable", lot.isUtilityBuilding ? "" : lot.elevation),
         lot.isUtilityBuilding ? "—" : lot.reverse ? "Yes" : "No",
         lot.isUtilityBuilding
           ? "Plan only"

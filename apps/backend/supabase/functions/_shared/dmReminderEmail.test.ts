@@ -102,3 +102,17 @@ Deno.test("a part of a split DM says so", () => {
   assertStringIncludes(part.text, "It was split into parts; these are the Sequence Sheet lots of this part.");
   assertStringIncludes(part.html, "split into parts");
 });
+
+Deno.test("the DM reminder says the elevation next to the Plan, and nothing for a Lot without one", () => {
+  const rendered = renderDmReminderEmail(event({
+    lots: [
+      { lotNumber: "2", planCode: "4", elevation: "A", reverse: false, options: [] },
+      { lotNumber: "10", planCode: "2A", reverse: false, options: [] },
+    ],
+  }));
+
+  assertStringIncludes(rendered.html, "Elev. A");
+  assertEquals(rendered.html.split("Elev. ").length - 1, 1);
+  assertStringIncludes(rendered.text, "Plan 4 (Elev. A)");
+  assertStringIncludes(rendered.text, "Plan 2A\t");
+});

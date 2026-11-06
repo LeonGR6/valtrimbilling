@@ -7,6 +7,7 @@ import {
   toSequenceSheetPhaseRpc,
 } from './sequenceSheetRecord.js'
 import { inBatches, listAllRows as listPagedRows } from '../../../services/pagedQuery.js'
+import { optionDetailsFromRows } from '../utils/optionDetails.js'
 
 const PHASE_COLUMNS = [
   'id',
@@ -24,6 +25,7 @@ const LOT_COLUMNS = [
   'lot_number',
   'utility_name',
   'is_reverse',
+  'elevation',
   'is_utility_building',
   'display_order',
   'plan_price_id',
@@ -33,6 +35,8 @@ const LOT_OPTION_COLUMNS = [
   'lot_id',
   'option_id',
   'option_price_id',
+  'quantity',
+  'locations',
 ].join(', ')
 
 const PLAN_PRICE_COLUMNS = ['id', 'base_price', 'hardware_price'].join(', ')
@@ -154,8 +158,10 @@ export async function listSequenceSheetPhases(jobIds) {
 
   const optionIdsByLot = new Map()
   const optionPricesByLot = new Map()
+  const optionRowsByLot = new Map()
   selectedOptionRows.forEach((row) => {
     appendToGroup(optionIdsByLot, row.lot_id, row.option_id)
+    appendToGroup(optionRowsByLot, row.lot_id, row)
     const price = optionPrices.get(row.option_price_id)
     if (price) {
       optionPricesByLot.set(row.lot_id, {
@@ -173,6 +179,7 @@ export async function listSequenceSheetPhases(jobIds) {
       toSequenceSheetLot(row, optionIdsByLot.get(row.id) ?? [], {
         planPrice: planPrices.get(row.plan_price_id),
         optionPrices: optionPricesByLot.get(row.id),
+        optionDetails: optionDetailsFromRows(optionRowsByLot.get(row.id)),
       }),
     )
   })

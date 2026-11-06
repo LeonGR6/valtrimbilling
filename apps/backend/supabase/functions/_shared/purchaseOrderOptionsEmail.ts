@@ -16,7 +16,11 @@ export interface OptionsEmailRecipient {
   email: string;
 }
 
-export interface OptionsEmailOption {
+import { type OptionUnits, optionUnitsLabel } from "./optionQuantity.ts";
+
+// `quantity` and `locations` are only known for an option that is still selected (a removed
+// option no longer has its row), and are left out for one unit with no place.
+export interface OptionsEmailOption extends OptionUnits {
   code: string;
   // What the Sequence Sheet shows: the option's description, else its name.
   description: string;
@@ -170,6 +174,13 @@ function lotRowsHtml(lot: OptionsEmailLot, index: number) {
         <span style="font-weight:700;">${escapeHtml(option.code)}</span>
         <span style="color:#334155;"> · ${escapeHtml(option.description)}</span>
         ${
+      optionUnitsLabel(option)
+        ? `<span style="font-weight:700;color:#1e293b;"> ${
+          escapeHtml(optionUnitsLabel(option))
+        }</span>`
+        : ""
+    }
+        ${
       option.createdInPlan
         ? '<span style="display:inline-block;margin-left:6px;padding:1px 7px;border-radius:999px;background-color:#dcfce7;color:#166534;font-size:11px;font-weight:700;">New option</span>'
         : ""
@@ -216,7 +227,8 @@ export function renderOptionsEmail(
         `Lot ${lot.lotNumber}`,
         lot.scope,
         `Plan ${lot.planCode || "unavailable"}`,
-        `${option.code} · ${option.description}`,
+        [`${option.code} · ${option.description}`, optionUnitsLabel(option)]
+          .filter(Boolean).join(" "),
         option.source,
       ].filter((part, index) => index < 4 || part !== "").join("\t")
     )
@@ -320,7 +332,7 @@ export interface OptionsEmailContact {
 }
 
 // One option selected for a Lot, as the Edge Function loads it.
-export interface OptionsEmailAddition {
+export interface OptionsEmailAddition extends OptionUnits {
   lotId: string;
   lotNumber: string;
   phaseCode: string;
@@ -399,6 +411,9 @@ export function buildOptionsEmailSnapshot(
         }`
         : "Purchase Order",
       createdInPlan: source.kind === "added" && addition.createdInPlan,
+      ...(optionUnitsLabel(addition)
+        ? { quantity: addition.quantity, locations: addition.locations }
+        : {}),
     });
     lots.set(addition.lotId, lot);
   }

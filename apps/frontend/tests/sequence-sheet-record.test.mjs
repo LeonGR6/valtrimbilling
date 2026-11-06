@@ -7,6 +7,7 @@ import {
   toSequenceSheetPhase,
   toSequenceSheetPhaseRpc,
 } from '../src/features/sequence-sheets/services/sequenceSheetRecord.js'
+import { optionDetailsFromRows } from '../src/features/sequence-sheets/utils/optionDetails.js'
 
 test('maps persisted Phase, Lot, reverse and selected Options to the UI model', () => {
   const lot = toSequenceSheetLot(
@@ -41,6 +42,7 @@ test('maps persisted Phase, Lot, reverse and selected Options to the UI model', 
       utilityName: '',
       planId: 31,
       reverse: true,
+      elevation: '',
       optionIds: [41, 42],
       isUtilityBuilding: false,
     }],
@@ -80,7 +82,9 @@ test('builds the atomic Sequence Sheet RPC payload with normalized values', () =
           utility_name: null,
           plan_id: 31,
           is_reverse: true,
+          elevation: '',
           option_ids: [41, 42],
+          option_details: [],
           is_utility_building: false,
         },
         {
@@ -89,7 +93,9 @@ test('builds the atomic Sequence Sheet RPC payload with normalized values', () =
           utility_name: null,
           plan_id: 32,
           is_reverse: false,
+          elevation: '',
           option_ids: [],
+          option_details: [],
           is_utility_building: false,
         },
       ],
@@ -127,6 +133,7 @@ test('maps and saves a Utility Building row with Reverse but without Options', (
       utilityName: ' Pool House ',
       planId: 31,
       reverse: true,
+      elevation: '',
       optionIds: [41],
       isUtilityBuilding: true,
     }],
@@ -141,7 +148,9 @@ test('maps and saves a Utility Building row with Reverse but without Options', (
       utility_name: 'Pool House',
       plan_id: 31,
       is_reverse: true,
+      elevation: '',
       option_ids: [],
+      option_details: [],
       is_utility_building: true,
     }],
     p_is_utility_building: false,
@@ -186,4 +195,55 @@ test('a Lot with no pinned price leaves the price fields out', () => {
 
   assert.equal('planPrice' in lot, false)
   assert.equal('optionPrices' in lot, false)
+})
+
+test('a Lot carries the quantity and locations of its Options and sends them to the database', () => {
+  const lot = toSequenceSheetLot(
+    { id: 71, lot_number: '18', utility_name: null, plan_id: 31, is_reverse: false, is_utility_building: false },
+    [41, 42],
+    {
+      optionDetails: optionDetailsFromRows([
+        { option_id: 41, quantity: 3, locations: ['1st floor', '2nd floor'] },
+        { option_id: 42, quantity: 1, locations: [] },
+      ]),
+    },
+  )
+
+  // Only the Option that is more than one unit or has a place is kept.
+  assert.deepEqual(lot.optionDetails, { 41: { quantity: 3, locations: ['1st floor', '2nd floor'] } })
+
+  const payload = toSequenceSheetPhaseRpc(11, 21, { phaseName: 'A3', building: 'C5', lots: [lot] })
+  assert.deepEqual(payload.p_lots[0].option_ids, [41, 42])
+  assert.deepEqual(payload.p_lots[0].option_details, [
+    { option_id: 41, quantity: 3, locations: ['1st floor', '2nd floor'] },
+  ])
+})
+
+test('a Lot with no quantity or place on its Options has no details', () => {
+  const lot = toSequenceSheetLot(
+    { id: 71, lot_number: '18', utility_name: null, plan_id: 31, is_reverse: false, is_utility_building: false },
+    [41],
+    { optionDetails: optionDetailsFromRows([{ option_id: 41, quantity: 1, locations: [] }]) },
+  )
+
+  assert.equal('optionDetails' in lot, false)
+})
+
+test('details of an Option that is no longer selected are not sent', () => {
+  const payload = toSequenceSheetPhaseRpc(11, 21, {
+    phaseName: 'A3',
+    building: '',
+    lots: [{
+      id: 71,
+      lotNumber: '18',
+      planId: 31,
+      reverse: false,
+      optionIds: [41],
+      optionDetails: { 41: { quantity: 2, locations: ['Garage'] }, 42: { quantity: 5, locations: [] } },
+    }],
+  })
+
+  assert.deepEqual(payload.p_lots[0].option_details, [
+    { option_id: 41, quantity: 2, locations: ['Garage'] },
+  ])
 })

@@ -21,6 +21,7 @@ import { countUnbacked } from '../../../purchase-orders/services/purchaseOrderRe
 import { formatPhaseBuilding } from '../../../sequence-sheets/utils/phaseBuildingCodes.js'
 import { formatCurrency, formatOptionPrice } from '../../utils/drawInvoiceFormatters.js'
 import { bulkOptionCheck } from '../../utils/packageOptionLink.js'
+import { planWithElevation } from '../../../sequence-sheets/utils/lotElevation.js'
 
 // `standalone` is for Options that no Draw of the Package carries: they are billed on a Package of
 // their own (nothing is charged with a Draw), and none is included until it is chosen.
@@ -108,8 +109,8 @@ export default function SelectableOptionsTable({
                       onChange={() => !billed && onToggle(option)}
                       inputProps={{
                         'aria-label': billed
-                          ? `Option ${option.optionCode} for lot ${option.lotNumber} was already billed`
-                          : `${included ? 'Exclude' : 'Include'} option ${option.optionCode} for lot ${option.lotNumber}`,
+                          ? `Option ${option.optionCode}${option.unitLabel ? ` (${option.unitLabel})` : ''} for lot ${option.lotNumber} was already billed`
+                          : `${included ? 'Exclude' : 'Include'} option ${option.optionCode}${option.unitLabel ? ` (${option.unitLabel})` : ''} for lot ${option.lotNumber}`,
                       }}
                     />
                   </TableCell>
@@ -121,11 +122,18 @@ export default function SelectableOptionsTable({
                       {option.lotNumber}
                     </Typography>
                   </TableCell>
-                  <TableCell>{option.planCode ?? '—'}</TableCell>
+                  <TableCell>{planWithElevation(option.planCode, option.lotElevation) || '—'}</TableCell>
                   <TableCell>
                     <Typography fontWeight={750}>{option.optionCode}</Typography>
                   </TableCell>
-                  <TableCell>{option.description}</TableCell>
+                  <TableCell>
+                    {option.description}
+                    {option.unitLabel && (
+                      <Typography component="span" variant="body2" fontWeight={750} sx={{ ml: 0.75, whiteSpace: 'nowrap' }}>
+                        · {option.unitLabel}
+                      </Typography>
+                    )}
+                  </TableCell>
                   <TableCell>
                     {(billed
                       ? option.billingDrawIndex

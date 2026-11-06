@@ -28,6 +28,7 @@ import {
   formatPercentage,
 } from '../../utils/drawInvoiceFormatters.js'
 import HeadingDivisions from './HeadingDivisions.jsx'
+import { planWithElevation } from '../../../sequence-sheets/utils/lotElevation.js'
 
 // The tones of the dark theme are translucent. A cell that sticks while the rows scroll needs a
 // solid base under its tone, or the rows going under it show through.
@@ -268,7 +269,7 @@ export default function DrawSelectionGrid({
                       </Stack>
                     </TableCell>
                     <TableCell>
-                      <Typography fontWeight={750}>{row.planCode ?? '—'}</Typography>
+                      <Typography fontWeight={750}>{planWithElevation(row.planCode, row.lotElevation) || '—'}</Typography>
                       {(row.selectedOptions?.length ?? 0) > 0 && (
                         <Typography variant="caption" color="text.secondary">
                           {row.selectedOptions.length}{' '}

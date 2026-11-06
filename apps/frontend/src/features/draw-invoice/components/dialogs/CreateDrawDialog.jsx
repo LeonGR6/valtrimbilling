@@ -398,7 +398,7 @@ export default function CreateDrawDialog({
       ?.worksheet.rows.find((candidate) => String(candidate.id) === String(lotId))
 
     return (row?.selectedOptions ?? []).map(
-      (option) => optionSelectionKey(phaseId, lotId, option.id),
+      (option) => optionSelectionKey(phaseId, lotId, option.id, option.unitNo),
     )
   }
 
@@ -643,6 +643,7 @@ export default function CreateDrawDialog({
       ? summary.selectedOptionRows.map((option) => ({
           lotId: option.lotId,
           optionId: option.optionId,
+          unitNo: option.unitNo,
         }))
       : [],
     optionsBillingDrawIndex: summary.optionsBillingDrawIndex,
@@ -688,12 +689,12 @@ export default function CreateDrawDialog({
     schedule,
     splitPlan,
     input: createInput,
-    ownOptions: ownOptionRows.map(({ lotId, optionId }) => ({ lotId, optionId })),
+    ownOptions: ownOptionRows.map(({ lotId, optionId, unitNo }) => ({ lotId, optionId, unitNo })),
     priceDifferences: chosenPriceChanges,
   })
   const split = createdPackages.length > 1 ? { packages: createdPackages } : null
   const optionRowOf = new Map(summary.availableOptionRows.map((option) => [
-    optionBillingIdentity(option.lotId, option.optionId),
+    optionBillingIdentity(option.lotId, option.optionId, option.unitNo),
     option,
   ]))
   // What each Options Package would invoice, Option by Option as the database does.
@@ -704,7 +705,7 @@ export default function CreateDrawDialog({
       count: input.optionSelections.length,
       amounts: optionsPackageAmounts(
         input.optionSelections.map(
-          ({ lotId, optionId }) => optionRowOf.get(optionBillingIdentity(lotId, optionId)) ?? {},
+          ({ lotId, optionId, unitNo }) => optionRowOf.get(optionBillingIdentity(lotId, optionId, unitNo)) ?? {},
         ),
         schedule,
       ),

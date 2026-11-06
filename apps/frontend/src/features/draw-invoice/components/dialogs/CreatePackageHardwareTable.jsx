@@ -18,6 +18,7 @@ import BilledRowsAccordion from './BilledRowsAccordion.jsx'
 import { formatPhaseBuilding } from '../../../sequence-sheets/utils/phaseBuildingCodes.js'
 import { formatCurrency, formatLongDate } from '../../utils/drawInvoiceFormatters.js'
 import { hardwareChargeKey } from '../../utils/drawPackages.js'
+import { planWithElevation } from '../../../sequence-sheets/utils/lotElevation.js'
 
 // `eventDateFor(lotId, eventType)` is the date the Calendar gave that event for the lot, or null.
 export default function CreatePackageHardwareTable({
@@ -87,7 +88,7 @@ export default function CreatePackageHardwareTable({
                     {hardware.lotNumber}
                   </Typography>
                 </TableCell>
-                <TableCell>{hardware.planCode ?? '—'}</TableCell>
+                <TableCell>{planWithElevation(hardware.planCode, hardware.lotElevation) || '—'}</TableCell>
                 <TableCell>
                   <Typography fontWeight={750}>
                     {hardware.hardwareBillingMode === 'BY_EVENT'

@@ -38,7 +38,7 @@ export function findUnbackedOptions(backing, rows) {
 
 /** One sentence for an option that is not well backed. `formatMoney` writes an amount. */
 export function describeUnbackedOption({ row, state, poPrice }, formatMoney) {
-  const who = `Lot ${row.lotNumber} · ${row.optionCode}`
+  const who = `Lot ${row.lotNumber} · ${row.optionCode}${row.unitLabel ? ` (${row.unitLabel})` : ''}`
   if (state === 'price_differs') {
     const billed = row.priceNotApplicable === true ? 'NA' : formatMoney(Number(row.price))
     return `${who}: the PO prints ${formatMoney(poPrice)} and this Package bills ${billed}.`
@@ -74,6 +74,7 @@ export function planPackagePurchaseOrders({ rows = [], lines = [], files = {} })
     order.options.push({
       lotNumber: row.lotNumber,
       optionCode: row.optionCode,
+      unitLabel: row.unitLabel ?? null,
       phaseCode: row.phaseCode ?? null,
       building: row.building ?? null,
     })
@@ -98,7 +99,9 @@ export function joinableOrders(plan) {
 
 /** "Lot 22 · 6000, Lot 23 · 6000 and 2 more": the options an order backs, shortened. */
 export function describeOrderOptions(order, limit = 4) {
-  const names = order.options.map((option) => `Lot ${option.lotNumber} · ${option.optionCode}`)
+  const names = order.options.map((option) => (
+    `Lot ${option.lotNumber} · ${option.optionCode}${option.unitLabel ? ` (${option.unitLabel})` : ''}`
+  ))
   if (names.length <= limit) return names.join(', ')
   return `${names.slice(0, limit).join(', ')} and ${names.length - limit} more`
 }

@@ -1,4 +1,6 @@
 import { z } from 'zod'
+import { MAX_ELEVATION_LENGTH } from '../utils/lotElevation.js'
+import { MAX_LOCATION_LENGTH, MAX_OPTION_QUANTITY } from '../utils/optionDetails.js'
 import {
   normalizeBuildingCode,
   normalizePhaseCode,
@@ -23,6 +25,18 @@ const buildingCodeSchema = z
   .max(50, 'Use 50 characters or fewer.')
   .transform(normalizeBuildingCode)
 
+// The quantity and places of the Options that are more than one unit or have a place, by Option id.
+const optionDetailSchema = z.object({
+  quantity: z.coerce
+    .number()
+    .int('Use a whole number.')
+    .min(1, 'The quantity is at least 1.')
+    .max(MAX_OPTION_QUANTITY, `The quantity is at most ${MAX_OPTION_QUANTITY}.`),
+  locations: z.array(
+    z.string().trim().min(1, 'Enter a location.').max(MAX_LOCATION_LENGTH, `Use ${MAX_LOCATION_LENGTH} characters or fewer.`),
+  ),
+})
+
 const lotAssignmentSchema = z.object({
   id: z.union([z.string(), z.number()]).optional(),
   lotNumber: z
@@ -37,7 +51,14 @@ const lotAssignmentSchema = z.object({
     .optional(),
   planId: z.coerce.number().int().positive('Select a plan.'),
   reverse: z.boolean(),
+  elevation: z
+    .string()
+    .trim()
+    .max(MAX_ELEVATION_LENGTH, `Use ${MAX_ELEVATION_LENGTH} characters or fewer.`)
+    .transform((value) => value.toUpperCase())
+    .default(''),
   optionIds: z.array(z.coerce.number().int().positive()),
+  optionDetails: z.record(z.string(), optionDetailSchema).optional(),
   isUtilityBuilding: z.boolean().default(false),
 })
 
@@ -163,6 +184,23 @@ export function createPhaseByLotSchema(
             path: ['lots', index, 'optionIds'],
             message: 'An option does not belong to the selected plan.',
           })
+        }
+
+        const selectedIds = new Set(lot.optionIds.map(String))
+        for (const [optionId, detail] of Object.entries(lot.optionDetails ?? {})) {
+          if (!selectedIds.has(optionId)) {
+            context.addIssue({
+              code: 'custom',
+              path: ['lots', index, 'optionDetails'],
+              message: 'A quantity or location belongs to an option that is not selected.',
+            })
+          } else if (detail.locations.length > detail.quantity) {
+            context.addIssue({
+              code: 'custom',
+              path: ['lots', index, 'optionDetails'],
+              message: 'An option cannot have more locations than its quantity.',
+            })
+          }
         }
       })
     })

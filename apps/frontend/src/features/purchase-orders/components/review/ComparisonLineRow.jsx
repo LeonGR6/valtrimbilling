@@ -133,6 +133,12 @@ export default function ComparisonLineRow({ line, onImportLine, onUsePrice }) {
                 </Tooltip>
               )}
             </Stack>
+            {line.systemQuantity !== null && (line.systemQuantity !== 1 || line.systemLocations.length > 0) && (
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', overflowWrap: 'anywhere' }}>
+                ×{line.systemQuantity}
+                {line.systemLocations.length > 0 ? ` · ${line.systemLocations.join(', ')}` : ''}
+              </Typography>
+            )}
           </>
         ) : (
           <Typography variant="body2" color="text.secondary" sx={{ fontStyle: 'italic' }}>

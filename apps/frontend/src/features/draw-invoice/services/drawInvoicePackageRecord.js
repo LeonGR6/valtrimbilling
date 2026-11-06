@@ -376,6 +376,7 @@ export function toDrawInvoicePackage(
             sourcePackageId: row.source_package_id,
             sourceLotId: row.source_lot_id,
             sourceOptionId: row.source_option_id,
+            sourceUnitNo: Number(row.source_unit_no ?? 1),
             phaseId: row.phase_id,
             retentionAmount: toNumber(row.retention_amount),
           })),
@@ -459,6 +460,8 @@ export function toDrawInvoicePackage(
         : null,
       isUtilityBuilding: Boolean(row.is_utility_building),
       planCode: row.plan_code,
+      // The elevation the Lot had when the Package was made; empty on Packages made before it existed.
+      lotElevation: row.lot_elevation ?? '',
       basePrice: toNumber(row.base_price),
       drawIndex: Number(row.draw_number) - 1,
       drawName: row.draw_name ?? '',
@@ -491,6 +494,7 @@ export function toDrawInvoicePackage(
       lotId: row.lot_id,
       lotNumber: row.lot_number,
       planCode: row.plan_code,
+      lotElevation: row.lot_elevation ?? '',
       hardwarePrice: toNumber(row.hardware_price),
       hardwareBillingMode: 'BY_EVENT',
       hardwareEventType: row.hardware_event_type,
@@ -508,7 +512,8 @@ export function toDrawInvoicePackage(
     // Lot by Lot, and by option code within each Lot.
     persistedOptionLines: [...optionRows].sort(
       (left, right) => left.lot_id - right.lot_id
-        || compareOptionCodes(left.option_code, right.option_code),
+        || compareOptionCodes(left.option_code, right.option_code)
+        || Number(left.unit_no ?? 1) - Number(right.unit_no ?? 1),
     ).map((row) => {
       const drawRow = drawRowsByLotAndDraw.get(`${row.lot_id}:${row.draw_id}`)
       const billingDrawRow = drawRowsByLotAndDraw.get(
@@ -516,7 +521,7 @@ export function toDrawInvoicePackage(
       )
       const hasOriginSnapshot = row.phase_id != null
       return {
-        id: `${row.lot_id}:${row.option_id}`,
+        id: `${row.lot_id}:${row.option_id}:${row.unit_no ?? 1}`,
         phaseId: row.phase_id ?? drawRow?.phase_id ?? null,
         phaseCode: row.phase_code ?? drawRow?.phase_code ?? null,
         building: hasOriginSnapshot ? row.building : (drawRow?.building ?? null),
@@ -527,9 +532,14 @@ export function toDrawInvoicePackage(
         drawId: row.draw_id,
         lotNumber: row.lot_number ?? drawRow?.lot_number ?? '',
         planCode: row.plan_code ?? drawRow?.plan_code ?? null,
+        lotElevation: row.lot_elevation ?? '',
         optionId: row.option_id,
+        // Each unit of an Option on a Lot is a row of its own: the one that goes to the 2nd floor.
+        unitNo: Number(row.unit_no ?? 1),
+        unitLabel: row.unit_label ?? null,
         optionCode: row.option_code,
         description: row.option_name,
+        quantity: 1,
         price: toNumber(row.option_price),
         // What an Options Package withholds of the Option; a Draw Package withholds it on the
         // Draw line that carries the Option instead.
@@ -564,13 +574,14 @@ export function toCreateDrawPackageRpc({
   const packageOptions = new Map()
 
   if (hasExplicitOptionSelection) {
-    for (const { lotId, optionId } of optionSelections) {
+    for (const { lotId, optionId, unitNo = 1 } of optionSelections) {
       const normalized = {
         lot_id: Number(lotId),
         option_id: Number(optionId),
+        unit_no: Number(unitNo ?? 1),
       }
       packageOptions.set(
-        `${normalized.lot_id}:${normalized.option_id}`,
+        `${normalized.lot_id}:${normalized.option_id}:${normalized.unit_no}`,
         normalized,
       )
     }
@@ -588,7 +599,9 @@ export function toCreateDrawPackageRpc({
         ))[0]?.index ?? -1
     : -1
   const sortedPackageOptions = [...packageOptions.values()].sort(
-    (left, right) => left.lot_id - right.lot_id || left.option_id - right.option_id,
+    (left, right) => left.lot_id - right.lot_id
+      || left.option_id - right.option_id
+      || left.unit_no - right.unit_no,
   )
   const legacyHardwareKeys = new Set(hardwareSelections
     .filter(({ eventType }) => eventType == null)
@@ -662,7 +675,7 @@ export function toCreateRetentionReleasePackageRpc({
 
 /**
  * Bills Options on a Package of their own, with no Lot / Draw cell: `optionSelections` are the
- * { lotId, optionId } pairs, which the database checks are unbilled and belong to a Lot that already
+ * { lotId, optionId, unitNo } units, which the database checks are unbilled and belong to a Lot that already
  * reached the Options billing Draw.
  */
 export function toCreateOptionsPackageRpc({
@@ -671,11 +684,17 @@ export function toCreateOptionsPackageRpc({
   packageDate = null,
   notes = null,
 }) {
-  const options = [...new Map((optionSelections ?? []).map(({ lotId, optionId }) => {
-    const normalized = { lot_id: Number(lotId), option_id: Number(optionId) }
-    return [`${normalized.lot_id}:${normalized.option_id}`, normalized]
+  const options = [...new Map((optionSelections ?? []).map(({ lotId, optionId, unitNo = 1 }) => {
+    const normalized = {
+      lot_id: Number(lotId),
+      option_id: Number(optionId),
+      unit_no: Number(unitNo ?? 1),
+    }
+    return [`${normalized.lot_id}:${normalized.option_id}:${normalized.unit_no}`, normalized]
   })).values()].sort(
-    (left, right) => left.lot_id - right.lot_id || left.option_id - right.option_id,
+    (left, right) => left.lot_id - right.lot_id
+      || left.option_id - right.option_id
+      || left.unit_no - right.unit_no,
   )
   if (options.length === 0) {
     throw new Error('Select at least one Option to bill.')

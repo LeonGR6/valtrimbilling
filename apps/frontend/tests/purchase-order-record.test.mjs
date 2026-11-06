@@ -5,6 +5,7 @@ import {
   countOptionsWithOrder,
   describeHeaderMatch,
   describeOptionOrder,
+  describeQuantityDifference,
   describeVerdict,
   linesWithStatus,
   lineStatusLabel,
@@ -579,6 +580,47 @@ test('a work order needs a look when its Lot is not settled or an option differs
   assert.equal(workOrderNeedsLook(group('resolved', 'MATCH', 'PRICE_DIFF')), true)
   assert.equal(workOrderNeedsLook(group('suggested', 'MATCH')), true)
   assert.equal(workOrderNeedsLook(group('lot_not_found')), true)
+})
+
+test('a line carries the quantity and the places the sequence sheet has for the option', () => {
+  const placed = toComparisonLine(row({ system_quantity: 2, system_locations: ['1st floor', '2nd floor'] }))
+  assert.equal(placed.systemQuantity, 2)
+  assert.deepEqual(placed.systemLocations, ['1st floor', '2nd floor'])
+
+  const unmatched = toComparisonLine(row({ system_quantity: null, system_locations: null }))
+  assert.equal(unmatched.systemQuantity, null)
+  assert.deepEqual(unmatched.systemLocations, [])
+})
+
+test('a different quantity is its own result, after the price and before a match', () => {
+  const breakdown = statusBreakdown(summaryOf('MATCH', 'QUANTITY_DIFF', 'PRICE_DIFF', 'QUANTITY_DIFF'))
+  assert.deepEqual(breakdown.map(({ key }) => key), ['PRICE_DIFF', 'QUANTITY_DIFF', 'MATCH'])
+  assert.deepEqual(breakdown.map(({ count }) => count), [1, 2, 1])
+  assert.equal(breakdown[1].color, 'warning')
+  assert.match(breakdown[1].advice, /quantity of the option/)
+  assert.equal(summarizeComparison([{ status: 'QUANTITY_DIFF' }, { status: 'MATCH' }]).attention, 1)
+  assert.equal(workOrderNeedsLook({ headerStatus: 'resolved', lines: [{ status: 'QUANTITY_DIFF' }] }), true)
+})
+
+test('the quantity difference says both quantities and where the sheet puts them', () => {
+  const line = { status: 'QUANTITY_DIFF', quantity: 4, systemQuantity: 2, systemLocations: ['1st floor', '2nd floor'] }
+  assert.equal(
+    describeQuantityDifference(line),
+    'The PDF prints ×4; the sequence sheet has ×2 (1st floor, 2nd floor).',
+  )
+  assert.equal(
+    describeQuantityDifference({ ...line, systemLocations: [] }),
+    'The PDF prints ×4; the sequence sheet has ×2.',
+  )
+  assert.equal(describeQuantityDifference({ ...line, systemQuantity: 4 }), null)
+  assert.equal(describeQuantityDifference({ ...line, systemQuantity: null }), null)
+  assert.equal(lineStatusLabel(line), 'Quantity differs · PDF ×4, sheet ×2')
+  assert.equal(lineStatusLabel({ status: 'QUANTITY_DIFF', quantity: 4, systemQuantity: null }), 'Quantity differs')
+
+  const money = (value) => `$${value.toFixed(2)}`
+  const card = describeOptionOrder({ ...line, workOrderNo: '1', referenceNo: '2', poUnitPrice: 10, systemPrice: 10 }, money)
+  assert.deepEqual(card.status, { label: 'Quantity differs', color: 'warning' })
+  assert.match(card.hint, /The PDF prints ×4; the sequence sheet has ×2/)
 })
 
 test('an option missing from the sequence sheet says for which Lot', () => {

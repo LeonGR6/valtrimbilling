@@ -203,3 +203,20 @@ Deno.test("a Phase without a Building has no Building line in the email", () => 
   assertMatch(withBuilding.text, /Building: Building 15/u);
   assertMatch(withBuilding.html, /Phase \/ Building/u);
 });
+
+Deno.test("an elevation is said under the Plan, only for the Lots that have one", () => {
+  const rendered = renderSequenceSheetEmail({
+    ...snapshot,
+    lots: [
+      { lotNumber: "9", planCode: "2", elevation: "b", reverse: false, options: [] },
+      { lotNumber: "10", planCode: "2B", reverse: false, options: [] },
+      { lotNumber: "U1", planCode: "2", elevation: "C", reverse: false, options: [], isUtilityBuilding: true },
+    ],
+  });
+
+  assertMatch(rendered.html, /2<br><span[^>]*>Elev\. B<\/span>/u);
+  assertEquals(rendered.html.split("Elev. ").length - 1, 1, "only the Lot with an elevation says one");
+  assertMatch(rendered.text, /9\t2 \(Elev\. B\)\t/u);
+  assertMatch(rendered.text, /10\t2B\t/u);
+  assertNotMatch(rendered.text, /Elev\. C/u);
+});

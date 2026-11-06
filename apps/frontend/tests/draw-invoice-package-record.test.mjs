@@ -233,7 +233,7 @@ test('maps persisted package, invoice and calculated snapshots to the UI model',
   assert.equal(record.persistedDrawLines[0].hardwareEventType, null)
   assert.equal(record.persistedDrawLines[0].hardwarePercentage, 0)
   assert.deepEqual(record.persistedOptionLines[0], {
-    id: '41:61',
+    id: '41:61:1',
     phaseId: 21,
     phaseCode: '1',
     building: 'P1',
@@ -242,9 +242,13 @@ test('maps persisted package, invoice and calculated snapshots to the UI model',
     drawId: 52,
     lotNumber: '19',
     planCode: 'A',
+    lotElevation: '',
     optionId: 61,
+    unitNo: 1,
+    unitLabel: null,
     optionCode: 'OPT-1',
     description: 'Door upgrade',
+    quantity: 1,
     price: 125,
     priceNotApplicable: false,
     // A Draw Package withholds on its Draw lines, not on its Options.
@@ -515,6 +519,7 @@ test('maps immutable Separate Hardware snapshots without an HW Draw', () => {
     lotId: 41,
     lotNumber: '101',
     planCode: 'A',
+    lotElevation: '',
     hardwarePrice: 600,
     hardwareBillingMode: 'BY_EVENT',
     hardwareEventType: 'HW',
@@ -555,9 +560,9 @@ test('adds explicit Option ids only to the configured billing Draw cells', () =>
         lot_id: 41,
         draw_number: 2,
         package_options: [
-          { lot_id: 40, option_id: 70 },
-          { lot_id: 41, option_id: 61 },
-          { lot_id: 41, option_id: 63 },
+          { lot_id: 40, option_id: 70, unit_no: 1 },
+          { lot_id: 41, option_id: 61, unit_no: 1 },
+          { lot_id: 41, option_id: 63, unit_no: 1 },
         ],
       },
       { lot_id: 42, draw_number: 2 },
@@ -599,7 +604,7 @@ test('a later Draw can be the Package Option charge anchor', () => {
       {
         lot_id: 42,
         draw_number: 3,
-        package_options: [{ lot_id: 40, option_id: 70 }],
+        package_options: [{ lot_id: 40, option_id: 70, unit_no: 1 }],
       },
     ],
   })
@@ -636,7 +641,7 @@ test('maps a deferred Option from its own immutable Lot snapshot', () => {
   )
 
   assert.deepEqual(record.persistedOptionLines[0], {
-    id: '41:61',
+    id: '41:61:1',
     phaseId: 20,
     phaseCode: 'A',
     building: 'Building 9',
@@ -646,9 +651,13 @@ test('maps a deferred Option from its own immutable Lot snapshot', () => {
     drawId: 52,
     lotNumber: '19',
     planCode: '2A',
+    lotElevation: '',
     optionId: 61,
+    unitNo: 1,
+    unitLabel: null,
     optionCode: 'OPT-1',
     description: 'Door upgrade',
+    quantity: 1,
     price: 125,
     priceNotApplicable: false,
     // A Draw Package withholds on its Draw lines, not on its Options.
@@ -1108,9 +1117,9 @@ test('the Options Package RPC lists each Option once, in order, and needs at lea
   }), {
     p_job_id: 9,
     p_options: [
-      { lot_id: 41, option_id: 1 },
-      { lot_id: 41, option_id: 5 },
-      { lot_id: 42, option_id: 2 },
+      { lot_id: 41, option_id: 1, unit_no: 1 },
+      { lot_id: 41, option_id: 5, unit_no: 1 },
+      { lot_id: 42, option_id: 2, unit_no: 1 },
     ],
     p_notes: 'late options',
   })
@@ -1118,7 +1127,7 @@ test('the Options Package RPC lists each Option once, in order, and needs at lea
     jobId: 9, optionSelections: [{ lotId: 1, optionId: 1 }], packageDate: '2026-11-02',
   }), {
     p_job_id: 9,
-    p_options: [{ lot_id: 1, option_id: 1 }],
+    p_options: [{ lot_id: 1, option_id: 1, unit_no: 1 }],
     p_package_date: '2026-11-02',
     p_notes: null,
   })
@@ -1143,4 +1152,22 @@ test('an Options Package Draft can be cancelled, or deleted once its QuickBooks 
   assert.equal(canCorrectDrawPackage(draft), false)
   assert.match(draftLockReason(draft), /Options Package cannot be edited/u)
   assert.equal(canDeleteVoidedQuickbooksPackage({ ...draft, quickbooksStatus: 'VOIDED' }), true)
+})
+
+test('a Package line keeps the elevation its Lot had, and one made before elevations existed has none', () => {
+  const record = toDrawInvoicePackage(
+    packageRow,
+    { id: 101, status: 'DRAFT', paid_amount: '0' },
+    [
+      { phase_id: 21, phase_code: '1', building: 'P1', lot_id: 42, draw_id: 52, lot_number: '20', plan_code: '10', lot_elevation: 'B', draw_number: 3 },
+      { phase_id: 21, phase_code: '1', building: 'P1', lot_id: 43, draw_id: 53, lot_number: '21', plan_code: '10A', lot_elevation: null, draw_number: 3 },
+    ],
+    [{
+      lot_id: 42, billing_lot_id: 42, option_id: 61, unit_no: 1, draw_id: 52, option_code: 'OPT-1', option_name: 'Door',
+      option_price: '125', phase_id: 21, phase_code: '1', building: 'P1', lot_number: '20', plan_code: '10', lot_elevation: 'B',
+    }],
+  )
+
+  assert.deepEqual(record.persistedDrawLines.map((line) => [line.planCode, line.lotElevation]), [['10', 'B'], ['10A', '']])
+  assert.equal(record.persistedOptionLines[0].lotElevation, 'B')
 })

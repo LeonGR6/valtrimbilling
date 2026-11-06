@@ -366,8 +366,49 @@ test('worksheet resolves only selected options that belong to the assigned plan'
   )
 
   assert.deepEqual(worksheet.rows[0].selectedOptions, [
-    { id: 10, code: 'OPT-10', description: 'Door upgrade', price: 125 },
+    { id: 10, code: 'OPT-10', description: 'Door upgrade', price: 125, quantity: 1, unitNo: 1, unitLabel: null },
   ])
+})
+
+test('worksheet lists each unit of an Option on the Lot more than once on its own, at the price of one unit', () => {
+  const worksheet = buildDrawWorksheet(
+    {
+      sequenceSheet: {
+        plans: [{
+          id: 1,
+          code: 'A',
+          price: 1000,
+          options: [
+            { id: 10, code: 'OPT-10', description: 'Door upgrade', price: 125.5 },
+            { id: 11, code: 'OPT-11', description: 'Shelf upgrade', price: 75 },
+          ],
+        }],
+      },
+    },
+    {
+      lots: [{
+        id: 1,
+        lotNumber: '19',
+        planId: 1,
+        optionIds: [10, 11],
+        optionDetails: { 10: { quantity: 3, locations: ['1st floor', '2nd floor'] } },
+      }],
+    },
+    { draws: [{ percentage: 50 }, { percentage: 50 }] },
+  )
+
+  assert.deepEqual(
+    worksheet.rows[0].selectedOptions.map(({ id, unitNo, unitLabel, quantity, price }) => (
+      { id, unitNo, unitLabel, quantity, price }
+    )),
+    [
+      { id: 10, unitNo: 1, unitLabel: '1st floor', quantity: 1, price: 125.5 },
+      { id: 10, unitNo: 2, unitLabel: '2nd floor', quantity: 1, price: 125.5 },
+      // A unit with no place named is told apart by its number.
+      { id: 10, unitNo: 3, unitLabel: 'Unit 3', quantity: 1, price: 125.5 },
+      { id: 11, unitNo: 1, unitLabel: null, quantity: 1, price: 75 },
+    ],
+  )
 })
 
 test('worksheet exposes current draw, retention, WRAP and invoice totals', () => {

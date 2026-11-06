@@ -93,8 +93,8 @@ function sourceHardwareLineKey(hardwareLineId) {
   return String(hardwareLineId)
 }
 
-function sourceOptionLineKey(packageId, lotId, optionId) {
-  return `${packageId}:${lotId}:${optionId}`
+function sourceOptionLineKey(packageId, lotId, optionId, unitNo = 1) {
+  return `${packageId}:${lotId}:${optionId}:${unitNo ?? 1}`
 }
 
 function isDrawPackage(record) {
@@ -182,6 +182,7 @@ export function buildRetentionSuggestions({
         line.sourcePackageId,
         line.sourceLotId,
         line.sourceOptionId,
+        line.sourceUnitNo,
       ))
     }
   }
@@ -259,7 +260,7 @@ export function buildRetentionSuggestions({
             phaseIds.has(String(line.phaseId))
             && Number(line.retentionAmount) !== 0
             && !activeReleaseOptionLines.has(
-              sourceOptionLineKey(record.id, line.lotId, line.optionId),
+              sourceOptionLineKey(record.id, line.lotId, line.optionId, line.unitNo),
             )
           ))
           .map((line) => ({ record, amount: Number(line.retentionAmount) }))

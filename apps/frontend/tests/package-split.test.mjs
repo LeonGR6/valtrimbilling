@@ -424,7 +424,7 @@ test('an Option added after its Phase was billed gets its own Package while the 
 
   assert.deepEqual(created.map(({ kind }) => kind), ['DRAW', 'OPTIONS'], 'Draw Packages first')
   assert.deepEqual(created[0].input.optionSelections, [optionPick(17, 4)], 'its own Option rides on its Draw')
-  assert.deepEqual(created[1].input.optionSelections, [optionPick(1, 9)], 'the other Phase keeps its Option off this invoice')
+  assert.deepEqual(created[1].input.optionSelections, [{ ...optionPick(1, 9), unitNo: 1 }], 'the other Phase keeps its Option off this invoice')
   assert.deepEqual(created[1].group.phaseIds, ['47'], 'the Phase the Option is in')
   assert.equal(created[1].group.label, 'Phase 3')
 })
@@ -511,4 +511,23 @@ test('an Options Package takes retention and WRAP Option by Option, like the dat
   assert.deepEqual(optionsPackageAmounts([{ price: 1000 }, { price: -200 }], schedule), {
     gross: 800, retention: 40, wrap: 12, net: 748,
   })
+})
+
+test('the units of an Option on a Lot go to an Options Package one by one', () => {
+  const schedule = setup({ singleInvoiceScope: '', finalReleaseScope: '' })
+  const created = planOptionsPackages({
+    job: job(),
+    schedule,
+    optionSelections: [
+      { lotId: 17, optionId: 1, unitNo: 2 },
+      { lotId: 17, optionId: 1, unitNo: 1 },
+      { lotId: 17, optionId: 1, unitNo: 2 },
+    ],
+  })
+
+  assert.equal(created.length, 1)
+  assert.deepEqual(created[0].input.optionSelections, [
+    { lotId: 17, optionId: 1, unitNo: 2 },
+    { lotId: 17, optionId: 1, unitNo: 1 },
+  ], 'a unit appears once; each unit is its own selection')
 })

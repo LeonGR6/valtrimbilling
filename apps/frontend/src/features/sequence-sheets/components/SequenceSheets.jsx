@@ -97,6 +97,8 @@ import LotRangeField from './LotRangeField.jsx'
 import PhasesTable from './PhasesTable.jsx'
 import LotOptionPicker from './LotOptionPicker.jsx'
 import { getPhaseRowCounts, getSelectedOptionCount } from '../utils/phaseCounts.js'
+import { describeOptionDetail, detailOf, pruneOptionDetails } from '../utils/optionDetails.js'
+import LotElevationField from './LotElevationField.jsx'
 import SequenceSheetEmailDialog from './SequenceSheetEmailDialog.jsx'
 import OptionOrderChip from '../../purchase-orders/components/OptionOrderChip.jsx'
 import OptionsBillingNotice from '../../jobs/components/OptionsBillingNotice.jsx'
@@ -110,8 +112,10 @@ const emptyLot = {
   lotNumber: '',
   utilityName: '',
   planId: '',
+  elevation: '',
   reverse: false,
   optionIds: [],
+  optionDetails: {},
   isUtilityBuilding: false,
 }
 
@@ -277,6 +281,7 @@ function PhaseDetails({
                 <TableRow>
                   <TableCell>Lot / Utility</TableCell>
                   <TableCell>Plan</TableCell>
+                  <TableCell sx={{ width: 100 }}>Elevation</TableCell>
                   <TableCell align="center">Reverse</TableCell>
                   <TableCell>Options for selected plan</TableCell>
                 </TableRow>
@@ -304,6 +309,13 @@ function PhaseDetails({
                           <Typography variant="body2" color="error">Plan unavailable</Typography>
                         )}
                       </TableCell>
+                      <TableCell sx={{ width: 100 }}>
+                        {lot.elevation && !lot.isUtilityBuilding ? (
+                          <Typography variant="body2" fontWeight={700}>{lot.elevation}</Typography>
+                        ) : (
+                          <Typography variant="body2" color="text.disabled">—</Typography>
+                        )}
+                      </TableCell>
                       <TableCell align="center" sx={{ width: 100 }}>
                         {lot.reverse ? (
                           <Chip size="small" color="primary" label="Reverse" />
@@ -316,21 +328,34 @@ function PhaseDetails({
                           <Typography variant="body2" color="text.secondary">Plan only</Typography>
                         ) : options.length > 0 ? (
                           <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: 'wrap' }}>
-                            {options.map((option) => (
-                              <OptionOrderChip
-                                key={option.id}
-                                option={option}
-                                lot={lot}
-                                lines={orders.index?.linesFor({
-                                  lotId: lot.id,
-                                  optionId: option.id,
-                                  optionCode: option.code,
-                                }) ?? []}
-                                files={orders.files}
-                                openingId={orders.openingId}
-                                onOpenFile={orders.openFile}
-                              />
-                            ))}
+                            {options.map((option) => {
+                              const detailText = describeOptionDetail(detailOf(lot.optionDetails, option.id))
+                              return (
+                                <Box key={option.id} sx={{ maxWidth: '100%' }}>
+                                  <OptionOrderChip
+                                    option={option}
+                                    lot={lot}
+                                    lines={orders.index?.linesFor({
+                                      lotId: lot.id,
+                                      optionId: option.id,
+                                      optionCode: option.code,
+                                    }) ?? []}
+                                    files={orders.files}
+                                    openingId={orders.openingId}
+                                    onOpenFile={orders.openFile}
+                                  />
+                                  {detailText && (
+                                    <Typography
+                                      variant="caption"
+                                      color="text.secondary"
+                                      sx={{ display: 'block', mt: 0.25, ml: 0.5, overflowWrap: 'anywhere' }}
+                                    >
+                                      {detailText}
+                                    </Typography>
+                                  )}
+                                </Box>
+                              )
+                            })}
                           </Stack>
                         ) : (
                           <Typography variant="body2" color="text.disabled">
@@ -355,6 +380,8 @@ function LotEditor({ index, fieldId, job, control, register, errors, setValue, r
   const selectedPlan = getPlan(job, lots?.[index]?.planId)
   const planOptions = selectedPlan?.options ?? []
   const optionError = errors.lots?.[index]?.optionIds?.message
+  const detailsError = errors.lots?.[index]?.optionDetails?.message
+  const optionDetails = lots?.[index]?.optionDetails ?? {}
 
   return (
     <Box
@@ -447,6 +474,7 @@ function LotEditor({ index, fieldId, job, control, register, errors, setValue, r
                     shouldDirty: true,
                     shouldValidate: true,
                   })
+                  setValue(`lots.${index}.optionDetails`, {}, { shouldDirty: true })
                 }}
               >
                 <MenuItem value="">Select a plan</MenuItem>
@@ -456,6 +484,20 @@ function LotEditor({ index, fieldId, job, control, register, errors, setValue, r
                   </MenuItem>
                 ))}
               </TextField>
+            )}
+          />
+
+          <Controller
+            name={`lots.${index}.elevation`}
+            control={control}
+            render={({ field }) => (
+              <LotElevationField
+                value={field.value}
+                onChange={field.onChange}
+                error={Boolean(errors.lots?.[index]?.elevation)}
+                helperText={errors.lots?.[index]?.elevation?.message ?? 'Optional'}
+                sx={{ width: { xs: '100%', md: 130 } }}
+              />
             )}
           />
 
@@ -509,15 +551,29 @@ function LotEditor({ index, fieldId, job, control, register, errors, setValue, r
                 <LotOptionPicker
                   options={planOptions}
                   value={field.value ?? []}
-                  onChange={field.onChange}
-                  error={Boolean(optionError)}
+                  onChange={(nextIds) => {
+                    field.onChange(nextIds)
+                    // An Option taken out of the Lot loses its quantity and locations.
+                    setValue(
+                      `lots.${index}.optionDetails`,
+                      pruneOptionDetails(optionDetails, nextIds),
+                      { shouldDirty: true },
+                    )
+                  }}
+                  error={Boolean(optionError || detailsError)}
+                  details={optionDetails}
+                  onDetailsChange={(nextDetails) => setValue(
+                    `lots.${index}.optionDetails`,
+                    nextDetails,
+                    { shouldDirty: true, shouldValidate: true },
+                  )}
                 />
               )}
             />
           )}
-          {optionError && (
+          {(optionError || detailsError) && (
             <Typography variant="caption" color="error" sx={{ ml: 1.75, mt: 0.5, display: 'block' }}>
-              {optionError}
+              {optionError ?? detailsError}
             </Typography>
           )}
         </Box>
@@ -661,8 +717,10 @@ function PhaseDialog({
             lotNumber: lot.lotNumber,
             utilityName: lot.utilityName ?? '',
             planId: lot.planId,
+            elevation: lot.elevation ?? '',
             reverse: lot.reverse ?? false,
             optionIds: [...(lot.optionIds ?? [])],
+            optionDetails: structuredClone(lot.optionDetails ?? {}),
             isUtilityBuilding: Boolean(lot.isUtilityBuilding),
           })),
         }
@@ -986,10 +1044,7 @@ function PhaseDialog({
 
 function PhaseDeleteDialog({ busy, target, onClose, onDelete }) {
   const rowCounts = getPhaseRowCounts(target?.phase)
-  const selectedOptionCount = (target?.phase.lots ?? []).reduce(
-    (total, lot) => total + (lot.optionIds?.length ?? 0),
-    0,
-  )
+  const selectedOptionCount = getSelectedOptionCount(target?.phase)
 
   return (
     <Dialog

@@ -1,3 +1,6 @@
+import { cleanElevation } from '../utils/lotElevation.js'
+import { optionDetailsPayload } from '../utils/optionDetails.js'
+
 function requiredId(value) {
   return Number(value)
 }
@@ -26,9 +29,12 @@ export function toLotOptionPrice(row) {
  * `prices` carries what the Lot was created with: its Plan price and, by Option
  * id, the price of each selected Option. A Phase bills those, not today's price.
  * Older rows pinned to nothing leave them out and use the Plan's current price.
+ * `prices.optionDetails` has the quantity and locations of the Options that are more than one unit
+ * or have a place (by Option id); the others are one unit with no place and are left out.
  */
 export function toSequenceSheetLot(row, optionIds = [], prices = {}) {
   const optionPrices = prices.optionPrices ?? {}
+  const optionDetails = prices.optionDetails ?? {}
 
   return {
     id: row.id,
@@ -36,10 +42,13 @@ export function toSequenceSheetLot(row, optionIds = [], prices = {}) {
     utilityName: row.utility_name ?? '',
     planId: row.plan_id,
     reverse: row.is_reverse,
+    // Apart from the Plan; empty when the Lot has none.
+    elevation: row.elevation ?? '',
     optionIds: [...optionIds],
     isUtilityBuilding: Boolean(row.is_utility_building),
     ...(prices.planPrice ? { planPrice: prices.planPrice } : {}),
     ...(Object.keys(optionPrices).length > 0 ? { optionPrices } : {}),
+    ...(Object.keys(optionDetails).length > 0 ? { optionDetails } : {}),
   }
 }
 
@@ -66,9 +75,14 @@ export function toSequenceSheetPhaseRpc(jobId, phaseId, phase) {
       utility_name: lot.isUtilityBuilding ? (lot.utilityName ?? '').trim() : null,
       plan_id: requiredId(lot.planId),
       is_reverse: Boolean(lot.reverse),
+      // Always sent, even empty: an empty one clears it. A Utility row has none.
+      elevation: lot.isUtilityBuilding ? '' : cleanElevation(lot.elevation),
       option_ids: lot.isUtilityBuilding
         ? []
         : (lot.optionIds ?? []).map(requiredId),
+      // Always sent, even empty: a save that carries the details also puts back to one unit the Options
+      // that no longer have a quantity or a place.
+      option_details: lot.isUtilityBuilding ? [] : optionDetailsPayload(lot),
       is_utility_building: Boolean(lot.isUtilityBuilding),
     })),
     p_is_utility_building: false,

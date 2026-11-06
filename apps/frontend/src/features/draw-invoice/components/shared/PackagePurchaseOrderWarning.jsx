@@ -24,7 +24,7 @@ export default function PackagePurchaseOrderWarning({ unbacked, sx }) {
       </AlertTitle>
       <Box component="ul" sx={{ m: 0, pl: 2.5 }}>
         {unbacked.slice(0, LISTED).map((item) => (
-          <li key={`${item.row.lotId}:${item.row.optionId ?? item.row.optionCode}`}>
+          <li key={`${item.row.lotId}:${item.row.optionId ?? item.row.optionCode}:${item.row.unitNo ?? 1}`}>
             {describeUnbackedOption(item, formatCurrency)}
           </li>
         ))}

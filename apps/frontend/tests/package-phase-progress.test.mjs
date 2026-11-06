@@ -178,6 +178,42 @@ test('an Option billed on a Lot is not mistaken for the same Option on another L
   assert.equal(open.pendingOptions, 2)
 })
 
+test('every unit of an Option on a Lot is billed before the Phase is complete', () => {
+  const job = {
+    ...optionJob,
+    sequenceSheet: {
+      ...optionJob.sequenceSheet,
+      phases: [{
+        id: 70,
+        lots: [{
+          id: 1,
+          lotNumber: '1',
+          planId: 5,
+          optionIds: [50],
+          optionDetails: { 50: { quantity: 3, locations: ['1st floor', '2nd floor', '3rd floor'] } },
+        }],
+      }],
+    },
+  }
+  const progress = (billed) => phaseBillingProgress({
+    job,
+    phase: job.sequenceSheet.phases[0],
+    schedule: optionSchedule,
+    usedSelections: allCells(),
+    billedUtilityCharges: new Map(),
+    billedHardwareCharges: new Map(),
+    billedOptionIdentities: new Set(billed.map((unitNo) => optionBillingIdentity(1, 50, unitNo))),
+  })
+
+  const partial = progress([1, 3])
+  assert.equal(partial.totalOptions, 3)
+  assert.equal(partial.billedOptions, 2)
+  assert.equal(partial.isComplete, false, 'the 2nd floor is still to bill')
+  assert.equal(partial.pendingOptions, 1)
+
+  assert.equal(progress([1, 2, 3]).pendingOptions, 0)
+})
+
 test('a Builder that does not bill Options never keeps a Phase open for them', () => {
   const done = optionProgress({ schedule })
 

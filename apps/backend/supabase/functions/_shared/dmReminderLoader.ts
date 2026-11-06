@@ -8,6 +8,7 @@
 // own day with its own lots). The activity and the Job must still be active. Kept apart from the Edge Function so it can be
 // tested with a fake client. There are no prices here: they are never read.
 
+import { optionUnitsFields } from "./optionQuantity.ts";
 import type {
   DmReminderContact,
   DmReminderEvent,
@@ -116,9 +117,10 @@ export async function loadDmReminders(
       ).in("id", jobIds),
       caller.from("phases").select("id, code, building").in("id", phaseIds),
       caller.from("lots").select(
-        "id, lot_number, plan_id, is_reverse, is_utility_building",
+        "id, lot_number, plan_id, is_reverse, elevation, is_utility_building",
       ).in("id", lotIds),
-      caller.from("lot_options").select("lot_id, option_id").in("lot_id", lotIds),
+      caller.from("lot_options").select("lot_id, option_id, quantity, locations")
+        .in("lot_id", lotIds),
     ]);
 
   const jobs = indexBy(
@@ -162,10 +164,11 @@ export async function loadDmReminders(
     const key = String(row.schedule_id);
     lotIdsBySchedule.set(key, [...(lotIdsBySchedule.get(key) ?? []), String(row.lot_id)]);
   }
-  const optionIdsByLot = new Map<string, string[]>();
+  // The rows of each Lot, which carry the quantity and places of each option.
+  const lotOptionsByLot = new Map<string, Row[]>();
   for (const row of many(lotOptionsResult)) {
     const key = String(row.lot_id);
-    optionIdsByLot.set(key, [...(optionIdsByLot.get(key) ?? []), String(row.option_id)]);
+    lotOptionsByLot.set(key, [...(lotOptionsByLot.get(key) ?? []), row]);
   }
 
   const events: DmReminderEvent[] = [];
@@ -182,14 +185,18 @@ export async function loadDmReminders(
       .map((lot) => ({
         lotNumber: String(lot.lot_number ?? ""),
         planCode: String(plans.get(String(lot.plan_id))?.code ?? ""),
+        elevation: String(lot.elevation ?? "").trim().toUpperCase(),
         reverse: Boolean(lot.is_reverse),
-        options: (optionIdsByLot.get(String(lot.id)) ?? [])
-          .map((optionId) => options.get(optionId))
-          .filter((option): option is Row => Boolean(option))
-          .map((option) => ({
+        options: (lotOptionsByLot.get(String(lot.id)) ?? [])
+          .flatMap((lotOption) => {
+            const option = options.get(String(lotOption.option_id));
+            return option ? [{ option, lotOption }] : [];
+          })
+          .map(({ option, lotOption }) => ({
             code: String(option.code ?? ""),
             description: String(option.description ?? "").trim() ||
               String(option.name ?? "").trim(),
+            ...optionUnitsFields(lotOption),
           }))
           .sort((a, b) => a.code.localeCompare(b.code)),
       }))

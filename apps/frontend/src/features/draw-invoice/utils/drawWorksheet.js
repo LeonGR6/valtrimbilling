@@ -1,3 +1,5 @@
+import { detailOf } from '../../sequence-sheets/utils/optionDetails.js'
+
 const PERCENTAGE_TOLERANCE = 0.001
 const BILLING_EVENT_TYPES = ['EXT', 'DM', 'HW']
 
@@ -8,6 +10,16 @@ export function hasPlanPrice(value) {
 // An Option can be a credit, so its price may be negative.
 export function hasOptionPrice(value) {
   return typeof value === 'number' && Number.isFinite(value)
+}
+
+/**
+ * What tells apart the units of an Option on a Lot: the place it goes ("1st floor"), or "Unit 4" when
+ * the unit has none. An Option with a single unit and no place needs no label.
+ */
+export function unitLabelOf(location, unitNo, quantity) {
+  const place = String(location ?? '').trim()
+  if (place) return place
+  return quantity > 1 ? `Unit ${unitNo}` : null
 }
 
 export function hasHardwarePrice(value) {
@@ -213,19 +225,25 @@ export function buildDrawWorksheet(job, phase, schedule) {
     // A Lot bills the prices it was created with; the Plan's current price is
     // only for older rows that were never pinned to one.
     const lotPlanPrice = lot.planPrice ?? null
+    // The same Option can be on the Lot more than once (one unit for each place it goes), and each
+    // unit is a line of its own: it is chosen and billed apart, at the price of one unit.
     const selectedOptions = (isUtilityBuilding ? [] : (plan?.options ?? []))
       .filter((option) => selectedOptionIds.has(String(option.id)))
-      .map((option) => {
+      .flatMap((option) => {
         const lotOptionPrice = lot.optionPrices?.[option.id] ?? null
         const optionPrice = lotOptionPrice ? lotOptionPrice.price : option.price
+        const { quantity, locations } = detailOf(lot.optionDetails, option.id)
 
-        return {
+        return Array.from({ length: quantity }, (_, index) => ({
           ...option,
+          unitNo: index + 1,
+          unitLabel: unitLabelOf(locations[index], index + 1, quantity),
+          quantity: 1,
           price: hasOptionPrice(optionPrice) ? optionPrice : null,
           ...(lotOptionPrice
             ? { priceNotApplicable: lotOptionPrice.priceNotApplicable }
             : {}),
-        }
+        }))
       })
     const basePrice = lotPlanPrice ? lotPlanPrice.basePrice : plan?.price
     const priceIsAvailable = hasPlanPrice(basePrice)
@@ -276,6 +294,8 @@ export function buildDrawWorksheet(job, phase, schedule) {
         : draws.map(() => 0),
       plan,
       planCode: plan?.code ?? null,
+      // Apart from the Plan; empty when the Lot has none.
+      lotElevation: isUtilityBuilding ? '' : (lot.elevation ?? ''),
       selectedOptions,
       basePrice: priceIsAvailable ? basePrice : null,
       drawBasePrice,

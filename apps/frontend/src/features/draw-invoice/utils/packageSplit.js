@@ -124,12 +124,12 @@ export function planPackageSplit({
  * Building) the Options are in, so an Option is never on another one's invoice; any other Builder
  * gets one for all of them.
  *
- * @param optionSelections the Options to bill: { lotId, optionId }
+ * @param optionSelections the Options to bill: { lotId, optionId, unitNo }
  * @returns {{ kind: 'OPTIONS', group, input }[]} `group.phaseIds` are the Phases the Options are in
  */
 export function planOptionsPackages({ job, schedule, optionSelections = [], notes = null }) {
   const options = [...new Map(optionSelections.map(
-    (option) => [`${option.lotId}:${option.optionId}`, option],
+    (option) => [`${option.lotId}:${option.optionId}:${option.unitNo ?? 1}`, option],
   )).values()]
   if (options.length === 0) return []
 
@@ -169,7 +169,7 @@ export function planOptionsPackages({ job, schedule, optionSelections = [], note
       input: {
         kind: 'OPTIONS',
         jobId: job?.id,
-        optionSelections: group.options.map(({ lotId, optionId }) => ({ lotId, optionId })),
+        optionSelections: group.options.map(({ lotId, optionId, unitNo = 1 }) => ({ lotId, optionId, unitNo })),
         notes,
       },
     }))
@@ -192,7 +192,7 @@ export function planOptionsPackages({ job, schedule, optionSelections = [], note
  * @param splitPlan  result of `planPackageSplit`
  * @param input      { jobId, selections, hardwareSelections, optionSelections, optionsBillingDrawIndex,
  *                   notes }, where `optionSelections` are the Options that ride on a Draw
- * @param ownOptions the Options { lotId, optionId } to bill on their own
+ * @param ownOptions the Options { lotId, optionId, unitNo } to bill on their own
  * @param priceDifferences the pending differences { id, phaseId } to collect with the Draw Packages
  * @returns {{ kind: 'DRAW' | 'OPTIONS', group, input }[]}
  */

@@ -14,7 +14,10 @@ export interface DmReminderContact {
   email: string;
 }
 
-export interface DmReminderOption {
+import { planHtmlWithElevation, planTextWithElevation } from "./lotElevation.ts";
+import { type OptionUnits, optionUnitsLabel } from "./optionQuantity.ts";
+
+export interface DmReminderOption extends OptionUnits {
   code: string;
   description: string;
 }
@@ -22,6 +25,8 @@ export interface DmReminderOption {
 export interface DmReminderLot {
   lotNumber: string;
   planCode: string;
+  // The elevation of the Lot, apart from the Plan; empty or missing when it has none.
+  elevation?: string;
   reverse: boolean;
   options: DmReminderOption[];
 }
@@ -174,8 +179,9 @@ const HEAD =
 function optionLabel(option: DmReminderOption) {
   const code = option.code.trim();
   const description = option.description.trim();
-  if (code && description) return `${code} · ${description}`;
-  return code || description || "Option unavailable";
+  const units = optionUnitsLabel(option);
+  const name = code && description ? `${code} · ${description}` : code || description || "Option unavailable";
+  return units ? `${name} ${units}` : name;
 }
 
 function optionHtml(option: DmReminderOption) {
@@ -198,7 +204,7 @@ function lotRowHtml(lot: DmReminderLot, index: number) {
     escapeHtml(lot.lotNumber)
   }</td>
       <td style="width:100px;${CELL}${border}">${
-    escapeHtml(lot.planCode || "Plan unavailable")
+    planHtmlWithElevation(escapeHtml(lot.planCode || "Plan unavailable"), lot.elevation, escapeHtml)
   }</td>
       <td align="center" style="width:82px;${CELL}${border}">${reverse}</td>
       <td style="${CELL}${border}padding-top:10px;padding-bottom:10px;">${options}</td>
@@ -218,7 +224,7 @@ export function renderDmReminderEmail(
   const textRows = event.lots.map((lot) =>
     [
       `Lot ${lot.lotNumber}`,
-      `Plan ${lot.planCode || "unavailable"}`,
+      `Plan ${planTextWithElevation(lot.planCode || "unavailable", lot.elevation)}`,
       `Reverse: ${lot.reverse ? "Yes" : "No"}`,
       lot.options.length > 0
         ? lot.options.map(optionLabel).join("; ")

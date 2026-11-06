@@ -9,6 +9,8 @@ import AutoAwesomeRoundedIcon from '@mui/icons-material/AutoAwesomeRounded'
 import EventRoundedIcon from '@mui/icons-material/EventRounded'
 import SuggestionsCard from './SuggestionsCard.jsx'
 import SuggestionRow from './SuggestionRow.jsx'
+import SuggestionFilterBar, { NoSuggestionMatch } from './SuggestionFilterBar.jsx'
+import { useSuggestionFilter } from '../../hooks/useSuggestionFilter.js'
 import { formatLongDate } from '../../utils/drawInvoiceFormatters.js'
 
 function businessDaysLabel(suggestion) {
@@ -41,8 +43,9 @@ export default function PackageSuggestionsPanel({
   onToggle,
   onReview,
 }) {
-  const groups = groupSuggestions(suggestions)
-  const empty = !loading && !error && groups.length === 0
+  const filter = useSuggestionFilter(suggestions)
+  const groups = groupSuggestions(filter.filtered)
+  const empty = !loading && !error && suggestions.length === 0
 
   return (
     <SuggestionsCard
@@ -73,6 +76,13 @@ export default function PackageSuggestionsPanel({
             No Calendar-linked work is ready within the next 5 business days.
           </Typography>
         </Box>
+      )}
+
+      {!loading && !error && (
+        <>
+          <SuggestionFilterBar filter={filter} label="Package Suggestions" />
+          <NoSuggestionMatch filter={filter} />
+        </>
       )}
 
       {!loading && !error && groups.map(({ key, items }, groupIndex) => {

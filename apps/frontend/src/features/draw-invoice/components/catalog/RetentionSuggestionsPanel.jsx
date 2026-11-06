@@ -10,6 +10,8 @@ import AccountBalanceRoundedIcon from '@mui/icons-material/AccountBalanceRounded
 import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded'
 import HourglassBottomRoundedIcon from '@mui/icons-material/HourglassBottomRounded'
 import SuggestionsCard from './SuggestionsCard.jsx'
+import SuggestionFilterBar, { NoSuggestionMatch } from './SuggestionFilterBar.jsx'
+import { useSuggestionFilter } from '../../hooks/useSuggestionFilter.js'
 import {
   formatPhaseBuilding,
 } from '../../../sequence-sheets/utils/phaseBuildingCodes.js'
@@ -57,6 +59,7 @@ export default function RetentionSuggestionsPanel({
   onToggle,
   onReview,
 }) {
+  const filter = useSuggestionFilter(suggestions)
   if (suggestions.length === 0) return null
 
   return (
@@ -71,7 +74,9 @@ export default function RetentionSuggestionsPanel({
       open={open}
       onToggle={onToggle}
     >
-      {suggestions.map((suggestion, index) => {
+      <SuggestionFilterBar filter={filter} label="Retention Suggestions" />
+      <NoSuggestionMatch filter={filter} />
+      {filter.filtered.map((suggestion, index) => {
         const content = statusContent[suggestion.status]
         return (
           <Box key={`${suggestion.job.id}:${suggestion.phaseId ?? 'JOB'}`}>

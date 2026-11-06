@@ -7,6 +7,8 @@ import {
 import EventBusyRoundedIcon from '@mui/icons-material/EventBusyRounded'
 import SuggestionsCard from './SuggestionsCard.jsx'
 import SuggestionRow from './SuggestionRow.jsx'
+import SuggestionFilterBar, { NoSuggestionMatch } from './SuggestionFilterBar.jsx'
+import { useSuggestionFilter } from '../../hooks/useSuggestionFilter.js'
 import { formatLongDate } from '../../utils/drawInvoiceFormatters.js'
 
 function groupByCutoff(suggestions) {
@@ -28,9 +30,10 @@ function groupByCutoff(suggestions) {
  * Suggestions. It is not shown when there is none.
  */
 export default function MissedCutoffsPanel({ suggestions, disabled, open, onToggle, onReview }) {
+  const filter = useSuggestionFilter(suggestions)
   if (suggestions.length === 0) return null
 
-  const groups = groupByCutoff(suggestions)
+  const groups = groupByCutoff(filter.filtered)
 
   return (
     <SuggestionsCard
@@ -44,6 +47,8 @@ export default function MissedCutoffsPanel({ suggestions, disabled, open, onTogg
       open={open}
       onToggle={onToggle}
     >
+      <SuggestionFilterBar filter={filter} label="Missed cutoffs" />
+      <NoSuggestionMatch filter={filter} />
       {groups.map(({ cutoffDate, items }, groupIndex) => (
         <Box key={cutoffDate}>
           {groupIndex > 0 && <Divider />}

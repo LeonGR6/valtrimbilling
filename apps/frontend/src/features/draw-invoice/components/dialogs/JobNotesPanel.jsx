@@ -7,12 +7,10 @@ import {
   Chip,
   Collapse,
   Paper,
-  Skeleton,
   Stack,
   Typography,
   useMediaQuery,
 } from '@mui/material'
-import { alpha } from '@mui/material/styles'
 import ExpandMoreRoundedIcon from '@mui/icons-material/ExpandMoreRounded'
 import StickyNote2RoundedIcon from '@mui/icons-material/StickyNote2Rounded'
 import { usePersistentState } from '../../../../hooks/usePersistentState.js'
@@ -27,60 +25,12 @@ import {
   summarizeJobNotes,
 } from '../../services/jobNotesRecord.js'
 import { formatDateTime } from '../../utils/drawInvoiceFormatters.js'
-import { NoteComposer, NoteEntry } from '../shared/NotesThread.jsx'
-
-const HISTORY_MAX_HEIGHT = 260
-
-function NoteSkeletons() {
-  return (
-    <Stack spacing={1.5} sx={{ px: { xs: 2, sm: 2.5 }, py: 1.5 }} aria-hidden="true">
-      {[0, 1].map((row) => (
-        <Stack key={row} spacing={0.75}>
-          <Skeleton variant="rounded" width={row === 0 ? 180 : 150} height={14} />
-          <Skeleton variant="rounded" width={row === 0 ? '78%' : '52%'} height={14} />
-        </Stack>
-      ))}
-    </Stack>
-  )
-}
-
-// The list scrolls when it is long. A soft shadow on the edge that has more beyond it says so,
-// and goes away at the end of the list (the covers move with the content, the shadows stay put).
-function ThreadList({ label, children }) {
-  return (
-    <Box
-      component="ol"
-      tabIndex={0}
-      aria-label={label}
-      sx={(theme) => {
-        const paper = theme.palette.background.paper
-        const shadow = alpha(theme.palette.text.primary, 0.16)
-
-        return {
-          m: 0,
-          p: 0,
-          listStyle: 'none',
-          maxHeight: HISTORY_MAX_HEIGHT,
-          overflowY: 'auto',
-          backgroundColor: paper,
-          backgroundRepeat: 'no-repeat',
-          backgroundSize: '100% 36px, 100% 36px, 100% 10px, 100% 10px',
-          backgroundPosition: '0 0, 0 100%, 0 0, 0 100%',
-          backgroundAttachment: 'local, local, scroll, scroll',
-          backgroundImage: [
-            `linear-gradient(${paper} 30%, transparent)`,
-            `linear-gradient(transparent, ${paper} 70%)`,
-            `radial-gradient(farthest-side at 50% 0, ${shadow}, transparent)`,
-            `radial-gradient(farthest-side at 50% 100%, ${shadow}, transparent)`,
-          ].join(', '),
-          '&:focus-visible': { outline: 2, outlineStyle: 'solid', outlineColor: 'primary.main', outlineOffset: -2 },
-        }
-      }}
-    >
-      {children}
-    </Box>
-  )
-}
+import {
+  NoteComposer,
+  NoteEntry,
+  NoteSkeletons,
+  NoteThreadList,
+} from '../shared/NotesThread.jsx'
 
 /**
  * What the team left about a Job, at hand while a Package is created: the history of its notes,
@@ -155,7 +105,7 @@ export default function JobNotesPanel({ job, packages }) {
               No notes on this Job yet. Leave one so the next person knows what it needs.
             </Typography>
           ) : (
-            <ThreadList label={`History of the notes of Job #${job.code}`}>
+            <NoteThreadList label={`History of the notes of Job #${job.code}`}>
               {notes.map((note) => (
                 <NoteEntry
                   key={note.id}
@@ -164,7 +114,7 @@ export default function JobNotesPanel({ job, packages }) {
                   body={note.body}
                 />
               ))}
-            </ThreadList>
+            </NoteThreadList>
           )}
 
           <Box
@@ -201,7 +151,7 @@ export default function JobNotesPanel({ job, packages }) {
                 Notes on this Job&apos;s Packages ({packageNotes.length})
               </Button>
               <Collapse in={packageNotesOpen} timeout={reduceMotion ? 0 : 'auto'} unmountOnExit>
-                <ThreadList label={`Notes on the Packages of Job #${job.code}`}>
+                <NoteThreadList label={`Notes on the Packages of Job #${job.code}`}>
                   {packageNotes.map((note) => (
                     <NoteEntry
                       key={note.key}
@@ -211,7 +161,7 @@ export default function JobNotesPanel({ job, packages }) {
                       tag={note.packageNumber}
                     />
                   ))}
-                </ThreadList>
+                </NoteThreadList>
               </Collapse>
             </Box>
           )}

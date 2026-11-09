@@ -271,7 +271,8 @@ cross join co_ctx ctx;
 
 create temporary table co_bad_headers (name text, call text) on commit drop;
 insert into co_bad_headers values
-  ('an empty title', $q$select valtrim.create_change_order({JOB}, '  ', 'Carlos', {LINES}::jsonb)::text$q$),
+  -- (the title stopped being required in 20261204120000; one longer than 150 characters is still refused)
+  ('a title longer than 150 characters', $q$select valtrim.create_change_order({JOB}, repeat('t', 151), 'Carlos', {LINES}::jsonb)::text$q$),
   ('nobody who requested it', $q$select valtrim.create_change_order({JOB}, 'T', '', {LINES}::jsonb)::text$q$),
   ('a needed-by date before the request date', $q$select valtrim.create_change_order({JOB}, 'T', 'C', {LINES}::jsonb, null, date '2026-11-10', date '2026-11-01')::text$q$),
   ('a coverage that is not an object', $q$select valtrim.create_change_order({JOB}, 'T', 'C', {LINES}::jsonb, null, null, null, '[1]'::jsonb)::text$q$),

@@ -16,12 +16,22 @@ import {
   withSuggestedNumber,
 } from '../services/changeOrderRecord.js'
 import { createChangeOrder, updateChangeOrder } from '../services/changeOrderRepository.js'
-import { useNextChangeOrderNumber } from '../hooks/useChangeOrderData.js'
+import { shouldOfferSchedulingEmail } from '../services/changeOrderEmailRecord.js'
+import { useLotCalendarEvents, useNextChangeOrderNumber } from '../hooks/useChangeOrderData.js'
+import {
+  evaluateLots,
+  groupEvaluations,
+  isCalendarEvent,
+  linkedEvents,
+  summarizeEvaluations,
+} from '../utils/calendarEvents.js'
 import ChangeOrderBasicsCard from './ChangeOrderBasicsCard.jsx'
 import ChangeOrderCoverageCard from './ChangeOrderCoverageCard.jsx'
+import ChangeOrderEventCard from './ChangeOrderEventCard.jsx'
 import ChangeOrderLinesCard from './ChangeOrderLinesCard.jsx'
 import ChangeOrderFormSection from './ChangeOrderFormSection.jsx'
 import ChangeOrderSaveBar from './ChangeOrderSaveBar.jsx'
+import SchedulingEmailDialog from './SchedulingEmailDialog.jsx'
 import ChangeOrderStatusChip from './ChangeOrderStatusChip.jsx'
 import RecentChangeOrdersCard from './RecentChangeOrdersCard.jsx'
 
@@ -58,7 +68,27 @@ export default function ChangeOrderForm({
     () => (editing ? values : withSuggestedNumber(values, suggestedNumber, numberEdited)),
     [editing, values, suggestedNumber, numberEdited],
   )
-  const { job, lines, places, amounts } = useChangeOrderCoverage(values)
+  const { job, rows, lines, places, amounts } = useChangeOrderCoverage(values)
+
+  // The Calendar event the lots are charged with. The Calendar is only read once an event is chosen, and
+  // the database decides which lots can be tied; what is shown and what is sent come from the same read.
+  const choosingEvent = isCalendarEvent(values.chargeEvent)
+  const { events, loading: eventsLoading, error: eventsError } = useLotCalendarEvents(
+    choosingEvent && job ? job.id : '',
+  )
+  const evaluations = useMemo(
+    () => evaluateLots(rows, { chargeEvent: values.chargeEvent, events, savedLinks: values.savedLinks }),
+    [rows, values.chargeEvent, events, values.savedLinks],
+  )
+  const eventGroups = useMemo(() => groupEvaluations(evaluations), [evaluations])
+  const eventSummary = useMemo(() => summarizeEvaluations(evaluations), [evaluations])
+  const links = useMemo(() => linkedEvents(evaluations, values.chargeEvent), [evaluations, values.chargeEvent])
+  // Saving without knowing what the Calendar says would let go of ties, so it waits for the Calendar.
+  const calendarProblem = !(choosingEvent && job && rows.length > 0) ? ''
+    : eventsLoading ? 'The Calendar events are still loading. Wait a moment, or choose Own CO event.'
+      : eventsError ? 'The Calendar events could not be read. Reload the page, or choose Own CO event.'
+        : ''
+
   // Nothing is marked until the person tries to save; after that, it follows what they fix.
   const [attempted, setAttempted] = useState(false)
   // Each failed save brings the list of what to fix into view: the bar is the only thing always on screen.
@@ -66,20 +96,24 @@ export default function ChangeOrderForm({
   const problemsRef = useRef(null)
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState('')
+  // Once saved with lots charged with a Calendar event, the person is asked about telling Scheduling
+  // before leaving: { id, path } of the Extra / CO and the page to go to afterwards.
+  const [emailOffer, setEmailOffer] = useState(null)
 
   // What is still missing, always: the steps and the bar follow it; the messages wait for a save.
-  const allProblems = useMemo(
-    () => changeOrderProblems(values, { lines, places }),
-    [values, lines, places],
-  )
+  const allProblems = useMemo(() => {
+    const found = changeOrderProblems(values, { lines, places })
+    return calendarProblem ? [...found, { field: 'chargeEvent', message: calendarProblem }] : found
+  }, [values, lines, places, calendarProblem])
   const problems = useMemo(() => (attempted ? allProblems : []), [attempted, allProblems])
   const fieldErrors = useMemo(() => problemsByField(problems), [problems])
 
   const problemFields = new Set(allProblems.map((problem) => problem.field))
   const hasLines = lines.length + places.length > 0
-  const requestDone = !['builderId', 'community', 'title', 'requestedBy', 'internalNumber', 'neededByDate']
+  const requestDone = !['builderId', 'jobId', 'requestedBy', 'internalNumber', 'poCoNumber', 'neededByDate']
     .some((field) => problemFields.has(field))
   const whereDone = Boolean(job) && hasLines
+  const eventDone = whereDone && !calendarProblem
   const chargedDone = whereDone && !problemFields.has('lines')
 
   useEffect(() => {
@@ -96,7 +130,7 @@ export default function ChangeOrderForm({
 
   const handleSave = async () => {
     setAttempted(true)
-    if (changeOrderProblems(values, { lines, places }).length > 0) {
+    if (allProblems.length > 0) {
       setFailedSaves((count) => count + 1)
       return
     }
@@ -104,15 +138,24 @@ export default function ChangeOrderForm({
     setSaving(true)
     setSaveError('')
     try {
+      let savedId = changeOrderId
       if (editing) {
-        await updateChangeOrder(toUpdateChangeOrderRpc(changeOrderId, values, { lines, places }))
-        navigate(detailPath)
+        await updateChangeOrder(toUpdateChangeOrderRpc(changeOrderId, values, { lines, places, links }))
       } else {
-        const createdId = await createChangeOrder(
-          toCreateChangeOrderRpc(values, { lines, places, status: values.status }),
+        savedId = await createChangeOrder(
+          toCreateChangeOrderRpc(values, { lines, places, links, status: values.status }),
         )
-        navigate(`/change-orders/${createdId}`)
       }
+
+      const path = `/change-orders/${savedId}`
+      const offer = shouldOfferSchedulingEmail({
+        status: values.status,
+        links,
+        savedLinks: editing ? values.savedLinks : {},
+      })
+      // The bar stays busy while the question is open: the Extra / CO is already saved.
+      if (offer) setEmailOffer({ id: savedId, path })
+      else navigate(path)
     } catch (error) {
       setSaveError(error.message)
       setSaving(false)
@@ -180,7 +223,7 @@ export default function ChangeOrderForm({
           <ChangeOrderFormSection
             step={1}
             title="Request"
-            hint="Who it is for and who asked for it."
+            hint="The Builder, the Job and who asked for it."
             done={requestDone}
             attention={attempted && !requestDone}
           >
@@ -197,15 +240,34 @@ export default function ChangeOrderForm({
           <ChangeOrderFormSection
             step={2}
             title="Where the work is"
-            hint="The Job and the lots it reaches."
+            hint="The lots of the Job it reaches."
             done={whereDone}
             attention={attempted && !whereDone}
           >
-            <ChangeOrderCoverageCard values={values} onChange={handleChange} errors={fieldErrors} />
+            <ChangeOrderCoverageCard values={values} onChange={handleChange} />
           </ChangeOrderFormSection>
 
           <ChangeOrderFormSection
             step={3}
+            title="Calendar event"
+            hint="Charge it with an event already on the Calendar, or give it one of its own."
+            done={eventDone}
+            attention={attempted && Boolean(calendarProblem)}
+          >
+            <ChangeOrderEventCard
+              chargeEvent={values.chargeEvent}
+              onChange={handleChange}
+              hasJob={Boolean(job)}
+              hasLots={rows.length > 0}
+              loading={eventsLoading}
+              error={eventsError}
+              groups={eventGroups}
+              summary={eventSummary}
+            />
+          </ChangeOrderFormSection>
+
+          <ChangeOrderFormSection
+            step={4}
             title="What is charged"
             hint="The Scope of Work and the Amount of each line."
             done={chargedDone}
@@ -233,6 +295,14 @@ export default function ChangeOrderForm({
         onSave={handleSave}
         onCancel={() => navigate(editing ? detailPath : '/change-orders')}
       />
+
+      {emailOffer && (
+        <SchedulingEmailDialog
+          changeOrderId={emailOffer.id}
+          onClose={() => navigate(emailOffer.path)}
+          onSent={(notice) => navigate(emailOffer.path, { state: { notice } })}
+        />
+      )}
     </Box>
   )
 }

@@ -519,6 +519,12 @@ verify_jwt = true
 [functions.dm-reminder-email]
 verify_jwt = true
 
+# Tells a Job's Scheduling contact which lots of an Extra / Change Order are charged with an event
+# already on the Calendar (EXT, DM or HW). Previews and sends as the signed-in Admin or Project
+# Management user; it reuses the Sequence Sheet email's Resend secrets.
+[functions.change-order-event-email]
+verify_jwt = true
+
 [analytics]
 enabled = true
 port = 54327

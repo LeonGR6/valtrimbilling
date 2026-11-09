@@ -20,9 +20,14 @@ export const coverageModes = [
 // How long the place of a line without a Lot can be (the database accepts the same).
 export const maxPlaceLength = 100
 
+// "Own CO event": the lots are not charged with an event of the Calendar (EXT, DM or HW); each will need an
+// event of its own in the Extra / CO calendar.
+export const OWN_EVENT = 'NONE'
+
 export const emptyChangeOrder = {
   internalNumber: '',
-  title: '',
+  // The PO or CO number the Builder gave for the extra, written by the person.
+  poCoNumber: '',
   builderId: '',
   community: '',
   requestedBy: '',
@@ -39,6 +44,10 @@ export const emptyChangeOrder = {
   // Lines that are not on a Lot (Sales Office, restroom): [{ id, location, scope, amount }].
   // They always have a Scope and Amount of their own.
   placeLines: [],
+  // The Calendar event the lots are charged with ('EXT', 'DM', 'HW') or OWN_EVENT, and the ties the
+  // Extra / CO already had when it was opened: { [lotId]: { event, date } }.
+  chargeEvent: OWN_EVENT,
+  savedLinks: {},
   coverageMode: 'lots',
   // Each kind of coverage keeps its own selection while the person switches.
   lotIds: new Set(),

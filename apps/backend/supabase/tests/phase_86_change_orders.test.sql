@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(20);
+select plan(23);
 
 select has_table('valtrim', 'change_orders', 'There is a table of Change Orders');
 select has_table('valtrim', 'change_order_lines', 'A Change Order has a table of lines');
@@ -226,7 +226,7 @@ select ok(
   and has_function_privilege('authenticated', 'valtrim.update_change_order(bigint,bigint,text,text,jsonb,text,date,date,jsonb)', 'execute')
   and has_function_privilege('authenticated', 'valtrim.set_change_order_status(bigint,valtrim.change_order_status,text)', 'execute')
   and not has_function_privilege('anon', 'valtrim.create_change_order(bigint,text,text,jsonb,text,date,date,jsonb,valtrim.change_order_status)', 'execute')
-  and not has_function_privilege('authenticated', 'private.replace_change_order_lines(bigint,bigint,jsonb)', 'execute')
+  and not has_function_privilege('authenticated', 'private.replace_change_order_lines(bigint,bigint,jsonb,jsonb)', 'execute')
   and not has_function_privilege('authenticated', 'private.next_change_order_number()', 'execute'),
   'Signed-in users call the three writers; nobody calls the helpers, and anonymous users call nothing'
 );
@@ -265,6 +265,44 @@ select ok(
     where procedure.oid = 'private.delete_change_order(bigint)'::regprocedure
   ), false),
   'ADMIN and PROJECT_MANAGEMENT delete a Change Order as the signed-in user, and only a Draft; anonymous users cannot'
+);
+
+select ok(
+  exists (
+    select 1 from information_schema.columns
+    where table_schema = 'valtrim' and table_name = 'change_order_lines' and column_name = 'billing_event'
+  )
+  and exists (
+    select 1 from information_schema.columns
+    where table_schema = 'valtrim' and table_name = 'change_order_lines' and column_name = 'billing_event_date'
+  )
+  and exists (
+    select 1 from pg_constraint
+    where conrelid = 'valtrim.change_order_lines'::regclass
+      and conname in ('change_order_lines_billing_event_pair', 'change_order_lines_billing_event_on_lot')
+    having count(*) = 2
+  ),
+  'A line can say which Calendar event (EXT, DM or HW) it is charged with, with the date it had, and only on a Lot'
+);
+
+select ok(
+  has_function_privilege('authenticated', 'valtrim.change_order_lot_events(bigint)', 'execute')
+  and not has_function_privilege('anon', 'valtrim.change_order_lot_events(bigint)', 'execute')
+  and not has_function_privilege('anon', 'private.lot_event_dates(bigint[])', 'execute')
+  and not has_function_privilege('anon', 'private.change_order_event_status(date, date)', 'execute'),
+  'Signed-in users read the Calendar events of a Job''s Lots; anonymous users cannot'
+);
+
+select ok(
+  private.is_us_federal_holiday('2026-07-03')
+  and not private.is_us_federal_holiday('2026-07-04')
+  and private.is_us_federal_holiday('2026-11-26')
+  and private.business_days_ahead('2026-11-05', '2026-11-13') = 6
+  and private.business_days_ahead('2026-11-23', '2026-11-30') = 4
+  and private.change_order_event_status('2026-11-13', '2026-11-05') = 'AVAILABLE'
+  and private.change_order_event_status('2026-11-12', '2026-11-05') = 'TOO_CLOSE'
+  and private.change_order_event_status('2026-11-04', '2026-11-05') = 'PASSED',
+  'An event can be charged with only when more than 5 business days (no weekends or US federal holidays) are left'
 );
 
 select * from finish();

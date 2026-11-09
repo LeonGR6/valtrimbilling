@@ -150,8 +150,8 @@ export default function ChangeOrdersList() {
                 value={search}
                 onChange={(event) => changeSearch(event.target.value)}
                 size="small"
-                placeholder="Search number, title, builder, job or who requested"
-                sx={{ width: { xs: '100%', lg: 380 } }}
+                placeholder="Search number, PO / CO #, builder, job or who requested"
+                sx={{ width: { xs: '100%', lg: 460 } }}
                 slotProps={{
                   htmlInput: { 'aria-label': 'Search Extras / Change Orders' },
                   input: {
@@ -199,12 +199,12 @@ export default function ChangeOrdersList() {
               size="small"
               aria-label="Extras / Change Orders"
               aria-busy={loading}
-              sx={[{ minWidth: canEdit ? 1060 : 980 }, catalogTableSx]}
+              sx={[{ minWidth: canEdit ? 940 : 860 }, catalogTableSx]}
             >
               <TableHead>
                 <TableRow>
                   <TableCell>Extra / CO</TableCell>
-                  <TableCell>Title</TableCell>
+                  <TableCell>PO / CO #</TableCell>
                   <TableCell>Builder</TableCell>
                   <TableCell>Requested by</TableCell>
                   <TableCell>Date</TableCell>
@@ -242,10 +242,14 @@ export default function ChangeOrdersList() {
                         </Typography>
                       )}
                     </TableCell>
-                    <TableCell sx={{ maxWidth: 320 }}>
-                      <Typography variant="body2" fontWeight={500} noWrap title={order.title}>
-                        {order.title}
-                      </Typography>
+                    <TableCell sx={{ maxWidth: 240 }}>
+                      {order.poCoNumber
+                        ? (
+                          <Typography variant="body2" fontWeight={500} noWrap title={order.poCoNumber}>
+                            {order.poCoNumber}
+                          </Typography>
+                        )
+                        : <Typography variant="body2" color="text.disabled" aria-label="No PO / CO #">—</Typography>}
                     </TableCell>
                     <TableCell sx={{ maxWidth: 260 }}>
                       <Typography variant="body2" fontWeight={500} noWrap>

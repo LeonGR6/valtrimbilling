@@ -2,6 +2,7 @@ import { useMemo } from 'react'
 
 import { useJobs } from '../../jobs/context/useJobs.js'
 import { coveredLots, summarizeCoverage } from '../utils/coverage.js'
+import { jobsOfBuilder } from '../utils/jobChoices.js'
 import {
   buildChangeOrderLines,
   buildPlaceLines,
@@ -12,22 +13,17 @@ import {
  * The Job being covered, the Lots the coverage reaches and the line each one
  * is (its Scope of Work and Amount), plus the lines without a Lot, from the
  * form values.
- * The Jobs offered are the ones of the Builder and Community chosen.
+ * The Jobs offered are the ones of the Builder chosen; the Job (and with it the Community) is picked
+ * from them in the first card.
  */
 export function useChangeOrderCoverage(values) {
   const { jobs } = useJobs()
   const {
-    builderId, community, jobId, coverageMode, lotIds, recordIds, planIds,
+    builderId, jobId, coverageMode, lotIds, recordIds, planIds,
     defaultScope, defaultAmount, lineOverrides, placeLines,
   } = values
 
-  const jobOptions = useMemo(() => (
-    builderId && community
-      ? jobs.filter((job) => (
-        String(job.builderId) === String(builderId) && job.community === community
-      ))
-      : []
-  ), [jobs, builderId, community])
+  const jobOptions = useMemo(() => jobsOfBuilder(jobs, builderId), [jobs, builderId])
   const job = jobOptions.find((item) => String(item.id) === String(jobId)) ?? null
 
   const rows = useMemo(

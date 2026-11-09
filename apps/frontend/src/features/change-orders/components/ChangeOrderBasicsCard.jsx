@@ -7,6 +7,7 @@ import DateField from '../../../components/common/DateField.jsx'
 import { useBuilders } from '../../builders/context/useBuilders.js'
 import { useJobs } from '../../jobs/context/useJobs.js'
 import { changeOrderStatuses } from '../data/changeOrders.js'
+import { jobChoiceLabel, jobsOfBuilder } from '../utils/jobChoices.js'
 import Field from './ChangeOrderField.jsx'
 
 // Columns of the card on a wide card; every field says how many it spans.
@@ -14,10 +15,11 @@ const WIDE = '@container (min-width: 640px)'
 const span = (columns) => ({ [WIDE]: { gridColumn: `span ${columns}` } })
 
 /**
- * Who the Extra / CO is for, why it is asked and when. `errors` has the message of each field that
- * must be fixed ({ title: '...' }); only Admin can save it already approved (`canApprove`). The
- * Internal # box says `numberPlaceholder` (the number the Extra / CO will get) when it is emptied.
- * With `statusLocked` the status is only shown: an existing one is moved from its own page.
+ * Who the Extra / CO is for (the Builder, and the Job with its Community), why it is asked and when.
+ * `errors` has the message of each field that must be fixed ({ requestedBy: '...' }); only Admin can save it
+ * already approved (`canApprove`). The Internal # box says `numberPlaceholder` (the number the Extra /
+ * CO will get) when it is emptied. With `statusLocked` the status is only shown: an existing one is
+ * moved from its own page.
  */
 export default function ChangeOrderBasicsCard({
   values,
@@ -31,19 +33,32 @@ export default function ChangeOrderBasicsCard({
   const { jobs } = useJobs()
   const fileInput = useRef(null)
 
-  // The Communities are the ones the selected Builder has Jobs in.
-  const communities = useMemo(() => {
-    if (!values.builderId) return []
-    const names = jobs
-      .filter((job) => String(job.builderId) === String(values.builderId))
-      .map((job) => job.community)
-    return [...new Set(names)].sort((left, right) => left.localeCompare(right))
-  }, [jobs, values.builderId])
+  // The Jobs the selected Builder has; each one says its Community, which is not asked apart.
+  const jobOptions = useMemo(() => jobsOfBuilder(jobs, values.builderId), [jobs, values.builderId])
+  const selectedJob = jobOptions.find((job) => String(job.id) === String(values.jobId))
 
   const handleBuilderChange = (event) => {
-    // A different Builder makes the previous Community and Job meaningless.
+    // A different Builder makes the previous Job and Community meaningless.
     onChange({ builderId: event.target.value, community: '', jobId: '' })
   }
+
+  // The Community comes with the Job; a different Job also starts the lots it reaches over.
+  const handleJobChange = (event) => {
+    const job = jobOptions.find((item) => String(item.id) === String(event.target.value))
+    onChange({
+      jobId: job ? job.id : '',
+      community: job ? job.community : '',
+      lotIds: new Set(),
+      recordIds: new Set(),
+      planIds: new Set(),
+      lineOverrides: {},
+    })
+  }
+
+  // With no Job to choose from, the reason is more useful than "Select the Job / Community."
+  const jobHelper = !values.builderId ? 'Choose the Builder first.'
+    : jobOptions.length === 0 ? 'This Builder has no Jobs.'
+      : errors.jobId
 
   // The Add button is disabled until attachments can be stored: nothing picked would be saved.
   const handleFilesPicked = (event) => {
@@ -82,15 +97,16 @@ export default function ChangeOrderBasicsCard({
           />
         </Field>
 
-        <Field label="Title" required sx={span(2)}>
+        {/* The number the Builder gave for the extra, as it is on their PO or CO; the internal number is the first box. */}
+        <Field label="PO / CO #" sx={span(2)}>
           <TextField
             fullWidth
             size="small"
-            placeholder="Upgrade passage locks to electronic locks"
-            value={values.title}
-            onChange={(event) => onChange({ title: event.target.value })}
-            error={Boolean(errors.title)}
-            helperText={errors.title}
+            placeholder="1277447-000"
+            value={values.poCoNumber}
+            onChange={(event) => onChange({ poCoNumber: event.target.value })}
+            error={Boolean(errors.poCoNumber)}
+            helperText={errors.poCoNumber}
           />
         </Field>
 
@@ -126,19 +142,20 @@ export default function ChangeOrderBasicsCard({
           </TextField>
         </Field>
 
-        <Field label="Community" required sx={span(3)}>
+        <Field label="Job / Community" required sx={span(3)}>
           <TextField
             select
             fullWidth
             size="small"
-            disabled={!values.builderId}
-            value={values.community}
-            onChange={(event) => onChange({ community: event.target.value, jobId: '' })}
-            error={Boolean(errors.community)}
-            helperText={errors.community}
+            disabled={jobOptions.length === 0}
+            value={selectedJob ? selectedJob.id : ''}
+            onChange={handleJobChange}
+            error={Boolean(errors.jobId)}
+            helperText={jobHelper}
+            slotProps={{ htmlInput: { 'aria-label': 'Job / Community' } }}
           >
-            {communities.map((community) => (
-              <MenuItem key={community} value={community}>{community}</MenuItem>
+            {jobOptions.map((job) => (
+              <MenuItem key={job.id} value={job.id}>{jobChoiceLabel(job)}</MenuItem>
             ))}
           </TextField>
         </Field>

@@ -4,12 +4,12 @@
 // screen, before anything is sent.
 
 import { PLANNING_ROLES, canWork } from '../../auth/authorization/roleAccess.js'
-import { allChangeOrderStatuses, emptyChangeOrder, maxPlaceLength } from '../data/changeOrders.js'
+import { OWN_EVENT, allChangeOrderStatuses, emptyChangeOrder, maxPlaceLength } from '../data/changeOrders.js'
 import { restoreCoverage } from '../utils/coverage.js'
 
-export const CHANGE_ORDER_TITLE_MAX = 150
 export const CHANGE_ORDER_REQUESTED_BY_MAX = 100
 export const CHANGE_ORDER_INTERNAL_NUMBER_MAX = 60
+export const CHANGE_ORDER_PO_CO_NUMBER_MAX = 60
 export const CHANGE_ORDER_SCOPE_MAX = 1000
 export const CHANGE_ORDER_CANCEL_REASON_MAX = 500
 export const CHANGE_ORDER_MAX_LINES = 5000
@@ -87,14 +87,16 @@ export function toCoverage(values) {
 
 /**
  * The lines in the order they are shown: the Lot lines, then the lines without a Lot. A Lot line
- * carries the id of its Lot; a line without a Lot says where in words.
+ * carries the id of its Lot and the Calendar event it is charged with (`links`, `{ [lotId]: 'DM' }`;
+ * none when it needs an event of its own); a line without a Lot says where in words.
  */
-export function toLinesPayload({ lines, places }) {
+export function toLinesPayload({ lines, places, links = {} }) {
   return [
     ...lines.map((line) => ({
       lot_id: Number(line.lotId),
       scope_of_work: line.scope.trim(),
       amount: line.amount,
+      billing_event: links[line.lotId] ?? null,
     })),
     ...places.map((place) => ({
       location: place.location.trim(),
@@ -104,34 +106,78 @@ export function toLinesPayload({ lines, places }) {
   ]
 }
 
-/** The arguments of `create_change_order` for what is filled in. `status` is the one it is saved with. */
-export function toCreateChangeOrderRpc(values, { lines, places, status }) {
+/**
+ * The PO / CO # as it is kept: every kind of space (the non-breaking one that comes with a paste from a
+ * portal, a tab, a line break) becomes one plain space and the ends are trimmed. Nothing else changes: the
+ * leading zeros, the "CO#" and the dashes and slashes are part of the number. The database cleans it the same way.
+ */
+export function cleanPoCoNumber(value) {
+  return String(value ?? '').replace(/\s+/gu, ' ').trim()
+}
+
+/**
+ * The arguments of `create_change_order` for what is filled in. `status` is the one it is saved with.
+ * The title is not asked any more, but it is still an argument of the function: it goes empty.
+ */
+export function toCreateChangeOrderRpc(values, { lines, places, links, status }) {
   return {
     p_job_id: Number(values.jobId),
-    p_title: values.title.trim(),
+    p_title: null,
     p_requested_by: values.requestedBy.trim(),
-    p_lines: toLinesPayload({ lines, places }),
+    p_lines: toLinesPayload({ lines, places, links }),
     p_internal_number: values.internalNumber.trim() || null,
     p_request_date: values.requestDate || null,
     p_needed_by_date: values.neededByDate || null,
     p_coverage: toCoverage(values),
     p_status: status,
+    p_po_co_number: cleanPoCoNumber(values.poCoNumber) || null,
   }
 }
 
 /** The arguments of `update_change_order`: the whole form again; the status is moved apart. */
-export function toUpdateChangeOrderRpc(changeOrderId, values, { lines, places }) {
+export function toUpdateChangeOrderRpc(changeOrderId, values, { lines, places, links }) {
   return {
     p_change_order_id: Number(changeOrderId),
     p_job_id: Number(values.jobId),
-    p_title: values.title.trim(),
+    p_title: null,
     p_requested_by: values.requestedBy.trim(),
-    p_lines: toLinesPayload({ lines, places }),
+    p_lines: toLinesPayload({ lines, places, links }),
     p_internal_number: values.internalNumber.trim() || null,
     p_request_date: values.requestDate || null,
     p_needed_by_date: values.neededByDate || null,
     p_coverage: toCoverage(values),
+    p_po_co_number: cleanPoCoNumber(values.poCoNumber) || null,
   }
+}
+
+/**
+ * Whether the person can write or change the PO / CO # of an Extra / CO in `status` from its page: the roles
+ * that edit Extras / COs, on any that is not cancelled. Unlike the form, this also works once it is approved
+ * (the builder's PO often arrives later); the database allows the same.
+ */
+export function canSetPoCoNumber(status, role) {
+  return canEditChangeOrders(role) && status !== 'CANCELLED'
+}
+
+/** Why the PO / CO # cannot be saved, or '' when it can. */
+export function poCoNumberProblem(value) {
+  return cleanPoCoNumber(value).length > CHANGE_ORDER_PO_CO_NUMBER_MAX
+    ? `The PO / CO # can have up to ${CHANGE_ORDER_PO_CO_NUMBER_MAX} characters.`
+    : ''
+}
+
+/** The arguments of `set_change_order_po_co_number`; writing nothing clears the number. */
+export function toSetPoCoNumberRpc(changeOrderId, value) {
+  return {
+    p_change_order_id: Number(changeOrderId),
+    p_po_co_number: cleanPoCoNumber(value) || null,
+  }
+}
+
+/** What is said once the PO / CO # was saved. */
+export function poCoNumberNotice(value) {
+  const clean = cleanPoCoNumber(value)
+  return clean ? `PO / CO # saved: ${clean}` : 'PO / CO # removed'
 }
 
 /** The arguments of `set_change_order_status`; `note` is the reason when cancelling. */
@@ -195,10 +241,19 @@ export function toChangeOrderFormValues(order, { job = null } = {}) {
 
   const coverage = restoreCoverage(job, order.coverage, lotLines.map((line) => line.lotId))
 
+  // The Calendar event the Lots were charged with: the one most of them share, and each saved tie.
+  const savedLinks = {}
+  for (const line of lotLines) {
+    if (line.billingEvent) {
+      savedLinks[String(line.lotId)] = { event: line.billingEvent, date: line.billingEventDate }
+    }
+  }
+  const chargeEvent = mostCommon(lotLines.map((line) => line.billingEvent).filter(Boolean)) || OWN_EVENT
+
   return {
     ...emptyChangeOrder,
     internalNumber: order.internalNumber,
-    title: order.title,
+    poCoNumber: order.poCoNumber ?? '',
     builderId: order.builderId,
     community: order.community,
     requestedBy: order.requestedBy,
@@ -219,6 +274,8 @@ export function toChangeOrderFormValues(order, { job = null } = {}) {
     lotIds: coverage.lotIds,
     recordIds: coverage.recordIds,
     planIds: coverage.planIds,
+    chargeEvent,
+    savedLinks,
   }
 }
 
@@ -227,28 +284,25 @@ export function toChangeOrderFormValues(order, { job = null } = {}) {
 /**
  * What stops the Extra / CO from being saved, as `{ field, message }` in the order the person fills it
  * in; empty when it can be saved. `field` says which field of the first cards to mark ('builderId',
- * 'community', 'jobId', 'title', 'requestedBy', 'internalNumber', 'neededByDate'), or is 'lines'.
+ * 'jobId' (the Job / Community), 'requestedBy', 'internalNumber', 'poCoNumber', 'neededByDate'), or is 'lines'.
  * `lines` and `places` are the Lot lines and the lines without a Lot, as the screen builds them.
  */
 export function changeOrderProblems(values, { lines = [], places = [] } = {}) {
   const problems = []
   const add = (field, message) => problems.push({ field, message })
-  const title = values.title.trim()
   const requestedBy = values.requestedBy.trim()
 
   if (!values.builderId) add('builderId', 'Select the Builder.')
-  if (!values.community) add('community', 'Select the Community.')
-  if (!values.jobId) add('jobId', 'Select the Job.')
-  if (!title) add('title', 'Write a title.')
-  else if (title.length > CHANGE_ORDER_TITLE_MAX) {
-    add('title', `The title can have up to ${CHANGE_ORDER_TITLE_MAX} characters.`)
-  }
+  if (!values.jobId) add('jobId', 'Select the Job / Community.')
   if (!requestedBy) add('requestedBy', 'Write who requested it.')
   else if (requestedBy.length > CHANGE_ORDER_REQUESTED_BY_MAX) {
     add('requestedBy', `Who requested it can have up to ${CHANGE_ORDER_REQUESTED_BY_MAX} characters.`)
   }
   if (values.internalNumber.trim().length > CHANGE_ORDER_INTERNAL_NUMBER_MAX) {
     add('internalNumber', `The internal number can have up to ${CHANGE_ORDER_INTERNAL_NUMBER_MAX} characters.`)
+  }
+  if (cleanPoCoNumber(values.poCoNumber).length > CHANGE_ORDER_PO_CO_NUMBER_MAX) {
+    add('poCoNumber', `The PO / CO # can have up to ${CHANGE_ORDER_PO_CO_NUMBER_MAX} characters.`)
   }
   if (values.requestDate && values.neededByDate && values.neededByDate < values.requestDate) {
     add('neededByDate', 'The needed-by date cannot be before the request date.')
@@ -288,7 +342,7 @@ export function changeOrderProblems(values, { lines = [], places = [] } = {}) {
   return problems
 }
 
-/** The first message of each field, `{ title: 'Write a title.', ... }`, to mark the fields. */
+/** The first message of each field, `{ requestedBy: 'Write who requested it.', ... }`, to mark the fields. */
 export function problemsByField(problems) {
   const byField = {}
   for (const { field, message } of problems) byField[field] ??= message
@@ -317,7 +371,7 @@ export function toChangeOrderSummary(row) {
     id: row.id,
     number: row.change_order_number,
     internalNumber: row.internal_number ?? '',
-    title: row.title,
+    poCoNumber: row.po_co_number ?? '',
     status: row.status,
     builderId: row.builder_id,
     builderName: row.builder_name ?? '',
@@ -361,6 +415,10 @@ export function toChangeOrderLine(row) {
     scope: row.scope_of_work,
     amount: number(row.amount),
     poNumber: row.po_number ?? '',
+    // The Calendar event (EXT, DM or HW) it is charged with and the date that event had when it was
+    // saved; none when the line needs an event of its own.
+    billingEvent: row.billing_event ?? null,
+    billingEventDate: row.billing_event_date ?? '',
   }
 }
 
@@ -466,6 +524,56 @@ export function groupDetailLines(lines) {
   return { works, places }
 }
 
+const CALENDAR_EVENT_ORDER = ['EXT', 'DM', 'HW']
+
+/**
+ * The lines of an Extra / CO by the Calendar event they are charged with. `ties` has one entry per event
+ * (EXT, DM, HW in that order) with where and when it is (`spots`: Phase, Building, the date the event
+ * had when it was saved and the Lots, as a range). `own` is what has no event of the Calendar: the Lots,
+ * by Phase and Building, and how many lines are not on a Lot; each of those needs an event of its own in
+ * the Extra / CO calendar.
+ */
+export function groupDetailEvents(lines) {
+  const ties = new Map()
+  const ownSpots = new Map()
+  let places = 0
+
+  for (const line of lines) {
+    if (line.isPlace) {
+      places += 1
+      continue
+    }
+
+    const spot = `${line.phase}\u0000${line.building}`
+    if (!line.billingEvent) {
+      if (!ownSpots.has(spot)) ownSpots.set(spot, { phase: line.phase, building: line.building, lots: [] })
+      ownSpots.get(spot).lots.push(line.lot)
+      continue
+    }
+
+    if (!ties.has(line.billingEvent)) ties.set(line.billingEvent, new Map())
+    const spots = ties.get(line.billingEvent)
+    const key = `${spot}\u0000${line.billingEventDate}`
+    if (!spots.has(key)) {
+      spots.set(key, { phase: line.phase, building: line.building, date: line.billingEventDate, lots: [] })
+    }
+    spots.get(key).lots.push(line.lot)
+  }
+
+  const finish = (spot) => ({ ...spot, lots: formatLotRanges(spot.lots) })
+
+  return {
+    ties: CALENDAR_EVENT_ORDER
+      .filter((event) => ties.has(event))
+      .map((event) => ({
+        event,
+        spots: [...ties.get(event).values()].map(finish)
+          .sort((left, right) => left.date.localeCompare(right.date)),
+      })),
+    own: { spots: [...ownSpots.values()].map(finish), places },
+  }
+}
+
 // The list ---------------------------------------------------------------------------------------------
 
 /**
@@ -489,7 +597,7 @@ export function filterChangeOrders(orders, { status = 'ALL', search = '' } = {})
     if (status !== 'ALL' && order.status !== status) return false
     if (words.length === 0) return true
     const haystack = [
-      order.number, order.internalNumber, order.title, order.builderName,
+      order.number, order.internalNumber, order.poCoNumber, order.builderName,
       order.jobCode, order.community, order.requestedBy,
     ].join(' ').toLowerCase()
     return words.every((word) => haystack.includes(word))

@@ -1,5 +1,6 @@
 import { requireSupabase } from '../../../services/api.js'
 import { listAllRows } from '../../../services/pagedQuery.js'
+import { toLotEvent } from '../utils/calendarEvents.js'
 import {
   changeOrderErrorMessage,
   toChangeOrderDates,
@@ -13,7 +14,6 @@ const OVERVIEW_COLUMNS = [
   'id',
   'change_order_number',
   'internal_number',
-  'title',
   'status',
   'builder_id',
   'builder_name',
@@ -27,6 +27,7 @@ const OVERVIEW_COLUMNS = [
   'updated_at',
   'line_count',
   'total_amount',
+  'po_co_number',
 ].join(', ')
 
 const DATE_COLUMNS = 'created_at, approved_at, cancelled_at, cancel_reason, coverage'
@@ -44,6 +45,8 @@ const LINE_COLUMNS = [
   'scope_of_work',
   'amount',
   'po_number',
+  'billing_event',
+  'billing_event_date',
 ].join(', ')
 
 const HISTORY_COLUMNS = 'id, previous_status, new_status, note, changed_at'
@@ -153,6 +156,19 @@ export async function updateChangeOrder(payload) {
   }
 }
 
+/**
+ * Writes, changes or clears only the PO / CO # of an Extra / CO that is not cancelled, also once it is
+ * approved (the form no longer opens it then).
+ */
+export async function setChangeOrderPoCoNumber(payload) {
+  const client = await requireSupabase()
+  const { error } = await client.rpc('set_change_order_po_co_number', payload)
+
+  if (error) {
+    throw new Error(changeOrderErrorMessage(error, 'The PO / CO # could not be saved.'), { cause: error })
+  }
+}
+
 /** Moves an Extra / CO to another status; cancelling needs the reason as `note` in the payload. */
 export async function setChangeOrderStatus(payload) {
   const client = await requireSupabase()
@@ -171,4 +187,19 @@ export async function deleteChangeOrder(changeOrderId) {
   if (error) {
     throw new Error(changeOrderErrorMessage(error, 'The Extra / Change Order could not be deleted.'), { cause: error })
   }
+}
+
+/**
+ * The EXT, DM and HW events of every Lot of a Job, each with its date and whether it can still be charged
+ * along with (more than 5 business days left). The database answers all of them at once (a Job has some
+ * dozens of Lots, far from the 1000 rows the Data API returns at most).
+ */
+export async function listLotCalendarEvents(jobId) {
+  const client = await requireSupabase()
+  const { data, error } = await client.rpc('change_order_lot_events', { p_job_id: Number(jobId) })
+
+  // The database's own words (a missing function, a closed connection) mean nothing to the person.
+  if (error) throw new Error('The Calendar events could not be read.', { cause: error })
+
+  return (data ?? []).map(toLotEvent)
 }

@@ -6,7 +6,6 @@ import {
   Divider,
   FormControlLabel,
   InputAdornment,
-  MenuItem,
   Radio,
   RadioGroup,
   Stack,
@@ -18,7 +17,6 @@ import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
 import { coverageModes } from '../data/changeOrders.js'
 import { useChangeOrderCoverage } from '../hooks/useChangeOrderCoverage.js'
 import { buildCoverageTree, filterCoverageTree } from '../utils/coverage.js'
-import Field from './ChangeOrderField.jsx'
 import CoverageTree from './CoverageTree.jsx'
 
 const SELECTION_FIELD = { lots: 'lotIds', phase: 'recordIds', plans: 'planIds' }
@@ -36,10 +34,11 @@ function buildPlanNodes(job) {
   }))
 }
 
-export default function ChangeOrderCoverageCard({ values, onChange, errors = {} }) {
+// The lots the Extra / CO reaches, in the Job picked in the first card (Job / Community).
+export default function ChangeOrderCoverageCard({ values, onChange }) {
   const [search, setSearch] = useState('')
   const mode = values.coverageMode
-  const { job, jobOptions, summary } = useChangeOrderCoverage(values)
+  const { job, summary } = useChangeOrderCoverage(values)
 
   const treeNodes = useMemo(() => {
     if (!job) return []
@@ -61,32 +60,6 @@ export default function ChangeOrderCoverageCard({ values, onChange, errors = {} 
 
   return (
     <Box>
-      <Field label="Job" required sx={{ maxWidth: 420, mb: 2.5 }}>
-        <TextField
-          select
-          fullWidth
-          size="small"
-          disabled={jobOptions.length === 0}
-          value={job ? values.jobId : ''}
-          onChange={(event) => onChange({
-            jobId: event.target.value,
-            lotIds: new Set(),
-            recordIds: new Set(),
-            planIds: new Set(),
-            lineOverrides: {},
-          })}
-          error={Boolean(errors.jobId)}
-          helperText={errors.jobId
-            ?? (values.community ? undefined : 'Choose the Builder and Community first.')}
-        >
-          {jobOptions.map((item) => (
-            <MenuItem key={item.id} value={item.id}>
-              #{item.code} · {item.community}
-            </MenuItem>
-          ))}
-        </TextField>
-      </Field>
-
       <RadioGroup
         row
         value={mode}
@@ -121,7 +94,7 @@ export default function ChangeOrderCoverageCard({ values, onChange, errors = {} 
 
       {!job ? (
         <Typography variant="body2" color="text.secondary">
-          Select a Job to choose the affected locations.
+          Choose the Job / Community in the Request section to pick the affected locations.
         </Typography>
       ) : (
         <>

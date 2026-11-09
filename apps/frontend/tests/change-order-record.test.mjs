@@ -5,15 +5,20 @@ import {
   cancelReasonProblem,
   canApproveChangeOrders,
   canEditChangeOrders,
+  canSetPoCoNumber,
   changeOrderActions,
   changeOrderErrorMessage,
   changeOrderMoveNotice,
   changeOrderListDate,
   changeOrderProblems,
   changeOrderStatusTabs,
+  cleanPoCoNumber,
   filterChangeOrders,
   formatLotRanges,
+  groupDetailEvents,
   groupDetailLines,
+  poCoNumberNotice,
+  poCoNumberProblem,
   problemsByField,
   summarizeChangeOrders,
   summarizeDetailLines,
@@ -26,6 +31,7 @@ import {
   toCoverage,
   toCreateChangeOrderRpc,
   toLinesPayload,
+  toSetPoCoNumberRpc,
   toSetStatusRpc,
   toUpdateChangeOrderRpc,
   withSuggestedNumber,
@@ -37,7 +43,6 @@ const filled = (overrides = {}) => ({
   builderId: '3',
   community: 'Rancho Madrina',
   jobId: 10,
-  title: '  Electronic locks  ',
   requestedBy: ' Carlos Ramirez ',
   internalNumber: ' E-2026-0047 ',
   requestDate: '2026-11-01',
@@ -81,8 +86,8 @@ test('the lines are the lots first, then the lines without a lot, trimmed, in th
   const payload = toLinesPayload({ lines, places: placeLines([office]) })
 
   assert.deepEqual(payload, [
-    { lot_id: 101, scope_of_work: 'Add attic ladder', amount: 10 },
-    { lot_id: 102, scope_of_work: 'Add attic ladder', amount: -30.25 },
+    { lot_id: 101, scope_of_work: 'Add attic ladder', amount: 10, billing_event: null },
+    { lot_id: 102, scope_of_work: 'Add attic ladder', amount: -30.25, billing_event: null },
     { location: 'Sales Office', scope_of_work: 'Electronic locks', amount: 250.5 },
   ])
   // A line without a lot never carries a Lot, and a Lot line never carries a place.
@@ -100,10 +105,11 @@ test('creating sends the Job, the trimmed header, the lines, the coverage and th
 
   assert.deepEqual(Object.keys(rpc), [
     'p_job_id', 'p_title', 'p_requested_by', 'p_lines', 'p_internal_number',
-    'p_request_date', 'p_needed_by_date', 'p_coverage', 'p_status',
+    'p_request_date', 'p_needed_by_date', 'p_coverage', 'p_status', 'p_po_co_number',
   ])
   assert.equal(rpc.p_job_id, 10)
-  assert.equal(rpc.p_title, 'Electronic locks')
+  // The title is not asked any more: the function still has it, and it goes empty.
+  assert.equal(rpc.p_title, null)
   assert.equal(rpc.p_requested_by, 'Carlos Ramirez')
   assert.equal(rpc.p_internal_number, 'E-2026-0047')
   assert.equal(rpc.p_request_date, '2026-11-01')
@@ -133,9 +139,9 @@ test('the Internal # box shows the next number until the person touches it, and 
   assert.equal(withSuggestedNumber(untouched, 'CO-0001', true).internalNumber, '')
 
   // With no number known the box is simply empty; the rest of the form is not touched.
-  const shown = withSuggestedNumber({ ...untouched, title: 'Locks' }, '', false)
+  const shown = withSuggestedNumber({ ...untouched, requestedBy: 'Carlos' }, '', false)
   assert.equal(shown.internalNumber, '')
-  assert.equal(shown.title, 'Locks')
+  assert.equal(shown.requestedBy, 'Carlos')
 
   // Showing it does not change what is saved: the untouched box is sent as nothing, for the database to fill in.
   assert.equal(untouched.internalNumber, '')
@@ -159,15 +165,14 @@ test('an empty form says what is missing, field by field, in the order it is fil
   const problems = changeOrderProblems(emptyChangeOrder, { lines: [], places: [] })
 
   assert.deepEqual(problems.map((problem) => problem.field), [
-    'builderId', 'community', 'jobId', 'title', 'requestedBy', 'lines',
+    'builderId', 'jobId', 'requestedBy', 'lines',
   ])
-  assert.equal(problemsByField(problems).title, 'Write a title.')
+  assert.equal(problemsByField(problems).jobId, 'Select the Job / Community.')
   assert.match(problemsByField(problems).lines, /Add at least one line/)
 })
 
 test('the limits are the ones of the database', () => {
   const problems = changeOrderProblems(filled({
-    title: 'x'.repeat(151),
     requestedBy: 'y'.repeat(101),
     internalNumber: 'z'.repeat(61),
     requestDate: '2026-11-10',
@@ -175,16 +180,17 @@ test('the limits are the ones of the database', () => {
   }), { lines: lotLines(), places: [] })
 
   assert.deepEqual(problemsByField(problems), {
-    title: 'The title can have up to 150 characters.',
     requestedBy: 'Who requested it can have up to 100 characters.',
     internalNumber: 'The internal number can have up to 60 characters.',
     neededByDate: 'The needed-by date cannot be before the request date.',
   })
 })
 
-test('a title of only spaces is not a title', () => {
-  const values = filled({ title: '   ' })
-  assert.equal(problemsByField(changeOrderProblems(values, { lines: lotLines(values) })).title, 'Write a title.')
+test('there is no title to fill in: a form without one has nothing to fix', () => {
+  assert.equal('title' in emptyChangeOrder, false)
+  const values = filled()
+  assert.equal('title' in values, false)
+  assert.deepEqual(changeOrderProblems(values, { lines: lotLines(values), places: [] }), [])
 })
 
 test('the lots that miss a scope or an amount are counted in one message', () => {
@@ -241,7 +247,6 @@ const overviewRow = (overrides = {}) => ({
   id: 7,
   change_order_number: 'CO-0007',
   internal_number: null,
-  title: 'Electronic locks',
   status: 'PENDING',
   builder_id: 3,
   builder_name: 'KB Home',
@@ -263,7 +268,7 @@ test('a row of the list keeps its number, status, Job and total, with empty text
     id: 7,
     number: 'CO-0007',
     internalNumber: '',
-    title: 'Electronic locks',
+    poCoNumber: '',
     status: 'PENDING',
     builderId: 3,
     builderName: 'KB Home',
@@ -349,7 +354,7 @@ test('the lines of an Extra / CO add up in exact cents, counting lots and places
 const orders = [
   toChangeOrderSummary(overviewRow({ id: 3, change_order_number: 'CO-0003', status: 'APPROVED', total_amount: 100 })),
   toChangeOrderSummary(overviewRow({
-    id: 2, change_order_number: 'CO-0002', status: 'DRAFT', title: 'Paint', builder_name: 'Tri Pointe',
+    id: 2, change_order_number: 'CO-0002', status: 'DRAFT', builder_name: 'Tri Pointe',
     job_code: '1301', community: 'Corona', internal_number: 'E-77', total_amount: 50.5,
   })),
   toChangeOrderSummary(overviewRow({ id: 1, change_order_number: 'CO-0001', status: 'CANCELLED', total_amount: 900 })),
@@ -449,7 +454,7 @@ test('saving a change sends the whole form for that Extra / CO and no status', (
 
   assert.equal(rpc.p_change_order_id, 12)
   assert.equal(rpc.p_job_id, 10)
-  assert.equal(rpc.p_title, 'Electronic locks')
+  assert.equal(rpc.p_title, null)
   assert.equal(rpc.p_requested_by, 'Carlos Ramirez')
   assert.equal(rpc.p_internal_number, null)
   assert.equal(rpc.p_lines.length, 3)
@@ -473,7 +478,6 @@ const savedOrder = (overrides = {}) => ({
   id: 12,
   number: 'CO-0012',
   internalNumber: 'E-2026-0047',
-  title: 'Attic ladder',
   status: 'PENDING',
   builderId: 3,
   community: 'Rancho Madrina',
@@ -525,9 +529,9 @@ test('opening and saving again gives back the same lines', () => {
   })
 
   assert.deepEqual(payload, [
-    { lot_id: 101, scope_of_work: 'Add attic ladder', amount: 10 },
-    { lot_id: 102, scope_of_work: 'Replace the door', amount: -30.25 },
-    { lot_id: 103, scope_of_work: 'Add attic ladder', amount: 1689.6 },
+    { lot_id: 101, scope_of_work: 'Add attic ladder', amount: 10, billing_event: null },
+    { lot_id: 102, scope_of_work: 'Replace the door', amount: -30.25, billing_event: null },
+    { lot_id: 103, scope_of_work: 'Add attic ladder', amount: 1689.6, billing_event: null },
     { location: 'Sales Office', scope_of_work: 'Electronic locks', amount: 250.5 },
     { location: 'Restroom', scope_of_work: 'Credit', amount: -20 },
   ])
@@ -638,4 +642,247 @@ test('every move says what happened, with the number of the Extra / CO', () => {
   assert.equal(changeOrderMoveNotice('CO-0007', 'CANCELLED'), 'CO-0007 cancelled')
   assert.equal(changeOrderMoveNotice('CO-0007', 'DELETE'), 'CO-0007 deleted')
   assert.equal(changeOrderMoveNotice('CO-0007', 'SOMETHING'), 'CO-0007 updated')
+})
+
+// The Calendar event a line is charged with ------------------------------------------------------------
+
+test('a line says which Calendar event it is charged with, and none when it needs its own', () => {
+  const tied = toChangeOrderLine({
+    id: 1, line_number: 1, lot_id: 101, phase_code: '2', building: '1', lot_number: '3',
+    plan_code: '1A', plan_name: 'Plan 1A', location: null, scope_of_work: 'Add',
+    amount: '10', po_number: null, billing_event: 'DM', billing_event_date: '2026-09-22',
+  })
+  assert.equal(tied.billingEvent, 'DM')
+  assert.equal(tied.billingEventDate, '2026-09-22')
+
+  const own = toChangeOrderLine({
+    id: 2, line_number: 2, lot_id: 102, phase_code: '2', building: '1', lot_number: '4',
+    plan_code: '1A', plan_name: 'Plan 1A', location: null, scope_of_work: 'Add',
+    amount: '10', po_number: null,
+  })
+  assert.equal(own.billingEvent, null)
+  assert.equal(own.billingEventDate, '')
+})
+
+test('the lines are sent with the event each Lot is charged with, and no event for the rest', () => {
+  const rows = [101, 102, 103].map((id) => ({ lotId: String(id), lot: String(id) }))
+  const lines = buildChangeOrderLines(rows, { defaultScope: 'Add', defaultAmount: '10', lineOverrides: {} })
+  const places = buildPlaceLines([{ id: 1, location: 'Sales Office', scope: 'Locks', amount: '5' }])
+
+  assert.deepEqual(toLinesPayload({ lines, places, links: { 101: 'DM', 103: 'DM' } }), [
+    { lot_id: 101, scope_of_work: 'Add', amount: 10, billing_event: 'DM' },
+    { lot_id: 102, scope_of_work: 'Add', amount: 10, billing_event: null },
+    { lot_id: 103, scope_of_work: 'Add', amount: 10, billing_event: 'DM' },
+    { location: 'Sales Office', scope_of_work: 'Locks', amount: 5 },
+  ])
+  assert.equal(toLinesPayload({ lines, places }).every((line) => line.billing_event == null), true)
+})
+
+test('creating and editing send the same ties', () => {
+  const values = filled()
+  const rows = [{ lotId: '101', lot: '101' }]
+  const lines = buildChangeOrderLines(rows, { defaultScope: 'Add', defaultAmount: '10', lineOverrides: {} })
+  const links = { 101: 'HW' }
+
+  assert.equal(toCreateChangeOrderRpc(values, { lines, places: [], links, status: 'DRAFT' }).p_lines[0].billing_event, 'HW')
+  assert.equal(toUpdateChangeOrderRpc(12, values, { lines, places: [], links }).p_lines[0].billing_event, 'HW')
+})
+
+test('a saved Extra / CO opens with the event most Lots were charged with and the ties it had', () => {
+  const values = toChangeOrderFormValues(savedOrder({
+    lines: [
+      { isPlace: false, lotId: 101, scope: 'Add', amount: 10, billingEvent: 'DM', billingEventDate: '2026-09-22' },
+      { isPlace: false, lotId: 102, scope: 'Add', amount: 10, billingEvent: 'DM', billingEventDate: '2026-09-22' },
+      { isPlace: false, lotId: 103, scope: 'Add', amount: 10, billingEvent: null, billingEventDate: '' },
+      { isPlace: true, lotId: null, location: 'Sales Office', scope: 'Locks', amount: 5 },
+    ],
+  }))
+
+  assert.equal(values.chargeEvent, 'DM')
+  assert.deepEqual(values.savedLinks, {
+    101: { event: 'DM', date: '2026-09-22' },
+    102: { event: 'DM', date: '2026-09-22' },
+  })
+})
+
+test('an Extra / CO with no ties opens as "Own CO event"', () => {
+  const values = toChangeOrderFormValues(savedOrder())
+
+  assert.equal(values.chargeEvent, 'NONE')
+  assert.deepEqual(values.savedLinks, {})
+  assert.equal(emptyChangeOrder.chargeEvent, 'NONE')
+})
+
+test('the detail says which lots are charged with which event, and which need an event of their own', () => {
+  const lot = (id, lotNumber, building, billingEvent, billingEventDate = '') => ({
+    id, isPlace: false, lotId: id, phase: '2', building, lot: lotNumber, billingEvent, billingEventDate,
+  })
+  const events = groupDetailEvents([
+    lot(1, '1', '1', 'DM', '2026-12-01'), lot(2, '2', '1', 'DM', '2026-12-01'), lot(3, '3', '1', 'DM', '2026-12-01'),
+    lot(4, '4', '1', 'DM', '2026-12-08'),
+    lot(7, '7', '2', 'EXT', '2026-12-15'),
+    lot(14, '14', '3', null), lot(15, '15', '3', null),
+    { id: 99, isPlace: true, lotId: null, location: 'Sales Office', billingEvent: null },
+  ])
+
+  assert.deepEqual(events.ties.map(({ event }) => event), ['EXT', 'DM'])
+  assert.deepEqual(events.ties[1].spots, [
+    { phase: '2', building: '1', date: '2026-12-01', lots: '1–3' },
+    { phase: '2', building: '1', date: '2026-12-08', lots: '4' },
+  ])
+  assert.deepEqual(events.own, {
+    spots: [{ phase: '2', building: '3', lots: '14, 15' }],
+    places: 1,
+  })
+})
+
+test('an Extra / CO with no ties has only lots that need an event of their own', () => {
+  const events = groupDetailEvents([
+    { id: 1, isPlace: false, lotId: 1, phase: '1', building: 'A', lot: '1', billingEvent: null },
+  ])
+
+  assert.deepEqual(events.ties, [])
+  assert.deepEqual(events.own, { spots: [{ phase: '1', building: 'A', lots: '1' }], places: 0 })
+})
+
+// The PO / CO # ------------------------------------------------------------------------------------------
+
+test('the PO / CO # is kept as written, with every kind of space made a plain one and the ends trimmed', () => {
+  assert.equal(cleanPoCoNumber('\u00a0CO#\u00a0\u00a04400102/247\t\n '), 'CO# 4400102/247')
+  assert.equal(cleanPoCoNumber('  1277447-000  '), '1277447-000')
+  // Nothing else is touched: zeros, letters, dashes and slashes belong to the number.
+  assert.equal(cleanPoCoNumber('0001277447-000'), '0001277447-000')
+  assert.equal(cleanPoCoNumber('M2068526708'), 'M2068526708')
+  assert.equal(cleanPoCoNumber('4010-C-003232'), '4010-C-003232')
+  assert.equal(cleanPoCoNumber('\u00a0 \u2007\u202f'), '')
+  assert.equal(cleanPoCoNumber(null), '')
+  assert.equal(cleanPoCoNumber(undefined), '')
+})
+
+test('a new form has the internal number and the PO / CO # apart, and suggesting the first leaves the second alone', () => {
+  assert.equal(emptyChangeOrder.poCoNumber, '')
+  const typed = { ...emptyChangeOrder, poCoNumber: '1277447-000' }
+  const shown = withSuggestedNumber(typed, 'CO-0008', false)
+  assert.equal(shown.internalNumber, 'CO-0008')
+  assert.equal(shown.poCoNumber, '1277447-000')
+})
+
+test('creating and editing send the cleaned PO / CO #, or nothing when there is none', () => {
+  const values = filled({ poCoNumber: '\u00a0CO #37 ' })
+  const create = toCreateChangeOrderRpc(values, { lines: lotLines(values), places: [], status: 'DRAFT' })
+  const update = toUpdateChangeOrderRpc('12', values, { lines: lotLines(values), places: [] })
+  assert.equal(create.p_po_co_number, 'CO #37')
+  assert.equal(update.p_po_co_number, 'CO #37')
+
+  const none = filled({ poCoNumber: ' \u00a0 ' })
+  assert.equal(
+    toCreateChangeOrderRpc(none, { lines: lotLines(none), places: [], status: 'DRAFT' }).p_po_co_number,
+    null,
+  )
+  assert.equal(toUpdateChangeOrderRpc('12', none, { lines: lotLines(none), places: [] }).p_po_co_number, null)
+})
+
+test('the PO / CO # has the limit of the database, counted once it is cleaned', () => {
+  const check = (poCoNumber) => changeOrderProblems(filled({ poCoNumber }), { lines: lotLines(), places: [] })
+
+  assert.deepEqual(problemsByField(check('9'.repeat(61))), {
+    poCoNumber: 'The PO / CO # can have up to 60 characters.',
+  })
+  assert.deepEqual(check('9'.repeat(60)), [])
+  // The spaces that the cleaning takes away do not count.
+  assert.deepEqual(check(`  ${'9'.repeat(60)}\u00a0`), [])
+  assert.deepEqual(check(''), [])
+})
+
+test('a row of the list, the detail and a saved Extra / CO carry the PO / CO #, with empty text instead of null', () => {
+  assert.equal(toChangeOrderSummary(overviewRow({ po_co_number: '1277447-000' })).poCoNumber, '1277447-000')
+  assert.equal(toChangeOrderSummary(overviewRow({ po_co_number: null })).poCoNumber, '')
+
+  const detail = toChangeOrderDetail({
+    summary: toChangeOrderSummary(overviewRow({ po_co_number: 'CO #37' })),
+    dates: toChangeOrderDates({ created_at: '2026-11-02T18:00:00.000Z' }),
+    lines: [],
+    history: [],
+  })
+  assert.equal(detail.poCoNumber, 'CO #37')
+
+  assert.equal(toChangeOrderFormValues(savedOrder({ poCoNumber: '1277447-000' })).poCoNumber, '1277447-000')
+  assert.equal(toChangeOrderFormValues(savedOrder()).poCoNumber, '')
+})
+
+test('the list is searched by the PO / CO # too', () => {
+  const withNumbers = [
+    toChangeOrderSummary(overviewRow({ id: 5, po_co_number: 'CO# 4400102/247' })),
+    toChangeOrderSummary(overviewRow({ id: 6, po_co_number: '1277447-000' })),
+    toChangeOrderSummary(overviewRow({ id: 8 })),
+  ]
+
+  assert.deepEqual(filterChangeOrders(withNumbers, { search: '4400102/247' }).map((order) => order.id), [5])
+  assert.deepEqual(filterChangeOrders(withNumbers, { search: '1277447' }).map((order) => order.id), [6])
+  assert.deepEqual(filterChangeOrders(withNumbers, { search: 'zzz' }), [])
+})
+
+test('a title that an older Extra / CO still has in the database is not read or searched', () => {
+  const old = toChangeOrderSummary(overviewRow({ id: 9, title: 'Old title', po_co_number: '123' }))
+
+  assert.equal('title' in old, false)
+  assert.deepEqual(filterChangeOrders([old], { search: 'old title' }), [])
+  assert.deepEqual(filterChangeOrders([old], { search: '123' }).map((order) => order.id), [9])
+  assert.equal('title' in toChangeOrderFormValues(savedOrder({ title: 'Old title' })), false)
+})
+
+// Writing the PO / CO # after the Extra / CO was approved ---------------------------------------------------
+
+test('the PO / CO # can be written on anything that is not cancelled, by the roles that edit Extras / COs', () => {
+  for (const status of ['DRAFT', 'PENDING', 'APPROVED']) {
+    assert.equal(canSetPoCoNumber(status, 'ADMIN'), true, `Admin on ${status}`)
+    assert.equal(canSetPoCoNumber(status, 'PROJECT_MANAGEMENT'), true, `Project Management on ${status}`)
+    assert.equal(canSetPoCoNumber(status, 'READ_ONLY'), false, `a reader on ${status}`)
+    assert.equal(canSetPoCoNumber(status, 'ACCOUNTING'), false, `Accounting on ${status}`)
+  }
+
+  // A cancelled Extra / CO is closed for everybody, an Admin too.
+  assert.equal(canSetPoCoNumber('CANCELLED', 'ADMIN'), false)
+  assert.equal(canSetPoCoNumber('CANCELLED', 'PROJECT_MANAGEMENT'), false)
+  assert.equal(canSetPoCoNumber('APPROVED', undefined), false)
+})
+
+test('the form still does not open an approved Extra / CO, only the PO / CO # is written there', () => {
+  assert.equal(changeOrderActions('APPROVED', 'ADMIN').canEdit, false)
+  assert.equal(canSetPoCoNumber('APPROVED', 'ADMIN'), true)
+})
+
+test('writing the PO / CO # sends the id and the cleaned number, or nothing to clear it', () => {
+  assert.deepEqual(toSetPoCoNumberRpc('12', ' CO #37 '), { p_change_order_id: 12, p_po_co_number: 'CO #37' })
+  assert.deepEqual(toSetPoCoNumberRpc(12, '   \t'), { p_change_order_id: 12, p_po_co_number: null })
+  assert.deepEqual(toSetPoCoNumberRpc(12, null), { p_change_order_id: 12, p_po_co_number: null })
+  // Leading zeros, letters and dashes stay as they were written.
+  assert.equal(toSetPoCoNumberRpc(12, '0001277447-000').p_po_co_number, '0001277447-000')
+})
+
+test('the PO / CO # written on its own has the same limit as in the form', () => {
+  assert.equal(poCoNumberProblem('9'.repeat(60)), '')
+  assert.equal(poCoNumberProblem(`  ${'9'.repeat(60)} `), '')
+  assert.equal(poCoNumberProblem(''), '')
+  assert.equal(poCoNumberProblem('9'.repeat(61)), 'The PO / CO # can have up to 60 characters.')
+})
+
+test('once the PO / CO # is saved the person is told what it is, or that it was removed', () => {
+  assert.equal(poCoNumberNotice(' 1277447-000 '), 'PO / CO # saved: 1277447-000')
+  assert.equal(poCoNumberNotice('  '), 'PO / CO # removed')
+  assert.equal(poCoNumberNotice(''), 'PO / CO # removed')
+})
+
+test('the database refusals about the PO / CO # reach the person in the database words', () => {
+  assert.equal(
+    changeOrderErrorMessage(
+      { code: '23514', message: 'The PO / CO # of a cancelled Change Order cannot be changed' },
+      'The PO / CO # could not be saved.',
+    ),
+    'The PO / CO # of a cancelled Change Order cannot be changed',
+  )
+  assert.equal(
+    changeOrderErrorMessage({ message: '' }, 'The PO / CO # could not be saved.'),
+    'The PO / CO # could not be saved.',
+  )
 })

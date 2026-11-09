@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Link as RouterLink, useParams } from 'react-router-dom'
+import { Link as RouterLink, useLocation, useParams } from 'react-router-dom'
 import {
   Alert,
   Box,
@@ -19,6 +19,7 @@ import {
 } from '@mui/material'
 import TableRowsOutlinedIcon from '@mui/icons-material/TableRowsOutlined'
 import ViewAgendaOutlinedIcon from '@mui/icons-material/ViewAgendaOutlined'
+import EmailOutlinedIcon from '@mui/icons-material/EmailOutlined'
 
 import {
   CatalogEmptyState,
@@ -30,11 +31,22 @@ import {
   formatDate,
   formatDateTime,
 } from '../../draw-invoice/utils/drawInvoiceFormatters.js'
+import { useAuth } from '../../auth/context/useAuth.js'
 import { allChangeOrderStatuses } from '../data/changeOrders.js'
-import { useChangeOrder } from '../hooks/useChangeOrderData.js'
-import { groupDetailLines, summarizeDetailLines } from '../services/changeOrderRecord.js'
+import { useChangeOrder, useSchedulingEmails } from '../hooks/useChangeOrderData.js'
+import { canTellScheduling, describeEmailHistory } from '../services/changeOrderEmailRecord.js'
+import {
+  canEditChangeOrders,
+  canSetPoCoNumber,
+  groupDetailEvents,
+  groupDetailLines,
+  summarizeDetailLines,
+} from '../services/changeOrderRecord.js'
+import { formatEventDate } from '../utils/calendarEvents.js'
 import ChangeOrderActions from './ChangeOrderActions.jsx'
 import ChangeOrderStatusChip from './ChangeOrderStatusChip.jsx'
+import PoCoNumberDialog from './PoCoNumberDialog.jsx'
+import SchedulingEmailDialog from './SchedulingEmailDialog.jsx'
 
 const plural = (count, singular) => `${count} ${singular}${count === 1 ? '' : 's'}`
 
@@ -58,12 +70,17 @@ function countsText({ lots, places }) {
   ].filter(Boolean).join(' and ')
 }
 
-/** Who asked and when: one row under the title, only what was written. */
-function Facts({ order }) {
+/**
+ * Who asked and when: one row under the number, only what was written. The PO / CO # is the exception:
+ * whoever may write it sees it even when empty, with the button to add or change it (it often arrives
+ * after the Extra / CO was approved).
+ */
+function Facts({ order, onEditPoCo }) {
   const facts = [
     { label: 'Builder', value: order.builderName },
     { label: 'Community', value: order.community },
     { label: 'Job', value: order.jobCode ? `#${order.jobCode}` : '' },
+    { label: 'PO / CO #', value: order.poCoNumber, onEdit: onEditPoCo },
     { label: 'Requested by', value: order.requestedBy },
     { label: 'Requested on', value: order.requestDate ? formatDate(order.requestDate) : '' },
     { label: 'Needed by', value: order.neededByDate ? formatDate(order.neededByDate) : '' },
@@ -72,7 +89,7 @@ function Facts({ order }) {
       label: 'Internal #',
       value: order.internalNumber && order.internalNumber !== order.number ? order.internalNumber : '',
     },
-  ].filter((fact) => fact.value)
+  ].filter((fact) => fact.value || fact.onEdit)
 
   return (
     <Box
@@ -85,8 +102,26 @@ function Facts({ order }) {
           <Typography component="dt" variant="caption" color="text.secondary">
             {fact.label}
           </Typography>
-          <Typography component="dd" variant="body2" fontWeight={600} sx={{ m: 0, overflowWrap: 'anywhere' }}>
-            {fact.value}
+          <Typography
+            component="dd"
+            variant="body2"
+            fontWeight={600}
+            sx={{ m: 0, overflowWrap: 'anywhere', display: 'flex', alignItems: 'center', gap: 0.5 }}
+          >
+            <Box component="span" sx={{ minWidth: 0, overflowWrap: 'anywhere' }}>
+              {fact.value || <Box component="span" sx={{ color: 'text.disabled', fontWeight: 400 }}>Not written yet</Box>}
+            </Box>
+            {fact.onEdit && (
+              // The button never shrinks: a long number wraps instead, so "Change" is not cut in two.
+              <Button
+                size="small"
+                onClick={fact.onEdit}
+                aria-label={`${fact.value ? 'Change' : 'Add'} ${fact.label}`}
+                sx={{ minWidth: 0, flexShrink: 0, whiteSpace: 'nowrap', px: 0.75, py: 0, fontWeight: 600 }}
+              >
+                {fact.value ? 'Change' : 'Add'}
+              </Button>
+            )}
           </Typography>
         </Box>
       ))}
@@ -178,10 +213,140 @@ function PlaceGroup({ place }) {
   )
 }
 
+/** "Phase 2, Building 1", or "Lots" when the Job has neither. */
+const spotLabel = (spot) => [
+  spot.phase && `Phase ${spot.phase}`,
+  spot.building && `Building ${spot.building}`,
+].filter(Boolean).join(', ') || 'Lots'
+
+const lotsText = (lots) => (/[,–]/.test(lots) ? `Lots ${lots}` : `Lot ${lots}`)
+
+/**
+ * Which Calendar event the lots are charged with (and the date it had when it was saved), and which
+ * lots have none and need an event of their own in the Extra / CO calendar.
+ */
+function EventCard({ order }) {
+  const { profile } = useAuth()
+  const { ties, own } = useMemo(() => groupDetailEvents(order.lines), [order.lines])
+  const needsOwn = own.spots.length > 0 || own.places > 0
+  const hasTies = ties.length > 0
+  // Scheduling is told about the lots charged with an event, once the Extra / CO is more than a Draft.
+  const canSend = hasTies && canEditChangeOrders(profile?.role) && canTellScheduling(order.status)
+  const { emails, refresh: refreshEmails } = useSchedulingEmails(order.id, hasTies)
+  const [asking, setAsking] = useState(false)
+  const [sentMessage, setSentMessage] = useState('')
+  if (!hasTies && !needsOwn) return null
+
+  const history = describeEmailHistory(emails, formatDateTime)
+
+  return (
+    <Paper variant="outlined" component="section" aria-label="Calendar event" sx={{ p: 2.5, borderRadius: 2 }}>
+      <Typography variant="subtitle1" component="h2" fontWeight={700} sx={{ mb: 1.5 }}>
+        Calendar event
+      </Typography>
+
+      <Stack spacing={2}>
+        {ties.map(({ event, spots }) => (
+          <Box key={event}>
+            <Typography variant="body2" fontWeight={700} sx={{ mb: 0.75 }}>
+              Charged with {event}
+            </Typography>
+            <Box
+              component="dl"
+              sx={{ m: 0, display: 'grid', gridTemplateColumns: 'minmax(120px, auto) 1fr', columnGap: 2, rowGap: 0.5 }}
+            >
+              {spots.map((spot) => (
+                <Row key={`${spot.phase}-${spot.building}-${spot.date}`} label={spotLabel(spot)}>
+                  {lotsText(spot.lots)}
+                  <Typography component="span" variant="body2" color="text.secondary" fontWeight={400}>
+                    {' '}· {event} on {formatEventDate(spot.date)}
+                  </Typography>
+                </Row>
+              ))}
+            </Box>
+          </Box>
+        ))}
+
+        {needsOwn && (
+          <Box>
+            <Typography variant="body2" fontWeight={700} sx={{ mb: 0.25 }}>
+              Own CO event
+            </Typography>
+            <Typography variant="caption" color="text.secondary" component="p" sx={{ m: 0, mb: 0.75 }}>
+              Not tied to the Calendar: these need an event in the Extra / CO calendar.
+            </Typography>
+            <Box
+              component="dl"
+              sx={{ m: 0, display: 'grid', gridTemplateColumns: 'minmax(120px, auto) 1fr', columnGap: 2, rowGap: 0.5 }}
+            >
+              {own.spots.map((spot) => (
+                <Row key={`${spot.phase}-${spot.building}`} label={spotLabel(spot)}>
+                  {lotsText(spot.lots)}
+                </Row>
+              ))}
+              {own.places > 0 && (
+                <Row label="Not on a lot">{plural(own.places, 'line')}</Row>
+              )}
+            </Box>
+          </Box>
+        )}
+      </Stack>
+
+      {hasTies && (
+        <Box sx={{ mt: 2, pt: 2, borderTop: 1, borderColor: 'divider' }}>
+          <Stack
+            direction={{ xs: 'column', sm: 'row' }}
+            spacing={1.5}
+            sx={{ alignItems: { sm: 'center' }, justifyContent: 'space-between' }}
+          >
+            <Typography variant="body2" color="text.secondary" sx={{ minWidth: 0 }}>
+              {history
+                || (canTellScheduling(order.status)
+                  ? 'Scheduling has not been told about these lots yet.'
+                  : 'Scheduling can be told once this is Pending or Approved.')}
+            </Typography>
+            {canSend && (
+              <Button
+                size="small"
+                variant="outlined"
+                startIcon={<EmailOutlinedIcon />}
+                onClick={() => {
+                  setSentMessage('')
+                  setAsking(true)
+                }}
+                sx={{ flexShrink: 0 }}
+              >
+                {emails.length > 0 ? 'Email Scheduling again' : 'Email Scheduling'}
+              </Button>
+            )}
+          </Stack>
+          {sentMessage && (
+            <Alert severity="success" onClose={() => setSentMessage('')} sx={{ mt: 1.5 }}>
+              {sentMessage}
+            </Alert>
+          )}
+        </Box>
+      )}
+
+      {asking && (
+        <SchedulingEmailDialog
+          changeOrderId={order.id}
+          onClose={() => setAsking(false)}
+          onSent={(message) => {
+            setAsking(false)
+            setSentMessage(message)
+            refreshEmails()
+          }}
+        />
+      )}
+    </Paper>
+  )
+}
+
 function LinesTable({ order, totals }) {
   return (
     <TableContainer>
-      <Table size="small" aria-label="Every line" sx={[{ minWidth: 900 }, catalogTableSx]}>
+      <Table size="small" aria-label="Every line" sx={[{ minWidth: 1000 }, catalogTableSx]}>
         <TableHead>
           <TableRow>
             <TableCell width={48}>#</TableCell>
@@ -190,6 +355,7 @@ function LinesTable({ order, totals }) {
             <TableCell>Lot / Place</TableCell>
             <TableCell>Plan Type</TableCell>
             <TableCell sx={{ minWidth: 260 }}>Scope of Work</TableCell>
+            <TableCell>Charged with</TableCell>
             <TableCell>PO</TableCell>
             <TableCell align="right">Amount</TableCell>
           </TableRow>
@@ -212,6 +378,11 @@ function LinesTable({ order, totals }) {
               </TableCell>
               <TableCell>{line.plan ? `Plan ${line.plan}` : '—'}</TableCell>
               <TableCell sx={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{line.scope}</TableCell>
+              <TableCell sx={{ whiteSpace: 'nowrap' }}>
+                {line.billingEvent
+                  ? `${line.billingEvent} · ${formatDate(line.billingEventDate)}`
+                  : <Box component="span" sx={{ color: 'text.secondary' }}>Own CO event</Box>}
+              </TableCell>
               <TableCell sx={{ whiteSpace: 'nowrap' }}>{line.poNumber || '—'}</TableCell>
               <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
                 {formatCurrency(line.amount)}
@@ -219,7 +390,7 @@ function LinesTable({ order, totals }) {
             </TableRow>
           ))}
           <TableRow>
-            <TableCell colSpan={7} align="right" sx={{ fontWeight: 700 }}>Total</TableCell>
+            <TableCell colSpan={8} align="right" sx={{ fontWeight: 700 }}>Total</TableCell>
             <TableCell align="right" sx={{ fontWeight: 800, whiteSpace: 'nowrap' }}>
               {formatCurrency(totals.total)}
             </TableCell>
@@ -406,7 +577,14 @@ export default function ChangeOrderDetail() {
   const { order, loading, error, reload, refresh } = useChangeOrder(changeOrderId)
   // What went wrong with a move made from a button (someone else may have moved it first).
   const [actionError, setActionError] = useState('')
+  // What the page that sent here wants said (the email to Scheduling went out), once.
+  const location = useLocation()
+  const [notice, setNotice] = useState(location.state?.notice ?? '')
+  // The PO / CO # is written from here, also once the Extra / CO is approved and the form no longer opens.
+  const { profile } = useAuth()
+  const [editingPoCo, setEditingPoCo] = useState(false)
   const totals = useMemo(() => summarizeDetailLines(order?.lines ?? []), [order])
+  const canSetPoCo = order ? canSetPoCoNumber(order.status, profile?.role) : false
 
   if (loading) {
     return (
@@ -456,18 +634,29 @@ export default function ChangeOrderDetail() {
         breadcrumbs={[LIST, { label: order.number }]}
         title={order.number}
         titleAdornment={<ChangeOrderStatusChip status={order.status} />}
-        subtitle={(
-          <Box component="span" sx={{ color: 'text.primary', fontSize: 16, fontWeight: 600 }}>
-            {order.title}
-          </Box>
-        )}
-        meta={<Facts order={order} />}
+        meta={<Facts order={order} onEditPoCo={canSetPoCo ? () => setEditingPoCo(true) : undefined} />}
         actions={<ChangeOrderActions order={order} onChanged={refresh} onError={setActionError} />}
       />
 
+      {editingPoCo && canSetPoCo && (
+        <PoCoNumberDialog
+          order={order}
+          onClose={() => setEditingPoCo(false)}
+          onSaved={async (message) => {
+            setEditingPoCo(false)
+            setActionError('')
+            setNotice(message)
+            await refresh()
+          }}
+        />
+      )}
+
       <Box sx={{ p: { xs: 2.5, md: 4 } }}>
-        {(actionError || order.status === 'CANCELLED') && (
+        {(notice || actionError || order.status === 'CANCELLED') && (
           <Stack spacing={2} sx={{ mb: 3 }}>
+            {notice && (
+              <Alert severity="success" onClose={() => setNotice('')}>{notice}</Alert>
+            )}
             {actionError && (
               <Alert severity="error" onClose={() => setActionError('')}>{actionError}</Alert>
             )}
@@ -493,9 +682,10 @@ export default function ChangeOrderDetail() {
             },
           }}
         >
-          <Box sx={{ gridArea: 'work', minWidth: 0 }}>
+          <Stack spacing={3} sx={{ gridArea: 'work', minWidth: 0 }}>
             <WorkCard order={order} totals={totals} />
-          </Box>
+            <EventCard order={order} />
+          </Stack>
           <Box sx={{ gridArea: 'total' }}>
             <TotalCard totals={totals} />
           </Box>

@@ -852,6 +852,17 @@ export function canEditInvoicedDrawPackage(record) {
   return record != null && invoicedEditLockReason(record) === null
 }
 
+/**
+ * Whether the generated Release / Payment Schedule of a Package let the correction go on. A Draft cannot be
+ * corrected while it holds one: the person removes them first (the database only lets them be removed from
+ * a Draft with no invoice). An invoiced Package can always be edited: they print the amount, so saving the
+ * edit removes them on its own, and the review says so.
+ */
+export function documentsAllowCorrection({ isInvoiced, loading, documentCount }) {
+  if (isInvoiced) return true
+  return !loading && documentCount === 0
+}
+
 /** True when the failure of an edit means nothing was saved: the Package is exactly as it was. */
 export function invoicedEditLeftNothingSaved(code) {
   return [

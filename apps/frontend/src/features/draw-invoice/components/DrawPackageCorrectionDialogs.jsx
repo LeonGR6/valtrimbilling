@@ -20,6 +20,7 @@ import LayersRoundedIcon from '@mui/icons-material/LayersRounded'
 import { formatPhaseBuilding } from '../../sequence-sheets/utils/phaseBuildingCodes.js'
 import {
   canCorrectDrawPackage,
+  documentsAllowCorrection,
   invoicedEditLeftNothingSaved,
   toInvoicedEditRequest,
 } from '../services/drawInvoicePackageRecord.js'
@@ -190,7 +191,12 @@ export function EditDrawPackageDialog({
   const changed = removedCount > 0 || addedCount > 0 || metadataChanged
     || removedHardwareCount > 0 || releasedOptions.length > 0
   const hasSomethingToBill = selections.length > 0 || keptHardwareLines.length > 0
-  const canSave = !submitting && !releases.loading && releases.releases.length === 0
+  const canSave = !submitting
+    && documentsAllowCorrection({
+      isInvoiced,
+      loading: releases.loading,
+      documentCount: releases.releases.length,
+    })
     && (isInvoiced ? hasSomethingToBill : selections.length > 0) && changed
     && validateReason(reason) && notes.trim().length <= 500
   const stage = done ? 'done' : review ? 'review' : 'edit'
@@ -414,7 +420,11 @@ export function EditDrawPackageDialog({
             Job, Billing Setup and Package date cannot be edited.
           </Alert>
           )}
-          <PackageReleasesNotice state={releases} action={isInvoiced ? 'edit this Package' : 'edit this draft'} />
+          <PackageReleasesNotice
+            state={releases}
+            action="edit this draft"
+            removable={!isInvoiced}
+          />
           {error && <Alert severity="error">{error}</Alert>}
 
           <Box>

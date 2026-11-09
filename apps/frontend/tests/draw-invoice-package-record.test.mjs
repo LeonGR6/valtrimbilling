@@ -7,6 +7,7 @@ import {
   canEditInvoicedDrawPackage,
   canManageDraftDrawPackage,
   draftLockReason,
+  documentsAllowCorrection,
   invoicedEditLeftNothingSaved,
   invoicedEditLockReason,
   toCreateOptionsPackageRpc,
@@ -1309,4 +1310,15 @@ test('the difference line of an invoice is read from its sync row, and an invoic
     toInvoiceDifference({ difference_description: 'DIFFERENCE', difference_amount: '-4.5' }),
     { description: 'DIFFERENCE', amount: -4.5, limit: null, addedAt: null },
   )
+})
+
+test('generated documents block the correction of a Draft but never the edit of an invoiced Package', () => {
+  // A Draft: the Release and Payment Schedule are removed by hand first.
+  assert.equal(documentsAllowCorrection({ isInvoiced: false, loading: false, documentCount: 0 }), true)
+  assert.equal(documentsAllowCorrection({ isInvoiced: false, loading: false, documentCount: 2 }), false)
+  assert.equal(documentsAllowCorrection({ isInvoiced: false, loading: true, documentCount: 0 }), false)
+  // An invoiced Package: the database refuses the manual removal and the edit removes them itself.
+  assert.equal(documentsAllowCorrection({ isInvoiced: true, loading: false, documentCount: 2 }), true)
+  assert.equal(documentsAllowCorrection({ isInvoiced: true, loading: true, documentCount: 0 }), true)
+  assert.equal(documentsAllowCorrection({ isInvoiced: true, loading: false, documentCount: 0 }), true)
 })

@@ -16,10 +16,14 @@ function describeDocuments(releases) {
 }
 
 /**
- * A Package with a generated Release or Payment Schedule cannot be edited or
+ * A draft Package with a generated Release or Payment Schedule cannot be edited or
  * deleted. This lists those documents and lets the user remove them first.
+ *
+ * An invoiced Package is different (`removable` false): the database does not let those
+ * documents be removed by hand, and editing the Package removes them on its own because
+ * they print the amount. Then this only tells which ones will go.
  */
-export default function PackageReleasesNotice({ state, action }) {
+export default function PackageReleasesNotice({ state, action, removable = true }) {
   const { releases, loading, removingId, error, remove } = state
   const [confirmingId, setConfirmingId] = useState(null)
 
@@ -39,7 +43,11 @@ export default function PackageReleasesNotice({ state, action }) {
       {releases.length > 0 && (
         <Alert severity="warning">
           This Package has {describeDocuments(releases)}.
-          {' '}Remove {releases.length === 1 ? 'it' : 'them'} first to {action}.
+          {removable
+            ? ` Remove ${releases.length === 1 ? 'it' : 'them'} first to ${action}.`
+            : ` Saving this change removes ${releases.length === 1 ? 'it' : 'them'} because ${
+              releases.length === 1 ? 'it prints' : 'they print'
+            } the amount. Generate ${releases.length === 1 ? 'it' : 'them'} again from the Package page afterwards.`}
         </Alert>
       )}
       {releases.map(({ id, kind, label, file }) => (
@@ -56,7 +64,7 @@ export default function PackageReleasesNotice({ state, action }) {
             </Typography>
             <Typography variant="caption" color="text.secondary">{label}</Typography>
           </Box>
-          {confirmingId === id ? (
+          {!removable ? null : confirmingId === id ? (
             <>
               <Button size="small" color="inherit" onClick={() => setConfirmingId(null)}>
                 Keep

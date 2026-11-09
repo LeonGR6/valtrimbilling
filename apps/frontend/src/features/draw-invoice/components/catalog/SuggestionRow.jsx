@@ -10,6 +10,7 @@ import WarningAmberRoundedIcon from '@mui/icons-material/WarningAmberRounded'
 import {
   formatPhaseBuilding,
 } from '../../../sequence-sheets/utils/phaseBuildingCodes.js'
+import { submissionMethodLabels } from '../../../builder-draw-schedules/data/builderDrawSchedules.js'
 import { formatCurrency } from '../../utils/drawInvoiceFormatters.js'
 
 /** One Job's suggested Package: what it holds, what it is worth and the button to review it. */
@@ -19,6 +20,11 @@ export default function SuggestionRow({ suggestion, disabled, onReview }) {
     phase.building,
     { variant: 'short', separator: ' / ' },
   )).join(' · ')
+  // How the Builder of this Job receives its Packages, as registered in the Builder Setup.
+  const submittedBy = suggestion.submissionMethod
+    ? (submissionMethodLabels[suggestion.submissionMethod] ?? suggestion.submissionMethod)
+    : '—'
+  const submittedTitle = [submittedBy, suggestion.submissionDestination].filter(Boolean).join(' · ')
   const needsAttention = !suggestion.isReady
   const items = `${suggestion.selectionCount} billing ${suggestion.selectionCount === 1 ? 'item' : 'items'}`
   const warnings = [
@@ -36,7 +42,7 @@ export default function SuggestionRow({ suggestion, disabled, onReview }) {
         display: 'grid',
         gap: { xs: 0.75, lg: 2 },
         alignItems: 'center',
-        gridTemplateColumns: { xs: '1fr', lg: 'minmax(0, 1.5fr) minmax(0, 1fr) 130px auto' },
+        gridTemplateColumns: { xs: '1fr', lg: 'minmax(0, 1.5fr) minmax(0, 1fr) 110px 130px auto' },
         '&:hover': { bgcolor: 'action.hover' },
       }}
     >
@@ -75,6 +81,15 @@ export default function SuggestionRow({ suggestion, disabled, onReview }) {
             {warnings.join(' · ')}
           </Typography>
         )}
+      </Box>
+
+      <Box sx={{ minWidth: 0 }} data-testid="suggestion-submitted-by">
+        <Typography variant="caption" color="text.secondary" sx={{ display: { lg: 'block' } }}>
+          Submitted by{' '}
+        </Typography>
+        <Typography variant="body2" fontWeight={750} component="span" noWrap title={submittedTitle}>
+          {submittedBy}
+        </Typography>
       </Box>
 
       <Box sx={{ textAlign: { lg: 'right' } }}>

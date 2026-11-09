@@ -1,7 +1,9 @@
 import { Chip, ToggleButton, ToggleButtonGroup, Tooltip } from '@mui/material'
 import { quickbooksEnvironmentLabel } from '../../services/quickbooksRecord.js'
 
-const MODES = ['sandbox', 'production']
+// Test (sandbox) is hidden for now: Production is the only mode people can pick. The Test code stays in
+// place (a Package already invoiced in Test still says so) until it is removed for good.
+const MODES = ['production']
 
 // Test is amber and Production is red on purpose: sending to the wrong one is
 // the costly mistake, so the active mode is never subtle.

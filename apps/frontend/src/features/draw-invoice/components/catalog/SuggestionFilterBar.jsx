@@ -6,9 +6,10 @@ import {
   TextField,
   Typography,
 } from '@mui/material'
+import { submissionMethodLabels } from '../../../builder-draw-schedules/data/builderDrawSchedules.js'
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
 
-/** The two fields at the top of a suggestions card. */
+/** The fields at the top of a suggestions card. */
 export default function SuggestionFilterBar({ filter, label }) {
   if (!filter.visible) return null
 
@@ -53,6 +54,22 @@ export default function SuggestionFilterBar({ filter, label }) {
             htmlInput: { 'aria-label': `Filter ${label} by Job` },
           }}
         />
+        {filter.submissionMethods.length > 0 && (
+          <TextField
+            select
+            size="small"
+            label="Submitted by"
+            value={filter.submission}
+            onChange={(event) => filter.setSubmission(event.target.value)}
+            sx={{ minWidth: { sm: 180 } }}
+            slotProps={{ htmlInput: { 'aria-label': `Filter ${label} by how they are submitted` } }}
+          >
+            <MenuItem value="">All</MenuItem>
+            {filter.submissionMethods.map((method) => (
+              <MenuItem key={method} value={method}>{submissionMethodLabels[method] ?? method}</MenuItem>
+            ))}
+          </TextField>
+        )}
         {filter.isFiltering && (
           <Typography variant="body2" color="text.secondary" sx={{ flex: 1 }}>
             Showing {filter.filtered.length} of {filter.total}
@@ -80,7 +97,7 @@ export function NoSuggestionMatch({ filter }) {
     <Box sx={{ px: 2, py: 1.5 }}>
       <Typography variant="body2" fontWeight={750}>No Job matches this filter</Typography>
       <Typography variant="body2" color="text.secondary">
-        Change the Builder or the Job text, or clear the filter.
+        Change the Builder, the Job text or Submitted by, or clear the filter.
       </Typography>
     </Box>
   )

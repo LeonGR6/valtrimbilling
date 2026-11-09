@@ -3,6 +3,7 @@ import test from 'node:test'
 import {
   filterSuggestions,
   suggestionBuilders,
+  suggestionSubmissionMethods,
 } from '../src/features/draw-invoice/utils/suggestionFilters.js'
 
 const suggestions = [
@@ -45,4 +46,24 @@ test('Builder and Job work together', () => {
 
 test('a Builder that is not in the list filters nothing', () => {
   assert.equal(filterSuggestions(suggestions, { builder: 'Gone Homes' }).length, 4)
+})
+
+test('Submitted by lists the ways in the order of the Builder Setup and filters on one of them', () => {
+  const bySubmission = [
+    { job: { id: 1, code: '1307', builder: 'Olson Homes' }, submissionMethod: 'TEXTURA' },
+    { job: { id: 2, code: '1295', builder: 'Indigo Builders' }, submissionMethod: 'PORTAL' },
+    { job: { id: 3, code: '1410', builder: 'Olson Homes' }, submissionMethod: 'TEXTURA' },
+    { job: { id: 4, code: '1500', builder: 'KB' }, submissionMethod: 'EMAIL' },
+  ]
+  assert.deepEqual(suggestionSubmissionMethods(bySubmission), ['PORTAL', 'EMAIL', 'TEXTURA'])
+  assert.deepEqual(suggestionSubmissionMethods(suggestions), [])
+  assert.deepEqual(
+    filterSuggestions(bySubmission, { submission: 'TEXTURA' }).map(({ job }) => job.id),
+    [1, 3],
+  )
+  assert.deepEqual(
+    filterSuggestions(bySubmission, { submission: 'TEXTURA', builder: 'Olson Homes', job: '14' }).map(({ job }) => job.id),
+    [3],
+  )
+  assert.equal(filterSuggestions(bySubmission, { submission: '' }).length, 4)
 })

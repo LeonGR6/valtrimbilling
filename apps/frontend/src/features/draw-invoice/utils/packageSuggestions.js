@@ -191,6 +191,9 @@ export function buildPackageSuggestions({
       hardwareSelectionCount: calendarSuggestion.suggestedHardwareSelections.length,
       eventTypes: calendarSuggestion.eventTypes,
       estimatedInvoiceAmount: calendarSuggestion.estimatedInvoiceAmount,
+      // How this Job's Builder receives its Packages, as registered in the Builder Setup of the Job.
+      submissionMethod: schedule.submissionMethod ?? 'PORTAL',
+      submissionDestination: schedule.submissionDestination ?? '',
       needsWorksheetReview,
       unpricedOptionCount,
       isReady,

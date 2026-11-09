@@ -133,6 +133,31 @@ test('Package Suggestions expose actionable Job and Phase work inside five busin
   assert.equal(suggestions[0].isReady, true)
 })
 
+test('a suggestion says how the Job\'s Builder Setup submits the Package, not how the current Builder schedule does', () => {
+  const suggestions = buildPackageSuggestions({
+    jobs: [buildJob()],
+    schedules: [buildSchedule({ id: 999, submissionMethod: 'EMAIL', submissionDestination: 'ap@builder.test' })],
+    jobBillingSetupVersions: [buildSchedule({ submissionMethod: 'TEXTURA', submissionDestination: 'Textura' })],
+    packages: [],
+    productionActivities: [buildActivity()],
+    asOfDate: '2026-10-05',
+  })
+
+  assert.equal(suggestions[0].submissionMethod, 'TEXTURA')
+  assert.equal(suggestions[0].submissionDestination, 'Textura')
+
+  // A setup that does not say defaults to Portal, like the Builder Setup form.
+  const plain = buildPackageSuggestions({
+    jobs: [buildJob()],
+    schedules: [],
+    jobBillingSetupVersions: [buildSchedule()],
+    packages: [],
+    productionActivities: [buildActivity()],
+    asOfDate: '2026-10-05',
+  })
+  assert.equal(plain[0].submissionMethod, 'PORTAL')
+})
+
 test('Package Suggestions expose HW Calendar work when the Builder has no HW Draw', () => {
   const job = buildJob()
   job.sequenceSheet.plans[0].hardwarePrice = 600

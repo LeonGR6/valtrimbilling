@@ -15,6 +15,7 @@ const OAUTH_START_FUNCTION = 'quickbooks-oauth-start'
 const INVOICE_FUNCTION = 'quickbooks-invoice-create'
 const CUSTOMERS_FUNCTION = 'quickbooks-customers'
 const VOID_FUNCTION = 'quickbooks-invoice-void'
+const UPDATE_FUNCTION = 'quickbooks-invoice-update'
 const RESET_FUNCTION = 'quickbooks-invoice-reset'
 const DETACH_FUNCTION = 'quickbooks-invoice-detach'
 const PDF_FUNCTION = 'quickbooks-invoice-pdf'
@@ -215,6 +216,24 @@ export async function linkQuickbooksCustomer(builderId, customerId) {
 export async function unlinkQuickbooksCustomer(builderId) {
   const data = await customersRequest({ action: 'unlink', builderId })
   return Boolean(data?.removed)
+}
+
+/**
+ * What editing an invoiced Package would change (cells, Options, Hardware, documents, the new total),
+ * without saving anything. QuickBooks is read, so a payment or a hand edit there is reported first.
+ */
+export async function previewInvoicedPackageEdit(request) {
+  return functionRequest(UPDATE_FUNCTION, { ...request, action: 'preview' })
+}
+
+/** Edits the Package and sends the new lines to the same QuickBooks invoice. */
+export async function applyInvoicedPackageEdit(request) {
+  return functionRequest(UPDATE_FUNCTION, { ...request, action: 'apply' })
+}
+
+/** Sends again a change that was saved on the Package but did not reach QuickBooks. */
+export async function retryInvoicedPackageUpdate(packageId) {
+  return functionRequest(UPDATE_FUNCTION, { packageId, action: 'retry' })
 }
 
 /** Voids the Package's invoice in QuickBooks; the Package can then be deleted. */

@@ -45,10 +45,16 @@ import {
   packageCreator,
 } from '../../utils/createPackagesInOrder.js'
 import { describeSavedInvoiceSplit } from '../../utils/packageSplit.js'
-import { refreshQuickbooksPayment } from '../../services/quickbooksRepository.js'
+import {
+  applyInvoicedPackageEdit,
+  previewInvoicedPackageEdit,
+  refreshQuickbooksPayment,
+} from '../../services/quickbooksRepository.js'
 import {
   canCorrectDrawPackage,
+  canEditInvoicedDrawPackage,
   draftLockReason,
+  invoicedEditLockReason,
 } from '../../services/drawInvoicePackageRecord.js'
 import { canAddPackageNotes } from '../../services/packageNotesRecord.js'
 import {
@@ -346,6 +352,9 @@ export default function DrawPackageDetail() {
     && isMultiPhasePackage(packageSummary?.phaseCount)
   const canCorrectFocusedPackage = canManageDrawInvoicePackages
     && canCorrectDrawPackage(focusedPackage)
+  // A Package whose invoice is waiting for payment can still be edited: the same QuickBooks invoice is updated.
+  const canEditInvoicedFocusedPackage = canManageDrawInvoicePackages
+    && canEditInvoicedDrawPackage(focusedPackage)
   const canDeleteFocusedPackage = canManageDrawInvoicePackages
     && canDeleteDraftPackage(focusedPackage)
   const canSendToQuickbooks = canCreateQuickbooksInvoice(focusedPackage, profile?.role)
@@ -354,6 +363,17 @@ export default function DrawPackageDetail() {
     sync: quickbooksSync,
     canSend: canSendToQuickbooks,
   })
+
+  // The edit of an invoiced Package: a preview first, then the change and the new lines in QuickBooks.
+  // Past the checks the Package may be changed even if QuickBooks refused, so it is read again either way.
+  const saveInvoicedEdit = async (request) => {
+    try {
+      return await applyInvoicedPackageEdit(request)
+    } finally {
+      setPaymentRefresh((value) => value + 1)
+      await refreshDrawInvoicePackages().catch(() => {})
+    }
+  }
 
   const handlePhaseChange = (event) => {
     navigate(jobDrawInvoicePath(focusedBuilderId, focusedJob.id, event.target.value))
@@ -383,8 +403,10 @@ export default function DrawPackageDetail() {
   // Why a Draft cannot be edited, moved or deleted, so the button explains itself.
   const carriesPriceChanges = (focusedPackage?.priceDifferences?.lineCount ?? 0) > 0
   const editLockedReason = canManageDrawInvoicePackages && !canCorrectFocusedPackage
-    && !canDeleteFocusedPackage
-    ? draftLockReason(focusedPackage)
+    && !canEditInvoicedFocusedPackage && !canDeleteFocusedPackage
+    ? (focusedPackage?.status === 'AWAITING_PAYMENT' && focusedPackage.quickbooksStatus === 'CREATED'
+      ? invoicedEditLockReason(focusedPackage)
+      : draftLockReason(focusedPackage))
     : canManageDrawInvoicePackages && !canCorrectFocusedPackage && carriesPriceChanges
       ? 'This Package collects price changes, so its cells cannot be edited or moved. Cancel it to give them back as pending, then create it again.'
       : null
@@ -528,7 +550,7 @@ export default function DrawPackageDetail() {
               lockedReason={editLockedReason}
               hasPackage={Boolean(focusedPackage)}
               canGenerate={RELEASE_ROLES.includes(profile?.role)}
-              canEdit={canCorrectFocusedPackage}
+              canEdit={canCorrectFocusedPackage || canEditInvoicedFocusedPackage}
               canMoveCells={canCorrectFocusedPackage}
               canDelete={canDeleteFocusedPackage}
               canCreate={canCreatePackage}
@@ -623,7 +645,10 @@ export default function DrawPackageDetail() {
           canSend={canSendToQuickbooks}
           role={profile?.role}
           onSend={() => setQuickbooksDialogOpen(true)}
-          onChanged={refreshDrawInvoicePackages}
+          onChanged={() => {
+            setPaymentRefresh((value) => value + 1)
+            refreshDrawInvoicePackages()
+          }}
         />
         {phases.length === 0 ? (
           <Alert
@@ -997,6 +1022,13 @@ export default function DrawPackageDetail() {
           schedule={schedule}
           packages={drawInvoicePackages}
           productionActivities={productionActivities}
+          submissions={submissions}
+          onPreviewInvoiced={previewInvoicedPackageEdit}
+          onSaveInvoiced={saveInvoicedEdit}
+          onResend={() => {
+            setCorrectionDialog(null)
+            setPackageDialogOpen(true)
+          }}
           onClose={() => setCorrectionDialog(null)}
           onSave={editDrawInvoicePackage}
         />

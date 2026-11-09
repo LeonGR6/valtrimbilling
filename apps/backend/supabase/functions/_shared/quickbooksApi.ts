@@ -317,15 +317,7 @@ async function apiPost(
   return { body, status: response.status }
 }
 
-export async function createQuickbooksInvoice(
-  options: QuickbooksApiOptions,
-  payload: QuickbooksInvoicePayload,
-  requestId: string,
-  fetcher: Fetcher = fetch,
-): Promise<CreatedQuickbooksInvoice> {
-  const operation = 'Creating the QuickBooks invoice'
-  const { body, status } = await apiPost(operation, options, 'invoice', { requestid: requestId }, payload, fetcher)
-
+function parseSavedInvoice(operation: string, body: Record<string, unknown> | null, status: number) {
   const invoice = body?.Invoice as
     | { Id?: unknown; DocNumber?: unknown; SyncToken?: unknown; TotalAmt?: unknown }
     | undefined
@@ -339,6 +331,34 @@ export async function createQuickbooksInvoice(
     syncToken: typeof invoice.SyncToken === 'string' ? invoice.SyncToken : null,
     totalAmount: typeof invoice.TotalAmt === 'number' ? invoice.TotalAmt : null,
   }
+}
+
+export async function createQuickbooksInvoice(
+  options: QuickbooksApiOptions,
+  payload: QuickbooksInvoicePayload,
+  requestId: string,
+  fetcher: Fetcher = fetch,
+): Promise<CreatedQuickbooksInvoice> {
+  const operation = 'Creating the QuickBooks invoice'
+  const { body, status } = await apiPost(operation, options, 'invoice', { requestid: requestId }, payload, fetcher)
+  return parseSavedInvoice(operation, body, status)
+}
+
+/**
+ * Replaces the lines of an invoice that already exists. `invoice` is the invoice exactly as QuickBooks
+ * returned it (Id and the current SyncToken included) with its `Line` array swapped: a full update keeps
+ * every other field as it was, and a line left out of the array is removed. A request id makes a retry
+ * after a network failure give back the first answer instead of applying the change twice.
+ */
+export async function updateQuickbooksInvoice(
+  options: QuickbooksApiOptions,
+  invoice: Record<string, unknown>,
+  requestId: string,
+  fetcher: Fetcher = fetch,
+): Promise<CreatedQuickbooksInvoice> {
+  const operation = 'Updating the QuickBooks invoice'
+  const { body, status } = await apiPost(operation, options, 'invoice', { requestid: requestId }, invoice, fetcher)
+  return parseSavedInvoice(operation, body, status)
 }
 
 /** The invoice that already uses this number (DocNumber) in QuickBooks, or null. */
@@ -362,12 +382,28 @@ export async function findQuickbooksInvoiceByDocNumber(
     : null
 }
 
-/** One invoice as it is in QuickBooks right now, or null when it no longer exists. */
-export async function getQuickbooksInvoice(
+/** One line of an invoice as QuickBooks has it. */
+export interface QuickbooksInvoiceLineSummary {
+  description: string
+  amount: number
+  itemId: string | null
+}
+
+/** An invoice as QuickBooks has it: the figures that matter, and the whole object to send back changed. */
+export interface QuickbooksInvoiceSnapshot {
+  detail: QuickbooksInvoiceDetail
+  /** The invoice exactly as QuickBooks returned it. */
+  raw: Record<string, unknown>
+  /** Its product lines; the subtotal line QuickBooks adds is left out. */
+  lines: QuickbooksInvoiceLineSummary[]
+}
+
+/** One invoice as it is in QuickBooks right now, with its lines, or null when it no longer exists. */
+export async function readQuickbooksInvoice(
   options: QuickbooksApiOptions,
   invoiceId: string,
   fetcher: Fetcher = fetch,
-): Promise<QuickbooksInvoiceDetail | null> {
+): Promise<QuickbooksInvoiceSnapshot | null> {
   let body: Record<string, unknown> | null
   try {
     body = await apiGet(
@@ -384,7 +420,7 @@ export async function getQuickbooksInvoice(
     throw error
   }
 
-  const invoice = body?.Invoice as {
+  const invoice = body?.Invoice as ({
     Id?: unknown
     SyncToken?: unknown
     DocNumber?: unknown
@@ -394,22 +430,49 @@ export async function getQuickbooksInvoice(
     PrivateNote?: unknown
     MetaData?: { LastUpdatedTime?: unknown }
     LinkedTxn?: { TxnType?: unknown }[]
-  } | undefined
+    Line?: {
+      DetailType?: unknown
+      Description?: unknown
+      Amount?: unknown
+      SalesItemLineDetail?: { ItemRef?: { value?: unknown } }
+    }[]
+  } & Record<string, unknown>) | undefined
   if (typeof invoice?.Id !== 'string' || typeof invoice.SyncToken !== 'string') return null
 
   return {
-    id: invoice.Id,
-    syncToken: invoice.SyncToken,
-    docNumber: typeof invoice.DocNumber === 'string' ? invoice.DocNumber : null,
-    totalAmount: Number(invoice.TotalAmt ?? 0),
-    balance: Number(invoice.Balance ?? 0),
-    linkedTransactions: (invoice.LinkedTxn ?? []).map((txn) => String(txn.TxnType ?? 'Unknown')),
-    dueDate: typeof invoice.DueDate === 'string' ? invoice.DueDate : null,
-    privateNote: typeof invoice.PrivateNote === 'string' ? invoice.PrivateNote : null,
-    lastUpdatedAt: typeof invoice.MetaData?.LastUpdatedTime === 'string'
-      ? invoice.MetaData.LastUpdatedTime
-      : null,
+    detail: {
+      id: invoice.Id,
+      syncToken: invoice.SyncToken,
+      docNumber: typeof invoice.DocNumber === 'string' ? invoice.DocNumber : null,
+      totalAmount: Number(invoice.TotalAmt ?? 0),
+      balance: Number(invoice.Balance ?? 0),
+      linkedTransactions: (invoice.LinkedTxn ?? []).map((txn) => String(txn.TxnType ?? 'Unknown')),
+      dueDate: typeof invoice.DueDate === 'string' ? invoice.DueDate : null,
+      privateNote: typeof invoice.PrivateNote === 'string' ? invoice.PrivateNote : null,
+      lastUpdatedAt: typeof invoice.MetaData?.LastUpdatedTime === 'string'
+        ? invoice.MetaData.LastUpdatedTime
+        : null,
+    },
+    raw: invoice,
+    lines: (invoice.Line ?? [])
+      .filter((line) => line.DetailType === 'SalesItemLineDetail')
+      .map((line) => ({
+        description: typeof line.Description === 'string' ? line.Description : '',
+        amount: Number(line.Amount ?? 0),
+        itemId: typeof line.SalesItemLineDetail?.ItemRef?.value === 'string'
+          ? line.SalesItemLineDetail.ItemRef.value
+          : null,
+      })),
   }
+}
+
+/** One invoice as it is in QuickBooks right now, or null when it no longer exists. */
+export async function getQuickbooksInvoice(
+  options: QuickbooksApiOptions,
+  invoiceId: string,
+  fetcher: Fetcher = fetch,
+): Promise<QuickbooksInvoiceDetail | null> {
+  return (await readQuickbooksInvoice(options, invoiceId, fetcher))?.detail ?? null
 }
 
 /**

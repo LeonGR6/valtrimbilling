@@ -447,6 +447,11 @@ verify_jwt = true
 [functions.quickbooks-invoice-pdf]
 verify_jwt = true
 
+# Edits a Package that already has a QuickBooks invoice and updates that same invoice (preview, apply,
+# retry). Same role check, made inside the function before any service-role access.
+[functions.quickbooks-invoice-update]
+verify_jwt = true
+
 # Reads what QuickBooks shows for Package invoices (open, overdue, paid...). A
 # signed-in Admin or Accounting user is checked inside the function; the
 # scheduled run sends QUICKBOOKS_SYNC_CRON_SECRET instead. No request is trusted

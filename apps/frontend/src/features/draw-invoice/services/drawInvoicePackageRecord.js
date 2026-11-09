@@ -326,6 +326,9 @@ export function toDrawInvoicePackage(
       ? null
       : Number(packageRow.quickbooks_invoice_syncs.qbo_total),
     paymentDueDate: packageRow.quickbooks_invoice_syncs?.qbo_due_date ?? null,
+    // A change made to the Package after its invoice was sent that QuickBooks has not received yet.
+    quickbooksUpdatePending: packageRow.quickbooks_invoice_syncs?.update_pending === true,
+    quickbooksUpdateError: packageRow.quickbooks_invoice_syncs?.update_error ?? null,
     submissionStatus: packageRow.submission_status ?? 'NOT_SUBMITTED',
     submittedAt: packageRow.submitted_at ?? null,
     // "Ready to submit" no longer exists: a Package still stored in it is a Draft.
@@ -787,7 +790,8 @@ export function draftLockReason(record) {
     return 'This Package was already sent to the Builder, so its cells are locked.'
   }
   if (record.quickbooksStatus === 'CREATED') {
-    return 'This Package already has a QuickBooks invoice, so its cells are locked.'
+    return invoicedEditLockReason(record)
+      ?? 'This Package already has a QuickBooks invoice, so its cells are locked.'
   }
   if (record.quickbooksStatus === 'VOIDED') {
     return 'The QuickBooks invoice was voided. The Package can be deleted but not edited.'
@@ -799,6 +803,87 @@ export function draftLockReason(record) {
     return 'This Package has a payment recorded, so its cells are locked.'
   }
   return 'This Package can no longer be changed.'
+}
+
+/**
+ * A Package whose invoice was sent to QuickBooks can still be edited while it waits for payment:
+ * nothing paid, credited or recorded against it. The invoice keeps its number; QuickBooks gets the
+ * new lines. Returns why it cannot, in the words shown to the person, or null when it can.
+ */
+export function invoicedEditLockReason(record) {
+  if (record == null || record.packageType !== 'DRAW' || record.quickbooksStatus !== 'CREATED') {
+    return 'This Package has no QuickBooks invoice to edit.'
+  }
+  if (record.status !== 'AWAITING_PAYMENT') {
+    return 'Only a Package that is awaiting payment can be edited after its invoice was sent.'
+  }
+  if ((record.persistedInvoice?.paidAmount ?? 0) > 0
+    || (record.paymentState != null && record.paymentState !== 'OPEN')
+    || (record.paymentBalance != null && record.paymentTotal != null
+      && Math.round(record.paymentBalance * 100) !== Math.round(record.paymentTotal * 100))) {
+    return 'The invoice already has a payment or credit, so it cannot be edited.'
+  }
+  if ((record.priceDifferences?.lineCount ?? 0) > 0) {
+    return 'This Package collects price changes, so its cells cannot be edited. Void the invoice and create it again.'
+  }
+  if (record.quickbooksUpdatePending) {
+    return 'The last change has not reached QuickBooks yet. Send it again from the notice on this page first.'
+  }
+  return null
+}
+
+export function canEditInvoicedDrawPackage(record) {
+  return record != null && invoicedEditLockReason(record) === null
+}
+
+/** True when the failure of an edit means nothing was saved: the Package is exactly as it was. */
+export function invoicedEditLeftNothingSaved(code) {
+  return [
+    'INVALID_REQUEST',
+    'NOT_CREATED',
+    'UPDATE_PENDING',
+    'WRONG_COMPANY',
+    'MISSING_IN_QUICKBOOKS',
+    'VOIDED_IN_QUICKBOOKS',
+    'HAS_PAYMENTS',
+    'EDITED_IN_QUICKBOOKS',
+    'EDIT_REFUSED',
+    'NOT_CONNECTED',
+    'BUSY',
+    'PACKAGE_NOT_FOUND',
+  ].includes(code)
+}
+
+/**
+ * The body of the edit of an invoiced Package: the cells, the Separate Hardware lines and the Option
+ * units that stay. An Option left out is released; so are those of a Lot that leaves.
+ */
+export function toInvoicedEditRequest({
+  packageId,
+  selections,
+  keptHardwareLines,
+  releasedOptions,
+  reason,
+  notes,
+}) {
+  return {
+    packageId: Number(packageId),
+    selections: (selections ?? []).map(({ lotId, drawIndex }) => ({
+      lot_id: Number(lotId),
+      draw_number: Number(drawIndex) + 1,
+    })),
+    hardwareSelections: (keptHardwareLines ?? []).map((line) => ({
+      lot_id: Number(line.lotId),
+      event_type: String(line.hardwareEventType ?? line.eventType),
+    })),
+    releasedOptions: (releasedOptions ?? []).map((option) => ({
+      lot_id: Number(option.lotId),
+      option_id: Number(option.optionId),
+      unit_no: Number(option.unitNo),
+    })),
+    reason: String(reason ?? '').trim(),
+    notes: String(notes ?? '').trim() || null,
+  }
 }
 
 export function canCorrectDrawPackage(record) {

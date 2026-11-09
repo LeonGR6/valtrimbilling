@@ -1,6 +1,8 @@
 // What the void and PDF actions need to know about a Package's QuickBooks invoice.
 
 import type { serviceClient } from './supabase.ts'
+import type { InvoiceUpdateContext } from './quickbooksInvoiceUpdate.ts'
+import type { QuickbooksInvoicePayload } from './quickbooksInvoice.ts'
 import { PackageNotFoundError } from './quickbooksPackageSource.ts'
 
 type Admin = ReturnType<typeof serviceClient>
@@ -39,5 +41,24 @@ export async function loadSyncContext(admin: Admin, packageId: number): Promise<
     environment: sync?.environment ?? null,
     realmId: sync?.realm_id ?? null,
     totalAmount: sync?.total_amount == null ? null : Number(sync.total_amount),
+  }
+}
+
+/** What editing an invoiced Package needs: the invoice as it was last sent, and whether a change is waiting. */
+export async function loadUpdateContext(admin: Admin, packageId: number): Promise<InvoiceUpdateContext> {
+  const base = await loadSyncContext(admin, packageId)
+
+  const { data: sync, error } = await admin
+    .from('quickbooks_invoice_syncs')
+    .select('payload, update_pending, update_request_id')
+    .eq('package_id', packageId)
+    .maybeSingle()
+  if (error) throw new Error(error.message)
+
+  return {
+    ...base,
+    payload: (sync?.payload ?? null) as QuickbooksInvoicePayload | null,
+    updatePending: sync?.update_pending === true,
+    updateRequestId: sync?.update_request_id ?? null,
   }
 }

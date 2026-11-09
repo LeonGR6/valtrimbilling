@@ -4,8 +4,11 @@ import {
   DRAW_PACKAGE_STATUSES,
   canCorrectDrawPackage,
   canDeleteVoidedQuickbooksPackage,
+  canEditInvoicedDrawPackage,
   canManageDraftDrawPackage,
   draftLockReason,
+  invoicedEditLeftNothingSaved,
+  invoicedEditLockReason,
   toCreateOptionsPackageRpc,
   toCreatePriceAdjustmentPackageRpc,
   toCreateRetentionReleasePackageRpc,
@@ -14,6 +17,7 @@ import {
   toCreateDrawPackageRpc,
   toDrawInvoicePackage,
   toEditDrawPackageRpc,
+  toInvoicedEditRequest,
   toPackageStatusRpc,
   toTransferDrawPackageRpc,
 } from '../src/features/draw-invoice/services/drawInvoicePackageRecord.js'
@@ -1170,4 +1174,97 @@ test('a Package line keeps the elevation its Lot had, and one made before elevat
 
   assert.deepEqual(record.persistedDrawLines.map((line) => [line.planCode, line.lotElevation]), [['10', 'B'], ['10A', '']])
   assert.equal(record.persistedOptionLines[0].lotElevation, 'B')
+})
+
+const invoiced = {
+  packageType: 'DRAW',
+  status: 'AWAITING_PAYMENT',
+  quickbooksStatus: 'CREATED',
+  quickbooksUpdatePending: false,
+  persistedInvoice: { paidAmount: 0 },
+  paymentState: 'OPEN',
+  paymentBalance: 1520,
+  paymentTotal: 1520,
+  priceDifferences: null,
+}
+
+test('a Package awaiting payment with an untouched invoice can be edited', () => {
+  assert.equal(canEditInvoicedDrawPackage(invoiced), true)
+  assert.equal(invoicedEditLockReason(invoiced), null)
+  // Before QuickBooks has been read, nothing is known about the payment: it can still be edited.
+  assert.equal(
+    canEditInvoicedDrawPackage({ ...invoiced, paymentState: null, paymentBalance: null, paymentTotal: null }),
+    true,
+  )
+})
+
+test('an invoiced Package is locked once a payment, a credit or a partial payment shows', () => {
+  for (const patch of [
+    { paymentState: 'PAID' },
+    { paymentState: 'PARTIAL' },
+    { paymentBalance: 1000 },
+    { persistedInvoice: { paidAmount: 10 } },
+  ]) {
+    const record = { ...invoiced, ...patch }
+    assert.equal(canEditInvoicedDrawPackage(record), false)
+    assert.match(invoicedEditLockReason(record), /payment or credit/u)
+  }
+})
+
+test('an invoiced Package is locked when it is not awaiting payment, has no invoice or carries price changes', () => {
+  assert.match(invoicedEditLockReason({ ...invoiced, status: 'PAID_CLOSED' }), /awaiting payment/u)
+  assert.match(invoicedEditLockReason({ ...invoiced, status: 'DRAFT' }), /awaiting payment/u)
+  assert.match(invoicedEditLockReason({ ...invoiced, quickbooksStatus: 'NOT_CREATED' }), /no QuickBooks invoice/u)
+  assert.match(invoicedEditLockReason({ ...invoiced, quickbooksStatus: 'VOIDED' }), /no QuickBooks invoice/u)
+  assert.match(invoicedEditLockReason({ ...invoiced, packageType: 'OPTIONS' }), /no QuickBooks invoice/u)
+  assert.match(
+    invoicedEditLockReason({ ...invoiced, priceDifferences: { lineCount: 2 } }),
+    /price changes/u,
+  )
+})
+
+test('a change that has not reached QuickBooks must be sent before another is made', () => {
+  const waiting = { ...invoiced, quickbooksUpdatePending: true }
+  assert.equal(canEditInvoicedDrawPackage(waiting), false)
+  assert.match(invoicedEditLockReason(waiting), /Send it again/u)
+})
+
+test('the lock reason of a Draft explains an invoiced Package that cannot be edited', () => {
+  const locked = { ...invoiced, status: 'DRAFT', persistedInvoice: { status: 'DRAFT', paidAmount: 0 }, submissionStatus: 'NOT_SUBMITTED' }
+  assert.match(draftLockReason(locked), /awaiting payment/u)
+})
+
+test('the record knows when a change is waiting for QuickBooks', () => {
+  const row = { ...packageRow, quickbooks_status: 'CREATED', quickbooks_invoice_syncs: { update_pending: true, update_error: 'timeout' } }
+  const record = toDrawInvoicePackage(row, null)
+  assert.equal(record.quickbooksUpdatePending, true)
+  assert.equal(record.quickbooksUpdateError, 'timeout')
+  assert.equal(toDrawInvoicePackage({ ...packageRow, quickbooks_invoice_syncs: null }, null).quickbooksUpdatePending, false)
+})
+
+test('the edit of an invoiced Package sends the cells, Hardware lines and Option units that are kept or released', () => {
+  assert.deepEqual(toInvoicedEditRequest({
+    packageId: '68',
+    selections: [{ phaseId: 3, lotId: '7', drawIndex: 0, chargeHardware: true }],
+    keptHardwareLines: [{ lotId: 7, hardwareEventType: 'EXT' }, { lotId: 8, eventType: 'DM' }],
+    releasedOptions: [{ lotId: 7, optionId: '61', unitNo: 2 }],
+    reason: '  Billed twice ',
+    notes: ' ',
+  }), {
+    packageId: 68,
+    selections: [{ lot_id: 7, draw_number: 1 }],
+    hardwareSelections: [{ lot_id: 7, event_type: 'EXT' }, { lot_id: 8, event_type: 'DM' }],
+    releasedOptions: [{ lot_id: 7, option_id: 61, unit_no: 2 }],
+    reason: 'Billed twice',
+    notes: null,
+  })
+})
+
+test('an edit that failed before saving anything is told apart from one that may be half done', () => {
+  for (const code of ['HAS_PAYMENTS', 'EDITED_IN_QUICKBOOKS', 'EDIT_REFUSED', 'WRONG_COMPANY', 'VOIDED_IN_QUICKBOOKS']) {
+    assert.equal(invoicedEditLeftNothingSaved(code), true, code)
+  }
+  for (const code of ['QUICKBOOKS_ERROR', 'TOTAL_MISMATCH', 'INTERNAL', null, undefined]) {
+    assert.equal(invoicedEditLeftNothingSaved(code), false, String(code))
+  }
 })

@@ -5,6 +5,7 @@ const ACTION_LABELS = {
   EDIT: 'Edited',
   CANCEL: 'Cancelled',
   RECALCULATE: 'Prices updated',
+  EDIT_INVOICED: 'Edited after invoicing',
 }
 
 function describeCorrection(correction, packageId) {

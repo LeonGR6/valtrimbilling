@@ -6,6 +6,8 @@ import {
   getQuickbooksCustomer,
   getQuickbooksInvoice,
   getQuickbooksInvoicePdf,
+  readQuickbooksInvoice,
+  updateQuickbooksInvoice,
   voidQuickbooksInvoice,
   QuickbooksApiError,
   type QuickbooksApiOptions,
@@ -173,6 +175,71 @@ Deno.test('reads an invoice with its balance and linked payments', async () => {
   })
   assertEquals(calls[0].url.pathname, '/v3/company/9341/invoice/146')
   assertEquals(await getQuickbooksInvoice(options, '1', recording(faultReply('610')).fetcher), null)
+})
+
+Deno.test('reads an invoice with its product lines and the whole object to send back', async () => {
+  const { fetcher } = recording(
+    reply({
+      Invoice: {
+        Id: '146',
+        SyncToken: '3',
+        DocNumber: '14899',
+        TotalAmt: 760,
+        Balance: 760,
+        CustomerRef: { value: '58' },
+        Line: [
+          {
+            Id: '1',
+            Amount: 800,
+            DetailType: 'SalesItemLineDetail',
+            Description: 'PHASE 1 LOT #1\nDRAW 1',
+            SalesItemLineDetail: { ItemRef: { value: '19' } },
+          },
+          { Id: '2', Amount: -40, DetailType: 'SalesItemLineDetail', Description: 'RETENTION', SalesItemLineDetail: {} },
+          { Amount: 760, DetailType: 'SubTotalLineDetail', SubTotalLineDetail: {} },
+        ],
+      },
+    }),
+  )
+
+  const snapshot = await readQuickbooksInvoice(options, '146', fetcher)
+
+  assertEquals(snapshot?.detail.totalAmount, 760)
+  assertEquals(snapshot?.lines, [
+    { description: 'PHASE 1 LOT #1\nDRAW 1', amount: 800, itemId: '19' },
+    { description: 'RETENTION', amount: -40, itemId: null },
+  ])
+  assertEquals(snapshot?.raw.CustomerRef, { value: '58' })
+  assertEquals(await readQuickbooksInvoice(options, '1', recording(faultReply('610')).fetcher), null)
+})
+
+Deno.test('updates an invoice with a full update that carries a request id', async () => {
+  const { fetcher, calls } = recording(
+    reply({ Invoice: { Id: '146', SyncToken: '4', DocNumber: '14899', TotalAmt: 760 } }),
+  )
+  const invoice = { Id: '146', SyncToken: '3', DocNumber: '14899', Line: [] }
+
+  const updated = await updateQuickbooksInvoice(options, invoice, 'req-9', fetcher)
+
+  assertEquals(updated, { id: '146', docNumber: '14899', syncToken: '4', totalAmount: 760 })
+  assertEquals(calls[0].url.pathname, '/v3/company/9341/invoice')
+  assertEquals(calls[0].url.searchParams.get('requestid'), 'req-9')
+  assertEquals(calls[0].url.searchParams.get('operation'), null)
+  assertEquals(calls[0].init?.method, 'POST')
+  assertEquals(JSON.parse(String(calls[0].init?.body)), invoice)
+
+  // A refusal is definite (nothing changed); a network failure is not.
+  const stale = await assertRejects(
+    () => updateQuickbooksInvoice(options, invoice, 'req-9', recording(faultReply('5010')).fetcher),
+    QuickbooksApiError,
+    'Updating the QuickBooks invoice failed',
+  )
+  assertEquals(stale.definite, true)
+  const down = await assertRejects(
+    () => updateQuickbooksInvoice(options, invoice, 'req-9', recording(new Error('timeout')).fetcher),
+    QuickbooksApiError,
+  )
+  assertEquals(down.definite, false)
 })
 
 Deno.test('voids an invoice with the operation=void sparse update', async () => {

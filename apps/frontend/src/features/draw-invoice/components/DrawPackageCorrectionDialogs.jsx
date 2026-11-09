@@ -18,12 +18,22 @@ import AddRoundedIcon from '@mui/icons-material/AddRounded'
 import CheckRoundedIcon from '@mui/icons-material/CheckRounded'
 import LayersRoundedIcon from '@mui/icons-material/LayersRounded'
 import { formatPhaseBuilding } from '../../sequence-sheets/utils/phaseBuildingCodes.js'
-import { canCorrectDrawPackage } from '../services/drawInvoicePackageRecord.js'
+import {
+  canCorrectDrawPackage,
+  invoicedEditLeftNothingSaved,
+  toInvoicedEditRequest,
+} from '../services/drawInvoicePackageRecord.js'
 import { buildDrawCalendarHeadings } from '../utils/calendarDrawSuggestions.js'
 import { packageInvoiceUnits, phaseFitsPackageInvoice } from '../utils/packageSplit.js'
 import DrawSelectionGrid from './dialogs/DrawSelectionGrid.jsx'
 import { usePackageReleases } from '../hooks/usePackageReleases.js'
 import PackageReleasesNotice from './PackageReleasesNotice.jsx'
+import {
+  InvoicedEditDone,
+  InvoicedEditReview,
+  InvoicedLinesEditor,
+  SentToBuilderWarning,
+} from './InvoicedEditPanels.jsx'
 import {
   buildBilledHardwareCharges,
   buildBilledUtilityCharges,
@@ -63,9 +73,15 @@ export function EditDrawPackageDialog({
   schedule,
   packages,
   productionActivities = [],
+  // Only for a Package whose invoice was already sent to QuickBooks.
+  submissions = [],
+  onPreviewInvoiced,
+  onSaveInvoiced,
+  onResend,
   onClose,
   onSave,
 }) {
+  const isInvoiced = record.quickbooksStatus === 'CREATED'
   const releases = usePackageReleases(record.id)
   const availablePhases = sortPhasesForPicking(job.sequenceSheet?.phases ?? [])
   // Every Phase the Package already covers is shown, plus any the user adds.
@@ -83,6 +99,14 @@ export function EditDrawPackageDialog({
   const [reason, setReason] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState(null)
+  // An invoiced Package: the Hardware lines and Options it keeps, the dry run, and the outcome.
+  const [keptHardwareIds, setKeptHardwareIds] = useState(
+    () => new Set((record.persistedHardwareLines ?? []).map((line) => line.id)),
+  )
+  const [releasedOptionIds, setReleasedOptionIds] = useState(() => new Set())
+  const [review, setReview] = useState(null)
+  const [done, setDone] = useState(null)
+  const [savedWithoutQuickbooks, setSavedWithoutQuickbooks] = useState(false)
   const shownPhaseIdSet = new Set(shownPhaseIds)
   const shownPhases = availablePhases.filter(
     (candidate) => shownPhaseIdSet.has(String(candidate.id)),
@@ -153,10 +177,31 @@ export function EditDrawPackageDialog({
     (selection) => !originalKeys.has(cellKey(selection)),
   ).length
   const metadataChanged = notes.trim() !== (record.notes ?? '')
+  const hardwareLines = record.persistedHardwareLines ?? []
+  const keptLotIds = new Set(selections.map(({ lotId }) => String(lotId)))
+  const keptHardwareLines = hardwareLines.filter((line) => keptHardwareIds.has(line.id))
+  const removedHardwareCount = hardwareLines.length - keptHardwareLines.length
+  // The Options of a Lot that leaves go with it; the server releases those on its own.
+  const releasedOptions = isInvoiced
+    ? (record.persistedOptionLines ?? []).filter(
+      (option) => releasedOptionIds.has(option.id) && keptLotIds.has(String(option.lotId)),
+    )
+    : []
   const changed = removedCount > 0 || addedCount > 0 || metadataChanged
+    || removedHardwareCount > 0 || releasedOptions.length > 0
+  const hasSomethingToBill = selections.length > 0 || keptHardwareLines.length > 0
   const canSave = !submitting && !releases.loading && releases.releases.length === 0
-    && selections.length > 0 && changed
+    && (isInvoiced ? hasSomethingToBill : selections.length > 0) && changed
     && validateReason(reason) && notes.trim().length <= 500
+  const stage = done ? 'done' : review ? 'review' : 'edit'
+  const invoicedRequest = () => toInvoicedEditRequest({
+    packageId: record.id,
+    selections,
+    keptHardwareLines,
+    releasedOptions,
+    reason,
+    notes,
+  })
   const packagePhaseIds = new Set(selections.map(({ phaseId }) => String(phaseId)))
   const packagePhases = availablePhases.filter(
     (candidate) => packagePhaseIds.has(String(candidate.id)),
@@ -248,6 +293,44 @@ export function EditDrawPackageDialog({
     ) <= 0
   )
 
+  const toggleHardware = (id) => setKeptHardwareIds((current) => {
+    const next = new Set(current)
+    if (!next.delete(id)) next.add(id)
+    return next
+  })
+  const toggleOption = (id) => setReleasedOptionIds((current) => {
+    const next = new Set(current)
+    if (!next.delete(id)) next.add(id)
+    return next
+  })
+
+  // An invoiced Package is read in two steps: what would change, then the change itself.
+  const reviewChanges = async () => {
+    setSubmitting(true)
+    setError(null)
+    try {
+      setReview(await onPreviewInvoiced(invoicedRequest()))
+    } catch (reviewError) {
+      setError(reviewError.message)
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const saveInvoiced = async () => {
+    setSubmitting(true)
+    setError(null)
+    try {
+      setDone(await onSaveInvoiced(invoicedRequest()))
+    } catch (saveError) {
+      setError(saveError.message)
+      // Past the checks the Package is already saved: the page says it is waiting for QuickBooks.
+      setSavedWithoutQuickbooks(!invoicedEditLeftNothingSaved(saveError.code))
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
   const save = async () => {
     setSubmitting(true)
     setError(null)
@@ -283,12 +366,43 @@ export function EditDrawPackageDialog({
           )}
         </Stack>
         <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-          Correct the Lot / Draw cells of this draft Package. The reason is kept
-          in its correction history.
+          {isInvoiced
+            ? `Change what this Package bills. Invoice ${record.quickbooksReference ?? ''} stays the same invoice in QuickBooks: its lines are replaced. The reason is kept in the correction history.`
+            : 'Correct the Lot / Draw cells of this draft Package. The reason is kept in its correction history.'}
         </Typography>
       </DialogTitle>
       <DialogContent sx={{ pt: '16px !important' }}>
+        {stage === 'review' && (
+          <Stack spacing={2}>
+            {error && (
+              <Alert severity="error">
+                {error}
+                {savedWithoutQuickbooks && (
+                  <>
+                    {' '}<strong>The change is saved on the Package, but QuickBooks does not have it yet.</strong>{' '}
+                    Close this window and use “Send to QuickBooks again” on the Package page.
+                  </>
+                )}
+              </Alert>
+            )}
+            <InvoicedEditReview review={review} />
+          </Stack>
+        )}
+        {stage === 'done' && (
+          <InvoicedEditDone result={done} sent={submissions.length > 0} />
+        )}
+        {stage === 'edit' && (
         <Stack spacing={2.5}>
+          {isInvoiced && <SentToBuilderWarning submissions={submissions} />}
+          {isInvoiced && (
+            <Alert severity="info">
+              Only what is free can be added: yellow cells belong to another Package. A Lot, Option or
+              Separate Hardware line you take off becomes free for another Package. The invoice number and
+              date do not change, and the Release and Payment Schedule are removed because they print the
+              amount. Nothing is saved until you review the new total and confirm.
+            </Alert>
+          )}
+          {!isInvoiced && (
           <Alert severity="info">
             Keep at least one cell. Yellow cells belong to another Package;
             use “Move cells here” to transfer them. Unchanged cells retain
@@ -299,7 +413,8 @@ export function EditDrawPackageDialog({
               : 'You may add cells from any Phase in this Job.'}{' '}
             Job, Billing Setup and Package date cannot be edited.
           </Alert>
-          <PackageReleasesNotice state={releases} action="edit this draft" />
+          )}
+          <PackageReleasesNotice state={releases} action={isInvoiced ? 'edit this Package' : 'edit this draft'} />
           {error && <Alert severity="error">{error}</Alert>}
 
           <Box>
@@ -449,6 +564,18 @@ export function EditDrawPackageDialog({
               label={`${removedCount} removed`}
             />
           </Stack>
+          {isInvoiced && (
+            <InvoicedLinesEditor
+              hardwareLines={hardwareLines}
+              keptHardwareIds={keptHardwareIds}
+              onToggleHardware={toggleHardware}
+              optionLines={record.persistedOptionLines ?? []}
+              releasedOptionIds={releasedOptionIds}
+              keptLotIds={keptLotIds}
+              onToggleOption={toggleOption}
+              disabled={submitting}
+            />
+          )}
           <TextField
             label="Package notes"
             value={notes}
@@ -467,12 +594,47 @@ export function EditDrawPackageDialog({
             helperText="Saved in the Package correction history."
           />
         </Stack>
+        )}
       </DialogContent>
       <DialogActions sx={{ px: 3, pb: 2.5 }}>
-        <Button color="inherit" onClick={onClose} disabled={submitting}>Cancel</Button>
-        <Button variant="contained" disableElevation onClick={save} disabled={!canSave}>
-          {submitting ? 'Saving…' : 'Save correction'}
-        </Button>
+        {stage === 'done' && (
+          <>
+            {submissions.length > 0 && onResend && (
+              <Button color="inherit" onClick={onResend}>Send to the Builder again</Button>
+            )}
+            <Button variant="contained" disableElevation onClick={onClose}>Close</Button>
+          </>
+        )}
+        {stage === 'review' && (
+          <>
+            {savedWithoutQuickbooks
+              ? <Button variant="contained" disableElevation onClick={onClose}>Close</Button>
+              : (
+                <>
+                  <Button color="inherit" onClick={() => { setReview(null); setError(null) }} disabled={submitting}>
+                    Back to editing
+                  </Button>
+                  <Button variant="contained" disableElevation onClick={saveInvoiced} disabled={submitting}>
+                    {submitting ? 'Updating QuickBooks…' : 'Confirm and update the invoice'}
+                  </Button>
+                </>
+              )}
+          </>
+        )}
+        {stage === 'edit' && (
+          <>
+            <Button color="inherit" onClick={onClose} disabled={submitting}>Cancel</Button>
+            {isInvoiced ? (
+              <Button variant="contained" disableElevation onClick={reviewChanges} disabled={!canSave}>
+                {submitting ? 'Checking QuickBooks…' : 'Review changes'}
+              </Button>
+            ) : (
+              <Button variant="contained" disableElevation onClick={save} disabled={!canSave}>
+                {submitting ? 'Saving…' : 'Save correction'}
+              </Button>
+            )}
+          </>
+        )}
       </DialogActions>
     </Dialog>
   )

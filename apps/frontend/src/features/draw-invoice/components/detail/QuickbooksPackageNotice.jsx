@@ -9,7 +9,7 @@ import {
   isInvoicedThroughQuickbooks,
   isQuickbooksTestPackage,
 } from '../../services/quickbooksRecord.js'
-import { saveQuickbooksInvoicePdf } from '../../services/quickbooksRepository.js'
+import { retryInvoicedPackageUpdate, saveQuickbooksInvoicePdf } from '../../services/quickbooksRepository.js'
 import { formatCurrency } from '../../utils/drawInvoiceFormatters.js'
 import QuickbooksNewInvoiceDialog from './QuickbooksNewInvoiceDialog.jsx'
 import QuickbooksResetDialog from './QuickbooksResetDialog.jsx'
@@ -39,6 +39,8 @@ export default function QuickbooksPackageNotice({
   const [voidOpen, setVoidOpen] = useState(false)
   const [resetOpen, setResetOpen] = useState(false)
   const [newInvoiceOpen, setNewInvoiceOpen] = useState(false)
+  const [retrying, setRetrying] = useState(false)
+  const [retryError, setRetryError] = useState('')
 
   if (!record || !isInvoicedThroughQuickbooks(record)) return null
 
@@ -58,6 +60,21 @@ export default function QuickbooksPackageNotice({
       onReset={onChanged}
     />
   )
+
+  // A change saved on the Package that QuickBooks did not receive: send the same change again.
+  const retryUpdate = async () => {
+    setRetrying(true)
+    setRetryError('')
+    try {
+      await retryInvoicedPackageUpdate(record.id)
+      reload()
+    } catch (failure) {
+      setRetryError(failure.message)
+    } finally {
+      setRetrying(false)
+      onChanged?.()
+    }
+  }
 
   const savePdf = async () => {
     setSavingPdf(true)
@@ -127,6 +144,22 @@ export default function QuickbooksPackageNotice({
 
   return (
     <>
+      {record.quickbooksUpdatePending && (
+        <Alert
+          severity="warning"
+          sx={{ mb: 1.5 }}
+          action={canSavePdf && (
+            <Button color="inherit" size="small" onClick={retryUpdate} disabled={retrying} sx={{ whiteSpace: 'nowrap' }}>
+              {retrying ? 'Sending…' : 'Send to QuickBooks again'}
+            </Button>
+          )}
+        >
+          <strong>A change to this Package has not reached QuickBooks yet.</strong>{' '}
+          The Package is already changed, but the QuickBooks invoice still shows the old lines.
+          {record.quickbooksUpdateError ? ` Last error: ${record.quickbooksUpdateError}` : ''}
+          {retryError && <Box sx={{ mt: 0.5, color: 'error.main' }}>{retryError}</Box>}
+        </Alert>
+      )}
       <Alert
         severity={isTest ? 'warning' : 'success'}
         sx={{ '& .MuiAlert-message': { flex: 1 } }}
@@ -143,7 +176,7 @@ export default function QuickbooksPackageNotice({
             {record.quickbooksReference ? `Invoice ${record.quickbooksReference}` : 'This Package has an invoice'}
             {sync?.totalAmount != null ? ` · ${formatCurrency(sync.totalAmount)}` : ''}
             {sync?.updatedAt ? ` · sent ${savedDate(sync.updatedAt)}` : ''}
-            . It cannot be sent again or edited here.
+            . It cannot be sent again.
             {isTest && ' It cannot be sent to the Builder until it is moved back to Production.'}
             <Box sx={{ mt: 0.5, color: 'text.secondary' }}>
               {loading

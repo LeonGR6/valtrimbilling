@@ -14,6 +14,7 @@ import type { User } from 'jsr:@supabase/supabase-js@2'
 const ROLES = [
   'ADMIN',
   'ACCOUNTING',
+  'DRAW_INVOICE',
   'PROJECT_MANAGEMENT',
   'SCHEDULING',
   'CUSTOMER_SERVICE',

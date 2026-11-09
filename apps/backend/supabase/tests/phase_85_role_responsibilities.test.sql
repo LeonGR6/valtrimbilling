@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(12);
+select plan(13);
 
 -- The roles named by the has_app_role call of a function or a policy, as 'ACCOUNTING,ADMIN'.
 create function pg_temp.function_roles(p_schema text, p_name text)
@@ -46,8 +46,8 @@ select is(
   (select array_agg(enumlabel::text order by enumsortorder)
    from pg_enum
    where enumtypid = 'valtrim.app_role'::regtype),
-  array['ADMIN', 'ACCOUNTING', 'PROJECT_MANAGEMENT', 'SCHEDULING', 'CUSTOMER_SERVICE', 'FIELD', 'READ_ONLY'],
-  'Customer Service is a role of its own'
+  array['ADMIN', 'ACCOUNTING', 'DRAW_INVOICE', 'PROJECT_MANAGEMENT', 'SCHEDULING', 'CUSTOMER_SERVICE', 'FIELD', 'READ_ONLY'],
+  'Customer Service and Draw & Invoice are roles of their own'
 );
 
 select is(
@@ -70,13 +70,22 @@ select is(
      ('private', 'register_package_payment_schedule'),
      ('private', 'delete_package_payment_schedule'),
      ('private', 'confirm_release_template'),
-     ('private', 'confirm_payment_schedule_template'),
+     ('private', 'confirm_payment_schedule_template')
+   ) as f(schema_name, name)
+   where pg_temp.function_roles(f.schema_name, f.name) is distinct from 'ACCOUNTING,ADMIN,DRAW_INVOICE'),
+  null::text,
+  'Packages, their documents and notes belong to ADMIN, ACCOUNTING and DRAW_INVOICE'
+);
+
+select is(
+  (select string_agg(f.name, ' ' order by f.name)
+   from (values
      ('valtrim', 'save_builder_billing_setup'),
      ('valtrim', 'deactivate_builder_billing_setup')
    ) as f(schema_name, name)
    where pg_temp.function_roles(f.schema_name, f.name) is distinct from 'ACCOUNTING,ADMIN'),
   null::text,
-  'Packages, their documents and notes, and the Builder billing setup belong to ADMIN and ACCOUNTING'
+  'The Builder billing setup belongs to ADMIN and ACCOUNTING, not to DRAW_INVOICE'
 );
 
 select is(
@@ -86,7 +95,7 @@ select is(
      ('valtrim', 'reject_package_line_change'),
      ('valtrim', 'reject_package_hardware_line_change')
    ) as f(schema_name, name)
-   where pg_temp.function_roles(f.schema_name, f.name) is distinct from 'ACCOUNTING,ADMIN,PROJECT_MANAGEMENT'),
+   where pg_temp.function_roles(f.schema_name, f.name) is distinct from 'ACCOUNTING,ADMIN,DRAW_INVOICE,PROJECT_MANAGEMENT'),
   null::text,
   'The Package line guards also let PROJECT_MANAGEMENT through, because its price changes recalculate draft Packages'
 );
@@ -165,9 +174,9 @@ select is(
      ('storage', 'objects', 'job_documents_objects_insert'),
      ('storage', 'objects', 'package_documents_objects_insert')
    ) as p(schema_name, table_name, policy_name)
-   where pg_temp.policy_roles(p.schema_name, p.table_name, p.policy_name) is distinct from 'ACCOUNTING,ADMIN'),
+   where pg_temp.policy_roles(p.schema_name, p.table_name, p.policy_name) is distinct from 'ACCOUNTING,ADMIN,DRAW_INVOICE'),
   null::text,
-  'Job notes are read, and Job and Package documents uploaded, by ADMIN and ACCOUNTING'
+  'Job notes are read, and Job and Package documents uploaded, by ADMIN, ACCOUNTING and DRAW_INVOICE'
 );
 
 select is(
@@ -194,7 +203,7 @@ select is(
      ('storage', 'objects', 'package_documents_objects_delete'),
      ('valtrim', 'package_price_differences', 'package_price_differences_select')
    ) as p(schema_name, table_name, policy_name)
-   where pg_temp.policy_roles(p.schema_name, p.table_name, p.policy_name) is distinct from 'ACCOUNTING,ADMIN,PROJECT_MANAGEMENT'),
+   where pg_temp.policy_roles(p.schema_name, p.table_name, p.policy_name) is distinct from 'ACCOUNTING,ADMIN,DRAW_INVOICE,PROJECT_MANAGEMENT'),
   null::text,
   'PROJECT_MANAGEMENT still clears the PDFs of a draft Package it recalculates and sees the price differences'
 );
@@ -224,7 +233,7 @@ select is(
 select is(
   array[
     obj_description('valtrim.cancel_production_activity(bigint)'::regprocedure, 'pg_proc') like '%ADMIN and SCHEDULING only.',
-    obj_description('valtrim.add_job_note(bigint,text)'::regprocedure, 'pg_proc') like '%ADMIN and ACCOUNTING only.',
+    obj_description('valtrim.add_job_note(bigint,text)'::regprocedure, 'pg_proc') like '%ADMIN, ACCOUNTING and DRAW_INVOICE only.',
     obj_description('valtrim.save_builder_billing_setup(bigint,jsonb,jsonb,jsonb)'::regprocedure, 'pg_proc') like '%ADMIN and ACCOUNTING only.'
   ],
   array[true, true, true],

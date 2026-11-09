@@ -80,6 +80,7 @@ test('the note is sent trimmed, to the Package it was written on', () => {
 test('only the roles that bill can add notes', () => {
   assert.equal(canAddPackageNotes('ADMIN'), true)
   assert.equal(canAddPackageNotes('ACCOUNTING'), true)
+  assert.equal(canAddPackageNotes('DRAW_INVOICE'), true)
   assert.equal(canAddPackageNotes('PROJECT_MANAGEMENT'), false)
   assert.equal(canAddPackageNotes('SCHEDULING'), false)
   assert.equal(canAddPackageNotes('CUSTOMER_SERVICE'), false)

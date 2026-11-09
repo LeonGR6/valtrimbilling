@@ -138,6 +138,7 @@ const draftPackage = {
 test('only ADMIN and ACCOUNTING can send an eligible Package to QuickBooks', () => {
   assert.equal(canCreateQuickbooksInvoice(draftPackage, 'ADMIN'), true)
   assert.equal(canCreateQuickbooksInvoice(draftPackage, 'ACCOUNTING'), true)
+  assert.equal(canCreateQuickbooksInvoice(draftPackage, 'DRAW_INVOICE'), true)
   assert.equal(canCreateQuickbooksInvoice(draftPackage, 'PROJECT_MANAGEMENT'), false)
   assert.equal(canCreateQuickbooksInvoice(draftPackage, 'READ_ONLY'), false)
   assert.equal(canCreateQuickbooksInvoice(null, 'ADMIN'), false)
@@ -382,9 +383,10 @@ test('the preview carries the custom fields and the warnings of the function', (
   assert.deepEqual(toQuickbooksInvoiceResult({}).warnings, [])
 })
 
-test('only ADMIN and ACCOUNTING manage the Builder to Customer links', () => {
+test('only the roles that work in Draw & Invoice manage the Builder to Customer links', () => {
   assert.equal(canManageQuickbooksCustomers('ADMIN'), true)
   assert.equal(canManageQuickbooksCustomers('ACCOUNTING'), true)
+  assert.equal(canManageQuickbooksCustomers('DRAW_INVOICE'), true)
   assert.equal(canManageQuickbooksCustomers('PROJECT_MANAGEMENT'), false)
 })
 

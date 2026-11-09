@@ -91,7 +91,7 @@ import {
   sortPhasesForPicking,
 } from '../../utils/packagePhaseScope.js'
 import { useAuth } from '../../../auth/context/useAuth.js'
-import { BILLING_ROLES } from '../../../auth/authorization/roleAccess.js'
+import { DRAW_INVOICE_ROLES, canOpenPage } from '../../../auth/authorization/roleAccess.js'
 import { usePurchaseOrderBacking } from '../../../purchase-orders/hooks/usePurchaseOrders.js'
 import { usePreliminaryNoticeGate } from '../../hooks/usePreliminaryNoticeGate.js'
 import DrawSelectionGrid from './DrawSelectionGrid.jsx'
@@ -106,7 +106,7 @@ const PreliminaryNoticeEditorDialog = lazy(
 )
 
 // The roles that can save a Job's documents, the notice included.
-const NOTICE_ROLES = BILLING_ROLES
+const NOTICE_ROLES = DRAW_INVOICE_ROLES
 
 const cellKey = ({ phaseId, lotId, drawIndex }) => `${phaseId}:${lotId}:${drawIndex}`
 
@@ -1272,7 +1272,7 @@ export default function CreateDrawDialog({
             summary.unpricedOptionCount > 0 ? (
               <Alert
                 severity="warning"
-                action={job ? (
+                action={job && canOpenPage(profile?.role, 'planning') ? (
                   <Button
                     component={RouterLink}
                     to={jobPlanPricingPath(getJobBuilderId(job), job.id)}

@@ -2,14 +2,14 @@
 // document the Builder still needs). Like the notes of a Package, a note is added and never edited or
 // removed, so the thread reads as a record of what was said about the Job.
 
-import { BILLING_ROLES } from '../../auth/authorization/roleAccess.js'
+import { DRAW_INVOICE_ROLES } from '../../auth/authorization/roleAccess.js'
 import { noteAuthor, noteProblem, sortNotes } from '../utils/noteThread.js'
 
 export const JOB_NOTE_MAX_LENGTH = 1000
 
 // The roles that bill add them and read them. They can hold things like a promised payment date, so
 // unlike the notes of a Package they are not open to every active user.
-export const JOB_NOTE_ROLES = BILLING_ROLES
+export const JOB_NOTE_ROLES = DRAW_INVOICE_ROLES
 
 export function canUseJobNotes(role) {
   return JOB_NOTE_ROLES.includes(role)

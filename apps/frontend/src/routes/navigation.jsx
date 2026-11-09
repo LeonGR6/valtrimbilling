@@ -18,12 +18,15 @@ import {
   UsersPage,
 } from './lazyPages.jsx'
 import { ADMIN_ROLES, PAGE_ROLES } from '../features/auth/authorization/roleAccess.js'
+import StartPageGate from '../features/auth/context/StartPageGate.jsx'
 import { CHANGE_ORDERS_ENABLED } from '../config/appConfig.js'
 
 // Who may open each page: the roles that work there, plus the observers
-// (FIELD, READ_ONLY) who only look. Home has no list, so everyone opens it.
+// (FIELD, READ_ONLY) who only look. Home has no list, so everyone opens it,
+// except the roles that start on a page of their own (see StartPageGate).
 const {
   planning: planningPage,
+  drawInvoice: drawInvoicePage,
   billing: billingPage,
   scheduling: schedulingPage,
   customerService: customerServicePage,
@@ -47,7 +50,12 @@ const changeOrdersContextualRoutes = [
 ]
 
 export const navigationRoutes = [
-  { path: '/', label: 'Home', icon: 'home', element: <HomePage /> },
+  {
+    path: '/',
+    label: 'Home',
+    icon: 'home',
+    element: <StartPageGate><HomePage /></StartPageGate>,
+  },
   {
     path: '/calendar',
     label: 'Calendar',
@@ -68,7 +76,7 @@ export const navigationRoutes = [
     label: 'Draw & Invoice',
     icon: 'draw-invoice',
     element: <DrawAndInvoicePage />,
-    allowedRoles: billingPage,
+    allowedRoles: drawInvoicePage,
   },
   ...(CHANGE_ORDERS_ENABLED ? [changeOrdersRoute] : []),
   {
@@ -141,16 +149,16 @@ export const contextualRoutes = [
   {
     path: '/draw-invoice/builder/:builderId/job/:jobId',
     element: <DrawAndInvoicePage />,
-    allowedRoles: billingPage,
+    allowedRoles: drawInvoicePage,
   },
   {
     path: '/draw-invoice/builder/:builderId/job/:jobId/phase/:phaseId',
     element: <DrawAndInvoicePage />,
-    allowedRoles: billingPage,
+    allowedRoles: drawInvoicePage,
   },
   {
     path: '/draw-invoice/builder/:builderId/job/:jobId/phase/:phaseId/package/:packageId',
     element: <DrawAndInvoicePage />,
-    allowedRoles: billingPage,
+    allowedRoles: drawInvoicePage,
   },
 ]

@@ -421,17 +421,17 @@ verify_jwt = true
 [functions.quickbooks-oauth-callback]
 verify_jwt = false
 
-# A signed-in ADMIN or ACCOUNTING user creates the QuickBooks invoice of a
+# A signed-in ADMIN, ACCOUNTING or DRAW_INVOICE user creates the QuickBooks invoice of a
 # Package. The function re-checks the role before any service-role access.
 [functions.quickbooks-invoice-create]
 verify_jwt = true
 
-# A signed-in ADMIN or ACCOUNTING user links Builders to QuickBooks Customers.
+# A signed-in ADMIN, ACCOUNTING or DRAW_INVOICE user links Builders to QuickBooks Customers.
 # The function re-checks the role before any service-role access.
 [functions.quickbooks-customers]
 verify_jwt = true
 
-# A signed-in ADMIN or ACCOUNTING user voids a Package's QuickBooks invoice, or
+# A signed-in ADMIN, ACCOUNTING or DRAW_INVOICE user voids a Package's QuickBooks invoice, or
 # saves QuickBooks' PDF of it. Each function re-checks the role before any
 # service-role access.
 [functions.quickbooks-invoice-void]

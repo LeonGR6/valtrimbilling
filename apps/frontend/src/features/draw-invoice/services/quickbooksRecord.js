@@ -1,3 +1,5 @@
+import { DRAW_INVOICE_ROLES } from '../../auth/authorization/roleAccess.js'
+
 // QuickBooks "sandbox" is called Test everywhere a person reads it.
 const ENVIRONMENT_LABELS = {
   sandbox: 'Test',
@@ -217,9 +219,9 @@ export function isInvoicedThroughQuickbooks(record) {
   return ['DRAW', 'PRICE_ADJUSTMENT', 'OPTIONS'].includes(record?.packageType ?? 'DRAW')
 }
 
-// ADMIN and ACCOUNTING may create QuickBooks invoices; the Edge Function
-// re-checks the role, this only decides whether to offer the action.
-const INVOICE_ROLES = ['ADMIN', 'ACCOUNTING']
+// The roles that work in Draw & Invoice may create QuickBooks invoices; the Edge
+// Function re-checks the role, this only decides whether to offer the action.
+const INVOICE_ROLES = DRAW_INVOICE_ROLES
 
 export function canCreateQuickbooksInvoice(record, role) {
   return INVOICE_ROLES.includes(role)

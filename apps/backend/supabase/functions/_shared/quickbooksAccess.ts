@@ -1,11 +1,11 @@
 // The sign-in and role check shared by the QuickBooks functions that act on a
-// Package: only an ADMIN or ACCOUNTING user may.
+// Package: only an ADMIN, ACCOUNTING or DRAW_INVOICE user may.
 
 import type { User } from '@supabase/supabase-js'
 import { json } from './cors.ts'
 import { userClient } from './supabase.ts'
 
-const ALLOWED_ROLES = ['ADMIN', 'ACCOUNTING']
+const ALLOWED_ROLES = ['ADMIN', 'ACCOUNTING', 'DRAW_INVOICE']
 
 export type InvoiceAccess =
   | { user: null; response: Response }
@@ -30,7 +30,7 @@ export async function requireInvoiceUser(req: Request, action: string): Promise<
   if (!profile?.is_active || !ALLOWED_ROLES.includes(profile.role)) {
     return {
       user: null,
-      response: json({ error: `Only an administrator or accounting user can ${action}.` }, 403),
+      response: json({ error: `Only an administrator, accounting or Draw & Invoice user can ${action}.` }, 403),
     }
   }
 

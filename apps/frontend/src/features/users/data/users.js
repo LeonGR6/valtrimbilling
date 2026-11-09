@@ -13,7 +13,13 @@ export const userRoleOptions = [
   {
     value: 'ACCOUNTING',
     label: 'Accounting',
-    description: 'Draw & Invoice (Packages, QuickBooks, payments, releases and notes) and Builder Setup.',
+    description: 'Draw & Invoice (Packages, QuickBooks, payments, releases and notes, A/R) and Builder Setup.',
+    scoped: false,
+  },
+  {
+    value: 'DRAW_INVOICE',
+    label: 'Draw & Invoice',
+    description: 'Only Draw & Invoice: Packages, Documents, notes and QuickBooks invoices. No A/R and no other module.',
     scoped: false,
   },
   {

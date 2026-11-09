@@ -9,6 +9,7 @@ test('each role gets the tabs of the Job pages it can open', () => {
   assert.deepEqual(idsFor('ADMIN'), ['plans-options', 'sequence-sheet', 'plan-pricing', 'draw-invoice'])
   assert.deepEqual(idsFor('PROJECT_MANAGEMENT'), ['plans-options', 'plan-pricing'])
   assert.deepEqual(idsFor('ACCOUNTING'), ['draw-invoice'])
+  assert.deepEqual(idsFor('DRAW_INVOICE'), ['draw-invoice'])
   assert.deepEqual(idsFor('SCHEDULING'), ['sequence-sheet'])
   assert.deepEqual(idsFor('CUSTOMER_SERVICE'), [])
 })
@@ -20,7 +21,7 @@ test('the observers see every tab', () => {
 })
 
 test('a tab is never offered to a role that its page would deny', () => {
-  for (const role of ['ADMIN', 'PROJECT_MANAGEMENT', 'ACCOUNTING', 'SCHEDULING', 'CUSTOMER_SERVICE', 'FIELD', 'READ_ONLY']) {
+  for (const role of ['ADMIN', 'PROJECT_MANAGEMENT', 'ACCOUNTING', 'DRAW_INVOICE', 'SCHEDULING', 'CUSTOMER_SERVICE', 'FIELD', 'READ_ONLY']) {
     for (const module of jobModulesForRole(role)) {
       assert.ok(isRoleAllowed(role, module.roles), `${role} / ${module.id}`)
     }
@@ -41,6 +42,7 @@ test('only the roles that open Jobs get the way back to the Builder jobs', () =>
   assert.equal(canOpenBuilderJobs('PROJECT_MANAGEMENT'), true)
   assert.equal(canOpenBuilderJobs('READ_ONLY'), true)
   assert.equal(canOpenBuilderJobs('ACCOUNTING'), false)
+  assert.equal(canOpenBuilderJobs('DRAW_INVOICE'), false)
   assert.equal(canOpenBuilderJobs('SCHEDULING'), false)
   assert.equal(canOpenBuilderJobs('CUSTOMER_SERVICE'), false)
 })

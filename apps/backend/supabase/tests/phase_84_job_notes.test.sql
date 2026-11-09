@@ -60,13 +60,13 @@ select ok(
 
 select ok(coalesce((
   select procedure.prosecdef
-    and procedure.prosrc like '%has_app_role(''ADMIN'', ''ACCOUNTING'')%'
+    and procedure.prosrc like '%has_app_role(''ADMIN'', ''ACCOUNTING'', ''DRAW_INVOICE'')%'
     and procedure.prosrc like '%(select auth.uid())%'
     and procedure.prosrc like '%author.name%'
     and procedure.prosrc like '%char_length(v_body) > 1000%'
   from pg_proc procedure
   where procedure.oid = 'private.add_job_note(bigint,text)'::regprocedure
-), false), 'Only ADMIN and ACCOUNTING add a note, as the signed-in user, with their name and a length limit');
+), false), 'Only ADMIN, ACCOUNTING and DRAW_INVOICE add a note, as the signed-in user, with their name and a length limit');
 
 select ok(
   has_function_privilege('authenticated', 'valtrim.add_job_note(bigint,text)', 'execute')

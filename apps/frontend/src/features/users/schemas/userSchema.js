@@ -7,6 +7,7 @@ import { normalizePhoneNumber } from '../../../utils/phoneNumbers.js'
 export const userRoleSchema = z.enum([
   'ADMIN',
   'ACCOUNTING',
+  'DRAW_INVOICE',
   'PROJECT_MANAGEMENT',
   'SCHEDULING',
   'CUSTOMER_SERVICE',

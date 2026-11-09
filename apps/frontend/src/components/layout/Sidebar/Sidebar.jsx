@@ -56,7 +56,7 @@ import valtrimLogoLight from '../../../assets/icons/Valtrim-Blue-Transparent.png
 import { navigationRoutes } from '../../../routes/navigation.jsx'
 import ColorModeToggle from '../../common/ColorModeToggle'
 import { useAuth } from '../../../features/auth/context/useAuth.js'
-import { isRoleAllowed } from '../../../features/auth/authorization/roleAccess.js'
+import { isRoleAllowed, startPageOf } from '../../../features/auth/authorization/roleAccess.js'
 import { MANUAL_SIGN_OUT_STORAGE_KEY } from '../../../config/appConfig.js'
 import { useSidebarBadges } from './useSidebarBadges.js'
 import { hasAvailableItem as hasAvailableSectionItem, sectionsForRole } from './sidebarSections.js'
@@ -328,6 +328,8 @@ function SidebarContent({ onNavigate, collapsed = false, onToggleCollapsed, badg
     accessByPath: routeAccessByPath,
     availablePaths,
   }), [profile?.role])
+  // A role that starts on a page of its own has no Home to go back to.
+  const hasHome = startPageOf(profile?.role) === homeItem.path
   const [signOutDialogOpen, setSignOutDialogOpen] = useState(false)
   const [signingOut, setSigningOut] = useState(false)
   const [signOutError, setSignOutError] = useState(null)
@@ -415,7 +417,9 @@ function SidebarContent({ onNavigate, collapsed = false, onToggleCollapsed, badg
         ]}
       >
         <List disablePadding>
-        <NavigationItem {...homeItem} onNavigate={onNavigate} collapsed={collapsed} badge={badges[homeItem.path]} />
+        {hasHome && (
+          <NavigationItem {...homeItem} onNavigate={onNavigate} collapsed={collapsed} badge={badges[homeItem.path]} />
+        )}
 
         {visibleSections
           .filter((section) => !collapsed || hasAvailableItem(section))

@@ -1,7 +1,7 @@
 // Internal notes on a Package: a thread of entries, each with who wrote it and when. A note is added
 // and never edited or removed, so the thread reads as a record of what was said about the Package.
 
-import { BILLING_ROLES } from '../../auth/authorization/roleAccess.js'
+import { DRAW_INVOICE_ROLES } from '../../auth/authorization/roleAccess.js'
 import { noteAuthor, noteProblem, sortNotes } from '../utils/noteThread.js'
 
 export const PACKAGE_NOTE_MAX_LENGTH = 1000
@@ -11,7 +11,7 @@ export const PACKAGE_NOTE_MAX_LENGTH = 1000
 export const NEW_PACKAGE_NOTE_MAX_LENGTH = 500
 
 // The same roles that can generate a Package's Release can leave a note; every active user reads them.
-export const PACKAGE_NOTE_ROLES = BILLING_ROLES
+export const PACKAGE_NOTE_ROLES = DRAW_INVOICE_ROLES
 
 /** What sits under the note box of a dialog that creates Package(s): the count, and where it goes. */
 export function newPackageNoteHelp(note, packageCount = 1) {

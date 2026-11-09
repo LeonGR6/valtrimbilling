@@ -20,7 +20,7 @@ import SyncRoundedIcon from '@mui/icons-material/SyncRounded'
 import MarkEmailReadRoundedIcon from '@mui/icons-material/MarkEmailReadRounded'
 import LayersRoundedIcon from '@mui/icons-material/LayersRounded'
 import { useAuth } from '../../../auth/context/useAuth.js'
-import { BILLING_ROLES } from '../../../auth/authorization/roleAccess.js'
+import { DRAW_INVOICE_ROLES, canOpenPage, canWork } from '../../../auth/authorization/roleAccess.js'
 import { useBuilderDrawSchedules } from '../../../builder-draw-schedules/context/useBuilderDrawSchedules.js'
 import { displayInvoiceNumber } from '../../utils/packageInvoiceLabel.js'
 import { usePackageSubmissions } from '../../hooks/usePackageSubmissions.js'
@@ -109,7 +109,7 @@ import ViewGeneratedPackageButton from './ViewGeneratedPackageButton.jsx'
 const GeneratePackageDialog = lazy(() => import('./GeneratePackageDialog.jsx'))
 
 // The same roles that can save Job documents can generate a Package's Release.
-const RELEASE_ROLES = BILLING_ROLES
+const RELEASE_ROLES = DRAW_INVOICE_ROLES
 
 export default function DrawPackageDetail() {
   const navigate = useNavigate()
@@ -167,10 +167,10 @@ export default function DrawPackageDetail() {
   const finalReleaseSplit = usePackageFinalReleaseSplit(focusedPackageRecord)
 
   // Asks QuickBooks how the invoice stands (open, overdue, paid...). A Package
-  // that is paid there becomes Paid / Closed here. Admin and Accounting only:
-  // the same people who send the invoice.
+  // that is paid there becomes Paid / Closed here. The roles that work in Draw
+  // & Invoice only: the same people who send the invoice.
   const checkedPackageId = focusedPackageRecord?.id ?? null
-  const canCheckPayment = ['ADMIN', 'ACCOUNTING'].includes(profile?.role)
+  const canCheckPayment = canWork(profile?.role, DRAW_INVOICE_ROLES)
     && focusedPackageRecord?.quickbooksStatus === 'CREATED'
   const checkPayment = useCallback(async ({ silent = false } = {}) => {
     if (checkedPackageId == null) return
@@ -628,11 +628,11 @@ export default function DrawPackageDetail() {
         {phases.length === 0 ? (
           <Alert
             severity="info"
-            action={
+            action={canOpenPage(profile?.role, 'scheduling') ? (
               <Button component={RouterLink} to={jobSequenceSheetPath(focusedBuilderId, focusedJob.id)} color="inherit">
                 Open Sequence Sheet
               </Button>
-            }
+            ) : undefined}
           >
             This Job has no phases yet. Create a phase and assign its lots first.
           </Alert>
@@ -841,7 +841,9 @@ export default function DrawPackageDetail() {
             {!hasNoDrawCells && !worksheet.hasSchedule && (
               <Alert
                 severity="warning"
-                action={<Button component={RouterLink} to="/builder-draw-schedules" color="inherit">Configure schedule</Button>}
+                action={canOpenPage(profile?.role, 'billing')
+                  ? <Button component={RouterLink} to="/builder-draw-schedules" color="inherit">Configure schedule</Button>
+                  : undefined}
               >
                 {focusedJob.builder} does not have a Builder Setup.
               </Alert>
@@ -849,7 +851,9 @@ export default function DrawPackageDetail() {
             {!hasNoDrawCells && (worksheet.missingPlanCount > 0 || worksheet.unpricedLotCount > 0) && (
               <Alert
                 severity="warning"
-                action={<Button component={RouterLink} to={jobPlanPricingPath(focusedBuilderId, focusedJob.id)} color="inherit">Open pricing</Button>}
+                action={canOpenPage(profile?.role, 'planning')
+                  ? <Button component={RouterLink} to={jobPlanPricingPath(focusedBuilderId, focusedJob.id)} color="inherit">Open pricing</Button>
+                  : undefined}
               >
                 Complete missing plan assignments and prices before creating a package.
               </Alert>

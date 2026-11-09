@@ -4,6 +4,7 @@ import { Alert, Snackbar } from '@mui/material'
 import { useBuilderDrawSchedules } from '../../../builder-draw-schedules/context/useBuilderDrawSchedules.js'
 import { useProductionActivities } from '../../../calendar/context/useProductionActivities.js'
 import { useAuth } from '../../../auth/context/useAuth.js'
+import { DRAW_INVOICE_ROLES, canWork } from '../../../auth/authorization/roleAccess.js'
 import { useJobs } from '../../../jobs/context/useJobs.js'
 import {
   getJobBuilderId,
@@ -60,7 +61,7 @@ export default function DrawInvoiceCatalog() {
     cancelDrawInvoicePackage,
   } = useDrawInvoicePackages()
   const { profile } = useAuth()
-  const canCheckPayments = ['ADMIN', 'ACCOUNTING'].includes(profile?.role)
+  const canCheckPayments = canWork(profile?.role, DRAW_INVOICE_ROLES)
   useEffect(() => {
     if (!canCheckPayments || Date.now() - lastPaymentCheck < PAYMENT_CHECK_INTERVAL_MS) return
     lastPaymentCheck = Date.now()

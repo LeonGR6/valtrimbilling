@@ -14,7 +14,7 @@ import { loadActiveEnvironment, openSessionFor } from '../_shared/quickbooksEnvi
 import { QuickbooksBusyError, QuickbooksNotConnectedError } from '../_shared/quickbooksSession.ts'
 import { serviceClient, userClient } from '../_shared/supabase.ts'
 
-const ALLOWED_ROLES = ['ADMIN', 'ACCOUNTING']
+const ALLOWED_ROLES = ['ADMIN', 'ACCOUNTING', 'DRAW_INVOICE']
 
 function errorResponse(error: unknown) {
   if (error instanceof QuickbooksCustomerAdminError) {
@@ -55,7 +55,7 @@ Deno.serve(async (req) => {
 
     if (profileError) throw profileError
     if (!profile?.is_active || !ALLOWED_ROLES.includes(profile.role)) {
-      return json({ error: 'Only an administrator or accounting user can manage QuickBooks customers.' }, 403)
+      return json({ error: 'Only an administrator, accounting or Draw & Invoice user can manage QuickBooks customers.' }, 403)
     }
 
     const input = parseCustomerAdminInput(await req.json().catch(() => null))

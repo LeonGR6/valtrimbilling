@@ -21,7 +21,7 @@ interface RequestBody {
   requestId?: string
 }
 
-const SUBMIT_ROLES = ['ADMIN', 'ACCOUNTING']
+const SUBMIT_ROLES = ['ADMIN', 'ACCOUNTING', 'DRAW_INVOICE']
 
 function requiredEnv(primary: string, ...fallbacks: string[]) {
   for (const name of [primary, ...fallbacks]) {

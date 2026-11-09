@@ -11,7 +11,7 @@ export const JOB_MODULES = [
   { id: 'plans-options', label: 'Plans & Options', path: jobPlansOptionsPath, roles: PAGE_ROLES.planning },
   { id: 'sequence-sheet', label: 'Sequence Sheet', path: jobSequenceSheetPath, roles: PAGE_ROLES.scheduling },
   { id: 'plan-pricing', label: 'Plan Pricing', path: jobPlanPricingPath, roles: PAGE_ROLES.planning },
-  { id: 'draw-invoice', label: 'Draws', path: jobDrawInvoicePath, roles: PAGE_ROLES.billing },
+  { id: 'draw-invoice', label: 'Draws', path: jobDrawInvoicePath, roles: PAGE_ROLES.drawInvoice },
 ]
 
 /** The pages of a Job that a role can open, so a tab never leads to "Access denied". */

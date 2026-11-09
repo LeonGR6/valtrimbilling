@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Alert, Box, Button, Stack } from '@mui/material'
+import { DRAW_INVOICE_ROLES, canWork } from '../../../auth/authorization/roleAccess.js'
 import { useQuickbooksInvoicePdf } from '../../hooks/useQuickbooksInvoicePdf.js'
 import {
   canResetQuickbooksTestInvoice,
@@ -122,7 +123,7 @@ export default function QuickbooksPackageNotice({
 
   if (record.quickbooksStatus !== 'CREATED') return null
 
-  const canSavePdf = ['ADMIN', 'ACCOUNTING'].includes(role)
+  const canSavePdf = canWork(role, DRAW_INVOICE_ROLES)
 
   return (
     <>

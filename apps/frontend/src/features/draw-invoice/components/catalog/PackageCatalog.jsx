@@ -28,6 +28,8 @@ import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined'
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
 import { useCurrentDate } from '../../../../hooks/useCurrentDate.js'
 import { usePersistentState, isStoredString } from '../../../../hooks/usePersistentState.js'
+import { RECEIVABLES_ROLES, isRoleAllowed } from '../../../auth/authorization/roleAccess.js'
+import { useAuth } from '../../../auth/context/useAuth.js'
 import { getJobBuilderId } from '../../../jobs/utils/jobRoutes.js'
 import { useJobDocuments } from '../../hooks/useJobDocuments.js'
 import { useQuickbooksConnection } from '../../hooks/useQuickbooksConnection.js'
@@ -213,11 +215,16 @@ export default function PackageCatalog({
   onTransfer,
   onDelete,
 }) {
-  const [catalogTab, setCatalogTab] = usePersistentState(
+  const { profile } = useAuth()
+  // The Draw & Invoice role works with Packages and Documents; A/R is not for it.
+  const canSeeReceivables = isRoleAllowed(profile?.role, RECEIVABLES_ROLES)
+  const [storedCatalogTab, setCatalogTab] = usePersistentState(
     'draw-invoice:section',
     'packages',
     (value) => value === 'packages' || value === 'documents' || value === 'ar',
   )
+  // A tab remembered from before (or from another user of this browser) that this role cannot open.
+  const catalogTab = storedCatalogTab === 'ar' && !canSeeReceivables ? 'packages' : storedCatalogTab
   const [search, setSearch] = usePersistentState('draw-invoice:packages:search', '', isStoredString)
   const [statusTab, setStatusTab] = usePersistentState(
     'draw-invoice:packages:status',
@@ -529,12 +536,14 @@ export default function PackageCatalog({
             iconPosition="start"
             label="Documents"
           />
-          <Tab
-            value="ar"
-            icon={<AccountBalanceWalletRoundedIcon />}
-            iconPosition="start"
-            label="A/R"
-          />
+          {canSeeReceivables && (
+            <Tab
+              value="ar"
+              icon={<AccountBalanceWalletRoundedIcon />}
+              iconPosition="start"
+              label="A/R"
+            />
+          )}
         </Tabs>
       </Box>
 

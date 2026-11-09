@@ -22,6 +22,8 @@ import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded'
 import PrintRoundedIcon from '@mui/icons-material/PrintRounded'
 import SendRoundedIcon from '@mui/icons-material/SendRounded'
 import TaskAltRoundedIcon from '@mui/icons-material/TaskAltRounded'
+import { canOpenPage } from '../../../auth/authorization/roleAccess.js'
+import { useAuth } from '../../../auth/context/useAuth.js'
 import { printPdfBytes } from '../../services/printPdf.js'
 import {
   markPackageSubmitted,
@@ -110,6 +112,8 @@ function RecipientsField({ recipients, onChange, disabled, problem }) {
 }
 
 function EmailSubmission({ destination, bundle, packageRecord, job, submissions, onSent }) {
+  const { profile } = useAuth()
+  const canOpenBuilderSetup = canOpenPage(profile?.role, 'billing')
   const context = {
     packageNumber: packageRecord.packageNumber,
     invoiceNumber: displayInvoiceNumber(packageRecord),
@@ -162,11 +166,11 @@ function EmailSubmission({ destination, bundle, packageRecord, job, submissions,
       {!destination && (
         <Alert
           severity="info"
-          action={(
+          action={canOpenBuilderSetup ? (
             <Button component={RouterLink} to="/builder-draw-schedules" color="inherit" size="small">
               Builder setup
             </Button>
-          )}
+          ) : undefined}
         >
           This Builder's setup has no email address. Type the recipients below, or add it
           in the Builder setup so it is filled in next time.
@@ -319,6 +323,7 @@ function SubmittedNotice({ status, error }) {
 }
 
 function MailSubmission({ destination, bundle, packageRecord, onSent }) {
+  const { profile } = useAuth()
   const { working, status, error, run } = useSubmitAction(packageRecord, onSent)
 
   return (
@@ -328,7 +333,7 @@ function MailSubmission({ destination, bundle, packageRecord, onSent }) {
         <Typography fontWeight={700} sx={{ whiteSpace: 'pre-line' }}>
           {destination || 'No mailing address in the Builder setup'}
         </Typography>
-        {!destination && (
+        {!destination && canOpenPage(profile?.role, 'billing') && (
           <Button component={RouterLink} to="/builder-draw-schedules" size="small" sx={{ mt: 0.5 }}>
             Open Builder setup
           </Button>

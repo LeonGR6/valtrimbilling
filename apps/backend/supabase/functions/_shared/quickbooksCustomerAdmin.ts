@@ -1,4 +1,4 @@
-// Lets an administrator or accounting user see and change which QuickBooks
+// Lets an administrator, accounting or Draw & Invoice user see and change which QuickBooks
 // Customer each Builder is linked to. Linking checks the Customer exists in
 // QuickBooks right now, so a typo or a deleted Customer cannot be saved.
 

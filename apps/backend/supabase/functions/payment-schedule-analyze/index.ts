@@ -24,7 +24,7 @@ import { decideAnalysis, type AnalysisStatus } from '../_shared/releaseAnalysisS
 import { ReleasePdfError } from '../_shared/releasePdf.ts'
 import { serviceClient, userClient } from '../_shared/supabase.ts'
 
-const ALLOWED_ROLES = ['ADMIN', 'ACCOUNTING']
+const ALLOWED_ROLES = ['ADMIN', 'ACCOUNTING', 'DRAW_INVOICE']
 const MAX_PDF_BYTES = 25 * 1024 * 1024
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu
 

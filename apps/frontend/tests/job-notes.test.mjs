@@ -36,7 +36,7 @@ test('a Job note keeps its text, its author and the moment it was written', () =
 })
 
 test('only the roles that bill use Job notes', () => {
-  for (const role of ['ADMIN', 'ACCOUNTING']) {
+  for (const role of ['ADMIN', 'ACCOUNTING', 'DRAW_INVOICE']) {
     assert.equal(canUseJobNotes(role), true, role)
   }
   for (const role of ['PROJECT_MANAGEMENT', 'FIELD', 'SCHEDULING', 'CUSTOMER_SERVICE', 'READ_ONLY', undefined, null]) {

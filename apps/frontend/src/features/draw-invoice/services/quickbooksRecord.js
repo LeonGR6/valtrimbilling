@@ -23,8 +23,12 @@ export function pickQuickbooksConnection(connections, environment) {
   return (connections ?? []).find((connection) => connection.environment === environment) ?? null
 }
 
+// ADMIN and the Draw & Invoice role choose where new invoices go; connecting an
+// environment to Intuit stays with ADMIN. The database re-checks the role.
+const MODE_ROLES = ['ADMIN', 'DRAW_INVOICE']
+
 export function canSwitchQuickbooksMode(role) {
-  return role === 'ADMIN'
+  return MODE_ROLES.includes(role)
 }
 
 export function toQuickbooksConnection(row) {

@@ -10,28 +10,31 @@ const SELECTED_STYLES = {
   production: { bgcolor: 'error.main', color: 'error.contrastText' },
 }
 
-function title(environment, { connected, canSwitch, active }) {
+function title(environment, { connected, canSwitch, canConnect, active }) {
   const label = quickbooksEnvironmentLabel(environment)
-  if (!canSwitch) return 'Only an administrator can change the QuickBooks mode.'
+  if (!canSwitch) return 'Only an administrator or a Draw & Invoice user can change the QuickBooks mode.'
   if (active) {
     return environment === 'production'
       ? 'New invoices go to your real QuickBooks.'
       : 'New invoices go to the QuickBooks Test company. Nothing reaches your real books.'
   }
-  return connected
-    ? `Send new invoices to QuickBooks ${label}.`
-    : `QuickBooks ${label} is not connected yet. Select to connect it.`
+  if (connected) return `Send new invoices to QuickBooks ${label}.`
+  return canConnect
+    ? `QuickBooks ${label} is not connected yet. Select to connect it.`
+    : `QuickBooks ${label} is not connected yet. An administrator has to connect it.`
 }
 
 /**
  * Where new invoices go: QuickBooks Test (sandbox) or Production. Only an
- * administrator can change it; everyone else sees which one is active. An
- * environment that is not connected is connected when selected.
+ * administrator or a Draw & Invoice user can change it; everyone else sees which
+ * one is active. An environment that is not connected is connected when an
+ * administrator selects it.
  */
 export default function QuickbooksModeSwitch({
   activeEnvironment,
   connections,
   canSwitch,
+  canConnect,
   switching,
   loading,
   onSwitch,
@@ -70,7 +73,7 @@ export default function QuickbooksModeSwitch({
         const active = environment === activeEnvironment
         const connected = isConnected(environment)
         return (
-          <Tooltip key={environment} title={title(environment, { connected, canSwitch, active })}>
+          <Tooltip key={environment} title={title(environment, { connected, canSwitch, canConnect, active })}>
             <span>
               <ToggleButton
                 value={environment}

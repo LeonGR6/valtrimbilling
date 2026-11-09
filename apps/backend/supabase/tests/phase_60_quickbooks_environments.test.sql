@@ -46,8 +46,8 @@ select ok(
 select throws_ok(
   $$ select private.set_quickbooks_active_environment('production') $$,
   '42501',
-  'Only an administrator can change the QuickBooks mode',
-  'Without a signed-in administrator the mode cannot change'
+  'Only an administrator or a Draw & Invoice user can change the QuickBooks mode',
+  'Without a signed-in administrator or Draw & Invoice user the mode cannot change'
 );
 
 select throws_ok(

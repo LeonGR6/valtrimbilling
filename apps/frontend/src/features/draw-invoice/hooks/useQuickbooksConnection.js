@@ -119,6 +119,11 @@ export function useQuickbooksConnection() {
 
     const target = pickQuickbooksConnection(connections, environment)
     if (target?.status !== 'CONNECTED') {
+      // Only an administrator can connect it; anyone else is told who can.
+      if (!canConnect) {
+        setError(`QuickBooks ${quickbooksEnvironmentLabel(environment)} is not connected yet. Ask an administrator to connect it.`)
+        return
+      }
       await connect(environment)
       return
     }
@@ -134,7 +139,7 @@ export function useQuickbooksConnection() {
     } finally {
       setSwitching(false)
     }
-  }, [canSwitch, activeEnvironment, connections, connect, apply, fetchAll])
+  }, [canSwitch, canConnect, activeEnvironment, connections, connect, apply, fetchAll])
 
   return {
     connection,

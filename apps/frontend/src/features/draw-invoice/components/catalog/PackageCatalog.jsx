@@ -471,6 +471,7 @@ export default function PackageCatalog({
                 activeEnvironment={quickbooks.activeEnvironment}
                 connections={quickbooks.connections}
                 canSwitch={quickbooks.canSwitch}
+                canConnect={quickbooks.canConnect}
                 switching={quickbooks.switching}
                 loading={quickbooks.loading}
                 onSwitch={quickbooks.switchMode}

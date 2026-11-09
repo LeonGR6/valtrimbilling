@@ -592,7 +592,10 @@ test('reads the active mode, defaulting to Test, and only an ADMIN can change it
   assert.equal(toQuickbooksSettings(null), null)
 
   assert.equal(canSwitchQuickbooksMode('ADMIN'), true)
+  assert.equal(canSwitchQuickbooksMode('DRAW_INVOICE'), true)
   assert.equal(canSwitchQuickbooksMode('ACCOUNTING'), false)
+  assert.equal(canSwitchQuickbooksMode('PROJECT_MANAGEMENT'), false)
+  assert.equal(canSwitchQuickbooksMode('READ_ONLY'), false)
   assert.equal(canSwitchQuickbooksMode(undefined), false)
 })
 

@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(6);
+select plan(7);
 
 -- The functions of valtrim and private whose has_app_role call names DRAW_INVOICE.
 create function pg_temp.functions_naming_the_role()
@@ -48,9 +48,10 @@ select is(
      ('register_package_release'),
      ('reject_package_hardware_line_change'),
      ('reject_package_line_change'),
-     ('set_draw_package_workflow_status')
+     ('set_draw_package_workflow_status'),
+     ('set_quickbooks_active_environment')
    ) as f(name)),
-  'The role works in Packages, their documents and notes, and in nothing else (not Builder Setup, Jobs, Plans, Prices, the Calendar or Sequence Sheets)'
+  'The role works in Packages, their documents and notes and chooses the QuickBooks mode, and in nothing else (not Builder Setup, Jobs, Plans, Prices, the Calendar or Sequence Sheets)'
 );
 
 select is(
@@ -96,6 +97,20 @@ select is(
   ],
   array[true, true],
   'The comments of the functions name the roles that can call them'
+);
+
+select is(
+  (select array_agg(token[1] order by token[1])
+   from regexp_matches(
+     (regexp_match(
+       (select prosrc from pg_proc where oid = 'private.set_quickbooks_active_environment(text)'::regprocedure),
+       'has_app_role\s*\(([^()]*)\)'
+     ))[1],
+     '''([A-Z_]+)''',
+     'g'
+   ) as token),
+  array['ADMIN', 'DRAW_INVOICE'],
+  'ADMIN and DRAW_INVOICE choose the QuickBooks mode; ACCOUNTING does not'
 );
 
 select ok(

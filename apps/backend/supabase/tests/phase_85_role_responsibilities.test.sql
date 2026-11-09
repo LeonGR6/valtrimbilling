@@ -124,12 +124,11 @@ select is(
      ('private', 'create_company_contact_internal'),
      ('private', 'create_supervisor_internal'),
      ('private', 'set_company_contact_roles_internal'),
-     ('private', 'save_builder_follow_up_escalation_settings'),
-     ('private', 'set_quickbooks_active_environment')
+     ('private', 'save_builder_follow_up_escalation_settings')
    ) as f(schema_name, name)
    where pg_temp.function_roles(f.schema_name, f.name) is distinct from 'ADMIN'),
   null::text,
-  'People, the escalation settings and the QuickBooks environment are for ADMIN only'
+  'People and the escalation settings are for ADMIN only'
 );
 
 select is(

@@ -185,6 +185,20 @@ export function resolvePreviousBillingCutoffDate(packageDate, setupVersion) {
   return null
 }
 
+/**
+ * The manual difference line of a QuickBooks invoice, from its sync row; null when the invoice has none
+ * (or the columns were not read).
+ */
+export function toInvoiceDifference(syncRow) {
+  if (syncRow?.difference_amount == null || syncRow.difference_description == null) return null
+  return {
+    description: syncRow.difference_description,
+    amount: Number(syncRow.difference_amount),
+    limit: syncRow.difference_limit == null ? null : Number(syncRow.difference_limit),
+    addedAt: syncRow.difference_at ?? null,
+  }
+}
+
 /** One price difference a Package collected, as the Package shows it. */
 function toPriceDifferenceLine(row) {
   return {
@@ -327,6 +341,8 @@ export function toDrawInvoicePackage(
       : Number(packageRow.quickbooks_invoice_syncs.qbo_total),
     paymentDueDate: packageRow.quickbooks_invoice_syncs?.qbo_due_date ?? null,
     // A change made to the Package after its invoice was sent that QuickBooks has not received yet.
+    // The manual extra line the invoice carries (e.g. DIFFERENCE), with the limit it had; null if none.
+    invoiceDifference: toInvoiceDifference(packageRow.quickbooks_invoice_syncs),
     quickbooksUpdatePending: packageRow.quickbooks_invoice_syncs?.update_pending === true,
     quickbooksUpdateError: packageRow.quickbooks_invoice_syncs?.update_error ?? null,
     submissionStatus: packageRow.submission_status ?? 'NOT_SUBMITTED',

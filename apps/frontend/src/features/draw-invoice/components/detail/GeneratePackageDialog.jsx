@@ -939,6 +939,9 @@ export default function GeneratePackageDialog({
                   packageRecord={packageRecord}
                   packages={packages}
                   job={job}
+                  // The difference line typed in the invoice that is created together with this
+                  // Release: the Release is made first, so it learns it from here.
+                  pendingDifference={willCreateInvoice ? invoiceDraft.difference : null}
                   onReadyChange={setRelease}
                   onClose={onClose}
                 />

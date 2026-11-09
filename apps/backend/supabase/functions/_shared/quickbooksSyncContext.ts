@@ -50,7 +50,7 @@ export async function loadUpdateContext(admin: Admin, packageId: number): Promis
 
   const { data: sync, error } = await admin
     .from('quickbooks_invoice_syncs')
-    .select('payload, update_pending, update_request_id')
+    .select('payload, update_pending, update_request_id, difference_description, difference_amount')
     .eq('package_id', packageId)
     .maybeSingle()
   if (error) throw new Error(error.message)
@@ -58,6 +58,9 @@ export async function loadUpdateContext(admin: Admin, packageId: number): Promis
   return {
     ...base,
     payload: (sync?.payload ?? null) as QuickbooksInvoicePayload | null,
+    difference: sync?.difference_amount == null || sync.difference_description == null
+      ? null
+      : { description: sync.difference_description, amount: Number(sync.difference_amount) },
     updatePending: sync?.update_pending === true,
     updateRequestId: sync?.update_request_id ?? null,
   }

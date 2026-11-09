@@ -10,6 +10,7 @@ import {
 import { useQuickbooksInvoiceDraft } from '../../hooks/useQuickbooksInvoiceDraft.js'
 import { quickbooksEnvironmentLabel } from '../../services/quickbooksRecord.js'
 import { formatCurrency } from '../../utils/drawInvoiceFormatters.js'
+import { formatSignedCurrency } from '../../utils/invoiceDifference.js'
 import QuickbooksEnvironmentChip from './QuickbooksEnvironmentChip.jsx'
 import QuickbooksInvoiceForm from './QuickbooksInvoiceForm.jsx'
 
@@ -43,6 +44,12 @@ export default function QuickbooksInvoiceDialog({ record, onClose, onSettled }) 
                 {result.customerName ? ` for ${result.customerName}` : ''}
                 {result.totalAmount != null ? ` · ${formatCurrency(result.totalAmount)}` : ''}.
               </Alert>
+              {result.difference && (
+                <Alert severity="info">
+                  The invoice includes the line "{result.difference.description}" of{' '}
+                  {formatSignedCurrency(result.difference.amount)}, and it is recorded on the Package.
+                </Alert>
+              )}
               {result.warnings.map((warning) => (
                 <Alert key={warning} severity="info">{warning}</Alert>
               ))}

@@ -173,6 +173,7 @@ function harness(
     realmId: '9341',
     totalAmount: 1520,
     payload: storedPayload(),
+    difference: null,
     updatePending: false,
     updateRequestId: null,
     ...options.context,
@@ -293,6 +294,107 @@ Deno.test('a preview reads QuickBooks and asks the database for a dry run, and c
   assertEquals(result.action, 'preview')
   if (result.action !== 'preview') throw new Error('unreachable')
   assertEquals(result.edit.next.net, 760)
+})
+
+// An invoice that was sent with a manual DIFFERENCE line of $4 (limit $5 for the new total of $760).
+const WITH_DIFFERENCE = [...OLD_LINES, { description: 'DIFFERENCE', amount: 4 }]
+
+Deno.test('an edit keeps the DIFFERENCE line of the invoice and the total follows it', async () => {
+  const answerWithDifference: Partial<InvoiceUpdateDeps> = {
+    updateInvoice: (_api, invoice, requestId) => {
+      h.updates.push({ invoice, requestId })
+      return Promise.resolve({ id: '146', docNumber: '14899', syncToken: '4', totalAmount: 764 })
+    },
+  }
+  const h: Harness = harness(answerWithDifference, {
+    context: {
+      difference: { description: 'DIFFERENCE', amount: 4 },
+      totalAmount: 1524,
+      payload: storedPayload(WITH_DIFFERENCE),
+    },
+    live: snapshot(WITH_DIFFERENCE),
+  })
+
+  const result = await apply(h.deps)
+
+  // Looked at first (nothing kept), then edited, then sent.
+  assertEquals(h.calls.filter((call) => call.startsWith('applyEdit')), [
+    'applyEdit(dryRun=true)',
+    'applyEdit(dryRun=false)',
+  ])
+  const sent = h.updates[0].invoice.Line as { Amount: number; Description: string }[]
+  assertEquals(sent.map((line) => [line.Description, line.Amount]), [
+    ['PHASE 1 LOT #1\nDRAW 1', 800],
+    ['RETENTION', -40],
+    ['DIFFERENCE', 4],
+  ])
+  assertEquals(h.completed[0].payload.Line.map((line) => line.Amount), [800, -40, 4])
+  if (result.action === 'preview') throw new Error('unreachable')
+  assertEquals(result.totalAmount, 764)
+})
+
+Deno.test('QuickBooks answering the Package net without the DIFFERENCE is a failure, not done', async () => {
+  const { deps, calls } = harness({}, {
+    context: {
+      difference: { description: 'DIFFERENCE', amount: 4 },
+      totalAmount: 1524,
+      payload: storedPayload(WITH_DIFFERENCE),
+    },
+    live: snapshot(WITH_DIFFERENCE),
+  })
+
+  // The default answer of the harness is 760, the net without the difference.
+  const error = await assertRejects(() => apply(deps), QuickbooksInvoiceUpdateError)
+
+  assertEquals(error.code, 'TOTAL_MISMATCH')
+  assertEquals(calls.includes('complete'), false)
+})
+
+Deno.test('an edit that would leave the DIFFERENCE above the limit of the new total is refused before it is saved', async () => {
+  const context = {
+    difference: { description: 'DIFFERENCE', amount: 8 },
+    totalAmount: 1528,
+    payload: storedPayload([...OLD_LINES, { description: 'DIFFERENCE', amount: 8 }]),
+  }
+  const live = snapshot([...OLD_LINES, { description: 'DIFFERENCE', amount: 8 }])
+
+  for (const action of ['preview', 'apply'] as const) {
+    const { deps, calls } = harness({}, { context, live })
+    const error = await refused(deps, action)
+
+    assertEquals(error.code, 'DIFFERENCE_TOO_LARGE')
+    assertEquals(
+      error.message.startsWith('The difference of $8.00 is greater than the $5.00 allowed for an invoice of $760.00.'),
+      true,
+    )
+    // Only the look (a dry run) happened: the Package was not edited and QuickBooks was not touched.
+    assertEquals(calls.includes('applyEdit(dryRun=false)'), false)
+    assertEquals(calls.includes('updateInvoice'), false)
+  }
+})
+
+Deno.test('a retry rebuilds the invoice with its DIFFERENCE line too', async () => {
+  const h: Harness = harness({
+    updateInvoice: (_api, invoice, requestId) => {
+      h.updates.push({ invoice, requestId })
+      return Promise.resolve({ id: '146', docNumber: '14899', syncToken: '4', totalAmount: 764 })
+    },
+  }, {
+    context: {
+      difference: { description: 'DIFFERENCE', amount: 4 },
+      totalAmount: 1524,
+      payload: storedPayload(WITH_DIFFERENCE),
+      updatePending: true,
+      updateRequestId: 'req-kept',
+    },
+    live: snapshot(WITH_DIFFERENCE),
+  })
+
+  await updatePackageInvoice(h.deps, { packageId: 68, action: 'retry' })
+
+  const amounts = (h.updates[0].invoice.Line as { Amount: number }[]).map((row) => row.Amount)
+  assertEquals(amounts, [800, -40, 4])
+  assertEquals(h.updates[0].requestId, 'req-kept')
 })
 
 Deno.test('nothing is edited when QuickBooks shows a payment, a credit or a different balance', async () => {

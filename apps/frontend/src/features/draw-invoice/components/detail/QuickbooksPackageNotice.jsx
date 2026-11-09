@@ -11,6 +11,7 @@ import {
 } from '../../services/quickbooksRecord.js'
 import { retryInvoicedPackageUpdate, saveQuickbooksInvoicePdf } from '../../services/quickbooksRepository.js'
 import { formatCurrency } from '../../utils/drawInvoiceFormatters.js'
+import { formatSignedCurrency } from '../../utils/invoiceDifference.js'
 import QuickbooksNewInvoiceDialog from './QuickbooksNewInvoiceDialog.jsx'
 import QuickbooksResetDialog from './QuickbooksResetDialog.jsx'
 import QuickbooksVoidDialog from './QuickbooksVoidDialog.jsx'
@@ -178,6 +179,18 @@ export default function QuickbooksPackageNotice({
             {sync?.updatedAt ? ` · sent ${savedDate(sync.updatedAt)}` : ''}
             . It cannot be sent again.
             {isTest && ' It cannot be sent to the Builder until it is moved back to Production.'}
+            {record.invoiceDifference && (
+              <Box sx={{ mt: 0.5 }} data-testid="invoice-difference">
+                <strong>
+                  Includes "{record.invoiceDifference.description}" {formatSignedCurrency(record.invoiceDifference.amount)}
+                </strong>
+                {' '}added by hand, so the invoice is the Package total {formatSignedCurrency(record.invoiceDifference.amount)}
+                {record.invoiceDifference.limit != null
+                  ? ` (the most allowed was ${formatCurrency(record.invoiceDifference.limit)})`
+                  : ''}
+                {record.invoiceDifference.addedAt ? ` · ${savedDate(record.invoiceDifference.addedAt)}` : ''}.
+              </Box>
+            )}
             <Box sx={{ mt: 0.5, color: 'text.secondary' }}>
               {loading
                 ? 'Checking the invoice PDF…'

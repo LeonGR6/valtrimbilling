@@ -22,6 +22,7 @@ import {
   QuickbooksInvoiceError,
   type QuickbooksInvoicePayload,
 } from './quickbooksInvoice.ts'
+import { differenceProblem, type InvoiceDifference } from './quickbooksInvoiceDifference.ts'
 import { mapPackageToCharges } from './quickbooksPackageCharges.ts'
 import type { LoadedPackage } from './quickbooksPackageSource.ts'
 import type { QuickbooksSession } from './quickbooksSession.ts'
@@ -37,6 +38,7 @@ export type InvoiceUpdateErrorCode =
   | 'HAS_PAYMENTS'
   | 'EDITED_IN_QUICKBOOKS'
   | 'TOTAL_MISMATCH'
+  | 'DIFFERENCE_TOO_LARGE'
   | 'EDIT_REFUSED'
 
 export class QuickbooksInvoiceUpdateError extends Error {
@@ -101,6 +103,8 @@ export interface InvoiceUpdateContext {
   totalAmount: number | null
   /** The invoice as it was last sent. */
   payload: QuickbooksInvoicePayload | null
+  /** The manual difference line the invoice carries, which stays on it through every edit. */
+  difference: InvoiceDifference | null
   updatePending: boolean
   updateRequestId: string | null
 }
@@ -234,6 +238,24 @@ function describeFailure(error: unknown) {
   return error instanceof Error ? error.message : String(error)
 }
 
+/**
+ * The difference line stays on the invoice through an edit, so it has to fit the limit for the size the
+ * invoice will have. This runs before anything is saved: a Package must never be edited into a state its
+ * invoice cannot follow.
+ */
+function checkDifferenceStillFits(difference: InvoiceDifference | null, newNet: number) {
+  if (!difference) return
+  const problem = differenceProblem(difference, newNet)
+  if (!problem) return
+  throw new QuickbooksInvoiceUpdateError(
+    'DIFFERENCE_TOO_LARGE',
+    problem.code === 'TOO_LARGE'
+      ? `${problem.message} The invoice keeps its "${difference.description}" line, so this change cannot be made. `
+        + 'Void the invoice and create it again, or keep the Package total within that limit.'
+      : problem.message,
+  )
+}
+
 /** The invoice as QuickBooks has it, checked against what this Package says it should be. */
 function checkLiveInvoice(
   snapshot: QuickbooksInvoiceSnapshot,
@@ -322,6 +344,7 @@ export async function updatePackageInvoice(
 
   if (action === 'preview') {
     const preview = await deps.applyEdit(packageId, edit as PackageEditRequest, true)
+    checkDifferenceStillFits(context.difference, Number(preview.next.net))
     return { action, edit: preview, warnings: [] }
   }
 
@@ -329,6 +352,12 @@ export async function updatePackageInvoice(
   const warnings: string[] = []
 
   if (action === 'apply') {
+    // Look first (nothing is kept): the edit must not be saved if the invoice's difference line would
+    // no longer fit.
+    if (context.difference) {
+      const dryRun = await deps.applyEdit(packageId, edit as PackageEditRequest, true)
+      checkDifferenceStillFits(context.difference, Number(dryRun.next.net))
+    }
     result = await deps.applyEdit(packageId, edit as PackageEditRequest, false)
     // The Release and Payment Schedule files were deleted from the database; their bytes go too.
     for (const path of result.removed_storage_paths) {
@@ -338,12 +367,12 @@ export async function updatePackageInvoice(
 
   // What the invoice has to say now, from the Package as the database holds it.
   let built: QuickbooksInvoicePayload
-  // What QuickBooks has to total: the Package net.
+  // What QuickBooks has to total: the Package net, plus the manual difference line the invoice carries.
   let expectedNet: number
   try {
     const loaded = await deps.loadPackage(packageId)
     const mapped = mapPackageToCharges(loaded.source)
-    expectedNet = mapped.expectedNetAmount
+    expectedNet = mapped.expectedNetAmount + (context.difference?.amount ?? 0)
 
     const customerId = (snapshot.raw.CustomerRef as { value?: unknown } | undefined)?.value
     const itemId = snapshot.lines.find((line) => line.itemId)?.itemId
@@ -362,6 +391,7 @@ export async function updatePackageInvoice(
         ? snapshot.raw.TxnDate
         : (context.payload?.TxnDate ?? new Date().toISOString().slice(0, 10)),
       ...mapped,
+      difference: context.difference,
     })
   } catch (error) {
     await deps.fail(packageId, describeFailure(error), true).catch(() => {})
@@ -433,7 +463,7 @@ export async function updatePackageInvoice(
 
   if (updated.totalAmount == null || cents(updated.totalAmount) !== cents(expectedNet)) {
     const message = `QuickBooks answered with a total of ${updated.totalAmount?.toFixed(2) ?? 'nothing'} `
-      + `but the Package is ${expectedNet.toFixed(2)}. `
+      + `but the Package${context.difference ? ' with its difference' : ''} is ${expectedNet.toFixed(2)}. `
       + 'Check the invoice in QuickBooks.'
     await deps.fail(packageId, message, true).catch(() => {})
     throw new QuickbooksInvoiceUpdateError('TOTAL_MISMATCH', message)

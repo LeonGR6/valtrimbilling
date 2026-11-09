@@ -7,10 +7,15 @@ import {
   buildPackageDocumentStoragePath,
   buildPackageFillValues,
   buildPackageReleaseFileName,
+  checkAmountFor,
   describeFillPlan,
   chooseRelease,
+  hasDifferenceChoice,
   isFromPastCutoff,
   newManualExceptionRow,
+  pendingAmountFor,
+  releaseDifference,
+  switchExceptionBasis,
   CONDITIONAL_FINAL_TYPE,
   CONDITIONAL_PROGRESS_TYPE,
   describePendingPackage,
@@ -81,6 +86,8 @@ test('the values row maps to the model the screen uses', () => {
     retentionAmount: 91.25,
     wrapAmount: 36.5,
     netAmount: 1697.25,
+    differenceDescription: null,
+    differenceAmount: null,
     pendingPackages: [
       {
         id: 8,
@@ -91,6 +98,9 @@ test('the values row maps to the model the screen uses', () => {
         netAmount: 1200,
         balanceAmount: 1200,
         balanceSource: 'invoice',
+        differenceDescription: null,
+        differenceAmount: null,
+        balanceWithDifference: 1200,
         status: 'SUBMITTED',
         workflowStatus: 'AWAITING_PAYMENT',
       },
@@ -103,6 +113,9 @@ test('the values row maps to the model the screen uses', () => {
         netAmount: 845.5,
         balanceAmount: 845.5,
         balanceSource: 'invoice',
+        differenceDescription: null,
+        differenceAmount: null,
+        balanceWithDifference: 845.5,
         status: 'DRAFT',
         workflowStatus: 'AWAITING_PAYMENT',
       },
@@ -682,4 +695,130 @@ test('the list marks a Package that was partly paid', () => {
   // The balance QuickBooks gives equal to the invoice is not a partial payment.
   assert.equal(describePendingPackage({ netAmount: 10, balanceAmount: 10, balanceSource: 'quickbooks' }).partlyPaid, false)
   assert.equal(describePendingPackage({ netAmount: null, balanceAmount: null, balanceSource: 'invoice' }).partlyPaid, false)
+})
+
+
+// A Package whose invoice carries a manual difference line (e.g. DIFFERENCE +$8): the Release prints the
+// total with it or without it, as the person chooses.
+const withDifference = (extra = {}) => toPackageReleaseValues({
+  ...row,
+  net_amount: '6700',
+  difference_description: 'DIFFERENCE',
+  difference_amount: '8',
+  ...extra,
+})
+
+test('the difference line of the Package is read, and a Package without one has none', () => {
+  const values = withDifference()
+  assert.equal(values.differenceDescription, 'DIFFERENCE')
+  assert.equal(values.differenceAmount, 8)
+  assert.deepEqual(releaseDifference(values), { description: 'DIFFERENCE', amount: 8, source: 'invoice' })
+
+  const plain = toPackageReleaseValues({ ...row, net_amount: '6700' })
+  assert.equal(releaseDifference(plain), null)
+})
+
+test('a difference being typed in the invoice that is created with the Release is used before it is saved', () => {
+  const plain = toPackageReleaseValues({ ...row, net_amount: '6700' })
+  assert.deepEqual(
+    releaseDifference(plain, { description: 'DIFFERENCE', amount: -4.5 }),
+    { description: 'DIFFERENCE', amount: -4.5, source: 'draft' },
+  )
+  // The one already on the invoice wins: an invoice that exists is not being created.
+  assert.equal(releaseDifference(withDifference(), { description: 'X', amount: 1 }).source, 'invoice')
+})
+
+test('the check amount is the net, or the invoice total when the person chose the difference', () => {
+  const values = withDifference()
+  const difference = releaseDifference(values)
+  assert.equal(checkAmountFor(values, difference, 'with'), 6708)
+  assert.equal(checkAmountFor(values, difference, 'without'), 6700)
+  // Without a difference there is only the net, whatever the choice.
+  const plain = toPackageReleaseValues({ ...row, net_amount: '6700' })
+  assert.equal(checkAmountFor(plain, null, 'with'), 6700)
+  // A negative difference lowers it, and cents do not drift.
+  assert.equal(checkAmountFor(values, { description: 'D', amount: -0.1 }, 'with'), 6699.9)
+  // No amount on the Package: nothing to print.
+  assert.equal(checkAmountFor(toPackageReleaseValues({ ...row, net_amount: null }), null, 'with'), null)
+})
+
+test('the choice is offered when this invoice or an earlier unpaid one has a difference', () => {
+  const plain = toPackageReleaseValues({ ...row, net_amount: '6700' })
+  assert.equal(hasDifferenceChoice(plain, releaseDifference(plain)), false)
+
+  const own = withDifference()
+  assert.equal(hasDifferenceChoice(own, releaseDifference(own)), true)
+
+  const earlier = toPackageReleaseValues({
+    ...row,
+    pending_packages: [{
+      ...pendingRow(3, '2026-10-09', 500),
+      difference_description: 'DIFFERENCE',
+      difference_amount: '5',
+      balance_with_difference: '505',
+    }],
+  })
+  assert.equal(hasDifferenceChoice(earlier, releaseDifference(earlier)), true)
+})
+
+test('an earlier unpaid Package with a difference lists what is owed with it or without it', () => {
+  const values = toPackageReleaseValues({
+    ...row,
+    pending_packages: [
+      pendingRow(1, '2026-09-25', 300),
+      {
+        ...pendingRow(3, '2026-10-09', 500),
+        balance_amount: '500',
+        difference_description: 'DIFFERENCE',
+        difference_amount: '5',
+        balance_with_difference: '505',
+      },
+    ],
+  })
+  const [plain, withExtra] = values.pendingPackages
+
+  assert.equal(pendingAmountFor(plain, 'with'), 300)
+  assert.equal(pendingAmountFor(plain, 'without'), 300)
+  assert.equal(pendingAmountFor(withExtra, 'with'), 505)
+  assert.equal(pendingAmountFor(withExtra, 'without'), 500)
+  assert.equal(withExtra.differenceAmount, 5)
+
+  assert.deepEqual(buildExceptionRows(values).map((entry) => entry.amount), ['300', '505'])
+  assert.deepEqual(buildExceptionRows(values, { basis: 'with' }).map((entry) => entry.amount), ['300', '505'])
+  assert.deepEqual(buildExceptionRows(values, { basis: 'without' }).map((entry) => entry.amount), ['300', '500'])
+})
+
+test('switching the choice moves the amounts that were not typed over and leaves the others', () => {
+  const values = toPackageReleaseValues({
+    ...row,
+    pending_packages: [
+      {
+        ...pendingRow(3, '2026-10-09', 500),
+        balance_amount: '500',
+        difference_description: 'DIFFERENCE',
+        difference_amount: '5',
+        balance_with_difference: '505',
+      },
+      {
+        ...pendingRow(4, '2026-10-09', 700),
+        balance_amount: '700',
+        difference_description: 'DIFFERENCE',
+        difference_amount: '5',
+        balance_with_difference: '705',
+      },
+      pendingRow(1, '2026-09-25', 300),
+    ],
+  })
+  const rows = buildExceptionRows(values, { basis: 'with' })
+  rows[1] = { ...rows[1], amount: '710.25' } // typed by hand
+
+  const without = switchExceptionBasis(rows, values, 'with', 'without')
+  assert.deepEqual(without.map((entry) => entry.amount), ['500', '710.25', '300'])
+
+  const back = switchExceptionBasis(without, values, 'without', 'with')
+  assert.deepEqual(back.map((entry) => entry.amount), ['505', '710.25', '300'])
+
+  // A line added by hand has no Package and is never touched.
+  const manual = [{ key: 'manual-1', packageId: null, include: true, date: '', amount: '12' }]
+  assert.deepEqual(switchExceptionBasis(manual, values, 'with', 'without'), manual)
 })

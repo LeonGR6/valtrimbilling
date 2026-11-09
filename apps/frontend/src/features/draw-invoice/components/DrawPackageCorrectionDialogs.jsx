@@ -385,11 +385,11 @@ export function EditDrawPackageDialog({
                 )}
               </Alert>
             )}
-            <InvoicedEditReview review={review} />
+            <InvoicedEditReview review={review} difference={record.invoiceDifference} />
           </Stack>
         )}
         {stage === 'done' && (
-          <InvoicedEditDone result={done} sent={submissions.length > 0} />
+          <InvoicedEditDone result={done} sent={submissions.length > 0} difference={record.invoiceDifference} />
         )}
         {stage === 'edit' && (
         <Stack spacing={2.5}>

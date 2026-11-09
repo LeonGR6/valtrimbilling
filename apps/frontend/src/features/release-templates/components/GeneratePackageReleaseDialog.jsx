@@ -12,8 +12,11 @@ import {
   DialogContent,
   DialogTitle,
   Divider,
+  FormControlLabel,
   IconButton,
   InputAdornment,
+  Radio,
+  RadioGroup,
   Stack,
   TextField,
   Typography,
@@ -25,16 +28,21 @@ import VisibilityRoundedIcon from '@mui/icons-material/VisibilityRounded'
 import TaskAltRoundedIcon from '@mui/icons-material/TaskAltRounded'
 import PdfPreviewDialog from './PdfPreviewDialog.jsx'
 import { formatCurrency } from '../../draw-invoice/utils/drawInvoiceFormatters.js'
+import { formatSignedCurrency } from '../../draw-invoice/utils/invoiceDifference.js'
 import {
   buildExceptionFillValues,
   buildExceptionRows,
   buildFinalReleaseNote,
   buildPackageFillValues,
   buildPackageReleaseFileName,
+  checkAmountFor,
+  hasDifferenceChoice,
   newManualExceptionRow,
   describeFillPlan,
   chooseRelease,
   describePendingPackage,
+  releaseDifference,
+  switchExceptionBasis,
 } from '../services/packageRelease.js'
 import {
   downloadStoredPdf,
@@ -55,7 +63,9 @@ const HELPER_TEXT = {
   through_date: (values) => values.cutoffSource === 'builder_setup'
     ? "Cut-off date of this Package, from the Builder's setup."
     : 'The Builder bills on any date, so the Package date is used.',
-  check_amount: () => 'Invoice net amount, after retention and wrap.',
+  check_amount: (values, difference, basis) => difference && basis === 'with'
+    ? `Invoice total: net amount after retention and wrap, plus the ${difference.description} line.`
+    : 'Invoice net amount, after retention and wrap.',
   signature_date: () => 'Same date as Through Date.',
 }
 
@@ -90,6 +100,9 @@ export default function GeneratePackageReleaseDialog({
   packages = [],
   // The parent has its own Preview button and calls `showPreview` through `ref`.
   hideInlinePreview = false,
+  // The difference line being added to the invoice that is created together with this Release
+  // ({ description, amount }), which is not in the database yet.
+  pendingDifference = null,
   ref = null,
   onReadyChange = null,
   onClose,
@@ -99,6 +112,11 @@ export default function GeneratePackageReleaseDialog({
   const [loadError, setLoadError] = useState(null)
   const [form, setForm] = useState({ through_date: '', check_amount: '', signature_date: '' })
   const [signatureFollows, setSignatureFollows] = useState(true)
+  // When an invoice has a difference line the Release can print the total with it or without it.
+  const [amountBasis, setAmountBasis] = useState('with')
+  // The check amount typed over by hand. It belongs to the choice and the difference it was typed for
+  // (`key`): changing either goes back to the amount the Package says.
+  const [typedCheck, setTypedCheck] = useState(null)
   // The Exceptions lines: one per unpaid earlier Package, plus any added by hand.
   const [exceptionRows, setExceptionRows] = useState([])
   const manualCount = useRef(0)
@@ -131,7 +149,8 @@ export default function GeneratePackageReleaseDialog({
         if (!active) return
         setData(loaded)
         setForm(startingForm(loaded.values))
-        setExceptionRows(buildExceptionRows(loaded.values))
+        setExceptionRows(buildExceptionRows(loaded.values, { basis: 'with' }))
+        setAmountBasis('with')
       },
       (loadingError) => {
         if (active) setLoadError(loadingError.message)
@@ -146,6 +165,18 @@ export default function GeneratePackageReleaseDialog({
     setLoadError(null)
     setData(null)
     setAttempt((current) => current + 1)
+  }
+
+  // The difference line of the invoice (already there, or being typed in the invoice created with this
+  // Release) and the check amount it gives: the Package net, or the invoice total, as the person chose.
+  const difference = data ? releaseDifference(data.values, pendingDifference) : null
+  const checkKey = `${amountBasis}|${difference?.amount ?? ''}`
+  const suggestedCheck = data ? checkAmountFor(data.values, difference, amountBasis) : null
+  const currentForm = {
+    ...form,
+    check_amount: typedCheck?.key === checkKey
+      ? typedCheck.value
+      : suggestedCheck === null ? '' : String(suggestedCheck),
   }
 
   // The Release type is decided by the Package, never picked by hand.
@@ -196,10 +227,22 @@ export default function GeneratePackageReleaseDialog({
   }
 
   const resetExceptionRows = () => {
-    setExceptionRows(buildExceptionRows(data.values))
+    setExceptionRows(buildExceptionRows(data.values, { basis: amountBasis }))
+  }
+
+  // Printing the total with or without the difference: the check amount and the amounts of earlier
+  // Packages that have one follow, unless the person typed over them.
+  const chooseAmountBasis = (next) => {
+    if (next === amountBasis) return
+    setExceptionRows((current) => switchExceptionBasis(current, data.values, amountBasis, next))
+    setAmountBasis(next)
   }
 
   const setValue = (key, value) => {
+    if (key === 'check_amount') {
+      setTypedCheck({ key: checkKey, value })
+      return
+    }
     setForm((current) => ({
       ...current,
       [key]: value,
@@ -216,7 +259,7 @@ export default function GeneratePackageReleaseDialog({
       pdfBytes: new Uint8Array(await pdf.arrayBuffer()),
       mapping: template.mapping,
       values: {
-        ...form,
+        ...currentForm,
         // One date and one amount per unpaid earlier Package that is included.
         waiver_release_dates: exceptionLines.waiver_release_dates,
         unpaid_progress_amount: exceptionLines.unpaid_progress_amount,
@@ -291,10 +334,13 @@ export default function GeneratePackageReleaseDialog({
 
   const values = data?.values
   const ready = choice?.state === 'ready'
+  const showsDifferenceChoice = Boolean(values) && hasDifferenceChoice(values, difference)
 
   const canGenerate = ready
 
   useImperativeHandle(ref, () => ({ generate, build, showPreview }))
+  // Changes whenever the generated file would change.
+  const signature = JSON.stringify([currentForm, exceptionRows])
   useEffect(() => {
     onReadyChange?.({
       canGenerate,
@@ -307,10 +353,9 @@ export default function GeneratePackageReleaseDialog({
         : ['missing_template', 'retention', 'price_adjustment'].includes(choice?.state)
           ? choice.state
           : null,
-      // Changes whenever the generated file would change.
-      signature: JSON.stringify([form, exceptionRows]),
+      signature,
     })
-  }, [canGenerate, choice?.state, data, exceptionRows, form, generating, loadError, onReadyChange, status])
+  }, [canGenerate, choice?.state, data, generating, loadError, onReadyChange, signature, status])
 
   const body = (
     <>
@@ -370,6 +415,50 @@ export default function GeneratePackageReleaseDialog({
               </Typography>
             </Box>
 
+            {showsDifferenceChoice && (isFilled('check_amount') || usesExceptions) && (
+              <Box
+                data-testid="difference-choice"
+                sx={{ border: 1, borderColor: 'divider', borderRadius: 1, px: 1.5, py: 1 }}
+              >
+                <Typography variant="subtitle2" fontWeight={850}>
+                  {difference
+                    ? `This invoice has a ${difference.description} line of ${formatSignedCurrency(difference.amount)}`
+                    : 'An earlier unpaid invoice has a difference line'}
+                </Typography>
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                  {difference?.source === 'draft'
+                    ? 'It is added when the invoice is created together with this Release. '
+                    : ''}
+                  Choose which total the Release prints{difference ? ' as the check amount' : ''}
+                  {(values.pendingPackages ?? []).some((item) => item.differenceAmount != null)
+                    ? ', and in the earlier invoices that have a difference too'
+                    : ''}.
+                </Typography>
+                <RadioGroup
+                  value={amountBasis}
+                  onChange={(event) => chooseAmountBasis(event.target.value)}
+                  aria-label="Release total"
+                >
+                  <FormControlLabel
+                    value="with"
+                    disabled={generating}
+                    control={<Radio size="small" />}
+                    label={difference && values.netAmount != null
+                      ? `With the difference · ${formatCurrency(checkAmountFor(values, difference, 'with'))}`
+                      : 'With the difference'}
+                  />
+                  <FormControlLabel
+                    value="without"
+                    disabled={generating}
+                    control={<Radio size="small" />}
+                    label={difference && values.netAmount != null
+                      ? `Without the difference · ${formatCurrency(values.netAmount)} (the Package total)`
+                      : 'Without the difference'}
+                  />
+                </RadioGroup>
+              </Box>
+            )}
+
             {plan.filled.length > 0 && (
               <Stack spacing={1.5}>
                 {plan.filled.filter(({ key }) => EDITABLE_VARIABLES.includes(key)).map(({ key, label }) => {
@@ -380,9 +469,9 @@ export default function GeneratePackageReleaseDialog({
                       size="small"
                       label={label}
                       type={isDate ? 'date' : 'text'}
-                      value={form[key]}
+                      value={currentForm[key]}
                       disabled={generating}
-                      helperText={HELPER_TEXT[key](values)}
+                      helperText={HELPER_TEXT[key](values, difference, amountBasis)}
                       onChange={(event) => {
                         if (key === 'signature_date') setSignatureFollows(false)
                         setValue(key, event.target.value)

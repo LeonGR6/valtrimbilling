@@ -11,6 +11,11 @@
 // differences adds one PRICE_CHANGE line for each, named after its Phase, Lot and Draw.
 
 import type { InvoiceCustomField } from './quickbooksCustomFields.ts'
+import {
+  cleanDifferenceDescription,
+  differenceProblem,
+  type InvoiceDifference,
+} from './quickbooksInvoiceDifference.ts'
 
 export type InvoiceLineFormat = 'LOT_SCOPE' | 'BUILDING_SCOPE'
 
@@ -54,8 +59,14 @@ export interface QuickbooksInvoiceInput {
   /** Package totals as positive magnitudes; they are sent as negative lines. */
   retentionAmount?: number
   wrapAmount?: number
-  /** Package net amount. The built lines must add up to exactly this. */
+  /** Package net amount. The built lines must add up to exactly this (plus the difference, if any). */
   expectedNetAmount: number
+  /**
+   * One manual line to cover a gap between the Package and what the Builder requires. It is the only
+   * thing allowed to move the total away from the Package net, and only within the limit for the size
+   * of the invoice (see quickbooksInvoiceDifference.ts).
+   */
+  difference?: InvoiceDifference | null
 }
 
 export interface QuickbooksInvoiceLine {
@@ -91,6 +102,7 @@ export type QuickbooksInvoiceErrorCode =
   | 'INVALID_INPUT'
   | 'NO_LINES'
   | 'TOTAL_MISMATCH'
+  | 'DIFFERENCE_TOO_LARGE'
   | 'UNSUPPORTED_PACKAGE'
   | 'PRODUCT_MISSING'
   | 'NUMBER_IN_USE'
@@ -349,14 +361,28 @@ export function buildQuickbooksInvoicePayload(
     throw new QuickbooksInvoiceError('NO_LINES', 'The package has nothing to invoice.')
   }
 
+  // The difference line goes last, after the Package's own lines, and only within its limit.
+  let differenceCents = 0
+  if (input.difference) {
+    const problem = differenceProblem(input.difference, input.expectedNetAmount)
+    if (problem) {
+      throw new QuickbooksInvoiceError(
+        problem.code === 'TOO_LARGE' ? 'DIFFERENCE_TOO_LARGE' : 'INVALID_INPUT',
+        problem.message,
+      )
+    }
+    differenceCents = toCents(input.difference.amount, 'difference')
+    lines.push(toLine(cleanDifferenceDescription(input.difference.description), differenceCents))
+  }
+
   const totalCents = lines.reduce((sum, line) => sum + toCents(line.Amount, 'line'), 0)
-  const expectedCents = toCents(input.expectedNetAmount, 'expectedNetAmount')
+  const expectedCents = toCents(input.expectedNetAmount, 'expectedNetAmount') + differenceCents
   if (totalCents !== expectedCents) {
     throw new QuickbooksInvoiceError(
       'TOTAL_MISMATCH',
-      `Invoice lines add up to ${fromCents(totalCents).toFixed(2)} but the package net amount is ${
-        fromCents(expectedCents).toFixed(2)
-      }.`,
+      `Invoice lines add up to ${fromCents(totalCents).toFixed(2)} but the package net amount${
+        differenceCents === 0 ? '' : ' with the difference'
+      } is ${fromCents(expectedCents).toFixed(2)}.`,
     )
   }
 

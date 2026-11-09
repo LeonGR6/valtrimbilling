@@ -66,6 +66,13 @@ function toPendingPackage(row) {
     // without a balance means. 'quickbooks' or 'invoice' says which it is.
     balanceAmount: toNumberOrNull(row.balance_amount) ?? toNumberOrNull(row.net_amount),
     balanceSource: row.balance_source === 'quickbooks' ? 'quickbooks' : 'invoice',
+    // The manual difference line the invoice carries (null when it has none), and what is still owed
+    // with it. `balanceAmount` is what is owed without it.
+    differenceDescription: row.difference_amount == null ? null : (row.difference_description ?? null),
+    differenceAmount: toNumberOrNull(row.difference_amount),
+    balanceWithDifference: toNumberOrNull(row.balance_with_difference)
+      ?? toNumberOrNull(row.balance_amount)
+      ?? toNumberOrNull(row.net_amount),
     status: row.status,
     workflowStatus: row.workflow_status,
   }
@@ -125,6 +132,9 @@ export function toPackageReleaseValues(row) {
     retentionAmount: toNumberOrNull(row.retention_amount),
     wrapAmount: toNumberOrNull(row.wrap_amount),
     netAmount: toNumberOrNull(row.net_amount),
+    // The manual difference line this Package's invoice carries, when it has one already.
+    differenceDescription: row.difference_amount == null ? null : (row.difference_description ?? null),
+    differenceAmount: toNumberOrNull(row.difference_amount),
     // Earlier Packages of the Job that are not paid yet and whose cut-off date has
     // already passed, oldest first. These fill the Exceptions lines.
     pendingPackages: unpaidEarlier.filter(
@@ -214,6 +224,51 @@ export function describePendingPackage(pending) {
 }
 
 /**
+ * The manual difference line the Release has to know about: the one the Package's invoice already
+ * carries, else the one being typed in the invoice that is created together with the Release. Null
+ * when there is none.
+ */
+export function releaseDifference(values, pendingDifference = null) {
+  if (values?.differenceAmount != null) {
+    return {
+      description: values.differenceDescription ?? 'DIFFERENCE',
+      amount: values.differenceAmount,
+      source: 'invoice',
+    }
+  }
+  if (pendingDifference?.amount != null) {
+    return {
+      description: pendingDifference.description ?? 'DIFFERENCE',
+      amount: pendingDifference.amount,
+      source: 'draft',
+    }
+  }
+  return null
+}
+
+/** Whether the person has a choice to make: this Package's invoice or an earlier unpaid one has a difference. */
+export function hasDifferenceChoice(values, difference) {
+  return difference != null
+    || (values?.pendingPackages ?? []).some((item) => item.differenceAmount != null)
+}
+
+/**
+ * The check amount: the Package net, and with the difference line on top when the person chose to
+ * print the invoice total (`basis` 'with') and there is one. Null when the Package has no amount.
+ */
+export function checkAmountFor(values, difference, basis) {
+  if (values?.netAmount == null) return null
+  if (basis !== 'with' || !difference) return values.netAmount
+  return Math.round((values.netAmount + difference.amount) * 100) / 100
+}
+
+/** What is still owed of an earlier Package, with or without its difference line. */
+export function pendingAmountFor(item, basis) {
+  if (basis === 'with' && item.differenceAmount != null) return item.balanceWithDifference
+  return item.balanceAmount
+}
+
+/**
  * The values to print, as raw inputs for the filler.
  *  - Through Date: the cut-off date of the Package.
  *  - Amount of Check: the invoice net amount (after retention and wrap).
@@ -245,14 +300,32 @@ export function buildPackageFillValues(values, pending = values.pendingPackages 
  * Package (included, with its cut-off date and what is still owed as input text). A
  * person can edit them, leave one out or add lines by hand before generating.
  */
-export function buildExceptionRows(values) {
-  return (values.pendingPackages ?? []).map((item) => ({
-    key: `package-${item.id}`,
-    packageId: item.id,
-    include: true,
-    date: item.cutoffDate ?? '',
-    amount: item.balanceAmount === null ? '' : String(item.balanceAmount),
-  }))
+export function buildExceptionRows(values, { basis = 'with' } = {}) {
+  return (values.pendingPackages ?? []).map((item) => {
+    const owed = pendingAmountFor(item, basis)
+    return {
+      key: `package-${item.id}`,
+      packageId: item.id,
+      include: true,
+      date: item.cutoffDate ?? '',
+      amount: owed === null ? '' : String(owed),
+    }
+  })
+}
+
+/**
+ * The rows after the person switched between printing the totals with or without the differences:
+ * the amount of an earlier Package that has a difference follows, unless it was typed over by hand.
+ */
+export function switchExceptionBasis(rows, values, from, to) {
+  return rows.map((row) => {
+    const item = (values.pendingPackages ?? []).find((pending) => pending.id === row.packageId)
+    if (!item || item.differenceAmount == null) return row
+    const before = pendingAmountFor(item, from)
+    if (String(row.amount) !== (before === null ? '' : String(before))) return row
+    const after = pendingAmountFor(item, to)
+    return { ...row, amount: after === null ? '' : String(after) }
+  })
 }
 
 /** An empty line the person fills in by hand. `key` must be unique among the rows. */

@@ -1,7 +1,7 @@
 import { assertEquals, assertRejects } from '@std/assert'
 import { QuickbooksApiError } from './quickbooksApi.ts'
 import { QuickbooksCustomerError } from './quickbooksCustomer.ts'
-import { QuickbooksInvoiceError } from './quickbooksInvoice.ts'
+import { QuickbooksInvoiceError, type QuickbooksInvoicePayload } from './quickbooksInvoice.ts'
 import {
   type ClaimResult,
   createPackageInvoice,
@@ -120,7 +120,11 @@ function harness(overrides: Partial<InvoiceSyncDeps> = {}, pkg: LoadedPackage = 
 const run = (
   deps: InvoiceSyncDeps,
   dryRun = false,
-  extra: { environment?: 'sandbox' | 'production'; invoiceNumber?: string | null } = {},
+  extra: {
+    environment?: 'sandbox' | 'production'
+    invoiceNumber?: string | null
+    difference?: { description: string; amount: number } | null
+  } = {},
 ) =>
   createPackageInvoice(deps, {
     packageId: 68,
@@ -152,6 +156,80 @@ Deno.test('dry run previews the invoice and changes nothing', async () => {
     ['PHASE 1 LOT #1\nDRAW 1', 800],
     ['RETENTION', -40],
   ])
+})
+
+Deno.test('a preview says the Package net and how large a difference may be, with or without one', async () => {
+  const { deps } = harness()
+
+  const plain = await run(deps, true)
+  if (!plain.dryRun) throw new Error('unreachable')
+  assertEquals([plain.packageNet, plain.differenceLimit], [760, 5])
+  assertEquals(plain.invoice.Line.length, 2)
+
+  const withDifference = await run(deps, true, { difference: { description: 'DIFFERENCE', amount: 4 } })
+  if (!withDifference.dryRun) throw new Error('unreachable')
+  assertEquals(withDifference.invoice.Line.map((line) => [line.Description, line.Amount]), [
+    ['PHASE 1 LOT #1\nDRAW 1', 800],
+    ['RETENTION', -40],
+    ['DIFFERENCE', 4],
+  ])
+  assertEquals(withDifference.packageNet, 760)
+})
+
+Deno.test('a real send puts the DIFFERENCE line on the invoice and records it with the invoice', async () => {
+  const recorded: unknown[] = []
+  const { deps, sent } = harness({
+    createInvoice: (_api, payload, requestId) => {
+      sent.push({ requestId, payload })
+      return Promise.resolve({ id: '147', docNumber: payload.DocNumber ?? null, syncToken: '0', totalAmount: 764 })
+    },
+    complete: (_id, _created, _payload, difference) => {
+      recorded.push(difference)
+      return Promise.resolve()
+    },
+  })
+
+  const result = await run(deps, false, { difference: { description: 'DIFFERENCE', amount: 4 } })
+
+  const payload = sent[0].payload as QuickbooksInvoicePayload
+  assertEquals(payload.Line.at(-1), {
+    Amount: 4,
+    DetailType: 'SalesItemLineDetail',
+    Description: 'DIFFERENCE',
+    SalesItemLineDetail: { ItemRef: { value: '19' }, Qty: 1, UnitPrice: 4 },
+  })
+  assertEquals(recorded, [{ description: 'DIFFERENCE', amount: 4 }])
+  if (result.dryRun) throw new Error('unreachable')
+  assertEquals(result.difference, { description: 'DIFFERENCE', amount: 4 })
+})
+
+Deno.test('a difference above the limit stops everything before the Package is claimed', async () => {
+  for (const dryRun of [true, false]) {
+    const { deps, calls } = harness()
+
+    const error = await assertRejects(
+      () => run(deps, dryRun, { difference: { description: 'DIFFERENCE', amount: 8 } }),
+      QuickbooksInvoiceError,
+    )
+
+    assertEquals(error.code, 'DIFFERENCE_TOO_LARGE')
+    assertEquals(calls.includes('claim'), false)
+    assertEquals(calls.includes('createInvoice'), false)
+  }
+})
+
+Deno.test('an invoice with no difference records none', async () => {
+  const recorded: unknown[] = []
+  const { deps } = harness({
+    complete: (_id, _created, _payload, difference) => {
+      recorded.push(difference)
+      return Promise.resolve()
+    },
+  })
+
+  await run(deps)
+
+  assertEquals(recorded, [null])
 })
 
 Deno.test('creates the invoice: claim, create with the claimed request id, then record it', async () => {

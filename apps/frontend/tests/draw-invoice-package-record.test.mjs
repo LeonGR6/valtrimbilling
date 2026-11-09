@@ -18,6 +18,7 @@ import {
   toDrawInvoicePackage,
   toEditDrawPackageRpc,
   toInvoicedEditRequest,
+  toInvoiceDifference,
   toPackageStatusRpc,
   toTransferDrawPackageRpc,
 } from '../src/features/draw-invoice/services/drawInvoicePackageRecord.js'
@@ -1242,6 +1243,27 @@ test('the record knows when a change is waiting for QuickBooks', () => {
   assert.equal(toDrawInvoicePackage({ ...packageRow, quickbooks_invoice_syncs: null }, null).quickbooksUpdatePending, false)
 })
 
+test('the Package record carries the difference line of its invoice', () => {
+  const row = {
+    ...packageRow,
+    quickbooks_status: 'CREATED',
+    quickbooks_invoice_syncs: {
+      difference_description: 'DIFFERENCE',
+      difference_amount: '8',
+      difference_limit: '10',
+      difference_at: '2026-11-09T15:00:00Z',
+    },
+  }
+  assert.deepEqual(toDrawInvoicePackage(row, null).invoiceDifference, {
+    description: 'DIFFERENCE',
+    amount: 8,
+    limit: 10,
+    addedAt: '2026-11-09T15:00:00Z',
+  })
+  assert.equal(toDrawInvoicePackage({ ...row, quickbooks_invoice_syncs: { update_pending: false } }, null).invoiceDifference, null)
+  assert.equal(toDrawInvoicePackage({ ...packageRow, quickbooks_invoice_syncs: null }, null).invoiceDifference, null)
+})
+
 test('the edit of an invoiced Package sends the cells, Hardware lines and Option units that are kept or released', () => {
   assert.deepEqual(toInvoicedEditRequest({
     packageId: '68',
@@ -1267,4 +1289,24 @@ test('an edit that failed before saving anything is told apart from one that may
   for (const code of ['QUICKBOOKS_ERROR', 'TOTAL_MISMATCH', 'INTERNAL', null, undefined]) {
     assert.equal(invoicedEditLeftNothingSaved(code), false, String(code))
   }
+})
+
+
+test('the difference line of an invoice is read from its sync row, and an invoice without one has none', () => {
+  assert.deepEqual(
+    toInvoiceDifference({
+      difference_description: 'DIFFERENCE',
+      difference_amount: '8.00',
+      difference_limit: '10.00',
+      difference_at: '2026-11-09T15:00:00Z',
+    }),
+    { description: 'DIFFERENCE', amount: 8, limit: 10, addedAt: '2026-11-09T15:00:00Z' },
+  )
+  assert.equal(toInvoiceDifference({ difference_description: null, difference_amount: null }), null)
+  assert.equal(toInvoiceDifference({ qbo_state: 'OPEN' }), null)
+  assert.equal(toInvoiceDifference(null), null)
+  assert.deepEqual(
+    toInvoiceDifference({ difference_description: 'DIFFERENCE', difference_amount: '-4.5' }),
+    { description: 'DIFFERENCE', amount: -4.5, limit: null, addedAt: null },
+  )
 })

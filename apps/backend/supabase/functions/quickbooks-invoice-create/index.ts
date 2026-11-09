@@ -2,6 +2,7 @@ import { handlePreflight, json } from '../_shared/cors.ts'
 import { QuickbooksApiError } from '../_shared/quickbooksApi.ts'
 import { QuickbooksCustomerError } from '../_shared/quickbooksCustomer.ts'
 import { QuickbooksInvoiceError } from '../_shared/quickbooksInvoice.ts'
+import { readInvoiceDifference } from '../_shared/quickbooksInvoiceDifference.ts'
 import {
   createPackageInvoice,
   type ClaimResult,
@@ -83,6 +84,10 @@ Deno.serve(async (req) => {
       return json({ error: 'txnDate must be YYYY-MM-DD.' }, 400)
     }
     const txnDate = body?.txnDate ?? new Date().toISOString().slice(0, 10)
+
+    // The manual difference line, if the person added one; its limit is checked against the Package.
+    const { difference, problem: differenceReadProblem } = readInvoiceDifference(body?.difference)
+    if (differenceReadProblem) return json({ code: 'INVALID_INPUT', error: differenceReadProblem }, 422)
 
     const admin = serviceClient()
 
@@ -170,7 +175,7 @@ Deno.serve(async (req) => {
           rpcFailure(error)
           return data as ClaimResult
         },
-        complete: async (id, created, payload) => {
+        complete: async (id, created, payload, invoiceDifference) => {
           const { error } = await admin.rpc('complete_quickbooks_invoice_sync', {
             p_package_id: id,
             p_qbo_invoice_id: created.id,
@@ -178,6 +183,8 @@ Deno.serve(async (req) => {
             p_qbo_sync_token: created.syncToken,
             p_total_amount: created.totalAmount,
             p_payload: payload,
+            p_difference_description: invoiceDifference?.description ?? null,
+            p_difference_amount: invoiceDifference?.amount ?? null,
           })
           rpcFailure(error)
         },
@@ -198,6 +205,7 @@ Deno.serve(async (req) => {
         dryRun: body?.dryRun === true,
         environment,
         invoiceNumber: typeof body?.invoiceNumber === 'string' ? body.invoiceNumber : null,
+        difference,
       },
     )
 

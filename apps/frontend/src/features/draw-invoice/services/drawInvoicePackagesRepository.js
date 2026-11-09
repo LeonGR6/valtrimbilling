@@ -34,7 +34,7 @@ const PACKAGE_COLUMNS = [
   'quickbooks_reference',
   'quickbooks_environment',
   // How QuickBooks shows the invoice (open, overdue, paid...) and what is still owed, when it was read.
-  'quickbooks_invoice_syncs(qbo_state, qbo_overdue, qbo_balance, qbo_total, qbo_due_date, update_pending, update_error)',
+  'quickbooks_invoice_syncs(qbo_state, qbo_overdue, qbo_balance, qbo_total, qbo_due_date, update_pending, update_error, difference_description, difference_amount, difference_limit, difference_at)',
   'voided_at',
   'void_reason',
   'notes',

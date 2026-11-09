@@ -5,7 +5,8 @@
 // database. Rules this enforces:
 //   * the environment (Test or Production) is given, never guessed: it is where
 //     the invoice goes, and the caller took it from the platform setting,
-//   * nothing leaves the server before the lines add up to the Package net,
+//   * nothing leaves the server before the lines add up to the Package net (plus the one manual
+//     difference line, when the person added it and it is within the limit for the invoice),
 //   * the invoice number is typed by a person and must be unused in that
 //     environment, in the database and in QuickBooks,
 //   * the Package is claimed (locked) before QuickBooks is called,
@@ -39,6 +40,7 @@ import {
   QuickbooksInvoiceError,
   type QuickbooksInvoicePayload,
 } from './quickbooksInvoice.ts'
+import { differenceLimit, type InvoiceDifference } from './quickbooksInvoiceDifference.ts'
 import { mapPackageToCharges } from './quickbooksPackageCharges.ts'
 import type { LoadedPackage } from './quickbooksPackageSource.ts'
 import type { QuickbooksSession } from './quickbooksSession.ts'
@@ -121,6 +123,8 @@ export interface InvoiceSyncDeps {
     packageId: number,
     created: CreatedQuickbooksInvoice,
     payload: QuickbooksInvoicePayload,
+    /** The manual difference line the invoice carries, recorded with the invoice. */
+    difference: InvoiceDifference | null,
   ): Promise<void>
   /** Saves QuickBooks' own PDF of the new invoice as the Package's INVOICE document. */
   saveInvoicePdf(
@@ -151,6 +155,9 @@ export type CreatePackageInvoiceResult =
     customer: ResolvedQuickbooksCustomer
     invoice: QuickbooksInvoicePayload
     numberCheck: InvoiceNumberCheck
+    /** The Package net before any difference, and the most a difference may be for it. */
+    packageNet: number
+    differenceLimit: number
     /** Things that were left out or changed, e.g. a custom field QuickBooks does not have. */
     warnings: string[]
   }
@@ -162,6 +169,8 @@ export type CreatePackageInvoiceResult =
     docNumber: string | null
     totalAmount: number | null
     customer: ResolvedQuickbooksCustomer
+    /** The difference line the invoice carries, if any. */
+    difference: InvoiceDifference | null
     warnings: string[]
   }
 
@@ -212,13 +221,15 @@ async function lastNumberInUse(
 
 export async function createPackageInvoice(
   deps: InvoiceSyncDeps,
-  { packageId, txnDate, dryRun, environment, invoiceNumber }: {
+  { packageId, txnDate, dryRun, environment, invoiceNumber, difference = null }: {
     packageId: number
     txnDate: string
     dryRun: boolean
     environment: QuickbooksEnvironment
     /** What the person typed; a preview may not have one yet. */
     invoiceNumber?: string | null
+    /** One manual line for a gap with what the Builder requires; checked against its limit. */
+    difference?: InvoiceDifference | null
   },
 ): Promise<CreatePackageInvoiceResult> {
   const label = ENVIRONMENT_LABELS[environment]
@@ -318,10 +329,20 @@ export async function createPackageInvoice(
     privateNote: `ValtrimBilling ${loaded.packageNumber}`,
     customFields,
     ...mapped,
+    difference,
   })
 
   if (dryRun) {
-    return { dryRun: true, environment, customer, invoice: payload, numberCheck, warnings }
+    return {
+      dryRun: true,
+      environment,
+      customer,
+      invoice: payload,
+      numberCheck,
+      packageNet: mapped.expectedNetAmount,
+      differenceLimit: differenceLimit(mapped.expectedNetAmount),
+      warnings,
+    }
   }
 
   if (numberCheck.inDatabase) throw new QuickbooksSyncConflictError('NUMBER_IN_USE')
@@ -356,7 +377,7 @@ export async function createPackageInvoice(
   }
 
   try {
-    await deps.complete(packageId, created, sendPayload)
+    await deps.complete(packageId, created, sendPayload, difference)
   } catch (error) {
     // The invoice exists in QuickBooks; keep the request id so a retry gets it back.
     await deps.fail(
@@ -390,6 +411,7 @@ export async function createPackageInvoice(
     docNumber: created.docNumber,
     totalAmount: created.totalAmount,
     customer,
+    difference,
     warnings,
   }
 }

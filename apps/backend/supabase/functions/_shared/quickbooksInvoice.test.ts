@@ -142,6 +142,97 @@ Deno.test('rejects an invoice whose lines do not add up to the net amount', () =
   assertEquals(error.code, 'TOTAL_MISMATCH')
 })
 
+Deno.test('a difference is one more line, last, and moves the total by exactly its amount', () => {
+  const payload = buildQuickbooksInvoicePayload({
+    ...base,
+    charges: [draw('97', 7000)],
+    retentionAmount: 300,
+    expectedNetAmount: 6700,
+    difference: { description: ' DIFFERENCE ', amount: 8 },
+  })
+
+  assertEquals(payload.Line.map((row) => [row.Description, row.Amount]), [
+    ['PHASE 1 LOT #97\nDRAW 3', 7000],
+    ['RETENTION', -300],
+    ['DIFFERENCE', 8],
+  ])
+  assertEquals(payload.Line[2].SalesItemLineDetail.UnitPrice, 8)
+  assertEquals(payload.Line.reduce((sum, row) => sum + row.Amount, 0), 6708)
+})
+
+Deno.test('a negative difference is a negative line', () => {
+  const payload = buildQuickbooksInvoicePayload({
+    ...base,
+    charges: [draw('97', 6700)],
+    expectedNetAmount: 6700,
+    difference: { description: 'DIFFERENCE', amount: -4.5 },
+  })
+
+  assertEquals(payload.Line.at(-1)?.Amount, -4.5)
+})
+
+Deno.test('a difference above the limit for the invoice is refused before anything is built', () => {
+  const error = assertThrows(
+    () =>
+      buildQuickbooksInvoicePayload({
+        ...base,
+        charges: [draw('97', 6700)],
+        expectedNetAmount: 6700,
+        difference: { description: 'DIFFERENCE', amount: 15 },
+      }),
+    QuickbooksInvoiceError,
+  )
+  assertEquals(error.code, 'DIFFERENCE_TOO_LARGE')
+  assertEquals(
+    error.message,
+    'The difference of $15.00 is greater than the $10.00 allowed for an invoice of $6,700.00.',
+  )
+})
+
+Deno.test('a difference with no text or no amount is an invalid input, not a limit problem', () => {
+  for (const difference of [{ description: '', amount: 5 }, { description: 'DIFFERENCE', amount: 0 }]) {
+    const error = assertThrows(
+      () =>
+        buildQuickbooksInvoicePayload({
+          ...base,
+          charges: [draw('97', 6700)],
+          expectedNetAmount: 6700,
+          difference,
+        }),
+      QuickbooksInvoiceError,
+    )
+    assertEquals(error.code, 'INVALID_INPUT')
+  }
+})
+
+Deno.test('a difference does not hide a Package whose own lines are wrong', () => {
+  const error = assertThrows(
+    () =>
+      buildQuickbooksInvoicePayload({
+        ...base,
+        charges: [draw('97', 6700)],
+        expectedNetAmount: 6690,
+        difference: { description: 'DIFFERENCE', amount: 8 },
+      }),
+    QuickbooksInvoiceError,
+  )
+  assertEquals(error.code, 'TOTAL_MISMATCH')
+})
+
+Deno.test('a difference alone does not make an invoice', () => {
+  const error = assertThrows(
+    () =>
+      buildQuickbooksInvoicePayload({
+        ...base,
+        charges: [],
+        expectedNetAmount: 0,
+        difference: { description: 'DIFFERENCE', amount: 5 },
+      }),
+    QuickbooksInvoiceError,
+  )
+  assertEquals(error.code, 'NO_LINES')
+})
+
 Deno.test('sums in cents so floating point noise cannot break the total', () => {
   const payload = buildQuickbooksInvoicePayload({
     ...base,

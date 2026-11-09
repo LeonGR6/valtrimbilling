@@ -11,6 +11,11 @@ import {
   quickbooksInvoiceNumberStatus,
 } from '../services/quickbooksRecord.js'
 import { localDateKey } from '../utils/calendarDrawSuggestions.js'
+import {
+  DEFAULT_DIFFERENCE_DESCRIPTION,
+  differenceLimit,
+  readDifferenceDraft,
+} from '../utils/invoiceDifference.js'
 
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/u
 const NUMBER_PATTERN = /^[0-9A-Za-z][0-9A-Za-z.-]{0,20}$/u
@@ -26,6 +31,11 @@ const MAX_NUMBER_ADVANCES = 20
  * is read again whenever the date or the invoice number changes. The mode (Test or Production)
  * is read from the first preview and, once seen, sent back with the request: if the platform
  * was switched in between, the server sends nothing.
+ *
+ * A person can add ONE extra line, a difference (see `utils/invoiceDifference.js`), when the total the
+ * Builder requires does not match the Package. It is typed in `differenceInput` and checked here against
+ * the limit the preview reports; `difference` is the line that will be sent (null while there is none or
+ * it has a problem, which is then in `differenceProblem`), and `invoiceTotal` the total with it.
  *
  * `create` sends the invoice and resolves with what QuickBooks made; it rejects (and keeps the
  * message in `submitError`) when it could not. `onSettled` is called either way, because a
@@ -48,6 +58,11 @@ export function useQuickbooksInvoiceDraft(record, { enabled = true, onSettled = 
   const [lastNumber, setLastNumber] = useState(null)
   const [confirmed, setConfirmed] = useState(false)
   const [lastSync, setLastSync] = useState(null)
+  const [differenceInput, setDifferenceInput] = useState({
+    open: false,
+    description: DEFAULT_DIFFERENCE_DESCRIPTION,
+    amountText: '',
+  })
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState('')
   const [result, setResult] = useState(null)
@@ -129,6 +144,18 @@ export function useQuickbooksInvoiceDraft(record, { enabled = true, onSettled = 
     numberCheck: previewData?.numberCheck,
   })
 
+  // The difference line typed, read against the Package net the preview reported.
+  const packageNet = previewData?.packageNet ?? null
+  const limit = previewData
+    ? (previewData.differenceLimit ?? differenceLimit(previewData.packageNet))
+    : null
+  const differenceDraft = previewData
+    ? readDifferenceDraft(differenceInput, previewData.packageNet, limit)
+    : { difference: null, problem: null, total: null }
+  const { difference, problem: differenceProblem, total: invoiceTotal } = differenceDraft
+
+  const changeDifference = (changes) => setDifferenceInput((current) => ({ ...current, ...changes }))
+
   const create = async () => {
     setSubmitting(true)
     setSubmitError('')
@@ -136,6 +163,7 @@ export function useQuickbooksInvoiceDraft(record, { enabled = true, onSettled = 
       const created = await createQuickbooksInvoice(record.id, txnDate, {
         invoiceNumber: typed,
         expectedEnvironment: environment,
+        difference,
       })
       setResult(created)
       return created
@@ -154,6 +182,7 @@ export function useQuickbooksInvoiceDraft(record, { enabled = true, onSettled = 
     && !submitting
     && !result
     && !numberStatus.blocking
+    && !differenceProblem
     && (!isProduction || confirmed)
 
   return {
@@ -182,5 +211,12 @@ export function useQuickbooksInvoiceDraft(record, { enabled = true, onSettled = 
     result,
     canCreate,
     create,
+    differenceInput,
+    changeDifference,
+    difference,
+    differenceProblem,
+    differenceLimit: limit,
+    packageNet,
+    invoiceTotal,
   }
 }

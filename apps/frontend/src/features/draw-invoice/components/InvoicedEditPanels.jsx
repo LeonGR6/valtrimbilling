@@ -8,6 +8,7 @@ import {
 } from '@mui/material'
 import { formatPhaseBuilding } from '../../sequence-sheets/utils/phaseBuildingCodes.js'
 import { formatCurrency } from '../utils/drawInvoiceFormatters.js'
+import { differenceLimit, formatSignedCurrency } from '../utils/invoiceDifference.js'
 
 const sentWhen = (value) => new Date(value).toLocaleString('en-US', {
   month: 'short',
@@ -168,19 +169,29 @@ const optionText = (option) => `Lot ${option.lot_number} · ${option.option_code
  * What saving would do, from the dry run: the new total of the same invoice, what leaves and what is
  * added, the documents that must be made again, and whether the Builder already received the Package.
  */
-export function InvoicedEditReview({ review }) {
+export function InvoicedEditReview({ review, difference = null }) {
   const { edit } = review
   const before = Number(edit.previous.net)
   const after = Number(edit.next.net)
   const sent = edit.sent ?? []
+  // The invoice keeps a manual line through the edit: the total QuickBooks shows is the Package plus it.
+  const extra = difference?.amount ?? 0
 
   return (
     <Stack spacing={2}>
       <Alert severity="info">
         <strong>Invoice {edit.invoice_number} stays the same invoice in QuickBooks.</strong>{' '}
-        Only its lines change, and its total goes from {formatCurrency(before)} to {formatCurrency(after)}
+        Only its lines change, and its total goes from {formatCurrency(before + extra)} to {formatCurrency(after + extra)}
         {' '}({after - before >= 0 ? '+' : '-'}{formatCurrency(Math.abs(after - before))}).
       </Alert>
+      {difference && (
+        <Alert severity="info" data-testid="difference-kept">
+          <strong>
+            The invoice keeps its "{difference.description}" line of {formatSignedCurrency(difference.amount)}.
+          </strong>{' '}
+          For a Package of {formatCurrency(after)} the most a difference may be is {formatCurrency(differenceLimit(after))}.
+        </Alert>
+      )}
       <SentToBuilderWarning
         submissions={sent.map((entry) => ({ sentAt: entry.sent_at, destination: entry.destination }))}
       />
@@ -223,14 +234,14 @@ export function InvoicedEditReview({ review }) {
 }
 
 /** What the edit did, once QuickBooks has the new lines. */
-export function InvoicedEditDone({ result, sent }) {
+export function InvoicedEditDone({ result, sent, difference = null }) {
   const edit = result.edit
   return (
     <Stack spacing={2}>
       <Alert severity="success">
         <strong>Invoice {edit?.invoice_number ?? result.docNumber} was updated in QuickBooks.</strong>{' '}
         {edit
-          ? `Its total went from ${formatCurrency(Number(edit.previous.net))} to ${formatCurrency(Number(result.totalAmount))}.`
+          ? `Its total went from ${formatCurrency(Number(edit.previous.net) + (difference?.amount ?? 0))} to ${formatCurrency(Number(result.totalAmount))}.`
           : `Its total is ${formatCurrency(Number(result.totalAmount))}.`}
       </Alert>
       {(result.warnings ?? []).map((warning) => (

@@ -234,6 +234,31 @@ test('a Package that was never sent only shows the card to people who can send i
   )
 })
 
+test('the preview says the Package net and the most a difference may be, from the server', () => {
+  const lines = [{ Description: 'PHASE 1 LOT #1\nDRAW 1', Amount: 6700 }]
+  const preview = toQuickbooksInvoicePreview({
+    invoice: { Line: lines },
+    packageNet: 6700,
+    differenceLimit: 10,
+  })
+  assert.equal(preview.packageNet, 6700)
+  assert.equal(preview.differenceLimit, 10)
+
+  // An older answer without them falls back to the lines, and the limit is worked out by the screen.
+  const older = toQuickbooksInvoicePreview({ invoice: { Line: lines } })
+  assert.equal(older.packageNet, 6700)
+  assert.equal(older.differenceLimit, null)
+})
+
+test('the created invoice says the difference line it carries, or none', () => {
+  assert.deepEqual(
+    toQuickbooksInvoiceResult({ invoiceId: '1', difference: { description: 'DIFFERENCE', amount: 8 } }).difference,
+    { description: 'DIFFERENCE', amount: 8 },
+  )
+  assert.equal(toQuickbooksInvoiceResult({ invoiceId: '1', difference: null }).difference, null)
+  assert.equal(toQuickbooksInvoiceResult({ invoiceId: '1' }).difference, null)
+})
+
 test('maps the dry run to preview lines and a cent-exact total', () => {
   const preview = toQuickbooksInvoicePreview({
     dryRun: true,
@@ -276,6 +301,7 @@ test('maps the created invoice and the last sync attempt', () => {
       customerName: 'Trumark',
       environment: null,
       invoiceNumber: '',
+      difference: null,
       warnings: [],
     },
   )

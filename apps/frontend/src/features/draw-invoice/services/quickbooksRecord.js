@@ -279,6 +279,10 @@ export function toQuickbooksInvoicePreview(data) {
     docNumber: invoice.DocNumber ?? '',
     lines,
     total: totalCents / 100,
+    // The Package net before any difference, and the most a difference may be for it (the server's
+    // numbers; an older answer without them falls back to the total of the lines).
+    packageNet: typeof data.packageNet === 'number' ? data.packageNet : totalCents / 100,
+    differenceLimit: typeof data.differenceLimit === 'number' ? data.differenceLimit : null,
     customFields: (invoice.CustomField ?? []).map((field) => ({
       name: field.Name,
       value: field.StringValue,
@@ -370,6 +374,9 @@ export function toQuickbooksInvoiceResult(data) {
     customerName: data?.customer?.displayName ?? '',
     environment: data?.environment ?? null,
     invoiceNumber: data?.invoiceNumber ?? '',
+    difference: data?.difference
+      ? { description: data.difference.description, amount: Number(data.difference.amount) }
+      : null,
     warnings: Array.isArray(data?.warnings) ? data.warnings : [],
   }
 }

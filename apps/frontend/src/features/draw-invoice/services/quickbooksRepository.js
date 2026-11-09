@@ -153,10 +153,17 @@ export async function previewQuickbooksInvoice(
 export async function createQuickbooksInvoice(
   packageId,
   txnDate,
-  { invoiceNumber, expectedEnvironment },
+  { invoiceNumber, expectedEnvironment, difference = null },
 ) {
   return toQuickbooksInvoiceResult(
-    await invoiceRequest({ packageId, txnDate, invoiceNumber, expectedEnvironment }),
+    await invoiceRequest({
+      packageId,
+      txnDate,
+      invoiceNumber,
+      expectedEnvironment,
+      // One manual extra line ({ description, amount }); the server checks it against its limit.
+      difference,
+    }),
   )
 }
 

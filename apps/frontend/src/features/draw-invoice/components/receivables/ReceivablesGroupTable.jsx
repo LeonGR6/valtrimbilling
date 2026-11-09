@@ -17,6 +17,7 @@ import {
   AGING_BUCKETS,
   DEFAULT_GROUP_SORT,
   groupReceivables,
+  jobWithCommunity,
   sortReceivableGroups,
   sortReceivableInvoices,
 } from '../../utils/receivablesAging.js'
@@ -107,7 +108,7 @@ function InvoiceRow({ invoice, depth }) {
 function GroupRows({ group, depth, expanded, onToggle, onDrill }) {
   const rowKey = `${group.level}:${group.key}`
   const open = expanded.has(rowKey)
-  const name = group.level === 'job' ? group.jobName : group.builderName
+  const name = group.level === 'job' ? jobWithCommunity(group.jobName, group.community) : group.builderName
   const label = group.level === 'job' ? `Job ${name}` : name
   const target = group.level === 'job'
     ? { builderId: group.builderId, jobId: group.jobId }

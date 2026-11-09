@@ -271,8 +271,8 @@ export default function ReceivablesCatalog({ jobs }) {
             sx={{ flex: 1, minWidth: { md: 130 } }}
           >
             <MenuItem value="ALL">All jobs</MenuItem>
-            {jobOptions.map(({ id, name }) => (
-              <MenuItem key={id} value={id}>{name}</MenuItem>
+            {jobOptions.map(({ id, label }) => (
+              <MenuItem key={id} value={id}>{label}</MenuItem>
             ))}
           </TextField>
           <PartiallyPaidFilter

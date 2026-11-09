@@ -144,6 +144,12 @@ export function totalReceivables(invoices) {
   return { buckets, totalCents, invoiceCount: invoices.length }
 }
 
+/** The Job code with its community next to it ("101 · Oak Park"); just the code when the Job has no community. */
+export function jobWithCommunity(jobName, community) {
+  const place = String(community ?? '').trim()
+  return place ? `${jobName} · ${place}` : String(jobName)
+}
+
 /**
  * One row per Builder or per Job, with the cents it owes in each bucket and the
  * Invoices that make them up. There is no days-past-due for a group: each
@@ -160,6 +166,7 @@ export function groupReceivables(invoices, level) {
       builderName: invoice.builderName,
       jobId: level === 'job' ? invoice.jobId : null,
       jobName: level === 'job' ? invoice.jobName : null,
+      community: level === 'job' ? invoice.community : null,
       invoices: [],
     }
     group.invoices.push(invoice)
@@ -207,10 +214,10 @@ export function receivableJobOptions(invoices, builderId = 'ALL') {
   const jobs = new Map()
   for (const invoice of invoices) {
     if (builderId !== 'ALL' && invoice.builderId !== String(builderId)) continue
-    jobs.set(invoice.jobId, invoice.jobName)
+    jobs.set(invoice.jobId, { name: invoice.jobName, community: invoice.community })
   }
   return [...jobs]
-    .map(([id, name]) => ({ id, name }))
+    .map(([id, { name, community }]) => ({ id, name, community, label: jobWithCommunity(name, community) }))
     .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }))
 }
 

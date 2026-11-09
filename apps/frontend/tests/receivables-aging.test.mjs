@@ -13,6 +13,7 @@ import {
   filterReceivables,
   groupReceivables,
   isReportDateAllowed,
+  jobWithCommunity,
   oldestPaymentCheck,
   receivableBuilderOptions,
   receivableJobOptions,
@@ -170,6 +171,7 @@ test('a Job adds its invoices by bucket and shows no days of its own', () => {
   const [job] = groupReceivables(invoices, 'job')
 
   assert.equal(job.jobName, '101')
+  assert.equal(job.community, 'Oak Park')
   assert.equal(job.builderName, 'Builder A')
   assert.deepEqual(job.buckets, {
     CURRENT: 0,
@@ -295,6 +297,25 @@ test('the Builder and Job choices list only what has open invoices, and a Builde
   ])
   assert.deepEqual(receivableJobOptions(invoices).map(({ name }) => name), ['101', '103', '201'])
   assert.deepEqual(receivableJobOptions(invoices, '1').map(({ name }) => name), ['101', '103'])
+})
+
+test('the Job is shown with its community next to it, and alone when it has none', () => {
+  assert.equal(jobWithCommunity('101', 'Oak Park'), '101 · Oak Park')
+  assert.equal(jobWithCommunity('101', '  Oak Park '), '101 · Oak Park')
+  assert.equal(jobWithCommunity('101', ''), '101')
+  assert.equal(jobWithCommunity('101', null), '101')
+  assert.equal(jobWithCommunity('101', undefined), '101')
+
+  const invoices = build([record(103, 100, 0), record(101, 100, 0), record(201, 10, 0)])
+  assert.deepEqual(
+    receivableJobOptions(invoices).map(({ label }) => label),
+    ['101 · Oak Park', '103 · Pine Hills', '201 · Lakeside'],
+  )
+  assert.deepEqual(
+    groupReceivables(invoices, 'job').map((group) => jobWithCommunity(group.jobName, group.community)).sort(),
+    ['101 · Oak Park', '103 · Pine Hills', '201 · Lakeside'],
+  )
+  assert.equal(groupReceivables(invoices, 'builder')[0].community, null)
 })
 
 test('a Job or Builder missing from the list is shown by its id instead of vanishing', () => {

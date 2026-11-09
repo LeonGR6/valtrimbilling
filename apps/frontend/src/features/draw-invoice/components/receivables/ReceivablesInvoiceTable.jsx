@@ -8,6 +8,7 @@ import {
   Typography,
 } from '@mui/material'
 import { formatDate } from '../../utils/drawInvoiceFormatters.js'
+import { jobWithCommunity } from '../../utils/receivablesAging.js'
 import { BucketChip, InvoiceLink, SortHeader } from './receivablesUi.jsx'
 import {
   BUCKET_COLORS,
@@ -83,7 +84,7 @@ export default function ReceivablesInvoiceTable({
                 </Typography>
               </TableCell>
               <TableCell sx={{ overflowWrap: 'anywhere' }}>{invoice.builderName}</TableCell>
-              <TableCell sx={{ overflowWrap: 'anywhere' }}>{invoice.jobName}</TableCell>
+              <TableCell sx={{ overflowWrap: 'anywhere' }}>{jobWithCommunity(invoice.jobName, invoice.community)}</TableCell>
               <TableCell>{formatDate(invoice.invoiceDate)}</TableCell>
               <TableCell>{formatDate(invoice.dueDate)}</TableCell>
               <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums' }}>

@@ -64,30 +64,45 @@ export function differenceProblem({ description, amount }, netAmount, limit = di
 }
 
 /**
- * The difference the person is typing, read against the Package: the line to send (or null while there
- * is nothing to send), what is wrong with it, and the invoice total with it.
- *  - Closed, or open with the amount still empty: no line and no problem.
- *  - `limit` is the one the server reported for this Package, when it has.
+ * The difference line from the total the person types: the total the Builder requires (what the invoice
+ * has to come to). The line is that total minus the Package net so far, to the cent, and is then checked
+ * like any other difference. Returns:
+ *  - `difference`: the line to send (null while there is none or it has a problem),
+ *  - `amount`: the signed difference the total implies (null while the total is empty or not an amount),
+ *  - `problem`: what is wrong, as a sentence, or null,
+ *  - `total`: the invoice total with the line (the Package net when there is no line).
+ * Closed, or open with the total still empty: no line and no problem. `limit` is the one the server
+ * reported for this Package, when it has.
  */
-export function readDifferenceDraft({ open, description, amountText }, netAmount, limit = undefined) {
+export function readDifferenceDraft({ open, description, totalText }, netAmount, limit = undefined) {
   const net = Number(netAmount)
-  const noLine = { difference: null, problem: null, total: Number.isFinite(net) ? net : null }
+  const noLine = { difference: null, amount: null, problem: null, total: Number.isFinite(net) ? net : null }
   if (!open || !Number.isFinite(net)) return noLine
 
-  const amount = parseDifferenceAmount(amountText)
-  if (amount === null) return noLine
+  const required = parseDifferenceAmount(totalText)
+  if (required === null) return noLine
+  if (Number.isNaN(required)) return { ...noLine, problem: 'The total must be an amount.' }
+
+  const requiredCents = toCents(required)
+  if (Math.abs(required * 100 - requiredCents) > 1e-6) {
+    return { ...noLine, problem: 'The total can have at most two decimals.' }
+  }
+  if (requiredCents <= 0) return { ...noLine, problem: 'The total must be more than $0.00.' }
+
+  const amount = (requiredCents - toCents(net)) / 100
+  if (amount === 0) {
+    return {
+      ...noLine,
+      amount: 0,
+      problem: 'This is the same as the Package total, so there is no difference to add.',
+    }
+  }
 
   const candidate = { description: cleanDifferenceDescription(description), amount }
-  const problem = Number.isNaN(amount)
-    ? 'The difference must be an amount.'
-    : differenceProblem(candidate, net, limit ?? differenceLimit(net))
-  if (problem) return { difference: null, problem, total: net }
+  const problem = differenceProblem(candidate, net, limit ?? differenceLimit(net))
+  if (problem) return { difference: null, amount, problem, total: net }
 
-  return {
-    difference: candidate,
-    problem: null,
-    total: Math.round((net + amount) * 100) / 100,
-  }
+  return { difference: candidate, amount, problem: null, total: requiredCents / 100 }
 }
 
 /** "+$8.00" or "-$8.00": the amount with its sign, for the places that say what was added. */
@@ -96,4 +111,18 @@ export function formatSignedCurrency(amount) {
   const value = Number(amount)
   if (!Number.isFinite(value)) return '—'
   return `${value < 0 ? '-' : '+'}${formatCurrency(Math.abs(value))}`
+}
+
+/** What the invoice looks like after the change, for the person to read before saving. */
+export function describeDifferenceChange(current, next) {
+  if (current && !next) return `The "${current.description}" line of ${formatSignedCurrency(current.amount)} is taken off the invoice.`
+  if (!current && next) return `A "${next.description}" line of ${formatSignedCurrency(next.amount)} is added to the invoice.`
+  return `The "${current.description}" line of ${formatSignedCurrency(current.amount)} becomes "${next.description}" of ${formatSignedCurrency(next.amount)}.`
+}
+
+/** True when the line typed is the one the invoice already has. */
+export function sameDifference(left, right) {
+  if (!left && !right) return true
+  if (!left || !right) return false
+  return left.description === right.description && Math.round(left.amount * 100) === Math.round(right.amount * 100)
 }

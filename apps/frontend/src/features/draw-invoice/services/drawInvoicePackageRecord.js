@@ -826,7 +826,7 @@ export function draftLockReason(record) {
  * nothing paid, credited or recorded against it. The invoice keeps its number; QuickBooks gets the
  * new lines. Returns why it cannot, in the words shown to the person, or null when it can.
  */
-export function invoicedEditLockReason(record) {
+export function invoicedEditLockReason(record, { ignorePriceChanges = false } = {}) {
   if (record == null || record.packageType !== 'DRAW' || record.quickbooksStatus !== 'CREATED') {
     return 'This Package has no QuickBooks invoice to edit.'
   }
@@ -839,7 +839,7 @@ export function invoicedEditLockReason(record) {
       && Math.round(record.paymentBalance * 100) !== Math.round(record.paymentTotal * 100))) {
     return 'The invoice already has a payment or credit, so it cannot be edited.'
   }
-  if ((record.priceDifferences?.lineCount ?? 0) > 0) {
+  if (!ignorePriceChanges && (record.priceDifferences?.lineCount ?? 0) > 0) {
     return 'This Package collects price changes, so its cells cannot be edited. Void the invoice and create it again.'
   }
   if (record.quickbooksUpdatePending) {
@@ -850,6 +850,19 @@ export function invoicedEditLockReason(record) {
 
 export function canEditInvoicedDrawPackage(record) {
   return record != null && invoicedEditLockReason(record) === null
+}
+
+/**
+ * Whether the difference line of the invoice can be added, changed or taken off: the same conditions as
+ * editing an invoiced Package (waiting for payment, nothing paid, no change waiting for QuickBooks), except
+ * that collecting price changes does not matter, because the cells are not touched.
+ */
+export function invoiceDifferenceLockReason(record) {
+  return invoicedEditLockReason(record, { ignorePriceChanges: true })
+}
+
+export function canChangeInvoiceDifference(record) {
+  return record != null && invoiceDifferenceLockReason(record) === null
 }
 
 /**

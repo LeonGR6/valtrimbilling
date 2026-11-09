@@ -24,18 +24,27 @@ import { formatCurrency, formatDate } from '../../utils/drawInvoiceFormatters.js
 import {
   DEFAULT_DIFFERENCE_DESCRIPTION,
   DIFFERENCE_DESCRIPTION_MAX,
+  formatSignedCurrency,
 } from '../../utils/invoiceDifference.js'
 
 const NUMBER_COLORS = { success: 'success.main', error: 'error.main', neutral: 'text.secondary' }
 
 /**
- * One extra line for the occasions when the total the Builder requires does not match the Package:
- * a text (starts as "DIFFERENCE") and an amount, plus or minus, within a limit that grows with the
- * size of the invoice. The table above shows the line once it is valid; a problem is said here, and
- * the invoice cannot be created while there is one.
+ * One extra line for the occasions when the total the Builder requires does not match the Package: the
+ * person types that required total and the line is the difference with the Package total so far (plus or
+ * minus, within a limit that grows with the size of the invoice), with a text that starts as "DIFFERENCE".
+ * The table above shows the line once it is valid; a problem is said here, and the invoice cannot be
+ * created while there is one.
  */
 function DifferenceEditor({ draft }) {
-  const { differenceInput: input, changeDifference, differenceProblem, differenceLimit, packageNet } = draft
+  const {
+    differenceInput: input,
+    changeDifference,
+    differenceProblem,
+    differenceAmount,
+    differenceLimit,
+    packageNet,
+  } = draft
   const disabled = draft.submitting
 
   if (!input.open) {
@@ -64,7 +73,7 @@ function DifferenceEditor({ draft }) {
         <IconButton
           size="small"
           aria-label="Remove the difference line"
-          onClick={() => changeDifference({ open: false, amountText: '' })}
+          onClick={() => changeDifference({ open: false, totalText: '' })}
           disabled={disabled}
         >
           <CloseRoundedIcon fontSize="small" />
@@ -82,18 +91,18 @@ function DifferenceEditor({ draft }) {
           sx={{ flex: 1 }}
         />
         <TextField
-          label="Amount"
+          label="Total the Builder requires"
           size="small"
-          value={input.amountText}
-          onChange={(event) => changeDifference({ amountText: event.target.value })}
+          value={input.totalText}
+          onChange={(event) => changeDifference({ totalText: event.target.value })}
           disabled={disabled}
           error={Boolean(differenceProblem)}
           autoFocus
           slotProps={{
             input: { startAdornment: <InputAdornment position="start">$</InputAdornment> },
-            htmlInput: { inputMode: 'decimal', autoComplete: 'off', 'aria-label': 'Difference amount' },
+            htmlInput: { inputMode: 'decimal', autoComplete: 'off', 'aria-label': 'Total the Builder requires' },
           }}
-          sx={{ width: { sm: 160 } }}
+          sx={{ width: { sm: 240 } }}
         />
       </Stack>
       {differenceProblem ? (
@@ -102,10 +111,13 @@ function DifferenceEditor({ draft }) {
         </Typography>
       ) : (
         <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
+          {differenceAmount != null && packageNet != null
+            ? `The Package is ${formatCurrency(packageNet)}, so the line is ${formatSignedCurrency(differenceAmount)}. `
+            : `The Package total so far is ${packageNet != null ? formatCurrency(packageNet) : '…'}: type the total the Builder requires and the line is the difference. `}
           {differenceLimit != null
-            ? `Up to ${formatCurrency(differenceLimit)} either way for an invoice of ${formatCurrency(packageNet)}. `
+            ? `Up to ${formatCurrency(differenceLimit)} either way for this invoice. `
             : ''}
-          Use a minus sign to take off. It is sent to QuickBooks as one more line and recorded on the Package.
+          It is sent to QuickBooks as one more line and recorded on the Package.
         </Typography>
       )}
     </Box>

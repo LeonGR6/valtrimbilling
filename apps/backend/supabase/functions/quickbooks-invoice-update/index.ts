@@ -2,6 +2,8 @@
 //
 // POST { packageId, action: "preview" | "apply" | "retry", selections, hardwareSelections,
 //        releasedOptions, addedOptions, reason, notes }
+//   or   { packageId, action: "preview" | "apply", difference: { description, amount } | null }
+//        which only adds, changes or (null) takes off the manual DIFFERENCE line of the invoice
 //   preview  what the edit would change and the new total; nothing is saved anywhere
 //   apply    edits the Package, then sends the new lines to the same QuickBooks invoice
 //   retry    sends again a change that is saved but did not reach QuickBooks
@@ -13,6 +15,8 @@ import { QuickbooksInvoiceError } from '../_shared/quickbooksInvoice.ts'
 import {
   type InvoiceUpdateAction,
   type PackageEditResult,
+  type DifferenceChangeResult,
+  parseDifferenceRequest,
   parseEditRequest,
   QuickbooksInvoiceUpdateError,
   updatePackageInvoice,
@@ -71,6 +75,9 @@ Deno.serve(async (req) => {
       return json({ error: 'action must be "preview", "apply" or "retry".' }, 400)
     }
 
+    // A body with a `difference` and no cells only changes that line of the invoice.
+    const differenceChange = action === 'retry' ? null : parseDifferenceRequest(body)
+
     const admin = serviceClient()
     const result = await updatePackageInvoice({
       loadContext: (id) => loadUpdateContext(admin, id),
@@ -94,6 +101,20 @@ Deno.serve(async (req) => {
           throw new Error(error.message)
         }
         return data as PackageEditResult
+      },
+      applyDifference: async (id, difference, dryRun) => {
+        const { data, error } = await admin.rpc('set_invoice_difference', {
+          p_actor_id: user.id,
+          p_package_id: id,
+          p_description: difference?.description ?? null,
+          p_amount: difference?.amount ?? null,
+          p_dry_run: dryRun,
+        })
+        if (error) {
+          if (REFUSAL_CODES.has(error.code)) throw new EditRefusedError(error.message)
+          throw new Error(error.message)
+        }
+        return data as DifferenceChangeResult
       },
       removeStoredFile: removeStoredFile(admin),
       loadPackage: (id) => loadPackageSource(admin, id),
@@ -120,7 +141,8 @@ Deno.serve(async (req) => {
     }, {
       packageId,
       action: action as InvoiceUpdateAction,
-      edit: action === 'retry' ? undefined : parseEditRequest(body),
+      edit: action === 'retry' || differenceChange ? undefined : parseEditRequest(body),
+      differenceChange: differenceChange ?? undefined,
     })
 
     return json(result)

@@ -238,6 +238,19 @@ export async function applyInvoicedPackageEdit(request) {
   return functionRequest(UPDATE_FUNCTION, { ...request, action: 'apply' })
 }
 
+/**
+ * Adds, changes or (with null) takes off the manual difference line of an invoice that already exists, and
+ * sends the new lines to the same QuickBooks invoice. The Package cells are not touched.
+ */
+export async function applyInvoiceDifference(packageId, difference) {
+  return functionRequest(UPDATE_FUNCTION, { packageId, action: 'apply', difference })
+}
+
+/** What changing the difference line would do (new total, Release to be removed), saving nothing. */
+export async function previewInvoiceDifference(packageId, difference) {
+  return functionRequest(UPDATE_FUNCTION, { packageId, action: 'preview', difference })
+}
+
 /** Sends again a change that was saved on the Package but did not reach QuickBooks. */
 export async function retryInvoicedPackageUpdate(packageId) {
   return functionRequest(UPDATE_FUNCTION, { packageId, action: 'retry' })

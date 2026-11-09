@@ -33,7 +33,8 @@ const MAX_NUMBER_ADVANCES = 20
  * was switched in between, the server sends nothing.
  *
  * A person can add ONE extra line, a difference (see `utils/invoiceDifference.js`), when the total the
- * Builder requires does not match the Package. It is typed in `differenceInput` and checked here against
+ * Builder requires does not match the Package. The person types that required total in `differenceInput`;
+ * the line is the difference between it and the Package net, and is checked here against
  * the limit the preview reports; `difference` is the line that will be sent (null while there is none or
  * it has a problem, which is then in `differenceProblem`), and `invoiceTotal` the total with it.
  *
@@ -61,7 +62,7 @@ export function useQuickbooksInvoiceDraft(record, { enabled = true, onSettled = 
   const [differenceInput, setDifferenceInput] = useState({
     open: false,
     description: DEFAULT_DIFFERENCE_DESCRIPTION,
-    amountText: '',
+    totalText: '',
   })
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState('')
@@ -151,8 +152,8 @@ export function useQuickbooksInvoiceDraft(record, { enabled = true, onSettled = 
     : null
   const differenceDraft = previewData
     ? readDifferenceDraft(differenceInput, previewData.packageNet, limit)
-    : { difference: null, problem: null, total: null }
-  const { difference, problem: differenceProblem, total: invoiceTotal } = differenceDraft
+    : { difference: null, amount: null, problem: null, total: null }
+  const { difference, amount: differenceAmount, problem: differenceProblem, total: invoiceTotal } = differenceDraft
 
   const changeDifference = (changes) => setDifferenceInput((current) => ({ ...current, ...changes }))
 
@@ -214,6 +215,7 @@ export function useQuickbooksInvoiceDraft(record, { enabled = true, onSettled = 
     differenceInput,
     changeDifference,
     difference,
+    differenceAmount,
     differenceProblem,
     differenceLimit: limit,
     packageNet,

@@ -22,7 +22,7 @@ import {
   QuickbooksInvoiceError,
   type QuickbooksInvoicePayload,
 } from './quickbooksInvoice.ts'
-import { differenceProblem, type InvoiceDifference } from './quickbooksInvoiceDifference.ts'
+import { differenceProblem, type InvoiceDifference, readInvoiceDifference } from './quickbooksInvoiceDifference.ts'
 import { mapPackageToCharges } from './quickbooksPackageCharges.ts'
 import type { LoadedPackage } from './quickbooksPackageSource.ts'
 import type { QuickbooksSession } from './quickbooksSession.ts'
@@ -96,6 +96,29 @@ export interface PackageEditResult {
   sent: { sent_at: string; destination: string | null }[]
 }
 
+/** What setting the difference line of an invoiced Package did (or, on a preview, would do). */
+export interface DifferenceChangeResult {
+  package_id: number
+  package_number: string
+  invoice_number: string
+  qbo_invoice_id: string
+  dry_run: boolean
+  net: number
+  limit: number
+  previous: { description: string; amount: number; limit: number } | null
+  next: { description: string; amount: number; limit: number } | null
+  previous_total: number
+  next_total: number
+  removed_documents: unknown[]
+  removed_storage_paths: string[]
+  sent: { sent_at: string; destination: string | null }[]
+}
+
+/** A change to the difference line only: the new line, or null to take it off. */
+export interface DifferenceChange {
+  difference: InvoiceDifference | null
+}
+
 export interface InvoiceUpdateContext {
   packageNumber: string
   quickbooksStatus: string
@@ -120,6 +143,12 @@ export interface InvoiceUpdateDeps {
   readInvoice(api: QuickbooksApiOptions, invoiceId: string): Promise<QuickbooksInvoiceSnapshot | null>
   /** Runs the database edit; a dry run changes nothing. */
   applyEdit(packageId: number, request: PackageEditRequest, dryRun: boolean): Promise<PackageEditResult>
+  /** Saves the new difference line of the invoice (or takes it off); a dry run changes nothing. */
+  applyDifference(
+    packageId: number,
+    difference: InvoiceDifference | null,
+    dryRun: boolean,
+  ): Promise<DifferenceChangeResult>
   removeStoredFile(path: string): Promise<void>
   loadPackage(packageId: number): Promise<LoadedPackage>
   updateInvoice(
@@ -141,11 +170,19 @@ export interface InvoiceUpdateDeps {
 }
 
 export type InvoiceUpdateResult =
-  | { action: 'preview'; edit: PackageEditResult; warnings: string[] }
+  | {
+    action: 'preview'
+    /** Set when the Package would be edited; null when only the difference line changes. */
+    edit: PackageEditResult | null
+    difference: DifferenceChangeResult | null
+    warnings: string[]
+  }
   | {
     action: 'apply' | 'retry'
     /** What the database edit did; a retry has none, the edit was made earlier. */
     edit: PackageEditResult | null
+    /** What changing the difference line did, when that was the change. */
+    difference: DifferenceChangeResult | null
     invoiceId: string
     docNumber: string | null
     totalAmount: number
@@ -223,6 +260,25 @@ export function parseEditRequest(body: unknown): PackageEditRequest {
   }
 
   return { selections, hardwareSelections, releasedOptions, addedOptions, reason, notes }
+}
+
+/**
+ * The body of a request that only changes the difference line: `difference` is `{ description, amount }`
+ * to add or change it, or null to take it off. Returns null when the body is not about the difference.
+ */
+export function parseDifferenceRequest(body: unknown): DifferenceChange | null {
+  const record = (body ?? {}) as Record<string, unknown>
+  if (!('difference' in record) || record.selections !== undefined) return null
+
+  const read = readInvoiceDifference(record.difference)
+  if (read.problem) throw new QuickbooksInvoiceUpdateError('INVALID_REQUEST', read.problem)
+  const { difference } = read
+  if (difference) {
+    // The limit depends on the Package net, which the database knows; everything else is checked here.
+    const problem = differenceProblem(difference, 1_000_000_000)
+    if (problem) throw new QuickbooksInvoiceUpdateError('INVALID_REQUEST', problem.message)
+  }
+  return { difference }
 }
 
 const environmentOf = (value: string | null): QuickbooksEnvironment | null =>
@@ -303,11 +359,13 @@ function checkLiveInvoice(
 
 export async function updatePackageInvoice(
   deps: InvoiceUpdateDeps,
-  { packageId, action, edit }: {
+  { packageId, action, edit, differenceChange }: {
     packageId: number
     action: InvoiceUpdateAction
-    /** Required for a preview and an apply; a retry sends what the database already holds. */
+    /** Required for a preview and an apply, unless only the difference changes; a retry sends what the database already holds. */
     edit?: PackageEditRequest
+    /** Instead of an edit: only the difference line of the invoice changes. */
+    differenceChange?: DifferenceChange
   },
 ): Promise<InvoiceUpdateResult> {
   const context = await deps.loadContext(packageId)
@@ -325,9 +383,14 @@ export async function updatePackageInvoice(
       'The last change to this Package has not reached QuickBooks yet. Send it again first.',
     )
   }
-  if (action !== 'retry' && !edit) {
+  if (action !== 'retry' && !edit && !differenceChange) {
     throw new QuickbooksInvoiceUpdateError('INVALID_REQUEST', 'Say which cells, Hardware lines and Options the Package keeps.')
   }
+  if (edit && differenceChange) {
+    throw new QuickbooksInvoiceUpdateError('INVALID_REQUEST', 'Change the Package or its difference line, not both at once.')
+  }
+  // The difference line the invoice has after this change: the new one, or the one it carries.
+  const difference: InvoiceDifference | null = differenceChange ? differenceChange.difference : context.difference
 
   const session = await deps.openSession(environment)
   if (session.environment !== context.environment || session.realmId !== context.realmId) {
@@ -355,15 +418,26 @@ export async function updatePackageInvoice(
   checkLiveInvoice(snapshot, context, { expectOld: action !== 'retry' })
 
   if (action === 'preview') {
+    if (differenceChange) {
+      const preview = await deps.applyDifference(packageId, differenceChange.difference, true)
+      return { action, edit: null, difference: preview, warnings: [] }
+    }
     const preview = await deps.applyEdit(packageId, edit as PackageEditRequest, true)
     checkDifferenceStillFits(context.difference, Number(preview.next.net))
-    return { action, edit: preview, warnings: [] }
+    return { action, edit: preview, difference: null, warnings: [] }
   }
 
   let result: PackageEditResult | null = null
+  let differenceResult: DifferenceChangeResult | null = null
   const warnings: string[] = []
 
-  if (action === 'apply') {
+  if (action === 'apply' && differenceChange) {
+    // The database checks the limit against the Package net and keeps the new line; the Release goes.
+    differenceResult = await deps.applyDifference(packageId, differenceChange.difference, false)
+    for (const path of differenceResult.removed_storage_paths) {
+      await deps.removeStoredFile(path).catch(() => {})
+    }
+  } else if (action === 'apply') {
     // Look first (nothing is kept): the edit must not be saved if the invoice's difference line would
     // no longer fit.
     if (context.difference) {
@@ -384,7 +458,7 @@ export async function updatePackageInvoice(
   try {
     const loaded = await deps.loadPackage(packageId)
     const mapped = mapPackageToCharges(loaded.source)
-    expectedNet = mapped.expectedNetAmount + (context.difference?.amount ?? 0)
+    expectedNet = mapped.expectedNetAmount + (difference?.amount ?? 0)
 
     const customerId = (snapshot.raw.CustomerRef as { value?: unknown } | undefined)?.value
     const itemId = snapshot.lines.find((line) => line.itemId)?.itemId
@@ -403,7 +477,7 @@ export async function updatePackageInvoice(
         ? snapshot.raw.TxnDate
         : (context.payload?.TxnDate ?? new Date().toISOString().slice(0, 10)),
       ...mapped,
-      difference: context.difference,
+      difference,
     })
   } catch (error) {
     await deps.fail(packageId, describeFailure(error), true).catch(() => {})
@@ -438,6 +512,7 @@ export async function updatePackageInvoice(
     return {
       action,
       edit: result,
+      difference: differenceResult,
       invoiceId: context.invoiceId as string,
       docNumber: snapshot.detail.docNumber,
       totalAmount: updated.totalAmount,
@@ -475,7 +550,7 @@ export async function updatePackageInvoice(
 
   if (updated.totalAmount == null || cents(updated.totalAmount) !== cents(expectedNet)) {
     const message = `QuickBooks answered with a total of ${updated.totalAmount?.toFixed(2) ?? 'nothing'} `
-      + `but the Package${context.difference ? ' with its difference' : ''} is ${expectedNet.toFixed(2)}. `
+      + `but the Package${difference ? ' with its difference' : ''} is ${expectedNet.toFixed(2)}. `
       + 'Check the invoice in QuickBooks.'
     await deps.fail(packageId, message, true).catch(() => {})
     throw new QuickbooksInvoiceUpdateError('TOTAL_MISMATCH', message)

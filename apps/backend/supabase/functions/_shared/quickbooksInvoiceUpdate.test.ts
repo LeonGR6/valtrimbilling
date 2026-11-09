@@ -2,10 +2,12 @@ import { assertEquals, assertRejects } from '@std/assert'
 import { QuickbooksApiError, type QuickbooksInvoiceSnapshot } from './quickbooksApi.ts'
 import type { QuickbooksInvoicePayload } from './quickbooksInvoice.ts'
 import {
+  type DifferenceChangeResult,
   type InvoiceUpdateContext,
   type InvoiceUpdateDeps,
   type PackageEditRequest,
   type PackageEditResult,
+  parseDifferenceRequest,
   parseEditRequest,
   QuickbooksInvoiceUpdateError,
   updatePackageInvoice,
@@ -138,6 +140,34 @@ const editResult = (dryRun: boolean): PackageEditResult => ({
   sent: [],
 })
 
+const differenceResult = (
+  difference: { description: string; amount: number } | null,
+  dryRun: boolean,
+): DifferenceChangeResult => ({
+  package_id: 68,
+  package_number: 'DP-00000068',
+  invoice_number: '14899',
+  qbo_invoice_id: '146',
+  dry_run: dryRun,
+  net: 1520,
+  limit: 5,
+  previous: null,
+  next: difference ? { ...difference, limit: 5 } : null,
+  previous_total: 1520,
+  next_total: 1520 + (difference?.amount ?? 0),
+  removed_documents: [],
+  removed_storage_paths: dryRun ? [] : ['68/release/a.pdf'],
+  sent: [],
+})
+
+// The Package as it was invoiced: Lots 1 and 2, 1,600 gross, 80 retention, 1,520 net (nothing edited).
+const unchangedPackage = (): LoadedPackage => {
+  const pkg = loaded()
+  pkg.source.draws[0] = { ...pkg.source.draws[0], base_draw_amount: 1600, retention_amount: 80 }
+  pkg.source.invoice = { net_amount: 1520 }
+  return pkg
+}
+
 const request: PackageEditRequest = {
   selections: [{ lot_id: 1, draw_number: 1 }],
   hardwareSelections: [],
@@ -199,6 +229,15 @@ function harness(
         state.updateRequestId = 'req-new'
       }
       return Promise.resolve(editResult(dryRun))
+    },
+    applyDifference: (_id, difference, dryRun) => {
+      calls.push(`applyDifference(dryRun=${dryRun})`)
+      if (!dryRun) {
+        state.difference = difference
+        state.updatePending = true
+        state.updateRequestId = 'req-new'
+      }
+      return Promise.resolve(differenceResult(difference, dryRun))
     },
     removeStoredFile: (path) => {
       calls.push(`remove:${path}`)
@@ -295,7 +334,7 @@ Deno.test('a preview reads QuickBooks and asks the database for a dry run, and c
   assertEquals(calls, ['openSession', 'readInvoice', 'applyEdit(dryRun=true)'])
   assertEquals(result.action, 'preview')
   if (result.action !== 'preview') throw new Error('unreachable')
-  assertEquals(result.edit.next.net, 760)
+  assertEquals(result.edit?.next.net, 760)
 })
 
 // An invoice that was sent with a manual DIFFERENCE line of $4 (limit $5 for the new total of $760).
@@ -609,5 +648,159 @@ Deno.test('the request body is checked before anything is touched', () => {
       code = (error as QuickbooksInvoiceUpdateError).code
     }
     assertEquals(code, 'INVALID_REQUEST', JSON.stringify(body))
+  }
+})
+
+// Changing only the DIFFERENCE line of an invoice that already exists ---------------------------------
+
+const addDifference = (deps: InvoiceUpdateDeps, action: 'preview' | 'apply', amount = 4) =>
+  updatePackageInvoice(deps, {
+    packageId: 68,
+    action,
+    differenceChange: { difference: { description: 'DIFFERENCE', amount } },
+  })
+
+Deno.test('adding a DIFFERENCE to an invoiced Package keeps the Package and sends the line to the same invoice', async () => {
+  const h: Harness = harness({
+    updateInvoice: (_api, invoice, requestId) => {
+      h.updates.push({ invoice, requestId })
+      return Promise.resolve({ id: '146', docNumber: '14899', syncToken: '4', totalAmount: 1524 })
+    },
+  }, { pkg: unchangedPackage() })
+
+  const result = await addDifference(h.deps, 'apply')
+
+  // The Package is not edited; only the line is saved, then QuickBooks is updated and the mark cleared.
+  assertEquals(h.calls, [
+    'openSession',
+    'readInvoice',
+    'applyDifference(dryRun=false)',
+    'remove:68/release/a.pdf',
+    'loadPackage',
+    'complete',
+    'saveInvoicePdf',
+  ])
+  const sent = h.updates[0].invoice
+  assertEquals(h.updates[0].requestId, 'req-new')
+  assertEquals(sent.Id, '146')
+  assertEquals(sent.SyncToken, '3')
+  assertEquals(sent.DocNumber, '14899')
+  assertEquals((sent.Line as { Amount: number; Description: string }[]).map((line) => [line.Description, line.Amount]), [
+    ['PHASE 1 LOT #1\nDRAW 1', 1600],
+    ['RETENTION', -80],
+    ['DIFFERENCE', 4],
+  ])
+  assertEquals(h.completed[0].updated, { syncToken: '4', totalAmount: 1524 })
+  assertEquals(h.completed[0].payload.Line.map((line) => line.Amount), [1600, -80, 4])
+  if (result.action === 'preview') throw new Error('unreachable')
+  assertEquals(result.edit, null)
+  assertEquals(result.difference?.next?.amount, 4)
+  assertEquals(result.totalAmount, 1524)
+})
+
+Deno.test('a negative DIFFERENCE takes off, and the total QuickBooks answers must follow it', async () => {
+  const h: Harness = harness({
+    updateInvoice: (_api, invoice, requestId) => {
+      h.updates.push({ invoice, requestId })
+      return Promise.resolve({ id: '146', docNumber: '14899', syncToken: '4', totalAmount: 1520 })
+    },
+  }, { pkg: unchangedPackage() })
+
+  const error = await assertRejects(() => addDifference(h.deps, 'apply', -3), QuickbooksInvoiceUpdateError)
+
+  // QuickBooks said 1,520 but the Package with its difference is 1,517.
+  assertEquals(error.code, 'TOTAL_MISMATCH')
+  assertEquals(h.calls.includes('complete'), false)
+  assertEquals((h.updates[0].invoice.Line as { Amount: number }[]).map((line) => line.Amount), [1600, -80, -3])
+})
+
+Deno.test('taking the DIFFERENCE off sends the invoice back to the Package lines', async () => {
+  const h: Harness = harness({
+    updateInvoice: (_api, invoice, requestId) => {
+      h.updates.push({ invoice, requestId })
+      return Promise.resolve({ id: '146', docNumber: '14899', syncToken: '4', totalAmount: 1520 })
+    },
+  }, {
+    pkg: unchangedPackage(),
+    context: {
+      difference: { description: 'DIFFERENCE', amount: 4 },
+      totalAmount: 1524,
+      payload: storedPayload(WITH_DIFFERENCE),
+    },
+    live: snapshot(WITH_DIFFERENCE),
+  })
+
+  const result = await updatePackageInvoice(h.deps, { packageId: 68, action: 'apply', differenceChange: { difference: null } })
+
+  assertEquals(h.calls.includes('applyDifference(dryRun=false)'), true)
+  assertEquals((h.updates[0].invoice.Line as { Amount: number }[]).map((line) => line.Amount), [1600, -80])
+  if (result.action === 'preview') throw new Error('unreachable')
+  assertEquals(result.totalAmount, 1520)
+  assertEquals(h.completed[0].payload.Line.length, 2)
+})
+
+Deno.test('a preview of a DIFFERENCE asks for a dry run and keeps everything as it is', async () => {
+  const { deps, calls } = harness({}, { pkg: unchangedPackage() })
+
+  const result = await addDifference(deps, 'preview')
+
+  assertEquals(calls, ['openSession', 'readInvoice', 'applyDifference(dryRun=true)'])
+  if (result.action !== 'preview') throw new Error('unreachable')
+  assertEquals(result.edit, null)
+  assertEquals(result.difference?.next_total, 1524)
+})
+
+Deno.test('a DIFFERENCE is not saved when the invoice was edited, paid or voided in QuickBooks, or a change is waiting', async () => {
+  const cases: { options: Parameters<typeof harness>[1]; code: string }[] = [
+    { options: { live: snapshot(OLD_LINES, { balance: 1000 }) }, code: 'HAS_PAYMENTS' },
+    { options: { live: snapshot(OLD_LINES, { totalAmount: 0, balance: 0 }) }, code: 'VOIDED_IN_QUICKBOOKS' },
+    { options: { live: snapshot([...OLD_LINES, { description: 'EXTRA', amount: 10 }]) }, code: 'EDITED_IN_QUICKBOOKS' },
+    { options: { context: { updatePending: true, updateRequestId: 'req' } }, code: 'UPDATE_PENDING' },
+  ]
+  for (const { options, code } of cases) {
+    for (const action of ['preview', 'apply'] as const) {
+      const { deps, calls } = harness({}, { pkg: unchangedPackage(), ...options })
+      const error = await assertRejects(() => addDifference(deps, action), QuickbooksInvoiceUpdateError)
+      assertEquals(error.code, code)
+      assertEquals(calls.some((call) => call.startsWith('applyDifference') || call === 'updateInvoice'), false)
+    }
+  }
+})
+
+Deno.test('a failed QuickBooks call after the DIFFERENCE was saved keeps the Package waiting for a retry', async () => {
+  const { deps, calls } = harness({
+    updateInvoice: () => Promise.reject(new QuickbooksApiError('QuickBooks is not answering', 503, false)),
+  }, { pkg: unchangedPackage() })
+
+  await assertRejects(() => addDifference(deps, 'apply'), QuickbooksApiError)
+
+  assertEquals(calls.includes('applyDifference(dryRun=false)'), true)
+  assertEquals(calls.includes('fail(reusable=true)'), true)
+  assertEquals(calls.includes('complete'), false)
+})
+
+Deno.test('the body of a difference request is read, and anything else is not one', () => {
+  assertEquals(parseDifferenceRequest({ packageId: 1, action: 'apply', difference: null }), { difference: null })
+  assertEquals(
+    parseDifferenceRequest({ difference: { description: '  DIFFERENCE   ', amount: -8.5 } }),
+    { difference: { description: 'DIFFERENCE', amount: -8.5 } },
+  )
+  assertEquals(parseDifferenceRequest({ packageId: 1, selections: [], difference: null }), null)
+  assertEquals(parseDifferenceRequest({ packageId: 1 }), null)
+
+  for (const bad of [
+    { difference: { description: '', amount: 4 } },
+    { difference: { description: 'DIFFERENCE', amount: 0 } },
+    { difference: { description: 'DIFFERENCE', amount: 1.234 } },
+    { difference: { description: 'DIFFERENCE', amount: '4' } },
+    { difference: 'DIFFERENCE' },
+    { difference: { description: 'x'.repeat(101), amount: 4 } },
+  ]) {
+    try {
+      parseDifferenceRequest(bad)
+      throw new Error(`accepted ${JSON.stringify(bad)}`)
+    } catch (error) {
+      assertEquals(error instanceof QuickbooksInvoiceUpdateError && error.code === 'INVALID_REQUEST', true)
+    }
   }
 })

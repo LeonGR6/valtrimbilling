@@ -52,6 +52,7 @@ import {
 } from '../../services/quickbooksRepository.js'
 import {
   canCorrectDrawPackage,
+  canChangeInvoiceDifference,
   canEditInvoicedDrawPackage,
   draftLockReason,
   invoicedEditLockReason,
@@ -355,6 +356,9 @@ export default function DrawPackageDetail() {
   // A Package whose invoice is waiting for payment can still be edited: the same QuickBooks invoice is updated.
   const canEditInvoicedFocusedPackage = canManageDrawInvoicePackages
     && canEditInvoicedDrawPackage(focusedPackage)
+  // The difference line of an invoice that exists can be changed under the same conditions.
+  const canChangeFocusedInvoiceDifference = canManageDrawInvoicePackages
+    && canChangeInvoiceDifference(focusedPackage)
   const canDeleteFocusedPackage = canManageDrawInvoicePackages
     && canDeleteDraftPackage(focusedPackage)
   const canSendToQuickbooks = canCreateQuickbooksInvoice(focusedPackage, profile?.role)
@@ -988,6 +992,7 @@ export default function DrawPackageDetail() {
             optionRows={currentOptionRows}
             canCreateInvoice={canSendToQuickbooks}
             onInvoiceCreated={refreshDrawInvoicePackages}
+            canChangeDifference={canChangeFocusedInvoiceDifference}
             submission={{
               method: jobSetup?.submissionMethod,
               destination: jobSetup?.submissionDestination,

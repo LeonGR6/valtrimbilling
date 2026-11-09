@@ -4,6 +4,7 @@ import {
   DRAW_PACKAGE_STATUSES,
   canCorrectDrawPackage,
   canDeleteVoidedQuickbooksPackage,
+  canChangeInvoiceDifference,
   canEditInvoicedDrawPackage,
   canManageDraftDrawPackage,
   draftLockReason,
@@ -1342,4 +1343,27 @@ test('generated documents block the correction of a Draft but never the edit of 
   assert.equal(documentsAllowCorrection({ isInvoiced: true, loading: false, documentCount: 2 }), true)
   assert.equal(documentsAllowCorrection({ isInvoiced: true, loading: true, documentCount: 0 }), true)
   assert.equal(documentsAllowCorrection({ isInvoiced: true, loading: false, documentCount: 0 }), true)
+})
+
+test('the difference line of an invoice can be changed under the conditions of an edit, except price changes', () => {
+  assert.equal(canChangeInvoiceDifference(invoiced), true)
+  // The cells are not touched, so collecting price changes does not matter here (it does for an edit).
+  const withPriceChanges = { ...invoiced, priceDifferences: { lineCount: 2 } }
+  assert.equal(canEditInvoicedDrawPackage(withPriceChanges), false)
+  assert.equal(canChangeInvoiceDifference(withPriceChanges), true)
+
+  for (const patch of [
+    { status: 'PAID_CLOSED' },
+    { status: 'DRAFT' },
+    { quickbooksStatus: 'NOT_CREATED' },
+    { quickbooksStatus: 'VOIDED' },
+    { packageType: 'OPTIONS' },
+    { paymentState: 'PARTIAL' },
+    { paymentBalance: 1000 },
+    { persistedInvoice: { paidAmount: 10 } },
+    { quickbooksUpdatePending: true },
+  ]) {
+    assert.equal(canChangeInvoiceDifference({ ...invoiced, ...patch }), false, JSON.stringify(patch))
+  }
+  assert.equal(canChangeInvoiceDifference(null), false)
 })

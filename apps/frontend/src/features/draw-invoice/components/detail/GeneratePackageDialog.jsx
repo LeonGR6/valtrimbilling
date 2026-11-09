@@ -59,6 +59,8 @@ import {
 } from '../../services/packageGenerateRecord.js'
 import QuickbooksEnvironmentChip from './QuickbooksEnvironmentChip.jsx'
 import QuickbooksInvoiceForm from './QuickbooksInvoiceForm.jsx'
+import InvoiceDifferenceDialog from './InvoiceDifferenceDialog.jsx'
+import { formatSignedCurrency } from '../../utils/invoiceDifference.js'
 import { downloadPurchaseOrderPdf } from '../../services/packagePurchaseOrders.js'
 import { usePackagePurchaseOrders } from '../../hooks/usePackagePurchaseOrders.js'
 import {
@@ -248,6 +250,9 @@ export default function GeneratePackageDialog({
   canCreateInvoice = false,
   // Called once the invoice attempt finished, successful or not, to refresh the Package.
   onInvoiceCreated = null,
+  // Whether the person may add, change or take off the difference line of the invoice this Package
+  // already has (it waits for payment, nothing paid, no change waiting for QuickBooks).
+  canChangeDifference = false,
   // The emails of this Package already sent, newest first, and a way to refresh them.
   submissions = [],
   onSent = null,
@@ -288,6 +293,9 @@ export default function GeneratePackageDialog({
   const [builtBytes, setBuiltBytes] = useState({ release: null, schedule: null })
   const [pageCounts, setPageCounts] = useState({ invoice: null, release: null, schedule: null })
   const invoicePdf = useQuickbooksInvoicePdf(packageRecord)
+  // The difference line of an invoice that exists, changed from here; the Release and the invoice PDF follow it.
+  const [differenceOpen, setDifferenceOpen] = useState(false)
+  const [differenceVersion, setDifferenceVersion] = useState(0)
   const purchaseOrders = usePackagePurchaseOrders({ jobId: job.id, rows: optionRows })
   const hasQuickbooksInvoice = packageRecord.quickbooksStatus === 'CREATED'
   // A Package with no invoice, for someone who may create it, creates it while generating.
@@ -331,7 +339,7 @@ export default function GeneratePackageDialog({
     return () => {
       cancelled = true
     }
-  }, [invoiceDocumentId, packageRecord.id])
+  }, [invoiceDocumentId, packageRecord.id, differenceVersion])
 
   // The Release and the Payment Schedule are built (not saved) once they are
   // ready and again when what they depend on changes.
@@ -443,6 +451,17 @@ export default function GeneratePackageDialog({
     const { name, bytes } = await loadInvoice()
     saveToDisk(new Blob([bytes], { type: 'application/pdf' }), name)
   })
+
+  // The invoice in QuickBooks changed: its PDF is read again, and the Release (removed, it printed the old
+  // total) is looked at again from what is saved.
+  const handleDifferenceChanged = async () => {
+    setInvoiceFile(null)
+    setPageCounts((counts) => ({ ...counts, invoice: null, release: null }))
+    setBuiltBytes((bytes) => ({ ...bytes, release: null }))
+    setDifferenceVersion((value) => value + 1)
+    invoicePdf.reload()
+    await Promise.resolve(onInvoiceCreated?.()).catch(() => {})
+  }
 
   const fetchInvoicePdf = () => runInvoiceAction('saving', async () => {
     await saveQuickbooksInvoicePdf(packageRecord.id)
@@ -850,6 +869,36 @@ export default function GeneratePackageDialog({
                       : 'This Package has no QuickBooks invoice, so there is no invoice to include. The Release and the Payment Schedule are generated as usual.'}
                   </Typography>
                 )}
+                {hasQuickbooksInvoice && (packageRecord.invoiceDifference || canChangeDifference) && (
+                  <Stack
+                    direction={{ xs: 'column', sm: 'row' }}
+                    spacing={1}
+                    sx={{ alignItems: { sm: 'center' } }}
+                    data-testid="invoice-difference-row"
+                  >
+                    <Typography variant="body2" sx={{ flex: 1 }}>
+                      {packageRecord.invoiceDifference
+                        ? (
+                          <>
+                            This invoice has a <strong>"{packageRecord.invoiceDifference.description}"</strong> line of{' '}
+                            <strong>{formatSignedCurrency(packageRecord.invoiceDifference.amount)}</strong>.
+                          </>
+                        )
+                        : 'The invoice is the Package total. If the Builder requires another total, add a difference line.'}
+                    </Typography>
+                    {canChangeDifference && (
+                      <Button
+                        size="small"
+                        variant="outlined"
+                        disabled={busy}
+                        onClick={() => setDifferenceOpen(true)}
+                        sx={{ whiteSpace: 'nowrap' }}
+                      >
+                        {packageRecord.invoiceDifference ? 'Change the difference' : 'Add a difference line'}
+                      </Button>
+                    )}
+                  </Stack>
+                )}
                 {hasQuickbooksInvoice && invoicePdf.loading && (
                   <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
                     <CircularProgress size={18} />
@@ -933,6 +982,7 @@ export default function GeneratePackageDialog({
               )}
               <Box sx={{ display: releaseNotNeeded ? 'none' : 'block' }}>
                 <GeneratePackageReleaseDialog
+                  key={`release-${differenceVersion}`}
                   embedded
                   hideInlinePreview
                   ref={releaseRef}
@@ -1267,6 +1317,15 @@ export default function GeneratePackageDialog({
           statusNote="saved on this Package"
           bytes={invoicePreview.bytes}
           onClose={() => setInvoicePreview(null)}
+        />
+      )}
+
+      {differenceOpen && (
+        <InvoiceDifferenceDialog
+          record={packageRecord}
+          submissions={submissions}
+          onClose={() => setDifferenceOpen(false)}
+          onChanged={handleDifferenceChanged}
         />
       )}
     </Dialog>

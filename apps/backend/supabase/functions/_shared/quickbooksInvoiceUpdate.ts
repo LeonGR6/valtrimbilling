@@ -57,7 +57,10 @@ export type InvoiceUpdateAction = 'preview' | 'apply' | 'retry'
 export interface PackageEditRequest {
   selections: { lot_id: number; draw_number: number }[]
   hardwareSelections: { lot_id: number; event_type: string }[]
+  /** Option units to take off the Package. */
   releasedOptions: { lot_id: number; option_id: number; unit_no: number }[]
+  /** Free Option units to put on the Package. */
+  addedOptions: { lot_id: number; option_id: number; unit_no: number }[]
   reason: string
   notes: string | null
 }
@@ -84,6 +87,7 @@ export interface PackageEditResult {
   removed_cells: unknown[]
   added_cells: unknown[]
   released_options: unknown[]
+  added_options: unknown[]
   removed_hardware: unknown[]
   added_hardware: unknown[]
   removed_documents: unknown[]
@@ -195,6 +199,14 @@ export function parseEditRequest(body: unknown): PackageEditRequest {
     return { lot_id: item.lot_id, option_id: item.option_id, unit_no: item.unit_no }
   })
 
+  const addedOptions = list(record.addedOptions, 'addedOptions').map((entry) => {
+    const item = entry as { lot_id?: unknown; option_id?: unknown; unit_no?: unknown }
+    if (!isPositiveInteger(item?.lot_id) || !isPositiveInteger(item.option_id) || !isPositiveInteger(item.unit_no)) {
+      return fail('Every added Option needs a lot_id, an option_id and a unit_no.')
+    }
+    return { lot_id: item.lot_id, option_id: item.option_id, unit_no: item.unit_no }
+  })
+
   if (selections.length + hardwareSelections.length === 0) {
     fail('A Package must keep at least one Lot / Draw cell or Separate Hardware line. To bill nothing, void the invoice instead.')
   }
@@ -210,7 +222,7 @@ export function parseEditRequest(body: unknown): PackageEditRequest {
     notes = (record.notes as string).trim() || null
   }
 
-  return { selections, hardwareSelections, releasedOptions, reason, notes }
+  return { selections, hardwareSelections, releasedOptions, addedOptions, reason, notes }
 }
 
 const environmentOf = (value: string | null): QuickbooksEnvironment | null =>

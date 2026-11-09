@@ -1278,7 +1278,28 @@ test('the edit of an invoiced Package sends the cells, Hardware lines and Option
     selections: [{ lot_id: 7, draw_number: 1 }],
     hardwareSelections: [{ lot_id: 7, event_type: 'EXT' }, { lot_id: 8, event_type: 'DM' }],
     releasedOptions: [{ lot_id: 7, option_id: 61, unit_no: 2 }],
+    addedOptions: [],
     reason: 'Billed twice',
+    notes: null,
+  })
+})
+
+test('the edit of an invoiced Package also sends the free Option units and Hardware lines put on it', () => {
+  assert.deepEqual(toInvoicedEditRequest({
+    packageId: 68,
+    selections: [{ phaseId: 3, lotId: 7, drawIndex: 1 }],
+    keptHardwareLines: [{ lotId: 7, hardwareEventType: 'EXT' }],
+    addedHardwareLines: [{ lotId: '8', eventType: 'HW' }],
+    releasedOptions: [],
+    addedOptions: [{ lotId: '7', optionId: '61', unitNo: 2 }, { lotId: 7, optionId: 62 }],
+    reason: 'Put back',
+  }), {
+    packageId: 68,
+    selections: [{ lot_id: 7, draw_number: 2 }],
+    hardwareSelections: [{ lot_id: 7, event_type: 'EXT' }, { lot_id: 8, event_type: 'HW' }],
+    releasedOptions: [],
+    addedOptions: [{ lot_id: 7, option_id: 61, unit_no: 2 }, { lot_id: 7, option_id: 62, unit_no: 1 }],
+    reason: 'Put back',
     notes: null,
   })
 })

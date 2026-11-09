@@ -151,11 +151,11 @@ select pg_temp.check_that(
 
 select pg_temp.check_that(
   'Only the service role can edit an invoiced Package or tell QuickBooks about it',
-  not has_function_privilege('authenticated', 'valtrim.edit_invoiced_draw_package(uuid,bigint,jsonb,jsonb,jsonb,text,text,boolean)', 'execute')
-  and not has_function_privilege('anon', 'valtrim.edit_invoiced_draw_package(uuid,bigint,jsonb,jsonb,jsonb,text,text,boolean)', 'execute')
+  not has_function_privilege('authenticated', 'valtrim.edit_invoiced_draw_package(uuid,bigint,jsonb,jsonb,jsonb,text,text,boolean,jsonb)', 'execute')
+  and not has_function_privilege('anon', 'valtrim.edit_invoiced_draw_package(uuid,bigint,jsonb,jsonb,jsonb,text,text,boolean,jsonb)', 'execute')
   and not has_function_privilege('authenticated', 'valtrim.complete_quickbooks_invoice_update(bigint,text,numeric,jsonb)', 'execute')
   and not has_function_privilege('authenticated', 'valtrim.fail_quickbooks_invoice_update(bigint,text,boolean)', 'execute')
-  and has_function_privilege('service_role', 'valtrim.edit_invoiced_draw_package(uuid,bigint,jsonb,jsonb,jsonb,text,text,boolean)', 'execute')
+  and has_function_privilege('service_role', 'valtrim.edit_invoiced_draw_package(uuid,bigint,jsonb,jsonb,jsonb,text,text,boolean,jsonb)', 'execute')
   and has_function_privilege('service_role', 'valtrim.complete_quickbooks_invoice_update(bigint,text,numeric,jsonb)', 'execute')
   and has_function_privilege('service_role', 'valtrim.fail_quickbooks_invoice_update(bigint,text,boolean)', 'execute'),
   null

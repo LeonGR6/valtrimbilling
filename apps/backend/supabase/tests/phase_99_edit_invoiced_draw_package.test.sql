@@ -6,14 +6,14 @@ select plan(12);
 
 select has_function(
   'valtrim', 'edit_invoiced_draw_package',
-  array['uuid', 'bigint', 'jsonb', 'jsonb', 'jsonb', 'text', 'text', 'boolean'],
+  array['uuid', 'bigint', 'jsonb', 'jsonb', 'jsonb', 'text', 'text', 'boolean', 'jsonb'],
   'A Package waiting for payment can be edited through one function'
 );
 
 select ok(
-  not has_function_privilege('authenticated', 'valtrim.edit_invoiced_draw_package(uuid,bigint,jsonb,jsonb,jsonb,text,text,boolean)', 'execute')
-  and not has_function_privilege('anon', 'valtrim.edit_invoiced_draw_package(uuid,bigint,jsonb,jsonb,jsonb,text,text,boolean)', 'execute')
-  and has_function_privilege('service_role', 'valtrim.edit_invoiced_draw_package(uuid,bigint,jsonb,jsonb,jsonb,text,text,boolean)', 'execute'),
+  not has_function_privilege('authenticated', 'valtrim.edit_invoiced_draw_package(uuid,bigint,jsonb,jsonb,jsonb,text,text,boolean,jsonb)', 'execute')
+  and not has_function_privilege('anon', 'valtrim.edit_invoiced_draw_package(uuid,bigint,jsonb,jsonb,jsonb,text,text,boolean,jsonb)', 'execute')
+  and has_function_privilege('service_role', 'valtrim.edit_invoiced_draw_package(uuid,bigint,jsonb,jsonb,jsonb,text,text,boolean,jsonb)', 'execute'),
   'Only the Edge Function (service role) can edit an invoiced Package, so QuickBooks is always told'
 );
 
@@ -26,8 +26,8 @@ select ok(
 );
 
 select ok(
-  (select prosecdef from pg_proc where oid = 'valtrim.edit_invoiced_draw_package(uuid,bigint,jsonb,jsonb,jsonb,text,text,boolean)'::regprocedure)
-  and (select proconfig::text like '%search_path=%' from pg_proc where oid = 'valtrim.edit_invoiced_draw_package(uuid,bigint,jsonb,jsonb,jsonb,text,text,boolean)'::regprocedure),
+  (select prosecdef from pg_proc where oid = 'valtrim.edit_invoiced_draw_package(uuid,bigint,jsonb,jsonb,jsonb,text,text,boolean,jsonb)'::regprocedure)
+  and (select proconfig::text like '%search_path=%' from pg_proc where oid = 'valtrim.edit_invoiced_draw_package(uuid,bigint,jsonb,jsonb,jsonb,text,text,boolean,jsonb)'::regprocedure),
   'The edit runs as its owner with an empty search path'
 );
 

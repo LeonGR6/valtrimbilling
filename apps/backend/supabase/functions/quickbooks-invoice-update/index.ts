@@ -1,7 +1,7 @@
 // Edits a Package that already has a QuickBooks invoice and updates that same invoice.
 //
 // POST { packageId, action: "preview" | "apply" | "retry", selections, hardwareSelections,
-//        releasedOptions, reason, notes }
+//        releasedOptions, addedOptions, reason, notes }
 //   preview  what the edit would change and the new total; nothing is saved anywhere
 //   apply    edits the Package, then sends the new lines to the same QuickBooks invoice
 //   retry    sends again a change that is saved but did not reach QuickBooks
@@ -84,6 +84,7 @@ Deno.serve(async (req) => {
           p_selections: request.selections,
           p_hardware_selections: request.hardwareSelections,
           p_released_options: request.releasedOptions,
+          p_added_options: request.addedOptions,
           p_reason: request.reason,
           p_notes: request.notes,
           p_dry_run: dryRun,

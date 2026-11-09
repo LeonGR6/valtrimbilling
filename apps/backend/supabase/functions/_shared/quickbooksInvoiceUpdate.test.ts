@@ -130,6 +130,7 @@ const editResult = (dryRun: boolean): PackageEditResult => ({
   removed_cells: [{ lot_id: 2 }],
   added_cells: [],
   released_options: [],
+  added_options: [],
   removed_hardware: [],
   added_hardware: [],
   removed_documents: [],
@@ -141,6 +142,7 @@ const request: PackageEditRequest = {
   selections: [{ lot_id: 1, draw_number: 1 }],
   hardwareSelections: [],
   releasedOptions: [],
+  addedOptions: [],
   reason: 'Lot 2 was billed by mistake',
   notes: null,
 }
@@ -569,10 +571,18 @@ Deno.test('the request body is checked before anything is touched', () => {
     selections: [{ lot_id: 1, draw_number: 2 }],
     hardwareSelections: [{ lot_id: 3, event_type: 'EXT' }],
     releasedOptions: [{ lot_id: 1, option_id: 5, unit_no: 1 }],
+    addedOptions: [{ lot_id: 1, option_id: 6, unit_no: 2 }],
     reason: '  Billed twice  ',
     notes: '  hello ',
   })
   assertEquals(ok.reason, 'Billed twice')
+  assertEquals(ok.releasedOptions, [{ lot_id: 1, option_id: 5, unit_no: 1 }])
+  assertEquals(ok.addedOptions, [{ lot_id: 1, option_id: 6, unit_no: 2 }])
+  // Left out, there are no Options to add (a request from before this field existed).
+  assertEquals(
+    parseEditRequest({ selections: [{ lot_id: 1, draw_number: 1 }], reason: 'x' }).addedOptions,
+    [],
+  )
   assertEquals(ok.notes, 'hello')
   assertEquals(ok.hardwareSelections, [{ lot_id: 3, event_type: 'EXT' }])
 
@@ -585,6 +595,9 @@ Deno.test('the request body is checked before anything is touched', () => {
     { selections: 'nope', reason: 'x' },
     { selections: [{ lot_id: 1, draw_number: 1 }], hardwareSelections: [{ lot_id: 1, event_type: 'HVAC' }], reason: 'x' },
     { selections: [{ lot_id: 1, draw_number: 1 }], releasedOptions: [{ lot_id: 1, option_id: 1 }], reason: 'x' },
+    { selections: [{ lot_id: 1, draw_number: 1 }], addedOptions: [{ lot_id: 1, option_id: 1 }], reason: 'x' },
+    { selections: [{ lot_id: 1, draw_number: 1 }], addedOptions: [{ lot_id: 1, option_id: 1, unit_no: 0 }], reason: 'x' },
+    { selections: [{ lot_id: 1, draw_number: 1 }], addedOptions: 'nope', reason: 'x' },
     { selections: [{ lot_id: 1, draw_number: 1 }], reason: 'x', notes: 'n'.repeat(501) },
     null,
   ]

@@ -883,13 +883,17 @@ export function invoicedEditLeftNothingSaved(code) {
 
 /**
  * The body of the edit of an invoiced Package: the cells, the Separate Hardware lines and the Option
- * units that stay. An Option left out is released; so are those of a Lot that leaves.
+ * units that stay. An Option left out is released; so are those of a Lot that leaves. Free Separate
+ * Hardware lines and Option units can be put on the Package: `addedHardwareLines` are { lotId, eventType }
+ * and `addedOptions` { lotId, optionId, unitNo }.
  */
 export function toInvoicedEditRequest({
   packageId,
   selections,
   keptHardwareLines,
+  addedHardwareLines = [],
   releasedOptions,
+  addedOptions = [],
   reason,
   notes,
 }) {
@@ -899,7 +903,7 @@ export function toInvoicedEditRequest({
       lot_id: Number(lotId),
       draw_number: Number(drawIndex) + 1,
     })),
-    hardwareSelections: (keptHardwareLines ?? []).map((line) => ({
+    hardwareSelections: [...(keptHardwareLines ?? []), ...(addedHardwareLines ?? [])].map((line) => ({
       lot_id: Number(line.lotId),
       event_type: String(line.hardwareEventType ?? line.eventType),
     })),
@@ -907,6 +911,11 @@ export function toInvoicedEditRequest({
       lot_id: Number(option.lotId),
       option_id: Number(option.optionId),
       unit_no: Number(option.unitNo),
+    })),
+    addedOptions: (addedOptions ?? []).map((option) => ({
+      lot_id: Number(option.lotId),
+      option_id: Number(option.optionId),
+      unit_no: Number(option.unitNo ?? 1),
     })),
     reason: String(reason ?? '').trim(),
     notes: String(notes ?? '').trim() || null,

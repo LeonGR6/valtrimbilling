@@ -25,6 +25,7 @@ import {
   toInvoicedEditRequest,
 } from '../services/drawInvoicePackageRecord.js'
 import { buildDrawCalendarHeadings } from '../utils/calendarDrawSuggestions.js'
+import { listFreeHardwareEvents, listFreeOptionUnits } from '../utils/invoicedEditCandidates.js'
 import { packageInvoiceUnits, phaseFitsPackageInvoice } from '../utils/packageSplit.js'
 import DrawSelectionGrid from './dialogs/DrawSelectionGrid.jsx'
 import { usePackageReleases } from '../hooks/usePackageReleases.js'
@@ -105,6 +106,9 @@ export function EditDrawPackageDialog({
     () => new Set((record.persistedHardwareLines ?? []).map((line) => line.id)),
   )
   const [releasedOptionIds, setReleasedOptionIds] = useState(() => new Set())
+  // Free Option units and Separate Hardware lines the person puts on the Package.
+  const [addedOptionIds, setAddedOptionIds] = useState(() => new Set())
+  const [addedHardwareIds, setAddedHardwareIds] = useState(() => new Set())
   const [review, setReview] = useState(null)
   const [done, setDone] = useState(null)
   const [savedWithoutQuickbooks, setSavedWithoutQuickbooks] = useState(false)
@@ -188,9 +192,21 @@ export function EditDrawPackageDialog({
       (option) => releasedOptionIds.has(option.id) && keptLotIds.has(String(option.lotId)),
     )
     : []
+  // What is free on the Lots the Package bills. A unit that stops qualifying (its Lot lost its cell) is
+  // dropped from the request on its own, because the list is worked out again from the cells.
+  const freeOptions = isInvoiced
+    ? listFreeOptionUnits({ phaseModels, selections, record, packages, schedule })
+    : []
+  const freeHardware = isInvoiced
+    ? listFreeHardwareEvents({ job, schedule, selections, keptHardwareLines, record, packages })
+    : []
+  const addedOptions = freeOptions.filter((option) => addedOptionIds.has(option.id))
+  const addedHardwareLines = freeHardware.filter((line) => addedHardwareIds.has(line.id))
   const changed = removedCount > 0 || addedCount > 0 || metadataChanged
     || removedHardwareCount > 0 || releasedOptions.length > 0
+    || addedOptions.length > 0 || addedHardwareLines.length > 0
   const hasSomethingToBill = selections.length > 0 || keptHardwareLines.length > 0
+    || addedHardwareLines.length > 0
   const canSave = !submitting
     && documentsAllowCorrection({
       isInvoiced,
@@ -204,7 +220,9 @@ export function EditDrawPackageDialog({
     packageId: record.id,
     selections,
     keptHardwareLines,
+    addedHardwareLines,
     releasedOptions,
+    addedOptions,
     reason,
     notes,
   })
@@ -305,6 +323,16 @@ export function EditDrawPackageDialog({
     return next
   })
   const toggleOption = (id) => setReleasedOptionIds((current) => {
+    const next = new Set(current)
+    if (!next.delete(id)) next.add(id)
+    return next
+  })
+  const toggleAddedOption = (id) => setAddedOptionIds((current) => {
+    const next = new Set(current)
+    if (!next.delete(id)) next.add(id)
+    return next
+  })
+  const toggleAddedHardware = (id) => setAddedHardwareIds((current) => {
     const next = new Set(current)
     if (!next.delete(id)) next.add(id)
     return next
@@ -579,10 +607,16 @@ export function EditDrawPackageDialog({
               hardwareLines={hardwareLines}
               keptHardwareIds={keptHardwareIds}
               onToggleHardware={toggleHardware}
+              freeHardware={freeHardware}
+              addedHardwareIds={addedHardwareIds}
+              onToggleAddedHardware={toggleAddedHardware}
               optionLines={record.persistedOptionLines ?? []}
               releasedOptionIds={releasedOptionIds}
               keptLotIds={keptLotIds}
               onToggleOption={toggleOption}
+              freeOptions={freeOptions}
+              addedOptionIds={addedOptionIds}
+              onToggleAddedOption={toggleAddedOption}
               disabled={submitting}
             />
           )}

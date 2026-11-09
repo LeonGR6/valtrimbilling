@@ -42,18 +42,30 @@ export function SentToBuilderWarning({ submissions }) {
  * Separate Hardware lines and Option units of an invoiced Package. Unchecking one releases it from this
  * Package (it becomes free for another); the invoice total follows. An Option whose Lot has no cell left
  * leaves with the Lot and cannot be kept on its own.
+ *
+ * Below each list, the ones that are free (no Package bills them) on the Lots of this Package can be put
+ * back by checking them; they are priced like new cells, on the date of the Package.
  */
 export function InvoicedLinesEditor({
   hardwareLines,
   keptHardwareIds,
   onToggleHardware,
+  freeHardware = [],
+  addedHardwareIds = new Set(),
+  onToggleAddedHardware = () => {},
   optionLines,
   releasedOptionIds,
   keptLotIds,
   onToggleOption,
+  freeOptions = [],
+  addedOptionIds = new Set(),
+  onToggleAddedOption = () => {},
   disabled,
 }) {
-  if (hardwareLines.length === 0 && optionLines.length === 0) return null
+  if (
+    hardwareLines.length === 0 && optionLines.length === 0
+    && freeHardware.length === 0 && freeOptions.length === 0
+  ) return null
 
   return (
     <Stack spacing={2}>
@@ -83,6 +95,36 @@ export function InvoicedLinesEditor({
                 </Typography>
                 <Typography variant="body2" sx={{ fontVariantNumeric: 'tabular-nums' }}>
                   {formatCurrency(line.grossAmount)}
+                </Typography>
+              </Stack>
+            ))}
+          </Box>
+        </Box>
+      )}
+
+      {freeHardware.length > 0 && (
+        <Box data-testid="free-hardware">
+          <Typography fontWeight={800}>Separate Hardware you can add</Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 0.75 }}>
+            No Package bills these yet. Check one to add it to this Package and the invoice.
+          </Typography>
+          <Box sx={{ border: 1, borderColor: 'divider', borderRadius: 1, maxHeight: 240, overflow: 'auto' }}>
+            {freeHardware.map((line) => (
+              <Stack
+                key={line.id}
+                direction="row"
+                spacing={1}
+                sx={{ alignItems: 'center', px: 1.5, borderBottom: 1, borderColor: 'divider', '&:last-child': { borderBottom: 0 } }}
+              >
+                <Checkbox
+                  checked={addedHardwareIds.has(line.id)}
+                  onChange={() => onToggleAddedHardware(line.id)}
+                  disabled={disabled}
+                  inputProps={{ 'aria-label': `Add Hardware ${line.eventType} of Lot ${line.lotNumber}` }}
+                />
+                <Typography variant="body2" sx={{ flex: 1 }}>
+                  {formatPhaseBuilding(line.phaseCode, line.building, { separator: ' / ' })} · Lot {line.lotNumber} ·{' '}
+                  {EVENT_LABELS[line.eventType] ?? line.eventType}
                 </Typography>
               </Stack>
             ))}
@@ -131,6 +173,48 @@ export function InvoicedLinesEditor({
                   </Typography>
                   <Typography variant="body2" sx={{ fontVariantNumeric: 'tabular-nums' }}>
                     {formatCurrency(option.price)}
+                  </Typography>
+                </Stack>
+              )
+            })}
+          </Box>
+        </Box>
+      )}
+
+      {freeOptions.length > 0 && (
+        <Box data-testid="free-options">
+          <Typography fontWeight={800}>Options you can add</Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 0.75 }}>
+            Selected on a Lot of this Package and billed by no Package. Check an Option to add it to this Package
+            and the invoice; it is priced on the date of the Package.
+          </Typography>
+          <Box sx={{ border: 1, borderColor: 'divider', borderRadius: 1, maxHeight: 280, overflow: 'auto' }}>
+            {freeOptions.map((option) => {
+              const unpriced = option.issue === 'PRICE_MISSING'
+              return (
+                <Stack
+                  key={option.id}
+                  direction="row"
+                  spacing={1}
+                  sx={{ alignItems: 'center', px: 1.5, borderBottom: 1, borderColor: 'divider', '&:last-child': { borderBottom: 0 } }}
+                >
+                  <Checkbox
+                    checked={addedOptionIds.has(option.id)}
+                    onChange={() => onToggleAddedOption(option.id)}
+                    disabled={disabled || unpriced}
+                    inputProps={{ 'aria-label': `Add ${option.optionCode} on Lot ${option.lotNumber}` }}
+                  />
+                  <Typography variant="body2" sx={{ flex: 1 }}>
+                    Lot {option.lotNumber} · {option.optionCode} · {option.description}
+                    {option.unitLabel ? ` · ${option.unitLabel}` : ''}
+                    {unpriced && (
+                      <Typography component="span" variant="body2" color="warning.main">
+                        {' '}· has no price yet
+                      </Typography>
+                    )}
+                  </Typography>
+                  <Typography variant="body2" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+                    {option.priceNotApplicable ? 'N/A' : unpriced ? '—' : formatCurrency(option.price)}
                   </Typography>
                 </Stack>
               )
@@ -210,6 +294,11 @@ export function InvoicedEditReview({ review, difference = null }) {
           title="Options released"
           color="error"
           items={edit.released_options.map((option, index) => ({ key: `ro${index}`, text: optionText(option) }))}
+        />
+        <ChangeList
+          title="Options added"
+          color="success"
+          items={(edit.added_options ?? []).map((option, index) => ({ key: `ao${index}`, text: optionText(option) }))}
         />
         <ChangeList
           title="Separate Hardware taken off"

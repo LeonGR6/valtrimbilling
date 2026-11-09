@@ -529,7 +529,7 @@ export function getOptionsBillingDrawIndex(record, schedule) {
   return Number.isInteger(parsedIndex) && parsedIndex >= 0 ? parsedIndex : null
 }
 
-function getSelectedOptionRows(selectedRows) {
+export function getSelectedOptionRows(selectedRows) {
   return selectedRows.flatMap((row) =>
     (row.selectedOptions ?? []).map((option) => ({
       id: optionSelectionKey(row.phaseId, row.id, option.id, option.unitNo),

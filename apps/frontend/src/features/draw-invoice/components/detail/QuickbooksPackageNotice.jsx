@@ -97,13 +97,20 @@ export default function QuickbooksPackageNotice({
       </Button>
     )
 
+    const voidedActions = (newInvoiceButton || resetButton) && (
+      <Stack direction="row" spacing={0.5}>
+        {newInvoiceButton}
+        {resetButton}
+      </Stack>
+    )
+
     return (
       <>
-        <Alert severity="info" action={resetButton || newInvoiceButton || undefined}>
+        <Alert severity="info" action={voidedActions || undefined}>
           <strong>The {isTest ? 'Test ' : ''}QuickBooks invoice was voided.</strong>
           {record.quickbooksReference ? ` Invoice ${record.quickbooksReference} stays in QuickBooks with its amounts at $0.` : ''}
           {isTest
-            ? ' This was a test: move the Package back to Production to send it for real, or delete it as a draft.'
+            ? ' This was a test: create a new invoice to send this Package again, move it back to Production to send it for real, or delete it as a draft.'
             : ' Create a new invoice to send this Package again, or delete it as a draft.'}
         </Alert>
         {resetDialog}

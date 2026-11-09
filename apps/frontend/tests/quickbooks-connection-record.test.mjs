@@ -758,7 +758,7 @@ test('only a Test Package that was never submitted can move back to Production',
   assert.equal(canResetQuickbooksTestInvoice({ ...testPackage, status: 'PAID' }, 'ADMIN'), false)
 })
 
-test('a Production Package with a voided invoice can get a new one until it is submitted', () => {
+test('a Package with a voided invoice, in Production or in Test, can get a new one until it is submitted', () => {
   const voided = {
     packageType: 'DRAW',
     quickbooksEnvironment: 'production',
@@ -779,8 +779,14 @@ test('a Production Package with a voided invoice can get a new one until it is s
   // An invoice that stands is voided, not detached.
   assert.equal(canStartNewQuickbooksInvoice({ ...voided, quickbooksStatus: 'CREATED' }, 'ADMIN'), false)
   assert.equal(canStartNewQuickbooksInvoice({ ...voided, quickbooksStatus: 'NOT_CREATED' }, 'ADMIN'), false)
-  // A Test Package moves back to Production instead.
-  assert.equal(canStartNewQuickbooksInvoice({ ...voided, quickbooksEnvironment: 'sandbox' }, 'ADMIN'), false)
+  // A Test Package gets a new invoice too (it can also be moved back to Production).
+  assert.equal(canStartNewQuickbooksInvoice({ ...voided, quickbooksEnvironment: 'sandbox' }, 'ADMIN'), true)
+  assert.equal(canStartNewQuickbooksInvoice({ ...voided, quickbooksEnvironment: 'sandbox' }, 'DRAW_INVOICE'), true)
+  assert.equal(canStartNewQuickbooksInvoice({ ...voided, quickbooksEnvironment: 'sandbox' }, 'READ_ONLY'), false)
+  assert.equal(
+    canStartNewQuickbooksInvoice({ ...voided, quickbooksEnvironment: 'sandbox', quickbooksStatus: 'CREATED' }, 'ADMIN'),
+    false,
+  )
   // A cancelled or submitted Package gets no new invoice.
   assert.equal(canStartNewQuickbooksInvoice({ ...voided, status: 'CANCELLED' }, 'ADMIN'), false)
   assert.equal(canStartNewQuickbooksInvoice({ ...voided, submissionStatus: 'SUBMITTED' }, 'ADMIN'), false)

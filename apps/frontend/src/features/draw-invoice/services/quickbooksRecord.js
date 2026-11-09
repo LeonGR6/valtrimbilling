@@ -681,16 +681,16 @@ export function canResetQuickbooksTestInvoice(record, role) {
 }
 
 /**
- * Whether to offer a new invoice for a Package whose Production invoice was voided: the
- * Package lets go of the voided invoice (it stays in QuickBooks) and can be sent again. A
- * Test Package is moved back to Production instead. The database re-checks everything
- * (unpaid, never submitted, not cancelled); this only hides the action when it cannot apply.
+ * Whether to offer a new invoice for a Package whose invoice was voided, in Production or in Test:
+ * the Package lets go of the voided invoice (it stays in QuickBooks) and can be sent again, to
+ * whichever QuickBooks company the platform is working with. A Test Package can also be moved back
+ * to Production. The database re-checks everything (unpaid, never submitted, not cancelled); this
+ * only hides the action when it cannot apply.
  */
 export function canStartNewQuickbooksInvoice(record, role) {
   return INVOICE_ROLES.includes(role)
     && record != null
     && isInvoicedThroughQuickbooks(record)
-    && !isQuickbooksTestPackage(record)
     && record.quickbooksStatus === 'VOIDED'
     && ['DRAFT', 'AWAITING_PAYMENT'].includes(record.status)
     && (record.submissionStatus ?? 'NOT_SUBMITTED') === 'NOT_SUBMITTED'

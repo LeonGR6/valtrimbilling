@@ -10,9 +10,11 @@ import {
   cancelCustomerServiceAppointment, estimateCustomerServiceTravel, loadCustomerServiceSchedule,
   registerCustomerServiceAppointment,
 } from '../services/customerServiceAppointmentsRepository.js'
-import { applyAppointmentsToRequests, toPlanningTechnicians, travelEstimatesToMinutes } from '../utils/appointmentRecords.js'
+import {
+  applyAppointmentsToRequests, toPlanningTechnicians, travelEstimateDetails, travelEstimatesToMinutes,
+} from '../utils/appointmentRecords.js'
 
-const emptySchedule = { roster: [], appointments: [], travelEstimates: [] }
+const emptySchedule = { roster: [], appointments: [], travelEstimates: [], travelTrafficMode: 'OFF' }
 
 // Requests, accepted appointments, travel estimates and technicians come from
 // Supabase. Proposal drafts stay in memory: they are never stored.
@@ -99,6 +101,8 @@ export default function CustomerServicePrototypeProvider({ children }) {
       technicians: toPlanningTechnicians(schedule.roster),
       storedTravelMinutes: travelEstimatesToMinutes(schedule.travelEstimates),
       storedRoutesMinutes: travelEstimatesToMinutes(schedule.travelEstimates.filter((row) => row.source === 'ROUTES_API')),
+      storedTravelDetails: travelEstimateDetails(schedule.travelEstimates),
+      travelTrafficMode: schedule.travelTrafficMode,
       estimateTravel: estimateCustomerServiceTravel,
       scheduleError,
       registerAppointment: async (payload) => afterScheduleChange(await registerCustomerServiceAppointment(payload)),

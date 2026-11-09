@@ -84,6 +84,7 @@ function classifyDistance(distanceMiles, settings) {
   if (distanceMiles === null) return null
   if (distanceMiles <= settings.distanceGreenMaxMiles) return 'GREEN'
   if (distanceMiles <= settings.distanceYellowMaxMiles) return 'YELLOW'
+  if (distanceMiles <= settings.distanceOrangeMaxMiles) return 'ORANGE'
   return 'RED'
 }
 

@@ -138,11 +138,17 @@ export function checkVisitCapacity({ visit, technicians, agenda, travelMinutes =
 
   // One leg per origin→destination pair; technicians sharing a leg share its estimate.
   const legs = new Map()
-  const addLeg = (fromRequestId, toRequestId, fromLabel, toLabel, name) => {
+  // Departure is the moment the technician leaves the earlier visit (after its
+  // pickup), in California time. Null when the visit date is not known yet.
+  const departureFor = (clockTime) => (visit.date && clockTime
+    ? californiaInstant(visit.date, clockTime)?.toISOString() ?? null
+    : null)
+  const addLeg = (fromRequestId, toRequestId, fromLabel, toLabel, name, departureAt) => {
     const key = travelLegKey(fromRequestId, toRequestId)
     const leg = legs.get(key) ?? {
       key, fromRequestId, toRequestId, fromLabel, toLabel, technicianNames: [],
       minutes: travelMinutesFor(travelMinutes, fromRequestId, toRequestId),
+      departureAt,
     }
     if (!leg.technicianNames.includes(name)) leg.technicianNames.push(name)
     legs.set(key, leg)
@@ -173,7 +179,7 @@ export function checkVisitCapacity({ visit, technicians, agenda, travelMinutes =
         .reduce((latest, entry) => (!latest || entry.to > latest.to ? entry : latest), null)
       const after = known.find((entry) => entry.from >= visitEnd)
       if (before) {
-        addLeg(before.requestId, visit.requestId, before.requestNumber, visitLabel, name)
+        addLeg(before.requestId, visit.requestId, before.requestNumber, visitLabel, name, departureFor(before.end))
         const travel = travelMinutesFor(travelMinutes, before.requestId, visit.requestId)
         if (travel === null) {
           warnings.push({ field: 'agenda', travelPending: true, message: `Travel time pending: enter the manual estimate from ${before.requestNumber} to this visit for ${name}.` })
@@ -182,7 +188,7 @@ export function checkVisitCapacity({ visit, technicians, agenda, travelMinutes =
         }
       }
       if (after) {
-        addLeg(visit.requestId, after.requestId, visitLabel, after.requestNumber, name)
+        addLeg(visit.requestId, after.requestId, visitLabel, after.requestNumber, name, departureFor(minutesToTime(visitEnd)))
         const travel = travelMinutesFor(travelMinutes, visit.requestId, after.requestId)
         if (travel === null) {
           warnings.push({ field: 'agenda', travelPending: true, message: `Travel time pending: enter the manual estimate from this visit to ${after.requestNumber} for ${name}.` })

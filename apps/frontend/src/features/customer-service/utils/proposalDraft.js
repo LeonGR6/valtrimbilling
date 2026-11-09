@@ -143,7 +143,7 @@ export function validatePrototypeProposalDraft({ requestId, values, requests, te
   const capacity = checkVisitCapacity({
     visit: {
       requestId, label: request?.requestNumber ?? 'This visit', windowStart: values.windowStart,
-      workStart: values.internalStart, durationMinutes: duration,
+      workStart: values.internalStart, durationMinutes: duration, date: values.date,
     },
     technicians: uniqueIds.map((id) => ({
       id, name: technicians.find((person) => String(person.id) === id)?.name ?? 'Unknown technician',

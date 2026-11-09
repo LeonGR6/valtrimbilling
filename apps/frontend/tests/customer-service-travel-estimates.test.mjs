@@ -1,12 +1,16 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
-  applyTravelEstimates, routesMinutesByLeg, travelEstimateMessages, travelLegSource, travelLegsToEstimate,
+  applyTravelEstimates, routesMinutesByLeg, travelEstimateMessages, travelLegHelperText, travelLegSource,
+  travelLegsToEstimate,
 } from '../src/features/customer-service/utils/travelEstimates.js'
 
 const leg = (fromRequestId, toRequestId, minutes) => ({
   key: `${fromRequestId}>${toRequestId}`, fromRequestId, toRequestId, minutes,
 })
+
+// Planning moment: 7:00 AM in California, before every departure used below.
+const NOW = new Date('2026-11-09T15:00:00Z')
 
 test('only empty legs between saved requests are sent to Google Maps', () => {
   assert.deepEqual(
@@ -41,4 +45,109 @@ test('a leg is labeled Google Maps until the coordinator changes its minutes', (
   assert.equal(travelLegSource('10>20', { '10>20': 20 }, routes), 'MANUAL')
   assert.equal(travelLegSource('20>30', { '20>30': 9 }, routes), 'MANUAL')
   assert.equal(travelLegSource('30>40', {}, routes), null)
+})
+
+test('a Google leg is sent again only when its departure moved to another half hour', () => {
+  const routes = { '10>20': 23, '20>30': 30 }
+  const details = {
+    '10>20': { staticMinutes: 20, trafficModel: 'BEST_GUESS', trafficDepartureAt: '2026-11-09T16:40:00.000Z' },
+    '20>30': { staticMinutes: 20, trafficModel: 'BEST_GUESS', trafficDepartureAt: '2026-11-09T16:40:00.000Z' },
+  }
+  const legs = [
+    { ...leg('10', '20', 23), departureAt: '2026-11-09T16:50:00.000Z' },
+    { ...leg('20', '30', 30), departureAt: '2026-11-09T20:40:00.000Z' },
+    { ...leg('30', '40', null), departureAt: '2026-11-09T20:40:00.000Z' },
+  ]
+  assert.deepEqual(travelLegsToEstimate(legs, routes, details, 'BEST_GUESS', NOW), [
+    { fromRequestId: 20, toRequestId: 30, departureAt: '2026-11-09T20:40:00.000Z' },
+    { fromRequestId: 30, toRequestId: 40, departureAt: '2026-11-09T20:40:00.000Z' },
+  ])
+})
+
+test('turning traffic on marks saved Google legs without traffic to calculate again', () => {
+  const saved = { ...leg('1496', '1497', 23), departureAt: '2026-11-16T16:40:00.000Z', technicianNames: ['Jorge Murillo'] }
+  const routes = { '1496>1497': 23 }
+  const details = { '1496>1497': { staticMinutes: null, trafficModel: null, trafficDepartureAt: null } }
+  assert.deepEqual(travelLegsToEstimate([saved], routes, details, 'BEST_GUESS', NOW), [
+    { fromRequestId: 1496, toRequestId: 1497, departureAt: '2026-11-16T16:40:00.000Z' },
+  ])
+  assert.equal(
+    travelLegHelperText({ leg: saved, source: 'ROUTES_API', details: details['1496>1497'], trafficMode: 'BEST_GUESS', now: NOW }),
+    'Traffic setting changed: calculate again · Jorge Murillo',
+  )
+  // With traffic off the same leg is current and is not sent.
+  assert.deepEqual(travelLegsToEstimate([saved], routes, details, 'OFF', NOW), [])
+})
+
+test('turning traffic off marks Google legs calculated with traffic to calculate again', () => {
+  const withTraffic = { ...leg('10', '20', 30), departureAt: '2026-11-09T16:40:00.000Z' }
+  const details = {
+    '10>20': { staticMinutes: 23, trafficModel: 'BEST_GUESS', trafficDepartureAt: '2026-11-09T16:40:00.000Z' },
+  }
+  assert.deepEqual(travelLegsToEstimate([withTraffic], { '10>20': 30 }, details, 'OFF', NOW), [
+    { fromRequestId: 10, toRequestId: 20, departureAt: '2026-11-09T16:40:00.000Z' },
+  ])
+})
+
+test('a departure that already passed never asks for traffic', () => {
+  const past = { ...leg('10', '20', 23), departureAt: '2026-11-09T14:00:00.000Z' }
+  const details = { '10>20': { staticMinutes: null, trafficModel: null, trafficDepartureAt: null } }
+  assert.deepEqual(travelLegsToEstimate([past], { '10>20': 23 }, details, 'BEST_GUESS', NOW), [])
+})
+
+test('a typed value is never sent or replaced, even when its departure moved', () => {
+  const legs = [{ ...leg('20', '30', 12), departureAt: '2026-11-09T20:40:00.000Z' }]
+  const details = {
+    '20>30': { staticMinutes: 20, trafficModel: 'BEST_GUESS', trafficDepartureAt: '2026-11-09T16:40:00.000Z' },
+  }
+  assert.deepEqual(travelLegsToEstimate(legs, { '20>30': 30 }, details), [])
+  const next = applyTravelEstimates(
+    { travelMinutes: { '20>30': 12 } },
+    [{ fromRequestId: 20, toRequestId: 30, minutes: 35, source: 'ROUTES_API', status: 'CALCULATED' }],
+    { '20>30': 30 },
+  )
+  assert.deepEqual(next.travelMinutes, { '20>30': 12 })
+})
+
+test('a moved leg that Google could not refresh shows its warning', () => {
+  const results = [
+    {
+      fromRequestId: 20, toRequestId: 30, minutes: 30, source: 'ROUTES_API', status: 'STORED',
+      message: 'Google Maps could not refresh the traffic estimate. The saved value is kept.',
+    },
+    { fromRequestId: 30, toRequestId: 40, minutes: 25, source: 'ROUTES_API', status: 'CALCULATED' },
+  ]
+  assert.deepEqual(travelEstimateMessages(results), [
+    'Google Maps could not refresh the traffic estimate. The saved value is kept.',
+  ])
+})
+
+test('a Google value is replaced by the recalculated minutes', () => {
+  const next = applyTravelEstimates(
+    { travelMinutes: { '20>30': 30 } },
+    [{ fromRequestId: 20, toRequestId: 30, minutes: 35, source: 'ROUTES_API', status: 'CALCULATED' }],
+    { '20>30': 30 },
+  )
+  assert.deepEqual(next.travelMinutes, { '20>30': 35 })
+})
+
+test('the leg label shows the traffic time and the minutes without traffic', () => {
+  const details = { staticMinutes: 18, trafficModel: 'BEST_GUESS', trafficDepartureAt: '2026-11-09T16:40:00.000Z' }
+  const base = { ...leg('10', '20', 23), technicianNames: ['Jorge Murillo'] }
+  assert.equal(
+    travelLegHelperText({ leg: { ...base, departureAt: '2026-11-09T16:40:00.000Z' }, source: 'ROUTES_API', details, trafficMode: 'BEST_GUESS', now: NOW }),
+    'Google Maps with traffic at 8:40 AM · 18 min without traffic · Jorge Murillo',
+  )
+  assert.equal(
+    travelLegHelperText({
+      leg: base, source: 'ROUTES_API', details: { staticMinutes: null, trafficModel: null, trafficDepartureAt: null },
+    }),
+    'Google Maps driving estimate · Jorge Murillo',
+  )
+  assert.equal(
+    travelLegHelperText({ leg: { ...base, departureAt: '2026-11-09T20:40:00.000Z' }, source: 'ROUTES_API', details, trafficMode: 'BEST_GUESS', now: NOW }),
+    'Departure moved: calculate again · Jorge Murillo',
+  )
+  assert.equal(travelLegHelperText({ leg: { ...base, minutes: null }, source: null }), 'Travel time pending · Jorge Murillo')
+  assert.equal(travelLegHelperText({ leg: base, source: 'MANUAL', details }), 'Manual estimate · Jorge Murillo')
 })

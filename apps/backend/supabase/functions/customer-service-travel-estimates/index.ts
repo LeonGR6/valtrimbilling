@@ -4,7 +4,13 @@
 // stored with source ROUTES_API (never over an existing row) so the same leg
 // is not billed twice. A failure returns no minutes, never zero.
 import { handlePreflight, json } from "../_shared/cors.ts";
-import { parseTravelInput, resolveTravelLegs, TravelInputError } from "../_shared/customerServiceTravel.ts";
+import {
+  parseTravelInput,
+  resolveTravelLegs,
+  TRAFFIC_MODES,
+  type TrafficMode,
+  TravelInputError,
+} from "../_shared/customerServiceTravel.ts";
 import { serviceClient, userClient } from "../_shared/supabase.ts";
 
 const ALLOWED_ROLES = ["ADMIN", "SCHEDULING"];
@@ -45,23 +51,31 @@ async function estimate(req: Request, actorId: string) {
 
   const ids = [...new Set(legs.flatMap((leg) => [leg.fromRequestId, leg.toRequestId]))];
   const admin = serviceClient();
-  const [requestsResult, storedResult] = await Promise.all([
+  const [requestsResult, storedResult, settingsResult] = await Promise.all([
     admin.from("service_requests").select("id, folio, service_properties(latitude, longitude)").in("id", ids),
     admin.from("service_travel_estimates")
-      .select("from_request_id, to_request_id, minutes, source")
+      .select("from_request_id, to_request_id, minutes, source, static_minutes, distance_miles, departure_at, traffic_model")
       .in("from_request_id", ids)
       .in("to_request_id", ids),
+    admin.from("service_scheduling_settings").select("travel_traffic_mode").eq("id", 1).single(),
   ]);
   if (requestsResult.error) throw requestsResult.error;
   if (storedResult.error) throw storedResult.error;
+  if (settingsResult.error) throw settingsResult.error;
 
-  const { results, rowsToStore } = await resolveTravelLegs({
+  const configuredMode = settingsResult.data?.travel_traffic_mode;
+  const trafficMode: TrafficMode = (TRAFFIC_MODES as readonly string[]).includes(configuredMode)
+    ? configuredMode as TrafficMode
+    : "OFF";
+
+  const { results, rowsToStore, rowsToReplace } = await resolveTravelLegs({
     legs,
     // deno-lint-ignore no-explicit-any
     requests: (requestsResult.data ?? []) as any,
     stored: storedResult.data ?? [],
     apiKey: Deno.env.get("GOOGLE_MAPS_API_KEY"),
     actorId,
+    trafficMode,
   });
 
   if (rowsToStore.length) {
@@ -69,6 +83,16 @@ async function estimate(req: Request, actorId: string) {
     const { error } = await admin.from("service_travel_estimates")
       .upsert(rowsToStore, { onConflict: "from_request_id,to_request_id", ignoreDuplicates: true });
     if (error) console.error("Routes API estimates could not be stored.", error);
+  }
+  for (const row of rowsToReplace) {
+    // Only ROUTES_API rows are replaced; a manual value saved meanwhile is kept.
+    const { from_request_id, to_request_id, created_by: _createdBy, ...values } = row;
+    const { error } = await admin.from("service_travel_estimates")
+      .update(values)
+      .eq("from_request_id", from_request_id)
+      .eq("to_request_id", to_request_id)
+      .eq("source", "ROUTES_API");
+    if (error) console.error("Routes API estimate could not be refreshed.", error);
   }
   return json({ legs: results });
 }

@@ -43,6 +43,7 @@ export const schedulingSettingsSchema = z.object({
   defaultDurationMinutes: z.coerce.number().int().min(15).max(720),
   distanceGreenMaxMiles: z.coerce.number().positive().max(999),
   distanceYellowMaxMiles: z.coerce.number().positive().max(999),
+  distanceOrangeMaxMiles: z.coerce.number().positive().max(999),
   requiresDispatcherApproval: z.boolean(),
 }).superRefine((value, context) => {
   if (value.workdayEndsAt <= value.workdayStartsAt) {
@@ -57,6 +58,13 @@ export const schedulingSettingsSchema = z.object({
       code: z.ZodIssueCode.custom,
       path: ['distanceYellowMaxMiles'],
       message: 'The second distance band must be greater than the first.',
+    })
+  }
+  if (value.distanceOrangeMaxMiles <= value.distanceYellowMaxMiles) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['distanceOrangeMaxMiles'],
+      message: 'The third distance band must be greater than the second.',
     })
   }
 }).transform(({ coordinates, ...value }) => ({ ...value, ...coordinates }))

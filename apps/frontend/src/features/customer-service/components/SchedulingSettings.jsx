@@ -25,8 +25,9 @@ function formValues(settings) {
     workdayEndsAt: settings.workdayEndsAt?.slice(0, 5) ?? '15:30',
     timeZone: settings.timeZone ?? 'America/Los_Angeles',
     defaultDurationMinutes: settings.defaultDurationMinutes ?? 60,
-    distanceGreenMaxMiles: settings.distanceGreenMaxMiles ?? 10,
-    distanceYellowMaxMiles: settings.distanceYellowMaxMiles ?? 20,
+    distanceGreenMaxMiles: settings.distanceGreenMaxMiles ?? 5,
+    distanceYellowMaxMiles: settings.distanceYellowMaxMiles ?? 10,
+    distanceOrangeMaxMiles: settings.distanceOrangeMaxMiles ?? 20,
     requiresDispatcherApproval: settings.requiresDispatcherApproval ?? true,
   }
 }
@@ -114,11 +115,15 @@ export default function SchedulingSettings({ settings, canEdit, onSaved }) {
         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
           <TextField label="Near distance (miles)" type="number" {...register('distanceGreenMaxMiles')}
             disabled={disabled} error={Boolean(errors.distanceGreenMaxMiles)}
-            helperText={errors.distanceGreenMaxMiles?.message ?? 'First grouping band'} fullWidth
+            helperText={errors.distanceGreenMaxMiles?.message ?? 'First band (green)'} fullWidth
             slotProps={{ htmlInput: { min: 0.1, step: 0.1 } }} />
-          <TextField label="Extended distance (miles)" type="number" {...register('distanceYellowMaxMiles')}
+          <TextField label="Medium distance (miles)" type="number" {...register('distanceYellowMaxMiles')}
             disabled={disabled} error={Boolean(errors.distanceYellowMaxMiles)}
-            helperText={errors.distanceYellowMaxMiles?.message ?? 'Second grouping band'} fullWidth
+            helperText={errors.distanceYellowMaxMiles?.message ?? 'Second band (yellow)'} fullWidth
+            slotProps={{ htmlInput: { min: 0.1, step: 0.1 } }} />
+          <TextField label="Far distance (miles)" type="number" {...register('distanceOrangeMaxMiles')}
+            disabled={disabled} error={Boolean(errors.distanceOrangeMaxMiles)}
+            helperText={errors.distanceOrangeMaxMiles?.message ?? 'Third band (orange). Beyond it is red.'} fullWidth
             slotProps={{ htmlInput: { min: 0.1, step: 0.1 } }} />
         </Stack>
 

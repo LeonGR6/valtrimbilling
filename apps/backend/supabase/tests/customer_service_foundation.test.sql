@@ -144,8 +144,8 @@ select is(
     from valtrim.service_scheduling_settings settings
     where settings.id = 1
   ),
-  10.00::numeric,
-  'The green proximity threshold is ten miles'
+  5.00::numeric,
+  'The green proximity threshold is five miles'
 );
 
 select is(
@@ -154,8 +154,8 @@ select is(
     from valtrim.service_scheduling_settings settings
     where settings.id = 1
   ),
-  20.00::numeric,
-  'The yellow proximity threshold ends at twenty miles'
+  10.00::numeric,
+  'The yellow proximity threshold ends at ten miles'
 );
 
 select is(

@@ -21,6 +21,17 @@ export function travelEstimatesToMinutes(rows = []) {
   return Object.fromEntries(rows.map((row) => [travelLegKey(row.from_request_id, row.to_request_id), row.minutes]))
 }
 
+// Traffic details of saved Google estimates, by leg key (used to label the legs).
+export function travelEstimateDetails(rows = []) {
+  return Object.fromEntries(rows
+    .filter((row) => row.source === 'ROUTES_API')
+    .map((row) => [travelLegKey(row.from_request_id, row.to_request_id), {
+      staticMinutes: row.static_minutes ?? null,
+      trafficModel: row.traffic_model ?? null,
+      trafficDepartureAt: row.departure_at ?? null,
+    }]))
+}
+
 export function applyAppointmentsToRequests(requests, appointments = [], technicians = []) {
   const byRequest = new Map(appointments.map((row) => [String(row.request_id), row]))
   const names = new Map(technicians.map((person) => [String(person.id), person.name]))

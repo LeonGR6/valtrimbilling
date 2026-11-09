@@ -48,16 +48,26 @@ test('scheduling settings keep five-day inputs small and reject inverted ranges'
     workdayEndsAt: '17:00',
     timeZone: 'America/Los_Angeles',
     defaultDurationMinutes: '60',
-    distanceGreenMaxMiles: '10',
-    distanceYellowMaxMiles: '20',
+    distanceGreenMaxMiles: '5',
+    distanceYellowMaxMiles: '10',
+    distanceOrangeMaxMiles: '20',
     requiresDispatcherApproval: true,
   }
 
   const result = schedulingSettingsSchema.parse(valid)
   assert.equal(result.latitude, 33.986588)
   assert.equal(result.defaultDurationMinutes, 60)
+  assert.equal(result.distanceOrangeMaxMiles, 20)
   assert.equal(schedulingSettingsSchema.safeParse({
     ...valid,
     distanceYellowMaxMiles: '5',
+  }).success, false)
+  assert.equal(schedulingSettingsSchema.safeParse({
+    ...valid,
+    distanceOrangeMaxMiles: '10',
+  }).success, false)
+  assert.equal(schedulingSettingsSchema.safeParse({
+    ...valid,
+    distanceOrangeMaxMiles: '',
   }).success, false)
 })

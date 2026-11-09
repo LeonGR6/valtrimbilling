@@ -12,26 +12,33 @@ async function functionErrorMessage(error, data, fallback) {
   return payload?.error || error?.message || fallback
 }
 
-// Current (not cancelled) appointments, and the travel estimates that touch an
-// appointment from today onward (the only legs the planner can prefill).
+// Current (not cancelled) appointments, the travel estimates that touch an
+// appointment from today onward (the only legs the planner can prefill), and the
+// travel traffic mode, so the planner knows which Google legs to calculate again.
 export async function loadCustomerServiceSchedule(now = new Date()) {
   const client = await requireSupabase()
-  const appointments = await client.from('service_appointments').select(APPOINTMENT_COLUMNS).eq('is_current', true)
-  if (appointments.error) {
-    throw new Error(appointments.error.message || 'The schedule could not be loaded.', { cause: appointments.error })
+  const [appointments, settings] = await Promise.all([
+    client.from('service_appointments').select(APPOINTMENT_COLUMNS).eq('is_current', true),
+    client.from('service_scheduling_settings').select('travel_traffic_mode').eq('id', 1).maybeSingle(),
+  ])
+  for (const result of [appointments, settings]) {
+    if (result.error) {
+      throw new Error(result.error.message || 'The schedule could not be loaded.', { cause: result.error })
+    }
   }
+  const travelTrafficMode = settings.data?.travel_traffic_mode ?? 'OFF'
 
   const requestIds = upcomingAppointmentRequestIds(appointments.data, now)
-  if (!requestIds.length) return { appointments: appointments.data, travelEstimates: [] }
+  if (!requestIds.length) return { appointments: appointments.data, travelEstimates: [], travelTrafficMode }
 
   const list = requestIds.join(',')
   const travel = await client.from('service_travel_estimates')
-    .select('from_request_id, to_request_id, minutes, source')
+    .select('from_request_id, to_request_id, minutes, source, static_minutes, departure_at, traffic_model')
     .or(`from_request_id.in.(${list}),to_request_id.in.(${list})`)
   if (travel.error) {
     throw new Error(travel.error.message || 'The schedule could not be loaded.', { cause: travel.error })
   }
-  return { appointments: appointments.data, travelEstimates: travel.data }
+  return { appointments: appointments.data, travelEstimates: travel.data, travelTrafficMode }
 }
 
 // The Edge Function revalidates capacity on the server before saving.

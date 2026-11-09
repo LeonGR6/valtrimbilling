@@ -10,7 +10,8 @@ import {
   suggestProposalTimes, validatePrototypeProposalDraft,
 } from '../utils/proposalDraft.js'
 import {
-  applyTravelEstimates, routesMinutesByLeg, travelEstimateMessages, travelLegSource, travelLegsToEstimate,
+  applyTravelEstimates, routesMinutesByLeg, travelDetailsByLeg, travelEstimateMessages, travelLegHelperText,
+  travelLegSource, travelLegsToEstimate,
 } from '../utils/travelEstimates.js'
 import { getCustomerServiceClock } from '../utils/dates.js'
 import { useCustomerServicePrototype } from '../context/customerServicePrototypeContext.js'
@@ -69,7 +70,9 @@ const acceptanceOptions = [
 ]
 
 export default function ProposalDraftPlanner({ request, requests, technicians: roster, savedDraft, onSave, onDirtyChange, onRegistered }) {
-  const { registerAppointment, storedTravelMinutes, storedRoutesMinutes, estimateTravel } = useCustomerServicePrototype()
+  const {
+    registerAppointment, storedTravelMinutes, storedRoutesMinutes, storedTravelDetails, travelTrafficMode, estimateTravel,
+  } = useCustomerServicePrototype()
   // Travel saved with earlier appointments fills the same legs; typed values win.
   const withStoredTravel = (formValues) => ({
     ...formValues, travelMinutes: { ...storedTravelMinutes, ...formValues.travelMinutes },
@@ -98,16 +101,18 @@ export default function ProposalDraftPlanner({ request, requests, technicians: r
   // Google Routes results fill only empty legs; a leg keeps its Google label until edited.
   const [travelEstimate, setTravelEstimate] = useState({ loading: false, error: '', results: [], routes: {} })
   const routesMinutes = { ...storedRoutesMinutes, ...travelEstimate.routes }
-  const legsToEstimate = travelLegsToEstimate(validation.travelLegs)
+  const travelDetails = { ...storedTravelDetails, ...travelDetailsByLeg(travelEstimate.results) }
+  // Empty legs, plus Google legs calculated with another traffic setting or departure slot.
+  const legsToEstimate = travelLegsToEstimate(validation.travelLegs, routesMinutes, travelDetails, travelTrafficMode)
   const pendingKeys = new Set(validation.travelLegs.filter((leg) => leg.minutes === null).map((leg) => leg.key))
   const travelMessages = travelEstimateMessages(travelEstimate.results
-    .filter((result) => pendingKeys.has(`${result.fromRequestId}>${result.toRequestId}`)))
+    .filter((result) => pendingKeys.has(`${result.fromRequestId}>${result.toRequestId}`) || result.status === 'STORED'))
   const calculateTravel = async () => {
     setTravelEstimate((current) => ({ ...current, loading: true, error: '', results: [] }))
     try {
       const results = await estimateTravel(legsToEstimate)
       setSaveError('')
-      setValues((current) => applyTravelEstimates(current, results))
+      setValues((current) => applyTravelEstimates(current, results, routesMinutes))
       setTravelEstimate((current) => ({
         loading: false, error: '', results, routes: { ...current.routes, ...routesMinutesByLeg(results) },
       }))
@@ -249,11 +254,12 @@ export default function ProposalDraftPlanner({ request, requests, technicians: r
                       setValues((current) => changePrototypeTravelMinutes(current, leg.key, event.target.value))
                     }}
                     slotProps={{ htmlInput: { min: 0, max: 999, step: 1, inputMode: 'numeric' } }}
-                    helperText={leg.minutes === null
-                      ? `Travel time pending · ${leg.technicianNames.join(', ')}`
-                      : travelLegSource(leg.key, values.travelMinutes, routesMinutes) === 'ROUTES_API'
-                        ? `Google Maps driving estimate · ${leg.technicianNames.join(', ')}`
-                        : `Manual estimate · ${leg.technicianNames.join(', ')}`}
+                    helperText={travelLegHelperText({
+                      leg,
+                      source: leg.minutes === null ? null : travelLegSource(leg.key, values.travelMinutes, routesMinutes),
+                      details: travelDetails[leg.key],
+                      trafficMode: travelTrafficMode,
+                    })}
                     fullWidth
                   />
                 ))}

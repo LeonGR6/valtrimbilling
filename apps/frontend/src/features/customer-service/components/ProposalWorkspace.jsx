@@ -54,7 +54,7 @@ export default function ProposalWorkspace({
     <Stack spacing={2.5}>
       <Alert severity="info" variant="outlined">
         Prepare a planning draft for a Ready to propose request. Saving a draft does not send a proposal or schedule a visit.
-        Route convenience, travel estimates and proposal sending are not implemented in this stage.
+        Route convenience and proposal sending are not implemented in this stage.
         {' '}Request information is read-only here. Edit requests in the Requests view before proposing.
       </Alert>
 

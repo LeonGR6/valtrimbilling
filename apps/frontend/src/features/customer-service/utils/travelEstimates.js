@@ -82,6 +82,15 @@ export function travelDetailsByLeg(results = []) {
     }]))
 }
 
+// Adds one calculation to the Google values already shown. Each calculation sends only
+// the legs that need it, so the minutes and traffic details of the other legs stay.
+export function mergeTravelEstimateResults(current = {}, results = []) {
+  return {
+    routes: { ...current.routes, ...routesMinutesByLeg(results) },
+    details: { ...current.details, ...travelDetailsByLeg(results) },
+  }
+}
+
 // Warnings to show: legs Google could not fill, and moved legs Google could not
 // refresh (the server keeps their saved minutes and returns them as STORED).
 export function travelEstimateMessages(results = []) {

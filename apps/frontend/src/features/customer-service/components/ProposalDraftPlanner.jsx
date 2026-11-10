@@ -10,7 +10,7 @@ import {
   suggestProposalTimes, validatePrototypeProposalDraft,
 } from '../utils/proposalDraft.js'
 import {
-  applyTravelEstimates, routesMinutesByLeg, travelDetailsByLeg, travelEstimateMessages, travelLegHelperText,
+  applyTravelEstimates, mergeTravelEstimateResults, travelEstimateMessages, travelLegHelperText,
   travelLegSource, travelLegsToEstimate,
 } from '../utils/travelEstimates.js'
 import { getCustomerServiceClock } from '../utils/dates.js'
@@ -21,12 +21,19 @@ const formatSuggestionDate = (date) => new Date(`${date}T12:00:00Z`).toLocaleDat
   weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC',
 })
 
+// The form column sits next to the agenda, so it can be narrow even on a wide screen.
+// Its rows wrap by the space they get instead of switching at a screen breakpoint.
+const sectionHeaderSx = { flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between' }
+const sectionTitleSx = { flex: '1 1 240px' }
+const fieldRowSx = { flexWrap: 'wrap', '& > *': { flex: '1 1 160px' } }
+const actionRowSx = { flexWrap: 'wrap', '& > *': { flex: '1 1 200px' } }
+
 // Suggestions only fill the form; nothing is saved or registered from here.
 function ProposalSuggestions({ result, onSuggest, onUse, disabled }) {
   return (
     <Stack spacing={1}>
-      <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} sx={{ alignItems: { sm: 'center' }, justifyContent: 'space-between' }}>
-        <Box>
+      <Stack direction="row" spacing={1} useFlexGap sx={sectionHeaderSx}>
+        <Box sx={sectionTitleSx}>
           <Typography variant="subtitle2" fontWeight={800}>Suggested times</Typography>
           <Typography variant="caption" color="text.secondary">
             Earliest viable start per window for the selected technicians. Using one only fills this form.
@@ -99,9 +106,9 @@ export default function ProposalDraftPlanner({ request, requests, technicians: r
     setValues((current) => applyProposalSuggestion(current, suggestion))
   }
   // Google Routes results fill only empty legs; a leg keeps its Google label until edited.
-  const [travelEstimate, setTravelEstimate] = useState({ loading: false, error: '', results: [], routes: {} })
+  const [travelEstimate, setTravelEstimate] = useState({ loading: false, error: '', results: [], routes: {}, details: {} })
   const routesMinutes = { ...storedRoutesMinutes, ...travelEstimate.routes }
-  const travelDetails = { ...storedTravelDetails, ...travelDetailsByLeg(travelEstimate.results) }
+  const travelDetails = { ...storedTravelDetails, ...travelEstimate.details }
   // Empty legs, plus Google legs calculated with another traffic setting or departure slot.
   const legsToEstimate = travelLegsToEstimate(validation.travelLegs, routesMinutes, travelDetails, travelTrafficMode)
   const pendingKeys = new Set(validation.travelLegs.filter((leg) => leg.minutes === null).map((leg) => leg.key))
@@ -114,7 +121,7 @@ export default function ProposalDraftPlanner({ request, requests, technicians: r
       setSaveError('')
       setValues((current) => applyTravelEstimates(current, results, routesMinutes))
       setTravelEstimate((current) => ({
-        loading: false, error: '', results, routes: { ...current.routes, ...routesMinutesByLeg(results) },
+        loading: false, error: '', results, ...mergeTravelEstimateResults(current, results),
       }))
     } catch (error) {
       setTravelEstimate((current) => ({ ...current, loading: false, error: error.message }))
@@ -207,7 +214,7 @@ export default function ProposalDraftPlanner({ request, requests, technicians: r
               </Select>
               <FormHelperText>Work plus 10 minutes of pickup must finish before the window closes.</FormHelperText>
             </FormControl>
-            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
+            <Stack direction="row" spacing={2} useFlexGap sx={fieldRowSx}>
               <TextField
                 label="Internal work starts" type="time" value={values.internalStart} fullWidth
                 onChange={(event) => change('internalStart', event.target.value)}
@@ -223,8 +230,8 @@ export default function ProposalDraftPlanner({ request, requests, technicians: r
             </Stack>
             {validation.travelLegs.length > 0 && (
               <Stack spacing={1.5}>
-                <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} sx={{ alignItems: { sm: 'center' }, justifyContent: 'space-between' }}>
-                  <Box>
+                <Stack direction="row" spacing={1} useFlexGap sx={sectionHeaderSx}>
+                  <Box sx={sectionTitleSx}>
                     <Typography variant="subtitle2" fontWeight={800}>Travel between visits</Typography>
                     <Typography variant="caption" color="text.secondary">
                       Minutes from leaving one visit (after pickup) to starting the next. Calculate empty legs with
@@ -282,7 +289,7 @@ export default function ProposalDraftPlanner({ request, requests, technicians: r
             <ProposalSuggestions result={suggestions} onSuggest={suggest} onUse={applySuggestion}
               disabled={values.technicianIds.length === 0} />
             {saveError && <Alert severity="error">{saveError}</Alert>}
-            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5}>
+            <Stack direction="row" spacing={1.5} useFlexGap sx={actionRowSx}>
               <Button variant="outlined" onClick={save} disabled={!validation.isValid}>
                 {savedDraft ? 'Update proposal draft' : 'Save proposal draft'}
               </Button>

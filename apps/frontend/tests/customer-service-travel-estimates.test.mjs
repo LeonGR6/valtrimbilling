@@ -1,8 +1,8 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
-  applyTravelEstimates, routesMinutesByLeg, travelEstimateMessages, travelLegHelperText, travelLegSource,
-  travelLegsToEstimate,
+  applyTravelEstimates, mergeTravelEstimateResults, routesMinutesByLeg, travelEstimateMessages, travelLegHelperText,
+  travelLegSource, travelLegsToEstimate,
 } from '../src/features/customer-service/utils/travelEstimates.js'
 
 const leg = (fromRequestId, toRequestId, minutes) => ({
@@ -129,6 +129,32 @@ test('a Google value is replaced by the recalculated minutes', () => {
     { '20>30': 30 },
   )
   assert.deepEqual(next.travelMinutes, { '20>30': 35 })
+})
+
+test('recalculating one leg keeps the traffic details of the legs already calculated', () => {
+  // Thursday 12 Nov: CS-2496 → CS-2022 leaves at 8:40 AM, CS-2022 → CS-2497 at 9:30 AM.
+  const first = mergeTravelEstimateResults({}, [
+    { fromRequestId: 1496, toRequestId: 1022, minutes: 0, source: 'ROUTES_API', status: 'CALCULATED',
+      staticMinutes: 0, trafficModel: 'BEST_GUESS', trafficDepartureAt: '2026-11-12T16:40:00.000Z' },
+    { fromRequestId: 1022, toRequestId: 1497, minutes: 23, source: 'ROUTES_API', status: 'CALCULATED',
+      staticMinutes: 23, trafficModel: 'BEST_GUESS', trafficDepartureAt: '2026-11-12T17:30:00.000Z' },
+  ])
+  // Work starts 5 minutes earlier: only the second leg moved to another half hour and is sent.
+  const second = mergeTravelEstimateResults(first, [
+    { fromRequestId: 1022, toRequestId: 1497, minutes: 23, source: 'ROUTES_API', status: 'CALCULATED',
+      staticMinutes: 23, trafficModel: 'BEST_GUESS', trafficDepartureAt: '2026-11-12T17:25:00.000Z' },
+  ])
+  assert.deepEqual(second.routes, { '1496>1022': 0, '1022>1497': 23 })
+  assert.equal(second.details['1022>1497'].trafficDepartureAt, '2026-11-12T17:25:00.000Z')
+
+  const firstLeg = {
+    ...leg('1496', '1022', 0), departureAt: '2026-11-12T16:40:00.000Z', technicianNames: ['Jorge Murillo'],
+  }
+  assert.deepEqual(travelLegsToEstimate([firstLeg], second.routes, second.details, 'BEST_GUESS', NOW), [])
+  assert.equal(
+    travelLegHelperText({ leg: firstLeg, source: 'ROUTES_API', details: second.details['1496>1022'], trafficMode: 'BEST_GUESS', now: NOW }),
+    'Google Maps with traffic at 8:40 AM · 0 min without traffic · Jorge Murillo',
+  )
 })
 
 test('the leg label shows the traffic time and the minutes without traffic', () => {

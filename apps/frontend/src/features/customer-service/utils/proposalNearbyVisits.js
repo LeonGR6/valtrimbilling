@@ -1,11 +1,39 @@
 // Nearby visits for the request being planned: the scheduled visits it could share a
 // day with and the open requests near it, nearest first in straight-line miles. It
 // only reads the loaded requests; nothing calls Google and nothing is saved.
-import { hasCoordinates, nearbyCandidates } from './customerServiceProximity.js'
+import { hasCoordinates, maxNearbyDrivingCandidates, nearbyCandidates } from './customerServiceProximity.js'
 import { parseServiceDate } from './customerServiceScheduling.js'
 import { effectiveRequestWorkflowStage } from './requestInbox.js'
 import { getCustomerServiceClock } from './dates.js'
 import { proposalSuggestionSearchBusinessDays } from './proposalDraft.js'
+
+export const proximityBandLabels = { GREEN: 'Near', YELLOW: 'Medium', ORANGE: 'Far', RED: 'Very far' }
+
+// Within the last band in a straight line: the only candidates whose driving miles
+// are worth asking Google for (driving is never shorter than the straight line).
+export function isWithinNearbyRange(candidate, bands) {
+  return candidate.miles !== null && (!bands || candidate.miles <= bands.distanceOrangeMaxMiles)
+}
+
+// Request ids sent for driving miles: the nearest candidates within range.
+export function nearbyIdsToMeasure(candidates = [], bands) {
+  return candidates.filter((candidate) => isWithinNearbyRange(candidate, bands))
+    .slice(0, maxNearbyDrivingCandidates)
+    .map((candidate) => Number(candidate.requestId))
+}
+
+// Chip text and band. Driving miles from Google give the band; beyond the last band
+// in a straight line is "Very far" without asking Google; otherwise the straight-line
+// miles show with "≈" and no band.
+export function nearbyVisitDistance(candidate, driving, bands) {
+  if (candidate.miles === null) return { text: 'No coordinates', band: null }
+  const straight = `≈ ${candidate.miles.toFixed(1)} mi`
+  if (!isWithinNearbyRange(candidate, bands)) return { text: `${proximityBandLabels.RED} · ${straight}`, band: 'RED' }
+  if (Number.isFinite(driving?.drivingMiles) && proximityBandLabels[driving.band]) {
+    return { text: `${proximityBandLabels[driving.band]} · ${driving.drivingMiles.toFixed(1)} mi`, band: driving.band }
+  }
+  return { text: straight, band: null }
+}
 
 // Requests that still need a visit and have no scheduled appointment.
 const openStages = ['NEEDS_REVIEW', 'READY_TO_PROPOSE', 'AWAITING_CUSTOMER', 'NEEDS_CONTACT']
@@ -42,6 +70,7 @@ export function getProposalNearbyVisits({ request, requests = [], now = new Date
       date: entry.customerWindow.date,
       start: entry.internalSlot?.start ?? entry.customerWindow.start,
       end: entry.internalSlot?.end ?? entry.customerWindow.end,
+      technicianIds: (entry.technicianIds ?? []).map(String),
       technicianNames: (entry.assignedTechnicians ?? []).map((person) => person.name),
     }))
   const openRequests = requests

@@ -3,6 +3,12 @@
 // browser. Stored estimates are returned as they are; new Routes results are
 // stored with source ROUTES_API (never over an existing row) so the same leg
 // is not billed twice. A failure returns no minutes, never zero.
+//
+// Two request bodies:
+// - { legs }: minutes for the planner's travel legs (computeRoutes, with traffic
+//   when the traffic mode is on).
+// - { nearby: { requestId, candidateIds } }: driving miles for the nearby-visit
+//   colors (computeRouteMatrix without traffic).
 import { handlePreflight, json } from "../_shared/cors.ts";
 import {
   parseTravelInput,
@@ -11,7 +17,11 @@ import {
   type TrafficMode,
   TravelInputError,
 } from "../_shared/customerServiceTravel.ts";
+import { type NearbyInput, parseNearbyInput, resolveNearbyDriving } from "../_shared/customerServiceTravelMatrix.ts";
 import { serviceClient, userClient } from "../_shared/supabase.ts";
+
+const ESTIMATE_COLUMNS =
+  "from_request_id, to_request_id, minutes, source, static_minutes, distance_miles, departure_at, traffic_model";
 
 const ALLOWED_ROLES = ["ADMIN", "SCHEDULING"];
 
@@ -39,22 +49,85 @@ async function authorize(req: Request): Promise<string> {
   return user.id;
 }
 
-async function estimate(req: Request, actorId: string) {
-  const body = await req.json().catch(() => null);
-  let legs;
+// Input problems are the caller's to fix (400), never a server failure.
+function parsed<T>(parse: () => T): T {
   try {
-    legs = parseTravelInput(body);
+    return parse();
   } catch (error) {
     if (error instanceof TravelInputError) throw new RequestError(error.message, 400);
     throw error;
   }
+}
+
+async function nearbyDriving(input: NearbyInput, actorId: string) {
+  const ids = [input.requestId, ...input.candidateIds];
+  const admin = serviceClient();
+  const [requestsResult, outboundResult, inboundResult, settingsResult] = await Promise.all([
+    admin.from("service_requests").select("id, folio, service_properties(latitude, longitude)").in("id", ids),
+    admin.from("service_travel_estimates").select(ESTIMATE_COLUMNS)
+      .eq("from_request_id", input.requestId).in("to_request_id", input.candidateIds),
+    admin.from("service_travel_estimates").select(ESTIMATE_COLUMNS)
+      .eq("to_request_id", input.requestId).in("from_request_id", input.candidateIds),
+    admin.from("service_scheduling_settings")
+      .select("distance_green_max_miles, distance_yellow_max_miles, distance_orange_max_miles").eq("id", 1).single(),
+  ]);
+  for (const result of [requestsResult, outboundResult, inboundResult, settingsResult]) {
+    if (result.error) throw result.error;
+  }
+
+  const settings = settingsResult.data;
+  if (!settings) throw new Error("Customer Service scheduling settings are missing.");
+  let resolved;
+  try {
+    resolved = await resolveNearbyDriving({
+      input,
+      // deno-lint-ignore no-explicit-any
+      requests: (requestsResult.data ?? []) as any,
+      stored: [...(outboundResult.data ?? []), ...(inboundResult.data ?? [])],
+      bands: {
+        distanceGreenMaxMiles: Number(settings.distance_green_max_miles),
+        distanceYellowMaxMiles: Number(settings.distance_yellow_max_miles),
+        distanceOrangeMaxMiles: Number(settings.distance_orange_max_miles),
+      },
+      apiKey: Deno.env.get("GOOGLE_MAPS_API_KEY"),
+      actorId,
+    });
+  } catch (error) {
+    if (error instanceof TravelInputError) throw new RequestError(error.message, 400);
+    throw error;
+  }
+  const { results, rowsToStore, distanceUpdates } = resolved;
+
+  if (rowsToStore.length) {
+    // ignoreDuplicates: a value saved meanwhile (manual or with traffic) wins.
+    const { error } = await admin.from("service_travel_estimates")
+      .upsert(rowsToStore, { onConflict: "from_request_id,to_request_id", ignoreDuplicates: true });
+    if (error) console.error("Route Matrix distances could not be stored.", error);
+  }
+  for (const { from_request_id, to_request_id, ...values } of distanceUpdates) {
+    // Only the distance is filled in; the saved minutes and their source stay.
+    const { error } = await admin.from("service_travel_estimates")
+      .update(values)
+      .eq("from_request_id", from_request_id)
+      .eq("to_request_id", to_request_id)
+      .is("distance_miles", null);
+    if (error) console.error("Route Matrix distance could not be saved.", error);
+  }
+  return json({ candidates: results });
+}
+
+async function estimate(req: Request, actorId: string) {
+  const body = await req.json().catch(() => null);
+  const nearby = parsed(() => parseNearbyInput(body));
+  if (nearby) return nearbyDriving(nearby, actorId);
+  const legs = parsed(() => parseTravelInput(body));
 
   const ids = [...new Set(legs.flatMap((leg) => [leg.fromRequestId, leg.toRequestId]))];
   const admin = serviceClient();
   const [requestsResult, storedResult, settingsResult] = await Promise.all([
     admin.from("service_requests").select("id, folio, service_properties(latitude, longitude)").in("id", ids),
     admin.from("service_travel_estimates")
-      .select("from_request_id, to_request_id, minutes, source, static_minutes, distance_miles, departure_at, traffic_model")
+      .select(ESTIMATE_COLUMNS)
       .in("from_request_id", ids)
       .in("to_request_id", ids),
     admin.from("service_scheduling_settings").select("travel_traffic_mode").eq("id", 1).single(),

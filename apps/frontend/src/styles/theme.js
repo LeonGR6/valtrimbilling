@@ -22,6 +22,8 @@ const theme = createTheme({
           muted: '#466681',
           action: '#31536F',
         },
+        // Nearby-visit distance bands (Near, Medium, Far, Very far). Always shown with text.
+        proximity: { near: '#15803D', medium: '#A16207', far: '#C2410C', veryFar: '#B91C1C' },
       },
     },
     dark: {
@@ -42,6 +44,7 @@ const theme = createTheme({
           muted: '#B8CCDE',
           action: '#D9E9F7',
         },
+        proximity: { near: '#4ADE80', medium: '#FACC15', far: '#FB923C', veryFar: '#F87171' },
       },
     },
   },

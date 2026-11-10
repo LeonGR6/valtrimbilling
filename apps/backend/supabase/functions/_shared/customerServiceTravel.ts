@@ -11,6 +11,13 @@ const METERS_PER_MILE = 1609.344;
 const DEPARTURE_SLOT_MS = 30 * 60 * 1000;
 const MAX_MILES = 9999.9;
 
+// Road distance in miles with one decimal, or null when Google gave none.
+export function milesFromMeters(meters: unknown): number | null {
+  if (typeof meters !== "number" || !Number.isFinite(meters) || meters < 0) return null;
+  const miles = Math.round((meters / METERS_PER_MILE) * 10) / 10;
+  return miles <= MAX_MILES ? miles : null;
+}
+
 export const TRAFFIC_MODES = ["OFF", "BEST_GUESS", "PESSIMISTIC"] as const;
 export type TrafficMode = (typeof TRAFFIC_MODES)[number];
 export type TrafficModel = Exclude<TrafficMode, "OFF">;
@@ -107,7 +114,7 @@ export class TravelInputError extends Error {
   }
 }
 
-const positiveId = (value: unknown) =>
+export const positiveId = (value: unknown) =>
   Number.isSafeInteger(Number(value)) && Number(value) > 0 ? Number(value) : null;
 
 export const legKey = (leg: TravelLeg) => `${leg.fromRequestId}>${leg.toRequestId}`;
@@ -179,11 +186,7 @@ export function routeDetailsFromResponse(payload: unknown): RouteDetails | null 
   const minutes = minutesFromSeconds(route?.duration);
   if (minutes === null) return null;
   const staticMinutes = minutesFromSeconds(route?.staticDuration) ?? minutes;
-  const meters = route?.distanceMeters;
-  const miles = typeof meters === "number" && Number.isFinite(meters) && meters >= 0
-    ? Math.round((meters / METERS_PER_MILE) * 10) / 10
-    : null;
-  return { minutes, staticMinutes, distanceMiles: miles !== null && miles <= MAX_MILES ? miles : null };
+  return { minutes, staticMinutes, distanceMiles: milesFromMeters(route?.distanceMeters) };
 }
 
 export async function fetchRoute(

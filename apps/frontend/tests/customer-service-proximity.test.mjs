@@ -3,7 +3,10 @@ import assert from 'node:assert/strict'
 import {
   calculateDistanceMiles, hasCoordinates, nearbyCandidates, proximityBand,
 } from '../src/features/customer-service/utils/customerServiceProximity.js'
-import { getProposalNearbyVisits, nearbyVisitsThrough } from '../src/features/customer-service/utils/proposalNearbyVisits.js'
+import {
+  getProposalNearbyVisits, nearbyIdsToMeasure, nearbyVisitDistance, nearbyVisitsThrough,
+} from '../src/features/customer-service/utils/proposalNearbyVisits.js'
+import { maxNearbyDrivingCandidates } from '../src/features/customer-service/utils/customerServiceProximity.js'
 import { toDistanceBands } from '../src/features/customer-service/utils/appointmentRecords.js'
 
 // Saved property coordinates (numeric strings, as PostgREST returns them).
@@ -85,6 +88,7 @@ const scheduled = (date, start, end, state = 'SCHEDULED') => ({
   workflowStage: 'CONFIRMED',
   customerWindow: { date, start: '08:00', end: '10:00' },
   internalSlot: { start, end },
+  technicianIds: ['82'],
   assignedTechnicians: [{ id: '82', name: 'Jorge Murillo' }],
   appointment: { id: 1, state },
 })
@@ -107,7 +111,7 @@ test('the planner lists scheduled visits and open requests near the request', ()
   assert.deepEqual(nearby.candidates[0], {
     requestId: '2496', requestNumber: 'CS-2496', community: 'Echo Highlands',
     latitude: echoHighlands.latitude, longitude: echoHighlands.longitude,
-    date: '2026-11-12', start: '08:00', end: '08:30', technicianNames: ['Jorge Murillo'],
+    date: '2026-11-12', start: '08:00', end: '08:30', technicianIds: ['82'], technicianNames: ['Jorge Murillo'],
     kind: 'VISIT', miles: 0,
   })
   // A cancelled appointment leaves an open request; it is not a scheduled visit.
@@ -135,6 +139,33 @@ test('a request without coordinates cannot be compared', () => {
   })
   assert.equal(nearby.hasCoordinates, false)
   assert.deepEqual(nearby.candidates, [])
+})
+
+test('only candidates within the last band in a straight line are measured, nearest first', () => {
+  const candidate = (requestId, miles) => ({ requestId: String(requestId), miles })
+  assert.deepEqual(nearbyIdsToMeasure([
+    candidate(2496, 0), candidate(2497, 8.3), candidate(2499, 20), candidate(2023, 32.6), candidate(2030, null),
+  ], bands), [2496, 2497, 2499])
+  const many = Array.from({ length: maxNearbyDrivingCandidates + 5 }, (_, index) => candidate(3000 + index, index / 10))
+  assert.equal(nearbyIdsToMeasure(many, bands).length, maxNearbyDrivingCandidates)
+  assert.equal(nearbyIdsToMeasure(many, bands)[0], 3000)
+})
+
+test('the chip shows driving miles with their band, or straight-line miles without one', () => {
+  const harmony = { requestId: '2497', miles: 8.32 }
+  // While Google is checking, or when it could not measure: straight line, no band.
+  assert.deepEqual(nearbyVisitDistance(harmony, undefined, bands), { text: '≈ 8.3 mi', band: null })
+  assert.deepEqual(nearbyVisitDistance(harmony, { drivingMiles: null, band: null, status: 'FAILED' }, bands),
+    { text: '≈ 8.3 mi', band: null })
+  // Driving 11.5 mi: farther than the straight line suggested, so Far (orange).
+  assert.deepEqual(nearbyVisitDistance(harmony, { drivingMiles: 11.5, band: 'ORANGE', status: 'CALCULATED' }, bands),
+    { text: 'Far · 11.5 mi', band: 'ORANGE' })
+  assert.deepEqual(nearbyVisitDistance({ requestId: '2496', miles: 0 }, { drivingMiles: 0, band: 'GREEN' }, bands),
+    { text: 'Near · 0.0 mi', band: 'GREEN' })
+  // Beyond 20 mi in a straight line the drive is longer still: Very far, without Google.
+  assert.deepEqual(nearbyVisitDistance({ requestId: '2023', miles: 32.64 }, undefined, bands),
+    { text: 'Very far · ≈ 32.6 mi', band: 'RED' })
+  assert.deepEqual(nearbyVisitDistance({ requestId: '2030', miles: null }, undefined, bands), { text: 'No coordinates', band: null })
 })
 
 test('distance bands come from the settings row', () => {

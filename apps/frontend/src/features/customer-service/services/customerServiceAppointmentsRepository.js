@@ -68,6 +68,19 @@ export async function estimateCustomerServiceTravel(legs) {
   return data.legs
 }
 
+// Driving miles and distance bands for nearby candidates (Route Matrix on the server,
+// without traffic). Candidates Google could not measure come back without miles.
+export async function estimateCustomerServiceNearby({ requestId, candidateIds }) {
+  const client = await requireSupabase()
+  const { data, error } = await client.functions.invoke('customer-service-travel-estimates', {
+    body: { nearby: { requestId, candidateIds } },
+  })
+  if (error || data?.error || !Array.isArray(data?.candidates)) {
+    throw new Error(await functionErrorMessage(error, data, 'Driving miles could not be checked.'), { cause: error })
+  }
+  return data.candidates
+}
+
 export async function cancelCustomerServiceAppointment({ appointmentId, expectedUpdatedAt, reason }) {
   const client = await requireSupabase()
   const { data, error } = await client.rpc('cancel_customer_service_appointment', {

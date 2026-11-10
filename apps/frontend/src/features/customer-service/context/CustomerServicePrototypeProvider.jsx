@@ -7,7 +7,7 @@ import { requireSupabase } from '../../../services/api.js'
 import { createCustomerServiceEmailAutomationMonitor } from '../services/customerServiceEmailAutomation.js'
 import { listTechnicians } from '../services/techniciansRepository.js'
 import {
-  cancelCustomerServiceAppointment, estimateCustomerServiceTravel, loadCustomerServiceSchedule,
+  cancelCustomerServiceAppointment, estimateCustomerServiceNearby, estimateCustomerServiceTravel, loadCustomerServiceSchedule,
   registerCustomerServiceAppointment,
 } from '../services/customerServiceAppointmentsRepository.js'
 import {
@@ -105,6 +105,7 @@ export default function CustomerServicePrototypeProvider({ children }) {
       travelTrafficMode: schedule.travelTrafficMode,
       distanceBands: schedule.distanceBands,
       estimateTravel: estimateCustomerServiceTravel,
+      estimateNearby: estimateCustomerServiceNearby,
       scheduleError,
       registerAppointment: async (payload) => afterScheduleChange(await registerCustomerServiceAppointment(payload)),
       cancelAppointment: async (payload) => afterScheduleChange(await cancelCustomerServiceAppointment(payload)),

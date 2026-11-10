@@ -66,6 +66,15 @@ export function formatLongDate(value) {
   })
 }
 
+// '2026-11-12' reads as 'Thu, Nov 12' in any browser time zone.
+export function formatWeekdayDate(value) {
+  if (!value) return ''
+
+  return new Date(`${value}T12:00:00Z`).toLocaleDateString('en-US', {
+    weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC',
+  })
+}
+
 // '09:00' reads as '9:00 AM'. The date only exists to carry the clock.
 export function formatTime(value) {
   if (!value) return ''

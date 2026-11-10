@@ -8,6 +8,10 @@
 
 const EARTH_RADIUS_MILES = 3958.8
 
+// Candidates whose driving miles are measured at once (two Route Matrix calls of up
+// to this many elements each).
+export const maxNearbyDrivingCandidates = 25
+
 const coordinate = (value) => {
   if (value === null || value === undefined || value === '') return null
   const number = Number(value)

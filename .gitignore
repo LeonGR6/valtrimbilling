@@ -15,7 +15,6 @@ coverage
 .env
 .env.*
 !.env.example
-/docs/pass.txt
 
 # Local Claude Code files (skills, preview config — not committed)
 .claude/
@@ -24,8 +23,8 @@ CLAUDE.md
 # Local Codex agent files
 .agents/
 
-# Local architecture notes (not committed)
-docs/architecture.md
+# Local docs and plans (kept on this machine only, not committed)
+/docs/
 
 # Editor directories and files
 .vscode/*

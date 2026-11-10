@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Alert, Box, Button, Chip, Paper, Stack, Typography } from '@mui/material'
+import { Alert, Box, Button, Chip, Divider, Paper, Stack, Typography } from '@mui/material'
 import {
   getProposalNearbyVisits, isWithinNearbyRange, nearbyIdsToMeasure, nearbyVisitDistance,
 } from '../utils/proposalNearbyVisits.js'
@@ -7,6 +7,7 @@ import { requestWorkflowStages } from '../utils/requestInbox.js'
 import { formatLongDate, formatTime, formatWeekdayDate as formatVisitDate } from '../utils/dates.js'
 import { proposalSuggestionSearchBusinessDays } from '../utils/proposalDraft.js'
 import { useCustomerServicePrototype } from '../context/customerServicePrototypeContext.js'
+import ProposalNearbySlots from './ProposalNearbySlots.jsx'
 
 const bandColors = { GREEN: 'proximity.near', YELLOW: 'proximity.medium', ORANGE: 'proximity.far', RED: 'proximity.veryFar' }
 // One shared empty map keeps memoized suggestions stable while driving miles load.
@@ -57,7 +58,7 @@ function useNearbyDriving(requestId, ids) {
 
 // Read-only list. Colors come from driving miles (Google Route Matrix, no traffic);
 // "≈" marks straight-line miles while they are being checked or when Google fails.
-export default function ProposalNearbyVisits({ request, requests, distanceBands }) {
+export default function ProposalNearbyVisits({ request, requests, technicians, distanceBands, onUseSlot }) {
   const [showFarther, setShowFarther] = useState(false)
   const { hasCoordinates, through, candidates } = useMemo(() => getProposalNearbyVisits({ request, requests }), [request, requests])
   const driving = useNearbyDriving(request.id, hasCoordinates && distanceBands ? nearbyIdsToMeasure(candidates, distanceBands) : [])
@@ -122,6 +123,13 @@ export default function ProposalNearbyVisits({ request, requests, distanceBands 
                 : `Show ${farther.length} more ${limit === null ? 'without coordinates' : `over ${limit} mi or without coordinates`}`}
             </Button>
           )}
+        </>
+      )}
+      {hasCoordinates && (
+        <>
+          <Divider />
+          <ProposalNearbySlots request={request} requests={requests} technicians={technicians} candidates={candidates}
+            drivingById={driving.byId} drivingLoading={driving.loading} onUseSlot={onUseSlot} />
         </>
       )}
     </Stack>

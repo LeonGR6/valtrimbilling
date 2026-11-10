@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   Alert, Box, Button, Chip, Dialog, DialogActions, DialogContent, DialogTitle, FormControl, FormControlLabel,
   FormHelperText, InputLabel, MenuItem, Paper, Radio, RadioGroup, Select, Stack, TextField, Typography,
@@ -13,14 +13,10 @@ import {
   applyTravelEstimates, mergeTravelEstimateResults, travelEstimateMessages, travelLegHelperText,
   travelLegSource, travelLegsToEstimate,
 } from '../utils/travelEstimates.js'
-import { getCustomerServiceClock } from '../utils/dates.js'
+import { formatWeekdayDate as formatSuggestionDate, getCustomerServiceClock } from '../utils/dates.js'
 import { useCustomerServicePrototype } from '../context/customerServicePrototypeContext.js'
 import ProposalDayAgenda from './ProposalDayAgenda.jsx'
 import ProposalNearbyVisits from './ProposalNearbyVisits.jsx'
-
-const formatSuggestionDate = (date) => new Date(`${date}T12:00:00Z`).toLocaleDateString('en-US', {
-  weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC',
-})
 
 // The form column sits next to the agenda, so it can be narrow even on a wide screen.
 // Its rows wrap by the space they get instead of switching at a screen breakpoint.
@@ -91,7 +87,7 @@ export default function ProposalDraftPlanner({ request, requests, technicians: r
   const [saveError, setSaveError] = useState('')
   const [registration, setRegistration] = useState(null)
   const [suggestionResult, setSuggestionResult] = useState(null)
-  const technicians = getPrototypePlanningTechnicians(roster)
+  const technicians = useMemo(() => getPrototypePlanningTechnicians(roster), [roster])
   const validation = validatePrototypeProposalDraft({ requestId: request.id, requests, technicians, values })
   const errorFor = (field) => validation.errors.find((error) => error.field === field)?.message
   const savedIsStale = savedDraft && savedDraft.requestSignature !== proposalPlanningSignature(request)
@@ -127,6 +123,15 @@ export default function ProposalDraftPlanner({ request, requests, technicians: r
       }))
     } catch (error) {
       setTravelEstimate((current) => ({ ...current, loading: false, error: error.message }))
+    }
+  }
+  // A nearby slot fills technicians, day, window and start, plus the Google minutes
+  // already checked for its legs; the coordinator can still change everything.
+  const applyNearbySlot = (slot, results = []) => {
+    setSaveError('')
+    setValues((current) => applyTravelEstimates({ ...current, ...slot }, results, routesMinutes))
+    if (results.length) {
+      setTravelEstimate((current) => ({ ...current, error: '', results: [], ...mergeTravelEstimateResults(current, results) }))
     }
   }
   const canRegister = validation.isValid && !validation.travelPending && !validation.pastDue
@@ -179,7 +184,8 @@ export default function ProposalDraftPlanner({ request, requests, technicians: r
           {!savedDraft && hasUnsavedChanges && <Chip label="Unsaved draft changes" color="warning" variant="outlined" />}
           {savedDraft && <Chip label={savedIsStale || savedNeedsRevalidation ? 'Saved draft needs review' : hasUnsavedChanges ? 'Unsaved draft changes' : 'Draft saved · not sent'} color={savedIsStale || savedNeedsRevalidation ? 'warning' : hasUnsavedChanges ? 'default' : 'success'} variant="outlined" />}
         </Stack>
-        <ProposalNearbyVisits request={request} requests={requests} distanceBands={distanceBands} />
+        <ProposalNearbyVisits request={request} requests={requests} technicians={technicians}
+          distanceBands={distanceBands} onUseSlot={applyNearbySlot} />
         <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'minmax(0, 1fr) minmax(0, 1fr)' }, gap: 2.5 }}>
           <Stack spacing={2}>
             <FormControl fullWidth error={values.technicianIds.length > 0 && Boolean(errorFor('technicianIds'))}>

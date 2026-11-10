@@ -200,7 +200,7 @@ export function createPrototypeProposalDraft({ requestId, values, requests, tech
 
 // Business days searched when the request is already overdue (no on-time day left).
 export const proposalSuggestionSearchBusinessDays = 10
-const suggestionStepMinutes = 15
+export const proposalSuggestionStepMinutes = 15
 
 // Proposes viable times for review (approved rule: suggest, never apply). It only reads
 // the schedule and returns plain values; filling the form is the user's choice and
@@ -228,7 +228,7 @@ export function suggestProposalTimes({ requestId, values, requests, technicians 
     searchedThrough = date
 
     for (const window of serviceCustomerWindowOptions) {
-      for (let start = minutes(window.start); start < minutes(window.end); start += suggestionStepMinutes) {
+      for (let start = minutes(window.start); start < minutes(window.end); start += proposalSuggestionStepMinutes) {
         const internalStart = timeFromMinutes(start)
         if (date === values.date && window.start === values.windowStart && internalStart === values.internalStart) continue
         const candidate = { ...values, date, windowStart: window.start, internalStart }

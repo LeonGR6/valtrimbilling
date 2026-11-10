@@ -4,7 +4,10 @@ import {
   getChangeOrder,
   getNextChangeOrderNumber,
   listChangeOrders,
+  listChangeOrderLines,
   listLotCalendarEvents,
+  listBillableChangeOrders,
+  listPackageCharges,
   listRecentChangeOrders,
 } from '../services/changeOrderRepository.js'
 import { listSchedulingEmails } from '../services/changeOrderEmailRepository.js'
@@ -42,6 +45,22 @@ function useLoaded(load) {
   const refresh = useCallback(() => setAttempt((current) => current + 1), [])
 
   return { ...state, reload, refresh }
+}
+
+/** Every approved or cancelled Extra / CO, newest first, with its invoice Package. */
+export function useBillableChangeOrders() {
+  const { data, ...rest } = useLoaded(listBillableChangeOrders)
+  return { orders: data ?? [], ...rest }
+}
+
+/** The lines of one Extra / CO, read when `changeOrderId` is given: `{ lines, loading, error }`. */
+export function useChangeOrderLines(changeOrderId) {
+  const load = useCallback(
+    () => (changeOrderId ? listChangeOrderLines(changeOrderId) : Promise.resolve([])),
+    [changeOrderId],
+  )
+  const { data, loading, error } = useLoaded(load)
+  return { lines: data ?? [], loading, error }
 }
 
 /** Every Extra / CO, newest first. */
@@ -121,4 +140,37 @@ export function useLotCalendarEvents(jobId) {
     loading: Boolean(wanted) && !ready,
     error: ready ? state.error : '',
   }
+}
+
+const NO_CHARGES = []
+
+/**
+ * What a Package of the Job billing `lotIds` would charge to the "Specific Plan Types" Extras / COs:
+ * `{ rows, loading, error }`. It is read again when the Lots change; what was shown stays until the new
+ * answer arrives, and an answer for Lots no longer chosen is dropped.
+ */
+export function usePackageCharges(jobId, lotIds) {
+  const key = jobId && lotIds.length > 0 ? `${jobId}:${lotIds.join(',')}` : ''
+  const [state, setState] = useState({ key: '', rows: NO_CHARGES, error: '' })
+
+  useEffect(() => {
+    if (!key) return undefined
+    let cancelled = false
+    const [job, list] = key.split(':')
+
+    listPackageCharges(job, list.split(','))
+      .then((rows) => {
+        if (!cancelled) setState({ key, rows, error: '' })
+      })
+      .catch((error) => {
+        if (!cancelled) setState({ key, rows: NO_CHARGES, error: error.message })
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [key])
+
+  if (!key) return { rows: NO_CHARGES, loading: false, error: '' }
+  return { rows: state.rows, loading: state.key !== key, error: state.key === key ? state.error : '' }
 }

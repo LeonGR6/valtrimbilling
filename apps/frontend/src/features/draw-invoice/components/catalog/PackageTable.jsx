@@ -342,6 +342,8 @@ export default function PackageTable({
                     <Typography variant="body2" color="text.secondary">
                       Job #{job.code} · {record.packageType === 'PRICE_ADJUSTMENT'
                         ? 'Price adjustment'
+                        : record.packageType === 'CHANGE_ORDER'
+                        ? `Extra / ${record.changeOrder?.number ?? 'CO'}`
                         : record.packageType === 'OPTIONS'
                         ? (record.phaseIds?.length ?? 0) === 1
                           ? formatPhaseBuilding(phase.name, phase.building, { separator: ' / ' })
@@ -391,6 +393,15 @@ export default function PackageTable({
                         sx={{ mt: 0.75, fontWeight: 750 }}
                       />
                     )}
+                    {record.packageType === 'CHANGE_ORDER' && (
+                      <Chip
+                        size="small"
+                        color="warning"
+                        variant="outlined"
+                        label="Extra / CO"
+                        sx={{ mt: 0.75, fontWeight: 750 }}
+                      />
+                    )}
                     {record.packageType === 'DRAW' && summary.phaseSummaries.map((scope) => (
                       <Typography
                         key={scope.phaseId}
@@ -429,7 +440,7 @@ export default function PackageTable({
                   <TableCell>
                     {record.packageType === 'RETENTION_RELEASE'
                       ? `Available ${formatLongDate(record.retentionRelease?.availableDate)}`
-                      : record.packageType === 'PRICE_ADJUSTMENT' || record.packageType === 'OPTIONS'
+                      : ['PRICE_ADJUSTMENT', 'OPTIONS', 'CHANGE_ORDER'].includes(record.packageType)
                         ? `Dated ${formatLongDate(record.packageDate)}`
                         : formatBillingPeriod(record)}
                   </TableCell>
@@ -437,6 +448,8 @@ export default function PackageTable({
                     <Typography fontWeight={750}>
                       {record.packageType === 'PRICE_ADJUSTMENT'
                         ? `${record.priceAdjustment?.lineCount ?? 0} ${record.priceAdjustment?.lineCount === 1 ? 'line' : 'lines'}`
+                        : record.packageType === 'CHANGE_ORDER'
+                        ? `${record.changeOrder?.lineCount ?? 0} ${record.changeOrder?.lineCount === 1 ? 'line' : 'lines'}`
                         : record.packageType === 'OPTIONS'
                         ? `${record.persistedOptionLines.length} ${record.persistedOptionLines.length === 1 ? 'option' : 'options'}`
                         : record.packageType === 'RETENTION_RELEASE'
@@ -451,6 +464,9 @@ export default function PackageTable({
                     <Typography variant="caption" color="text.secondary">
                       {record.packageType === 'PRICE_ADJUSTMENT'
                         ? `From ${record.priceAdjustment?.sourcePackageCount ?? 0} ${record.priceAdjustment?.sourcePackageCount === 1 ? 'Package' : 'Packages'}`
+                        : record.packageType === 'CHANGE_ORDER'
+                        ? [record.changeOrder?.number, record.changeOrder?.poCoNumber && `PO / CO # ${record.changeOrder.poCoNumber}`]
+                          .filter(Boolean).join(' · ')
                         : record.packageType === 'OPTIONS'
                         ? `Lots ${formatLotRange(record.persistedOptionLines.map((option) => option.lotNumber))}`
                         : record.packageType === 'RETENTION_RELEASE'

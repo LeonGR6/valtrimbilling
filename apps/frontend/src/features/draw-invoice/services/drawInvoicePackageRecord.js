@@ -16,7 +16,19 @@ export const DRAW_PACKAGE_STATUS_LABELS = {
 }
 
 // Every Package is a Draw Package unless it is one of these.
-const PACKAGE_TYPES_OTHER_THAN_DRAW = ['RETENTION_RELEASE', 'PRICE_ADJUSTMENT', 'OPTIONS']
+const PACKAGE_TYPES_OTHER_THAN_DRAW = ['RETENTION_RELEASE', 'PRICE_ADJUSTMENT', 'OPTIONS', 'CHANGE_ORDER']
+
+/** The Extra / Change Order a CHANGE_ORDER Package invoices, from a row of `change_order_overview`. */
+export function toInvoicedChangeOrder(row) {
+  return {
+    id: row.id,
+    number: row.change_order_number,
+    poCoNumber: row.po_co_number ?? '',
+    lineCount: Number(row.line_count ?? 0),
+    totalAmount: toNumber(row.total_amount),
+    sourceNumber: row.source_change_order_number ?? '',
+  }
+}
 
 function toNumber(value) {
   const number = Number(value)
@@ -312,6 +324,7 @@ export function toDrawInvoicePackage(
       : 'DRAW',
     builderId: packageRow.builder_id,
     jobId: packageRow.job_id,
+    changeOrderId: packageRow.change_order_id ?? null,
     phaseId: primaryPhaseId,
     phaseIds,
     setupVersionId: packageRow.setup_version_id,
@@ -774,7 +787,7 @@ export function canManageDraftDrawPackage(record) {
  */
 export function canDeleteVoidedQuickbooksPackage(record) {
   return record != null
-    && ['DRAW', 'PRICE_ADJUSTMENT', 'OPTIONS'].includes(record.packageType)
+    && ['DRAW', 'PRICE_ADJUSTMENT', 'OPTIONS', 'CHANGE_ORDER'].includes(record.packageType)
     && record.status === 'DRAFT'
     && record.quickbooksStatus === 'VOIDED'
     && record.persistedInvoice?.status === 'DRAFT'
@@ -801,6 +814,9 @@ export function draftLockReason(record) {
   }
   if (record.packageType === 'OPTIONS') {
     return 'An Options Package cannot be edited. Cancel it from the Packages list to bill its Options again.'
+  }
+  if (record.packageType === 'CHANGE_ORDER') {
+    return 'The Package of an Extra / CO cannot be edited. Cancel it from the Packages list to invoice the Extra / CO again.'
   }
   if (record.submissionStatus !== 'NOT_SUBMITTED' || record.submittedAt) {
     return 'This Package was already sent to the Builder, so its cells are locked.'

@@ -164,6 +164,8 @@ const COVERAGE_MODES = ['lots', 'phase', 'job', 'plans']
  * The coverage to open a saved Extra / CO with. The lines are what was saved, so the way the Lots were
  * chosen is only kept when it still reaches exactly those Lots (a Lot added to the Job since would
  * otherwise slip in as a new line); if not, the saved Lots are shown ticked one by one.
+ * Specific Plan Types is always kept: the Plans are the point of it (their Scope and Amount), and a Lot
+ * of those Plans added since does belong on it.
  * `saved` is the coverage as stored ({ mode, lotIds, recordIds, planIds } with lists, or null) and
  * `lotIds` the Lots of the saved lines.
  */
@@ -183,6 +185,8 @@ export function restoreCoverage(job, saved, lotIds) {
     recordIds: new Set((saved.recordIds ?? []).map(String)),
     planIds: new Set((saved.planIds ?? []).map(String)),
   }
+  if (saved.mode === 'plans') return asSaved
+
   const reached = coveredLots(job, asSaved).map((row) => row.lotId)
   const sameLots = reached.length === savedLots.size && reached.every((id) => savedLots.has(id))
 

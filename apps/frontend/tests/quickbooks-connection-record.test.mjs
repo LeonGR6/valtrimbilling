@@ -532,6 +532,7 @@ test('a Price Adjustment is sent, shown and voided in QuickBooks like a Draw; a 
 
   assert.equal(isInvoicedThroughQuickbooks(adjustment), true)
   assert.equal(isInvoicedThroughQuickbooks(release), false)
+  assert.equal(isInvoicedThroughQuickbooks({ packageType: 'CHANGE_ORDER' }), true)
   assert.equal(isInvoicedThroughQuickbooks(draftPackage), true)
   // A record with no type is a Draw, as every record before the types existed.
   assert.equal(isInvoicedThroughQuickbooks({ status: 'DRAFT' }), true)

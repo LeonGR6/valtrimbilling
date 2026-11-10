@@ -1,5 +1,6 @@
-// Maps the database rows of a Draw Package, of a Price Adjustment Package or of a Package of Options
-// only to the normalised charges consumed by `buildQuickbooksInvoicePayload`.
+// Maps the database rows of a Draw Package, of a Price Adjustment Package, of a Package of Options
+// only or of the Package that invoices an Extra / Change Order to the normalised charges consumed by
+// `buildQuickbooksInvoicePayload`.
 //
 // Pure: callers fetch the rows (package_draws, package_hardware_lines, package_options,
 // price_adjustment_lines, invoice) and pass them in. PostgREST returns `numeric` columns as numbers, but SQL
@@ -10,6 +11,7 @@ import {
   type PackageCharge,
   QuickbooksInvoiceError,
 } from './quickbooksInvoice.ts'
+import { changeOrderInvoiceLines, type ChangeOrderLineRow } from './quickbooksChangeOrderLines.ts'
 
 type Numeric = number | string
 
@@ -93,6 +95,9 @@ export interface PackageInvoiceSource {
    * Draw Package carries next to its own lines.
    */
   adjustmentLines?: PackageAdjustmentLineRow[]
+  /** The Extra / Change Order a CHANGE_ORDER Package invoices: its PO / CO # and its lines. */
+  changeOrder?: { poCoNumber: string | null } | null
+  changeOrderLines?: ChangeOrderLineRow[]
   invoice: PackageInvoiceRow | null
 }
 
@@ -197,6 +202,7 @@ export function mapPackageToCharges(source: PackageInvoiceSource): PackageInvoic
     header.package_type !== 'DRAW'
     && header.package_type !== 'PRICE_ADJUSTMENT'
     && header.package_type !== 'OPTIONS'
+    && header.package_type !== 'CHANGE_ORDER'
   ) {
     throw new QuickbooksInvoiceError(
       'UNSUPPORTED_PACKAGE',
@@ -278,6 +284,36 @@ export function mapPackageToCharges(source: PackageInvoiceSource): PackageInvoic
       charges,
       retentionAmount: retentionCents / 100,
       wrapAmount: wrapCents / 100,
+      expectedNetAmount: cents(invoice.net_amount, 'net_amount') / 100,
+    }
+  }
+
+  // An Extra / Change Order: its lines as the work they are, with no Retention and no WRAP.
+  if (header.package_type === 'CHANGE_ORDER') {
+    const lines = source.changeOrderLines ?? []
+    if (lines.length === 0) {
+      throw new QuickbooksInvoiceError('INVALID_INPUT', 'The Change Order has no lines to invoice.')
+    }
+    if (draws.length > 0 || hardwareLines.length > 0 || (source.optionLines ?? []).length > 0 || adjustmentLines.length > 0) {
+      throw new QuickbooksInvoiceError(
+        'INVALID_INPUT',
+        'The Package of a Change Order cannot have Draw, Hardware, Options or price difference lines.',
+      )
+    }
+
+    return {
+      invoiceLineFormat: header.invoice_line_format,
+      charges: changeOrderInvoiceLines(lines, { poCoNumber: source.changeOrder?.poCoNumber ?? null })
+        .map((line, index) => ({
+          phaseCode: '',
+          lotNumber: '',
+          kind: 'CHANGE_ORDER' as const,
+          description: line.description,
+          sequence: index,
+          amount: line.amount,
+        })),
+      retentionAmount: 0,
+      wrapAmount: 0,
       expectedNetAmount: cents(invoice.net_amount, 'net_amount') / 100,
     }
   }

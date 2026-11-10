@@ -15,6 +15,8 @@ import {
   Typography,
 } from '@mui/material'
 import AccountBalanceWalletRoundedIcon from '@mui/icons-material/AccountBalanceWalletRounded'
+import PostAddRoundedIcon from '@mui/icons-material/PostAddRounded'
+import { CHANGE_ORDERS_ENABLED } from '../../../../config/appConfig.js'
 import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded'
 import FolderOpenRoundedIcon from '@mui/icons-material/FolderOpenRounded'
 import ReceiptLongRoundedIcon from '@mui/icons-material/ReceiptLongRounded'
@@ -162,6 +164,9 @@ export function PackageCatalogSkeleton() {
           <Tab value="packages" disabled icon={<ReceiptLongRoundedIcon />} iconPosition="start" label="Packages" />
           <Tab value="documents" disabled icon={<FolderOpenRoundedIcon />} iconPosition="start" label="Documents" />
           <Tab value="ar" disabled icon={<AccountBalanceWalletRoundedIcon />} iconPosition="start" label="A/R" />
+          {CHANGE_ORDERS_ENABLED && (
+            <Tab value="co" disabled icon={<PostAddRoundedIcon />} iconPosition="start" label="Change Orders" />
+          )}
         </Tabs>
       </Box>
 

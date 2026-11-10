@@ -8,7 +8,9 @@
 // net amount. A Price Adjustment Package has PRICE_ADJUSTMENT lines instead: the
 // gross price difference of the Package it comes from, which may be negative (a
 // credit that the other lines of the same invoice outweigh). A Draw Package that carries price
-// differences adds one PRICE_CHANGE line for each, named after its Phase, Lot and Draw.
+// differences adds one PRICE_CHANGE line for each, named after its Phase, Lot and Draw. A Package that
+// invoices an Extra / Change Order has CHANGE_ORDER lines, already described by
+// quickbooksChangeOrderLines.ts, kept in the order they come.
 
 import type { InvoiceCustomField } from './quickbooksCustomFields.ts'
 import {
@@ -26,6 +28,7 @@ export type PackageChargeKind =
   | 'UTILITY'
   | 'PRICE_ADJUSTMENT'
   | 'PRICE_CHANGE'
+  | 'CHANGE_ORDER'
 
 export interface PackageCharge {
   phaseCode: string
@@ -39,8 +42,12 @@ export interface PackageCharge {
   scopeLabel?: string
   /** A PRICE_CHANGE line names its Lot as "LOT 2" unless this says otherwise (a Utility row). */
   lotLabel?: string
-  /** Gross amount in dollars. Negative only for a credit of a price difference. */
+  /** Gross amount in dollars. Negative only for a credit (a price difference, a credit of a Change Order). */
   amount: number
+  /** A CHANGE_ORDER line comes described; it is used as it is. */
+  description?: string
+  /** The place of a CHANGE_ORDER line among the others. */
+  sequence?: number
 }
 
 export interface QuickbooksInvoiceInput {
@@ -127,6 +134,7 @@ const KIND_RANK: Record<PackageChargeKind, number> = {
   UTILITY: 3,
   PRICE_ADJUSTMENT: 4,
   PRICE_CHANGE: 5,
+  CHANGE_ORDER: 6,
 }
 
 const naturalCompare = (left: string, right: string) =>
@@ -219,6 +227,8 @@ interface LineGroup {
   lotLabel: string | null
   lots: string[]
   cents: number
+  description: string | null
+  sequence: number
 }
 
 function groupCharges(charges: PackageCharge[], format: InvoiceLineFormat) {
@@ -227,6 +237,25 @@ function groupCharges(charges: PackageCharge[], format: InvoiceLineFormat) {
   for (const charge of charges) {
     const cents = toCents(charge.amount, `Lot ${charge.lotNumber} amount`)
     if (cents === 0) continue
+
+    // A line of a Change Order comes described and stays on its own.
+    if (charge.kind === 'CHANGE_ORDER') {
+      const description = requireText(charge.description, 'description')
+      const sequence = charge.sequence ?? groups.size
+      groups.set(`CHANGE_ORDER|${sequence}`, {
+        phaseCode: '',
+        building: null,
+        kind: 'CHANGE_ORDER',
+        drawNumber: 0,
+        scope: '',
+        lotLabel: null,
+        lots: [],
+        cents,
+        description,
+        sequence,
+      })
+      continue
+    }
 
     // Utility rows are not lots in a building: they always get a line of their own.
     // A Phase without a building has nothing to split by, so its lots are grouped by
@@ -251,6 +280,8 @@ function groupCharges(charges: PackageCharge[], format: InvoiceLineFormat) {
       lotLabel: charge.lotLabel?.trim() || null,
       lots: [],
       cents: 0,
+      description: null,
+      sequence: 0,
     }
     group.lots.push(charge.lotNumber)
     group.cents += cents
@@ -264,6 +295,7 @@ function groupCharges(charges: PackageCharge[], format: InvoiceLineFormat) {
       || Number(left.kind === 'UTILITY') - Number(right.kind === 'UTILITY')
       || naturalCompare(left.building ?? '', right.building ?? '')
       || KIND_RANK[left.kind] - KIND_RANK[right.kind]
+      || (left.kind === 'CHANGE_ORDER' ? left.sequence - right.sequence : 0)
       // The rows of price differences follow the Lots, each with its own line.
       || (left.kind === 'PRICE_CHANGE' ? naturalCompare(left.lots[0], right.lots[0]) : 0)
       || left.drawNumber - right.drawNumber
@@ -272,6 +304,7 @@ function groupCharges(charges: PackageCharge[], format: InvoiceLineFormat) {
 }
 
 function describe(group: LineGroup) {
+  if (group.kind === 'CHANGE_ORDER' && group.description) return group.description
   // One line for each difference, in a single row: "PRICE ADJUSTMENT PHASE MODELS LOT 2 · DRAW 1".
   if (group.kind === 'PRICE_CHANGE') {
     const building = group.building && !group.lotLabel ? `BUILDING ${group.building.toUpperCase()} ` : ''

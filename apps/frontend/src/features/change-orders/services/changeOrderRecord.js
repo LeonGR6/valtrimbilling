@@ -5,7 +5,8 @@
 
 import { PLANNING_ROLES, canWork } from '../../auth/authorization/roleAccess.js'
 import { OWN_EVENT, allChangeOrderStatuses, emptyChangeOrder, maxPlaceLength } from '../data/changeOrders.js'
-import { restoreCoverage } from '../utils/coverage.js'
+import { listCoverageLots, restoreCoverage } from '../utils/coverage.js'
+import { parseAmount } from '../utils/pricing.js'
 
 export const CHANGE_ORDER_REQUESTED_BY_MAX = 100
 export const CHANGE_ORDER_INTERNAL_NUMBER_MAX = 60
@@ -107,6 +108,22 @@ export function toLinesPayload({ lines, places, links = {} }) {
 }
 
 /**
+ * The Scope and Amount of each Plan chosen, when the Extra / CO covers Specific Plan Types; null otherwise
+ * (the database only takes them with that coverage, and needs one for each Plan chosen).
+ */
+export function toPlanRulesPayload(values) {
+  if (values.coverageMode !== 'plans') return null
+  return [...values.planIds].map((planId) => {
+    const rule = values.planRules?.[planId] ?? {}
+    return {
+      plan_id: Number(planId),
+      scope_of_work: String(rule.scope ?? '').trim(),
+      amount: parseAmount(rule.amount ?? ''),
+    }
+  })
+}
+
+/**
  * The PO / CO # as it is kept: every kind of space (the non-breaking one that comes with a paste from a
  * portal, a tab, a line break) becomes one plain space and the ends are trimmed. Nothing else changes: the
  * leading zeros, the "CO#" and the dashes and slashes are part of the number. The database cleans it the same way.
@@ -131,6 +148,7 @@ export function toCreateChangeOrderRpc(values, { lines, places, links, status })
     p_coverage: toCoverage(values),
     p_status: status,
     p_po_co_number: cleanPoCoNumber(values.poCoNumber) || null,
+    p_plan_rules: toPlanRulesPayload(values),
   }
 }
 
@@ -147,6 +165,7 @@ export function toUpdateChangeOrderRpc(changeOrderId, values, { lines, places, l
     p_needed_by_date: values.neededByDate || null,
     p_coverage: toCoverage(values),
     p_po_co_number: cleanPoCoNumber(values.poCoNumber) || null,
+    p_plan_rules: toPlanRulesPayload(values),
   }
 }
 
@@ -223,7 +242,9 @@ const amountText = (amount) => Number(amount).toFixed(2)
  * The form values to edit a saved Extra / CO (`order` from `toChangeOrderDetail`, `job` the Job it is
  * for, from the Jobs of the app). The Scope of Work and Amount most Lots share become the defaults and
  * the Lots that differ keep their own, as if it had been typed that way; the lines without a Lot come
- * back as they are.
+ * back as they are. With Specific Plan Types each Plan gets the Scope and Amount saved for it (or, when
+ * none was saved, the ones most of its Lots share) and a Lot keeps its own only where it differs from
+ * its Plan's.
  */
 export function toChangeOrderFormValues(order, { job = null } = {}) {
   const lotLines = order.lines.filter((line) => !line.isPlace)
@@ -231,15 +252,35 @@ export function toChangeOrderFormValues(order, { job = null } = {}) {
   const defaultScope = mostCommon(lotLines.map((line) => line.scope))
   const defaultAmount = mostCommon(lotLines.map((line) => amountText(line.amount)))
 
-  const lineOverrides = {}
-  for (const line of lotLines) {
-    const own = {}
-    if (line.scope !== defaultScope) own.scope = line.scope
-    if (amountText(line.amount) !== defaultAmount) own.amount = amountText(line.amount)
-    if (Object.keys(own).length > 0) lineOverrides[String(line.lotId)] = own
+  const coverage = restoreCoverage(job, order.coverage, lotLines.map((line) => line.lotId))
+  const byPlan = coverage.mode === 'plans'
+
+  // The Plan of each Lot, as the Job has it now (the Plans chosen reach the Lots by their Plan today).
+  const planOfLot = new Map(listCoverageLots(job).map((row) => [row.lotId, row.planId]))
+  const planRules = {}
+  if (byPlan) {
+    for (const planId of coverage.planIds) {
+      const saved = (order.planRules ?? []).find((rule) => String(rule.planId) === String(planId))
+      const ofPlan = lotLines.filter((line) => planOfLot.get(String(line.lotId)) === String(planId))
+      planRules[String(planId)] = saved
+        ? { scope: saved.scope, amount: amountText(saved.amount) }
+        : {
+          scope: mostCommon(ofPlan.map((line) => line.scope)),
+          amount: mostCommon(ofPlan.map((line) => amountText(line.amount))),
+        }
+    }
   }
 
-  const coverage = restoreCoverage(job, order.coverage, lotLines.map((line) => line.lotId))
+  const lineOverrides = {}
+  for (const line of lotLines) {
+    const base = byPlan
+      ? planRules[planOfLot.get(String(line.lotId))] ?? { scope: '', amount: '' }
+      : { scope: defaultScope, amount: defaultAmount }
+    const own = {}
+    if (line.scope !== base.scope) own.scope = line.scope
+    if (amountText(line.amount) !== base.amount) own.amount = amountText(line.amount)
+    if (Object.keys(own).length > 0) lineOverrides[String(line.lotId)] = own
+  }
 
   // The Calendar event the Lots were charged with: the one most of them share, and each saved tie.
   const savedLinks = {}
@@ -264,6 +305,7 @@ export function toChangeOrderFormValues(order, { job = null } = {}) {
     defaultScope,
     defaultAmount,
     lineOverrides,
+    planRules,
     placeLines: placeLines.map((line, index) => ({
       id: index + 1,
       location: line.location,
@@ -333,6 +375,17 @@ export function changeOrderProblems(values, { lines = [], places = [] } = {}) {
     if (parts.length > 0) add('lines', `${label}: ${parts.join(', ')}.`)
   }
   lineProblems('Lots', lines)
+
+  // With Specific Plan Types, every Plan chosen needs its Scope and Amount: they also charge the Lots of
+  // that Plan that come later.
+  if (values.coverageMode === 'plans') {
+    const rules = [...values.planIds].map((planId) => {
+      const rule = values.planRules?.[planId] ?? {}
+      return { scope: String(rule.scope ?? ''), amount: parseAmount(rule.amount ?? '') }
+    })
+    lineProblems('Scope and Amount by Plan', rules)
+  }
+
   lineProblems('Lines without a lot', places, [
     [(place) => !place.location.trim(), 'without a place'],
     [(place) => place.location.trim().length > maxPlaceLength,
@@ -385,6 +438,27 @@ export function toChangeOrderSummary(row) {
     updatedAt: row.updated_at,
     lineCount: number(row.line_count),
     totalAmount: number(row.total_amount),
+    // A Change Order made from a Package: the "Specific Plan Types" one it charges for, and the Package.
+    sourceChangeOrderId: row.source_change_order_id ?? null,
+    sourceNumber: row.source_change_order_number ?? '',
+    sourcePackageId: row.source_package_id ?? null,
+    sourcePackageNumber: row.source_package_number ?? '',
+    fromPackage: row.source_package_id !== null && row.source_package_id !== undefined,
+    // The Package that invoices it, while that Package stands (not voided).
+    invoicePackageId: row.invoice_package_id ?? null,
+    invoicePackageNumber: row.invoice_package_number ?? '',
+    invoiceWorkflowStatus: row.invoice_workflow_status ?? '',
+  }
+}
+
+/** The Scope and Amount of one Plan of a "Specific Plan Types" Extra / CO. */
+export function toChangeOrderPlanRule(row) {
+  return {
+    planId: row.plan_id,
+    plan: row.plan?.code ?? '',
+    planName: row.plan?.name ?? '',
+    scope: row.scope_of_work,
+    amount: number(row.amount),
   }
 }
 
@@ -433,13 +507,19 @@ export function toChangeOrderHistoryEntry(row) {
   }
 }
 
-/** The header, its dates, its lines and its history as one Extra / CO, lines in the order saved. */
-export function toChangeOrderDetail({ summary, dates, lines, history }) {
+/**
+ * The header, its dates, its lines and its history as one Extra / CO, lines in the order saved. A
+ * "Specific Plan Types" one also has its Scope and Amount by Plan (`planRules`, by Plan code) and the
+ * Extras / COs made from Packages for the Lots of those Plans billed later (`packageOrders`, oldest first).
+ */
+export function toChangeOrderDetail({ summary, dates, lines, history, planRules = [], packageOrders = [] }) {
   return {
     ...summary,
     ...dates,
     lines: [...lines].sort((left, right) => left.lineNumber - right.lineNumber),
     history: [...history].sort((left, right) => left.id - right.id),
+    planRules: [...planRules].sort((left, right) => left.plan.localeCompare(right.plan, 'en', { numeric: true })),
+    packageOrders: [...packageOrders].sort((left, right) => left.id - right.id),
   }
 }
 

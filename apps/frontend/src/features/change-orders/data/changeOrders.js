@@ -41,6 +41,10 @@ export const emptyChangeOrder = {
   defaultScope: '',
   defaultAmount: '',
   lineOverrides: {},
+  // With Specific Plan Types, each Plan has its own Scope and Amount instead of the defaults above:
+  // { [planId]: { scope, amount } }. They are what the Lots of that Plan follow, and, once the Extra / CO
+  // is approved, what a Lot of that Plan billed later by a Package is charged with.
+  planRules: {},
   // Lines that are not on a Lot (Sales Office, restroom): [{ id, location, scope, amount }].
   // They always have a Scope and Amount of their own.
   placeLines: [],

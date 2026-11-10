@@ -148,12 +148,13 @@ export default function ChangeOrderCoverageCard({ values, onChange }) {
 
           {mode === 'job' && (
             <Alert severity="info" sx={{ mb: 2 }}>
-              The whole Job is covered, including any Phase added to it later.
+              Covers every Lot the Job has today. Lots of Phases added later are not part of it.
             </Alert>
           )}
           {mode === 'plans' && (
             <Alert severity="info" sx={{ mb: 2 }}>
-              Covers every Lot with the selected Plans, including the Lots of Phases added later.
+              Covers every Lot that has the selected Plans today. Once approved, a Lot of these Plans added
+              later is charged too, with its Plan's Scope and Amount, from the first Package that bills it.
             </Alert>
           )}
 

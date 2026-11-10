@@ -55,6 +55,8 @@ import { planCreatedPackages, planPackageSplit } from '../../utils/packageSplit.
 import { priceChangeIssue, priceChangeRows, priceChangeTotals } from '../../utils/priceChanges.js'
 import { usePendingPriceDifferences } from '../../hooks/usePendingPriceDifferences.js'
 import JobNotesPanel from './JobNotesPanel.jsx'
+import PackageChargesPreview from '../../../change-orders/components/PackageChargesPreview.jsx'
+import { packageLotIds } from '../../../change-orders/utils/packageCharges.js'
 import PackageSplitNotice from './PackageSplitNotice.jsx'
 import {
   buildDrawWorksheet,
@@ -693,6 +695,8 @@ export default function CreateDrawDialog({
     priceDifferences: chosenPriceChanges,
   })
   const split = createdPackages.length > 1 ? { packages: createdPackages } : null
+  // The Lots these Packages bill, to show what an approved Specific Plan Types Extra / CO charges for them.
+  const chargedLotIds = packageLotIds(createdPackages)
   const optionRowOf = new Map(summary.availableOptionRows.map((option) => [
     optionBillingIdentity(option.lotId, option.optionId, option.unitNo),
     option,
@@ -1428,6 +1432,8 @@ export default function CreateDrawDialog({
               </CardContent>
             </Card>
           )}
+
+          {hasScope && <PackageChargesPreview jobId={job?.id} lotIds={chargedLotIds} />}
 
           {hasScope && (
             <TextField

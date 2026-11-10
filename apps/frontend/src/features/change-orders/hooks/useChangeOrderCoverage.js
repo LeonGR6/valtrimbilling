@@ -20,7 +20,7 @@ export function useChangeOrderCoverage(values) {
   const { jobs } = useJobs()
   const {
     builderId, jobId, coverageMode, lotIds, recordIds, planIds,
-    defaultScope, defaultAmount, lineOverrides, placeLines,
+    defaultScope, defaultAmount, lineOverrides, placeLines, planRules,
   } = values
 
   const jobOptions = useMemo(() => jobsOfBuilder(jobs, builderId), [jobs, builderId])
@@ -31,9 +31,15 @@ export function useChangeOrderCoverage(values) {
     [job, coverageMode, lotIds, recordIds, planIds],
   )
   const summary = useMemo(() => summarizeCoverage(rows), [rows])
+  // With Specific Plan Types each Lot follows the Scope and Amount of its Plan.
   const lines = useMemo(
-    () => buildChangeOrderLines(rows, { defaultScope, defaultAmount, lineOverrides }),
-    [rows, defaultScope, defaultAmount, lineOverrides],
+    () => buildChangeOrderLines(rows, {
+      defaultScope,
+      defaultAmount,
+      lineOverrides,
+      rulesByPlan: coverageMode === 'plans' ? (planRules ?? {}) : null,
+    }),
+    [rows, defaultScope, defaultAmount, lineOverrides, coverageMode, planRules],
   )
   const places = useMemo(() => buildPlaceLines(placeLines), [placeLines])
   const amounts = useMemo(() => summarizeChangeOrderLines(lines, places), [lines, places])

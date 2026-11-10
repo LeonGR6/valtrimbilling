@@ -141,11 +141,12 @@ export default function GeneratePackageScheduleDialog({
     setAttempt((current) => current + 1)
   }
 
-  // A Retention Release, a Price Adjustment and a Package of Options only bill no Lot or Draw of the schedule.
+  // A Retention Release, a Price Adjustment, a Package of Options only and an Extra / CO bill no Lot or Draw of the schedule.
   const isRetention = (packageRecord.packageType ?? 'DRAW') !== 'DRAW'
   const notScheduleBilling = {
     PRICE_ADJUSTMENT: 'This Package is a Price Adjustment',
     OPTIONS: 'This Package bills Options only',
+    CHANGE_ORDER: 'This Package invoices an Extra / Change Order',
   }[packageRecord.packageType] ?? 'This Package is a Retention Release'
   const lines = packageScheduleLines(packageRecord)
   const plan = data ? matchPackageToSchedules(lines, data.templates) : null

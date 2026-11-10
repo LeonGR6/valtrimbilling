@@ -9,6 +9,7 @@ import {
   toEditDrawPackageRpc,
   toPackageStatusRpc,
   toTransferDrawPackageRpc,
+  toInvoicedChangeOrder,
 } from './drawInvoicePackageRecord.js'
 import {
   packageNoteErrorMessage,
@@ -22,6 +23,8 @@ const PACKAGE_COLUMNS = [
   'id',
   'package_number',
   'package_type',
+  // The Extra / Change Order a CHANGE_ORDER Package invoices.
+  'change_order_id',
   'builder_id',
   'job_id',
   'phase_id',
@@ -336,6 +339,24 @@ function groupByPackage(rows) {
   }, new Map())
 }
 
+/**
+ * The Extras / Change Orders the CHANGE_ORDER Packages invoice, by id: their number, PO / CO #, lines and
+ * total, and the Extra / CO they charge for when they were made from a Package.
+ */
+async function listInvoicedChangeOrders(client, packages) {
+  const ids = [...new Set(packages.map((row) => row.change_order_id).filter((id) => id != null))]
+  const byId = new Map()
+  for (const batch of inBatches(ids)) {
+    const { data, error } = await client
+      .from('change_order_overview')
+      .select('id, change_order_number, po_co_number, line_count, total_amount, source_change_order_number')
+      .in('id', batch)
+    if (error) throw new Error('The Extras / Change Orders of the Packages could not be loaded.', { cause: error })
+    for (const row of data ?? []) byId.set(row.id, toInvoicedChangeOrder(row))
+  }
+  return byId
+}
+
 async function listRowsInBatches(client, packageIds, table, columns, order) {
   const batchRows = await Promise.all(inBatches(packageIds).map((batch) =>
     listAllRows(() => {
@@ -361,6 +382,7 @@ export async function listDrawInvoicePackages() {
   if (packages.length === 0) return []
 
   const packageIds = packages.map(({ id }) => id)
+  const changeOrdersById = await listInvoicedChangeOrders(client, packages)
   const setupVersionIds = [...new Set(
     packages.map(({ setup_version_id: setupVersionId }) => setupVersionId),
   )]
@@ -549,6 +571,8 @@ export async function listDrawInvoicePackages() {
     ),
     // The internal notes of the Package, newest first.
     noteEntries: sortPackageNotes((notesByPackage.get(packageRow.id) ?? []).map(toPackageNote)),
+    // The Extra / Change Order a CHANGE_ORDER Package invoices.
+    changeOrder: changeOrdersById.get(packageRow.change_order_id) ?? null,
   }))
 }
 

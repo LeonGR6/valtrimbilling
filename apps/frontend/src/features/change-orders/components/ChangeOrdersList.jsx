@@ -236,9 +236,14 @@ export default function ChangeOrdersList() {
                       >
                         {order.number}
                       </Link>
-                      {order.internalNumber && (
+                      {order.internalNumber && order.internalNumber !== order.number && (
                         <Typography variant="caption" color="text.secondary" component="div">
                           {order.internalNumber}
+                        </Typography>
+                      )}
+                      {order.fromPackage && (
+                        <Typography variant="caption" color="primary.main" fontWeight={600} component="div">
+                          From package {order.sourcePackageNumber}
                         </Typography>
                       )}
                     </TableCell>

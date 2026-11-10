@@ -31,12 +31,19 @@ import {
   toCoverage,
   toCreateChangeOrderRpc,
   toLinesPayload,
+  toChangeOrderPlanRule,
+  toPlanRulesPayload,
   toSetPoCoNumberRpc,
   toSetStatusRpc,
   toUpdateChangeOrderRpc,
   withSuggestedNumber,
 } from '../src/features/change-orders/services/changeOrderRecord.js'
-import { buildChangeOrderLines, buildPlaceLines } from '../src/features/change-orders/utils/pricing.js'
+import {
+  buildChangeOrderLines,
+  buildPlaceLines,
+  dropAmountsEqualToDefault,
+  setLineOverride,
+} from '../src/features/change-orders/utils/pricing.js'
 
 const filled = (overrides = {}) => ({
   ...emptyChangeOrder,
@@ -105,7 +112,7 @@ test('creating sends the Job, the trimmed header, the lines, the coverage and th
 
   assert.deepEqual(Object.keys(rpc), [
     'p_job_id', 'p_title', 'p_requested_by', 'p_lines', 'p_internal_number',
-    'p_request_date', 'p_needed_by_date', 'p_coverage', 'p_status', 'p_po_co_number',
+    'p_request_date', 'p_needed_by_date', 'p_coverage', 'p_status', 'p_po_co_number', 'p_plan_rules',
   ])
   assert.equal(rpc.p_job_id, 10)
   // The title is not asked any more: the function still has it, and it goes empty.
@@ -117,6 +124,8 @@ test('creating sends the Job, the trimmed header, the lines, the coverage and th
   assert.equal(rpc.p_status, 'PENDING')
   assert.equal(rpc.p_lines.length, 3)
   assert.equal(rpc.p_coverage.mode, 'lots')
+  // Only Specific Plan Types has a Scope and Amount by Plan.
+  assert.equal(rpc.p_plan_rules, null)
 })
 
 test('an empty internal number and empty dates are sent as nothing, not as empty text', () => {
@@ -282,8 +291,20 @@ test('a row of the list keeps its number, status, Job and total, with empty text
     updatedAt: '2026-11-02T18:00:00.000Z',
     lineCount: 3,
     totalAmount: 330.5,
+    sourceChangeOrderId: null,
+    sourceNumber: '',
+    sourcePackageId: null,
+    sourcePackageNumber: '',
+    fromPackage: false,
+    invoicePackageId: null,
+    invoicePackageNumber: '',
+    invoiceWorkflowStatus: '',
   })
   assert.equal(toChangeOrderSummary(overviewRow({ line_count: null, total_amount: null })).totalAmount, 0)
+  const invoiced = toChangeOrderSummary(overviewRow({ invoice_package_id: 300, invoice_package_number: 'CP-00000300', invoice_workflow_status: 'AWAITING_PAYMENT' }))
+  assert.equal(invoiced.invoicePackageId, 300)
+  assert.equal(invoiced.invoicePackageNumber, 'CP-00000300')
+  assert.equal(invoiced.invoiceWorkflowStatus, 'AWAITING_PAYMENT')
 })
 
 test('a Lot line and a line without a lot are read apart', () => {
@@ -885,4 +906,174 @@ test('the database refusals about the PO / CO # reach the person in the database
     changeOrderErrorMessage({ message: '' }, 'The PO / CO # could not be saved.'),
     'The PO / CO # could not be saved.',
   )
+})
+
+// Specific Plan Types: a Scope and Amount for each Plan ---------------------------------------------------
+
+const planJob = {
+  sequenceSheet: {
+    plans: [{ id: 1, code: 'A' }, { id: 2, code: 'B' }, { id: 3, code: 'C' }],
+    phases: [
+      {
+        id: 10,
+        name: '1',
+        building: '',
+        lots: [
+          { id: 101, lotNumber: '1', planId: 1 },
+          { id: 102, lotNumber: '2', planId: 2 },
+          { id: 103, lotNumber: '3', planId: 1 },
+          { id: 104, lotNumber: '4', planId: 3 },
+        ],
+      },
+    ],
+  },
+}
+
+const byPlan = (overrides = {}) => filled({
+  coverageMode: 'plans',
+  lotIds: new Set(),
+  planIds: new Set(['1', '2']),
+  defaultScope: '',
+  defaultAmount: '',
+  planRules: {
+    1: { scope: 'Attic ladder', amount: '120.00' },
+    2: { scope: 'Wider door', amount: '300.00' },
+  },
+  ...overrides,
+})
+
+const planRows = [
+  { lotId: '101', lot: '1', planId: '1' },
+  { lotId: '102', lot: '2', planId: '2' },
+  { lotId: '103', lot: '3', planId: '1' },
+]
+
+test('with Specific Plan Types each Lot follows the Scope and Amount of its Plan, unless it has its own', () => {
+  const values = byPlan({ lineOverrides: { 103: { amount: '99.00' } } })
+  const lines = buildChangeOrderLines(planRows, { ...values, rulesByPlan: values.planRules })
+
+  assert.deepEqual(
+    lines.map(({ lotId, scope, amount, ownAmount }) => ({ lotId, scope, amount, ownAmount })),
+    [
+      { lotId: '101', scope: 'Attic ladder', amount: 120, ownAmount: false },
+      { lotId: '102', scope: 'Wider door', amount: 300, ownAmount: false },
+      { lotId: '103', scope: 'Attic ladder', amount: 99, ownAmount: true },
+    ],
+  )
+  // A Plan without a rule yet leaves its Lots empty.
+  const empty = buildChangeOrderLines([{ lotId: '104', planId: '3' }], { rulesByPlan: values.planRules })
+  assert.equal(empty[0].scope, '')
+  assert.equal(empty[0].amount, null)
+})
+
+test('the form values alone never price by Plan: only the rules passed apart do', () => {
+  const values = byPlan()
+  const lines = buildChangeOrderLines(planRows, values)
+  assert.equal(lines[0].scope, '')
+})
+
+test('a value typed equal to its Plan is not a value of its own, Lot by Lot', () => {
+  const rules = byPlan().planRules
+  const planOf = { 101: '1', 102: '2' }
+  const defaults = (lotId) => rules[planOf[lotId]]
+
+  const next = setLineOverride({}, ['101', '102'], 'amount', '300.00', defaults)
+  assert.deepEqual(next, { 101: { amount: '300.00' } })
+  assert.deepEqual(dropAmountsEqualToDefault({ 101: { amount: '120' }, 102: { amount: '1' } }, (id) => defaults(id).amount), {
+    102: { amount: '1' },
+  })
+})
+
+test('the Scope and Amount by Plan are sent for each Plan chosen, trimmed; any other coverage sends none', () => {
+  const values = byPlan({ planRules: { 1: { scope: ' Attic ladder ', amount: '120.5' }, 2: { scope: 'Door', amount: '-3' } } })
+  assert.deepEqual(toPlanRulesPayload(values), [
+    { plan_id: 1, scope_of_work: 'Attic ladder', amount: 120.5 },
+    { plan_id: 2, scope_of_work: 'Door', amount: -3 },
+  ])
+  // A Plan that was chosen but not written yet goes empty, for the database to refuse it in words.
+  assert.deepEqual(toPlanRulesPayload(byPlan({ planIds: new Set(['3']) })), [
+    { plan_id: 3, scope_of_work: '', amount: null },
+  ])
+  assert.equal(toPlanRulesPayload(filled()), null)
+  assert.equal(toUpdateChangeOrderRpc('12', values, { lines: [], places: [] }).p_plan_rules.length, 2)
+})
+
+test('every Plan chosen needs its Scope and Amount', () => {
+  const lines = buildChangeOrderLines(planRows, { rulesByPlan: byPlan().planRules })
+  assert.deepEqual(changeOrderProblems(byPlan(), { lines }), [])
+
+  const missing = byPlan({
+    planIds: new Set(['1', '2', '3']),
+    planRules: { 1: { scope: 'Attic ladder', amount: '0' }, 2: { scope: ' ', amount: '300' } },
+  })
+  const messages = changeOrderProblems(missing, { lines }).map((problem) => problem.message)
+  assert.ok(
+    messages.includes('Scope and Amount by Plan: 2 without a Scope of Work, 1 without an Amount, 1 with an Amount of zero.'),
+    messages.join(' | '),
+  )
+})
+
+test('a saved Specific Plan Types Extra / CO opens with its Scope and Amount by Plan, and only what differs stays on the Lot', () => {
+  const values = toChangeOrderFormValues(savedOrder({
+    coverage: { mode: 'plans', lotIds: [], recordIds: [], planIds: ['1', '2'] },
+    planRules: [
+      { planId: 1, plan: 'A', scope: 'Attic ladder', amount: 120 },
+      { planId: 2, plan: 'B', scope: 'Wider door', amount: 300 },
+    ],
+    lines: [
+      { isPlace: false, lotId: 101, scope: 'Attic ladder', amount: 120 },
+      { isPlace: false, lotId: 102, scope: 'Wider door', amount: 300 },
+      { isPlace: false, lotId: 103, scope: 'Attic ladder', amount: 99 },
+    ],
+  }), { job: planJob })
+
+  assert.equal(values.coverageMode, 'plans')
+  assert.deepEqual(values.planRules, {
+    1: { scope: 'Attic ladder', amount: '120.00' },
+    2: { scope: 'Wider door', amount: '300.00' },
+  })
+  assert.deepEqual(values.lineOverrides, { 103: { amount: '99.00' } })
+})
+
+test('one saved before the Scope and Amount by Plan existed takes, for each Plan, what most of its Lots share', () => {
+  const values = toChangeOrderFormValues(savedOrder({
+    coverage: { mode: 'plans', lotIds: [], recordIds: [], planIds: ['1', '2'] },
+    lines: [
+      { isPlace: false, lotId: 101, scope: 'Attic ladder', amount: 120 },
+      { isPlace: false, lotId: 103, scope: 'Attic ladder', amount: 120 },
+      { isPlace: false, lotId: 102, scope: 'Wider door', amount: 300 },
+    ],
+  }), { job: planJob })
+
+  assert.deepEqual(values.planRules, {
+    1: { scope: 'Attic ladder', amount: '120.00' },
+    2: { scope: 'Wider door', amount: '300.00' },
+  })
+  assert.deepEqual(values.lineOverrides, {})
+})
+
+test('a rule and a row made from a Package are read', () => {
+  assert.deepEqual(
+    toChangeOrderPlanRule({ plan_id: 2, scope_of_work: 'Wider door', amount: '300.00', plan: { code: 'B', name: 'Bay' } }),
+    { planId: 2, plan: 'B', planName: 'Bay', scope: 'Wider door', amount: 300 },
+  )
+  const row = toChangeOrderSummary(overviewRow({
+    source_change_order_id: 2,
+    source_change_order_number: 'CO-0002',
+    source_package_id: 81,
+    source_package_number: 'DP-00000081',
+  }))
+  assert.equal(row.fromPackage, true)
+  assert.equal(row.sourceNumber, 'CO-0002')
+  assert.equal(row.sourcePackageNumber, 'DP-00000081')
+
+  const detail = toChangeOrderDetail({
+    summary: row,
+    dates: {},
+    lines: [],
+    history: [],
+    planRules: [{ plan: 'B10' }, { plan: 'B2' }],
+  })
+  assert.deepEqual(detail.planRules.map((rule) => rule.plan), ['B2', 'B10'])
+  assert.deepEqual(detail.packageOrders, [])
 })

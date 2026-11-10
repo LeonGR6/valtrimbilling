@@ -40,7 +40,7 @@ export async function loadPackageSource(admin: Admin, packageId: number): Promis
     await admin
       .from('draw_packages')
       .select(
-        'id, package_number, package_type, status, quickbooks_status, quickbooks_environment, invoice_line_format, builder_id, job_id, setup_version_id',
+        'id, package_number, package_type, status, quickbooks_status, quickbooks_environment, invoice_line_format, builder_id, job_id, setup_version_id, change_order_id',
       )
       .eq('id', packageId)
       .maybeSingle(),
@@ -112,6 +112,24 @@ export async function loadPackageSource(admin: Admin, packageId: number): Promis
     ) ?? []
   const lotsById = new Map(lots.map((lot) => [lot.id, lot]))
 
+  // The Package of an Extra / Change Order invoices the lines of that Change Order.
+  let changeOrder: { poCoNumber: string | null } | null = null
+  let changeOrderLines: NonNullable<PackageInvoiceSource['changeOrderLines']> = []
+  if (header.package_type === 'CHANGE_ORDER' && header.change_order_id) {
+    const [order, lines] = await Promise.all([
+      admin.from('change_orders').select('po_co_number').eq('id', header.change_order_id).maybeSingle(),
+      admin
+        .from('change_order_lines')
+        .select('line_number, lot_id, phase_code, building, lot_number, plan_code, location, scope_of_work, amount')
+        .eq('change_order_id', header.change_order_id)
+        .order('line_number'),
+    ])
+    const orderRow = orThrow(order)
+    if (!orderRow) throw new Error('The Change Order of this Package no longer exists.')
+    changeOrder = { poCoNumber: orderRow.po_co_number ?? null }
+    changeOrderLines = orThrow(lines) ?? []
+  }
+
   return {
     packageId,
     packageNumber: header.package_number,
@@ -132,6 +150,8 @@ export async function loadPackageSource(admin: Admin, packageId: number): Promis
         is_utility_building: Boolean(lotsById.get(lotId)?.is_utility_building),
         utility_name: lotsById.get(lotId)?.utility_name ?? null,
       })),
+      changeOrder,
+      changeOrderLines,
       invoice: orThrow(invoice),
     },
   }

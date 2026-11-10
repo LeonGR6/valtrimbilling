@@ -18,6 +18,7 @@ import {
   toCancelDrawPackageRpc,
   toCreateDrawPackageRpc,
   toDrawInvoicePackage,
+  toInvoicedChangeOrder,
   toEditDrawPackageRpc,
   toInvoicedEditRequest,
   toInvoiceDifference,
@@ -1366,4 +1367,23 @@ test('the difference line of an invoice can be changed under the conditions of a
     assert.equal(canChangeInvoiceDifference({ ...invoiced, ...patch }), false, JSON.stringify(patch))
   }
   assert.equal(canChangeInvoiceDifference(null), false)
+})
+
+test('the Package of an Extra / CO keeps its type and the Extra / CO it invoices, and explains why it is not edited', () => {
+  const record = toDrawInvoicePackage(
+    { ...packageRow, package_number: 'CP-00000300', package_type: 'CHANGE_ORDER', change_order_id: 287, phase_id: null, workflow_status: 'DRAFT' },
+    {
+      id: 7, invoice_number: null, invoice_date: null, due_date: null, gross_amount: '108.00',
+      retention_amount: '0', wrap_amount: '0', net_amount: '108.00', paid_amount: '0', status: 'DRAFT',
+    },
+  )
+  assert.equal(record.packageType, 'CHANGE_ORDER')
+  assert.equal(record.changeOrderId, 287)
+  assert.equal(record.persistedInvoice.netAmount, 108)
+  assert.match(draftLockReason({ ...record, status: 'DRAFT', quickbooksStatus: 'CREATED' }) ?? '', /Extra \/ CO/)
+
+  assert.deepEqual(
+    toInvoicedChangeOrder({ id: 287, change_order_number: 'CO-0006', po_co_number: null, line_count: '4', total_amount: '108.00', source_change_order_number: null }),
+    { id: 287, number: 'CO-0006', poCoNumber: '', lineCount: 4, totalAmount: 108, sourceNumber: '' },
+  )
 })

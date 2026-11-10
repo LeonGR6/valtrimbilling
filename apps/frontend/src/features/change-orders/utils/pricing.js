@@ -30,19 +30,38 @@ export function parseAmount(text) {
 }
 
 /**
- * One line per Lot: its Scope of Work and Amount are its own when it has an
- * entry in `lineOverrides` (keyed by Lot id), the defaults otherwise.
+ * What a Lot follows when it has nothing of its own: the Scope and Amount of its Plan when the order
+ * covers Specific plan types (`rulesByPlan`, `{ [planId]: { scope, amount } }`), the defaults otherwise.
  */
-export function buildChangeOrderLines(rows, { defaultScope = '', defaultAmount = '', lineOverrides = {} } = {}) {
+export function lineDefaults(row, { defaultScope = '', defaultAmount = '', rulesByPlan = null } = {}) {
+  if (rulesByPlan) {
+    const rule = rulesByPlan[row.planId] ?? {}
+    return { scope: rule.scope ?? '', amount: rule.amount ?? '' }
+  }
+  return { scope: defaultScope, amount: defaultAmount }
+}
+
+/**
+ * One line per Lot: its Scope of Work and Amount are its own when it has an
+ * entry in `lineOverrides` (keyed by Lot id), the defaults otherwise (`lineDefaults`:
+ * by Plan when `rulesByPlan` is given). `baseScope` and `baseAmount` are what it follows.
+ */
+export function buildChangeOrderLines(
+  rows,
+  { defaultScope = '', defaultAmount = '', lineOverrides = {}, rulesByPlan = null } = {},
+) {
   return rows.map((row) => {
+    const base = lineDefaults(row, { defaultScope, defaultAmount, rulesByPlan })
     const own = lineOverrides[row.lotId] ?? {}
     const ownScope = own.scope !== undefined
     const ownAmount = own.amount !== undefined
-    const amountText = ownAmount ? own.amount : defaultAmount
+    const amountText = ownAmount ? own.amount : base.amount
 
     return {
       ...row,
-      scope: ownScope ? own.scope : defaultScope,
+      baseScope: base.scope,
+      baseAmount: base.amount,
+      scope: ownScope ? own.scope : base.scope,
       ownScope,
       amountText,
       ownAmount,
@@ -57,15 +76,19 @@ function withoutField(entry, field) {
   return rest
 }
 
+// The defaults of one Lot: the same for every Lot, or a function of the Lot id (by Plan).
+const defaultsOf = (defaults, id) => (typeof defaults === 'function' ? defaults(id) : defaults) ?? {}
+
 /**
  * The overrides with `field` ('scope' or 'amount') set on every Lot in `lotIds`.
- * A value equal to the default (`defaults[field]`) is not a value of its own: the
- * field goes back to following the default, and a Lot left with nothing is dropped.
+ * A value equal to the default (`defaults[field]`, where `defaults` may be a function
+ * of the Lot id) is not a value of its own: the field goes back to following the
+ * default, and a Lot left with nothing is dropped.
  */
 export function setLineOverride(overrides, lotIds, field, value, defaults = {}) {
   const next = { ...overrides }
   for (const id of lotIds) {
-    const entry = value === defaults[field]
+    const entry = value === defaultsOf(defaults, id)[field]
       ? withoutField(next[id], field)
       : { ...next[id], [field]: value }
     if (Object.keys(entry).length === 0) delete next[id]
@@ -76,12 +99,13 @@ export function setLineOverride(overrides, lotIds, field, value, defaults = {}) 
 
 /**
  * The overrides without the amounts that mean the same number as the default
- * ("1689.6" and "1689.60"); meant for when the person leaves the field.
+ * ("1689.6" and "1689.60"); meant for when the person leaves the field. `defaultAmount`
+ * may be a function of the Lot id (by Plan).
  */
 export function dropAmountsEqualToDefault(overrides, defaultAmount) {
-  const base = parseAmount(defaultAmount)
   const next = {}
   for (const [id, entry] of Object.entries(overrides)) {
+    const base = parseAmount(typeof defaultAmount === 'function' ? defaultAmount(id) : defaultAmount)
     const keep = entry.amount !== undefined && base !== null && parseAmount(entry.amount) === base
       ? withoutField(entry, 'amount')
       : entry
@@ -92,7 +116,8 @@ export function dropAmountsEqualToDefault(overrides, defaultAmount) {
 
 /**
  * The overrides with every own amount settled into cents, and without the ones that then mean the same
- * number as the default; meant for when the person leaves an amount field.
+ * number as the default (a value, or a function of the Lot id); meant for when the person leaves an
+ * amount field.
  */
 export function settleLineAmounts(overrides, defaultAmount) {
   const settled = {}

@@ -24,6 +24,7 @@ const PACKAGE_TYPE_SEARCH_TERMS = {
   RETENTION_RELEASE: 'retention release',
   PRICE_ADJUSTMENT: 'price adjustment',
   OPTIONS: 'options',
+  CHANGE_ORDER: 'extra change order co',
   DRAW: 'draw',
 }
 
@@ -72,6 +73,8 @@ export function filterPackageCatalogContexts(contexts, {
       record.retentionRelease?.scopeType,
       record.retentionRelease?.phaseCode,
       record.retentionRelease?.building,
+      record.changeOrder?.number,
+      record.changeOrder?.poCoNumber,
       job.code,
       job.builder,
       job.community,
@@ -180,7 +183,7 @@ export function packageBillingPeriodDate(record) {
     return record.retentionRelease?.availableDate ?? null
   }
   // An adjustment, and Options billed on their own, have no cutoff: they are dated when created.
-  if (record?.packageType === 'PRICE_ADJUSTMENT' || record?.packageType === 'OPTIONS') {
+  if (['PRICE_ADJUSTMENT', 'OPTIONS', 'CHANGE_ORDER'].includes(record?.packageType)) {
     return record.packageDate ?? null
   }
   if (record?.billingCutoffAnyDate) return null

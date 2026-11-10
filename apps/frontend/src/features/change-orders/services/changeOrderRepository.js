@@ -1,12 +1,14 @@
 import { requireSupabase } from '../../../services/api.js'
 import { listAllRows } from '../../../services/pagedQuery.js'
 import { toLotEvent } from '../utils/calendarEvents.js'
+import { toPackageChargeRow } from '../utils/packageCharges.js'
 import {
   changeOrderErrorMessage,
   toChangeOrderDates,
   toChangeOrderDetail,
   toChangeOrderHistoryEntry,
   toChangeOrderLine,
+  toChangeOrderPlanRule,
   toChangeOrderSummary,
 } from './changeOrderRecord.js'
 
@@ -28,6 +30,13 @@ const OVERVIEW_COLUMNS = [
   'line_count',
   'total_amount',
   'po_co_number',
+  'source_change_order_id',
+  'source_change_order_number',
+  'source_package_id',
+  'source_package_number',
+  'invoice_package_id',
+  'invoice_package_number',
+  'invoice_workflow_status',
 ].join(', ')
 
 const DATE_COLUMNS = 'created_at, approved_at, cancelled_at, cancel_reason, coverage'
@@ -50,6 +59,9 @@ const LINE_COLUMNS = [
 ].join(', ')
 
 const HISTORY_COLUMNS = 'id, previous_status, new_status, note, changed_at'
+
+// The Plan is read through the key that ties the rule to a Plan of the same Job.
+const PLAN_RULE_COLUMNS = 'plan_id, scope_of_work, amount, plan:plans!change_order_plan_rules_plan_id_job_id_fkey(code, name)'
 
 function fail(error) {
   throw new Error(changeOrderErrorMessage(error, 'The Extras / Change Orders could not be loaded.'), {
@@ -84,13 +96,17 @@ export async function listRecentChangeOrders(limit = 3) {
   return (data ?? []).map(toChangeOrderSummary)
 }
 
-/** One Extra / CO with its lines and the history of its status, or null when it does not exist. */
+/**
+ * One Extra / CO with its lines and the history of its status, or null when it does not exist. A
+ * "Specific Plan Types" one also comes with its Scope and Amount by Plan and the Extras / COs made from
+ * Packages for it.
+ */
 export async function getChangeOrder(changeOrderId) {
   const client = await requireSupabase()
   const id = Number(changeOrderId)
   if (!Number.isInteger(id) || id < 1) return null
 
-  const [overview, dates, lines, history] = await Promise.all([
+  const [overview, dates, lines, history, planRules, packageOrders] = await Promise.all([
     client.from('change_order_overview').select(OVERVIEW_COLUMNS).eq('id', id).maybeSingle(),
     client.from('change_orders').select(DATE_COLUMNS).eq('id', id).maybeSingle(),
     listAllRows(
@@ -109,6 +125,22 @@ export async function getChangeOrder(changeOrderId) {
         .order('id', { ascending: true }),
       fail,
     ),
+    listAllRows(
+      () => client
+        .from('change_order_plan_rules')
+        .select(PLAN_RULE_COLUMNS)
+        .eq('change_order_id', id)
+        .order('plan_id', { ascending: true }),
+      fail,
+    ),
+    listAllRows(
+      () => client
+        .from('change_order_overview')
+        .select(OVERVIEW_COLUMNS)
+        .eq('source_change_order_id', id)
+        .order('id', { ascending: true }),
+      fail,
+    ),
   ])
 
   if (overview.error) fail(overview.error)
@@ -120,6 +152,8 @@ export async function getChangeOrder(changeOrderId) {
     dates: toChangeOrderDates(dates.data),
     lines: lines.map(toChangeOrderLine),
     history: history.map(toChangeOrderHistoryEntry),
+    planRules: planRules.map(toChangeOrderPlanRule),
+    packageOrders: packageOrders.map(toChangeOrderSummary),
   })
 }
 
@@ -202,4 +236,81 @@ export async function listLotCalendarEvents(jobId) {
   if (error) throw new Error('The Calendar events could not be read.', { cause: error })
 
   return (data ?? []).map(toLotEvent)
+}
+
+/**
+ * The Lots among `lotIds` that a Package of the Job would charge to an approved "Specific Plan Types"
+ * Extra / CO, with the Scope and Amount of their Plan. Nothing is written.
+ */
+export async function listPackageCharges(jobId, lotIds) {
+  if (!jobId || lotIds.length === 0) return []
+  const client = await requireSupabase()
+  const { data, error } = await client.rpc('package_change_order_preview', {
+    p_job_id: Number(jobId),
+    p_lot_ids: lotIds.map(Number),
+  })
+
+  if (error) throw new Error('The Extras / Change Orders this Package would make could not be read.', { cause: error })
+  return (data ?? []).map(toPackageChargeRow)
+}
+
+/**
+ * Every approved or cancelled Extra / CO (the ones Draw & Invoice works with), newest first, each with the
+ * Phase of the Packages it points at (`sourcePackagePhaseId`, `invoicePackagePhaseId`), to open them.
+ */
+export async function listBillableChangeOrders() {
+  const client = await requireSupabase()
+  const rows = await listAllRows(
+    () => client
+      .from('change_order_overview')
+      .select(OVERVIEW_COLUMNS)
+      .in('status', ['APPROVED', 'CANCELLED'])
+      .order('id', { ascending: false }),
+    fail,
+  )
+  const orders = rows.map(toChangeOrderSummary)
+
+  const packageIds = [...new Set(
+    orders.flatMap((order) => [order.sourcePackageId, order.invoicePackageId]).filter((id) => id != null),
+  )]
+  const phaseOf = new Map()
+  for (let start = 0; start < packageIds.length; start += 200) {
+    const { data, error } = await client
+      .from('draw_packages')
+      .select('id, phase_id')
+      .in('id', packageIds.slice(start, start + 200))
+    if (error) fail(error)
+    for (const row of data ?? []) phaseOf.set(row.id, row.phase_id)
+  }
+
+  return orders.map((order) => ({
+    ...order,
+    sourcePackagePhaseId: phaseOf.get(order.sourcePackageId) ?? null,
+    invoicePackagePhaseId: phaseOf.get(order.invoicePackageId) ?? null,
+  }))
+}
+
+/** Creates the Package that invoices an approved Extra / CO and returns its id. */
+export async function createChangeOrderPackage(changeOrderId) {
+  const client = await requireSupabase()
+  const { data, error } = await client.rpc('create_change_order_package', { p_change_order_id: Number(changeOrderId) })
+
+  if (error) {
+    throw new Error(changeOrderErrorMessage(error, 'The invoice Package could not be created.'), { cause: error })
+  }
+  return Number(data)
+}
+
+/** The lines of one Extra / CO, in the order saved. */
+export async function listChangeOrderLines(changeOrderId) {
+  const client = await requireSupabase()
+  const rows = await listAllRows(
+    () => client
+      .from('change_order_lines')
+      .select(LINE_COLUMNS)
+      .eq('change_order_id', Number(changeOrderId))
+      .order('line_number', { ascending: true }),
+    fail,
+  )
+  return rows.map(toChangeOrderLine)
 }

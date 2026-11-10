@@ -116,3 +116,12 @@ test('with no Job, no coverage or an unknown mode the saved lots are kept as lot
     assert.deepEqual([...restored.lotIds].sort(), ['101', '110'])
   }
 })
+
+test('Specific Plan Types opens as it was saved even when a Lot of those Plans was added since', () => {
+  // Plan B reaches Lots 110 and 200 today; only 110 was saved.
+  const restored = restoreCoverage(job, { mode: 'plans', lotIds: [], recordIds: [], planIds: [2] }, [110])
+
+  assert.equal(restored.mode, 'plans')
+  assert.deepEqual([...restored.planIds], ['2'])
+  assert.deepEqual(coveredLots(job, restored).map((row) => row.lotId), ['110', '200'])
+})

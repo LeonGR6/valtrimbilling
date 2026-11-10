@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import {
   Box,
   Button,
@@ -31,6 +31,7 @@ import {
 } from '../utils/pricing.js'
 import Field from './ChangeOrderField.jsx'
 import ChangeOrderPlaceLines from './ChangeOrderPlaceLines.jsx'
+import ChangeOrderPlanRules from './ChangeOrderPlanRules.jsx'
 
 // A value the Lot has of its own, not the default one.
 const ownValueSx = { '& .MuiOutlinedInput-root': { bgcolor: 'primary.light' } }
@@ -41,7 +42,8 @@ const plural = (count, singular) => `${count} ${singular}${count === 1 ? '' : 's
 
 /**
  * Every Lot the coverage reaches is a line of the order. The default Scope of
- * Work and Amount go to all of them; a line can be given its own, one by one
+ * Work and Amount go to all of them (with Specific Plan Types, the Scope and
+ * Amount of each Plan go to its Lots); a line can be given its own, one by one
  * or for the Lots ticked in the table. Work that is not on a Lot (the Sales
  * Office) is added below as a line without a Lot.
  */
@@ -50,22 +52,59 @@ export default function ChangeOrderLinesCard({ values, onChange }) {
   const [search, setSearch] = useState('')
   const [checked, setChecked] = useState(() => new Set())
   const [bulk, setBulk] = useState({ amount: '', scope: '' })
+  const byPlan = values.coverageMode === 'plans'
+
+  // The Plans chosen, in the Job's order, with how many Lots each reaches today.
+  const plans = useMemo(() => {
+    if (!byPlan) return []
+    return (job?.sequenceSheet?.plans ?? [])
+      .filter((plan) => values.planIds.has(String(plan.id)))
+      .map((plan) => ({
+        id: String(plan.id),
+        code: plan.code,
+        name: plan.name ?? '',
+        lots: lines.filter((line) => line.planId === String(plan.id)).length,
+      }))
+  }, [byPlan, job, values.planIds, lines])
 
   const visible = filterCoverageRows(lines, search)
   const selectedIds = lines.filter((line) => checked.has(line.lotId)).map((line) => line.lotId)
   const visibleChecked = visible.filter((line) => checked.has(line.lotId)).length
 
+  // What a Lot follows when it has nothing of its own: the defaults, or its Plan's.
+  const planOfLot = new Map(lines.map((line) => [line.lotId, line.planId]))
+  const defaultsFor = (planRules) => (byPlan
+    ? (lotId) => planRules[planOfLot.get(lotId)] ?? { scope: '', amount: '' }
+    : { scope: values.defaultScope, amount: values.defaultAmount })
+  const amountFor = (planRules) => (byPlan
+    ? (lotId) => planRules[planOfLot.get(lotId)]?.amount ?? ''
+    : values.defaultAmount)
+
   const setOverrides = (lineOverrides) => onChange({ lineOverrides })
   const setOwn = (lotIds, field, value) => (
-    setOverrides(setLineOverride(values.lineOverrides, lotIds, field, value, {
-      scope: values.defaultScope,
-      amount: values.defaultAmount,
-    }))
+    setOverrides(setLineOverride(values.lineOverrides, lotIds, field, value, defaultsFor(values.planRules)))
   )
   // "1689.6" becomes "1689.60", and typed over a default of "1689.60" it is the same price, not a value of its own.
   const settleAmounts = () => {
-    const settled = settleLineAmounts(values.lineOverrides, values.defaultAmount)
+    const settled = settleLineAmounts(values.lineOverrides, amountFor(values.planRules))
     if (JSON.stringify(settled) !== JSON.stringify(values.lineOverrides)) setOverrides(settled)
+  }
+
+  const changePlanRule = (planId, changes) => onChange({
+    planRules: {
+      ...values.planRules,
+      [planId]: { scope: '', amount: '', ...values.planRules[planId], ...changes },
+    },
+  })
+  // Leaving a Plan's Amount: it is settled into cents, and a Lot whose own amount is now that same price
+  // goes back to following its Plan.
+  const settlePlanAmount = (planId, amount) => {
+    const planRules = {
+      ...values.planRules,
+      [planId]: { scope: '', ...values.planRules[planId], amount },
+    }
+    const lineOverrides = settleLineAmounts(values.lineOverrides, amountFor(planRules))
+    onChange({ planRules, lineOverrides })
   }
 
   const toggleLot = (lotId) => setChecked((current) => {
@@ -87,7 +126,7 @@ export default function ChangeOrderLinesCard({ values, onChange }) {
   }
 
   const applyToSelected = () => {
-    const defaults = { scope: values.defaultScope, amount: values.defaultAmount }
+    const defaults = defaultsFor(values.planRules)
     let next = values.lineOverrides
     if (bulk.amount !== '') {
       next = setLineOverride(next, selectedIds, 'amount', settlePriceText(bulk.amount), defaults)
@@ -95,57 +134,66 @@ export default function ChangeOrderLinesCard({ values, onChange }) {
     if (bulk.scope.trim() !== '') {
       next = setLineOverride(next, selectedIds, 'scope', bulk.scope, defaults)
     }
-    setOverrides(dropAmountsEqualToDefault(next, values.defaultAmount))
+    setOverrides(dropAmountsEqualToDefault(next, amountFor(values.planRules)))
     setBulk({ amount: '', scope: '' })
   }
 
   return (
     <Box>
       <Typography variant="body2" color="text.secondary" sx={{ mb: 2, maxWidth: 720 }}>
-        Every lot is a line of this order: what you write here goes to all of them, and a row
-        can be changed to give that lot something different. It is charged as its own order and
-        does not change the prices the Job already has.
+        {byPlan
+          ? 'Every lot is a line of this order: what you write for a Plan goes to all its lots, and a row can be changed to give that lot something different. It is charged as its own order and does not change the prices the Job already has.'
+          : 'Every lot is a line of this order: what you write here goes to all of them, and a row can be changed to give that lot something different. It is charged as its own order and does not change the prices the Job already has.'}
       </Typography>
 
-      <Box
-        sx={{
-          display: 'grid',
-          gap: 2,
-          gridTemplateColumns: { xs: 'minmax(0, 1fr)', md: 'minmax(0, 1fr) 200px' },
-          alignItems: 'start',
-          mb: 2.5,
-        }}
-      >
-        <Field label="Scope of Work (every lot)">
-          <TextField
-            fullWidth
-            multiline
-            minRows={2}
-            size="small"
-            placeholder="What is done, and why"
-            value={values.defaultScope}
-            onChange={(event) => onChange({ defaultScope: event.target.value })}
-            slotProps={{ htmlInput: { 'aria-label': 'Scope of Work for every lot' } }}
-          />
-        </Field>
-        <Field label="Amount per Lot">
-          <TextField
-            fullWidth
-            size="small"
-            placeholder="0.00"
-            value={values.defaultAmount}
-            onChange={(event) => onChange({ defaultAmount: sanitizePriceInput(event.target.value) })}
-            onBlur={() => {
-              const settled = settlePriceText(values.defaultAmount)
-              if (settled !== values.defaultAmount) onChange({ defaultAmount: settled })
-            }}
-            slotProps={{
-              input: dollarAdornment,
-              htmlInput: { 'aria-label': 'Amount per Lot' },
-            }}
-          />
-        </Field>
-      </Box>
+      {byPlan ? (
+        <ChangeOrderPlanRules
+          plans={plans}
+          planRules={values.planRules}
+          onChange={changePlanRule}
+          onAmountSettled={settlePlanAmount}
+        />
+      ) : (
+        <Box
+          sx={{
+            display: 'grid',
+            gap: 2,
+            gridTemplateColumns: { xs: 'minmax(0, 1fr)', md: 'minmax(0, 1fr) 200px' },
+            alignItems: 'start',
+            mb: 2.5,
+          }}
+        >
+          <Field label="Scope of Work (every lot)">
+            <TextField
+              fullWidth
+              multiline
+              minRows={2}
+              size="small"
+              placeholder="What is done, and why"
+              value={values.defaultScope}
+              onChange={(event) => onChange({ defaultScope: event.target.value })}
+              slotProps={{ htmlInput: { 'aria-label': 'Scope of Work for every lot' } }}
+            />
+          </Field>
+          <Field label="Amount per Lot">
+            <TextField
+              fullWidth
+              size="small"
+              placeholder="0.00"
+              value={values.defaultAmount}
+              onChange={(event) => onChange({ defaultAmount: sanitizePriceInput(event.target.value) })}
+              onBlur={() => {
+                const settled = settlePriceText(values.defaultAmount)
+                if (settled !== values.defaultAmount) onChange({ defaultAmount: settled })
+              }}
+              slotProps={{
+                input: dollarAdornment,
+                htmlInput: { 'aria-label': 'Amount per Lot' },
+              }}
+            />
+          </Field>
+        </Box>
+      )}
 
       {lines.length === 0 ? (
         <Typography variant="body2" color="text.secondary">
@@ -332,7 +380,7 @@ export default function ChangeOrderLinesCard({ values, onChange }) {
                     </TableCell>
                     <TableCell padding="checkbox" sx={{ whiteSpace: 'nowrap' }}>
                       {(line.ownScope || line.ownAmount) && (
-                        <Tooltip title="Use the default values">
+                        <Tooltip title={byPlan ? "Use its Plan's values" : 'Use the default values'}>
                           <IconButton
                             size="small"
                             aria-label={`Use the default values for lot ${line.lot}`}

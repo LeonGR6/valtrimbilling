@@ -4,6 +4,7 @@ import {
   Alert,
   Box,
   Button,
+  Link,
   Paper,
   Skeleton,
   Stack,
@@ -32,6 +33,7 @@ import {
   formatDateTime,
 } from '../../draw-invoice/utils/drawInvoiceFormatters.js'
 import { useAuth } from '../../auth/context/useAuth.js'
+import { canOpenPage } from '../../auth/authorization/roleAccess.js'
 import { allChangeOrderStatuses } from '../data/changeOrders.js'
 import { useChangeOrder, useSchedulingEmails } from '../hooks/useChangeOrderData.js'
 import { canTellScheduling, describeEmailHistory } from '../services/changeOrderEmailRecord.js'
@@ -44,6 +46,7 @@ import {
 } from '../services/changeOrderRecord.js'
 import { formatEventDate } from '../utils/calendarEvents.js'
 import ChangeOrderActions from './ChangeOrderActions.jsx'
+import ChangeOrderInvoiceButton from './ChangeOrderInvoiceButton.jsx'
 import ChangeOrderStatusChip from './ChangeOrderStatusChip.jsx'
 import PoCoNumberDialog from './PoCoNumberDialog.jsx'
 import SchedulingEmailDialog from './SchedulingEmailDialog.jsx'
@@ -89,6 +92,13 @@ function Facts({ order, onEditPoCo }) {
       label: 'Internal #',
       value: order.internalNumber && order.internalNumber !== order.number ? order.internalNumber : '',
     },
+    // Made from a Package: the Extra / CO it charges for, and the Package that billed its Lots.
+    {
+      label: 'Charged for',
+      value: order.sourceNumber,
+      to: order.sourceChangeOrderId ? `/change-orders/${order.sourceChangeOrderId}` : '',
+    },
+    { label: 'From Package', value: order.sourcePackageNumber },
   ].filter((fact) => fact.value || fact.onEdit)
 
   return (
@@ -109,7 +119,9 @@ function Facts({ order, onEditPoCo }) {
             sx={{ m: 0, overflowWrap: 'anywhere', display: 'flex', alignItems: 'center', gap: 0.5 }}
           >
             <Box component="span" sx={{ minWidth: 0, overflowWrap: 'anywhere' }}>
-              {fact.value || <Box component="span" sx={{ color: 'text.disabled', fontWeight: 400 }}>Not written yet</Box>}
+              {fact.to
+                ? <Link component={RouterLink} to={fact.to} fontWeight={600}>{fact.value}</Link>
+                : fact.value || <Box component="span" sx={{ color: 'text.disabled', fontWeight: 400 }}>Not written yet</Box>}
             </Box>
             {fact.onEdit && (
               // The button never shrinks: a long number wraps instead, so "Change" is not cut in two.
@@ -492,6 +504,104 @@ function WorkCard({ order, totals }) {
   )
 }
 
+/**
+ * The Scope and Amount of each Plan of a "Specific Plan Types" Extra / CO: what its Lots were priced with
+ * and, once approved, what a Lot of those Plans added later is charged with.
+ */
+function PlanRulesCard({ order }) {
+  const approved = order.status === 'APPROVED'
+
+  return (
+    <Paper variant="outlined" component="section" aria-label="Scope and Amount by Plan" sx={{ borderRadius: 2, overflow: 'hidden' }}>
+      <Box sx={{ px: { xs: 2, md: 3 }, py: 2 }}>
+        <Typography variant="subtitle1" component="h2" fontWeight={700}>
+          Scope and Amount by Plan
+        </Typography>
+        <Typography variant="body2" color="text.secondary">
+          {order.status === 'CANCELLED'
+            ? 'It was cancelled: Lots of these Plans added later are no longer charged.'
+            : approved
+              ? 'A Lot of these Plans added to the Job later is charged with these, from the first Package that bills it.'
+              : 'Once approved, a Lot of these Plans added to the Job later is charged with these, from the first Package that bills it.'}
+        </Typography>
+      </Box>
+      <TableContainer sx={{ borderTop: 1, borderColor: 'divider' }}>
+        <Table size="small" aria-label="Scope and Amount of each Plan" sx={[{ minWidth: 520 }, catalogTableSx]}>
+          <TableHead>
+            <TableRow>
+              <TableCell sx={{ width: 180 }}>Plan</TableCell>
+              <TableCell>Scope of Work</TableCell>
+              <TableCell align="right" sx={{ width: 140 }}>Amount per Lot</TableCell>
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            {order.planRules.map((rule) => (
+              <TableRow key={rule.planId}>
+                <TableCell>
+                  <Typography variant="body2" fontWeight={700}>Plan {rule.plan}</Typography>
+                  {rule.planName && (
+                    <Typography variant="caption" color="text.secondary" component="div">{rule.planName}</Typography>
+                  )}
+                </TableCell>
+                <TableCell sx={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{rule.scope}</TableCell>
+                <TableCell align="right" sx={money}>{formatCurrency(rule.amount)}</TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </TableContainer>
+    </Paper>
+  )
+}
+
+/** The Extras / COs made from Packages for the Lots of these Plans billed after it was approved. */
+function PackageOrdersCard({ orders }) {
+  return (
+    <Paper variant="outlined" component="section" aria-label="Charged from Packages" sx={{ borderRadius: 2, overflow: 'hidden' }}>
+      <Box sx={{ px: { xs: 2, md: 3 }, py: 2 }}>
+        <Typography variant="subtitle1" component="h2" fontWeight={700}>
+          Charged from Packages
+        </Typography>
+        <Typography variant="body2" color="text.secondary">
+          {orders.length === 0
+            ? 'No Package has billed a Lot of these Plans added later yet.'
+            : 'Each Package that billed Lots of these Plans added later made an Extra / CO of its own.'}
+        </Typography>
+      </Box>
+      {orders.length > 0 && (
+        <TableContainer sx={{ borderTop: 1, borderColor: 'divider' }}>
+          <Table size="small" aria-label="Extras / COs made from Packages" sx={[{ minWidth: 520 }, catalogTableSx]}>
+            <TableHead>
+              <TableRow>
+                <TableCell>Extra / CO</TableCell>
+                <TableCell>Package</TableCell>
+                <TableCell>Status</TableCell>
+                <TableCell align="right">Lots</TableCell>
+                <TableCell align="right">Total</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {orders.map((item) => (
+                <TableRow key={item.id}>
+                  <TableCell>
+                    <Link component={RouterLink} to={`/change-orders/${item.id}`} fontWeight={700}>
+                      {item.number}
+                    </Link>
+                  </TableCell>
+                  <TableCell>{item.sourcePackageNumber}</TableCell>
+                  <TableCell><ChangeOrderStatusChip status={item.status} /></TableCell>
+                  <TableCell align="right" sx={money}>{item.lineCount}</TableCell>
+                  <TableCell align="right" sx={money}>{formatCurrency(item.totalAmount)}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </TableContainer>
+      )}
+    </Paper>
+  )
+}
+
 function TotalCard({ totals }) {
   return (
     <Paper variant="outlined" component="section" aria-label="Total" sx={{ p: 2.5, borderRadius: 2 }}>
@@ -585,11 +695,13 @@ export default function ChangeOrderDetail() {
   const [editingPoCo, setEditingPoCo] = useState(false)
   const totals = useMemo(() => summarizeDetailLines(order?.lines ?? []), [order])
   const canSetPoCo = order ? canSetPoCoNumber(order.status, profile?.role) : false
+  // Draw & Invoice comes from its Change Orders tab and goes back there; the list of Extras / COs is not theirs.
+  const list = canOpenPage(profile?.role, 'planning') ? LIST : { label: 'Draw & Invoice', to: '/draw-invoice' }
 
   if (loading) {
     return (
       <Box sx={{ minHeight: '100%', bgcolor: 'background.default' }} aria-busy="true">
-        <CatalogPageHeader breadcrumbs={[LIST, { label: 'Loading…' }]} title="Extra / Change Order" />
+        <CatalogPageHeader breadcrumbs={[list, { label: 'Loading…' }]} title="Extra / Change Order" />
         <Box sx={{ p: { xs: 2.5, md: 4 } }}>
           <Skeleton variant="rounded" height={160} sx={{ mb: 3 }} />
           <Skeleton variant="rounded" height={260} />
@@ -601,7 +713,7 @@ export default function ChangeOrderDetail() {
   if (error || !order) {
     return (
       <Box sx={{ minHeight: '100%', bgcolor: 'background.default' }}>
-        <CatalogPageHeader breadcrumbs={[LIST, { label: 'Not available' }]} title="Extra / Change Order" />
+        <CatalogPageHeader breadcrumbs={[list, { label: 'Not available' }]} title="Extra / Change Order" />
         <Box sx={{ p: { xs: 2.5, md: 4 } }}>
           {error ? (
             <Alert
@@ -631,11 +743,17 @@ export default function ChangeOrderDetail() {
   return (
     <Box sx={{ minHeight: '100%', bgcolor: 'background.default' }}>
       <CatalogPageHeader
-        breadcrumbs={[LIST, { label: order.number }]}
+        breadcrumbs={[list, { label: order.number }]}
         title={order.number}
         titleAdornment={<ChangeOrderStatusChip status={order.status} />}
         meta={<Facts order={order} onEditPoCo={canSetPoCo ? () => setEditingPoCo(true) : undefined} />}
-        actions={<ChangeOrderActions order={order} onChanged={refresh} onError={setActionError} />}
+        actions={(
+          // The QuickBooks button first, as on a Package; then what can be done with the Extra / CO.
+          <Stack direction="row" spacing={1.5} useFlexGap sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
+            <ChangeOrderInvoiceButton order={order} onChanged={refresh} startOpen={Boolean(location.state?.openInvoice)} />
+            <ChangeOrderActions order={order} onChanged={refresh} onError={setActionError} />
+          </Stack>
+        )}
       />
 
       {editingPoCo && canSetPoCo && (
@@ -684,6 +802,11 @@ export default function ChangeOrderDetail() {
         >
           <Stack spacing={3} sx={{ gridArea: 'work', minWidth: 0 }}>
             <WorkCard order={order} totals={totals} />
+            {order.planRules.length > 0 && <PlanRulesCard order={order} />}
+            {(order.planRules.length > 0 && order.status !== 'DRAFT' && order.status !== 'PENDING')
+              || order.packageOrders.length > 0
+              ? <PackageOrdersCard orders={order.packageOrders} />
+              : null}
             <EventCard order={order} />
           </Stack>
           <Box sx={{ gridArea: 'total' }}>

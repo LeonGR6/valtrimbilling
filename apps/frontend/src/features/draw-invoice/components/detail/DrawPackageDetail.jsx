@@ -10,6 +10,7 @@ import {
   IconButton,
   Tooltip,
   MenuItem,
+  Paper,
   Snackbar,
   Stack,
   TextField,
@@ -111,6 +112,7 @@ import {
 import { usePurchaseOrderBacking } from '../../../purchase-orders/hooks/usePurchaseOrders.js'
 import { currentPackageOptions } from '../../utils/packagePurchaseOrders.js'
 import ViewGeneratedPackageButton from './ViewGeneratedPackageButton.jsx'
+import ChangeOrderLinesTable from '../../../change-orders/components/ChangeOrderLinesTable.jsx'
 
 // Loaded on demand: it brings the Release generation screens.
 const GeneratePackageDialog = lazy(() => import('./GeneratePackageDialog.jsx'))
@@ -324,11 +326,13 @@ export default function DrawPackageDetail() {
   const isRetentionRelease = focusedPackage?.packageType === 'RETENTION_RELEASE'
   const isPriceAdjustment = focusedPackage?.packageType === 'PRICE_ADJUSTMENT'
   const isOptionsPackage = focusedPackage?.packageType === 'OPTIONS'
+  // The Package that invoices an Extra / Change Order: its lines are the lines of that Change Order.
+  const isChangeOrderPackage = focusedPackage?.packageType === 'CHANGE_ORDER'
   const retentionSource = isRetentionRelease
     ? summarizeRetentionSource(focusedPackage.retentionRelease, drawInvoicePackages)
     : null
   // None has Lot / Draw cells: the Draw worksheet and its tables do not apply.
-  const hasNoDrawCells = isRetentionRelease || isPriceAdjustment || isOptionsPackage
+  const hasNoDrawCells = isRetentionRelease || isPriceAdjustment || isOptionsPackage || isChangeOrderPackage
   const focusedPackagePhases = focusedPackage?.retentionRelease?.scopeType === 'JOB'
     ? phases
     : phases.filter((phase) => focusedPackagePhaseIds.has(String(phase.id)))
@@ -390,6 +394,8 @@ export default function DrawPackageDetail() {
 
   const packageContext = isPriceAdjustment
     ? `Job #${focusedJob.code} · Price adjustment`
+    : isChangeOrderPackage
+    ? `Job #${focusedJob.code} · Extra / ${focusedPackage.changeOrder?.number ?? 'CO'}`
     : isOptionsPackage
     ? `Job #${focusedJob.code} · Options only`
     : isRetentionRelease
@@ -445,6 +451,8 @@ export default function DrawPackageDetail() {
             <Typography variant="body2" color="text.secondary">
               {isPriceAdjustment
                 ? `Price Adjustment · ${focusedJob.builder} / ${focusedJob.community}`
+                : isChangeOrderPackage
+                ? `Extra / Change Order Package · ${focusedJob.builder} / ${focusedJob.community}`
                 : isOptionsPackage
                 ? `Options Package · ${focusedJob.builder} / ${focusedJob.community}`
                 : isRetentionRelease
@@ -625,6 +633,8 @@ export default function DrawPackageDetail() {
             This Package was cancelled on {formatDate(focusedPackage.cancelledAt?.slice(0, 10))}.
             {isPriceAdjustment
               ? ' Its price differences are pending again; the Package number remains for history.'
+              : isChangeOrderPackage
+              ? ' Its Extra / Change Order can be invoiced again; the Package number remains for history.'
               : isOptionsPackage
               ? ' Its Options can be billed again; the Package number remains for history.'
               : isRetentionRelease
@@ -692,7 +702,38 @@ export default function DrawPackageDetail() {
               </Alert>
             )}
 
-            {isOptionsPackage ? (
+            {isChangeOrderPackage && focusedPackage.status !== 'CANCELLED' && (
+              <Alert severity="info">
+                This Package invoices {focusedPackage.changeOrder?.number ?? 'an Extra / Change Order'}, with no
+                Retention or WRAP. Each piece of work of the Extra / CO is one line of the invoice. It is sent to
+                QuickBooks from the QuickBooks card, like any other Package.
+              </Alert>
+            )}
+
+            {isChangeOrderPackage ? (
+              <PackageSummaryPanel
+                facts={[
+                  { label: 'Extra / CO', value: focusedPackage.changeOrder?.number ?? '' },
+                  {
+                    label: 'Lines',
+                    value: focusedPackage.changeOrder?.lineCount ?? 0,
+                    detail: focusedPackage.changeOrder?.poCoNumber
+                      ? `PO / CO # ${focusedPackage.changeOrder.poCoNumber}`
+                      : undefined,
+                  },
+                ]}
+                lines={[
+                  { label: 'Extra / CO', value: formatCurrency(packageSummary.grossAmount) },
+                  { label: 'Retention', value: formatCurrency(0), tone: 'muted' },
+                  { label: 'WRAP', value: formatCurrency(0), tone: 'muted' },
+                ]}
+                total={{
+                  label: 'Invoice Amount',
+                  value: formatCurrency(packageSummary.invoiceAmount),
+                  detail: focusedInvoiceNumber ? `Invoice ${focusedInvoiceNumber}` : 'Invoice pending',
+                }}
+              />
+            ) : isOptionsPackage ? (
               <PackageSummaryPanel
                 facts={[
                   {
@@ -945,6 +986,22 @@ export default function DrawPackageDetail() {
             )}
             {focusedPackage && isPriceAdjustment && (
               <PackagePriceAdjustmentTable adjustment={focusedPackage.priceAdjustment} />
+            )}
+            {focusedPackage && isChangeOrderPackage && focusedPackage.changeOrderId && (
+              <Paper variant="outlined" component="section" aria-label="Lines of the Extra / CO" sx={{ borderRadius: 2, overflow: 'hidden' }}>
+                <Box sx={{ px: 2, py: 1.5 }}>
+                  <Typography fontWeight={800}>Lines of {focusedPackage.changeOrder?.number ?? 'the Extra / CO'}</Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    What the invoice charges, Lot by Lot. On the invoice, Lots with the same Plan, Scope and price go on one line.
+                  </Typography>
+                </Box>
+                <Box sx={{ overflowX: 'auto', borderTop: 1, borderColor: 'divider' }}>
+                  <ChangeOrderLinesTable
+                    changeOrderId={focusedPackage.changeOrderId}
+                    number={focusedPackage.changeOrder?.number ?? 'the Extra / CO'}
+                  />
+                </Box>
+              </Paper>
             )}
             {focusedPackage && carriesPriceChanges && (
               <PackagePriceAdjustmentTable

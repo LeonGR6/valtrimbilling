@@ -17,6 +17,7 @@ import {
   Typography,
 } from '@mui/material'
 import AccountBalanceWalletRoundedIcon from '@mui/icons-material/AccountBalanceWalletRounded'
+import PostAddRoundedIcon from '@mui/icons-material/PostAddRounded'
 import AddRoundedIcon from '@mui/icons-material/AddRounded'
 import AttachMoneyRoundedIcon from '@mui/icons-material/AttachMoneyRounded'
 import FolderOpenRoundedIcon from '@mui/icons-material/FolderOpenRounded'
@@ -41,6 +42,8 @@ import {
 } from '../DrawPackageCorrectionDialogs.jsx'
 import JobDocumentsCatalog from '../documents/JobDocumentsCatalog.jsx'
 import ReceivablesCatalog from '../receivables/ReceivablesCatalog.jsx'
+import BillableChangeOrdersCatalog from '../../../change-orders/components/BillableChangeOrdersCatalog.jsx'
+import { CHANGE_ORDERS_ENABLED } from '../../../../config/appConfig.js'
 import { DRAW_PACKAGE_STATUS_LABELS } from '../../services/drawInvoicePackageRecord.js'
 import { localDateKey } from '../../utils/calendarDrawSuggestions.js'
 import { summarizeDrawPackage } from '../../utils/drawPackages.js'
@@ -221,10 +224,14 @@ export default function PackageCatalog({
   const [storedCatalogTab, setCatalogTab] = usePersistentState(
     'draw-invoice:section',
     'packages',
-    (value) => value === 'packages' || value === 'documents' || value === 'ar',
+    (value) => value === 'packages' || value === 'documents' || value === 'ar' || value === 'co',
   )
-  // A tab remembered from before (or from another user of this browser) that this role cannot open.
-  const catalogTab = storedCatalogTab === 'ar' && !canSeeReceivables ? 'packages' : storedCatalogTab
+  // A tab remembered from before (or from another user of this browser) that this role cannot open, or the
+  // Extras / COs tab while Extras / COs are closed.
+  const catalogTab = (storedCatalogTab === 'ar' && !canSeeReceivables)
+    || (storedCatalogTab === 'co' && !CHANGE_ORDERS_ENABLED)
+    ? 'packages'
+    : storedCatalogTab
   const [search, setSearch] = usePersistentState('draw-invoice:packages:search', '', isStoredString)
   const [statusTab, setStatusTab] = usePersistentState(
     'draw-invoice:packages:status',
@@ -545,6 +552,14 @@ export default function PackageCatalog({
               label="A/R"
             />
           )}
+          {CHANGE_ORDERS_ENABLED && (
+            <Tab
+              value="co"
+              icon={<PostAddRoundedIcon />}
+              iconPosition="start"
+              label="Change Orders"
+            />
+          )}
         </Tabs>
       </Box>
 
@@ -552,6 +567,8 @@ export default function PackageCatalog({
         <JobDocumentsCatalog jobs={jobs} documentState={jobDocuments} />
       ) : catalogTab === 'ar' ? (
         <ReceivablesCatalog jobs={jobs} />
+      ) : catalogTab === 'co' ? (
+        <BillableChangeOrdersCatalog />
       ) : (
         <Stack spacing={1.5} sx={{ p: { xs: 2, md: 3 } }}>
           {error && (

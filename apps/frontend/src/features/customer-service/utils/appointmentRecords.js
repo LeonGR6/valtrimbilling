@@ -17,6 +17,16 @@ export function upcomingAppointmentRequestIds(appointments = [], now = new Date(
     .sort((left, right) => left - right)
 }
 
+// Distance band limits in miles, as configured in Settings; null without a settings row.
+export function toDistanceBands(row) {
+  if (!row) return null
+  return {
+    distanceGreenMaxMiles: Number(row.distance_green_max_miles),
+    distanceYellowMaxMiles: Number(row.distance_yellow_max_miles),
+    distanceOrangeMaxMiles: Number(row.distance_orange_max_miles),
+  }
+}
+
 export function travelEstimatesToMinutes(rows = []) {
   return Object.fromEntries(rows.map((row) => [travelLegKey(row.from_request_id, row.to_request_id), row.minutes]))
 }

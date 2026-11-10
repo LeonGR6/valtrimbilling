@@ -5,7 +5,6 @@ import {
   createPersistedCustomerServiceSchema,
 } from '../src/features/customer-service/schemas/persistedCustomerServiceSchema.js'
 import {
-  calculateDistanceMiles,
   getSchedulingReadinessReasons,
   toCustomerServiceRequest,
   toCustomerServiceRpcPayload,
@@ -205,15 +204,6 @@ test('RPC payload keeps property and scheduling restrictions together', () => {
   assert.deepEqual(payload.availability, [])
 })
 
-test('distance is calculated in miles from stored coordinates', () => {
-  const miles = calculateDistanceMiles(
-    { latitude: 33.986588, longitude: -117.343021 },
-    { latitude: 34.052235, longitude: -118.243683 },
-  )
-
-  assert.ok(miles > 50 && miles < 60)
-})
-
 test('proposal readiness explains missing data and requires an operational technician', () => {
   const reasons = getSchedulingReadinessReasons({
     status: 'NEW',
@@ -236,10 +226,6 @@ test('database detail rows map into the catalog without mock data', () => {
   const settings = {
     businessDaysToComplete: 5,
     timeZone: 'America/Los_Angeles',
-    companyLatitude: 33.986588,
-    companyLongitude: -117.343021,
-    distanceGreenMaxMiles: 10,
-    distanceYellowMaxMiles: 20,
   }
   const request = toCustomerServiceRequest({
     id: 42,
@@ -280,7 +266,7 @@ test('database detail rows map into the catalog without mock data', () => {
   assert.equal(request.requestNumber, 'SR-00000042')
   assert.equal(request.builderName, 'Example Builder')
   assert.equal(request.appointmentState, 'NOT_SCHEDULED')
-  assert.equal(request.distanceBand, 'GREEN')
+  assert.equal(request.latitude, 33.986588)
   assert.equal(request.availability[0].availableFrom, '2026-09-22T09:00')
   assert.deepEqual(request.customerUnavailableDates, ['2026-09-23'])
   assert.equal(request.customerNeedsContact, true)
@@ -301,10 +287,6 @@ test('unlinked repair requests display without invented builder or community nam
     description: 'Install the missing lock part.',
   }, [], {
     timeZone: 'America/Los_Angeles',
-    companyLatitude: 33.986588,
-    companyLongitude: -117.343021,
-    distanceGreenMaxMiles: 10,
-    distanceYellowMaxMiles: 20,
   })
 
   assert.equal(request.street, '456 New Street')

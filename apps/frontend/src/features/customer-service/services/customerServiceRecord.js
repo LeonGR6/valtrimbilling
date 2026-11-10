@@ -1,5 +1,3 @@
-const EARTH_RADIUS_MILES = 3958.8
-
 function numberOrNull(value) {
   if (value === null || value === undefined || value === '') return null
   const parsed = Number(value)
@@ -53,41 +51,6 @@ export function zonedDateTimeToIso(value, timeZone = 'America/Los_Angeles') {
   return new Date(instant).toISOString()
 }
 
-function toRadians(value) {
-  return (value * Math.PI) / 180
-}
-
-export function calculateDistanceMiles(origin, destination) {
-  if (
-    origin.latitude === null || origin.longitude === null
-    || destination.latitude === null || destination.longitude === null
-  ) return null
-
-  const latitudeDelta = toRadians(destination.latitude - origin.latitude)
-  const longitudeDelta = toRadians(destination.longitude - origin.longitude)
-  const originLatitude = toRadians(origin.latitude)
-  const destinationLatitude = toRadians(destination.latitude)
-  const haversine = (
-    Math.sin(latitudeDelta / 2) ** 2
-    + Math.cos(originLatitude)
-      * Math.cos(destinationLatitude)
-      * Math.sin(longitudeDelta / 2) ** 2
-  )
-
-  return EARTH_RADIUS_MILES * 2 * Math.atan2(
-    Math.sqrt(haversine),
-    Math.sqrt(1 - haversine),
-  )
-}
-
-function classifyDistance(distanceMiles, settings) {
-  if (distanceMiles === null) return null
-  if (distanceMiles <= settings.distanceGreenMaxMiles) return 'GREEN'
-  if (distanceMiles <= settings.distanceYellowMaxMiles) return 'YELLOW'
-  if (distanceMiles <= settings.distanceOrangeMaxMiles) return 'ORANGE'
-  return 'RED'
-}
-
 export function getSchedulingReadinessReasons(
   request,
   { hasOperationalTechnician = true } = {},
@@ -138,13 +101,6 @@ export function toCustomerServiceRequest(
 ) {
   const latitude = numberOrNull(row.latitude)
   const longitude = numberOrNull(row.longitude)
-  const distanceMiles = calculateDistanceMiles(
-    {
-      latitude: settings.companyLatitude,
-      longitude: settings.companyLongitude,
-    },
-    { latitude, longitude },
-  )
 
   const request = {
     id: row.id,
@@ -185,8 +141,6 @@ export function toCustomerServiceRequest(
     plan: row.plan_label ?? '',
     latitude,
     longitude,
-    distanceMiles,
-    distanceBand: classifyDistance(distanceMiles, settings),
     currentAppointmentId: row.current_appointment_id ?? null,
     appointmentState: row.current_appointment_id
       ? row.appointment_state

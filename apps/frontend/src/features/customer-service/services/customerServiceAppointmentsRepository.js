@@ -1,5 +1,5 @@
 import { requireSupabase } from '../../../services/api.js'
-import { upcomingAppointmentRequestIds } from '../utils/appointmentRecords.js'
+import { toDistanceBands, upcomingAppointmentRequestIds } from '../utils/appointmentRecords.js'
 
 const APPOINTMENT_COLUMNS = [
   'id', 'request_id', 'technician_ids', 'window_starts_at', 'window_ends_at',
@@ -12,14 +12,19 @@ async function functionErrorMessage(error, data, fallback) {
   return payload?.error || error?.message || fallback
 }
 
+const SETTINGS_COLUMNS = [
+  'travel_traffic_mode', 'distance_green_max_miles', 'distance_yellow_max_miles', 'distance_orange_max_miles',
+].join(', ')
+
 // Current (not cancelled) appointments, the travel estimates that touch an
-// appointment from today onward (the only legs the planner can prefill), and the
-// travel traffic mode, so the planner knows which Google legs to calculate again.
+// appointment from today onward (the only legs the planner can prefill), the
+// travel traffic mode, so the planner knows which Google legs to calculate again,
+// and the distance bands used for nearby visits.
 export async function loadCustomerServiceSchedule(now = new Date()) {
   const client = await requireSupabase()
   const [appointments, settings] = await Promise.all([
     client.from('service_appointments').select(APPOINTMENT_COLUMNS).eq('is_current', true),
-    client.from('service_scheduling_settings').select('travel_traffic_mode').eq('id', 1).maybeSingle(),
+    client.from('service_scheduling_settings').select(SETTINGS_COLUMNS).eq('id', 1).maybeSingle(),
   ])
   for (const result of [appointments, settings]) {
     if (result.error) {
@@ -27,9 +32,10 @@ export async function loadCustomerServiceSchedule(now = new Date()) {
     }
   }
   const travelTrafficMode = settings.data?.travel_traffic_mode ?? 'OFF'
+  const distanceBands = toDistanceBands(settings.data)
 
   const requestIds = upcomingAppointmentRequestIds(appointments.data, now)
-  if (!requestIds.length) return { appointments: appointments.data, travelEstimates: [], travelTrafficMode }
+  if (!requestIds.length) return { appointments: appointments.data, travelEstimates: [], travelTrafficMode, distanceBands }
 
   const list = requestIds.join(',')
   const travel = await client.from('service_travel_estimates')
@@ -38,7 +44,7 @@ export async function loadCustomerServiceSchedule(now = new Date()) {
   if (travel.error) {
     throw new Error(travel.error.message || 'The schedule could not be loaded.', { cause: travel.error })
   }
-  return { appointments: appointments.data, travelEstimates: travel.data, travelTrafficMode }
+  return { appointments: appointments.data, travelEstimates: travel.data, travelTrafficMode, distanceBands }
 }
 
 // The Edge Function revalidates capacity on the server before saving.

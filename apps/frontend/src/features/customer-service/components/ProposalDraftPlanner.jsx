@@ -16,6 +16,7 @@ import {
 import { getCustomerServiceClock } from '../utils/dates.js'
 import { useCustomerServicePrototype } from '../context/customerServicePrototypeContext.js'
 import ProposalDayAgenda from './ProposalDayAgenda.jsx'
+import ProposalNearbyVisits from './ProposalNearbyVisits.jsx'
 
 const formatSuggestionDate = (date) => new Date(`${date}T12:00:00Z`).toLocaleDateString('en-US', {
   weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC',
@@ -79,6 +80,7 @@ const acceptanceOptions = [
 export default function ProposalDraftPlanner({ request, requests, technicians: roster, savedDraft, onSave, onDirtyChange, onRegistered }) {
   const {
     registerAppointment, storedTravelMinutes, storedRoutesMinutes, storedTravelDetails, travelTrafficMode, estimateTravel,
+    distanceBands,
   } = useCustomerServicePrototype()
   // Travel saved with earlier appointments fills the same legs; typed values win.
   const withStoredTravel = (formValues) => ({
@@ -177,6 +179,7 @@ export default function ProposalDraftPlanner({ request, requests, technicians: r
           {!savedDraft && hasUnsavedChanges && <Chip label="Unsaved draft changes" color="warning" variant="outlined" />}
           {savedDraft && <Chip label={savedIsStale || savedNeedsRevalidation ? 'Saved draft needs review' : hasUnsavedChanges ? 'Unsaved draft changes' : 'Draft saved · not sent'} color={savedIsStale || savedNeedsRevalidation ? 'warning' : hasUnsavedChanges ? 'default' : 'success'} variant="outlined" />}
         </Stack>
+        <ProposalNearbyVisits request={request} requests={requests} distanceBands={distanceBands} />
         <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'minmax(0, 1fr) minmax(0, 1fr)' }, gap: 2.5 }}>
           <Stack spacing={2}>
             <FormControl fullWidth error={values.technicianIds.length > 0 && Boolean(errorFor('technicianIds'))}>

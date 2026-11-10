@@ -113,11 +113,15 @@ export async function loadPackageSource(admin: Admin, packageId: number): Promis
   const lotsById = new Map(lots.map((lot) => [lot.id, lot]))
 
   // The Package of an Extra / Change Order invoices the lines of that Change Order.
-  let changeOrder: { poCoNumber: string | null } | null = null
+  let changeOrder: { poCoNumber: string | null; byPlan: boolean } | null = null
   let changeOrderLines: NonNullable<PackageInvoiceSource['changeOrderLines']> = []
   if (header.package_type === 'CHANGE_ORDER' && header.change_order_id) {
     const [order, lines] = await Promise.all([
-      admin.from('change_orders').select('po_co_number').eq('id', header.change_order_id).maybeSingle(),
+      admin
+        .from('change_orders')
+        .select('po_co_number, coverage, source_change_order_id')
+        .eq('id', header.change_order_id)
+        .maybeSingle(),
       admin
         .from('change_order_lines')
         .select('line_number, lot_id, phase_code, building, lot_number, plan_code, location, scope_of_work, amount')
@@ -126,7 +130,12 @@ export async function loadPackageSource(admin: Admin, packageId: number): Promis
     ])
     const orderRow = orThrow(order)
     if (!orderRow) throw new Error('The Change Order of this Package no longer exists.')
-    changeOrder = { poCoNumber: orderRow.po_co_number ?? null }
+    // The Plan is named only when the Change Order is about Plans: Specific plan types, or made from a
+    // Package for one.
+    changeOrder = {
+      poCoNumber: orderRow.po_co_number ?? null,
+      byPlan: orderRow.coverage?.mode === 'plans' || orderRow.source_change_order_id != null,
+    }
     changeOrderLines = orThrow(lines) ?? []
   }
 

@@ -29,7 +29,7 @@ import { formatCurrency } from '../../draw-invoice/utils/drawInvoiceFormatters.j
 import { useJobs } from '../../jobs/context/useJobs.js'
 import { jobDrawInvoicePath } from '../../jobs/utils/jobRoutes.js'
 import { createChangeOrderPackage } from '../services/changeOrderRepository.js'
-import { changeOrderInvoiceLines, invoiceLinesTotal } from '../utils/invoiceLines.js'
+import { changeOrderInvoiceLines, invoiceIsByPlan, invoiceLinesTotal } from '../utils/invoiceLines.js'
 import { invoiceProblem } from '../utils/packageOrders.js'
 
 const QuickbooksInvoiceDialog = lazy(() => import('../../draw-invoice/components/detail/QuickbooksInvoiceDialog.jsx'))
@@ -62,8 +62,8 @@ export default function ChangeOrderInvoiceButton({ order, onChanged, startOpen =
     : null
   const sync = useQuickbooksInvoiceSync(record, syncKey)
   const lines = useMemo(
-    () => changeOrderInvoiceLines(order.lines, { poCoNumber: order.poCoNumber }),
-    [order.lines, order.poCoNumber],
+    () => changeOrderInvoiceLines(order.lines, { poCoNumber: order.poCoNumber, byPlan: invoiceIsByPlan(order) }),
+    [order],
   )
   const total = invoiceLinesTotal(lines)
   const problem = invoiceProblem(order)

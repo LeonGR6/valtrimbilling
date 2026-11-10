@@ -6,7 +6,9 @@
 //   PLAN 1 (WIDER DOOR) $27.00 PER LOT (PHASE 2 LOTS #10-11, 16-17)
 //
 // The Lots with the same Plan, Scope of Work and price go together; a Lot with another price, another
-// Scope or another Plan goes on a line of its own. The Phase is always named, because Lot numbers repeat
+// Scope or another Plan goes on a line of its own. The Plan is only named (and only separates Lots) when
+// the Change Order is about Plans: one that covers Specific plan types, or one made from a Package for
+// them. Any other names the work alone: "REPLACE DOOR TRIM $498.29 PER LOT (PHASE 1 LOT #7)". The Phase is always named, because Lot numbers repeat
 // between Phases ("PHASE 2 LOTS #10-11; PHASE 3 LOT #4"). A line without a Lot is its place and its
 // Scope: "SALES OFFICE (ELECTRONIC LOCKS)". When the Change Order has the Builder's PO / CO #, every line
 // ends with " - 9167 CHANGE ORDER". Everything is in capitals, like the lines of a Package.
@@ -90,11 +92,12 @@ interface WorkGroup {
 
 /**
  * The invoice lines of a Change Order: its Lots by Plan, Scope of Work and price (in that order), then its
- * lines without a Lot in the order they were saved. `poCoNumber` is the Builder's PO / CO #, if written.
+ * lines without a Lot in the order they were saved. `poCoNumber` is the Builder's PO / CO #, if written;
+ * `byPlan` says whether the Change Order is about Plans (the Plan is named and separates the Lots).
  */
 export function changeOrderInvoiceLines(
   rows: ChangeOrderLineRow[],
-  { poCoNumber = null }: { poCoNumber?: string | null } = {},
+  { poCoNumber = null, byPlan = true }: { poCoNumber?: string | null; byPlan?: boolean } = {},
 ): ChangeOrderInvoiceLine[] {
   const po = oneLine(poCoNumber)
   const suffix = po ? ` - ${po} CHANGE ORDER` : ''
@@ -113,7 +116,7 @@ export function changeOrderInvoiceLines(
       continue
     }
 
-    const plan = oneLine(row.plan_code)
+    const plan = byPlan ? oneLine(row.plan_code) : ''
     const key = JSON.stringify([plan.toUpperCase(), scope.toUpperCase(), amountCents])
     if (!groups.has(key)) groups.set(key, { plan, scope, unitCents: amountCents, lots: [] })
     groups.get(key)?.lots.push({ phase: oneLine(row.phase_code), lot: oneLine(row.lot_number) })
@@ -127,7 +130,9 @@ export function changeOrderInvoiceLines(
     )
     .map((group) => ({
       description: finish(
-        `PLAN ${group.plan} (${group.scope}) ${formatMoney(group.unitCents)} PER LOT (${lotsText(group.lots)})`,
+        byPlan
+          ? `PLAN ${group.plan} (${group.scope}) ${formatMoney(group.unitCents)} PER LOT (${lotsText(group.lots)})`
+          : `${group.scope} ${formatMoney(group.unitCents)} PER LOT (${lotsText(group.lots)})`,
       ),
       amount: (group.unitCents * group.lots.length) / 100,
     }))

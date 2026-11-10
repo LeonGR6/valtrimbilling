@@ -96,7 +96,7 @@ export interface PackageInvoiceSource {
    */
   adjustmentLines?: PackageAdjustmentLineRow[]
   /** The Extra / Change Order a CHANGE_ORDER Package invoices: its PO / CO # and its lines. */
-  changeOrder?: { poCoNumber: string | null } | null
+  changeOrder?: { poCoNumber: string | null; byPlan?: boolean } | null
   changeOrderLines?: ChangeOrderLineRow[]
   invoice: PackageInvoiceRow | null
 }
@@ -303,7 +303,10 @@ export function mapPackageToCharges(source: PackageInvoiceSource): PackageInvoic
 
     return {
       invoiceLineFormat: header.invoice_line_format,
-      charges: changeOrderInvoiceLines(lines, { poCoNumber: source.changeOrder?.poCoNumber ?? null })
+      charges: changeOrderInvoiceLines(lines, {
+        poCoNumber: source.changeOrder?.poCoNumber ?? null,
+        byPlan: source.changeOrder?.byPlan ?? true,
+      })
         .map((line, index) => ({
           phaseCode: '',
           lotNumber: '',

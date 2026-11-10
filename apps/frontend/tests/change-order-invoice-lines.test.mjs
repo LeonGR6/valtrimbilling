@@ -6,6 +6,7 @@ import {
   changeOrderInvoiceLines,
   formatInvoiceLotRanges,
   formatInvoiceMoney,
+  invoiceIsByPlan,
   invoiceLinesTotal,
   invoiceLotsText,
 } from '../src/features/change-orders/utils/invoiceLines.js'
@@ -91,4 +92,23 @@ test('money has thousands separators and exact cents, and the total is exact', (
   const lines = changeOrderInvoiceLines([lot('1', { amount: 0.1 }), lot('2', { amount: 0.1 }), lot('3', { amount: 0.1 })])
   assert.equal(lines[0].amount, 0.3)
   assert.equal(invoiceLinesTotal([...lines, { amount: 0.2 }]), 0.5)
+})
+
+test('an Extra / CO not about Plans names the work alone, and Lots of any Plan go together', () => {
+  const lines = changeOrderInvoiceLines([
+    lot('7', { phase: '1', plan: '1A', scope: 'Replace door trim', amount: 498.29 }),
+    lot('8', { phase: '1', plan: '2B', scope: 'Replace door trim', amount: 498.29 }),
+    place('Sales Office', 'Locks', 5),
+  ], { byPlan: false, poCoNumber: '9167' })
+  assert.deepEqual(lines, [
+    { description: 'REPLACE DOOR TRIM $498.29 PER LOT (PHASE 1 LOTS #7-8) - 9167 CHANGE ORDER', amount: 996.58 },
+    { description: 'SALES OFFICE (LOCKS) - 9167 CHANGE ORDER', amount: 5 },
+  ])
+})
+
+test('the Plan belongs on the invoice only for Specific plan types or one made from a Package', () => {
+  assert.equal(invoiceIsByPlan({ coverage: { mode: 'plans' } }), true)
+  assert.equal(invoiceIsByPlan({ coverage: {}, fromPackage: true }), true)
+  assert.equal(invoiceIsByPlan({ coverage: { mode: 'lots' }, fromPackage: false }), false)
+  assert.equal(invoiceIsByPlan({ coverage: null }), false)
 })

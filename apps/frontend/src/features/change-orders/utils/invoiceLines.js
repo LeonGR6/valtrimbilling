@@ -8,6 +8,10 @@
 //
 // Lots with the same Plan, Scope of Work and price go together; the Phase is always named; a line without
 // a Lot is its place and its Scope; the Builder's PO / CO # ends every line; everything in capitals.
+// The Plan is only named (and only separates Lots) when the Extra / CO is about Plans (`byPlan`): one that
+// covers Specific plan types, or one made from a Package for them. Any other names the work alone:
+//
+//   REPLACE DOOR TRIM $498.29 PER LOT (PHASE 1 LOT #7)
 
 const naturalCompare = (left, right) => left.localeCompare(right, 'en', { numeric: true, sensitivity: 'base' })
 
@@ -73,7 +77,7 @@ export function invoiceLotsText(lots) {
  * total as the Rate: `{ description, amount }`, the Lots first (by Plan, Scope and price), then the lines
  * without a Lot in their order. `poCoNumber` is the Builder's PO / CO #, if written.
  */
-export function changeOrderInvoiceLines(lines, { poCoNumber = '' } = {}) {
+export function changeOrderInvoiceLines(lines, { poCoNumber = '', byPlan = true } = {}) {
   const po = oneLine(poCoNumber)
   const finish = (text) => `${text}${po ? ` - ${po} CHANGE ORDER` : ''}`.toUpperCase()
   const groups = new Map()
@@ -86,7 +90,7 @@ export function changeOrderInvoiceLines(lines, { poCoNumber = '' } = {}) {
       places.push({ description: finish(`${oneLine(line.location)} (${scope})`), amount: cents / 100 })
       continue
     }
-    const plan = oneLine(line.plan)
+    const plan = byPlan ? oneLine(line.plan) : ''
     const key = JSON.stringify([plan.toUpperCase(), scope.toUpperCase(), cents])
     if (!groups.has(key)) groups.set(key, { plan, scope, unitCents: cents, lots: [] })
     groups.get(key).lots.push({ phase: oneLine(line.phase), lot: oneLine(line.lot) })
@@ -97,13 +101,18 @@ export function changeOrderInvoiceLines(lines, { poCoNumber = '' } = {}) {
       || naturalCompare(left.scope, right.scope)
       || left.unitCents - right.unitCents)
     .map((group) => ({
-      description: finish(
-        `PLAN ${group.plan} (${group.scope}) ${formatInvoiceMoney(group.unitCents)} PER LOT (${invoiceLotsText(group.lots)})`,
-      ),
+      description: finish(byPlan
+        ? `PLAN ${group.plan} (${group.scope}) ${formatInvoiceMoney(group.unitCents)} PER LOT (${invoiceLotsText(group.lots)})`
+        : `${group.scope} ${formatInvoiceMoney(group.unitCents)} PER LOT (${invoiceLotsText(group.lots)})`),
       amount: (group.unitCents * group.lots.length) / 100,
     }))
 
   return [...work, ...places]
+}
+
+/** Whether the Plan belongs on the invoice: the Extra / CO covers Specific plan types, or was made from a Package for one. */
+export function invoiceIsByPlan(order) {
+  return order?.coverage?.mode === 'plans' || Boolean(order?.fromPackage)
 }
 
 /** What the lines add up to, in cents so it is exact. */

@@ -137,3 +137,20 @@ Deno.test('a Change Order Package needs its lines and nothing else', () => {
     'cannot have',
   )
 })
+
+Deno.test('a Change Order not about Plans names the work alone, and Lots of any Plan go together', () => {
+  const lines = changeOrderInvoiceLines([
+    lot('7', { phase_code: '1', plan_code: '1A', scope_of_work: 'Replace door trim', amount: 498.29 }),
+    lot('8', { phase_code: '1', plan_code: '2B', scope_of_work: 'Replace door trim', amount: 498.29 }),
+    place('Sales Office', 'Locks', 5),
+  ], { byPlan: false, poCoNumber: '9167' })
+  assertEquals(lines, [
+    { description: 'REPLACE DOOR TRIM $498.29 PER LOT (PHASE 1 LOTS #7-8) - 9167 CHANGE ORDER', amount: 996.58 },
+    { description: 'SALES OFFICE (LOCKS) - 9167 CHANGE ORDER', amount: 5 },
+  ])
+})
+
+Deno.test('the Package of a Change Order not about Plans is invoiced without the Plan', () => {
+  const mapped = mapPackageToCharges(coSource({ changeOrder: { poCoNumber: null, byPlan: false } }))
+  assertEquals(mapped.charges[0].description, 'TESTING $27.00 PER LOT (PHASE 2 LOTS #10-11, 16-17)')
+})

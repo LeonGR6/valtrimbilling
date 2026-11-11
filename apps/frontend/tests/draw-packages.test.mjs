@@ -23,6 +23,7 @@ import {
   utilityChargeKey,
 } from '../src/features/draw-invoice/utils/drawPackages.js'
 import { testJobs } from './fixtures/jobs.mjs'
+import { differenceLedgerLine } from '../src/features/draw-invoice/utils/invoiceDifference.js'
 
 const persistedPackageFixture = {
   id: 1,
@@ -609,6 +610,37 @@ test('persisted package totals use immutable database snapshots', () => {
   assert.equal(summary.optionsTotal, 125)
   assert.equal(summary.lotRange, '19')
   assert.deepEqual(summary.scopeEventTypes, ['HW'])
+})
+
+test('an invoice with a difference line shows the amount QuickBooks bills, and says what it includes', () => {
+  const base = {
+    lotIds: [1],
+    drawIndexes: [1],
+    selections: makePackageSelections([1], [1]),
+    persistedInvoice: { grossAmount: 2700, retentionAmount: 75.3, wrapAmount: 0, netAmount: 2624.7 },
+    persistedDrawLines: [],
+    persistedOptionLines: [],
+  }
+  const summarize = (record) => summarizeDrawPackage(
+    record,
+    { sequenceSheet: { plans: [] } },
+    { lots: [] },
+    { draws: [{ percentage: 100, eventType: 'EXT' }] },
+  )
+
+  const without = summarize(base)
+  assert.equal(without.invoiceAmount, 2624.7)
+  assert.equal(without.difference, null)
+  assert.equal(differenceLedgerLine(without), null)
+
+  const taken = summarize({ ...base, invoiceDifference: { description: 'DIFFERENCE', amount: -4.1 } })
+  assert.equal(taken.packageAmount, 2624.7)
+  assert.equal(taken.invoiceAmount, 2620.6)
+  assert.deepEqual(differenceLedgerLine(taken), { label: 'DIFFERENCE', value: '-$4.10', tone: 'deduction' })
+
+  const added = summarize({ ...base, invoiceDifference: { description: 'ROUNDING', amount: 3.52 } })
+  assert.equal(added.invoiceAmount, 2628.22)
+  assert.deepEqual(differenceLedgerLine(added), { label: 'ROUNDING', value: '+$3.52', tone: undefined })
 })
 
 test('persisted package exposes only the Draw cells that charged Hardware', () => {

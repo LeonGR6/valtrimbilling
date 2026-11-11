@@ -845,7 +845,13 @@ export function summarizeDrawPackage(record, job, phaseOrPhases, schedule) {
       grossAmount: record.persistedInvoice.grossAmount,
       retention: record.persistedInvoice.retentionAmount,
       wrapInsurance: record.persistedInvoice.wrapAmount,
-      invoiceAmount: record.persistedInvoice.netAmount,
+      // What QuickBooks bills: the Package net plus the manual difference line the invoice carries, if any.
+      packageAmount: record.persistedInvoice.netAmount,
+      difference: record.invoiceDifference ?? null,
+      invoiceAmount: addCurrencyAmounts(
+        record.persistedInvoice.netAmount,
+        record.invoiceDifference?.amount ?? 0,
+      ),
     }
   }
 

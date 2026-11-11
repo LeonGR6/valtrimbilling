@@ -78,6 +78,7 @@ import {
   formatCurrency,
   formatDate,
 } from '../../utils/drawInvoiceFormatters.js'
+import { differenceLedgerLine } from '../../utils/invoiceDifference.js'
 import { canDeleteDraftPackage } from '../../utils/packageCatalog.js'
 import {
   CancelDrawPackageDialog,
@@ -749,6 +750,7 @@ export default function DrawPackageDetail() {
                   { label: 'Options', value: formatCurrency(packageSummary.currentDraw) },
                   { label: 'Retention', value: formatCurrency(packageSummary.retention), tone: packageSummary.retention > 0 ? 'deduction' : 'muted' },
                   { label: 'WRAP', value: formatCurrency(packageSummary.wrapInsurance), tone: packageSummary.wrapInsurance > 0 ? 'deduction' : 'muted' },
+                  ...[differenceLedgerLine(packageSummary)].filter(Boolean),
                 ]}
                 total={{
                   label: 'Invoice Amount',
@@ -848,6 +850,7 @@ export default function DrawPackageDetail() {
                   { label: 'Current Draw', value: formatCurrency(packageSummary.currentDraw) },
                   { label: 'Retention', value: formatCurrency(packageSummary.retention), tone: packageSummary.retention > 0 ? 'deduction' : 'muted' },
                   { label: 'WRAP', value: formatCurrency(packageSummary.wrapInsurance), tone: packageSummary.wrapInsurance > 0 ? 'deduction' : 'muted' },
+                  ...[differenceLedgerLine(packageSummary)].filter(Boolean),
                 ]}
                 total={{
                   label: 'Invoice Amount',

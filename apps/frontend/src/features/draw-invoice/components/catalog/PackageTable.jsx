@@ -45,6 +45,7 @@ import {
   formatDateTime,
   formatLongDate,
 } from '../../utils/drawInvoiceFormatters.js'
+import { formatSignedCurrency } from '../../utils/invoiceDifference.js'
 import { packageNoteAuthor, summarizePackageNotes } from '../../services/packageNotesRecord.js'
 import { canDeleteDraftPackage } from '../../utils/packageCatalog.js'
 import { PACKAGE_SORT_COLUMNS } from '../../utils/packageCatalog.js'
@@ -513,6 +514,16 @@ export default function PackageTable({
                     {summary.utilityTotal > 0 && (
                       <Typography variant="caption" color="text.secondary" component="div">
                         Includes {formatCurrency(summary.utilityTotal)} Utility
+                      </Typography>
+                    )}
+                    {summary.difference && (
+                      <Typography
+                        variant="caption"
+                        color={summary.difference.amount < 0 ? 'error.main' : 'text.secondary'}
+                        component="div"
+                        data-testid="invoice-difference-caption"
+                      >
+                        Includes "{summary.difference.description}" {formatSignedCurrency(summary.difference.amount)}
                       </Typography>
                     )}
                   </TableCell>

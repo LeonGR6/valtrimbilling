@@ -146,3 +146,17 @@ export function sameDifference(left, right) {
     && Math.round(left.amount * 100) === Math.round(right.amount * 100)
     && cleanDifferenceReason(left.reason) === cleanDifferenceReason(right.reason)
 }
+
+/**
+ * The ledger line of a Package summary for the difference its invoice carries, or null when it has none:
+ * the text of the line as label, its signed amount as value, in red when it takes off.
+ */
+export function differenceLedgerLine(summary) {
+  const difference = summary?.difference
+  if (!difference || difference.amount == null) return null
+  return {
+    label: difference.description,
+    value: formatSignedCurrency(difference.amount),
+    tone: difference.amount < 0 ? 'deduction' : undefined,
+  }
+}

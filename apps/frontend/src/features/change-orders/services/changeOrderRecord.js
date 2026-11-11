@@ -31,8 +31,8 @@ export function canApproveChangeOrders(role) {
  * and move it to another status. Each move says where it goes (`to`), what the button says (`label`),
  * whether the person must confirm it (`confirm`) and whether a reason is needed (`needsReason`).
  * The database allows the same: Project Management and Admin move it between Draft, Pending and
- * Cancelled; only Admin approves, or cancels an approved one. Only a Draft can be deleted (`canDelete`):
- * what was sent is cancelled instead.
+ * Cancelled; only Admin approves, or cancels an approved one. A Draft or a cancelled one can be deleted
+ * (`canDelete`): keeping a cancelled one as history is the person's choice; anything else is cancelled first.
  */
 export function changeOrderActions(status, role) {
   const mayWrite = canEditChangeOrders(role)
@@ -49,7 +49,7 @@ export function changeOrderActions(status, role) {
     }
   }
 
-  return { canEdit: mayWrite && open, canDelete: mayWrite && status === 'DRAFT', moves }
+  return { canEdit: mayWrite && open, canDelete: mayWrite && (status === 'DRAFT' || status === 'CANCELLED'), moves }
 }
 
 /** What is said once a move is done ("CO-0007 approved"); `to` is a status, or 'DELETE'. */

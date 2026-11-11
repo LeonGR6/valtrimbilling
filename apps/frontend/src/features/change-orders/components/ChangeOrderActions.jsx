@@ -1,8 +1,8 @@
-import { Link as RouterLink } from 'react-router-dom'
+import { Link as RouterLink, useNavigate } from 'react-router-dom'
 import { Button } from '@mui/material'
 
 import { useAuth } from '../../auth/context/useAuth.js'
-import { useChangeOrderMoves } from '../hooks/useChangeOrderMoves.jsx'
+import { DELETE_MOVE, useChangeOrderMoves } from '../hooks/useChangeOrderMoves.jsx'
 import { changeOrderActions } from '../services/changeOrderRecord.js'
 
 /**
@@ -13,10 +13,15 @@ import { changeOrderActions } from '../services/changeOrderRecord.js'
  */
 export default function ChangeOrderActions({ order, onChanged, onError }) {
   const { profile } = useAuth()
-  const { canEdit, moves } = changeOrderActions(order.status, profile?.role)
-  const { busy, startMove, dialog } = useChangeOrderMoves({ onChanged, onError })
+  const navigate = useNavigate()
+  const { canEdit, canDelete, moves } = changeOrderActions(order.status, profile?.role)
+  // Once deleted there is no page to stay on: back to the list.
+  const { busy, startMove, dialog } = useChangeOrderMoves({
+    onChanged: (target, move) => (move?.remove ? navigate('/change-orders') : onChanged(target, move)),
+    onError,
+  })
 
-  if (!canEdit && moves.length === 0) return null
+  if (!canEdit && !canDelete && moves.length === 0) return null
 
   const primary = moves.find((move) => move.to === 'APPROVED' && order.status === 'PENDING')
     ?? moves.find((move) => move.to === 'PENDING')
@@ -49,6 +54,11 @@ export default function ChangeOrderActions({ order, onChanged, onError }) {
           </Button>
         )
       })}
+      {canDelete && (
+        <Button color="error" disabled={busy} onClick={() => startMove(order, DELETE_MOVE)}>
+          Delete
+        </Button>
+      )}
       {dialog}
     </>
   )

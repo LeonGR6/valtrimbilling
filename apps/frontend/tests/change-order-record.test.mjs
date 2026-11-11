@@ -644,15 +644,17 @@ test('the pieces of work add up to what the lines add up to, to the cent', () =>
   assert.deepEqual(groupDetailLines([]), { works: [], places: [] })
 })
 
-test('only a Draft can be deleted, by Project Management and Admin', () => {
+test('a Draft or a cancelled Extra / CO can be deleted, by Project Management and Admin', () => {
   for (const role of ['PROJECT_MANAGEMENT', 'ADMIN']) {
     assert.equal(changeOrderActions('DRAFT', role).canDelete, true, role)
-    for (const status of ['PENDING', 'APPROVED', 'CANCELLED']) {
+    assert.equal(changeOrderActions('CANCELLED', role).canDelete, true, role)
+    for (const status of ['PENDING', 'APPROVED']) {
       assert.equal(changeOrderActions(status, role).canDelete, false, `${role} ${status}`)
     }
   }
-  for (const role of ['ACCOUNTING', 'SCHEDULING', 'CUSTOMER_SERVICE', 'FIELD', 'READ_ONLY', undefined]) {
+  for (const role of ['ACCOUNTING', 'SCHEDULING', 'CUSTOMER_SERVICE', 'FIELD', 'READ_ONLY', 'DRAW_INVOICE', undefined]) {
     assert.equal(changeOrderActions('DRAFT', role).canDelete, false, String(role))
+    assert.equal(changeOrderActions('CANCELLED', role).canDelete, false, String(role))
   }
 })
 

@@ -24,6 +24,7 @@ const CONFIRM_TEXT = {
   APPROVED: 'Once it is approved its lines can no longer be edited. Only an Admin can cancel it afterwards.',
   CANCELLED: 'A cancelled Extra / Change Order cannot be edited or reopened. It stays in the list with the reason.',
   DELETE: 'A Draft is deleted for good, with its lines and its history. It cannot be undone.',
+  DELETE_CANCELLED: 'It is deleted for good, with its lines, its charges and its history. Keep it cancelled if you want the record. It cannot be undone.',
 }
 
 const dialogTitle = (move, number) => {
@@ -104,7 +105,7 @@ export function useChangeOrderMoves({ onChanged, onError }) {
       </DialogTitle>
       <DialogContent>
         <DialogContentText sx={{ mb: move?.needsReason ? 2 : 0 }}>
-          {CONFIRM_TEXT[move?.to]}
+          {CONFIRM_TEXT[move?.to === 'DELETE' && order?.status === 'CANCELLED' ? 'DELETE_CANCELLED' : move?.to]}
         </DialogContentText>
         {dialogError && <Alert severity="error" sx={{ mb: 2 }}>{dialogError}</Alert>}
         {move?.needsReason && (

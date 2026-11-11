@@ -52,6 +52,20 @@ export function travelLegsToEstimate(travelLegs = [], routesMinutes = {}, travel
     }))
 }
 
+// Google legs that must be calculated again before registering, because a registered
+// appointment reserves time with these minutes. A typed value is never out of date. A
+// leg Google could not refresh (its key in refreshFailedKeys) keeps its saved value and
+// does not block, the same way the server keeps it.
+export function outdatedTravelLegs({
+  travelLegs = [], travelMinutes = {}, routesMinutes = {}, travelDetails = {}, trafficMode = 'OFF',
+  refreshFailedKeys = [], now = new Date(),
+}) {
+  return travelLegs.filter((leg) => leg.minutes !== null
+    && !refreshFailedKeys.includes(leg.key)
+    && travelLegSource(leg.key, travelMinutes, routesMinutes) === 'ROUTES_API'
+    && travelLegStaleReason(leg, travelDetails[leg.key], trafficMode, now) !== null)
+}
+
 // Fills blank legs and replaces Google values; a typed value always stays.
 export function applyTravelEstimates(values, results = [], routesMinutes = {}) {
   const travelMinutes = { ...(values.travelMinutes ?? {}) }

@@ -288,6 +288,36 @@ Deno.test("manual minutes are never recalculated, even when the traffic moved", 
   assertEquals(calls.length, 0);
 });
 
+Deno.test("the day-before check asks Google again for a current value, never for a manual one", async () => {
+  const stored = [
+    {
+      from_request_id: 10, to_request_id: 20, minutes: 23, source: "ROUTES_API",
+      traffic_model: "PESSIMISTIC", departure_at: DEPARTURE,
+    },
+    { from_request_id: 20, to_request_id: 10, minutes: 40, source: "MANUAL", traffic_model: null, departure_at: null },
+  ];
+  const legs = [
+    { fromRequestId: 10, toRequestId: 20, departureAt: DEPARTURE },
+    { fromRequestId: 20, toRequestId: 10, departureAt: SAME_SLOT },
+  ];
+  // Without refresh the current value is reused.
+  const planner = fakeRoutes([]);
+  await resolveTravelLegs({
+    legs, requests, stored, apiKey: "key", fetcher: planner.fetcher, actorId: "user", trafficMode: "PESSIMISTIC", now: NOW,
+  });
+  assertEquals(planner.calls.length, 0);
+
+  const check = fakeRoutes([Response.json({ routes: [{ duration: "1800s", staticDuration: "1380s" }] })]);
+  const { results, rowsToReplace } = await resolveTravelLegs({
+    legs, requests, stored, apiKey: "key", fetcher: check.fetcher, actorId: null, trafficMode: "PESSIMISTIC",
+    now: NOW, refresh: true,
+  });
+  assertEquals(check.calls.length, 1);
+  assertEquals([results[0].status, results[0].minutes, results[0].trafficModel], ["CALCULATED", 30, "PESSIMISTIC"]);
+  assertEquals([results[1].status, results[1].minutes, results[1].source], ["STORED", 40, "MANUAL"]);
+  assertEquals(rowsToReplace.map((row) => [row.from_request_id, row.to_request_id, row.minutes, row.created_by]), [[10, 20, 30, null]]);
+});
+
 Deno.test("a failed refresh keeps the saved minutes instead of returning nothing", async () => {
   const { fetcher } = fakeRoutes([Response.json({ error: { status: "UNAVAILABLE", message: "down" } }, { status: 503 })]);
   const { results, rowsToReplace } = await resolveTravelLegs({

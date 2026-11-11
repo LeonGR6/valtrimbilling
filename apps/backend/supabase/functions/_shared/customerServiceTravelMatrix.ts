@@ -53,6 +53,9 @@ export interface NearbyResult {
   requestId: number;
   straightMiles: number | null;
   drivingMiles: number | null;
+  // Driving minutes without traffic in the same longer direction, so the planner can
+  // show "23 min · 11.5 mi" (fit plan, block R5). Null when unknown.
+  drivingMinutes: number | null;
   band: string | null;
   status: NearbyStatus;
 }
@@ -187,6 +190,12 @@ export async function resolveNearbyDriving({
     const value = storedByKey.get(pairKey(from, to))?.distance_miles;
     return value === null || value === undefined ? null : Number(value);
   };
+  // Minutes without traffic of a saved leg that has its miles; a manual value as typed.
+  const savedMinutes = (from: number, to: number) => {
+    const row = storedByKey.get(pairKey(from, to));
+    if (!row || row.distance_miles === null || row.distance_miles === undefined) return null;
+    return row.static_minutes ?? row.minutes;
+  };
 
   // Straight line first: it decides who goes to Google.
   const candidates = input.candidateIds.map((id) => {
@@ -196,6 +205,7 @@ export async function resolveNearbyDriving({
     return {
       id, row, point, straightMiles,
       out: savedMiles(input.requestId, id), back: savedMiles(id, input.requestId),
+      outMinutes: savedMinutes(input.requestId, id), backMinutes: savedMinutes(id, input.requestId),
       fromGoogle: false,
     };
   });
@@ -237,6 +247,7 @@ export async function resolveNearbyDriving({
         const route = outbound.routes.get(`0>${index}`);
         if (!route) return;
         candidate.out = route.distanceMiles;
+        candidate.outMinutes = route.minutes;
         candidate.fromGoogle = true;
         remember(input.requestId, candidate.id, route);
       });
@@ -246,6 +257,7 @@ export async function resolveNearbyDriving({
         const route = inbound.routes.get(`${index}>0`);
         if (!route) return;
         candidate.back = route.distanceMiles;
+        candidate.backMinutes = route.minutes;
         candidate.fromGoogle = true;
         remember(candidate.id, input.requestId, route);
       });
@@ -254,20 +266,23 @@ export async function resolveNearbyDriving({
 
   const results: NearbyResult[] = candidates.map((candidate) => {
     const base = { requestId: candidate.id, straightMiles: candidate.straightMiles };
-    if (!candidate.row) return { ...base, drivingMiles: null, band: null, status: "NOT_FOUND" };
-    if (!candidate.point) return { ...base, drivingMiles: null, band: null, status: "MISSING_COORDINATES" };
+    const unknown = { drivingMiles: null, drivingMinutes: null };
+    if (!candidate.row) return { ...base, ...unknown, band: null, status: "NOT_FOUND" };
+    if (!candidate.point) return { ...base, ...unknown, band: null, status: "MISSING_COORDINATES" };
     if (candidate.straightMiles === 0) {
-      return { ...base, drivingMiles: 0, band: proximityBand(0, bands), status: "SAME_LOCATION" };
+      return { ...base, drivingMiles: 0, drivingMinutes: 0, band: proximityBand(0, bands), status: "SAME_LOCATION" };
     }
-    if (!inRange(candidate)) return { ...base, drivingMiles: null, band: "RED", status: "BEYOND_RANGE" };
+    if (!inRange(candidate)) return { ...base, ...unknown, band: "RED", status: "BEYOND_RANGE" };
     // The color uses the longer direction, so a one-way shortcut never looks nearer.
     const known = [candidate.out, candidate.back].filter((miles): miles is number => miles !== null);
     if (!known.length) {
-      return { ...base, drivingMiles: null, band: null, status: googleFailed ? "FAILED" : "NO_ROUTE" };
+      return { ...base, ...unknown, band: null, status: googleFailed ? "FAILED" : "NO_ROUTE" };
     }
     const drivingMiles = Math.max(...known);
+    const minutes = [candidate.outMinutes, candidate.backMinutes].filter((value): value is number => value !== null);
     return {
-      ...base, drivingMiles, band: proximityBand(drivingMiles, bands),
+      ...base, drivingMiles, drivingMinutes: minutes.length ? Math.max(...minutes) : null,
+      band: proximityBand(drivingMiles, bands),
       status: candidate.fromGoogle ? "CALCULATED" : "STORED",
     };
   });

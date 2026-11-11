@@ -1,8 +1,8 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
-  applyTravelEstimates, mergeTravelEstimateResults, routesMinutesByLeg, travelEstimateMessages, travelLegHelperText,
-  travelLegSource, travelLegsToEstimate,
+  applyTravelEstimates, mergeTravelEstimateResults, outdatedTravelLegs, routesMinutesByLeg, travelEstimateMessages,
+  travelLegHelperText, travelLegSource, travelLegsToEstimate,
 } from '../src/features/customer-service/utils/travelEstimates.js'
 
 const leg = (fromRequestId, toRequestId, minutes) => ({
@@ -120,6 +120,36 @@ test('a moved leg that Google could not refresh shows its warning', () => {
   assert.deepEqual(travelEstimateMessages(results), [
     'Google Maps could not refresh the traffic estimate. The saved value is kept.',
   ])
+})
+
+test('a Google leg marked to calculate again blocks registering until it is recalculated or typed', () => {
+  // Thursday 12 Nov: CS-2022 → CS-2497 leaves at 9:25 AM and was saved with BEST_GUESS.
+  const saved = { ...leg('1022', '1497', 23), departureAt: '2026-11-12T17:25:00.000Z' }
+  const travelDetails = {
+    '1022>1497': { staticMinutes: 23, trafficModel: 'BEST_GUESS', trafficDepartureAt: '2026-11-12T17:25:00.000Z' },
+  }
+  const input = {
+    travelLegs: [saved], travelMinutes: { '1022>1497': 23 }, routesMinutes: { '1022>1497': 23 }, travelDetails, now: NOW,
+  }
+  assert.deepEqual(outdatedTravelLegs({ ...input, trafficMode: 'BEST_GUESS' }), [])
+  // After switching to PESSIMISTIC the saved BEST_GUESS value is out of date.
+  assert.deepEqual(outdatedTravelLegs({ ...input, trafficMode: 'PESSIMISTIC' }).map((entry) => entry.key), ['1022>1497'])
+  // A departure moved to another half hour is out of date too.
+  const moved = { ...saved, departureAt: '2026-11-12T18:10:00.000Z' }
+  assert.deepEqual(outdatedTravelLegs({ ...input, travelLegs: [moved], trafficMode: 'BEST_GUESS' }).length, 1)
+  // A typed value, an empty leg, and a leg Google could not refresh never block.
+  assert.deepEqual(outdatedTravelLegs({ ...input, travelMinutes: { '1022>1497': 30 }, travelLegs: [{ ...saved, minutes: 30 }], trafficMode: 'PESSIMISTIC' }), [])
+  assert.deepEqual(outdatedTravelLegs({ ...input, travelLegs: [{ ...saved, minutes: null }], travelMinutes: {}, trafficMode: 'PESSIMISTIC' }), [])
+  assert.deepEqual(outdatedTravelLegs({ ...input, trafficMode: 'PESSIMISTIC', refreshFailedKeys: ['1022>1497'] }), [])
+  // Once recalculated with PESSIMISTIC at the same departure it is current again.
+  const recalculated = mergeTravelEstimateResults({ routes: input.routesMinutes, details: travelDetails }, [
+    { fromRequestId: 1022, toRequestId: 1497, minutes: 27, source: 'ROUTES_API', status: 'CALCULATED',
+      staticMinutes: 23, trafficModel: 'PESSIMISTIC', trafficDepartureAt: '2026-11-12T17:25:00.000Z' },
+  ])
+  assert.deepEqual(outdatedTravelLegs({
+    travelLegs: [{ ...saved, minutes: 27 }], travelMinutes: { '1022>1497': 27 }, routesMinutes: recalculated.routes,
+    travelDetails: recalculated.details, trafficMode: 'PESSIMISTIC', now: NOW,
+  }), [])
 })
 
 test('a Google value is replaced by the recalculated minutes', () => {

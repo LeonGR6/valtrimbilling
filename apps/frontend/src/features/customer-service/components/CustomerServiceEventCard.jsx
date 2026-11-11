@@ -3,6 +3,7 @@ import {
   formatWorkTypes,
   getServiceEventTone,
 } from '../data/serviceCalendarEvents.js'
+import { customerServiceMinimumMarginMinutes } from '../utils/customerServiceScheduling.js'
 import './CustomerServiceCalendar.css'
 
 const timeFormatter = new Intl.DateTimeFormat('en-US', {
@@ -36,6 +37,14 @@ function formatWorkSlot(slot) {
   return `Work ${at(slot.start)} – ${at(slot.end)}`
 }
 
+// How late the visit can start without it or a later visit leaving its window.
+function formatDelayMargin(margin) {
+  if (!Number.isInteger(margin)) return ''
+  return margin < customerServiceMinimumMarginMinutes
+    ? `Low margin · ${Math.max(0, margin)} min`
+    : `Margin ${margin} min`
+}
+
 function formatPreviousVisit(lastVisit) {
   if (!lastVisit?.date) return 'No previous visits'
   const date = new Date(`${lastVisit.date}T12:00:00`)
@@ -61,7 +70,7 @@ export default function CustomerServiceEventCard({ event, displayMode = 'timed' 
           <Box className="service-list-event__copy">
             <strong>{workTypes} · {props.requestNumber}</strong>
             <span>{props.community} · Lot {props.lotNumber}</span>
-            <span>{formatTimeRange(event)} · {props.technician}</span>
+            <span>{[formatTimeRange(event), props.technician, formatDelayMargin(props.delayMargin)].filter(Boolean).join(' · ')}</span>
           </Box>
         </Box>
         <span className="service-list-event__history">
@@ -102,6 +111,9 @@ export default function CustomerServiceEventCard({ event, displayMode = 'timed' 
       </span>
       {formatWorkSlot(props.internalSlot) && (
         <span className="service-work-event__time">{formatWorkSlot(props.internalSlot)}</span>
+      )}
+      {formatDelayMargin(props.delayMargin) && (
+        <span className="service-work-event__time">{formatDelayMargin(props.delayMargin)}</span>
       )}
       <span className="service-work-event__history">
         {formatPreviousVisit(props.lastVisit)}

@@ -41,6 +41,8 @@ import {
 import CustomerServiceCalendarDetail from './CustomerServiceCalendarDetail.jsx'
 import CustomerServiceEventCard from './CustomerServiceEventCard.jsx'
 import { customerServiceTimeZone, getCustomerServiceClock } from '../utils/dates.js'
+import { scheduledDelayMargins } from '../utils/proposalDraft.js'
+import { useCustomerServicePrototype } from '../context/customerServicePrototypeContext.js'
 import '../../calendar/components/CalendarScheduler.css'
 import './CustomerServiceCalendar.css'
 
@@ -75,10 +77,20 @@ const serviceCalendarViews = {
 
 export default function CustomerServiceCalendar({ requests, settings, onViewRequest }) {
   const calendarRef = useRef(null)
-  const serviceEvents = useMemo(
-    () => createServiceCalendarEventsFromRequests(requests),
-    [requests],
-  )
+  const { technicians, storedTravelMinutes } = useCustomerServicePrototype()
+  // Each visit carries its delay margin from the saved travel legs, which the day-before
+  // traffic check refreshes (block R6). One computation per day shown.
+  const serviceEvents = useMemo(() => {
+    const marginsByDate = new Map()
+    return createServiceCalendarEventsFromRequests(requests).map((event) => {
+      const date = String(event.start).slice(0, 10)
+      if (!marginsByDate.has(date)) {
+        marginsByDate.set(date, scheduledDelayMargins({ requests, technicians, date, travelMinutes: storedTravelMinutes }))
+      }
+      const delayMargin = marginsByDate.get(date)[String(event.extendedProps.requestId)]
+      return delayMargin === undefined ? event : { ...event, extendedProps: { ...event.extendedProps, delayMargin } }
+    })
+  }, [requests, technicians, storedTravelMinutes])
   const { events: productionOverlayEvents } = useProductionActivities()
   const { mode, systemMode } = useColorScheme()
   const resolvedColorMode = mode === 'system' ? systemMode : mode

@@ -91,6 +91,7 @@ Deno.test("same Job is green at zero miles and beyond the last band is red, both
     { requestId: 9999, drivingMiles: null, band: null, status: "NOT_FOUND" },
   ]);
   assert(results[1].straightMiles! > 32 && results[1].straightMiles! < 33);
+  assertEquals(results.map(({ drivingMinutes }) => drivingMinutes), [0, null, null, null]);
 });
 
 Deno.test("a nearby candidate gets driving miles both ways, colored by the longer one, and is cached", async () => {
@@ -109,6 +110,8 @@ Deno.test("a nearby candidate gets driving miles both ways, colored by the longe
   assertEquals(sentBody(calls[0]).destinations.length, 1);
   assertEquals(sentBody(calls[1]).origins[0].waypoint.location.latLng, { latitude: 33.6553011, longitude: -117.2438015 });
   assertEquals(results[0].drivingMiles, 11.5);
+  // The minutes without traffic of the longer direction: 23 out, 22 back.
+  assertEquals(results[0].drivingMinutes, 23);
   assertEquals(results[0].band, "ORANGE");
   assertEquals(results[0].status, "CALCULATED");
   assertEquals(distanceUpdates, []);
@@ -146,6 +149,8 @@ Deno.test("saved distances are reused and a saved row without distance only gets
   assertEquals(rowsToStore, []);
   assertEquals(distanceUpdates, [{ from_request_id: 1497, to_request_id: 1022, distance_miles: 9.8, updated_by: "actor" }]);
   assertEquals(results[0].drivingMiles, 11.5);
+  // Saved minutes without traffic out (23); the back leg uses Google's 22, not the manual 25.
+  assertEquals(results[0].drivingMinutes, 23);
 
   // Both directions saved: nothing goes to Google.
   const both = fakeMatrix([]);
@@ -156,6 +161,8 @@ Deno.test("saved distances are reused and a saved row without distance only gets
   });
   assertEquals(both.calls.length, 0);
   assertEquals(cached.results[0].status, "STORED");
+  // A manual leg with its distance counts as typed: the longer of 23 and 25.
+  assertEquals(cached.results[0].drivingMinutes, 25);
 });
 
 Deno.test("a Google failure leaves the driving miles empty and stores nothing", async () => {

@@ -22,15 +22,17 @@ export function nearbyIdsToMeasure(candidates = [], bands) {
     .map((candidate) => Number(candidate.requestId))
 }
 
-// Chip text and band. Driving miles from Google give the band; beyond the last band
-// in a straight line is "Very far" without asking Google; otherwise the straight-line
-// miles show with "≈" and no band.
+// Chip text and band. Driving miles from Google give the band, shown with the driving
+// minutes without traffic when known ("23 min · 11.5 mi · Far", block R5): the planner
+// works in minutes. Beyond the last band in a straight line is "Very far" without asking
+// Google; otherwise the straight-line miles show with "≈" and no band.
 export function nearbyVisitDistance(candidate, driving, bands) {
   if (candidate.miles === null) return { text: 'No coordinates', band: null }
   const straight = `≈ ${candidate.miles.toFixed(1)} mi`
   if (!isWithinNearbyRange(candidate, bands)) return { text: `${proximityBandLabels.RED} · ${straight}`, band: 'RED' }
   if (Number.isFinite(driving?.drivingMiles) && proximityBandLabels[driving.band]) {
-    return { text: `${proximityBandLabels[driving.band]} · ${driving.drivingMiles.toFixed(1)} mi`, band: driving.band }
+    const minutes = Number.isInteger(driving.drivingMinutes) ? `${driving.drivingMinutes} min · ` : ''
+    return { text: `${minutes}${driving.drivingMiles.toFixed(1)} mi · ${proximityBandLabels[driving.band]}`, band: driving.band }
   }
   return { text: straight, band: null }
 }

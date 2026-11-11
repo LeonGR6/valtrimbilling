@@ -77,7 +77,8 @@ export default function ProposalNearbyVisits({ request, requests, technicians, d
           {through.byDueDate
             ? `Scheduled visits through the due date (${formatVisitDate(through.date)})`
             : `This request is overdue: scheduled visits through ${formatVisitDate(through.date)} (${proposalSuggestionSearchBusinessDays} business days)`}
-          {' '}and open requests, nearest first. Colors use Google Maps driving miles; ≈ marks straight-line miles.
+          {' '}and open requests, nearest first. Colors use Google Maps driving miles; minutes here are without traffic;
+          {' '}≈ marks straight-line miles.
         </Typography>
       </Box>
       {!hasCoordinates ? (
@@ -125,13 +126,11 @@ export default function ProposalNearbyVisits({ request, requests, technicians, d
           )}
         </>
       )}
-      {hasCoordinates && (
-        <>
-          <Divider />
-          <ProposalNearbySlots request={request} requests={requests} technicians={technicians} candidates={candidates}
-            drivingById={driving.byId} drivingLoading={driving.loading} onUseSlot={onUseSlot} />
-        </>
-      )}
+      {/* The only suggestion list (block R5): without coordinates it still shows the final
+          days and the earliest time, on days the technician has free. */}
+      <Divider />
+      <ProposalNearbySlots request={request} requests={requests} technicians={technicians} candidates={candidates}
+        hasCoordinates={hasCoordinates} drivingById={driving.byId} drivingLoading={driving.loading} onUseSlot={onUseSlot} />
     </Stack>
   )
 }

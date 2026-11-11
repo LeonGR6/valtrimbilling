@@ -83,8 +83,9 @@ export interface TravelRowToStore {
   distance_miles: number | null;
   departure_at: string | null;
   traffic_model: TrafficModel | null;
-  created_by: string;
-  updated_by: string;
+  // Null when a scheduled task saves it (no signed-in user).
+  created_by: string | null;
+  updated_by: string | null;
 }
 
 export interface TrafficRequest {
@@ -251,7 +252,9 @@ interface LegOutcome {
 
 // Resolves each leg: a current saved estimate first, then Routes API when both
 // visits have coordinates. Returns the results, the new rows to insert and the
-// out-of-date rows to replace (never manual ones).
+// out-of-date rows to replace (never manual ones). With refresh, every Google value
+// is asked again even if it is current (the day-before traffic check, block R6);
+// a manual value is still never recalculated.
 export async function resolveTravelLegs({
   legs,
   requests,
@@ -261,15 +264,17 @@ export async function resolveTravelLegs({
   actorId,
   trafficMode = "OFF",
   now = new Date(),
+  refresh = false,
 }: {
   legs: TravelLeg[];
   requests: RequestLocationRow[];
   stored: StoredEstimateRow[];
   apiKey: string | undefined;
   fetcher?: typeof fetch;
-  actorId: string;
+  actorId: string | null;
   trafficMode?: TrafficMode;
   now?: Date;
+  refresh?: boolean;
 }) {
   const byId = new Map(requests.map((row) => [Number(row.id), row]));
   const storedByKey = new Map(stored.map((row) => [
@@ -280,7 +285,8 @@ export async function resolveTravelLegs({
   const outcomes = await Promise.all(legs.map(async (leg): Promise<LegOutcome> => {
     const existing = storedByKey.get(legKey(leg));
     const target = trafficTargetFor(leg, trafficMode, now);
-    if (existing && !isStaleEstimate(existing, target)) {
+    const forced = refresh && existing?.source !== "MANUAL";
+    if (existing && !forced && !isStaleEstimate(existing, target)) {
       return { result: { ...leg, minutes: existing.minutes, source: existing.source, status: "STORED", ...storedDetails(existing) } };
     }
     // A saved value is kept when a refresh is impossible; it is still usable.

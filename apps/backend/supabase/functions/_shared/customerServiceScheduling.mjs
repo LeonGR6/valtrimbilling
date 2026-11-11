@@ -8,6 +8,10 @@
 
 export const customerServiceTimeZone = 'America/Los_Angeles'
 export const customerServicePickupMinutes = 10
+// Decision D4 (10 Nov 2026): a visit is suggested next to others only when it can start
+// at least this many minutes late without it or a later visit leaving its customer
+// window. Planning a visit by hand below it only warns.
+export const customerServiceMinimumMarginMinutes = 15
 export const customerServiceWorkday = { startsAt: '07:00', endsAt: '15:30' }
 export const customerServiceWindows = [
   { start: '08:00', end: '10:00', label: '8:00 AM–10:00 AM', exceptional: false },
@@ -204,4 +208,42 @@ export function checkVisitCapacity({ visit, technicians, agenda, travelMinutes =
     pickupEnd: end === null ? '' : minutesToTime(end + customerServicePickupMinutes),
     travelLegs: [...legs.values()],
   }
+}
+
+// Delay margin of each visit in one technician's day: how many minutes it can start late
+// (traffic, a longer job before it) while it and every later visit still finish, with
+// pickup, inside their customer windows and the workday.
+//   margin = min(own slack, wait before the next visit + margin of the next visit)
+// Own slack is the window close (or workday end) minus the end of work plus pickup. The
+// leg to the next visit absorbs wait + margin of the next visit of extra driving.
+// An unknown leg or window makes the margins before it unknown (null), never zero; the
+// own slack is still an upper bound.
+// visits: [{ requestId, start, end, windowEnd }], end = work end + pickup (agenda shape).
+export function visitDelayMargins({ visits = [], travelMinutes = {} }) {
+  const workdayClose = timeToMinutes(customerServiceWorkday.endsAt) + customerServicePickupMinutes
+  const sorted = visits
+    .map((visit) => ({
+      requestId: visit.requestId, from: timeToMinutes(visit.start), to: timeToMinutes(visit.end),
+      close: timeToMinutes(visit.windowEnd),
+    }))
+    .sort((left, right) => (left.from ?? 0) - (right.from ?? 0))
+  const results = []
+  let following = null
+  for (let index = sorted.length - 1; index >= 0; index -= 1) {
+    const { requestId, from, to, close } = sorted[index]
+    const known = from !== null && to !== null && close !== null
+    const ownSlack = known ? Math.min(close, workdayClose) - to : null
+    let margin = ownSlack
+    let nextLeg = null
+    if (following) {
+      const travel = travelMinutesFor(travelMinutes, requestId, following.requestId)
+      const waitMinutes = known && travel !== null && following.from !== null ? following.from - (to + travel) : null
+      const absorbsMinutes = waitMinutes === null || following.margin === null ? null : waitMinutes + following.margin
+      nextLeg = { toRequestId: following.requestId, waitMinutes, absorbsMinutes }
+      margin = ownSlack === null || absorbsMinutes === null ? null : Math.min(ownSlack, absorbsMinutes)
+    }
+    results.unshift({ requestId, ownSlack, margin, nextLeg })
+    following = { requestId, from, margin }
+  }
+  return results
 }

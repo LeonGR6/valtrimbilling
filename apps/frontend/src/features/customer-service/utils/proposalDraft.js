@@ -4,8 +4,9 @@ import { buildRequestReviewSummary, effectiveRequestWorkflowStage } from './requ
 import { customerServiceTimeZone, getCustomerServiceClock } from './dates.js'
 import { assignedPrototypeTechnicianIds, prototypeTechnicians } from '../data/prototypeTechnicians.js'
 import {
-  checkVisitCapacity, checkVisitDate, customerServicePickupMinutes, customerServiceWorkday,
-  minutesToTime as timeFromMinutes, parseServiceDate as validDate, timeToMinutes as minutes,
+  checkVisitCapacity, checkVisitDate, customerServiceMinimumMarginMinutes, customerServicePickupMinutes,
+  customerServiceWorkday, minutesToTime as timeFromMinutes, parseServiceDate as validDate, timeToMinutes as minutes,
+  travelLegKey, visitDelayMargins,
 } from './customerServiceScheduling.js'
 
 export const prototypePlanningHours = {
@@ -105,6 +106,77 @@ export function getPrototypeTechnicianAgenda(requests, technicianIds, date, tech
   }).sort((left, right) => String(left.start ?? '').localeCompare(String(right.start ?? '')))
 }
 
+// Delay margins of each selected technician's day with the new visit in it. The visit's
+// own margin is the lowest across technicians (null while a leg after it is unknown);
+// its own slack is the same for all. Keyed per agenda entry ("requestId-technicianId")
+// and per leg, the lowest across technicians. A visit without recorded work time keeps
+// an unknown margin. If the new visit keeps the minimum margin, no earlier visit drops
+// below it because of the insertion: its margin is min(own slack, wait + that margin).
+export function draftDelayMargins({ requestId, agenda, technicianIds, visit, travelMinutes = {} }) {
+  const id = String(requestId)
+  const lowest = (current, value) => (current === undefined ? value
+    : current === null || value === null ? null : Math.min(current, value))
+  const entryMargins = {}
+  const legAbsorbs = {}
+  let margin
+  let ownSlack = null
+  for (const technicianId of technicianIds) {
+    const visits = agenda
+      .filter((entry) => entry.technicianId === technicianId && entry.blocksAvailability && entry.start && entry.end)
+      .map((entry) => ({
+        requestId: String(entry.requestId), start: entry.start, end: entry.end,
+        windowEnd: entry.windowUncertain || entry.timingUncertain ? null : entry.customerWindow?.end,
+      }))
+    visits.push({ requestId: id, start: visit.start, end: visit.end, windowEnd: visit.windowEnd })
+    for (const result of visitDelayMargins({ visits, travelMinutes })) {
+      if (result.requestId === id) {
+        margin = lowest(margin, result.margin)
+        ownSlack = result.ownSlack
+      } else {
+        entryMargins[`${result.requestId}-${technicianId}`] = result.margin
+      }
+      if (result.nextLeg) {
+        const key = travelLegKey(result.requestId, result.nextLeg.toRequestId)
+        legAbsorbs[key] = lowest(legAbsorbs[key], result.nextLeg.absorbsMinutes)
+      }
+    }
+  }
+  return { margin: margin ?? null, ownSlack, entryMargins, legAbsorbs }
+}
+
+// Delay margin of every scheduled visit on a date, from the saved travel legs (the
+// day-before traffic check refreshes them, block R6). Keyed by request id: the lowest
+// across its technicians, or null while a leg after it is unknown.
+export function scheduledDelayMargins({ requests, technicians, date, travelMinutes = {} }) {
+  const technicianIds = technicians.map((person) => String(person.id))
+  const agenda = getPrototypeTechnicianAgenda(requests, technicianIds, date, technicians)
+  const margins = {}
+  for (const technicianId of technicianIds) {
+    const visits = agenda
+      .filter((entry) => entry.technicianId === technicianId && entry.date === date && entry.blocksAvailability
+        && entry.start && entry.end)
+      .map((entry) => ({
+        requestId: String(entry.requestId), start: entry.start, end: entry.end,
+        windowEnd: entry.windowUncertain || entry.timingUncertain ? null : entry.customerWindow?.end,
+      }))
+    for (const { requestId, margin } of visitDelayMargins({ visits, travelMinutes })) {
+      const current = margins[requestId]
+      margins[requestId] = current === undefined ? margin
+        : current === null || margin === null ? null : Math.min(current, margin)
+    }
+  }
+  return margins
+}
+
+// One of three states for the draft and for each suggestion (block R5): it fits, it fits
+// with what is known but a travel leg is unknown or must be calculated again, or it does
+// not fit.
+export const fitStatusLabels = { FITS: 'Fits', TRAVEL_PENDING: 'Fits · travel pending', DOESNT_FIT: "Doesn't fit" }
+export const fitStatus = ({ fits, travelPending }) => (!fits ? 'DOESNT_FIT' : travelPending ? 'TRAVEL_PENDING' : 'FITS')
+
+// The most delay the visit can take: its margin, or while that is unknown, its own slack.
+export const delayMarginLimit = (delay) => (delay ? delay.margin ?? delay.ownSlack : null)
+
 export function validatePrototypeProposalDraft({ requestId, values, requests, technicians = prototypeTechnicians, now = new Date() }) {
   const request = requests.find((entry) => String(entry.id) === String(requestId))
   const errors = []
@@ -153,6 +225,21 @@ export function validatePrototypeProposalDraft({ requestId, values, requests, te
   })
   errors.push(...capacity.errors)
   warnings.push(...capacity.warnings)
+
+  // Margin against delays (decision D4): only a warning when planning by hand.
+  const delay = errors.length === 0 && capacity.window
+    ? draftDelayMargins({
+      requestId, agenda, technicianIds: uniqueIds, travelMinutes: values.travelMinutes,
+      visit: { start: values.internalStart, end: capacity.pickupEnd, windowEnd: capacity.window.end },
+    })
+    : null
+  const limit = delayMarginLimit(delay)
+  if (limit !== null && limit < customerServiceMinimumMarginMinutes) {
+    warnings.push({
+      field: 'margin',
+      message: `This visit can start ${delay.margin === null ? 'at most' : 'only'} ${Math.max(0, limit)} min late before it or a later visit leaves its customer window. Suggestions keep at least ${customerServiceMinimumMarginMinutes} min.`,
+    })
+  }
   return {
     isValid: errors.length === 0, errors, warnings,
     // Registering reserves capacity, so every travel leg must be known first.
@@ -160,7 +247,7 @@ export function validatePrototypeProposalDraft({ requestId, values, requests, te
     // A date after the due date cannot be registered while on-time days remain.
     pastDue: warnings.some((warning) => warning.pastDue),
     internalEnd: capacity.internalEnd, pickupEnd: capacity.pickupEnd, agenda,
-    travelLegs: capacity.travelLegs, dateIsValid: dateCheck.dateIsValid,
+    travelLegs: capacity.travelLegs, dateIsValid: dateCheck.dateIsValid, delay,
   }
 }
 
@@ -205,7 +292,8 @@ export const proposalSuggestionStepMinutes = 15
 // Proposes viable times for review (approved rule: suggest, never apply). It only reads
 // the schedule and returns plain values; filling the form is the user's choice and
 // registering still goes through the server. The first viable start of each window is
-// listed, earliest first, using the same validator as the form.
+// listed, earliest first, using the same validator as the form. "Earliest available"
+// uses it; the planner's own "Suggested times" section was removed in block R5.
 export function suggestProposalTimes({ requestId, values, requests, technicians = prototypeTechnicians, now = new Date(), limit = 3 }) {
   const request = requests.find((entry) => String(entry.id) === String(requestId))
   const current = validatePrototypeProposalDraft({ requestId, values, requests, technicians, now })
@@ -237,6 +325,7 @@ export function suggestProposalTimes({ requestId, values, requests, technicians 
         suggestions.push({
           date, windowStart: window.start, windowLabel: window.label, internalStart,
           internalEnd: result.internalEnd, pickupEnd: result.pickupEnd, travelPending: result.travelPending,
+          margin: result.delay?.margin ?? null, travelLegs: result.travelLegs,
         })
         break
       }
@@ -246,6 +335,3 @@ export function suggestProposalTimes({ requestId, values, requests, technicians 
   return { suggestions, searchedThrough }
 }
 
-export function applyProposalSuggestion(values, suggestion) {
-  return { ...values, date: suggestion.date, windowStart: suggestion.windowStart, internalStart: suggestion.internalStart }
-}

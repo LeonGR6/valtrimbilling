@@ -55,6 +55,7 @@ import RequestInboxList from './RequestInboxList.jsx'
 import RequestViewDialog from './RequestViewDialog.jsx'
 import ServiceSummaryCards from './ServiceSummaryCards.jsx'
 import SourcePdfPreviewDialog from './SourcePdfPreviewDialog.jsx'
+import TravelCheckAlert from './TravelCheckAlert.jsx'
 
 const viewCopy = {
   REQUESTS: {
@@ -365,6 +366,7 @@ export default function CustomerServiceCatalog() {
       </Box>
 
       <Box sx={{ p: { xs: 2.5, md: 4 } }}>
+        <TravelCheckAlert requests={requests} />
         <Alert severity="info" variant="outlined" sx={{ mb: 2 }}>
           Requests, edits, review approval and original sources are saved. Proposal drafts and planning
           are still session-only and reset when you reload. No email is sent or appointment created by approval.

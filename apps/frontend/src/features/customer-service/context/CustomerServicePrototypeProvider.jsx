@@ -14,7 +14,9 @@ import {
   applyAppointmentsToRequests, toPlanningTechnicians, travelEstimateDetails, travelEstimatesToMinutes,
 } from '../utils/appointmentRecords.js'
 
-const emptySchedule = { roster: [], appointments: [], travelEstimates: [], travelTrafficMode: 'OFF', distanceBands: null }
+const emptySchedule = {
+  roster: [], appointments: [], travelEstimates: [], travelTrafficMode: 'OFF', distanceBands: null, travelChecks: [],
+}
 
 // Requests, accepted appointments, travel estimates and technicians come from
 // Supabase. Proposal drafts stay in memory: they are never stored.
@@ -104,6 +106,7 @@ export default function CustomerServicePrototypeProvider({ children }) {
       storedTravelDetails: travelEstimateDetails(schedule.travelEstimates),
       travelTrafficMode: schedule.travelTrafficMode,
       distanceBands: schedule.distanceBands,
+      travelChecks: schedule.travelChecks ?? [],
       estimateTravel: estimateCustomerServiceTravel,
       estimateNearby: estimateCustomerServiceNearby,
       scheduleError,

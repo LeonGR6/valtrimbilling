@@ -5,7 +5,7 @@ import {
   applyAppointmentsToRequests, toPlanningTechnicians, travelEstimatesToMinutes, upcomingAppointmentRequestIds,
 } from '../src/features/customer-service/utils/appointmentRecords.js'
 import {
-  applyProposalSuggestion, buildAppointmentRegistration, suggestProposalTimes, validatePrototypeProposalDraft,
+  buildAppointmentRegistration, suggestProposalTimes, validatePrototypeProposalDraft,
 } from '../src/features/customer-service/utils/proposalDraft.js'
 import { createServiceCalendarEventsFromRequests } from '../src/features/customer-service/data/serviceCalendarEvents.js'
 
@@ -112,7 +112,7 @@ test('a late date blocks registration only while the request can still be done o
   assert.ok(overdue.warnings.some((warning) => warning.message === 'This request was due on 2026-09-04. The work will be completed late.'))
 })
 
-test('suggested times are the earliest viable start per window and only describe values', () => {
+test('the earliest viable start per window (used by Earliest available) only describes values', () => {
   const requests = applyAppointmentsToRequests([confirmed, ready], [appointment], roster)
   const values = { technicianIds: ['4'], date: '2026-11-06', windowStart: '', internalStart: '', travelMinutes: {} }
   const snapshot = JSON.stringify({ requests, values })
@@ -133,9 +133,9 @@ test('suggested times are the earliest viable start per window and only describe
   assert.equal(JSON.stringify({ requests, values }), snapshot)
   assert.equal(requests[0].appointment.id, 7)
 
-  // Using a suggestion only fills date, window and start; it is then a normal valid draft.
-  const used = applyProposalSuggestion(values, suggestions[0])
-  assert.deepEqual(used, { ...values, date: '2026-11-06', windowStart: '10:00', internalStart: '10:00' })
+  // Its date, window and start make a normal valid draft.
+  const [first] = suggestions
+  const used = { ...values, date: first.date, windowStart: first.windowStart, internalStart: first.internalStart }
   assert.equal(validatePrototypeProposalDraft({ requestId: 20, values: used, requests, technicians, now }).isValid, true)
 })
 

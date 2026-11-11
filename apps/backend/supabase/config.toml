@@ -445,6 +445,11 @@ verify_jwt = true
 [functions.customer-service-appointment-transitions]
 verify_jwt = false
 
+# Called by pg_cron every afternoon (block R6). No caller credential: the date comes
+# from the server clock and a second run for that date within six hours spends nothing.
+[functions.customer-service-travel-check]
+verify_jwt = false
+
 # Read-only short-lived URLs for finalized email attachments. The caller RPC
 # checks active Customer Service roles; no uploads are exposed to the browser.
 [functions.customer-service-import-source]

@@ -151,17 +151,22 @@ test('only candidates within the last band in a straight line are measured, near
   assert.equal(nearbyIdsToMeasure(many, bands)[0], 3000)
 })
 
-test('the chip shows driving miles with their band, or straight-line miles without one', () => {
+test('the chip shows driving minutes and miles with their band, or straight-line miles without one', () => {
   const harmony = { requestId: '2497', miles: 8.32 }
   // While Google is checking, or when it could not measure: straight line, no band.
   assert.deepEqual(nearbyVisitDistance(harmony, undefined, bands), { text: '≈ 8.3 mi', band: null })
   assert.deepEqual(nearbyVisitDistance(harmony, { drivingMiles: null, band: null, status: 'FAILED' }, bands),
     { text: '≈ 8.3 mi', band: null })
   // Driving 11.5 mi: farther than the straight line suggested, so Far (orange).
-  assert.deepEqual(nearbyVisitDistance(harmony, { drivingMiles: 11.5, band: 'ORANGE', status: 'CALCULATED' }, bands),
-    { text: 'Far · 11.5 mi', band: 'ORANGE' })
-  assert.deepEqual(nearbyVisitDistance({ requestId: '2496', miles: 0 }, { drivingMiles: 0, band: 'GREEN' }, bands),
-    { text: 'Near · 0.0 mi', band: 'GREEN' })
+  assert.deepEqual(
+    nearbyVisitDistance(harmony, { drivingMiles: 11.5, drivingMinutes: 23, band: 'ORANGE', status: 'CALCULATED' }, bands),
+    { text: '23 min · 11.5 mi · Far', band: 'ORANGE' },
+  )
+  assert.deepEqual(nearbyVisitDistance({ requestId: '2496', miles: 0 }, { drivingMiles: 0, drivingMinutes: 0, band: 'GREEN' }, bands),
+    { text: '0 min · 0.0 mi · Near', band: 'GREEN' })
+  // A server without minutes (before its deploy) still shows miles and band.
+  assert.deepEqual(nearbyVisitDistance(harmony, { drivingMiles: 11.5, band: 'ORANGE', status: 'STORED' }, bands),
+    { text: '11.5 mi · Far', band: 'ORANGE' })
   // Beyond 20 mi in a straight line the drive is longer still: Very far, without Google.
   assert.deepEqual(nearbyVisitDistance({ requestId: '2023', miles: 32.64 }, undefined, bands),
     { text: 'Very far · ≈ 32.6 mi', band: 'RED' })

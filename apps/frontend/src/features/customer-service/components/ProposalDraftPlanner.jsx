@@ -5,15 +5,16 @@ import {
 } from '@mui/material'
 import { serviceCustomerWindowOptions } from '../data/serviceCalendarEvents.js'
 import {
-  applyProposalSuggestion, buildAppointmentRegistration, changePrototypeProposalWindow, changePrototypeTravelMinutes,
+  buildAppointmentRegistration, changePrototypeProposalWindow, changePrototypeTravelMinutes, fitStatus, fitStatusLabels,
   getPrototypePlanningTechnicians, proposalDraftFormValues, proposalDraftHasChanges, proposalPlanningSignature,
-  suggestProposalTimes, validatePrototypeProposalDraft,
+  validatePrototypeProposalDraft,
 } from '../utils/proposalDraft.js'
 import {
-  applyTravelEstimates, mergeTravelEstimateResults, travelEstimateMessages, travelLegHelperText,
+  applyTravelEstimates, mergeTravelEstimateResults, outdatedTravelLegs, travelEstimateMessages, travelLegHelperText,
   travelLegSource, travelLegsToEstimate,
 } from '../utils/travelEstimates.js'
-import { formatWeekdayDate as formatSuggestionDate, getCustomerServiceClock } from '../utils/dates.js'
+import { getCustomerServiceClock } from '../utils/dates.js'
+import { customerServiceMinimumMarginMinutes } from '../utils/customerServiceScheduling.js'
 import { useCustomerServicePrototype } from '../context/customerServicePrototypeContext.js'
 import ProposalDayAgenda from './ProposalDayAgenda.jsx'
 import ProposalNearbyVisits from './ProposalNearbyVisits.jsx'
@@ -24,49 +25,6 @@ const sectionHeaderSx = { flexWrap: 'wrap', alignItems: 'center', justifyContent
 const sectionTitleSx = { flex: '1 1 240px' }
 const fieldRowSx = { flexWrap: 'wrap', '& > *': { flex: '1 1 160px' } }
 const actionRowSx = { flexWrap: 'wrap', '& > *': { flex: '1 1 200px' } }
-
-// Suggestions only fill the form; nothing is saved or registered from here.
-function ProposalSuggestions({ result, onSuggest, onUse, disabled }) {
-  return (
-    <Stack spacing={1}>
-      <Stack direction="row" spacing={1} useFlexGap sx={sectionHeaderSx}>
-        <Box sx={sectionTitleSx}>
-          <Typography variant="subtitle2" fontWeight={800}>Suggested times</Typography>
-          <Typography variant="caption" color="text.secondary">
-            Earliest viable start per window for the selected technicians. Using one only fills this form.
-          </Typography>
-        </Box>
-        <Button variant="text" onClick={onSuggest} disabled={disabled} sx={{ flexShrink: 0 }}>
-          {result ? 'Refresh suggestions' : 'Suggest available times'}
-        </Button>
-      </Stack>
-      {result && result.suggestions.length === 0 && (
-        <Alert severity="info" variant="outlined">
-          {result.searchedThrough
-            ? `No available times found through ${formatSuggestionDate(result.searchedThrough)} for the selected technicians. Try other technicians.`
-            : 'No suggestions are possible until the request and technician issues above are resolved.'}
-        </Alert>
-      )}
-      {result?.suggestions.map((suggestion) => (
-        <Paper key={`${suggestion.date}-${suggestion.windowStart}`} variant="outlined"
-          sx={{ p: 1.5, display: 'flex', gap: 1.5, alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap' }}>
-          <Box>
-            <Typography variant="body2" fontWeight={700}>
-              {formatSuggestionDate(suggestion.date)} · {suggestion.windowLabel}
-            </Typography>
-            <Typography variant="caption" color="text.secondary">
-              Work {suggestion.internalStart}–{suggestion.internalEnd} · pickup until {suggestion.pickupEnd}
-            </Typography>
-          </Box>
-          <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
-            {suggestion.travelPending && <Chip size="small" label="Travel time pending" color="warning" variant="outlined" />}
-            <Button size="small" variant="outlined" onClick={() => onUse(suggestion)}>Use this time</Button>
-          </Stack>
-        </Paper>
-      ))}
-    </Stack>
-  )
-}
 
 const acceptanceOptions = [
   { value: 'CUSTOMER_ACCEPTED_PROPOSAL', label: 'Customer accepted the proposal' },
@@ -86,23 +44,11 @@ export default function ProposalDraftPlanner({ request, requests, technicians: r
   const [values, setValues] = useState(initialValues)
   const [saveError, setSaveError] = useState('')
   const [registration, setRegistration] = useState(null)
-  const [suggestionResult, setSuggestionResult] = useState(null)
   const technicians = useMemo(() => getPrototypePlanningTechnicians(roster), [roster])
   const validation = validatePrototypeProposalDraft({ requestId: request.id, requests, technicians, values })
   const errorFor = (field) => validation.errors.find((error) => error.field === field)?.message
   const savedIsStale = savedDraft && savedDraft.requestSignature !== proposalPlanningSignature(request)
   const hasUnsavedChanges = proposalDraftHasChanges(values, savedDraft ? withStoredTravel(proposalDraftFormValues(savedDraft)) : initialValues)
-  // Suggestions depend on the selected crew and travel; any other edit keeps them visible.
-  const suggestionKey = JSON.stringify([values.technicianIds, values.travelMinutes])
-  const suggestions = suggestionResult?.key === suggestionKey ? suggestionResult.result : null
-  const suggest = () => setSuggestionResult({
-    key: suggestionKey,
-    result: suggestProposalTimes({ requestId: request.id, values, requests, technicians }),
-  })
-  const applySuggestion = (suggestion) => {
-    setSaveError('')
-    setValues((current) => applyProposalSuggestion(current, suggestion))
-  }
   // Google Routes results fill only empty legs; a leg keeps its Google label until edited.
   const [travelEstimate, setTravelEstimate] = useState({ loading: false, error: '', results: [], routes: {}, details: {} })
   const routesMinutes = { ...storedRoutesMinutes, ...travelEstimate.routes }
@@ -134,7 +80,20 @@ export default function ProposalDraftPlanner({ request, requests, technicians: r
       setTravelEstimate((current) => ({ ...current, error: '', results: [], ...mergeTravelEstimateResults(current, results) }))
     }
   }
-  const canRegister = validation.isValid && !validation.travelPending && !validation.pastDue
+  // A Google leg marked "calculate again" cannot be registered; one Google could not
+  // refresh keeps its saved value, as the server does.
+  const outdatedLegs = outdatedTravelLegs({
+    travelLegs: validation.travelLegs, travelMinutes: values.travelMinutes, routesMinutes, travelDetails,
+    trafficMode: travelTrafficMode,
+    refreshFailedKeys: travelEstimate.results.filter((result) => result.status === 'STORED' && result.message)
+      .map((result) => `${result.fromRequestId}>${result.toRequestId}`),
+  })
+  const canRegister = validation.isValid && !validation.travelPending && !validation.pastDue && outdatedLegs.length === 0
+  // Same three states as the suggestions; an unfinished form only lists what is missing.
+  const formIncomplete = !values.technicianIds.length || !values.date || !values.windowStart || !values.internalStart
+  const draftStatus = fitStatus({
+    fits: validation.isValid, travelPending: validation.travelPending || outdatedLegs.length > 0,
+  })
   const register = async () => {
     setRegistration((current) => ({ ...current, saving: true, error: '' }))
     try {
@@ -181,6 +140,11 @@ export default function ProposalDraftPlanner({ request, requests, technicians: r
         <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: 'wrap' }}>
           <Chip label={`${request.estimatedDurationMinutes} min · reviewed duration`} variant="outlined" />
           <Chip label={`${request.crewSize} ${Number(request.crewSize) === 1 ? 'person' : 'people'} required · ${values.technicianIds.length} selected`} variant="outlined" />
+          {validation.delay?.margin !== null && validation.delay?.margin !== undefined && (
+            <Chip variant="outlined" color={validation.delay.margin < customerServiceMinimumMarginMinutes ? 'warning' : 'success'}
+              label={`Margin ${Math.max(0, validation.delay.margin)} min`}
+              title="How late this visit can start without it or a later visit leaving its customer window" />
+          )}
           {!savedDraft && hasUnsavedChanges && <Chip label="Unsaved draft changes" color="warning" variant="outlined" />}
           {savedDraft && <Chip label={savedIsStale || savedNeedsRevalidation ? 'Saved draft needs review' : hasUnsavedChanges ? 'Unsaved draft changes' : 'Draft saved · not sent'} color={savedIsStale || savedNeedsRevalidation ? 'warning' : hasUnsavedChanges ? 'default' : 'success'} variant="outlined" />}
         </Stack>
@@ -270,33 +234,40 @@ export default function ProposalDraftPlanner({ request, requests, technicians: r
                       setValues((current) => changePrototypeTravelMinutes(current, leg.key, event.target.value))
                     }}
                     slotProps={{ htmlInput: { min: 0, max: 999, step: 1, inputMode: 'numeric' } }}
-                    helperText={travelLegHelperText({
-                      leg,
-                      source: leg.minutes === null ? null : travelLegSource(leg.key, values.travelMinutes, routesMinutes),
-                      details: travelDetails[leg.key],
-                      trafficMode: travelTrafficMode,
-                    })}
+                    helperText={[
+                      travelLegHelperText({
+                        leg,
+                        source: leg.minutes === null ? null : travelLegSource(leg.key, values.travelMinutes, routesMinutes),
+                        details: travelDetails[leg.key],
+                        trafficMode: travelTrafficMode,
+                      }),
+                      Number.isInteger(validation.delay?.legAbsorbs[leg.key])
+                        && `Absorbs up to ${Math.max(0, validation.delay.legAbsorbs[leg.key])} min of extra driving`,
+                    ].filter(Boolean).join(' · ')}
                     fullWidth
                   />
                 ))}
               </Stack>
             )}
-            <Alert severity={validation.isValid ? 'success' : 'warning'} variant="outlined">
-              {validation.isValid
-                ? (validation.warnings.length
-                  ? 'No conflicts found with the data available. The draft can be saved, but the items below are not verified.'
-                  : 'No conflicts found in the recorded Customer Service schedule. The draft can be saved.')
-                : (
+            {formIncomplete ? (
+              <Alert severity="info" variant="outlined">
+                <Box component="ul" sx={{ m: 0, pl: 2 }}>{validation.errors.map((error, index) => <li key={`${error.field}-${index}`}>{error.message}</li>)}</Box>
+              </Alert>
+            ) : (
+              <Alert severity={draftStatus === 'FITS' ? 'success' : 'warning'} variant="outlined">
+                <Typography variant="body2" fontWeight={700}>{fitStatusLabels[draftStatus]}</Typography>
+                {draftStatus === 'FITS' && 'The recorded Customer Service schedule has room for it. The draft can be saved.'}
+                {draftStatus === 'TRAVEL_PENDING' && 'Calculate or type the travel marked below to confirm it fits.'}
+                {draftStatus === 'DOESNT_FIT' && (
                   <Box component="ul" sx={{ m: 0, pl: 2 }}>{validation.errors.map((error, index) => <li key={`${error.field}-${index}`}>{error.message}</li>)}</Box>
                 )}
-            </Alert>
+              </Alert>
+            )}
             {validation.warnings.length > 0 && (
               <Alert severity="info" variant="outlined">
                 <Box component="ul" sx={{ m: 0, pl: 2 }}>{validation.warnings.map((warning, index) => <li key={`${warning.field}-${index}`}>{warning.message}</li>)}</Box>
               </Alert>
             )}
-            <ProposalSuggestions result={suggestions} onSuggest={suggest} onUse={applySuggestion}
-              disabled={values.technicianIds.length === 0} />
             {saveError && <Alert severity="error">{saveError}</Alert>}
             <Stack direction="row" spacing={1.5} useFlexGap sx={actionRowSx}>
               <Button variant="outlined" onClick={save} disabled={!validation.isValid}>
@@ -312,15 +283,21 @@ export default function ProposalDraftPlanner({ request, requests, technicians: r
                 ? 'Choose a date on or before the due date to register this appointment.'
                 : validation.isValid && validation.travelPending
                   ? 'Enter every travel estimate before registering: a registered appointment reserves the technicians’ time.'
-                  : 'Drafts are kept while navigating during the session; reloading removes them. Registered appointments are saved.'}
+                  : validation.isValid && outdatedLegs.length > 0
+                    ? 'Calculate the travel marked “calculate again” with Google Maps, or type its minutes, before registering.'
+                    : 'Drafts are kept while navigating during the session; reloading removes them. Registered appointments are saved.'}
             </Typography>
           </Stack>
           <ProposalDayAgenda
             date={validation.dateIsValid ? values.date : ''}
             agenda={validation.agenda}
+            margins={validation.delay?.entryMargins ?? {}}
             hasTechnicians={values.technicianIds.length > 0}
             proposedVisit={validation.internalEnd && validation.pickupEnd
-              ? { label: request.requestNumber, start: values.internalStart, workEnd: validation.internalEnd, end: validation.pickupEnd }
+              ? {
+                label: request.requestNumber, start: values.internalStart, workEnd: validation.internalEnd, end: validation.pickupEnd,
+                margin: validation.delay?.margin ?? null,
+              }
               : null}
           />
         </Box>

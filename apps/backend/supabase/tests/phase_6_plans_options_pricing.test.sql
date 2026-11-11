@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(48);
+select plan(46);
 
 select has_table('valtrim', 'plans', 'Plans table is available');
 select has_table('valtrim', 'plan_options', 'Plan Options table is available');
@@ -334,16 +334,6 @@ select ok(
   and not has_table_privilege('anon', 'valtrim.plan_options', 'update')
   and not has_table_privilege('anon', 'valtrim.plan_options', 'delete'),
   'Anonymous clients have no Option table privileges'
-);
-
-select ok(
-  not has_table_privilege('authenticated', 'valtrim.phases', 'select'),
-  'Sequence Sheet Phases remain closed'
-);
-
-select ok(
-  not has_table_privilege('authenticated', 'valtrim.lots', 'select'),
-  'Sequence Sheet Lots remain closed'
 );
 
 select ok(

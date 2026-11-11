@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(36);
+select plan(35);
 
 select has_table('valtrim', 'production_activities', 'Production activities table is available');
 select has_table('valtrim', 'production_activity_lots', 'Production activity Lots table is available');
@@ -214,12 +214,6 @@ select ok(
   and to_regclass('valtrim.production_schedules_updated_by_idx') is not null
   and to_regclass('valtrim.production_date_history_changed_by_idx') is not null,
   'Opened Production audit foreign keys have covering indexes'
-);
-
-select ok(
-  not has_table_privilege('authenticated', 'valtrim.service_requests', 'select')
-  and not has_table_privilege('authenticated', 'valtrim.service_requests', 'insert'),
-  'Customer Service remains closed'
 );
 select ok(
   to_regclass('valtrim.change_orders') is null

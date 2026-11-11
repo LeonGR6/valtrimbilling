@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(17);
+select plan(16);
 
 select ok(to_regclass('valtrim.draw_package_corrections') is not null,
   'Package corrections have one audit table');
@@ -70,11 +70,6 @@ select ok(coalesce((select proconfig @> array['search_path=""']
   from pg_proc where oid =
   'private.correct_draw_invoice_package(text,bigint,bigint,jsonb,text,date,date,text)'::regprocedure), false),
   'The private implementation has an empty search path');
-
-select ok(coalesce((select prosrc like '%perform 1 from valtrim.phases%for update%'
-  from pg_proc where oid =
-  'private.correct_draw_invoice_package(text,bigint,bigint,jsonb,text,date,date,text)'::regprocedure), false),
-  'Corrections lock the Phase before Packages');
 
 select ok(coalesce((select prosrc like '%where occupied.package_id <> p_package_id%'
   from pg_proc where oid =

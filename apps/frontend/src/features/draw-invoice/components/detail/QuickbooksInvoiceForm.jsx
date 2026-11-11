@@ -24,6 +24,7 @@ import { formatCurrency, formatDate } from '../../utils/drawInvoiceFormatters.js
 import {
   DEFAULT_DIFFERENCE_DESCRIPTION,
   DIFFERENCE_DESCRIPTION_MAX,
+  DIFFERENCE_REASON_MAX,
   formatSignedCurrency,
 } from '../../utils/invoiceDifference.js'
 
@@ -32,7 +33,9 @@ const NUMBER_COLORS = { success: 'success.main', error: 'error.main', neutral: '
 /**
  * One extra line for the occasions when the total the Builder requires does not match the Package: the
  * person types that required total and the line is the difference with the Package total so far (plus or
- * minus, within a limit that grows with the size of the invoice), with a text that starts as "DIFFERENCE".
+ * minus), with a text that starts as "DIFFERENCE". A line that takes off money is held to a limit that grows
+ * with the size of the invoice; one that adds money (the Builder pays more) has no limit but needs a reason,
+ * which stays inside the app and is never sent to QuickBooks.
  * The table above shows the line once it is valid; a problem is said here, and the invoice cannot be
  * created while there is one.
  */
@@ -60,7 +63,7 @@ function DifferenceEditor({ draft }) {
         </Button>
         <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
           When the total the Builder requires does not match this Package
-          {differenceLimit != null ? `: up to ${formatCurrency(differenceLimit)} either way for this invoice.` : '.'}
+          {differenceLimit != null ? `: it may take off up to ${formatCurrency(differenceLimit)} for this invoice, or add any amount with a reason.` : '.'}
         </Typography>
       </Box>
     )
@@ -105,6 +108,23 @@ function DifferenceEditor({ draft }) {
           sx={{ width: { sm: 240 } }}
         />
       </Stack>
+      {differenceAmount > 0 && (
+        <TextField
+          label="Why does the Builder pay more?"
+          size="small"
+          fullWidth
+          multiline
+          minRows={2}
+          value={input.reason ?? ''}
+          onChange={(event) => changeDifference({ reason: event.target.value })}
+          disabled={disabled}
+          required
+          error={!String(input.reason ?? '').trim()}
+          helperText="Internal note: it stays in the app and is not sent to QuickBooks."
+          slotProps={{ htmlInput: { maxLength: DIFFERENCE_REASON_MAX, autoComplete: 'off' } }}
+          sx={{ mt: 1.5 }}
+        />
+      )}
       {differenceProblem ? (
         <Typography variant="body2" color="error" role="alert" sx={{ mt: 1 }}>
           {differenceProblem}
@@ -115,7 +135,7 @@ function DifferenceEditor({ draft }) {
             ? `The Package is ${formatCurrency(packageNet)}, so the line is ${formatSignedCurrency(differenceAmount)}. `
             : `The Package total so far is ${packageNet != null ? formatCurrency(packageNet) : '…'}: type the total the Builder requires and the line is the difference. `}
           {differenceLimit != null
-            ? `Up to ${formatCurrency(differenceLimit)} either way for this invoice. `
+            ? `A line that takes off may be up to ${formatCurrency(differenceLimit)} for this invoice; one that adds money has no limit but needs a reason. `
             : ''}
           It is sent to QuickBooks as one more line and recorded on the Package.
         </Typography>

@@ -19,6 +19,7 @@ import { formatCurrency } from '../../utils/drawInvoiceFormatters.js'
 import {
   DEFAULT_DIFFERENCE_DESCRIPTION,
   DIFFERENCE_DESCRIPTION_MAX,
+  DIFFERENCE_REASON_MAX,
   describeDifferenceChange,
   differenceLimit,
   formatSignedCurrency,
@@ -29,6 +30,7 @@ import {
 // The box holds the total the Builder requires: for a line the invoice has, that is the Package plus the line.
 const toInput = (difference, net) => ({
   description: difference?.description ?? DEFAULT_DIFFERENCE_DESCRIPTION,
+  reason: difference?.reason ?? '',
   totalText: difference && net != null ? (Math.round((net + difference.amount) * 100) / 100).toFixed(2) : '',
 })
 
@@ -97,12 +99,13 @@ export default function InvoiceDifferenceDialog({ record, submissions = [], onCl
               <Typography variant="body2" color="text.secondary">
                 The same QuickBooks invoice is updated: its number and date stay, and it gets the lines of the
                 Package plus the difference line, with the new total. Type the total the Builder requires: the line
-                is its difference with the Package total{limit != null ? ` (up to ${formatCurrency(limit)} either way for this invoice)` : ''}.
+                is its difference with the Package total{limit != null ? ` (a line that takes off may be up to ${formatCurrency(limit)} for this invoice; one that adds money has no limit but needs a reason)` : ''}.
               </Typography>
               {current && (
                 <Alert severity="info" icon={false} data-testid="difference-current">
                   The invoice has a <strong>"{current.description}"</strong> line of{' '}
                   <strong>{formatSignedCurrency(current.amount)}</strong>.
+                  {current.reason ? <Box sx={{ mt: 0.5 }}>Reason: {current.reason}</Box> : null}
                 </Alert>
               )}
               <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} sx={{ alignItems: { sm: 'flex-start' } }}>
@@ -131,6 +134,22 @@ export default function InvoiceDifferenceDialog({ record, submissions = [], onCl
                   sx={{ width: { sm: 240 } }}
                 />
               </Stack>
+              {draft.amount > 0 && (
+                <TextField
+                  label="Why does the Builder pay more?"
+                  size="small"
+                  fullWidth
+                  multiline
+                  minRows={2}
+                  value={input.reason}
+                  onChange={(event) => setInput((value) => ({ ...value, reason: event.target.value }))}
+                  disabled={saving}
+                  required
+                  error={!input.reason.trim()}
+                  helperText="Internal note: it stays in the app and is not sent to QuickBooks."
+                  slotProps={{ htmlInput: { maxLength: DIFFERENCE_REASON_MAX, autoComplete: 'off' } }}
+                />
+              )}
               {draft.problem && (
                 <Typography variant="body2" color="error" role="alert">{draft.problem}</Typography>
               )}

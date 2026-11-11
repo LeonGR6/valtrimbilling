@@ -162,22 +162,27 @@ select valtrim.claim_quickbooks_invoice_sync(neg_pkg, actor, 'sandbox', 'realm-t
 select valtrim.claim_quickbooks_invoice_sync(plain_pkg, actor, 'sandbox', 'realm-test', '9990003') from qt_ctx;
 
 create temporary table qt_out (name text primary key, outcome text) on commit drop;
+-- Lines that were already in the history before this run (real tests with a sandbox invoice) are not part of it.
+create temporary table qt_old_corr on commit drop as
+select id from valtrim.draw_package_corrections where action = 'INVOICE_DIFFERENCE';
 
 create function pg_temp.complete(p_package bigint, p_description text, p_amount numeric)
 returns text
 language sql
 as $$
   select pg_temp.attempt(format(
-    'select valtrim.complete_quickbooks_invoice_sync(%s, ''inv-1'', ''9990001'', ''0'', %s, ''{}''::jsonb, %s, %s)::text',
+    'select valtrim.complete_quickbooks_invoice_sync(%s, ''inv-1'', ''9990001'', ''0'', %s, ''{}''::jsonb, %s, %s, %s)::text',
     p_package,
     (select net_amount from valtrim.invoices where package_id = p_package),
     coalesce(quote_literal(p_description), 'null'),
-    coalesce(p_amount::text, 'null')));
+    coalesce(p_amount::text, 'null'),
+    -- A line that adds money comes with its reason (a line that takes off has none).
+    case when p_amount > 0 then quote_literal('The Builder PO has a higher price') else 'null' end));
 $$;
 
 -- Refused: nothing is recorded ------------------------------------------------------------------------------------------
 
-insert into qt_out select 'too much', pg_temp.complete(pkg, 'DIFFERENCE', pkg_limit + 0.01) from qt_ctx;
+insert into qt_out select 'too much', pg_temp.complete(pkg, 'DIFFERENCE', -(pkg_limit + 0.01)) from qt_ctx;
 insert into qt_out select 'too much, minus', pg_temp.complete(pkg, 'DIFFERENCE', -(pkg_limit + 0.01)) from qt_ctx;
 insert into qt_out select 'text only', pg_temp.complete(pkg, 'DIFFERENCE', null) from qt_ctx;
 insert into qt_out select 'amount only', pg_temp.complete(pkg, null, 3) from qt_ctx;
@@ -187,7 +192,7 @@ insert into qt_out select 'blank text', pg_temp.complete(pkg, '   ', 3) from qt_
 insert into qt_out select 'long text', pg_temp.complete(pkg, repeat('x', 101), 3) from qt_ctx;
 
 select pg_temp.check_that(
-  'A difference above the limit is refused, in either direction, with a message that says the limit',
+  'A difference that takes off more than the limit is refused, with a message that says the limit',
   (select outcome like 'err:23514:The difference of $%is greater than the $%allowed for an invoice of $%'
      from qt_out where name = 'too much')
   and (select outcome like 'err:23514:%' from qt_out where name = 'too much, minus'),
@@ -203,13 +208,29 @@ select pg_temp.check_that(
      and outcome not like 'err:23514:%')
 );
 
+insert into qt_out
+select 'plus no reason', pg_temp.attempt(format(
+  'select valtrim.complete_quickbooks_invoice_sync(%s, ''inv-1'', ''9990001'', ''0'', %s, ''{}''::jsonb, ''DIFFERENCE'', 500, null)::text',
+  pkg, pkg_net)) from qt_ctx;
+insert into qt_out
+select 'plus long reason', pg_temp.attempt(format(
+  'select valtrim.complete_quickbooks_invoice_sync(%s, ''inv-1'', ''9990001'', ''0'', %s, ''{}''::jsonb, ''DIFFERENCE'', 500, %L)::text',
+  pkg, pkg_net, repeat('x', 501))) from qt_ctx;
+
+select pg_temp.check_that(
+  'A line that adds money is refused without a reason, and with a reason over 500 characters, whatever its size',
+  (select outcome like 'err:23514:%' from qt_out where name = 'plus no reason')
+  and (select outcome like 'err:23514:%' from qt_out where name = 'plus long reason'),
+  (select string_agg(name || '=' || outcome, '; ') from qt_out where name like 'plus %reason')
+);
+
 select pg_temp.check_that(
   'A refused difference leaves the invoice attempt as it was: still being created, nothing recorded',
   (select sync.status = 'CREATING' and sync.difference_amount is null
      and package.quickbooks_status <> 'CREATED'
      and not exists (
        select 1 from valtrim.draw_package_corrections c
-       where c.package_id = qt_ctx.pkg and c.action = 'INVOICE_DIFFERENCE')
+       where c.package_id = qt_ctx.pkg and c.action = 'INVOICE_DIFFERENCE' and c.id not in (select id from qt_old_corr))
    from qt_ctx
    join valtrim.quickbooks_invoice_syncs sync on sync.package_id = qt_ctx.pkg
    join valtrim.draw_packages package on package.id = qt_ctx.pkg)
@@ -245,20 +266,20 @@ select pg_temp.check_that(
 select pg_temp.check_that(
   'The Package keeps the difference in its history with the text, the amount and the limit',
   (select count(*) = 1
-     and bool_and(c.reason like '%DIFFERENCE with Builder%' and c.reason like '%+$%' and c.reason like '%limit $%')
+     and bool_and(c.reason like '%DIFFERENCE with Builder%' and c.reason like '%+$%' and c.reason like '%pays more than the Package%')
      and bool_and((c.next_details ->> 'amount')::numeric = qt_ctx.pkg_limit)
      and bool_and((c.next_details ->> 'limit')::numeric = qt_ctx.pkg_limit)
      and bool_and(c.changed_by = qt_ctx.actor)
    from qt_ctx join valtrim.draw_package_corrections c
-     on c.package_id = qt_ctx.pkg and c.action = 'INVOICE_DIFFERENCE'),
+     on c.package_id = qt_ctx.pkg and c.action = 'INVOICE_DIFFERENCE' and c.id not in (select id from qt_old_corr)),
   (select string_agg(c.reason, ' | ') from valtrim.draw_package_corrections c, qt_ctx
-   where c.package_id = qt_ctx.pkg and c.action = 'INVOICE_DIFFERENCE')
+   where c.package_id = qt_ctx.pkg and c.action = 'INVOICE_DIFFERENCE' and c.id not in (select id from qt_old_corr))
 );
 
 select pg_temp.check_that(
   'A negative line is written with its minus sign in the history',
   (select c.reason like '%-$%' from qt_ctx join valtrim.draw_package_corrections c
-     on c.package_id = qt_ctx.neg_pkg and c.action = 'INVOICE_DIFFERENCE')
+     on c.package_id = qt_ctx.neg_pkg and c.action = 'INVOICE_DIFFERENCE' and c.id not in (select id from qt_old_corr))
 );
 
 select pg_temp.check_that(
@@ -269,7 +290,7 @@ select pg_temp.check_that(
        from qt_ctx join valtrim.quickbooks_invoice_syncs sync on sync.package_id = qt_ctx.plain_pkg)
   and not exists (
     select 1 from valtrim.draw_package_corrections c, qt_ctx
-    where c.package_id = qt_ctx.plain_pkg and c.action = 'INVOICE_DIFFERENCE'),
+    where c.package_id = qt_ctx.plain_pkg and c.action = 'INVOICE_DIFFERENCE' and c.id not in (select id from qt_old_corr)),
   (select outcome from qt_out where name = 'no difference')
 );
 
@@ -277,7 +298,7 @@ select pg_temp.check_that(
 
 insert into qt_out
 select 'table above limit', pg_temp.attempt(format(
-  'update valtrim.quickbooks_invoice_syncs set difference_amount = difference_limit + 1 where package_id = %s', pkg))
+  'update valtrim.quickbooks_invoice_syncs set difference_amount = -(difference_limit + 1) where package_id = %s', pkg))
 from qt_ctx;
 insert into qt_out
 select 'table half', pg_temp.attempt(format(
@@ -289,7 +310,7 @@ select 'table failed row', pg_temp.attempt(format(
 from qt_ctx;
 
 select pg_temp.check_that(
-  'The table refuses a difference above its limit, half a difference, and a difference on an invoice that was not created',
+  'The table refuses a line that takes off above its limit, half a difference, and a difference on an invoice that was not created',
   (select bool_and(outcome like 'err:23514:%')
    from qt_out where name in ('table above limit', 'table half', 'table failed row')),
   (select string_agg(name || '=' || outcome, '; ') from qt_out where name like 'table%')

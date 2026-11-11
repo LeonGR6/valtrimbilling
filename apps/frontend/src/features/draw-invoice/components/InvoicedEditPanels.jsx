@@ -273,7 +273,9 @@ export function InvoicedEditReview({ review, difference = null }) {
           <strong>
             The invoice keeps its "{difference.description}" line of {formatSignedCurrency(difference.amount)}.
           </strong>{' '}
-          For a Package of {formatCurrency(after)} the most a difference may be is {formatCurrency(differenceLimit(after))}.
+          {difference.amount < 0
+            ? `For a Package of ${formatCurrency(after)} the most that may be taken off is ${formatCurrency(differenceLimit(after))}.`
+            : null}
         </Alert>
       )}
       <SentToBuilderWarning

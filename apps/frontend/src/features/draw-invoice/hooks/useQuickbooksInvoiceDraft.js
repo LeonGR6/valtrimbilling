@@ -63,6 +63,7 @@ export function useQuickbooksInvoiceDraft(record, { enabled = true, onSettled = 
     open: false,
     description: DEFAULT_DIFFERENCE_DESCRIPTION,
     totalText: '',
+    reason: '',
   })
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState('')

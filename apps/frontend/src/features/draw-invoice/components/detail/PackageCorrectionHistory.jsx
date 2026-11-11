@@ -70,6 +70,11 @@ export default function PackageCorrectionHistory({ package: record }) {
               </Box>
               <Typography variant="body2">
                 {correction.reason}
+                {correction.action === 'INVOICE_DIFFERENCE' && correction.next_details?.reason && (
+                  <Typography component="span" variant="body2" color="text.secondary" sx={{ display: 'block' }}>
+                    Reason: {correction.next_details.reason}
+                  </Typography>
+                )}
                 {other != null && (
                   <Typography component="span" variant="body2" color="text.secondary">
                     {` · Other Package ID ${other}`}

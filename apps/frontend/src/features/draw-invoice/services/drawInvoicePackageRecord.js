@@ -207,6 +207,7 @@ export function toInvoiceDifference(syncRow) {
     description: syncRow.difference_description,
     amount: Number(syncRow.difference_amount),
     limit: syncRow.difference_limit == null ? null : Number(syncRow.difference_limit),
+    reason: syncRow.difference_reason ?? null,
     addedAt: syncRow.difference_at ?? null,
   }
 }

@@ -141,7 +141,7 @@ const editResult = (dryRun: boolean): PackageEditResult => ({
 })
 
 const differenceResult = (
-  difference: { description: string; amount: number } | null,
+  difference: { description: string; amount: number; reason?: string | null } | null,
   dryRun: boolean,
 ): DifferenceChangeResult => ({
   package_id: 68,
@@ -152,7 +152,7 @@ const differenceResult = (
   net: 1520,
   limit: 5,
   previous: null,
-  next: difference ? { ...difference, limit: 5 } : null,
+  next: difference ? { ...difference, limit: 5, reason: difference.reason ?? null } : null,
   previous_total: 1520,
   next_total: 1520 + (difference?.amount ?? 0),
   removed_documents: [],
@@ -391,13 +391,13 @@ Deno.test('QuickBooks answering the Package net without the DIFFERENCE is a fail
   assertEquals(calls.includes('complete'), false)
 })
 
-Deno.test('an edit that would leave the DIFFERENCE above the limit of the new total is refused before it is saved', async () => {
+Deno.test('an edit that would leave the DIFFERENCE that takes off above the limit of the new total is refused before it is saved', async () => {
   const context = {
-    difference: { description: 'DIFFERENCE', amount: 8 },
-    totalAmount: 1528,
-    payload: storedPayload([...OLD_LINES, { description: 'DIFFERENCE', amount: 8 }]),
+    difference: { description: 'DIFFERENCE', amount: -8 },
+    totalAmount: 1512,
+    payload: storedPayload([...OLD_LINES, { description: 'DIFFERENCE', amount: -8 }]),
   }
-  const live = snapshot([...OLD_LINES, { description: 'DIFFERENCE', amount: 8 }])
+  const live = snapshot([...OLD_LINES, { description: 'DIFFERENCE', amount: -8 }])
 
   for (const action of ['preview', 'apply'] as const) {
     const { deps, calls } = harness({}, { context, live })
@@ -413,6 +413,25 @@ Deno.test('an edit that would leave the DIFFERENCE above the limit of the new to
     assertEquals(calls.includes('updateInvoice'), false)
   }
 })
+
+Deno.test('an edit keeps a DIFFERENCE that adds money whatever the new total: there is no limit to hold it', async () => {
+  const added = { description: 'DIFFERENCE', amount: 40, reason: 'Builder PO has a higher price' }
+  const h: Harness = harness({
+    updateInvoice: (_api, invoice, requestId) => {
+      h.updates.push({ invoice, requestId })
+      return Promise.resolve({ id: '146', docNumber: '14899', syncToken: '4', totalAmount: 800 })
+    },
+  }, {
+    context: { difference: added, totalAmount: 1560, payload: storedPayload([...OLD_LINES, { description: 'DIFFERENCE', amount: 40 }]) },
+    live: snapshot([...OLD_LINES, { description: 'DIFFERENCE', amount: 40 }]),
+  })
+
+  for (const action of ['preview', 'apply'] as const) {
+    await updatePackageInvoice(h.deps, { packageId: 68, action, edit: request })
+  }
+  assertEquals(h.calls.includes('applyEdit(dryRun=false)'), true)
+}
+)
 
 Deno.test('a retry rebuilds the invoice with its DIFFERENCE line too', async () => {
   const h: Harness = harness({
@@ -783,7 +802,11 @@ Deno.test('the body of a difference request is read, and anything else is not on
   assertEquals(parseDifferenceRequest({ packageId: 1, action: 'apply', difference: null }), { difference: null })
   assertEquals(
     parseDifferenceRequest({ difference: { description: '  DIFFERENCE   ', amount: -8.5 } }),
-    { difference: { description: 'DIFFERENCE', amount: -8.5 } },
+    { difference: { description: 'DIFFERENCE', amount: -8.5, reason: null } },
+  )
+  assertEquals(
+    parseDifferenceRequest({ difference: { description: 'DIFFERENCE', amount: 250, reason: ' PO is higher ' } }),
+    { difference: { description: 'DIFFERENCE', amount: 250, reason: 'PO is higher' } },
   )
   assertEquals(parseDifferenceRequest({ packageId: 1, selections: [], difference: null }), null)
   assertEquals(parseDifferenceRequest({ packageId: 1 }), null)
@@ -793,6 +816,8 @@ Deno.test('the body of a difference request is read, and anything else is not on
     { difference: { description: 'DIFFERENCE', amount: 0 } },
     { difference: { description: 'DIFFERENCE', amount: 1.234 } },
     { difference: { description: 'DIFFERENCE', amount: '4' } },
+    { difference: { description: 'DIFFERENCE', amount: 4 } },
+    { difference: { description: 'DIFFERENCE', amount: 4, reason: '   ' } },
     { difference: 'DIFFERENCE' },
     { difference: { description: 'x'.repeat(101), amount: 4 } },
   ]) {

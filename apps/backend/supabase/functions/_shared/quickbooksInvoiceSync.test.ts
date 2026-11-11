@@ -203,12 +203,12 @@ Deno.test('a real send puts the DIFFERENCE line on the invoice and records it wi
   assertEquals(result.difference, { description: 'DIFFERENCE', amount: 4 })
 })
 
-Deno.test('a difference above the limit stops everything before the Package is claimed', async () => {
+Deno.test('a difference that takes off more than the limit stops everything before the Package is claimed', async () => {
   for (const dryRun of [true, false]) {
     const { deps, calls } = harness()
 
     const error = await assertRejects(
-      () => run(deps, dryRun, { difference: { description: 'DIFFERENCE', amount: 8 } }),
+      () => run(deps, dryRun, { difference: { description: 'DIFFERENCE', amount: -8 } }),
       QuickbooksInvoiceError,
     )
 

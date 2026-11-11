@@ -105,8 +105,8 @@ export interface DifferenceChangeResult {
   dry_run: boolean
   net: number
   limit: number
-  previous: { description: string; amount: number; limit: number } | null
-  next: { description: string; amount: number; limit: number } | null
+  previous: { description: string; amount: number; limit: number; reason: string | null } | null
+  next: { description: string; amount: number; limit: number; reason: string | null } | null
   previous_total: number
   next_total: number
   removed_documents: unknown[]
@@ -274,7 +274,8 @@ export function parseDifferenceRequest(body: unknown): DifferenceChange | null {
   if (read.problem) throw new QuickbooksInvoiceUpdateError('INVALID_REQUEST', read.problem)
   const { difference } = read
   if (difference) {
-    // The limit depends on the Package net, which the database knows; everything else is checked here.
+    // The limit of a line that takes off depends on the Package net, which the database knows; everything
+    // else is checked here.
     const problem = differenceProblem(difference, 1_000_000_000)
     if (problem) throw new QuickbooksInvoiceUpdateError('INVALID_REQUEST', problem.message)
   }

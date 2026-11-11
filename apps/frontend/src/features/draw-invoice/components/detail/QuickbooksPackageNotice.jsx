@@ -192,10 +192,15 @@ export default function QuickbooksPackageNotice({
                   Includes "{record.invoiceDifference.description}" {formatSignedCurrency(record.invoiceDifference.amount)}
                 </strong>
                 {' '}added by hand, so the invoice is the Package total {formatSignedCurrency(record.invoiceDifference.amount)}
-                {record.invoiceDifference.limit != null
-                  ? ` (the most allowed was ${formatCurrency(record.invoiceDifference.limit)})`
+                {record.invoiceDifference.amount < 0 && record.invoiceDifference.limit != null
+                  ? ` (the most that may be taken off was ${formatCurrency(record.invoiceDifference.limit)})`
                   : ''}
                 {record.invoiceDifference.addedAt ? ` · ${savedDate(record.invoiceDifference.addedAt)}` : ''}.
+                {record.invoiceDifference.reason && (
+                  <Box component="span" sx={{ display: 'block' }} data-testid="invoice-difference-reason">
+                    Reason: {record.invoiceDifference.reason}
+                  </Box>
+                )}
               </Box>
             )}
             <Box sx={{ mt: 0.5, color: 'text.secondary' }}>

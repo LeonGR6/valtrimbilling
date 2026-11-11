@@ -171,14 +171,14 @@ Deno.test('a negative difference is a negative line', () => {
   assertEquals(payload.Line.at(-1)?.Amount, -4.5)
 })
 
-Deno.test('a difference above the limit for the invoice is refused before anything is built', () => {
+Deno.test('a difference that takes off more than the limit allows is refused before anything is built', () => {
   const error = assertThrows(
     () =>
       buildQuickbooksInvoicePayload({
         ...base,
         charges: [draw('97', 6700)],
         expectedNetAmount: 6700,
-        difference: { description: 'DIFFERENCE', amount: 15 },
+        difference: { description: 'DIFFERENCE', amount: -15 },
       }),
     QuickbooksInvoiceError,
   )
@@ -187,6 +187,17 @@ Deno.test('a difference above the limit for the invoice is refused before anythi
     error.message,
     'The difference of $15.00 is greater than the $10.00 allowed for an invoice of $6,700.00.',
   )
+})
+
+Deno.test('a difference that adds money is built whatever its size: the total follows it', () => {
+  const payload = buildQuickbooksInvoicePayload({
+    ...base,
+    charges: [draw('97', 6700)],
+    expectedNetAmount: 6700,
+    difference: { description: 'DIFFERENCE', amount: 250, reason: 'The Builder PO has a higher price' },
+  })
+  assertEquals(payload.Line.at(-1)?.Amount, 250)
+  assertEquals(payload.Line.reduce((sum, line) => sum + line.Amount, 0), 6950)
 })
 
 Deno.test('a difference with no text or no amount is an invalid input, not a limit problem', () => {

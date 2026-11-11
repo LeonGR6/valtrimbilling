@@ -2,7 +2,7 @@
 //
 // POST { packageId, action: "preview" | "apply" | "retry", selections, hardwareSelections,
 //        releasedOptions, addedOptions, reason, notes }
-//   or   { packageId, action: "preview" | "apply", difference: { description, amount } | null }
+//   or   { packageId, action: "preview" | "apply", difference: { description, amount, reason? } | null }
 //        which only adds, changes or (null) takes off the manual DIFFERENCE line of the invoice
 //   preview  what the edit would change and the new total; nothing is saved anywhere
 //   apply    edits the Package, then sends the new lines to the same QuickBooks invoice
@@ -108,6 +108,7 @@ Deno.serve(async (req) => {
           p_package_id: id,
           p_description: difference?.description ?? null,
           p_amount: difference?.amount ?? null,
+          p_reason: difference?.reason ?? null,
           p_dry_run: dryRun,
         })
         if (error) {

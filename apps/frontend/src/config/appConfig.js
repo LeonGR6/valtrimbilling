@@ -7,7 +7,6 @@ export const MANUAL_SIGN_OUT_STORAGE_KEY = 'valtrimbilling.auth.manual-sign-out'
 export const PUBLIC_APP_URL = (import.meta.env?.VITE_PUBLIC_APP_URL?.trim() || 'https://valtrimbilling.vercel.app')
   .replace(/\/+$/, '')
 
-// The Extra / Change Orders pages are built but closed in the deployed app: no route, and the sidebar
-// entry shows as not available. They are open on localhost (npm run dev), and set to true they open
-// everywhere.
-export const CHANGE_ORDERS_ENABLED = Boolean(import.meta.env?.DEV)
+// The Extra / Change Orders pages (routes, sidebar entry and the "CO" tabs) are open everywhere.
+// Set to false to close them again.
+export const CHANGE_ORDERS_ENABLED = true

@@ -62,13 +62,16 @@ as $$
   insert into qt_results (name, ok, detail) values (p_name, coalesce(p_ok, false), p_detail);
 $$;
 
-create function pg_temp.set_difference(p_actor uuid, p_package bigint, p_description text, p_amount numeric, p_dry boolean default false)
+create function pg_temp.set_difference(
+  p_actor uuid, p_package bigint, p_description text, p_amount numeric, p_dry boolean default false,
+  p_reason text default null
+)
 returns text
 language sql
 as $$
   select pg_temp.attempt(format(
-    'select valtrim.set_invoice_difference(%L, %s, %L, %L, %L)::text',
-    p_actor, p_package, p_description, p_amount, p_dry));
+    'select valtrim.set_invoice_difference(%L, %s, %L, %L, %L, %L)::text',
+    p_actor, p_package, p_description, p_amount, p_reason, p_dry));
 $$;
 
 -- The Package under test -----------------------------------------------------------------------------------------
@@ -119,9 +122,9 @@ select pg_temp.check_that('There is a real Package waiting for payment with an i
 -- Who may run it ----------------------------------------------------------------------------------------------------
 
 select pg_temp.check_that('Only the service role can run it',
-  not has_function_privilege('authenticated', 'valtrim.set_invoice_difference(uuid,bigint,text,numeric,boolean)', 'execute')
-  and not has_function_privilege('anon', 'valtrim.set_invoice_difference(uuid,bigint,text,numeric,boolean)', 'execute')
-  and has_function_privilege('service_role', 'valtrim.set_invoice_difference(uuid,bigint,text,numeric,boolean)', 'execute'));
+  not has_function_privilege('authenticated', 'valtrim.set_invoice_difference(uuid,bigint,text,numeric,text,boolean)', 'execute')
+  and not has_function_privilege('anon', 'valtrim.set_invoice_difference(uuid,bigint,text,numeric,text,boolean)', 'execute')
+  and has_function_privilege('service_role', 'valtrim.set_invoice_difference(uuid,bigint,text,numeric,text,boolean)', 'execute'));
 
 select pg_temp.check_that('Someone who is not an active Admin, Accounting or Draw & Invoice user is refused (42501)',
   pg_temp.set_difference((select stranger from qt_ctx), (select pkg from qt_ctx), 'DIFFERENCE', 1) like 'err:42501:%'
@@ -140,11 +143,19 @@ select pg_temp.check_that('An empty text, a text of 101 characters, zero and thr
   and pg_temp.set_difference((select actor from qt_ctx), (select pkg from qt_ctx), 'DIFFERENCE', 0) like 'err:23514:%'
   and pg_temp.set_difference((select actor from qt_ctx), (select pkg from qt_ctx), 'DIFFERENCE', 1.234) like 'err:23514:%');
 
-select pg_temp.check_that('A difference above the limit is refused, either sign, and the limit itself is not',
-  pg_temp.set_difference((select actor from qt_ctx), (select pkg from qt_ctx), 'DIFFERENCE', (select lim + 0.01 from qt_ctx), true) like 'err:23514:%greater than%'
-  and pg_temp.set_difference((select actor from qt_ctx), (select pkg from qt_ctx), 'DIFFERENCE', (select -(lim + 0.01) from qt_ctx), true) like 'err:23514:%greater than%'
-  and pg_temp.set_difference((select actor from qt_ctx), (select pkg from qt_ctx), 'DIFFERENCE', (select lim from qt_ctx), true) like 'ok:%',
-  pg_temp.set_difference((select actor from qt_ctx), (select pkg from qt_ctx), 'DIFFERENCE', (select lim + 0.01 from qt_ctx), true));
+select pg_temp.check_that('A line that takes off more than the limit is refused, and the limit itself is not',
+  pg_temp.set_difference((select actor from qt_ctx), (select pkg from qt_ctx), 'DIFFERENCE', (select -(lim + 0.01) from qt_ctx), true) like 'err:23514:%greater than%'
+  and pg_temp.set_difference((select actor from qt_ctx), (select pkg from qt_ctx), 'DIFFERENCE', (select -lim from qt_ctx), true) like 'ok:%',
+  pg_temp.set_difference((select actor from qt_ctx), (select pkg from qt_ctx), 'DIFFERENCE', (select -(lim + 0.01) from qt_ctx), true));
+
+select pg_temp.check_that('A line that adds money has no limit, but needs a reason of up to 500 characters',
+  pg_temp.set_difference((select actor from qt_ctx), (select pkg from qt_ctx), 'DIFFERENCE', (select lim + 0.01 from qt_ctx), true, 'The Builder PO has a higher price') like 'ok:%'
+  and pg_temp.set_difference((select actor from qt_ctx), (select pkg from qt_ctx), 'DIFFERENCE', 9999.99, true, 'The Builder PO has a higher price') like 'ok:%'
+  and pg_temp.set_difference((select actor from qt_ctx), (select pkg from qt_ctx), 'DIFFERENCE', 9999.99, true, repeat('x', 500)) like 'ok:%'
+  and pg_temp.set_difference((select actor from qt_ctx), (select pkg from qt_ctx), 'DIFFERENCE', 3, true) like 'err:23514:%write the reason%'
+  and pg_temp.set_difference((select actor from qt_ctx), (select pkg from qt_ctx), 'DIFFERENCE', 3, true, '   ') like 'err:23514:%write the reason%'
+  and pg_temp.set_difference((select actor from qt_ctx), (select pkg from qt_ctx), 'DIFFERENCE', 3, true, repeat('x', 501)) like 'err:23514:%write the reason%',
+  pg_temp.set_difference((select actor from qt_ctx), (select pkg from qt_ctx), 'DIFFERENCE', 3, true));
 
 select pg_temp.check_that('Taking off a difference the invoice does not have is refused',
   pg_temp.set_difference((select actor from qt_ctx), (select pkg from qt_ctx), null, null) like 'err:23514:%already has this difference%');
@@ -157,7 +168,7 @@ select pg_temp.check_that('A Package that is not waiting for payment with a Quic
 -- A dry run changes nothing ---------------------------------------------------------------------------------------------
 
 insert into qt_out
-select 'dry', pg_temp.set_difference((select actor from qt_ctx), (select pkg from qt_ctx), 'DIFFERENCE', 2, true);
+select 'dry', pg_temp.set_difference((select actor from qt_ctx), (select pkg from qt_ctx), 'DIFFERENCE', 2, true, 'The Builder PO has a higher price');
 
 select pg_temp.check_that('A dry run answers with the totals and saves nothing',
   (select outcome like 'ok:%' from qt_out where name = 'dry')
@@ -173,7 +184,7 @@ select pg_temp.check_that('A dry run answers with the totals and saves nothing',
 -- A real add --------------------------------------------------------------------------------------------------------------
 
 insert into qt_out
-select 'add', pg_temp.set_difference((select actor from qt_ctx), (select pkg from qt_ctx), '  DIFFERENCE  ', 2);
+select 'add', pg_temp.set_difference((select actor from qt_ctx), (select pkg from qt_ctx), '  DIFFERENCE  ', 2, false, '  The Builder PO   has a higher price ');
 
 select pg_temp.check_that('Adding the line keeps it on the invoice with who and when, and marks the invoice as waiting for QuickBooks',
   (select outcome like 'ok:%' from qt_out where name = 'add')
@@ -210,6 +221,12 @@ select pg_temp.check_that('The history says what was added',
      and previous_details ->> 'amount' is null
      and reason like 'Line "DIFFERENCE" of +$2.00 added%') = 1);
 
+select pg_temp.check_that('The reason is kept on the invoice record and in the history',
+  (select difference_reason = 'The Builder PO   has a higher price' from valtrim.quickbooks_invoice_syncs where package_id = (select pkg from qt_ctx))
+  and (select count(*) from valtrim.draw_package_corrections
+       where package_id = (select pkg from qt_ctx) and action = 'INVOICE_DIFFERENCE'
+         and next_details ->> 'reason' = 'The Builder PO   has a higher price' and previous_details ->> 'reason' is null) = 1);
+
 select pg_temp.check_that('Nothing else can be saved while that change waits for QuickBooks',
   pg_temp.set_difference((select actor from qt_ctx), (select pkg from qt_ctx), 'DIFFERENCE', 1) like 'err:23514:%has not reached QuickBooks%');
 
@@ -228,7 +245,7 @@ select pg_temp.check_that('When QuickBooks has the lines the mark goes and the l
      from valtrim.quickbooks_invoice_syncs where package_id = (select pkg from qt_ctx)));
 
 select pg_temp.check_that('The same line again is refused',
-  pg_temp.set_difference((select actor from qt_ctx), (select pkg from qt_ctx), 'DIFFERENCE', 2) like 'err:23514:%already has this difference%');
+  pg_temp.set_difference((select actor from qt_ctx), (select pkg from qt_ctx), 'DIFFERENCE', 2, false, 'The Builder PO   has a higher price') like 'err:23514:%already has this difference%');
 
 -- A change -------------------------------------------------------------------------------------------------------------------
 
@@ -240,6 +257,12 @@ select pg_temp.check_that('Changing the line replaces it and waits for QuickBook
   and (select difference_description = 'ROUNDING' and difference_amount = -1.5 and update_pending
        from valtrim.quickbooks_invoice_syncs where package_id = (select pkg from qt_ctx)),
   (select outcome from qt_out where name = 'change'));
+
+select pg_temp.check_that('A line that takes off keeps no reason, and the history says which one the old line had',
+  (select difference_reason is null from valtrim.quickbooks_invoice_syncs where package_id = (select pkg from qt_ctx))
+  and (select count(*) from valtrim.draw_package_corrections
+       where package_id = (select pkg from qt_ctx) and action = 'INVOICE_DIFFERENCE'
+         and previous_details ->> 'reason' = 'The Builder PO   has a higher price' and next_details ->> 'reason' is null) = 1);
 
 select pg_temp.check_that('The history says from what to what',
   (select count(*) from valtrim.draw_package_corrections
@@ -275,6 +298,36 @@ select pg_temp.check_that('The history says it was taken off, and the total goes
 select pg_temp.check_that('Three history rows were written in all',
   (select count(*) from valtrim.draw_package_corrections
    where package_id = (select pkg from qt_ctx) and action = 'INVOICE_DIFFERENCE') = (select history_before + 3 from qt_ctx));
+
+-- Above the limit, with a reason ------------------------------------------------------------------------------------------------
+
+select pg_temp.attempt(format(
+  $q$select valtrim.complete_quickbooks_invoice_update(%s, 'tok3', %s, '{}'::jsonb)::text$q$,
+  (select pkg from qt_ctx), (select net from qt_ctx)));
+
+insert into qt_out
+select 'big', pg_temp.set_difference((select actor from qt_ctx), (select pkg from qt_ctx), 'DIFFERENCE', 1000.50, false, 'Builder PO carries the new price');
+
+select pg_temp.check_that('A line far above the old limit is saved when the Builder pays more, with its reason',
+  (select outcome like 'ok:%' from qt_out where name = 'big')
+  and (select difference_amount = 1000.50 and difference_reason = 'Builder PO carries the new price'
+         and difference_limit = (select lim from qt_ctx) and update_pending
+       from valtrim.quickbooks_invoice_syncs where package_id = (select pkg from qt_ctx))
+  and (select ((substr(outcome, 4)::jsonb) ->> 'next_total')::numeric = (select net + 1000.50 from qt_ctx) from qt_out where name = 'big'),
+  (select left(outcome, 300) from qt_out where name = 'big'));
+
+select pg_temp.check_that('The history says the Builder pays more than the Package',
+  (select count(*) from valtrim.draw_package_corrections
+   where package_id = (select pkg from qt_ctx) and action = 'INVOICE_DIFFERENCE'
+     and (next_details ->> 'amount')::numeric = 1000.50
+     and reason like '%+$1,000.50 added to the QuickBooks invoice: the Builder pays more than the Package%') = 1);
+
+select pg_temp.check_that('A reason alone is a change: the same line with another reason is saved once QuickBooks has the first',
+  pg_temp.attempt(format(
+    $q$select valtrim.complete_quickbooks_invoice_update(%s, 'tok4', %s, '{}'::jsonb)::text$q$,
+    (select pkg from qt_ctx), (select net + 1000.50 from qt_ctx))) = 'ok:true'
+  and pg_temp.set_difference((select actor from qt_ctx), (select pkg from qt_ctx), 'DIFFERENCE', 1000.50, false, 'Builder PO carries the new price') like 'err:23514:%already has this difference%'
+  and pg_temp.set_difference((select actor from qt_ctx), (select pkg from qt_ctx), 'DIFFERENCE', 1000.50, false, 'Another reason') like 'ok:%');
 
 select step, name, ok, detail from qt_results order by step;
 

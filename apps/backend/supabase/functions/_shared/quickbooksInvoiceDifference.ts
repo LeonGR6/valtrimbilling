@@ -3,7 +3,8 @@
 //
 // The line is a small, checked exception to "the invoice lines add up to the Package net":
 //   * it is one line, with a text and an amount that may be positive (more) or negative (less),
-//   * it can never be larger than the limit for the size of the invoice,
+//   * a line that takes off can never be larger than the limit for the size of the invoice; one that adds
+//     (the Builder pays more than the Package) has no limit but needs a reason, kept internally,
 //   * the invoice total in QuickBooks is then the Package net plus this amount.
 //
 // Pure helpers: nothing here talks to QuickBooks or the database. The database holds the same formula in
@@ -13,9 +14,12 @@ export interface InvoiceDifference {
   description: string
   /** Dollars. Positive adds to the invoice, negative takes off. Never zero. */
   amount: number
+  /** Why the Builder pays more than the Package. Required when the amount is positive; internal only. */
+  reason?: string | null
 }
 
 export const DIFFERENCE_DESCRIPTION_MAX = 100
+export const DIFFERENCE_REASON_MAX = 500
 export const DEFAULT_DIFFERENCE_DESCRIPTION = 'DIFFERENCE'
 
 // $5 for every $5,000 of invoice, counted from the first dollar: up to $5,000 -> $5, up to $10,000 -> $10,
@@ -38,6 +42,22 @@ export function differenceLimit(netAmount: number): number {
 /** The text of a difference as it is printed: single spaces, no edges. */
 export function cleanDifferenceDescription(value: string): string {
   return value.replace(/\s+/gu, ' ').trim()
+}
+
+/** The reason as it is kept: single spaces and no edges. */
+export function cleanDifferenceReason(value: string): string {
+  return value.replace(/\s+/gu, ' ').trim()
+}
+
+/** What is wrong with the reason of a line that adds money, or null. Lines that take off need none. */
+export function differenceReasonProblem(difference: InvoiceDifference): string | null {
+  if (!(difference.amount > 0)) return null
+  const reason = cleanDifferenceReason(difference.reason ?? '')
+  if (!reason) return 'The Builder pays more than the Package: write the reason for the difference.'
+  if (reason.length > DIFFERENCE_REASON_MAX) {
+    return `The reason can have up to ${DIFFERENCE_REASON_MAX} characters.`
+  }
+  return null
 }
 
 export interface DifferenceProblem {
@@ -64,8 +84,9 @@ export function differenceProblem(difference: InvoiceDifference, netAmount: numb
   if (Math.abs(difference.amount * 100 - cents) > 1e-6) return invalid('The difference can have at most two decimals.')
   if (cents === 0) return invalid('The difference cannot be $0.00.')
 
+  // The limit only protects the Builder from paying LESS than the Package; paying more is allowed.
   const limitCents = toCents(differenceLimit(netAmount))
-  if (Math.abs(cents) > limitCents) {
+  if (cents < 0 && Math.abs(cents) > limitCents) {
     return {
       code: 'TOO_LARGE',
       message: `The difference of ${money(Math.abs(cents))} is greater than the ${money(limitCents)} allowed `
@@ -87,12 +108,23 @@ export function readInvoiceDifference(
   if (typeof value !== 'object' || Array.isArray(value)) {
     return { difference: null, problem: 'The difference must have a description and an amount.' }
   }
-  const { description, amount } = value as { description?: unknown; amount?: unknown }
+  const { description, amount, reason } = value as { description?: unknown; amount?: unknown; reason?: unknown }
   if (typeof description !== 'string') {
     return { difference: null, problem: 'Write what the difference is for.' }
   }
   if (typeof amount !== 'number') {
     return { difference: null, problem: 'The difference must be an amount.' }
   }
-  return { difference: { description: cleanDifferenceDescription(description), amount }, problem: null }
+  if (reason != null && typeof reason !== 'string') {
+    return { difference: null, problem: 'The reason must be text.' }
+  }
+  const difference: InvoiceDifference = {
+    description: cleanDifferenceDescription(description),
+    amount,
+    // Only a line that adds money has a reason; for one that takes off it is left out.
+    reason: amount > 0 && typeof reason === 'string' ? cleanDifferenceReason(reason) : null,
+  }
+  const reasonProblem = differenceReasonProblem(difference)
+  if (reasonProblem) return { difference: null, problem: reasonProblem }
+  return { difference, problem: null }
 }

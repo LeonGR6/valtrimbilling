@@ -20,25 +20,36 @@ test('the limit is $5 for every $5,000 of invoice, counted from the first dollar
   for (const [net, limit] of table) assert.equal(differenceLimit(net), limit, `net ${net}`)
 })
 
-test('$8 passes on an invoice of $6,700 and $15 is too much, with the message the server gives', () => {
-  assert.equal(differenceProblem({ description: 'DIFFERENCE', amount: 8 }, 6700), null)
+const WHY = 'The Builder PO has a higher price'
+
+test('taking off $8 passes on an invoice of $6,700 and $15 is too much, with the message the server gives', () => {
+  assert.equal(differenceProblem({ description: 'DIFFERENCE', amount: -8 }, 6700), null)
   assert.equal(
-    differenceProblem({ description: 'DIFFERENCE', amount: 15 }, 6700),
+    differenceProblem({ description: 'DIFFERENCE', amount: -15 }, 6700),
     'The difference of $15.00 is greater than the $10.00 allowed for an invoice of $6,700.00.',
   )
 })
 
-test('the limit is the same in both directions and its edge is allowed', () => {
-  assert.equal(differenceProblem({ description: 'DIFFERENCE', amount: 10 }, 6700), null)
+test('the limit holds only a line that takes off, and its edge is allowed', () => {
   assert.equal(differenceProblem({ description: 'DIFFERENCE', amount: -10 }, 6700), null)
-  assert.match(differenceProblem({ description: 'DIFFERENCE', amount: 10.01 }, 6700), /greater than/u)
   assert.match(differenceProblem({ description: 'DIFFERENCE', amount: -10.01 }, 6700), /greater than/u)
+})
+
+test('a line that adds money has no limit but needs a reason of up to 500 characters', () => {
+  assert.equal(differenceProblem({ description: 'DIFFERENCE', amount: 10.01, reason: WHY }, 6700), null)
+  assert.equal(differenceProblem({ description: 'DIFFERENCE', amount: 5000, reason: WHY }, 6700), null)
+  assert.equal(differenceProblem({ description: 'DIFFERENCE', amount: 5, reason: '  ' }, 6700), 'The Builder pays more than the Package: write why.')
+  assert.equal(differenceProblem({ description: 'DIFFERENCE', amount: 5 }, 6700), 'The Builder pays more than the Package: write why.')
+  assert.equal(differenceProblem({ description: 'DIFFERENCE', amount: 5, reason: 'x'.repeat(500) }, 6700), null)
+  assert.match(differenceProblem({ description: 'DIFFERENCE', amount: 5, reason: 'x'.repeat(501) }, 6700), /up to 500/u)
+  // A line that takes off needs none.
+  assert.equal(differenceProblem({ description: 'DIFFERENCE', amount: -5 }, 6700), null)
 })
 
 test('a zero amount, a missing text and cents beyond two are problems', () => {
   assert.match(differenceProblem({ description: 'DIFFERENCE', amount: 0 }, 6700), /\$0\.00/u)
-  assert.match(differenceProblem({ description: '  ', amount: 5 }, 6700), /what the difference is for/u)
-  assert.match(differenceProblem({ description: 'x'.repeat(101), amount: 5 }, 6700), /up to 100/u)
+  assert.match(differenceProblem({ description: '  ', amount: -5 }, 6700), /what the difference is for/u)
+  assert.match(differenceProblem({ description: 'x'.repeat(101), amount: -5 }, 6700), /up to 100/u)
   assert.match(differenceProblem({ description: 'DIFFERENCE', amount: 5.005 }, 6700), /two decimals/u)
   assert.match(differenceProblem({ description: 'DIFFERENCE', amount: Number.NaN }, 6700), /must be an amount/u)
 })
@@ -70,22 +81,35 @@ test('the draft being typed turns the required total into the line to send, the 
   assert.deepEqual(empty, { difference: null, amount: null, problem: null, total: 6700 })
 
   // The Builder requires $6,708.00 and the Package is $6,700.00: the line is +$8.00.
-  const fine = readDifferenceDraft({ open: true, description: ' DIFFERENCE ', totalText: '$6,708' }, 6700)
-  assert.deepEqual(fine, { difference: { description: 'DIFFERENCE', amount: 8 }, amount: 8, problem: null, total: 6708 })
+  const fine = readDifferenceDraft({ open: true, description: ' DIFFERENCE ', totalText: '$6,708', reason: `  ${WHY}  ` }, 6700)
+  assert.deepEqual(fine, { difference: { description: 'DIFFERENCE', amount: 8, reason: WHY }, amount: 8, problem: null, total: 6708 })
+
+  // The Builder pays more but no reason is written yet: no line to send, and it says why.
+  const noReason = readDifferenceDraft({ open: true, description: 'DIFFERENCE', totalText: '6708', reason: '' }, 6700)
+  assert.equal(noReason.difference, null)
+  assert.equal(noReason.amount, 8)
+  assert.equal(noReason.problem, 'The Builder pays more than the Package: write why.')
 
   // Less than the Package: the line takes off, to the cent and without floating point noise.
-  const credit = readDifferenceDraft({ open: true, description: 'DIFFERENCE', totalText: '6695.75' }, 6700)
+  const credit = readDifferenceDraft({ open: true, description: 'DIFFERENCE', totalText: '6695.75', reason: 'ignored' }, 6700)
   assert.equal(credit.amount, -4.25)
+  // A line that takes off carries no reason, even if one was typed before the total went down.
+  assert.deepEqual(credit.difference, { description: 'DIFFERENCE', amount: -4.25 })
   assert.equal(credit.total, 6695.75)
-  const cents = readDifferenceDraft({ open: true, description: 'DIFFERENCE', totalText: '1845' }, 1841.48)
+  const cents = readDifferenceDraft({ open: true, description: 'DIFFERENCE', totalText: '1845', reason: WHY }, 1841.48)
   assert.equal(cents.amount, 3.52)
   assert.equal(cents.difference.amount, 3.52)
 
-  const tooMuch = readDifferenceDraft({ open: true, description: 'DIFFERENCE', totalText: '6715' }, 6700)
+  const tooMuch = readDifferenceDraft({ open: true, description: 'DIFFERENCE', totalText: '6685' }, 6700)
   assert.equal(tooMuch.difference, null)
-  assert.equal(tooMuch.amount, 15)
+  assert.equal(tooMuch.amount, -15)
   assert.equal(tooMuch.total, 6700)
   assert.match(tooMuch.problem, /greater than the \$10\.00 allowed/u)
+
+  // The Builder pays far more than the Package: allowed, with a reason.
+  const much = readDifferenceDraft({ open: true, description: 'DIFFERENCE', totalText: '8000', reason: WHY }, 6700)
+  assert.equal(much.problem, null)
+  assert.deepEqual(much.difference, { description: 'DIFFERENCE', amount: 1300, reason: WHY })
 
   const same = readDifferenceDraft({ open: true, description: 'DIFFERENCE', totalText: '6700.00' }, 6700)
   assert.equal(same.difference, null)
@@ -99,15 +123,15 @@ test('the draft being typed turns the required total into the line to send, the 
     'The total can have at most two decimals.')
   assert.equal(readDifferenceDraft({ open: true, description: 'DIFFERENCE', totalText: '0' }, 6700).problem,
     'The total must be more than $0.00.')
-  assert.equal(readDifferenceDraft({ open: true, description: '  ', totalText: '6708' }, 6700).problem,
+  assert.equal(readDifferenceDraft({ open: true, description: '  ', totalText: '6708', reason: WHY }, 6700).problem,
     'Write what the difference is for.')
 })
 
 test('the limit the server reported is the one used', () => {
-  // The server said $20 (it measured a larger invoice): a line of 15 is then fine.
-  const draft = readDifferenceDraft({ open: true, description: 'DIFFERENCE', totalText: '6715' }, 6700, 20)
+  // The server said $20 (it measured a larger invoice): taking off 15 is then fine.
+  const draft = readDifferenceDraft({ open: true, description: 'DIFFERENCE', totalText: '6685' }, 6700, 20)
   assert.equal(draft.problem, null)
-  assert.equal(draft.difference.amount, 15)
+  assert.equal(draft.difference.amount, -15)
 })
 
 test('text and signed amounts are written the same everywhere', () => {
@@ -135,4 +159,10 @@ test('the line typed is the one the invoice has only when text and amount are th
   assert.equal(sameDifference(four, { description: 'DIFFERENCE', amount: 4.0 }), true)
   assert.equal(sameDifference(four, { description: 'DIFFERENCE', amount: 4.01 }), false)
   assert.equal(sameDifference(four, { description: 'ROUNDING', amount: 4 }), false)
+})
+
+test('another reason is a change, and blanks in the reason do not count', () => {
+  const four = { description: 'DIFFERENCE', amount: 4, reason: 'The PO says so' }
+  assert.equal(sameDifference(four, { ...four, reason: '  The PO   says so ' }), true)
+  assert.equal(sameDifference(four, { ...four, reason: 'Another' }), false)
 })

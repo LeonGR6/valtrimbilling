@@ -1,12 +1,15 @@
 import { formatCurrency } from './drawInvoiceFormatters.js'
 
 // The one extra line a person may add to a Package invoice before it goes to QuickBooks, for the occasions
-// when the total the Builder requires does not match the Package (e.g. "DIFFERENCE"). The server holds the
+// when the total the Builder requires does not match the Package (e.g. "DIFFERENCE"). A line that takes off
+// money is held to a limit; a line that adds money (the Builder pays more) has no limit but needs a reason,
+// kept inside the app and never sent to QuickBooks. The server holds the
 // same rule (functions/_shared/quickbooksInvoiceDifference.ts and valtrim.invoice_difference_limit) and
 // checks it again; this copy only lets the person see the problem while typing. The tests keep them in step.
 
 export const DIFFERENCE_DESCRIPTION_MAX = 100
 export const DEFAULT_DIFFERENCE_DESCRIPTION = 'DIFFERENCE'
+export const DIFFERENCE_REASON_MAX = 500
 
 // $5 for every $5,000 of invoice, counted from the first dollar: up to $5,000 -> $5, up to $10,000 -> $10,
 // up to $15,000 -> $15, and so on. The Package net before the line is what is measured.
@@ -15,7 +18,7 @@ const STEP_LIMIT_CENTS = 500
 
 const toCents = (amount) => Math.round(Number(amount) * 100)
 
-/** The largest difference (either sign) an invoice of this Package net may carry, in dollars. */
+/** The largest difference that TAKES OFF money an invoice of this Package net may carry, in dollars. */
 export function differenceLimit(netAmount) {
   const net = Number(netAmount)
   const netCents = Number.isFinite(net) ? Math.max(0, toCents(net)) : 0
@@ -24,6 +27,11 @@ export function differenceLimit(netAmount) {
 }
 
 export function cleanDifferenceDescription(value) {
+  return String(value ?? '').replace(/\s+/gu, ' ').trim()
+}
+
+/** The reason for a line that adds money, with its blanks tidied like the description. */
+export function cleanDifferenceReason(value) {
   return String(value ?? '').replace(/\s+/gu, ' ').trim()
 }
 
@@ -40,9 +48,10 @@ export function parseDifferenceAmount(text) {
 
 /**
  * What is wrong with a difference for an invoice whose Package net is `netAmount`, as a sentence to show,
- * or null when it is fine. `limit` may be given when the server already said it.
+ * or null when it is fine. `limit` may be given when the server already said it. A line that takes off
+ * money (negative) is held to the limit; a line that adds money (positive) has none but needs a `reason`.
  */
-export function differenceProblem({ description, amount }, netAmount, limit = differenceLimit(netAmount)) {
+export function differenceProblem({ description, amount, reason }, netAmount, limit = differenceLimit(netAmount)) {
   const text = cleanDifferenceDescription(description)
   if (!text) return 'Write what the difference is for.'
   if (text.length > DIFFERENCE_DESCRIPTION_MAX) {
@@ -54,10 +63,17 @@ export function differenceProblem({ description, amount }, netAmount, limit = di
   if (Math.abs(amount * 100 - cents) > 1e-6) return 'The difference can have at most two decimals.'
   if (cents === 0) return 'The difference cannot be $0.00.'
 
-  if (Math.abs(cents) > toCents(limit)) {
+  if (cents < 0 && Math.abs(cents) > toCents(limit)) {
     return `The difference of ${formatCurrency(Math.abs(cents) / 100)} is greater than the ${
       formatCurrency(limit)
     } allowed for an invoice of ${formatCurrency(Math.max(0, Number(netAmount)))}.`
+  }
+  if (cents > 0) {
+    const why = cleanDifferenceReason(reason)
+    if (!why) return 'The Builder pays more than the Package: write why.'
+    if (why.length > DIFFERENCE_REASON_MAX) {
+      return `The reason can have up to ${DIFFERENCE_REASON_MAX} characters.`
+    }
   }
   if (toCents(netAmount) + cents <= 0) return 'The difference cannot bring the invoice total to $0.00 or less.'
   return null
@@ -74,7 +90,7 @@ export function differenceProblem({ description, amount }, netAmount, limit = di
  * Closed, or open with the total still empty: no line and no problem. `limit` is the one the server
  * reported for this Package, when it has.
  */
-export function readDifferenceDraft({ open, description, totalText }, netAmount, limit = undefined) {
+export function readDifferenceDraft({ open, description, totalText, reason }, netAmount, limit = undefined) {
   const net = Number(netAmount)
   const noLine = { difference: null, amount: null, problem: null, total: Number.isFinite(net) ? net : null }
   if (!open || !Number.isFinite(net)) return noLine
@@ -99,6 +115,8 @@ export function readDifferenceDraft({ open, description, totalText }, netAmount,
   }
 
   const candidate = { description: cleanDifferenceDescription(description), amount }
+  // Only a line that adds money carries a reason; one that takes off has none.
+  if (amount > 0) candidate.reason = cleanDifferenceReason(reason)
   const problem = differenceProblem(candidate, net, limit ?? differenceLimit(net))
   if (problem) return { difference: null, amount, problem, total: net }
 
@@ -124,5 +142,7 @@ export function describeDifferenceChange(current, next) {
 export function sameDifference(left, right) {
   if (!left && !right) return true
   if (!left || !right) return false
-  return left.description === right.description && Math.round(left.amount * 100) === Math.round(right.amount * 100)
+  return left.description === right.description
+    && Math.round(left.amount * 100) === Math.round(right.amount * 100)
+    && cleanDifferenceReason(left.reason) === cleanDifferenceReason(right.reason)
 }

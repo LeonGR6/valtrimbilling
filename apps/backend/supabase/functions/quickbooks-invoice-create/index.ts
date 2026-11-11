@@ -185,6 +185,7 @@ Deno.serve(async (req) => {
             p_payload: payload,
             p_difference_description: invoiceDifference?.description ?? null,
             p_difference_amount: invoiceDifference?.amount ?? null,
+            p_difference_reason: invoiceDifference?.reason ?? null,
           })
           rpcFailure(error)
         },

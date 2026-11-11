@@ -1254,6 +1254,7 @@ test('the Package record carries the difference line of its invoice', () => {
       difference_description: 'DIFFERENCE',
       difference_amount: '8',
       difference_limit: '10',
+      difference_reason: 'The Builder PO has a higher price',
       difference_at: '2026-11-09T15:00:00Z',
     },
   }
@@ -1261,6 +1262,7 @@ test('the Package record carries the difference line of its invoice', () => {
     description: 'DIFFERENCE',
     amount: 8,
     limit: 10,
+    reason: 'The Builder PO has a higher price',
     addedAt: '2026-11-09T15:00:00Z',
   })
   assert.equal(toDrawInvoicePackage({ ...row, quickbooks_invoice_syncs: { update_pending: false } }, null).invoiceDifference, null)
@@ -1324,14 +1326,14 @@ test('the difference line of an invoice is read from its sync row, and an invoic
       difference_limit: '10.00',
       difference_at: '2026-11-09T15:00:00Z',
     }),
-    { description: 'DIFFERENCE', amount: 8, limit: 10, addedAt: '2026-11-09T15:00:00Z' },
+    { description: 'DIFFERENCE', amount: 8, limit: 10, reason: null, addedAt: '2026-11-09T15:00:00Z' },
   )
   assert.equal(toInvoiceDifference({ difference_description: null, difference_amount: null }), null)
   assert.equal(toInvoiceDifference({ qbo_state: 'OPEN' }), null)
   assert.equal(toInvoiceDifference(null), null)
   assert.deepEqual(
     toInvoiceDifference({ difference_description: 'DIFFERENCE', difference_amount: '-4.5' }),
-    { description: 'DIFFERENCE', amount: -4.5, limit: null, addedAt: null },
+    { description: 'DIFFERENCE', amount: -4.5, limit: null, reason: null, addedAt: null },
   )
 })
 

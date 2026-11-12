@@ -119,15 +119,15 @@ test('the earliest viable start per window (used by Earliest available) only des
 
   const { suggestions } = suggestProposalTimes({ requestId: 20, values, requests, technicians, now })
   // Friday 09:00 is now: the 08:00 window cannot fit 60 min + pickup anymore. Monday 08:00–08:40
-  // is SR-10 for Jorge, so the first free start is 08:45 (its travel leg is still unknown).
+  // is SR-10 for Jorge, so the first free start is 08:40 (its travel leg is still unknown).
   assert.deepEqual(suggestions.map(({ date, windowStart, internalStart, travelPending }) => (
     [date, windowStart, internalStart, travelPending]
   )), [
     ['2026-11-06', '10:00', '10:00', false],
     ['2026-11-06', '12:00', '12:00', false],
-    ['2026-11-09', '08:00', '08:45', true],
+    ['2026-11-09', '08:00', '08:40', true],
   ])
-  assert.equal(suggestions[2].pickupEnd, '09:55')
+  assert.equal(suggestions[2].pickupEnd, '09:50')
 
   // Suggesting changes nothing: not the requests, not their appointments, not the form.
   assert.equal(JSON.stringify({ requests, values }), snapshot)

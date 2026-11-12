@@ -42,6 +42,16 @@ export function travelEstimateDetails(rows = []) {
     }]))
 }
 
+// Manual legs the day-before check compared with Google (decision P5): the typed minutes
+// and Google's minutes with traffic at that departure, by leg key.
+export function manualTravelChecks(rows = []) {
+  return Object.fromEntries(rows
+    .filter((row) => row.source === 'MANUAL' && Number.isInteger(row.google_minutes))
+    .map((row) => [travelLegKey(row.from_request_id, row.to_request_id), {
+      minutes: row.minutes, googleMinutes: row.google_minutes,
+    }]))
+}
+
 export function applyAppointmentsToRequests(requests, appointments = [], technicians = []) {
   const byRequest = new Map(appointments.map((row) => [String(row.request_id), row]))
   const names = new Map(technicians.map((person) => [String(person.id), person.name]))

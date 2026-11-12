@@ -1,5 +1,37 @@
 import { assertEquals } from "@std/assert";
-import { nextBusinessDay, recentlyChecked, travelCheckLegs } from "./customerServiceTravelCheck.ts";
+import { manualLegChecks, nextBusinessDay, recentlyChecked, travelCheckLegs } from "./customerServiceTravelCheck.ts";
+
+Deno.test("a manual leg is asked from Google with traffic but keeps its value (P5)", async () => {
+  const calls: RequestInit[] = [];
+  const fetcher = (async (_url: string, init: RequestInit) => {
+    calls.push(init);
+    return Response.json({ routes: [{ duration: "1380s", staticDuration: "960s" }] });
+  }) as unknown as typeof fetch;
+  const requests = [
+    { id: 1022, folio: "CS-2022", service_properties: { latitude: 33.66023, longitude: -117.38831 } },
+    { id: 1497, folio: "CS-2497", service_properties: { latitude: 33.6553011, longitude: -117.2438015 } },
+    { id: 1496, folio: "CS-2496", service_properties: { latitude: 33.66023, longitude: -117.38831 } },
+  ];
+  const legs = [
+    { fromRequestId: 1022, toRequestId: 1497, departureAt: "2026-11-12T17:25:00.000Z" },
+    { fromRequestId: 1496, toRequestId: 1022, departureAt: "2026-11-12T16:40:00.000Z" },
+  ];
+  const stored = [
+    // Typed as 15 min; Google gives 23 with traffic at 9:25.
+    { from_request_id: 1022, to_request_id: 1497, minutes: 15, source: "MANUAL" },
+    { from_request_id: 1496, to_request_id: 1022, minutes: 0, source: "ROUTES_API" },
+  ];
+  const checks = await manualLegChecks({
+    legs, stored, requests, apiKey: "key", fetcher, trafficMode: "PESSIMISTIC", now: new Date("2026-11-12T00:00:00Z"),
+  });
+  assertEquals(checks, [{ from_request_id: 1022, to_request_id: 1497, google_minutes: 23 }]);
+  assertEquals(calls.length, 1);
+  const body = JSON.parse(String(calls[0].body));
+  assertEquals([body.departureTime, body.trafficModel], ["2026-11-12T17:25:00.000Z", "PESSIMISTIC"]);
+
+  // Without the key nothing is asked.
+  assertEquals(await manualLegChecks({ legs, stored, requests, apiKey: undefined, fetcher, trafficMode: "PESSIMISTIC" }), []);
+});
 
 Deno.test("the check looks at the next business day in California", () => {
   // Wednesday 11 Nov 2026 at 4:00 PM in California (midnight UTC): Thursday 12.

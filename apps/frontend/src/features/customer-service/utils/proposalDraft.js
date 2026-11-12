@@ -148,9 +148,19 @@ export function draftDelayMargins({ requestId, agenda, technicianIds, visit, tra
 // day-before traffic check refreshes them, block R6). Keyed by request id: the lowest
 // across its technicians, or null while a leg after it is unknown.
 export function scheduledDelayMargins({ requests, technicians, date, travelMinutes = {} }) {
+  return scheduledDay({ requests, technicians, date, travelMinutes }).margins
+}
+
+// Legs between consecutive scheduled visits of each technician on a date, by leg key.
+export function scheduledLegKeys({ requests, technicians, date }) {
+  return scheduledDay({ requests, technicians, date }).legKeys
+}
+
+function scheduledDay({ requests, technicians, date, travelMinutes = {} }) {
   const technicianIds = technicians.map((person) => String(person.id))
   const agenda = getPrototypeTechnicianAgenda(requests, technicianIds, date, technicians)
   const margins = {}
+  const legKeys = new Set()
   for (const technicianId of technicianIds) {
     const visits = agenda
       .filter((entry) => entry.technicianId === technicianId && entry.date === date && entry.blocksAvailability
@@ -159,13 +169,14 @@ export function scheduledDelayMargins({ requests, technicians, date, travelMinut
         requestId: String(entry.requestId), start: entry.start, end: entry.end,
         windowEnd: entry.windowUncertain || entry.timingUncertain ? null : entry.customerWindow?.end,
       }))
-    for (const { requestId, margin } of visitDelayMargins({ visits, travelMinutes })) {
+    for (const { requestId, margin, nextLeg } of visitDelayMargins({ visits, travelMinutes })) {
       const current = margins[requestId]
       margins[requestId] = current === undefined ? margin
         : current === null || margin === null ? null : Math.min(current, margin)
+      if (nextLeg) legKeys.add(travelLegKey(requestId, nextLeg.toRequestId))
     }
   }
-  return margins
+  return { margins, legKeys: [...legKeys] }
 }
 
 // One of three states for the draft and for each suggestion (block R5): it fits, it fits
@@ -287,7 +298,9 @@ export function createPrototypeProposalDraft({ requestId, values, requests, tech
 
 // Business days searched when the request is already overdue (no on-time day left).
 export const proposalSuggestionSearchBusinessDays = 10
-export const proposalSuggestionStepMinutes = 15
+// Suggested start times are tried every 5 minutes (decision P3, 12 Nov 2026): a quarter-hour
+// grid wasted room, for example arriving at 9:03 meant starting at 9:15 instead of 9:05.
+export const proposalSuggestionStepMinutes = 5
 
 // Proposes viable times for review (approved rule: suggest, never apply). It only reads
 // the schedule and returns plain values; filling the form is the user's choice and

@@ -56,7 +56,7 @@ export async function loadCustomerServiceSchedule(now = new Date()) {
 
   const list = requestIds.join(',')
   const travel = await client.from('service_travel_estimates')
-    .select('from_request_id, to_request_id, minutes, source, static_minutes, departure_at, traffic_model')
+    .select('from_request_id, to_request_id, minutes, source, static_minutes, departure_at, traffic_model, google_minutes')
     .or(`from_request_id.in.(${list}),to_request_id.in.(${list})`)
   if (travel.error) {
     throw new Error(travel.error.message || 'The schedule could not be loaded.', { cause: travel.error })

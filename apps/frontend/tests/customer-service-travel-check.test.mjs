@@ -1,9 +1,11 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import customerServiceMockDatabase from '../src/features/customer-service/data/customerServiceMockDatabase.js'
-import { applyAppointmentsToRequests, toPlanningTechnicians } from '../src/features/customer-service/utils/appointmentRecords.js'
+import {
+  applyAppointmentsToRequests, manualTravelChecks, toPlanningTechnicians,
+} from '../src/features/customer-service/utils/appointmentRecords.js'
 import { californiaInstant } from '../src/features/customer-service/utils/customerServiceScheduling.js'
-import { scheduledDelayMargins } from '../src/features/customer-service/utils/proposalDraft.js'
+import { scheduledDelayMargins, scheduledLegKeys } from '../src/features/customer-service/utils/proposalDraft.js'
 import { travelCheckSummary, upcomingTravelCheck } from '../src/features/customer-service/utils/travelCheck.js'
 
 // Thursday 12 Nov 2026 with Jorge (docs/customer-service-proposal-fit-plan.md, section 3):
@@ -67,4 +69,29 @@ test('the note shows the next checked date from today on', () => {
   ]
   assert.equal(upcomingTravelCheck(runs, wednesday).targetDate, '2026-11-12')
   assert.equal(upcomingTravelCheck([], wednesday), null)
+})
+
+test('a leg typed by hand below what Google gives is listed, without changing it (P5)', () => {
+  assert.deepEqual(scheduledLegKeys({ requests, technicians, date: '2026-11-12' }), ['1496>1022', '1022>1497'])
+  const manualChecks = manualTravelChecks([
+    // Anelda typed 15 min; the day-before check got 23 from Google at 9:25.
+    { from_request_id: 1022, to_request_id: 1497, minutes: 15, source: 'MANUAL', google_minutes: 23 },
+    // Typed above Google: nothing to warn.
+    { from_request_id: 1496, to_request_id: 1022, minutes: 5, source: 'MANUAL', google_minutes: 0 },
+    // Google legs and manual legs never checked are left out.
+    { from_request_id: 1497, to_request_id: 1022, minutes: 23, source: 'ROUTES_API', google_minutes: null },
+    { from_request_id: 1022, to_request_id: 1496, minutes: 3, source: 'MANUAL', google_minutes: null },
+  ])
+  assert.deepEqual(manualChecks, {
+    '1022>1497': { minutes: 15, googleMinutes: 23 },
+    '1496>1022': { minutes: 5, googleMinutes: 0 },
+  })
+  const summary = travelCheckSummary({
+    check, requests, technicians, travelMinutes: { '1496>1022': 5, '1022>1497': 15 }, manualChecks,
+  })
+  assert.deepEqual(summary.manualBelowGoogle, [
+    { key: '1022>1497', from: 'CS-2022', to: 'CS-2497', minutes: 15, googleMinutes: 23 },
+  ])
+  // The margins still use the typed minutes.
+  assert.deepEqual(summary.tight, [])
 })

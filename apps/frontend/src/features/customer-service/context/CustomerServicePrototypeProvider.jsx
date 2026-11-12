@@ -11,7 +11,7 @@ import {
   registerCustomerServiceAppointment,
 } from '../services/customerServiceAppointmentsRepository.js'
 import {
-  applyAppointmentsToRequests, toPlanningTechnicians, travelEstimateDetails, travelEstimatesToMinutes,
+  applyAppointmentsToRequests, manualTravelChecks, toPlanningTechnicians, travelEstimateDetails, travelEstimatesToMinutes,
 } from '../utils/appointmentRecords.js'
 
 const emptySchedule = {
@@ -104,6 +104,7 @@ export default function CustomerServicePrototypeProvider({ children }) {
       storedTravelMinutes: travelEstimatesToMinutes(schedule.travelEstimates),
       storedRoutesMinutes: travelEstimatesToMinutes(schedule.travelEstimates.filter((row) => row.source === 'ROUTES_API')),
       storedTravelDetails: travelEstimateDetails(schedule.travelEstimates),
+      manualTravelChecks: manualTravelChecks(schedule.travelEstimates),
       travelTrafficMode: schedule.travelTrafficMode,
       distanceBands: schedule.distanceBands,
       travelChecks: schedule.travelChecks ?? [],

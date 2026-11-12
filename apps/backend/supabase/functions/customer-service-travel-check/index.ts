@@ -10,7 +10,12 @@
 import { json } from "../_shared/cors.ts";
 import { californiaDayRange } from "../_shared/customerServiceAppointments.ts";
 import { resolveTravelLegs, TRAFFIC_MODES, type TrafficMode } from "../_shared/customerServiceTravel.ts";
-import { nextBusinessDay, recentlyChecked, travelCheckLegs } from "../_shared/customerServiceTravelCheck.ts";
+import {
+  manualLegChecks,
+  nextBusinessDay,
+  recentlyChecked,
+  travelCheckLegs,
+} from "../_shared/customerServiceTravelCheck.ts";
 import { serviceClient } from "../_shared/supabase.ts";
 
 const ESTIMATE_COLUMNS =
@@ -39,6 +44,7 @@ Deno.serve(async (req) => {
 
     let refreshed = 0;
     let failed = 0;
+    let manualChecked = 0;
     if (legs.length) {
       const ids = [...new Set(legs.flatMap((leg) => [leg.fromRequestId, leg.toRequestId]))];
       const [requestsResult, storedResult, settingsResult] = await Promise.all([
@@ -83,6 +89,26 @@ Deno.serve(async (req) => {
       }
       refreshed = results.filter((result) => result.status === "CALCULATED").length;
       failed = results.filter((result) => result.status !== "CALCULATED" && result.source !== "MANUAL").length;
+
+      // Manual legs keep their minutes; Google's value is kept beside them for the warning (P5).
+      const manualChecks = await manualLegChecks({
+        legs,
+        stored: storedResult.data ?? [],
+        // deno-lint-ignore no-explicit-any
+        requests: (requestsResult.data ?? []) as any,
+        apiKey: Deno.env.get("GOOGLE_MAPS_API_KEY"),
+        trafficMode,
+        now,
+      });
+      for (const { from_request_id, to_request_id, google_minutes } of manualChecks) {
+        const { error } = await admin.from("service_travel_estimates")
+          .update({ google_minutes, google_checked_at: now.toISOString() })
+          .eq("from_request_id", from_request_id)
+          .eq("to_request_id", to_request_id)
+          .eq("source", "MANUAL");
+        if (error) console.error("Manual leg check could not be saved.", error);
+      }
+      manualChecked = manualChecks.length;
     }
 
     const run = await admin.from("service_travel_check_runs").upsert(
@@ -90,7 +116,7 @@ Deno.serve(async (req) => {
       { onConflict: "target_date" },
     );
     if (run.error) throw run.error;
-    return json({ status: "CHECKED", targetDate, legs: legs.length, refreshed, failed });
+    return json({ status: "CHECKED", targetDate, legs: legs.length, refreshed, failed, manualChecked });
   } catch (error) {
     console.error("Customer Service traffic check failed.", error);
     return json({ error: "The traffic check could not be completed." }, 500);

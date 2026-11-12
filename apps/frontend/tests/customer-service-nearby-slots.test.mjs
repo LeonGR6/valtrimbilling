@@ -98,10 +98,10 @@ test('the request goes right after the nearby visit with its technician and the 
   }
   assert.equal(validatePrototypeProposalDraft({ requestId: 20, values, requests, technicians, now }).isValid, true)
 
-  // The earliest slot is always shown too: Friday 9:15 with the first free technician.
+  // The earliest slot is always shown too: Friday 9:05 (it is 9:00) with the first free technician.
   assert.deepEqual(
     [result.earliest.date, result.earliest.internalStart, result.earliest.technicianNames],
-    ['2026-11-06', '09:15', ['Jorge Murillo']],
+    ['2026-11-06', '09:05', ['Jorge Murillo']],
   )
 })
 
@@ -109,7 +109,8 @@ test('a slot whose travel is still unknown fits with pending travel and no extra
   const { result } = plan({ request: quick, drivingById: { 10: { drivingMiles: 0, band: 'GREEN' } } })
   const [slot] = result.suggestions
   assert.equal(slot.fits, true)
-  assert.equal(slot.internalStart, '08:45')
+  // Right when SR-10's pickup ends; the leg is still unknown.
+  assert.equal(slot.internalStart, '08:40')
   assert.equal(slot.travelPending, true)
   assert.equal(slot.extraMinutes, null)
   assert.equal(slot.margin, null)
@@ -152,9 +153,10 @@ test('between two slots with the same extra driving, a tight one gives way to on
     drivingById: { 10: { drivingMiles: 3, band: 'GREEN' } },
     travelMinutes: { '10>20': 8 },
   })
-  // 11:15 would add 8 min too but keeps only 5 min of margin; 12:00 keeps 80.
+  // It arrives at 11:03. With starts every 5 minutes (P3, 12 Nov 2026) 11:05 keeps exactly
+  // 15 min of margin and is offered; 11:15 would keep only 5 and is not.
   const [slot] = result.suggestions
-  assert.deepEqual([slot.fits, slot.windowStart, slot.internalStart, slot.extraMinutes, slot.margin], [true, '12:00', '12:00', 8, 80])
+  assert.deepEqual([slot.fits, slot.windowStart, slot.internalStart, slot.extraMinutes, slot.margin], [true, '10:00', '11:05', 8, 15])
 })
 
 test('the margins of the day and how much extra driving each leg absorbs', () => {
@@ -214,7 +216,7 @@ test('a high priority request follows the same rules as any other request (D3, 1
   // Friday is free, but it still groups next to the nearby visit on Monday.
   assert.equal(result.earliest.date, '2026-11-06')
   const [slot] = result.suggestions
-  assert.deepEqual([slot.fits, slot.date, slot.internalStart], [true, '2026-11-09', '08:45'])
+  assert.deepEqual([slot.fits, slot.date, slot.internalStart], [true, '2026-11-09', '08:40'])
   // And its final days are the due date, Friday 13.
   assert.equal(result.finalDays.date, '2026-11-13')
 })
@@ -279,18 +281,18 @@ test('the suggestion legs, the direct drive and the earliest slot legs are check
 })
 
 test('the earliest slot brings its travel legs so their traffic can be checked', () => {
-  // Only Jorge: Friday 9:15–9:45, pickup until 9:55, before SR-12 at 10:00.
+  // Only Jorge: Friday 9:05–9:35, pickup until 9:45, before SR-12 at 10:00.
   const requests = applyAppointmentsToRequests(
     [confirmed(12), quick], [appointment(12, [4], '2026-11-06', '10:00', '12:00', '10:00', '10:30')], roster,
   )
   const earliest = earliestAvailableSlot({ request: quick, requests, technicians: [technicians[0]], now })
-  assert.deepEqual([earliest.date, earliest.internalStart, earliest.travelPending], ['2026-11-06', '09:15', true])
+  assert.deepEqual([earliest.date, earliest.internalStart, earliest.travelPending], ['2026-11-06', '09:05', true])
   assert.deepEqual(earliest.travelLegs.map((leg) => [leg.key, leg.minutes, leg.departureAt]), [
-    ['20>12', null, at('2026-11-06', '09:55')],
+    ['20>12', null, at('2026-11-06', '09:45')],
   ])
   // Once Google gives 3 minutes it fits without pending travel.
   const known = earliestAvailableSlot({ request: quick, requests, technicians: [technicians[0]], travelMinutes: { '20>12': 3 }, now })
-  assert.deepEqual([known.internalStart, known.travelPending], ['09:15', false])
+  assert.deepEqual([known.internalStart, known.travelPending], ['09:05', false])
 })
 
 // Final days and grouping (docs/customer-service-proposal-fit-plan.md, section 4), with
@@ -340,11 +342,11 @@ test('CS-B joins CS-A on Monday 23 because it is near and within its due date (D
     drivingById: { 31: { drivingMiles: 4, band: 'GREEN' } },
     travelMinutes: { '31>32': 8 },
   })
-  // CS-A ends with pickup at 8:40; 8 min of driving: 9:00–9:30, 20 min of margin.
+  // CS-A ends with pickup at 8:40; 8 min of driving: 8:50–9:20, 30 min of margin.
   const [slot] = plan.suggestions
   assert.deepEqual(
     [slot.fits, slot.date, slot.internalStart, slot.technicianNames, slot.extraMinutes, slot.margin],
-    [true, '2026-11-23', '09:00', ['Jorge Murillo'], 8, 20],
+    [true, '2026-11-23', '08:50', ['Jorge Murillo'], 8, 30],
   )
   assert.equal(deadlineLabel({ date: slot.date, request: csB, now: monday16 }), 'Due Wed, Nov 25 · 2 business days left')
   // Its own final days are still shown after it: Wednesday 25.

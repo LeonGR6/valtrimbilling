@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(7);
+select plan(10);
 
 select has_table('valtrim', 'service_travel_check_runs', 'The day-before traffic check keeps a run log');
 
@@ -35,6 +35,22 @@ select is(
   (select schedule from cron.job where jobname = 'customer-service-travel-check'),
   '0 0 * * *',
   'The traffic check runs every day at 00:00 UTC (4 or 5 PM in California)'
+);
+
+select has_column(
+  'valtrim', 'service_travel_estimates', 'google_minutes',
+  'Manual legs keep the minutes Google gave in the day-before check (P5)'
+);
+
+select has_column(
+  'valtrim', 'service_travel_estimates', 'google_checked_at',
+  'The day-before check records when it compared a manual leg'
+);
+
+select throws_ok(
+  $$update valtrim.service_travel_estimates set google_minutes = 1000
+    where (from_request_id, to_request_id) = (select from_request_id, to_request_id from valtrim.service_travel_estimates limit 1)$$,
+  '23514'
 );
 
 select * from finish();

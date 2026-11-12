@@ -10,11 +10,15 @@ const plural = (count, word) => `${count} ${word}${count === 1 ? '' : 's'}`
 
 // On-screen note of the day-before traffic check (block R6, decision D6: no email).
 export default function TravelCheckAlert({ requests }) {
-  const { travelChecks, technicians, storedTravelMinutes } = useCustomerServicePrototype()
+  const { travelChecks, technicians, storedTravelMinutes, manualTravelChecks } = useCustomerServicePrototype()
   const check = upcomingTravelCheck(travelChecks)
   const summary = useMemo(
-    () => (check ? travelCheckSummary({ check, requests, technicians, travelMinutes: storedTravelMinutes }) : null),
-    [check, requests, technicians, storedTravelMinutes],
+    () => (check
+      ? travelCheckSummary({
+        check, requests, technicians, travelMinutes: storedTravelMinutes, manualChecks: manualTravelChecks,
+      })
+      : null),
+    [check, requests, technicians, storedTravelMinutes, manualTravelChecks],
   )
   if (!summary || summary.visits === 0) return null
 
@@ -30,8 +34,12 @@ export default function TravelCheckAlert({ requests }) {
     summary.failedLegs
       ? `${plural(summary.failedLegs, 'travel leg')} could not be refreshed; the saved minutes are used.`
       : '',
+    ...summary.manualBelowGoogle.map((leg) => (
+      `${leg.from} → ${leg.to} was typed as ${leg.minutes} min; Google gives ${leg.googleMinutes} at that time.`
+    )),
   ].filter(Boolean)
   const warn = summary.tight.length > 0 || summary.unknown.length > 0 || summary.failedLegs > 0
+    || summary.manualBelowGoogle.length > 0
   return (
     <Alert severity={warn ? 'warning' : 'success'} variant="outlined" sx={{ mb: 2 }}>
       {heading} {notes.join(' ')}

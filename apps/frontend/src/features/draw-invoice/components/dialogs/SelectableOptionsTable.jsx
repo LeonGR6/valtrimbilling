@@ -107,11 +107,11 @@ export default function SelectableOptionsTable({
                       checked={billed || included}
                       disabled={billed}
                       onChange={() => !billed && onToggle(option)}
-                      inputProps={{
+                      slotProps={{ input: {
                         'aria-label': billed
                           ? `Option ${option.optionCode}${option.unitLabel ? ` (${option.unitLabel})` : ''} for lot ${option.lotNumber} was already billed`
                           : `${included ? 'Exclude' : 'Include'} option ${option.optionCode}${option.unitLabel ? ` (${option.unitLabel})` : ''} for lot ${option.lotNumber}`,
-                      }}
+                      } }}
                     />
                   </TableCell>
                   <TableCell>

@@ -137,9 +137,9 @@ export default function CreatePackagePriceChangesTable({
                       size="small"
                       checked={included}
                       onChange={() => onToggle(row)}
-                      inputProps={{
+                      slotProps={{ input: {
                         'aria-label': `${included ? 'Exclude' : 'Include'} the price change of lot ${row.lotNumber}, ${priceChangeLabel(row)}`,
-                      }}
+                      } }}
                     />
                   </TableCell>
                   <TableCell>

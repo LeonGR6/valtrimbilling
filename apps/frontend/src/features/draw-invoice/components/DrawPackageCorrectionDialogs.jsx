@@ -792,9 +792,9 @@ export function TransferDrawPackageCellsDialog({
                         checked={selectedKeys.has(cellKey(selection))}
                         onChange={() => toggle(selection)}
                         disabled={submitting}
-                        inputProps={{
+                        slotProps={{ input: {
                           'aria-label': `Move ${rowLabel} Draw ${line.drawIndex + 1}`,
-                        }}
+                        } }}
                       />
                       <Typography variant="body2">
                         {formatPhaseBuilding(line.phaseCode, line.building, { separator: ' / ' })} ·{' '}

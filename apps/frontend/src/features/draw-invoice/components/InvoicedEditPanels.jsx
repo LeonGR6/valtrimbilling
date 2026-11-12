@@ -87,7 +87,7 @@ export function InvoicedLinesEditor({
                   checked={keptHardwareIds.has(line.id)}
                   onChange={() => onToggleHardware(line.id)}
                   disabled={disabled}
-                  inputProps={{ 'aria-label': `Keep Hardware ${line.eventType} of Lot ${line.lotNumber}` }}
+                  slotProps={{ input: { 'aria-label': `Keep Hardware ${line.eventType} of Lot ${line.lotNumber}` } }}
                 />
                 <Typography variant="body2" sx={{ flex: 1 }}>
                   {formatPhaseBuilding(line.phaseCode, line.building, { separator: ' / ' })} · Lot {line.lotNumber} ·{' '}
@@ -120,7 +120,7 @@ export function InvoicedLinesEditor({
                   checked={addedHardwareIds.has(line.id)}
                   onChange={() => onToggleAddedHardware(line.id)}
                   disabled={disabled}
-                  inputProps={{ 'aria-label': `Add Hardware ${line.eventType} of Lot ${line.lotNumber}` }}
+                  slotProps={{ input: { 'aria-label': `Add Hardware ${line.eventType} of Lot ${line.lotNumber}` } }}
                 />
                 <Typography variant="body2" sx={{ flex: 1 }}>
                   {formatPhaseBuilding(line.phaseCode, line.building, { separator: ' / ' })} · Lot {line.lotNumber} ·{' '}
@@ -160,7 +160,7 @@ export function InvoicedLinesEditor({
                     checked={kept}
                     onChange={() => onToggleOption(option.id)}
                     disabled={disabled || leavesWithLot}
-                    inputProps={{ 'aria-label': `Keep ${option.optionCode} on Lot ${option.lotNumber}` }}
+                    slotProps={{ input: { 'aria-label': `Keep ${option.optionCode} on Lot ${option.lotNumber}` } }}
                   />
                   <Typography variant="body2" sx={{ flex: 1 }}>
                     Lot {option.lotNumber} · {option.optionCode} · {option.description}
@@ -202,7 +202,7 @@ export function InvoicedLinesEditor({
                     checked={addedOptionIds.has(option.id)}
                     onChange={() => onToggleAddedOption(option.id)}
                     disabled={disabled || unpriced}
-                    inputProps={{ 'aria-label': `Add ${option.optionCode} on Lot ${option.lotNumber}` }}
+                    slotProps={{ input: { 'aria-label': `Add ${option.optionCode} on Lot ${option.lotNumber}` } }}
                   />
                   <Typography variant="body2" sx={{ flex: 1 }}>
                     Lot {option.lotNumber} · {option.optionCode} · {option.description}

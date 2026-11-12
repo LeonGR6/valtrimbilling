@@ -75,9 +75,9 @@ export default function CreatePackageHardwareTable({
                     checked={hardware.chargeHardware}
                     disabled={Boolean(billed)}
                     onChange={() => onToggle(hardware)}
-                    inputProps={{
+                    slotProps={{ input: {
                       'aria-label': `Charge Hardware for Lot ${hardware.lotNumber} from ${hardware.hardwareEventType ?? `Draw ${hardware.drawIndex + 1}`}`,
-                    }}
+                    } }}
                   />
                 </TableCell>
                 <TableCell>

@@ -221,9 +221,9 @@ export default function DrawSelectionGrid({
                           indeterminate={selectedCount > 0 && !allSelected}
                           disabled={availableRows.length === 0}
                           onChange={() => toggleDrawSelections(drawIndex)}
-                          inputProps={{
+                          slotProps={{ input: {
                             'aria-label': `Select available cells for Draw ${drawIndex + 1}`,
-                          }}
+                          } }}
                         />
                         <Typography variant="caption" color="text.secondary">
                           {selectedCount}/{availableRows.length}
@@ -258,9 +258,9 @@ export default function DrawSelectionGrid({
                             indeterminate={selectedCount > 0 && !allSelected}
                             disabled={availableDrawIndexes.length === 0}
                             onChange={() => toggleLotSelections(row.id)}
-                            inputProps={{
+                            slotProps={{ input: {
                               'aria-label': `Select available Draws for lot ${row.lotNumber}`,
-                            }}
+                            } }}
                           />
                         )}
                         <Typography color="error.main" fontWeight={850}>
@@ -362,9 +362,9 @@ export default function DrawSelectionGrid({
                                 disabled={disabled}
                                 onClick={(event) => event.stopPropagation()}
                                 onChange={() => toggleSelection(row.id, drawIndex)}
-                                inputProps={{
+                                slotProps={{ input: {
                                   'aria-label': `Select lot ${row.lotNumber}, Draw ${drawIndex + 1}`,
-                                }}
+                                } }}
                               />
                               <Typography variant="body2" fontWeight={850}>
                                 {formatCurrency(row.drawAmounts[drawIndex])}

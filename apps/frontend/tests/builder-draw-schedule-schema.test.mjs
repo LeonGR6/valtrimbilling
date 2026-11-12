@@ -42,14 +42,35 @@ test('Builder Draw Schedule accepts 3 draws totaling 100 percent', () => {
   assert.equal(result.utilityBuilding, false)
 })
 
-test('Utility Building defaults to one selectable 100 percent charge', () => {
-  const result = createBuilderDrawScheduleSchema([], null).parse(validSetup({
+test('Utility Building needs its Calendar events: 100% on one is the simplest choice', () => {
+  const schema = createBuilderDrawScheduleSchema([], null)
+  const unset = schema.safeParse(validSetup({ utilityBuilding: true }))
+  const oneEvent = schema.parse(validSetup({
     utilityBuilding: true,
+    utilityEventPercentages: { EXT: 0, DM: 100, HW: 0 },
   }))
 
-  assert.equal(result.utilityBuilding, true)
-  assert.equal(result.utilityBillingMode, 'FULL')
-  assert.deepEqual(result.utilityEventPercentages, { EXT: 0, DM: 0, HW: 0 })
+  assert.equal(unset.success, false)
+  assert.equal(oneEvent.utilityBuilding, true)
+  assert.equal(oneEvent.utilityBillingMode, 'BY_EVENT')
+  assert.deepEqual(oneEvent.utilityEventPercentages, { EXT: 0, DM: 100, HW: 0 })
+})
+
+test('Utility Building follows Calendar events that are not Draws, like Separate Hardware', () => {
+  const result = createBuilderDrawScheduleSchema([], null).parse(validSetup({
+    draws: [{ percentage: 100, eventType: 'DM' }],
+    separateHardwarePrice: true,
+    hardwareBillingMode: 'BY_EVENT',
+    hardwareEventPercentages: { EXT: 0, DM: 0, HW: 100 },
+    utilityBuilding: true,
+    utilityBillingMode: 'FULL',
+    utilityEventPercentages: { EXT: 100, DM: 0, HW: 0 },
+  }))
+
+  assert.equal(result.draws.length, 1)
+  assert.equal(result.utilityBillingMode, 'BY_EVENT')
+  assert.deepEqual(result.utilityEventPercentages, { EXT: 100, DM: 0, HW: 0 })
+  assert.deepEqual(result.hardwareEventPercentages, { EXT: 0, DM: 0, HW: 100 })
 })
 
 test('Utility Building can split 100 percent across configured Draw events', () => {
@@ -63,7 +84,7 @@ test('Utility Building can split 100 percent across configured Draw events', () 
   assert.deepEqual(result.utilityEventPercentages, { EXT: 25, DM: 50, HW: 25 })
 })
 
-test('Utility event split supports two events and rejects missing or incomplete allocation', () => {
+test('Utility event split supports two events, events that are not Draws, and rejects an incomplete allocation', () => {
   const schema = createBuilderDrawScheduleSchema([], null)
   const twoEvents = schema.safeParse(validSetup({
     draws: [
@@ -90,7 +111,7 @@ test('Utility event split supports two events and rejects missing or incomplete 
   }))
 
   assert.equal(twoEvents.success, true)
-  assert.equal(missingEvent.success, false)
+  assert.equal(missingEvent.success, true)
   assert.equal(incomplete.success, false)
 })
 
@@ -317,9 +338,12 @@ test('Builder Draw Schedule rejects totals other than 100 percent', () => {
   ])
 })
 
-test('Builder Draw Schedule requires between 2 and 5 draws', () => {
+test('Builder Draw Schedule takes between 1 and 5 draws, and a single Draw bills 100%', () => {
+  const single = createBuilderDrawScheduleSchema([], null).safeParse(validSetup({
+    draws: [{ percentage: 100, eventType: 'DM' }],
+  }))
   const tooFew = createBuilderDrawScheduleSchema([], null).safeParse(validSetup({
-    draws: [{ percentage: 100 }],
+    draws: [],
   }))
   const tooMany = createBuilderDrawScheduleSchema([], null).safeParse(validSetup({
     draws: Array.from({ length: 6 }, (_, index) => ({
@@ -327,6 +351,7 @@ test('Builder Draw Schedule requires between 2 and 5 draws', () => {
     })),
   }))
 
+  assert.equal(single.success, true)
   assert.equal(tooFew.success, false)
   assert.equal(tooMany.success, false)
 })

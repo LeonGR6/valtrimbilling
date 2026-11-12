@@ -54,6 +54,7 @@ export function initialShownPhaseIds({
   for (const selection of [
     ...suggestion.suggestedSelections,
     ...suggestion.suggestedHardwareSelections,
+    ...(suggestion.suggestedUtilitySelections ?? []),
   ]) {
     ids.add(String(selection.phaseId))
   }

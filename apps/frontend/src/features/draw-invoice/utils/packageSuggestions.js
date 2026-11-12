@@ -85,6 +85,7 @@ export function selectUpcomingCutoffSuggestions(suggestions = [], limit = 3) {
 function hasSelections(suggestion) {
   return suggestion.suggestedSelections.length > 0
     || suggestion.suggestedHardwareSelections.length > 0
+    || (suggestion.suggestedUtilitySelections ?? []).length > 0
 }
 
 export function buildPackageSuggestions({
@@ -144,6 +145,7 @@ export function buildPackageSuggestions({
       [
         ...calendarSuggestion.suggestedSelections,
         ...calendarSuggestion.suggestedHardwareSelections,
+        ...(calendarSuggestion.suggestedUtilitySelections ?? []),
       ].map(({ phaseId }) => String(phaseId)),
     )
     const phases = (job.sequenceSheet?.phases ?? []).filter(
@@ -159,6 +161,7 @@ export function buildPackageSuggestions({
     const summary = summarizeDrawPackage({
       selections: calendarSuggestion.suggestedSelections,
       hardwareSelections: calendarSuggestion.suggestedHardwareSelections,
+      utilityEventSelections: calendarSuggestion.suggestedUtilitySelections ?? [],
       optionsBillingDrawIndex: schedule.optionsBillingDrawIndex ?? null,
       ...optionContext,
     }, job, phases, schedule)
@@ -174,6 +177,7 @@ export function buildPackageSuggestions({
       phases,
       initialPhaseId: calendarSuggestion.suggestedSelections[0]?.phaseId
         ?? calendarSuggestion.suggestedHardwareSelections[0]?.phaseId
+        ?? calendarSuggestion.suggestedUtilitySelections?.[0]?.phaseId
         ?? phases[0].id,
       mode: calendarSuggestion.mode,
       cutoffDate: calendarSuggestion.cutoffDate,
@@ -186,9 +190,11 @@ export function buildPackageSuggestions({
       businessDaysRemaining,
       isCutoffToday: calendarSuggestion.cutoffDate === asOfDate,
       selectionCount: calendarSuggestion.suggestedSelections.length
-        + calendarSuggestion.suggestedHardwareSelections.length,
+        + calendarSuggestion.suggestedHardwareSelections.length
+        + (calendarSuggestion.suggestedUtilitySelections ?? []).length,
       drawSelectionCount: calendarSuggestion.suggestedSelections.length,
       hardwareSelectionCount: calendarSuggestion.suggestedHardwareSelections.length,
+      utilitySelectionCount: (calendarSuggestion.suggestedUtilitySelections ?? []).length,
       eventTypes: calendarSuggestion.eventTypes,
       estimatedInvoiceAmount: calendarSuggestion.estimatedInvoiceAmount,
       // How this Job's Builder receives its Packages, as registered in the Builder Setup of the Job.

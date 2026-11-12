@@ -2,7 +2,7 @@
 // it is being filled, and what is still missing before it can be saved. Pure: nothing here
 // touches the network or React.
 
-import { isNamedSubmissionMethod } from '../data/builderDrawSchedules.js'
+import { isNamedSubmissionMethod, MIN_DRAW_COUNT } from '../data/builderDrawSchedules.js'
 import { percentageFromFraction } from '../schemas/builderDrawScheduleSchema.js'
 import { normalizeLag } from './drawLag.js'
 import { formatSetupPercentage } from './setupSummary.js'
@@ -194,7 +194,7 @@ const SERVER_REASONS = [
       ? 'This builder already has an active billing setup.'
       : 'Select an active builder that still exists.')],
   [/porcentajes de los draws deben sumar 100/iu, 'draws.0.percentage', 'draws', () => 'Draw percentages must total exactly 100%.'],
-  [/entre 2 y 5 draws/iu, 'draws.0.percentage', 'draws', () => 'Configure between 2 and 5 draws.'],
+  [/entre \d y 5 draws/iu, 'draws.0.percentage', 'draws', () => `Configure between ${MIN_DRAW_COUNT} and 5 draws.`],
   [/event type EXT, DM o HW/iu, 'draws.0.eventType', 'draws', () => 'Every Draw needs an event: EXT, DM or HW.'],
   [/draw lag needs another draw/iu, 'draws.0.percentage', 'draws', () => 'A Draw lag needs another Draw with the same event.'],
   [/draws deben ser consecutivos/iu, 'draws.0.percentage', 'draws', () => 'The Draws must be numbered one after another.'],
@@ -202,10 +202,8 @@ const SERVER_REASONS = [
   [/draw configurado para hardware/iu, 'hardwareEventPercentages.EXT', 'hardware', () => 'The Draw set for Hardware does not exist.'],
   [/hardware event percentages must total|separate hardware setups must allocate/iu, 'hardwareEventPercentages.EXT', 'hardware',
     () => 'Hardware event percentages must total exactly 100%.'],
-  [/utility (event percentages|allocation)/iu, 'utilityEventPercentages.EXT', 'hardware',
-    (message) => (/total/iu.test(message)
-      ? 'Utility event percentages must total exactly 100%.'
-      : 'Every Utility allocation needs a Draw with that event.')],
+  [/utility event percentages must total|utility building setups must allocate/iu, 'utilityEventPercentages.EXT', 'hardware',
+    () => 'Utility event percentages must total exactly 100%.'],
   [/conditional final release/iu, 'finalReleaseScope', 'submission',
     (message) => (/needs release/iu.test(message)
       ? 'The Conditional Final Release needs a Release to be required.'

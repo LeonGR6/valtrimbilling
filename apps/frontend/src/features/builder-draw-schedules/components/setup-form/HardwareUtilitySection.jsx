@@ -1,20 +1,16 @@
 import {
   Alert,
   Box,
-  FormControlLabel,
   LinearProgress,
-  Radio,
-  RadioGroup,
   Stack,
   TextField,
   Typography,
 } from '@mui/material'
-import { Controller, useFormContext, useWatch } from 'react-hook-form'
+import { useFormContext, useWatch } from 'react-hook-form'
 import {
   drawEventTypeOptions,
   emptyHardwareEventPercentages,
   emptyUtilityEventPercentages,
-  utilityBillingModeOptions,
 } from '../../data/builderDrawSchedules.js'
 import { formatSetupPercentage } from '../../utils/setupSummary.js'
 import { Section, ToggleRow } from './formParts.jsx'
@@ -67,8 +63,10 @@ function EventAllocation({ name, events, labelSuffix, helperFor }) {
 export default function HardwareUtilitySection() {
   const { control, setValue } = useFormContext()
   const draws = useWatch({ control, name: 'draws' }) ?? []
-  const utilityMode = useWatch({ control, name: 'utilityBillingMode' })
-  const drawEvents = new Set(draws.map((draw) => draw.eventType).filter(Boolean))
+  const utilityPercentages = useWatch({ control, name: 'utilityEventPercentages' }) ?? {}
+  const utilityIsUnset = drawEventTypeOptions.every(
+    ({ value }) => (Number(utilityPercentages[value]) || 0) === 0,
+  )
   const touch = { shouldDirty: true, shouldValidate: true }
 
   return (
@@ -107,52 +105,34 @@ export default function HardwareUtilitySection() {
         label="Utility Building"
         description="The builder has buildings whose Plans are Utility rows, billed apart from the houses."
         onChange={(checked) => {
-          if (checked) return
-          setValue('utilityBillingMode', 'FULL', touch)
-          setValue('utilityEventPercentages', { ...emptyUtilityEventPercentages }, touch)
+          // Like Hardware, the Utility starts as 100% on one event: the first Draw's, or DM.
+          const firstEvent = draws.find((draw) => draw.eventType)?.eventType ?? 'DM'
+          setValue('utilityBillingMode', checked ? 'BY_EVENT' : 'FULL', touch)
+          setValue(
+            'utilityEventPercentages',
+            checked
+              ? { ...emptyUtilityEventPercentages, [firstEvent]: 100 }
+              : { ...emptyUtilityEventPercentages },
+            touch,
+          )
         }}
       >
-        <Controller
-          name="utilityBillingMode"
-          control={control}
-          render={({ field }) => (
-            <RadioGroup
-              {...field}
-              onChange={(event) => {
-                field.onChange(event.target.value)
-                if (event.target.value === 'FULL') {
-                  setValue('utilityEventPercentages', { ...emptyUtilityEventPercentages }, touch)
-                }
-              }}
-            >
-              {utilityBillingModeOptions.map((option) => (
-                <FormControlLabel
-                  key={option.value}
-                  value={option.value}
-                  control={<Radio size="small" />}
-                  label={option.label}
-                />
-              ))}
-            </RadioGroup>
-          )}
-        />
-        {utilityMode === 'FULL' ? (
-          <Alert severity="info" sx={{ mt: 1 }}>
-            Create Package shows one Charge checkbox per Utility row. Checking it adds 100% of
-            that row&apos;s Plan price.
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+          Split 100% of each Utility row&apos;s Plan price across Calendar events, or put 100% on
+          one. They do not need to be Draws.
+        </Typography>
+        {utilityIsUnset && (
+          <Alert severity="warning" sx={{ mb: 1.5 }}>
+            This setup charged the Utility 100% in one package. Choose the Calendar event(s) that
+            bill it now; it is needed to save.
           </Alert>
-        ) : (
-          <Box sx={{ mt: 1.5 }}>
-            <EventAllocation
-              name="utilityEventPercentages"
-              events={drawEventTypeOptions.filter(({ value }) => drawEvents.has(value))}
-              labelSuffix="Utility"
-              helperFor={(value) => draws
-                .flatMap((draw, index) => (draw.eventType === value ? [`Draw ${index + 1}`] : []))
-                .join(', ')}
-            />
-          </Box>
         )}
+        <EventAllocation
+          name="utilityEventPercentages"
+          events={drawEventTypeOptions}
+          labelSuffix="Utility"
+          helperFor={(value) => `${value} Calendar event`}
+        />
       </ToggleRow>
     </Section>
   )

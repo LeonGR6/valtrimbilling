@@ -19,9 +19,9 @@ import { TableCardHeader } from '../shared/PackageUi.jsx'
 import { packageTableSx } from '../shared/packageTableStyles.js'
 
 function lineLabel(line) {
-  return line.kind === 'HARDWARE_EVENT'
-    ? `Hardware ${line.hardwareEventType}`
-    : `Draw ${line.drawNumber}`
+  if (line.kind === 'HARDWARE_EVENT') return `Hardware ${line.hardwareEventType}`
+  if (line.kind === 'UTILITY_EVENT') return `Utility ${line.hardwareEventType}`
+  return `Draw ${line.drawNumber}`
 }
 
 /**

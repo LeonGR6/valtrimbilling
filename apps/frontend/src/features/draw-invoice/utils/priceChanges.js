@@ -64,9 +64,9 @@ export function priceChangeIssue(billed, totals) {
   return null
 }
 
-/** Where a price change was billed: "Draw 1" or "Hardware EXT". */
+/** Where a price change was billed: "Draw 1", "Hardware EXT" or "Utility DM". */
 export function priceChangeLabel(row) {
-  return row.kind === 'HARDWARE_EVENT'
-    ? `Hardware ${row.hardwareEventType ?? ''}`.trim()
-    : `Draw ${row.drawNumber}`
+  if (row.kind === 'HARDWARE_EVENT') return `Hardware ${row.hardwareEventType ?? ''}`.trim()
+  if (row.kind === 'UTILITY_EVENT') return `Utility ${row.hardwareEventType ?? ''}`.trim()
+  return `Draw ${row.drawNumber}`
 }

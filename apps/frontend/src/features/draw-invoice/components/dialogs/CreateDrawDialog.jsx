@@ -62,7 +62,7 @@ import {
   buildDrawWorksheet,
   getHardwareBillingMode,
   getUtilityBillingMode,
-  getUtilityEventPercentage,
+  getUtilityEvents,
 } from '../../utils/drawWorksheet.js'
 import {
   formatCurrency,
@@ -73,6 +73,7 @@ import {
   buildAvailableSeparateHardwareSelections,
   buildCalendarDrawSuggestion,
   buildDrawCalendarHeadings,
+  buildPhaseEventFirstDates,
   findLotEventDate,
   localDateKey,
 } from '../../utils/calendarDrawSuggestions.js'
@@ -163,7 +164,9 @@ export default function CreateDrawDialog({
   const [hardwareSelectionKeys, setHardwareSelectionKeys] = useState([])
   const [splitHardwareSelectionKeys, setSplitHardwareSelectionKeys] = useState(null)
   const [fullUtilityRowIds, setFullUtilityRowIds] = useState([])
+  // Utility shares by Calendar event: unchecked although suggested, and checked by hand.
   const [excludedUtilityChargeKeys, setExcludedUtilityChargeKeys] = useState([])
+  const [includedUtilityChargeKeys, setIncludedUtilityChargeKeys] = useState([])
   const [excludedOptionKeys, setExcludedOptionKeys] = useState([])
   // Options no Draw of the Package carries are only billed when they are chosen.
   const [ownOptionKeys, setOwnOptionKeys] = useState([])
@@ -267,37 +270,6 @@ export default function CreateDrawDialog({
             : []
         ))
       : []
-    const suggestedSplitUtilitySelections = utilityBillingMode === 'BY_EVENT'
-      ? utilityRows.flatMap((row) => {
-          const selectionsByEvent = new Map()
-          for (const selection of lotSelected) {
-            const eventType = schedule?.draws?.[selection.drawIndex]?.eventType
-            if (
-              getUtilityEventPercentage(schedule, eventType) <= 0
-              || selectionsByEvent.has(eventType)
-              || billedUtilityCharges.has(
-                utilityChargeKey(row.id, 'BY_EVENT', eventType),
-              )
-            ) continue
-            selectionsByEvent.set(eventType, {
-              phaseId: candidate.id,
-              lotId: row.id,
-              drawIndex: selection.drawIndex,
-            })
-          }
-          return [...selectionsByEvent.values()]
-        })
-      : []
-    const splitUtilitySelections = suggestedSplitUtilitySelections.filter(
-      ({ lotId, drawIndex }) => !excludedUtilityChargeKeys.includes(
-        utilityChargeKey(
-          lotId,
-          'BY_EVENT',
-          schedule?.draws?.[drawIndex]?.eventType,
-        ),
-      ),
-    )
-
     return {
       phase: candidate,
       worksheet: sheet,
@@ -308,9 +280,9 @@ export default function CreateDrawDialog({
       lotSelected,
       selectedLotDrawIndexes,
       anchorDrawIndex,
-      utilitySelections: utilityBillingMode === 'BY_EVENT'
-        ? splitUtilitySelections
-        : fullUtilitySelections,
+      // An older setup charges the whole Utility row on a Lot's Draw; by Calendar event it is
+      // chosen apart (`utilityEventSelections`).
+      utilitySelections: utilityBillingMode === 'BY_EVENT' ? [] : fullUtilitySelections,
       headings: buildDrawCalendarHeadings({
         activities: productionActivities,
         job,
@@ -380,6 +352,49 @@ export default function CreateDrawDialog({
           }
         })
     : []
+  // A Utility row's share of an event is suggested once anything of its Phase with that event is
+  // chosen (a Lot's Draw or a Separate Hardware portion), or when the Calendar has the event on a
+  // Lot of the Phase. It can still be checked or unchecked on its own.
+  const utilityEvents = getUtilityEvents(schedule)
+  const calendarUtilityKeys = new Set(
+    (calendarSuggestion.suggestedUtilitySelections ?? []).map(({ lotId, eventType }) => (
+      utilityChargeKey(lotId, 'BY_EVENT', eventType)
+    )),
+  )
+  const phaseEventFirstDates = buildPhaseEventFirstDates({ activities: productionActivities, job })
+  const utilityEventCandidates = utilityBillingMode === 'BY_EVENT'
+    ? phaseModels.flatMap((model) => {
+        const phaseId = String(model.phase.id)
+        const relatedEvents = new Set([
+          ...model.lotSelected.map(({ drawIndex }) => schedule?.draws?.[drawIndex]?.eventType),
+          ...splitHardwareSelections
+            .filter((hardware) => hardware.chargeHardware && String(hardware.phaseId) === phaseId)
+            .map((hardware) => hardware.eventType),
+        ])
+        return model.utilityRows.flatMap((row) => utilityEvents.map((eventType) => {
+          const chargeKey = utilityChargeKey(row.id, 'BY_EVENT', eventType)
+          const billed = billedUtilityCharges.has(chargeKey)
+          const isRelated = relatedEvents.has(eventType)
+          const isCalendarSuggested = calendarUtilityKeys.has(chargeKey)
+          return {
+            phaseId: model.phase.id,
+            lotId: row.id,
+            eventType,
+            chargeKey,
+            eventDate: phaseEventFirstDates.get(`${model.phase.id}:${eventType}`) ?? null,
+            isRelated,
+            isCalendarSuggested,
+            checked: !billed && (
+              includedUtilityChargeKeys.includes(chargeKey)
+              || ((isRelated || isCalendarSuggested) && !excludedUtilityChargeKeys.includes(chargeKey))
+            ),
+          }
+        }))
+      })
+    : []
+  const utilityEventSelections = utilityEventCandidates
+    .filter((candidate) => candidate.checked)
+    .map(({ phaseId, lotId, eventType }) => ({ phaseId, lotId, eventType }))
   const effectiveHardwareSelectionKeys = hardwareBillingMode === 'BY_EVENT'
     ? []
     : hardwareSelectionKeys
@@ -447,6 +462,7 @@ export default function CreateDrawDialog({
     setSplitHardwareSelectionKeys(null)
     setFullUtilityRowIds([])
     setExcludedUtilityChargeKeys([])
+    setIncludedUtilityChargeKeys([])
     setExcludedOptionKeys([])
   }
 
@@ -491,6 +507,8 @@ export default function CreateDrawDialog({
       ? null
       : current.filter((key) => !lotIds.has(key.split(':')[0])))
     setExcludedOptionKeys((current) => current.filter((key) => !key.startsWith(`${id}:`)))
+    setIncludedUtilityChargeKeys((current) => current.filter((key) => !lotIds.has(key.split(':')[0])))
+    setExcludedUtilityChargeKeys((current) => current.filter((key) => !lotIds.has(key.split(':')[0])))
     pruneHardwareSelections(nextSelections)
   }
 
@@ -518,13 +536,18 @@ export default function CreateDrawDialog({
       : [...current, key])
   }
 
-  const toggleSplitUtilityCharge = (lotId, drawIndex) => {
-    const eventType = schedule?.draws?.[drawIndex]?.eventType
+  const toggleSplitUtilityCharge = (lotId, eventType) => {
     const key = utilityChargeKey(lotId, 'BY_EVENT', eventType)
     if (billedUtilityCharges.has(key)) return
-    setExcludedUtilityChargeKeys((current) => current.includes(key)
+    const checked = utilityEventCandidates.some(
+      (candidate) => candidate.chargeKey === key && candidate.checked,
+    )
+    setExcludedUtilityChargeKeys((current) => checked
+      ? [...current.filter((chargeKey) => chargeKey !== key), key]
+      : current.filter((chargeKey) => chargeKey !== key))
+    setIncludedUtilityChargeKeys((current) => checked
       ? current.filter((chargeKey) => chargeKey !== key)
-      : [...current, key])
+      : [...current.filter((chargeKey) => chargeKey !== key), key])
   }
 
   const toggleSelectionGroup = (available) => {
@@ -606,6 +629,7 @@ export default function CreateDrawDialog({
     selections: packageSelections,
     hardwareSelections: splitHardwareSelections,
     hardwareSelectionKeys: effectiveHardwareSelectionKeys,
+    utilityEventSelections,
     excludedOptionKeys,
     ...optionChargeContext,
   }
@@ -639,6 +663,7 @@ export default function CreateDrawDialog({
         drawIndex,
         eventType: hardwareEventType,
       })),
+    utilityEventSelections,
     // The Options that ride on a Draw of the Package: only when a cell at or after the Options Draw is
     // selected. The others are billed on a Package of their own, when they are chosen.
     optionSelections: summary.optionsAreDue
@@ -665,13 +690,16 @@ export default function CreateDrawDialog({
     builderSchedule,
     usedSelections,
     billedHardwareCharges,
+    billedUtilityCharges,
     selections: packageSelections,
     hardwareCharges: createInput.hardwareSelections,
+    utilityCharges: utilityEventSelections,
   })
   // The price changes of the Phases this Package bills; the ones checked are collected with it.
   const priceChangePhaseIds = new Set([
     ...packageSelections,
     ...createInput.hardwareSelections,
+    ...utilityEventSelections,
   ].map(({ phaseId }) => String(phaseId)))
   const priceChangeOptions = priceChangeRows(pendingPriceDifferences, priceChangePhaseIds)
   const priceChangeIdSet = new Set(priceChangeIds)
@@ -720,6 +748,7 @@ export default function CreateDrawDialog({
     ? 0
     : optionsPackageAmounts(ownOptionRows, schedule).net
   const hasDrawContent = packageSelections.length > 0 || summary.hardwareIsDue
+    || utilityEventSelections.length > 0
 
   const toggleOption = (option) => {
     setExcludedOptionKeys((current) => current.includes(option.id)
@@ -760,6 +789,7 @@ export default function CreateDrawDialog({
     [
       ...selectedSelections,
       ...splitHardwareSelections.filter((selection) => selection.chargeHardware),
+      ...utilityEventSelections,
     ]
       .map(({ phaseId }) => String(phaseId)),
   )
@@ -783,6 +813,7 @@ export default function CreateDrawDialog({
   const hiddenSuggestedPhaseIds = [...new Set([
     ...calendarSuggestion.suggestedSelections,
     ...calendarSuggestion.suggestedHardwareSelections,
+    ...(calendarSuggestion.suggestedUtilitySelections ?? []),
   ].map(({ phaseId }) => String(phaseId)))].filter(
     (id) => !shownPhaseIdSet.has(id),
   )
@@ -1211,9 +1242,10 @@ export default function CreateDrawDialog({
                   <CreatePackageUtilityTable
                     phase={phase}
                     worksheet={model.utilityWorksheet}
-                    drawCalendarHeadings={model.headings}
                     selectedUtilitySelections={model.utilitySelections}
-                    selectedLotDrawIndexes={model.selectedLotDrawIndexes}
+                    utilityEventCandidates={utilityEventCandidates.filter(
+                      (candidate) => String(candidate.phaseId) === String(phase.id),
+                    )}
                     billedUtilityCharges={billedUtilityCharges}
                     fullUtilityRowIds={fullUtilityRowIds}
                     fullUtilityAnchorDrawIndex={model.anchorDrawIndex}

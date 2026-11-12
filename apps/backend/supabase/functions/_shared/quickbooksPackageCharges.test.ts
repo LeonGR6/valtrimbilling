@@ -7,6 +7,7 @@ import {
   type PackageHardwareLineRow,
   type PackageInvoiceSource,
   type PackageOptionRow,
+  type PackageUtilityLineRow,
 } from './quickbooksPackageCharges.ts'
 
 const header = { package_type: 'DRAW', status: 'DRAFT', invoice_line_format: 'LOT_SCOPE' }
@@ -85,6 +86,71 @@ Deno.test('maps draws, utility and hardware lines to one row each, plus retentio
       ['RETENTION', -157.5],
     ],
   )
+})
+
+const utilityLine = (patch: Partial<PackageUtilityLineRow>): PackageUtilityLineRow => ({
+  lot_number: 'UTILITY-1',
+  utility_name: 'B1',
+  phase_code: '1',
+  building: '1',
+  utility_event_type: 'EXT',
+  utility_amount: 0,
+  retention_amount: 0,
+  wrap_amount: 0,
+  ...patch,
+})
+
+Deno.test('a Utility share billed by Calendar event is a UTILITY row with its event and retention', () => {
+  const payload = invoiceFor({
+    package: header,
+    draws: [],
+    hardwareLines: [hardwareLine({ lot_number: '1', hardware_amount: '500.00', retention_amount: '25.00' })],
+    utilityLines: [
+      utilityLine({ utility_event_type: 'EXT', utility_amount: '630.00', retention_amount: '31.50' }),
+      utilityLine({ utility_name: 'B2', lot_number: 'UTILITY-2', utility_event_type: 'DM', utility_amount: '1890.00', retention_amount: '94.50' }),
+    ],
+    invoice: { net_amount: '2869.00' },
+  })
+
+  assertEquals(
+    payload.Line.map((row) => [row.Description, row.Amount]),
+    [
+      ['PHASE 1 LOT #1\nHARDWARE - HW', 500],
+      ['PHASE 1 B2\nUTILITY - DM', 1890],
+      ['PHASE 1 B1\nUTILITY - EXT', 630],
+      ['RETENTION', -151],
+    ],
+  )
+})
+
+Deno.test('a Utility line without a utility name is refused', () => {
+  assertThrows(
+    () => mapPackageToCharges({
+      package: header,
+      draws: [],
+      hardwareLines: [],
+      utilityLines: [utilityLine({ utility_name: ' ', utility_amount: '10.00' })],
+      invoice: { net_amount: '10.00' },
+    }),
+    QuickbooksInvoiceError,
+    'has no utility name',
+  )
+})
+
+Deno.test('a Utility price difference names its event', () => {
+  const payload = invoiceFor(drawWithDifferences([
+    priceDifference({
+      lot_number: 'UTILITY-1',
+      is_utility_building: true,
+      utility_name: 'B1',
+      line_kind: 'UTILITY_EVENT',
+      draw_number: null,
+      hardware_event_type: 'DM',
+      gross: '30.00',
+    }),
+  ], '5686.95'))
+
+  assertEquals(payload.Line.map((row) => row.Description).slice(1), ['PRICE ADJUSTMENT PHASE MODELS B1 · UTILITY DM'])
 })
 
 // DP-00000069: two phases, options on one lot and wrap only.

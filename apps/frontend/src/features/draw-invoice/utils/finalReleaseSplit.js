@@ -1,6 +1,11 @@
 import { formatPhase, formatPhaseBuilding } from '../../sequence-sheets/utils/phaseBuildingCodes.js'
-import { drawSelectionKey, hardwareChargeKey } from './drawPackages.js'
-import { getHardwareBillingMode, getHardwareEventPercentage } from './drawWorksheet.js'
+import { drawSelectionKey, hardwareChargeKey, utilityChargeKey } from './drawPackages.js'
+import {
+  getHardwareBillingMode,
+  getHardwareEventPercentage,
+  getUtilityBillingMode,
+  getUtilityEvents,
+} from './drawWorksheet.js'
 
 // When a Builder's setup asks for a Final Release per Phase (or per Building), the Package that
 // finishes a Phase is the one that gets the Final Release, and the Packages that do not are
@@ -10,8 +15,9 @@ import { getHardwareBillingMode, getHardwareEventPercentage } from './drawWorksh
 // Phase the Package finishes goes in a Package of its own, and everything else stays together.
 //
 // It follows how the database decides the Final Release (get_final_release_status): a scope is
-// every Lot (Utility rows too) in every Draw, plus the Separate Hardware parts when the setup has
-// them, and it is finished by the Package that bills the last of them.
+// every Lot in every Draw, the Separate Hardware parts when the setup has them, and each Utility
+// row's share of every Calendar event it has (or its single charge on an older setup), and it is
+// finished by the Package that bills the last of them.
 
 const HARDWARE_EVENTS = ['EXT', 'DM', 'HW']
 
@@ -70,8 +76,10 @@ export function planFinalReleaseSplit({
   builderSchedule = null,
   usedSelections = new Map(),
   billedHardwareCharges = new Map(),
+  billedUtilityCharges = new Map(),
   selections = [],
   hardwareCharges = [],
+  utilityCharges = [],
 }) {
   const scope = finalReleaseSplitScope(schedule, builderSchedule)
   const none = { scope, scopes: [], groups: [], needsSplit: false }
@@ -96,6 +104,15 @@ export function planFinalReleaseSplit({
   const chosenHardware = new Set(hardwareCharges.map(
     ({ lotId, eventType }) => hardwareChargeKey(lotId, hardwareMode, eventType),
   ))
+  const utilityMode = getUtilityBillingMode(schedule)
+  const utilityParts = utilityMode === 'BY_EVENT' ? getUtilityEvents(schedule) : [null]
+  const chosenUtility = new Set([
+    ...utilityCharges.map(({ lotId, eventType }) => utilityChargeKey(lotId, 'BY_EVENT', eventType)),
+    // An older setup charges the whole Utility row on one of its cells.
+    ...(utilityMode === 'FULL'
+      ? selections.map(({ lotId }) => utilityChargeKey(lotId, 'FULL'))
+      : []),
+  ])
 
   const result = []
   for (const candidate of scopes.values()) {
@@ -106,6 +123,19 @@ export function planFinalReleaseSplit({
 
     for (const phase of candidate.phases) {
       for (const lot of phase.lots ?? []) {
+        if (lot.isUtilityBuilding) {
+          for (const part of utilityParts) {
+            const key = utilityChargeKey(lot.id, utilityMode, part)
+            const used = billedUtilityCharges.has(key)
+            const chosen = chosenUtility.has(key)
+            total += 1
+            if (used) before += 1
+            if (used || chosen) after += 1
+            if (chosen) touched = true
+          }
+          continue
+        }
+
         for (let drawIndex = 0; drawIndex < drawCount; drawIndex += 1) {
           const used = usedSelections.has(drawSelectionKey(job.id, phase.id, lot.id, drawIndex))
           const chosen = chosenCells.has(`${phase.id}:${lot.id}:${drawIndex}`)
@@ -115,7 +145,6 @@ export function planFinalReleaseSplit({
           if (chosen) touched = true
         }
 
-        if (lot.isUtilityBuilding) continue
         for (const part of hardwareParts) {
           const key = hardwareChargeKey(lot.id, hardwareMode, part)
           const used = billedHardwareCharges.has(key)
@@ -185,6 +214,7 @@ export function splitPackageInput({ plan, job, input }) {
   const parts = plan.groups.map(() => ({
     selections: [],
     hardwareSelections: [],
+    utilityEventSelections: [],
     optionSelections: [],
   }))
   for (const selection of input.selections ?? []) {
@@ -192,6 +222,9 @@ export function splitPackageInput({ plan, job, input }) {
   }
   for (const hardware of input.hardwareSelections ?? []) {
     parts[groupOfPhase.get(String(hardware.phaseId))]?.hardwareSelections.push(hardware)
+  }
+  for (const utility of input.utilityEventSelections ?? []) {
+    parts[groupOfPhase.get(String(utility.phaseId))]?.utilityEventSelections.push(utility)
   }
 
   const optionsDrawIndex = input.optionsBillingDrawIndex
@@ -219,6 +252,7 @@ export function splitPackageInput({ plan, job, input }) {
         jobId: input.jobId,
         selections: parts[index].selections,
         hardwareSelections: parts[index].hardwareSelections,
+        utilityEventSelections: parts[index].utilityEventSelections,
         optionSelections: parts[index].optionSelections,
         optionsBillingDrawIndex: input.optionsBillingDrawIndex,
         // Each Package of the division gets the note, since each is read on its own.

@@ -4,16 +4,19 @@ import {
 } from '../services/drawInvoicePackageRecord.js'
 import {
   buildBilledHardwareCharges,
+  buildBilledUtilityCharges,
   buildOptionChargeContext,
   buildUsedDrawSelections,
   drawSelectionKey,
   hardwareChargeKey,
   summarizeDrawPackage,
+  utilityChargeKey,
 } from './drawPackages.js'
 import { addLag, normalizeLag } from '../../builder-draw-schedules/utils/drawLag.js'
 import {
   getHardwareBillingMode,
   getHardwareEventPercentage,
+  getUtilityEvents,
 } from './drawWorksheet.js'
 
 const DAY_MS = 24 * 60 * 60 * 1000
@@ -117,6 +120,7 @@ function emptySuggestion(mode, cutoffDate = null, isMissedCutoff = false) {
     eligibleHardwareCandidates: [],
     eligibleHardwareSelections: [],
     suggestedHardwareSelections: [],
+    suggestedUtilitySelections: [],
     estimatedInvoiceAmount: 0,
     overdueCount: 0,
     eventTypes: [],
@@ -261,12 +265,109 @@ export function findLotEventDate(headings, lotId, eventType) {
 }
 
 /**
+ * The first date the Calendar gives each event in each Phase, counting the Lots of the Phase (a
+ * Utility row has no Calendar events of its own): `phaseId:eventType` → date.
+ */
+export function buildPhaseEventFirstDates({ activities = [], job }) {
+  const firstDates = new Map()
+  if (!job) return firstDates
+
+  const phaseLots = new Map((job.sequenceSheet?.phases ?? []).map((phase) => [
+    String(phase.id),
+    new Set((phase.lots ?? [])
+      .filter((lot) => !lot.isUtilityBuilding)
+      .map((lot) => String(lot.id))),
+  ]))
+
+  for (const activity of activities) {
+    if (
+      activity.status !== 'ACTIVE'
+      || String(activity.jobId) !== String(job.id)
+      || !phaseLots.has(String(activity.phaseId))
+    ) continue
+
+    const lotIdsInPhase = phaseLots.get(String(activity.phaseId))
+    for (const stage of activity.stages ?? []) {
+      if (stage.isEnabled === false || !EVENT_TYPE_ORDER.includes(stage.type)) continue
+      for (const productionSchedule of stage.schedules ?? []) {
+        if (
+          productionSchedule.isActive === false
+          || !countsForBilling(productionSchedule)
+          || !parseDateKey(productionSchedule.date)
+          || !(productionSchedule.lotIds ?? []).some((lotId) => lotIdsInPhase.has(String(lotId)))
+        ) continue
+
+        const key = `${activity.phaseId}:${stage.type}`
+        const known = firstDates.get(key)
+        if (!known || productionSchedule.date < known) {
+          firstDates.set(key, productionSchedule.date)
+        }
+      }
+    }
+  }
+
+  return firstDates
+}
+
+/**
+ * The Utility shares the Calendar makes billable: a Utility row's share of an event once the first
+ * Lot of its Phase has that event, up to `latestDate`, and not billed yet.
+ */
+export function buildUtilityEventSuggestions({
+  activities = [],
+  job,
+  schedule,
+  packages = [],
+  latestDate,
+}) {
+  const events = getUtilityEvents(schedule)
+  if (!job || events.length === 0 || !latestDate) return []
+
+  const firstDates = buildPhaseEventFirstDates({ activities, job })
+  const billed = buildBilledUtilityCharges(packages, job.id)
+
+  return (job.sequenceSheet?.phases ?? []).flatMap((phase) => (
+    (phase.lots ?? [])
+      .filter((lot) => lot.isUtilityBuilding)
+      .flatMap((lot) => events.flatMap((eventType) => {
+        const firstDate = firstDates.get(`${phase.id}:${eventType}`)
+        if (
+          !firstDate
+          || firstDate > latestDate
+          || billed.has(utilityChargeKey(lot.id, 'BY_EVENT', eventType))
+        ) return []
+        return [{ phaseId: phase.id, lotId: lot.id, eventType, eventDate: firstDate }]
+      }))
+  ))
+}
+
+/**
  * What the Calendar says is ready to bill. A Builder that bills any date gets the best rolling
  * window; one with fixed cutoffs gets everything up to its next cutoff. With `missedCutoff` a
  * fixed-cutoff Builder gets instead what was already ready by its last cutoff and is still
  * unbilled: work left behind after that cutoff went by.
+ * `suggestedUtilitySelections` are the Utility shares by Calendar event it makes billable.
  */
-export function buildCalendarDrawSuggestion({
+export function buildCalendarDrawSuggestion(options) {
+  const suggestion = buildDrawAndHardwareSuggestion(options)
+  // Up to the cut-off date; a Builder billed on any date takes what the window reaches, or what
+  // already happened when nothing else is due.
+  const latestDate = suggestion.mode === 'CUTOFF'
+    ? suggestion.cutoffDate
+    : (suggestion.windowEnd ?? options.asOfDate ?? localDateKey())
+  return {
+    ...suggestion,
+    suggestedUtilitySelections: buildUtilityEventSuggestions({
+      activities: options.activities,
+      job: options.job,
+      schedule: options.schedule,
+      packages: options.packages,
+      latestDate,
+    }),
+  }
+}
+
+function buildDrawAndHardwareSuggestion({
   activities = [],
   job,
   schedule,

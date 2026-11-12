@@ -56,6 +56,9 @@ function defaultValuesFor(schedule, initialBuilderId) {
     optionsBillingDrawIndex: schedule.optionsBillingDrawIndex ?? null,
     draws: schedule.draws.map((draw) => ({ ...draw })),
     hardwareEventPercentages: { ...emptyHardwareEventPercentages, ...schedule.hardwareEventPercentages },
+    // A setup made when the Utility could be charged 100% in one package now chooses its
+    // Calendar events: it opens with no event chosen, so it has to be set before saving.
+    utilityBillingMode: schedule.utilityBuilding ? 'BY_EVENT' : 'FULL',
     utilityEventPercentages: { ...emptyUtilityEventPercentages, ...schedule.utilityEventPercentages },
     cutoffDays: [...schedule.cutoffDays],
   }

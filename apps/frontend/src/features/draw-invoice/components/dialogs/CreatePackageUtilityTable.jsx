@@ -14,8 +14,6 @@ import {
   Typography,
 } from '@mui/material'
 import BilledRowsAccordion from './BilledRowsAccordion.jsx'
-import HeadingDivisions from './HeadingDivisions.jsx'
-import { headingDivisions } from '../../utils/calendarHeadingDates.js'
 import { utilityChargeKey } from '../../utils/drawPackages.js'
 import {
   formatCurrency,
@@ -23,22 +21,28 @@ import {
   formatPercentage,
 } from '../../utils/drawInvoiceFormatters.js'
 
-function eventLabel(heading, fallback) {
-  if (!heading?.eventType) return fallback
-  if (heading.eventDates.length === 0) return heading.eventType
-  // A divided event lists its dates, each with its lots, under this line.
-  if (headingDivisions(heading).length > 0) {
-    return `${heading.eventType} (${heading.eventDates.length} dates)`
+const UTILITY_EVENTS = ['EXT', 'DM', 'HW']
+
+/** Why a Utility share is checked, or why it waits. */
+function shareStatus(candidate, billed) {
+  if (billed) return `Charged · ${billed.packageNumber}`
+  if (!candidate) return 'Not charged'
+  if (candidate.checked) {
+    if (candidate.isRelated) return 'Will be charged · event selected'
+    if (candidate.isCalendarSuggested) return 'Will be charged · in the Calendar'
+    return 'Will be charged'
   }
-  return `${heading.eventType} (${formatLongDate(heading.eventDates[0])})`
+  if (candidate.isRelated || candidate.isCalendarSuggested) return 'Suggested · not charged'
+  return candidate.eventDate ? 'Not charged' : 'Not in the Calendar yet'
 }
 
+// `utilityEventCandidates` are this Phase's Utility shares by Calendar event, from the dialog: each
+// { lotId, eventType, eventDate, isRelated, isCalendarSuggested, checked }.
 export default function CreatePackageUtilityTable({
   phase,
   worksheet,
-  drawCalendarHeadings = [],
   selectedUtilitySelections = [],
-  selectedLotDrawIndexes = [],
+  utilityEventCandidates = [],
   billedUtilityCharges,
   fullUtilityRowIds = [],
   fullUtilityAnchorDrawIndex,
@@ -48,24 +52,23 @@ export default function CreatePackageUtilityTable({
   if (!phase || worksheet.rows.length === 0) return null
 
   const isSplit = worksheet.utilityBillingMode === 'BY_EVENT'
-  const selectedKeys = new Set(selectedUtilitySelections.map(
-    ({ phaseId, lotId, drawIndex }) => `${phaseId}:${lotId}:${drawIndex}`,
-  ))
-  const eventColumns = [...new Set(worksheet.draws
-    .filter((draw, drawIndex) => Number(
-      worksheet.rows[0]?.utilityPercentages?.[drawIndex],
-    ) > 0)
-    .map((draw) => draw.eventType))]
+  const candidateByKey = new Map(utilityEventCandidates.map((candidate) => [
+    `${candidate.lotId}:${candidate.eventType}`,
+    candidate,
+  ]))
+  const eventColumns = UTILITY_EVENTS
+    .filter((eventType) => Number(worksheet.rows[0]?.utilityEventPercentages?.[eventType]) > 0)
     .map((eventType) => ({
       eventType,
-      configuredDrawIndex: worksheet.draws.findIndex(
-        (draw) => draw.eventType === eventType,
-      ),
-      selectedDrawIndex: selectedLotDrawIndexes.find(
-        (drawIndex) => worksheet.draws[drawIndex]?.eventType === eventType,
-      ),
+      percentage: Number(worksheet.rows[0]?.utilityEventPercentages?.[eventType]) || 0,
+      // The first day the Calendar has the event on a Lot of this Phase.
+      eventDate: utilityEventCandidates.find(
+        (candidate) => candidate.eventType === eventType && candidate.eventDate,
+      )?.eventDate ?? null,
     }))
-  const selectedCount = selectedUtilitySelections.length
+  const selectedCount = isSplit
+    ? utilityEventCandidates.filter((candidate) => candidate.checked).length
+    : selectedUtilitySelections.length
 
   // A row with every one of its charges billed has nothing left to choose.
   const isFullyBilled = (row) => (isSplit
@@ -96,18 +99,12 @@ export default function CreatePackageUtilityTable({
                 sx={{ minWidth: 190, bgcolor: 'primary.light', color: 'primary.main' }}
               >
                 <Typography variant="caption" fontWeight={800} component="div">
-                  {eventLabel(
-                    drawCalendarHeadings[column.configuredDrawIndex],
-                    column.eventType,
-                  )}
+                  {column.eventDate
+                    ? `${column.eventType} (${formatLongDate(column.eventDate)})`
+                    : column.eventType}
                 </Typography>
-                <HeadingDivisions heading={drawCalendarHeadings[column.configuredDrawIndex]} />
                 <Typography fontWeight={850}>
-                  {formatPercentage(
-                    worksheet.rows[0]?.utilityPercentages?.[
-                      column.configuredDrawIndex
-                    ] ?? 0,
-                  )}% configured
+                  {formatPercentage(column.percentage)}% configured
                 </Typography>
               </TableCell>
             )) : (
@@ -143,35 +140,23 @@ export default function CreatePackageUtilityTable({
                     column.eventType,
                   )
                   const billed = billedUtilityCharges.get(chargeKey)
-                  const eligibleDrawIndex = column.selectedDrawIndex
-                  const selected = eligibleDrawIndex !== undefined
-                    && selectedKeys.has(
-                      `${phase.id}:${row.id}:${eligibleDrawIndex}`,
-                    )
-                  const amountDrawIndex = eligibleDrawIndex
-                    ?? column.configuredDrawIndex
+                  const candidate = candidateByKey.get(`${row.id}:${column.eventType}`)
                   return (
                     <TableCell key={column.eventType} align="center">
                       <Checkbox
                         size="small"
-                        checked={selected}
-                        disabled={Boolean(billed) || eligibleDrawIndex === undefined}
-                        onChange={() => onToggleSplit(row.id, eligibleDrawIndex)}
-                        inputProps={{
+                        checked={Boolean(candidate?.checked)}
+                        disabled={Boolean(billed) || !candidate}
+                        onChange={() => onToggleSplit(row.id, column.eventType)}
+                        slotProps={{ input: {
                           'aria-label': `Charge ${row.utilityLabel} ${column.eventType} Utility portion`,
-                        }}
+                        } }}
                       />
                       <Typography variant="caption" component="div" fontWeight={750}>
-                        {formatCurrency(row.drawAmounts[amountDrawIndex])}
+                        {formatCurrency(billed?.utilityAmount ?? row.utilityEventAmounts?.[column.eventType])}
                       </Typography>
                       <Typography variant="caption" component="div" color="text.secondary">
-                        {billed
-                          ? `Charged · ${billed.packageNumber}`
-                          : eligibleDrawIndex === undefined
-                            ? 'Draw not selected'
-                            : selected
-                              ? 'Will be charged'
-                              : 'Not charged'}
+                        {shareStatus(candidate, billed)}
                       </Typography>
                     </TableCell>
                   )
@@ -184,9 +169,9 @@ export default function CreatePackageUtilityTable({
                         disabled={Boolean(fullCharge)
                           || fullUtilityAnchorDrawIndex === null}
                         onChange={() => onToggleFull(row.id)}
-                        inputProps={{
+                        slotProps={{ input: {
                           'aria-label': `Charge 100% of ${row.utilityLabel}`,
-                        }}
+                        } }}
                       />
                     </TableCell>
                     <TableCell>
@@ -225,7 +210,7 @@ export default function CreatePackageUtilityTable({
             <Typography fontWeight={800}>Utility Building</Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mt: 0.25 }}>
               {isSplit
-                ? 'Configured event portions are suggested from the Lot Draws selected above. Uncheck any portion that should wait for another package.'
+                ? 'Each Calendar event bills its share of the Utility Plan Price. A share is suggested when a Lot Draw or Hardware of that event is chosen above, or when the Calendar has the event in this Phase. Uncheck any share that should wait for another package.'
                 : 'Use Charge to add 100% of the Utility Plan Price to this package.'}
             </Typography>
           </Box>

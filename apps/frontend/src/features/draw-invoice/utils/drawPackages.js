@@ -62,9 +62,11 @@ const EVENT_TYPE_ORDER_INDEX = { EXT: 100, DM: 101, HW: 102 }
 export function summarizeRetentionSource(retentionRelease, packages = []) {
   const drawLines = retentionRelease?.sourceLines ?? []
   const hardwareLines = retentionRelease?.sourceHardwareLines ?? []
+  const utilityLines = retentionRelease?.sourceUtilityLines ?? []
   const lotIds = new Set([
     ...drawLines.map((line) => String(line.sourceLotId)),
     ...hardwareLines.map((line) => String(line.sourceLotId)),
+    ...utilityLines.map((line) => String(line.sourceLotId)),
   ])
   const sourceDraws = new Set(drawLines.map((line) => (
     `${line.sourcePackageId}:${line.sourceLotId}:${line.sourceDrawId}`
@@ -121,6 +123,15 @@ function getPackageScopeEventTypes(record, selections, schedule) {
       eventTypeByDrawIndex.set(
         EVENT_TYPE_ORDER_INDEX[line.hardwareEventType],
         line.hardwareEventType,
+      )
+    }
+  }
+
+  for (const line of record?.persistedUtilityLines ?? []) {
+    if (DRAW_EVENT_TYPES.has(line.utilityEventType)) {
+      eventTypeByDrawIndex.set(
+        EVENT_TYPE_ORDER_INDEX[line.utilityEventType],
+        line.utilityEventType,
       )
     }
   }
@@ -443,7 +454,12 @@ export function buildBilledUtilityCharges(
       || record.status === 'CANCELLED'
     ) continue
 
-    for (const line of record.persistedDrawLines ?? []) {
+    // Utility shares on Draw rows (billed before Utility followed the Calendar) and on lines
+    // of their own by Calendar event.
+    for (const line of [
+      ...(record.persistedDrawLines ?? []),
+      ...(record.persistedUtilityLines ?? []),
+    ]) {
       if (!line.isUtilityBuilding) continue
 
       const billingMode = line.utilityBillingMode === 'BY_EVENT'
@@ -657,10 +673,16 @@ export function summarizeDrawPackage(record, job, phaseOrPhases, schedule) {
   )
   const selections = record?.selections ?? []
   const hardwareSelections = record?.hardwareSelections ?? []
-  const scopeEventTypes = getPackageScopeEventTypes(record, selections, schedule)
+  // The Utility shares chosen by Calendar event: { phaseId, lotId, eventType }.
+  const utilityEventSelections = record?.utilityEventSelections ?? []
+  const scopeEventTypes = getPackageScopeEventTypes(record, [
+    ...selections,
+    ...utilityEventSelections.map((selection) => ({ ...selection, drawIndex: null })),
+  ], schedule)
   const selectedRows = [...new Map([
     ...selections,
     ...hardwareSelections.filter((selection) => selection.chargeHardware !== false),
+    ...utilityEventSelections,
   ].map((selection) => {
     const scope = scopeForSelection(selection)
     const row = rowForSelection(selection)
@@ -757,9 +779,12 @@ export function summarizeDrawPackage(record, job, phaseOrPhases, schedule) {
         Number(line.hardwarePercentage) > 0 || Number(line.hardwareAmount) > 0
       )),
     ]
-    const persistedUtilityLines = persistedLines.filter(
-      (line) => line.isUtilityBuilding || Number(line.utilityAmount) > 0,
-    )
+    const persistedUtilityLines = [
+      ...persistedLines.filter(
+        (line) => line.isUtilityBuilding || Number(line.utilityAmount) > 0,
+      ),
+      ...(record.persistedUtilityLines ?? []),
+    ]
     const persistedLotLines = [
       ...persistedLines.filter((line) => !line.isUtilityBuilding),
       ...(record.persistedHardwareLines ?? []).map((line) => ({
@@ -805,6 +830,7 @@ export function summarizeDrawPackage(record, job, phaseOrPhases, schedule) {
         drawIndex: null,
         isUtilityBuilding: false,
       })),
+      ...(record.persistedUtilityLines ?? []),
     ], phaseById)
 
     return {
@@ -821,7 +847,8 @@ export function summarizeDrawPackage(record, job, phaseOrPhases, schedule) {
           )).join(' · '),
       phaseSummaries,
       phaseCount: phaseSummaries.length,
-      scopeCount: persistedLines.length + (record.persistedHardwareLines?.length ?? 0),
+      scopeCount: persistedLines.length + (record.persistedHardwareLines?.length ?? 0)
+        + (record.persistedUtilityLines?.length ?? 0),
       scopeEventTypes,
       currentDraw: record.persistedInvoice.grossAmount,
       utilityRows,
@@ -973,7 +1000,7 @@ export function summarizeDrawPackage(record, job, phaseOrPhases, schedule) {
       0,
     )
   const hardwareFinancials = calculateInvoiceAmounts(hardwareTotal, schedule)
-  const currentDraw = addCurrencyAmounts(baseCurrentDraw, hardwareTotal)
+  let currentDraw = addCurrencyAmounts(baseCurrentDraw, hardwareTotal)
   const optionFinancials = calculateInvoiceAmounts(optionsTotal, schedule)
   const utilityRows = selections.flatMap((selection) => {
     const scope = scopeForSelection(selection)
@@ -1002,6 +1029,37 @@ export function summarizeDrawPackage(record, job, phaseOrPhases, schedule) {
       isUtilityBuilding: true,
     }]
   })
+  const utilityEventRows = utilityEventSelections.flatMap((selection) => {
+    const scope = scopeForSelection(selection)
+    const row = rowForSelection(selection)
+    if (!scope || !row?.isUtilityBuilding) return []
+    return [{
+      phaseId: scope.phaseId,
+      phaseCode: scope.phase.name ?? scope.phase.code ?? null,
+      building: scope.phase.building ?? null,
+      lotId: row.id,
+      lotNumber: row.lotNumber,
+      utilityLabel: row.utilityLabel,
+      planCode: row.planCode,
+      lotElevation: '',
+      basePrice: row.basePrice,
+      drawIndex: null,
+      drawName: '',
+      eventType: selection.eventType,
+      utilityBillingMode: 'BY_EVENT',
+      utilityEventType: selection.eventType,
+      utilityPercentage: row.utilityEventPercentages?.[selection.eventType] ?? 0,
+      utilityAmount: row.utilityEventAmounts?.[selection.eventType] ?? 0,
+      isUtilityBuilding: true,
+    }]
+  })
+  const utilityEventTotal = utilityEventRows.reduce(
+    (total, row) => addCurrencyAmounts(total, row.utilityAmount),
+    0,
+  )
+  const utilityEventFinancials = calculateInvoiceAmounts(utilityEventTotal, schedule)
+  currentDraw = addCurrencyAmounts(currentDraw, utilityEventTotal)
+  utilityRows.push(...utilityEventRows)
   const utilityTotal = utilityRows.reduce(
     (total, row) => addCurrencyAmounts(total, row.utilityAmount),
     0,
@@ -1029,7 +1087,7 @@ export function summarizeDrawPackage(record, job, phaseOrPhases, schedule) {
       isUtilityBuilding: false,
     }))
   const phaseSummaries = buildPhaseSummaries(
-    [...selectedLines, ...selectedHardwareLines],
+    [...selectedLines, ...selectedHardwareLines, ...utilityEventRows],
     phaseById,
   )
 
@@ -1051,7 +1109,7 @@ export function summarizeDrawPackage(record, job, phaseOrPhases, schedule) {
         )).join(' · '),
     phaseSummaries,
     phaseCount: phaseSummaries.length,
-    scopeCount: selections.length + selectedHardwareLines.length,
+    scopeCount: selections.length + selectedHardwareLines.length + utilityEventRows.length,
     scopeEventTypes,
     currentDraw,
     utilityRows,
@@ -1076,16 +1134,19 @@ export function summarizeDrawPackage(record, job, phaseOrPhases, schedule) {
     retention: addCurrencyAmounts(
       baseRetention,
       hardwareFinancials.retention,
+      utilityEventFinancials.retention,
       optionFinancials.retention,
     ),
     wrapInsurance: addCurrencyAmounts(
       baseWrapInsurance,
       hardwareFinancials.wrapInsurance,
+      utilityEventFinancials.wrapInsurance,
       optionFinancials.wrapInsurance,
     ),
     invoiceAmount: addCurrencyAmounts(
       baseInvoiceAmount,
       hardwareFinancials.invoiceAmount,
+      utilityEventFinancials.invoiceAmount,
       optionFinancials.invoiceAmount,
     ),
   }

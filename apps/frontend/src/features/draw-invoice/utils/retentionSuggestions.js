@@ -156,6 +156,7 @@ export function buildRetentionSuggestions({
 
   const activeReleaseLines = new Set()
   const activeReleaseHardwareLines = new Set()
+  const activeReleaseUtilityLines = new Set()
   const activeReleaseAdjustmentLines = new Set()
   const activeReleaseOptionLines = new Set()
   for (const record of packages) {
@@ -173,6 +174,9 @@ export function buildRetentionSuggestions({
       activeReleaseHardwareLines.add(sourceHardwareLineKey(
         line.sourceHardwareLineId,
       ))
+    }
+    for (const line of record.retentionRelease?.sourceUtilityLines ?? []) {
+      activeReleaseUtilityLines.add(String(line.sourceUtilityLineId))
     }
     for (const line of record.retentionRelease?.sourceAdjustmentLines ?? []) {
       activeReleaseAdjustmentLines.add(String(line.sourceAdjustmentLineId))
@@ -235,11 +239,17 @@ export function buildRetentionSuggestions({
         ...(record.persistedHardwareLines ?? [])
           .filter((line) => phaseIds.has(String(line.phaseId)))
           .map((line) => ({ record, line, sourceType: 'HARDWARE' })),
+        ...(record.persistedUtilityLines ?? [])
+          .filter((line) => phaseIds.has(String(line.phaseId)))
+          .map((line) => ({ record, line, sourceType: 'UTILITY' })),
       ]))
       const outstanding = lines.filter(({ record, line, sourceType }) => {
         if (Number(line.retentionAmount) <= 0) return false
         if (sourceType === 'HARDWARE') {
           return !activeReleaseHardwareLines.has(sourceHardwareLineKey(line.id))
+        }
+        if (sourceType === 'UTILITY') {
+          return !activeReleaseUtilityLines.has(String(line.id))
         }
         return !activeReleaseLines.has(
           sourceLineKey(record.id, line.lotId, line.drawId),

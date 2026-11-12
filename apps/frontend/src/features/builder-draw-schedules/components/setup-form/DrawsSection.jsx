@@ -35,20 +35,19 @@ export default function DrawsSection() {
   const optionsDraw = optionsValue == null || optionsValue === '' ? null : Number(optionsValue)
   const total = draws.reduce((sum, draw) => sum + (Number(draw?.percentage) || 0), 0)
   const totalIsValid = Math.abs(total - 100) <= 0.001
-  const drawsError = errors.draws?.message ?? errors.draws?.root?.message
+  // The form checks the total when a Draw is saved, not on every keystroke: once the Draws add up to
+  // 100% (after removing one, say) an earlier "must total" message no longer applies.
+  const savedDrawsError = errors.draws?.message ?? errors.draws?.root?.message
+  const drawsError = totalIsValid && /must total exactly 100%/iu.test(savedDrawsError ?? '')
+    ? null
+    : savedDrawsError
 
   const handleRemove = (index) => {
-    // The Options Draw and the Utility split follow the Draws that are left.
+    // The Options Draw follows the Draws that are left.
     if (optionsDraw === index) {
       setValue('optionsBillingDrawIndex', null, { shouldDirty: true, shouldValidate: true })
     } else if (optionsDraw !== null && optionsDraw > index) {
       setValue('optionsBillingDrawIndex', optionsDraw - 1, { shouldDirty: true, shouldValidate: true })
-    }
-
-    const removedEvent = draws[index]?.eventType
-    const eventStillExists = draws.some((draw, other) => other !== index && draw.eventType === removedEvent)
-    if (removedEvent && !eventStillExists) {
-      setValue(`utilityEventPercentages.${removedEvent}`, 0, { shouldDirty: true, shouldValidate: true })
     }
 
     remove(index)

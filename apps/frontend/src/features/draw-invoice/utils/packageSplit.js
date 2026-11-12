@@ -1,4 +1,4 @@
-import { drawSelectionKey, hardwareChargeKey } from './drawPackages.js'
+import { drawSelectionKey, hardwareChargeKey, utilityChargeKey } from './drawPackages.js'
 import { getHardwareBillingMode } from './drawWorksheet.js'
 import { planFinalReleaseSplit, scopeOf, splitPackageInput } from './finalReleaseSplit.js'
 
@@ -28,6 +28,8 @@ export function singleInvoiceScope(schedule) {
  * @param billedHardwareCharges Map of the Hardware already billed (`buildBilledHardwareCharges`)
  * @param selections      the cells this Package would bill: { phaseId, lotId, drawIndex }
  * @param hardwareCharges the Hardware this Package would bill: { phaseId, lotId, eventType }
+ * @param billedUtilityCharges Map of the Utility shares already billed (`buildBilledUtilityCharges`)
+ * @param utilityCharges  the Utility shares by Calendar event it would bill: { phaseId, lotId, eventType }
  * @returns {{ invoiceScope, finalScope, groups, needsSplit }}
  *   `groups` is the Packages it takes, in the order they are created. Each has the `phaseIds` it
  *   covers and a `label`; `type` is `FINAL` or `PROGRESS` when the Builder has a Final Release at
@@ -40,8 +42,10 @@ export function planPackageSplit({
   builderSchedule = null,
   usedSelections = new Map(),
   billedHardwareCharges = new Map(),
+  billedUtilityCharges = new Map(),
   selections = [],
   hardwareCharges = [],
+  utilityCharges = [],
 }) {
   const invoiceScope = singleInvoiceScope(schedule)
   if (!invoiceScope) {
@@ -51,8 +55,10 @@ export function planPackageSplit({
       builderSchedule,
       usedSelections,
       billedHardwareCharges,
+      billedUtilityCharges,
       selections,
       hardwareCharges,
+      utilityCharges,
     })
     return { invoiceScope: null, finalScope: plan.scope, groups: plan.groups, needsSplit: plan.needsSplit }
   }
@@ -67,7 +73,9 @@ export function planPackageSplit({
   const phaseOfLot = new Map()
   for (const phase of phases) {
     const { key, label } = scopeOf(invoiceScope, phase)
-    const unit = units.get(key) ?? { key, label, phaseIds: [], selections: [], hardwareCharges: [] }
+    const unit = units.get(key) ?? {
+      key, label, phaseIds: [], selections: [], hardwareCharges: [], utilityCharges: [],
+    }
     unit.phaseIds.push(String(phase.id))
     units.set(key, unit)
     unitOfPhase.set(String(phase.id), unit)
@@ -79,17 +87,26 @@ export function planPackageSplit({
     const phaseId = charge.phaseId ?? phaseOfLot.get(String(charge.lotId))
     unitOfPhase.get(String(phaseId))?.hardwareCharges.push(charge)
   }
+  for (const charge of utilityCharges) {
+    const phaseId = charge.phaseId ?? phaseOfLot.get(String(charge.lotId))
+    unitOfPhase.get(String(phaseId))?.utilityCharges.push(charge)
+  }
 
   // Each Package is made after the ones before it, so what they bill counts as billed when the
   // Release of the next is decided: the one that finishes a Phase last is the one that gets the Final.
   const used = new Map(usedSelections)
   const billedHardware = new Map(billedHardwareCharges)
+  const billedUtility = new Map(billedUtilityCharges)
   const hardwareMode = getHardwareBillingMode(schedule)
   let finalScope = null
   const groups = []
 
   for (const unit of units.values()) {
-    if (unit.selections.length === 0 && unit.hardwareCharges.length === 0) continue
+    if (
+      unit.selections.length === 0
+      && unit.hardwareCharges.length === 0
+      && unit.utilityCharges.length === 0
+    ) continue
 
     const release = planFinalReleaseSplit({
       job,
@@ -97,8 +114,10 @@ export function planPackageSplit({
       builderSchedule,
       usedSelections: used,
       billedHardwareCharges: billedHardware,
+      billedUtilityCharges: billedUtility,
       selections: unit.selections,
       hardwareCharges: unit.hardwareCharges,
+      utilityCharges: unit.utilityCharges,
     })
     finalScope = release.scope
     // As the database does: the Final Release is for a Package that finishes every scope it touches.
@@ -112,6 +131,9 @@ export function planPackageSplit({
     }
     for (const { lotId, eventType } of unit.hardwareCharges) {
       billedHardware.set(hardwareChargeKey(lotId, hardwareMode, eventType), {})
+    }
+    for (const { lotId, eventType } of unit.utilityCharges) {
+      billedUtility.set(utilityChargeKey(lotId, 'BY_EVENT', eventType), {})
     }
   }
 
@@ -206,6 +228,7 @@ export function planCreatedPackages({
 }) {
   const hasDrawContent = (input.selections?.length ?? 0) > 0
     || (input.hardwareSelections?.length ?? 0) > 0
+    || (input.utilityEventSelections?.length ?? 0) > 0
   const alone = [...ownOptions]
   let drawPackages = []
 
@@ -225,6 +248,7 @@ export function planCreatedPackages({
       const billedPhaseIds = new Set([
         ...(drawPackage.input.selections ?? []),
         ...(drawPackage.input.hardwareSelections ?? []),
+        ...(drawPackage.input.utilityEventSelections ?? []),
       ].map(({ phaseId }) => String(phaseId)))
       const priceDifferenceIds = priceDifferences
         .filter(({ phaseId }) => billedPhaseIds.has(String(phaseId)))

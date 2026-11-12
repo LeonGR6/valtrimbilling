@@ -269,6 +269,8 @@ export function toDrawInvoicePackage(
   priceAdjustmentLineRows = [],
   retentionReleaseAdjustmentLineRows = [],
   retentionReleaseOptionLineRows = [],
+  utilityRows = [],
+  retentionReleaseUtilityLineRows = [],
 ) {
   const sortedDrawRows = [...drawRows].sort(
     (left, right) => String(left.phase_code ?? '').localeCompare(
@@ -286,6 +288,21 @@ export function toDrawInvoicePackage(
     sortedDrawRows.map((row) => [`${row.lot_id}:${row.draw_id}`, row]),
   )
   const optionsBillingDrawNumber = setupVersion?.options_billing_draw_number
+  // The Utility shares billed by Calendar event: by Phase, Utility row, then EXT, DM, HW.
+  const utilityEventOrder = { EXT: 1, DM: 2, HW: 3 }
+  const sortedUtilityRows = [...utilityRows].sort(
+    (left, right) => String(left.phase_code ?? '').localeCompare(
+      String(right.phase_code ?? ''),
+      'en',
+      { numeric: true, sensitivity: 'base' },
+    )
+      || String(left.lot_number).localeCompare(String(right.lot_number), 'en', {
+        numeric: true,
+        sensitivity: 'base',
+      })
+      || (utilityEventOrder[left.utility_event_type] ?? 9)
+        - (utilityEventOrder[right.utility_event_type] ?? 9),
+  )
   const sortedHardwareRows = [...hardwareRows].sort(
     (left, right) => String(left.phase_code ?? '').localeCompare(
       String(right.phase_code ?? ''),
@@ -404,6 +421,15 @@ export function toDrawInvoicePackage(
             phaseId: row.phase_id,
             retentionAmount: toNumber(row.retention_amount),
           })),
+          // What the Utility shares billed by Calendar event retained.
+          sourceUtilityLines: retentionReleaseUtilityLineRows.map((row) => ({
+            sourceUtilityLineId: row.source_utility_line_id,
+            sourcePackageId: row.source_package_id,
+            sourceLotId: row.source_lot_id,
+            utilityEventType: row.utility_event_type,
+            phaseId: row.phase_id,
+            retentionAmount: toNumber(row.retention_amount),
+          })),
           // What Options billed on their own (an Options Package) retained.
           sourceOptionLines: retentionReleaseOptionLineRows.map((row) => ({
             sourcePackageId: row.source_package_id,
@@ -435,6 +461,7 @@ export function toDrawInvoicePackage(
     lotIds: uniqueSortedNumbers([
       ...sortedDrawRows.map((row) => row.lot_id),
       ...sortedHardwareRows.map((row) => row.lot_id),
+      ...sortedUtilityRows.map((row) => row.lot_id),
     ]),
     drawIndexes: uniqueSortedNumbers(
       sortedDrawRows.map((row) => Number(row.draw_number) - 1),
@@ -542,6 +569,35 @@ export function toDrawInvoicePackage(
       drawName: '',
       isUtilityBuilding: false,
     })),
+    // The Utility shares billed by Calendar event, each a line of its own (not on a Draw).
+    persistedUtilityLines: sortedUtilityRows.map((row) => ({
+      id: row.id,
+      packageId: row.package_id,
+      phaseId: row.phase_id,
+      phaseCode: row.phase_code,
+      building: row.building,
+      lotId: row.lot_id,
+      lotNumber: row.lot_number,
+      utilityLabel: row.utility_name?.trim() || utilityLabel(row.lot_number),
+      isUtilityBuilding: true,
+      planCode: row.plan_code,
+      lotElevation: '',
+      basePrice: toNumber(row.base_price),
+      drawIndex: null,
+      drawName: '',
+      eventType: row.utility_event_type,
+      baseDrawAmount: 0,
+      hardwareAmount: 0,
+      optionsAmount: 0,
+      utilityAmount: toNumber(row.utility_amount),
+      utilityBillingMode: 'BY_EVENT',
+      utilityEventType: row.utility_event_type,
+      utilityPercentage: toNumber(row.utility_percentage),
+      grossAmount: toNumber(row.gross_amount),
+      retentionAmount: toNumber(row.retention_amount),
+      wrapAmount: toNumber(row.wrap_amount),
+      netAmount: toNumber(row.net_amount),
+    })),
     // Lot by Lot, and by option code within each Lot.
     persistedOptionLines: [...optionRows].sort(
       (left, right) => left.lot_id - right.lot_id
@@ -592,6 +648,8 @@ export function toCreateDrawPackageRpc({
   jobId,
   selections,
   hardwareSelections = [],
+  // The Utility shares chosen by Calendar event: { lotId, eventType }.
+  utilityEventSelections = [],
   optionSelections,
   optionsBillingDrawIndex,
   priceDifferenceIds = [],
@@ -652,6 +710,16 @@ export function toCreateDrawPackageRpc({
       || left.event_type.localeCompare(right.event_type)
   ))
 
+  const utilitySelections = [...new Map(utilityEventSelections
+    .filter(({ eventType }) => eventType != null)
+    .map(({ lotId, eventType }) => {
+      const normalized = { lot_id: Number(lotId), event_type: String(eventType) }
+      return [`${normalized.lot_id}:${normalized.event_type}`, normalized]
+    })).values()].sort((left, right) => (
+    left.lot_id - right.lot_id
+      || left.event_type.localeCompare(right.event_type)
+  ))
+
   return {
     p_job_id: Number(jobId),
     p_selections: selections.map(({ phaseId, lotId, drawIndex }, index) => {
@@ -675,6 +743,9 @@ export function toCreateDrawPackageRpc({
     }),
     ...(eventHardwareSelections.length > 0
       ? { p_hardware_selections: eventHardwareSelections }
+      : {}),
+    ...(utilitySelections.length > 0
+      ? { p_utility_selections: utilitySelections }
       : {}),
     // The pending price differences of earlier Packages that this one collects, one invoice row each.
     ...(differenceIds.length > 0 ? { p_difference_ids: differenceIds } : {}),
@@ -955,6 +1026,8 @@ export function toInvoicedEditRequest({
 export function canCorrectDrawPackage(record) {
   return canManageDraftDrawPackage(record)
     && (record.persistedHardwareLines?.length ?? 0) === 0
+    // Utility shares by Calendar event are not cells either: cancel it and create it again.
+    && (record.persistedUtilityLines?.length ?? 0) === 0
     // The amounts it collected were worked out against its cells: cancel it and create it again.
     && (record.priceDifferences?.lineCount ?? 0) === 0
 }

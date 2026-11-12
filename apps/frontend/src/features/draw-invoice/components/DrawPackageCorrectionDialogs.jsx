@@ -205,8 +205,9 @@ export function EditDrawPackageDialog({
   const changed = removedCount > 0 || addedCount > 0 || metadataChanged
     || removedHardwareCount > 0 || releasedOptions.length > 0
     || addedOptions.length > 0 || addedHardwareLines.length > 0
+  // The Utility shares by Calendar event stay on the Package as they are.
   const hasSomethingToBill = selections.length > 0 || keptHardwareLines.length > 0
-    || addedHardwareLines.length > 0
+    || addedHardwareLines.length > 0 || (record.persistedUtilityLines?.length ?? 0) > 0
   const canSave = !submitting
     && documentsAllowCorrection({
       isInvoiced,

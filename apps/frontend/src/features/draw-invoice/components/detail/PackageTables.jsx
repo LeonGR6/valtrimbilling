@@ -65,6 +65,11 @@ export function DrawWorksheetTable({
   phaseHeading = null,
 }) {
   const minimumWidth = 300 + worksheet.draws.length * 230
+  // Utility rows billed by Calendar event are not Draw cells: the Utility Building table shows them.
+  const utilityByEvent = worksheet.utilityBillingMode === 'BY_EVENT'
+  const gridRows = utilityByEvent
+    ? worksheet.rows.filter((row) => !row.isUtilityBuilding)
+    : worksheet.rows
   const usedSelections = useMemo(
     () => buildUsedDrawSelections(packages),
     [packages],
@@ -87,7 +92,7 @@ export function DrawWorksheetTable({
           <Chip
             size="small"
             variant="outlined"
-            label={`${worksheet.rows.length} ${worksheet.rows.length === 1 ? 'row' : 'rows'}`}
+            label={`${gridRows.length} ${gridRows.length === 1 ? 'row' : 'rows'}`}
           />
         )}
       >
@@ -103,7 +108,9 @@ export function DrawWorksheetTable({
         </Stack>
         {worksheet.utilityBuildingEnabled && (
           <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
-            Utility follows this Job&apos;s 100% or event-based Builder Setup.
+            {utilityByEvent
+              ? 'Utility rows are billed by Calendar event; their charges are in the Utility Building table.'
+              : 'Utility follows this Job\u2019s 100% Builder Setup.'}
           </Typography>
         )}
       </TableCardHeader>
@@ -143,7 +150,7 @@ export function DrawWorksheetTable({
                     {formatPercentage(draw.percentage)}%
                     {draw.lag ? ` · ${draw.eventType} ${formatLagShort(draw.lag)}` : ''}
                   </Typography>
-                  {worksheet.utilityBuildingEnabled && (
+                  {worksheet.utilityBuildingEnabled && !utilityByEvent && (
                     <Typography variant="caption" color="primary.main" fontWeight={750} sx={{ display: 'block' }}>
                       Utility{' '}
                       {worksheet.utilityBillingMode === 'BY_EVENT'
@@ -173,7 +180,7 @@ export function DrawWorksheetTable({
             </TableRow>
           </TableHead>
           <TableBody>
-            {worksheet.rows.map((row) => (
+            {gridRows.map((row) => (
               <TableRow key={row.id} hover>
                 <TableCell>
                   <Typography color={row.isUtilityBuilding ? 'primary.main' : 'error.main'} fontWeight={850}>
@@ -321,7 +328,7 @@ export function PackageUtilityTable({ summary }) {
           </TableHead>
           <TableBody>
             {utilityRows.map((row) => (
-              <TableRow key={`${row.phaseId}:${row.lotId}:${row.drawIndex}`} hover>
+              <TableRow key={`${row.phaseId}:${row.lotId}:${row.drawIndex ?? row.utilityEventType}`} hover>
                 <TableCell>
                   {formatPhaseBuilding(row.phaseCode, row.building, { separator: ' / ' })}
                 </TableCell>
@@ -329,11 +336,17 @@ export function PackageUtilityTable({ summary }) {
                 <TableCell>{planWithElevation(row.planCode, row.lotElevation) || '—'}</TableCell>
                 <TableCell>
                   <Typography fontWeight={750}>
-                    Draw #{row.drawIndex + 1}
-                    {row.drawName?.trim() ? ` · ${row.drawName.trim()}` : ''}
-                    {row.utilityEventType || row.eventType
-                      ? ` · ${row.utilityEventType ?? row.eventType}`
-                      : ''}
+                    {row.drawIndex == null
+                      ? `${row.utilityEventType ?? row.eventType} Calendar event`
+                      : (
+                        <>
+                          Draw #{row.drawIndex + 1}
+                          {row.drawName?.trim() ? ` · ${row.drawName.trim()}` : ''}
+                          {row.utilityEventType || row.eventType
+                            ? ` · ${row.utilityEventType ?? row.eventType}`
+                            : ''}
+                        </>
+                      )}
                   </Typography>
                 </TableCell>
                 <TableCell align="right">

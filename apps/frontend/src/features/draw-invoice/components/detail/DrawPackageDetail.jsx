@@ -307,6 +307,7 @@ export default function DrawPackageDetail() {
     ? describeSavedInvoiceSplit(schedule, focusedJob, [
       ...(focusedPackage.persistedDrawLines ?? []),
       ...(focusedPackage.persistedHardwareLines ?? []),
+      ...(focusedPackage.persistedUtilityLines ?? []),
     ].map(({ phaseId }) => phaseId))
     : null
   const finalReleaseSplitShown = schedule?.singleInvoiceScope ? null : finalReleaseSplit

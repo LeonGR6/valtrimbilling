@@ -14,7 +14,7 @@ const drawPercentageSchema = z.preprocess(
     })
     .finite('Enter a valid percentage.')
     .gt(0, 'Percentage must be greater than 0.')
-    .max(99, 'Percentage cannot exceed 99%.')
+    .max(100, 'Percentage cannot exceed 100%.')
     .refine(
       (value) => Math.abs(value * 100 - Math.round(value * 100)) < 0.000001,
       'Percentage can use up to two decimal places.',
@@ -147,7 +147,7 @@ export function createBuilderDrawScheduleSchema(schedules, currentScheduleId) {
           ),
           lag: lagSchema,
         }))
-        .min(MIN_DRAW_COUNT, `Configure at least ${MIN_DRAW_COUNT} draws.`)
+        .min(MIN_DRAW_COUNT, `Configure at least ${MIN_DRAW_COUNT} draw.`)
         .max(MAX_DRAW_COUNT, `Configure no more than ${MAX_DRAW_COUNT} draws.`),
       separateHardwarePrice: z.boolean().default(false),
       hardwareBillingMode: z.enum(['FULL', 'BY_EVENT']).default('FULL'),
@@ -281,8 +281,9 @@ export function createBuilderDrawScheduleSchema(schedules, currentScheduleId) {
         }
       }
 
-      if (data.utilityBuilding && data.utilityBillingMode === 'BY_EVENT') {
-        const configuredEvents = new Set(data.draws.map((draw) => draw.eventType))
+      // Like Separate Hardware, the Utility Building follows the Calendar events, which do not
+      // need to be Draws.
+      if (data.utilityBuilding) {
         const utilityTotal = Object.values(data.utilityEventPercentages).reduce(
           (sum, percentage) => sum + percentage,
           0,
@@ -294,18 +295,6 @@ export function createBuilderDrawScheduleSchema(schedules, currentScheduleId) {
             path: ['utilityEventPercentages'],
             message: 'Utility event percentages must total exactly 100%.',
           })
-        }
-
-        for (const [eventType, percentage] of Object.entries(
-          data.utilityEventPercentages,
-        )) {
-          if (percentage > 0 && !configuredEvents.has(eventType)) {
-            context.addIssue({
-              code: 'custom',
-              path: ['utilityEventPercentages', eventType],
-              message: `Add a ${eventType} Draw or set its Utility percentage to 0%.`,
-            })
-          }
         }
       }
 
@@ -416,11 +405,8 @@ export function createBuilderDrawScheduleSchema(schedules, currentScheduleId) {
       hardwareEventPercentages: data.separateHardwarePrice
         ? data.hardwareEventPercentages
         : { EXT: 0, DM: 0, HW: 0 },
-      utilityBillingMode: data.utilityBuilding
-        ? data.utilityBillingMode
-        : 'FULL',
+      utilityBillingMode: data.utilityBuilding ? 'BY_EVENT' : 'FULL',
       utilityEventPercentages: data.utilityBuilding
-        && data.utilityBillingMode === 'BY_EVENT'
         ? data.utilityEventPercentages
         : { EXT: 0, DM: 0, HW: 0 },
       anyDate: data.frequency === 'MONTHLY' && data.anyDate,

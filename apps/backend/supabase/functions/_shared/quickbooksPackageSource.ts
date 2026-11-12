@@ -47,7 +47,7 @@ export async function loadPackageSource(admin: Admin, packageId: number): Promis
   )
   if (!header) throw new PackageNotFoundError()
 
-  const [draws, hardwareLines, optionLines, adjustmentLines, invoice, builder, job, setup, sync] = await Promise.all([
+  const [draws, hardwareLines, utilityLines, optionLines, adjustmentLines, invoice, builder, job, setup, sync] = await Promise.all([
     admin
       .from('package_draws')
       .select(
@@ -60,6 +60,13 @@ export async function loadPackageSource(admin: Admin, packageId: number): Promis
       .from('package_hardware_lines')
       .select(
         'lot_number, phase_code, building, hardware_event_type, hardware_amount, retention_amount, wrap_amount',
+      )
+      .eq('package_id', packageId)
+      .order('id'),
+    admin
+      .from('package_utility_lines')
+      .select(
+        'lot_number, utility_name, phase_code, building, utility_event_type, utility_amount, retention_amount, wrap_amount',
       )
       .eq('package_id', packageId)
       .order('id'),
@@ -153,6 +160,7 @@ export async function loadPackageSource(admin: Admin, packageId: number): Promis
       package: header,
       draws: orThrow(draws) ?? [],
       hardwareLines: orThrow(hardwareLines) ?? [],
+      utilityLines: orThrow(utilityLines) ?? [],
       optionLines: orThrow(optionLines) ?? [],
       adjustmentLines: adjustmentRows.map(({ lot_id: lotId, ...row }) => ({
         ...row,

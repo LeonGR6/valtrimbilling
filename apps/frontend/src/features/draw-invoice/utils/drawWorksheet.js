@@ -136,6 +136,20 @@ export function allocateHardwareAmounts(hardwarePrice, schedule) {
   return allocateEventAmounts(hardwarePrice, schedule, getHardwareEventPercentage)
 }
 
+/** The Utility Plan Price split across the Calendar events the setup gives a share. */
+export function allocateUtilityEventAmounts(basePrice, schedule) {
+  return allocateConfiguredEventAmounts(basePrice, schedule, getUtilityEventPercentage)
+    ?? { EXT: 0, DM: 0, HW: 0 }
+}
+
+/** The Calendar events that carry a share of the Utility, in EXT, DM, HW order. */
+export function getUtilityEvents(schedule) {
+  if (getUtilityBillingMode(schedule) !== 'BY_EVENT') return []
+  return BILLING_EVENT_TYPES.filter(
+    (eventType) => getUtilityEventPercentage(schedule, eventType) > 0,
+  )
+}
+
 export function allocateHardwareEventAmounts(hardwarePrice, schedule) {
   return allocateConfiguredEventAmounts(
     hardwarePrice,
@@ -323,6 +337,19 @@ export function buildDrawWorksheet(job, phase, schedule) {
         : { EXT: 0, DM: 0, HW: 0 },
       hardwareEventAmounts,
       hardwareAmounts,
+      // A Utility row billed by Calendar event: what each event bills of its Plan Price.
+      utilityEventAmounts: isUtilityBuilding
+        && utilityBillingMode === 'BY_EVENT'
+        && scheduleIsValid
+        && hasPlanPrice(drawBasePrice)
+        ? allocateUtilityEventAmounts(drawBasePrice, schedule)
+        : { EXT: 0, DM: 0, HW: 0 },
+      utilityEventPercentages: isUtilityBuilding && utilityBillingMode === 'BY_EVENT'
+        ? Object.fromEntries(BILLING_EVENT_TYPES.map((eventType) => [
+            eventType,
+            getUtilityEventPercentage(schedule, eventType),
+          ]))
+        : { EXT: 0, DM: 0, HW: 0 },
       drawAmounts,
       drawRetentionAmounts: drawFinancials.map(({ retention }) => retention),
       drawWrapInsuranceAmounts: drawFinancials.map(

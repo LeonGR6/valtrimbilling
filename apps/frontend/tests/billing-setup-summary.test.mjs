@@ -125,7 +125,7 @@ test('the rest of the setup is described in plain words', () => {
     notes: ' Net of deposits ',
   })).map(({ label, value }) => [label, value]))
   assert.equal(other.Hardware, 'Included in the Plan price')
-  assert.equal(other['Utility building'], 'On · split by event · EXT 50% · DM 50%')
+  assert.equal(other['Utility building'], 'On · by Calendar event · EXT 50% · DM 50%')
   assert.equal(other['Options are billed in'], 'Not set')
   assert.equal(other['Required documents'], 'None required')
   assert.equal(other['Submitted by'], 'Portal')

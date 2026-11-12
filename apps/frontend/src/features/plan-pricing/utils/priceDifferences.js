@@ -41,7 +41,9 @@ export function toPriceDifference(row) {
     hardwareEventType: row.hardware_event_type ?? null,
     label: isHardware
       ? `Lot ${row.lot_number} · Hardware ${row.hardware_event_type}`
-      : `Lot ${row.lot_number} · Draw ${row.draw_number}`,
+      : row.line_kind === 'UTILITY_EVENT'
+        ? `${row.lot_number} · Utility ${row.hardware_event_type}`
+        : `Lot ${row.lot_number} · Draw ${row.draw_number}`,
     phaseLabel: row.building ? `${row.phase_code} · ${row.building}` : String(row.phase_code),
     billedGross: money(row.billed_gross),
     newGross: money(row.new_gross),

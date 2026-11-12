@@ -194,7 +194,8 @@ test('a refused save names the field it is about, in the words of the form', () 
     explainSaveError('The Conditional Final Release scope needs Release to be required to submit').text,
     'The Conditional Final Release needs a Release to be required.',
   )
-  assert.equal(explainSaveError('Every Utility allocation needs a matching Draw event').text, 'Every Utility allocation needs a Draw with that event.')
+  assert.equal(explainSaveError('La configuracion debe tener entre 1 y 5 draws').text, 'Configure between 1 and 5 draws.')
+  assert.equal(explainSaveError('New Utility Building setups must allocate 100 percent by Calendar event').name, 'utilityEventPercentages.EXT')
   assert.equal(explainSaveError('Utility event percentages must total 100').text, 'Utility event percentages must total exactly 100%.')
   assert.equal(explainSaveError('This Builder already has an active billing setup.').name, 'builderId')
 

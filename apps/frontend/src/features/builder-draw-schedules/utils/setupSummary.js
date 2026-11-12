@@ -74,8 +74,9 @@ function describeUtility(setup) {
   if (!setup.utilityBuilding) return 'Off'
   if (setup.utilityBillingMode === 'BY_EVENT') {
     const split = eventSplit(setup.utilityEventPercentages)
-    return split ? `On · split by event · ${split}` : 'On · split by event'
+    return split ? `On · by Calendar event · ${split}` : 'On · by Calendar event'
   }
+  // Setups made before the Utility followed the Calendar.
   return 'On · charged in one package'
 }
 

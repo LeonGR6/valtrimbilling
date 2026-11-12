@@ -112,6 +112,36 @@ const HARDWARE_COLUMNS = [
   'net_amount',
 ].join(', ')
 
+const UTILITY_COLUMNS = [
+  'id',
+  'package_id',
+  'phase_id',
+  'phase_code',
+  'building',
+  'lot_id',
+  'lot_number',
+  'utility_name',
+  'plan_code',
+  'base_price',
+  'utility_event_type',
+  'utility_percentage',
+  'utility_amount',
+  'gross_amount',
+  'retention_amount',
+  'wrap_amount',
+  'net_amount',
+].join(', ')
+
+const RETENTION_RELEASE_UTILITY_LINE_COLUMNS = [
+  'package_id',
+  'source_utility_line_id',
+  'source_package_id',
+  'source_lot_id',
+  'utility_event_type',
+  'phase_id',
+  'retention_amount',
+].join(', ')
+
 const BILLING_DRAW_COLUMNS = [
   'id',
   'setup_version_id',
@@ -402,6 +432,8 @@ export async function listDrawInvoicePackages() {
     retentionReleaseAdjustmentLines,
     retentionReleaseOptionLines,
     notes,
+    utilityLines,
+    retentionReleaseUtilityLines,
   ] = await Promise.all([
     listRowsInBatches(
       client,
@@ -506,6 +538,20 @@ export async function listDrawInvoicePackages() {
       NOTE_COLUMNS,
       [['package_id', true], ['created_at', false], ['id', false]],
     ),
+    listRowsInBatches(
+      client,
+      packageIds,
+      'package_utility_lines',
+      UTILITY_COLUMNS,
+      [['package_id', true], ['phase_code', true], ['lot_number', true], ['utility_event_type', true]],
+    ),
+    listRowsInBatches(
+      client,
+      packageIds,
+      'retention_release_utility_lines',
+      RETENTION_RELEASE_UTILITY_LINE_COLUMNS,
+      [['package_id', true], ['source_package_id', true]],
+    ),
   ])
 
   const invoicesByPackage = new Map(
@@ -545,6 +591,8 @@ export async function listDrawInvoicePackages() {
   )
   const retentionReleaseOptionLinesByPackage = groupByPackage(retentionReleaseOptionLines)
   const notesByPackage = groupByPackage(notes)
+  const utilityLinesByPackage = groupByPackage(utilityLines)
+  const retentionReleaseUtilityLinesByPackage = groupByPackage(retentionReleaseUtilityLines)
 
   return packages.map((packageRow) => ({
     ...toDrawInvoicePackage(
@@ -568,6 +616,8 @@ export async function listDrawInvoicePackages() {
       priceAdjustmentLinesByPackage.get(packageRow.id) ?? [],
       retentionReleaseAdjustmentLinesByPackage.get(packageRow.id) ?? [],
       retentionReleaseOptionLinesByPackage.get(packageRow.id) ?? [],
+      utilityLinesByPackage.get(packageRow.id) ?? [],
+      retentionReleaseUtilityLinesByPackage.get(packageRow.id) ?? [],
     ),
     // The internal notes of the Package, newest first.
     noteEntries: sortPackageNotes((notesByPackage.get(packageRow.id) ?? []).map(toPackageNote)),

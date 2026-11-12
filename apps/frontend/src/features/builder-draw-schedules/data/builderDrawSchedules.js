@@ -1,15 +1,10 @@
-export const MIN_DRAW_COUNT = 2
+export const MIN_DRAW_COUNT = 1
 export const MAX_DRAW_COUNT = 5
 
 export const drawEventTypeOptions = [
   { value: 'EXT', label: 'EXT' },
   { value: 'DM', label: 'DM' },
   { value: 'HW', label: 'HW' },
-]
-
-export const utilityBillingModeOptions = [
-  { value: 'FULL', label: 'Charge 100% in one package' },
-  { value: 'BY_EVENT', label: 'Split by Draw events' },
 ]
 
 export const emptyUtilityEventPercentages = {

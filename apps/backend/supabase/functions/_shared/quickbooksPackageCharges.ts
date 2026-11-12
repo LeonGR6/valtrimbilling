@@ -59,6 +59,18 @@ export interface PackageHardwareLineRow {
   wrap_amount: Numeric
 }
 
+/** A Utility Building share billed by Calendar event, on a line of its own (not on a Draw row). */
+export interface PackageUtilityLineRow {
+  lot_number: string
+  utility_name: string | null
+  phase_code: string
+  building: string | null
+  utility_event_type: string | null
+  utility_amount: Numeric
+  retention_amount: Numeric
+  wrap_amount: Numeric
+}
+
 /** One price difference collected by a Package. Amounts are signed. */
 export interface PackageAdjustmentLineRow {
   /** The Package that billed the difference, e.g. DP-00000035. */
@@ -84,6 +96,8 @@ export interface PackageInvoiceSource {
   package: PackageHeaderRow
   draws: PackageDrawRow[]
   hardwareLines: PackageHardwareLineRow[]
+  /** The Utility Building shares the Package bills by Calendar event. */
+  utilityLines?: PackageUtilityLineRow[]
   /**
    * The options the Package bills, one row each. Their amount is charged on a single draw line, but
    * they belong to several Lots, and the invoice names those Lots. A Package of Options only has
@@ -126,10 +140,19 @@ function eventScope(base: string, eventType: string | null) {
  * The invoice row of a price difference a Draw Package carries: its Phase, Lot and Draw, with no
  * other Package named, one for each difference.
  */
+/** Where a price difference was billed: its Draw, or the Hardware / Utility event. */
+function adjustmentPlace(row: PackageAdjustmentLineRow) {
+  if (row.line_kind === 'HARDWARE_EVENT') {
+    return `HARDWARE${row.hardware_event_type ? ` ${row.hardware_event_type}` : ''}`
+  }
+  if (row.line_kind === 'UTILITY_EVENT') {
+    return `UTILITY${row.hardware_event_type ? ` ${row.hardware_event_type}` : ''}`
+  }
+  return `DRAW ${row.draw_number}`
+}
+
 function priceChangeCharge(row: PackageAdjustmentLineRow): PackageCharge {
-  const scopeLabel = row.line_kind === 'HARDWARE_EVENT'
-    ? `HARDWARE${row.hardware_event_type ? ` ${row.hardware_event_type}` : ''}`
-    : `DRAW ${row.draw_number}`
+  const scopeLabel = adjustmentPlace(row)
   const charge: PackageCharge = {
     phaseCode: row.phase_code,
     building: row.building,
@@ -195,6 +218,7 @@ function optionCharges(
 
 export function mapPackageToCharges(source: PackageInvoiceSource): PackageInvoiceCharges {
   const { package: header, draws, hardwareLines, invoice } = source
+  const utilityLines = source.utilityLines ?? []
   const adjustmentLines = source.adjustmentLines ?? []
 
   // A Retention Release is not sent to QuickBooks yet.
@@ -233,7 +257,7 @@ export function mapPackageToCharges(source: PackageInvoiceSource): PackageInvoic
         'The Price Adjustment has no difference lines.',
       )
     }
-    if (draws.length > 0 || hardwareLines.length > 0) {
+    if (draws.length > 0 || hardwareLines.length > 0 || utilityLines.length > 0) {
       throw new QuickbooksInvoiceError(
         'INVALID_INPUT',
         'A Price Adjustment cannot have Draw or Hardware lines.',
@@ -245,9 +269,7 @@ export function mapPackageToCharges(source: PackageInvoiceSource): PackageInvoic
       wrapCents += cents(row.wrap, 'wrap')
 
       const place = { phaseCode: row.phase_code, building: row.building }
-      const where = row.line_kind === 'HARDWARE_EVENT'
-        ? `HARDWARE${row.hardware_event_type ? ` ${row.hardware_event_type}` : ''}`
-        : `DRAW ${row.draw_number}`
+      const where = adjustmentPlace(row)
       const scopeLabel = `PRICE ADJUSTMENT ${row.source_package_number} · ${where}`
 
       if (row.is_utility_building) {
@@ -294,7 +316,7 @@ export function mapPackageToCharges(source: PackageInvoiceSource): PackageInvoic
     if (lines.length === 0) {
       throw new QuickbooksInvoiceError('INVALID_INPUT', 'The Change Order has no lines to invoice.')
     }
-    if (draws.length > 0 || hardwareLines.length > 0 || (source.optionLines ?? []).length > 0 || adjustmentLines.length > 0) {
+    if (draws.length > 0 || hardwareLines.length > 0 || utilityLines.length > 0 || (source.optionLines ?? []).length > 0 || adjustmentLines.length > 0) {
       throw new QuickbooksInvoiceError(
         'INVALID_INPUT',
         'The Package of a Change Order cannot have Draw, Hardware, Options or price difference lines.',
@@ -326,7 +348,7 @@ export function mapPackageToCharges(source: PackageInvoiceSource): PackageInvoic
     if (optionLines.length === 0) {
       throw new QuickbooksInvoiceError('INVALID_INPUT', 'The Options Package has no options.')
     }
-    if (draws.length > 0 || hardwareLines.length > 0) {
+    if (draws.length > 0 || hardwareLines.length > 0 || utilityLines.length > 0) {
       throw new QuickbooksInvoiceError(
         'INVALID_INPUT',
         'An Options Package cannot have Draw or Hardware lines.',
@@ -418,6 +440,26 @@ export function mapPackageToCharges(source: PackageInvoiceSource): PackageInvoic
       kind: 'HARDWARE',
       scopeLabel: eventScope('HARDWARE', row.hardware_event_type),
       amount: Number(row.hardware_amount),
+    })
+  }
+
+  for (const row of utilityLines) {
+    retentionCents += cents(row.retention_amount, 'retention_amount')
+    wrapCents += cents(row.wrap_amount, 'wrap_amount')
+    const label = row.utility_name?.trim()
+    if (!label) {
+      throw new QuickbooksInvoiceError(
+        'INVALID_INPUT',
+        `Utility row ${row.lot_number} has no utility name.`,
+      )
+    }
+    charges.push({
+      phaseCode: row.phase_code,
+      building: row.building,
+      lotNumber: label,
+      kind: 'UTILITY',
+      scopeLabel: eventScope('UTILITY', row.utility_event_type),
+      amount: Number(row.utility_amount),
     })
   }
 

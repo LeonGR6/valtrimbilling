@@ -2,7 +2,7 @@
 // the Roadmap page: every item needs a title, a description and one of the
 // statuses below.
 
-export const roadmapUpdatedOn = 'November 12, 2026'
+export const roadmapUpdatedOn = 'November 13, 2026'
 
 export const roadmapStatuses = {
   DONE: { label: 'Done', color: 'success' },
@@ -111,6 +111,12 @@ export const roadmapAreas = [
         status: 'DONE',
         description:
           'The afternoon before, the drives are checked again with traffic. The screen warns when a margin gets too small or when a time typed by hand is shorter than Google’s.',
+      },
+      {
+        title: 'Visit details while planning',
+        status: 'DONE',
+        description:
+          'While planning a request, selecting a visit in the technician’s day agenda opens that visit’s request: homeowner, lot, work type, customer window, work time and technician. It is read-only, so nothing is cancelled by mistake.',
       },
       {
         title: 'Sent proposals hold their time',

@@ -3,6 +3,7 @@ import {
   Alert,
   Box,
   Button,
+  Chip,
   Divider,
   FormControlLabel,
   InputAdornment,
@@ -75,16 +76,25 @@ export default function ChangeOrderCoverageCard({ values, onChange }) {
           <FormControlLabel
             key={option.value}
             value={option.value}
-            control={<Radio size="small" />}
-            label={option.label}
+            control={<Radio size="small" sx={{ alignSelf: 'flex-start', mt: 0.25 }} />}
+            label={(
+              <Box>
+                <Typography variant="body2" fontWeight={700}>{option.label}</Typography>
+                <Typography variant="caption" color="text.secondary" component="div" sx={{ lineHeight: 1.35 }}>
+                  {option.description}
+                </Typography>
+              </Box>
+            )}
             sx={{
               m: 0,
-              px: 1,
-              py: 0.5,
+              px: 1.25,
+              py: 1,
+              alignItems: 'flex-start',
               border: 1,
               borderRadius: 1.5,
               borderColor: mode === option.value ? 'primary.main' : 'divider',
               bgcolor: mode === option.value ? 'action.selected' : 'transparent',
+              '&:hover': { borderColor: 'primary.main' },
             }}
           />
         ))}
@@ -94,7 +104,7 @@ export default function ChangeOrderCoverageCard({ values, onChange }) {
 
       {!job ? (
         <Typography variant="body2" color="text.secondary">
-          Choose the Job / Community in the Request section to pick the affected locations.
+          Choose the Job in the Request step above, and its lots show up here to pick from.
         </Typography>
       ) : (
         <>
@@ -135,15 +145,15 @@ export default function ChangeOrderCoverageCard({ values, onChange }) {
                 </Button>
               </>
             )}
-            <Typography
-              variant="body2"
+            <Chip
               aria-live="polite"
-              sx={{ ml: { md: 'auto' }, fontWeight: 600, color: summary.lots > 0 ? 'primary.main' : 'text.secondary' }}
-            >
-              {summary.lots === 0
+              color={summary.lots > 0 ? 'primary' : 'default'}
+              variant={summary.lots > 0 ? 'filled' : 'outlined'}
+              label={summary.lots === 0
                 ? 'Nothing selected yet'
-                : `${plural(summary.lots, 'lot')} in ${plural(summary.phases, 'phase')} and ${plural(summary.buildings, 'building')}`}
-            </Typography>
+                : `${plural(summary.lots, 'lot')} · ${plural(summary.phases, 'phase')} · ${plural(summary.buildings, 'building')}`}
+              sx={{ ml: { md: 'auto' }, fontWeight: 600 }}
+            />
           </Stack>
 
           {mode === 'job' && (
@@ -158,6 +168,16 @@ export default function ChangeOrderCoverageCard({ values, onChange }) {
             </Alert>
           )}
 
+          {mode === 'lots' && (
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+              Open a phase and tick its lots, or tick the phase to take all of them.
+            </Typography>
+          )}
+          {mode === 'phase' && (
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+              Tick the phases or buildings the work reaches; every lot in them is included.
+            </Typography>
+          )}
           {mode !== 'job' && (
             <Box
               sx={{

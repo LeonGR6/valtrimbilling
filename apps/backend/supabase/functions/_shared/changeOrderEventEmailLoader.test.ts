@@ -139,3 +139,30 @@ Deno.test("an Extra / CO with no lot charged with an event has nothing to say", 
     "No lot of this Extra / Change Order",
   );
 });
+
+Deno.test("the lots of the events of their own come with the date and note of their event", async () => {
+  const withEvents = tables();
+  withEvents.change_order_event_overview = [{
+    id: 9,
+    scheduled_date: "2026-11-26",
+    note: "Bring the ladder",
+    lots: [
+      { line_id: 3, lot_id: 90, phase_code: "2", building: "1", lot_number: "9", plan_code: "B", scope_of_work: "Change locks" },
+    ],
+  }];
+  const loaded = await loadChangeOrderEmailSnapshot(fakeClient(withEvents), "Andrés Pérez", "5");
+
+  assertEquals(loaded.lotCount, 3);
+  assertEquals(
+    loaded.snapshot.groups.map((group) => [group.event, group.eventDate, group.note, group.lots.map((lot) => lot.lotNumber)]),
+    [
+      ["EXT", "2026-11-20", "", ["7", "8"]],
+      ["CO", "2026-11-26", "Bring the ladder", ["9"]],
+    ],
+  );
+
+  // Only events of their own is enough to have something to say.
+  const onlyEvents = { ...withEvents, change_order_lines: [] };
+  const own = await loadChangeOrderEmailSnapshot(fakeClient(onlyEvents), "Andrés Pérez", "5");
+  assertEquals(own.lotCount, 1);
+});

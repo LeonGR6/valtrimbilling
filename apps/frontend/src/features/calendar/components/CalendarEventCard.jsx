@@ -14,6 +14,42 @@ export default function CalendarEventCard({ event, isList = false, isMonth = fal
   const tone = getActivityTone(props.activityType, props.orderMaterial, props.variant)
   const followUp = getFollowUpStatusMeta(props.followUp)
 
+  // An event of its own of an Extra / CO: its number, Job and Lots (and the note), no Production details.
+  if (props.activityType === 'CHANGE_ORDER') {
+    if (isMonth) {
+      const label = getMonthEventLabel(props)
+      return <Box className={`month-event activity-tone--${tone}`} title={label}>{label}</Box>
+    }
+    if (isList) {
+      return (
+        <Box className={`list-event activity-tone--${tone}`}>
+          <Box className="list-event__identity">
+            <span className="list-event__stage">{type.shortLabel}</span>
+            <Box className="list-event__copy">
+              <strong>{props.changeOrderNumber}{props.poCoNumber ? ` · PO / CO # ${props.poCoNumber}` : ''}</strong>
+              <span>Job #{props.jobCode} · {props.community}</span>
+              <span>{props.lotsText}</span>
+            </Box>
+          </Box>
+          {props.note && (
+            <Box className="list-event__tags"><span>{props.note}</span></Box>
+          )}
+        </Box>
+      )
+    }
+    return (
+      <Box className={`work-event activity-tone--${tone}`}>
+        <Box className="work-event__topline">
+          <strong>{props.changeOrderNumber}</strong>
+          <span className="work-event__tag">Extra / CO</span>
+        </Box>
+        <span className="work-event__community">Job #{props.jobCode} · {props.community}</span>
+        <span className="work-event__phase-building">{props.lotsText}</span>
+        {props.note && <span className="work-event__date-owner">{props.note}</span>}
+      </Box>
+    )
+  }
+
   // Month view: one line per event, like a Google Calendar chip.
   if (isMonth) {
     const label = getMonthEventLabel(props)

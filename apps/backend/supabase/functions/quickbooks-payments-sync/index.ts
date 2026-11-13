@@ -7,13 +7,14 @@ import {
 import { requireInvoiceUser, requirePackageId } from '../_shared/quickbooksAccess.ts'
 import { environmentOrNull, openSessionFor } from '../_shared/quickbooksEnvironment.ts'
 import {
+  type AppliedOutcome,
   failure,
   type PaymentSyncResult,
   syncQuickbooksPayments,
   todayInCalifornia,
 } from '../_shared/quickbooksPaymentSync.ts'
 import { QuickbooksBusyError, QuickbooksNotConnectedError } from '../_shared/quickbooksSession.ts'
-import { loadSyncContext } from '../_shared/quickbooksSyncContext.ts'
+import { loadSyncContext, loadSyncContexts } from '../_shared/quickbooksSyncContext.ts'
 import { serviceClient } from '../_shared/supabase.ts'
 
 // Reads what QuickBooks shows for the invoices of Packages (open, overdue,
@@ -90,22 +91,37 @@ Deno.serve(async (req) => {
     for (const [environment, packageIds] of byEnvironment) {
       try {
         results.push(...await syncQuickbooksPayments({
-          loadContext: (id) => loadSyncContext(admin, id),
+          loadContexts: (ids) => loadSyncContexts(admin, ids),
           openSession: (sessionEnvironment) => openSessionFor(admin, sessionEnvironment),
           getInvoice: (api, invoiceId) => getQuickbooksInvoice(api, invoiceId),
-          apply: async (state) => {
-            const { data, error } = await admin.rpc('apply_quickbooks_invoice_state', {
-              p_package_id: state.packageId,
-              p_state: state.state,
-              p_total: state.total,
-              p_balance: state.balance,
-              p_due_date: state.dueDate,
-              p_overdue: state.overdue,
-              p_linked: state.linkedTransactions,
-              p_qbo_last_updated: state.lastUpdatedAt,
+          applyAll: async (states) => {
+            // One request for the whole list: each request to the API is logged.
+            const { data, error } = await admin.rpc('apply_quickbooks_invoice_states', {
+              p_states: states.map((state) => ({
+                package_id: state.packageId,
+                state: state.state,
+                total: state.total,
+                balance: state.balance,
+                due_date: state.dueDate,
+                overdue: state.overdue,
+                linked: state.linkedTransactions,
+                qbo_last_updated: state.lastUpdatedAt,
+              })),
             })
             if (error) throw new Error(error.message)
-            return (data as string | null) ?? null
+
+            const outcomes = new Map<number, AppliedOutcome>()
+            for (const row of (data ?? []) as {
+              package_id: number
+              workflow_status: string | null
+              error: string | null
+            }[]) {
+              outcomes.set(Number(row.package_id), {
+                workflowStatus: row.workflow_status ?? null,
+                error: row.error ?? null,
+              })
+            }
+            return outcomes
           },
           today: () => todayInCalifornia(),
         }, packageIds, environment))

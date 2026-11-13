@@ -55,6 +55,8 @@ export default function CalendarWorkspace({
   viewTitle,
   viewType,
   visibleTypes,
+  // The kinds of event that can be shown or hidden (EXT, Shutter, DM, HW, and Extra / CO when it is on).
+  typeOptions = activityTypeOptions,
   onChangeView,
   onDatesSet,
   onEventClick,
@@ -76,7 +78,7 @@ export default function CalendarWorkspace({
     <>
       <Box className="calendar-toolbar">
         <Box className="calendar-type-filters" aria-label="Filter activity types">
-          {activityTypeOptions.map((type) => (
+          {typeOptions.map((type) => (
             <FormControlLabel
               key={type.value}
               className={`calendar-type-filter activity-tone--${type.tone}`}

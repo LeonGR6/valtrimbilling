@@ -2,9 +2,13 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Alert, Box, Stack } from '@mui/material'
 
+import { formatCurrency } from '../../draw-invoice/utils/drawInvoiceFormatters.js'
 import { CatalogPageHeader } from '../../../components/common/CatalogPage'
 import { useAuth } from '../../auth/context/useAuth.js'
+import { useBuilders } from '../../builders/context/useBuilders.js'
 import { emptyChangeOrder } from '../data/changeOrders.js'
+import { eventBreakdown, formSteps } from '../utils/changeOrderSummary.js'
+import ChangeOrderSummaryCard from './ChangeOrderSummaryCard.jsx'
 import { useChangeOrderCoverage } from '../hooks/useChangeOrderCoverage.js'
 import {
   canApproveChangeOrders,
@@ -20,9 +24,11 @@ import { shouldOfferSchedulingEmail } from '../services/changeOrderEmailRecord.j
 import { useLotCalendarEvents, useNextChangeOrderNumber } from '../hooks/useChangeOrderData.js'
 import {
   evaluateLots,
-  groupEvaluations,
-  isCalendarEvent,
   linkedEvents,
+  lotEventChooser,
+  needsCalendar,
+  planEventOf,
+  setLotEvents,
   summarizeEvaluations,
 } from '../utils/calendarEvents.js'
 import ChangeOrderBasicsCard from './ChangeOrderBasicsCard.jsx'
@@ -68,25 +74,45 @@ export default function ChangeOrderForm({
     () => (editing ? values : withSuggestedNumber(values, suggestedNumber, numberEdited)),
     [editing, values, suggestedNumber, numberEdited],
   )
-  const { job, rows, lines, places, amounts } = useChangeOrderCoverage(values)
+  const { job, rows, summary: coverage, lines, places, amounts } = useChangeOrderCoverage(values)
+  const { builders } = useBuilders()
+  const builderName = builders.find((builder) => String(builder.id) === String(values.builderId))?.name ?? ''
+  const byPlan = values.coverageMode === 'plans'
 
-  // The Calendar event the lots are charged with. The Calendar is only read once an event is chosen, and
-  // the database decides which lots can be tied; what is shown and what is sent come from the same read.
-  const choosingEvent = isCalendarEvent(values.chargeEvent)
+  // The Calendar event each Lot is charged with: its own, its Plan's, or the one for every Lot. The
+  // Calendar is only read once some Lot chooses EXT, DM or HW, and the database decides which lots can be
+  // tied; what is shown and what is sent come from the same read.
+  const eventOf = useMemo(
+    () => lotEventChooser(values),
+    [values],
+  )
+  const choosingEvent = needsCalendar(rows, eventOf)
   const { events, loading: eventsLoading, error: eventsError } = useLotCalendarEvents(
     choosingEvent && job ? job.id : '',
   )
   const evaluations = useMemo(
-    () => evaluateLots(rows, { chargeEvent: values.chargeEvent, events, savedLinks: values.savedLinks }),
-    [rows, values.chargeEvent, events, values.savedLinks],
+    () => evaluateLots(rows, { eventOf, events, savedLinks: values.savedLinks }),
+    [rows, eventOf, events, values.savedLinks],
   )
-  const eventGroups = useMemo(() => groupEvaluations(evaluations), [evaluations])
   const eventSummary = useMemo(() => summarizeEvaluations(evaluations), [evaluations])
-  const links = useMemo(() => linkedEvents(evaluations, values.chargeEvent), [evaluations, values.chargeEvent])
+  const links = useMemo(() => linkedEvents(evaluations), [evaluations])
+  // The Plans chosen with Specific Plan Types, with the event each follows.
+  const eventPlans = useMemo(() => {
+    if (!byPlan) return []
+    return (job?.sequenceSheet?.plans ?? [])
+      .filter((plan) => values.planIds.has(String(plan.id)))
+      .map((plan) => ({
+        id: String(plan.id),
+        code: plan.code,
+        name: plan.name ?? '',
+        lots: rows.filter((row) => row.planId === String(plan.id)).length,
+        event: planEventOf(values.planRules, String(plan.id), values.chargeEvent),
+      }))
+  }, [byPlan, job, values.planIds, values.planRules, values.chargeEvent, rows])
   // Saving without knowing what the Calendar says would let go of ties, so it waits for the Calendar.
   const calendarProblem = !(choosingEvent && job && rows.length > 0) ? ''
-    : eventsLoading ? 'The Calendar events are still loading. Wait a moment, or choose Own CO event.'
-      : eventsError ? 'The Calendar events could not be read. Reload the page, or choose Own CO event.'
+    : eventsLoading ? 'The Calendar events are still loading. Wait a moment, or set the Lots to Own CO event.'
+      : eventsError ? 'The Calendar events could not be read. Reload the page, or set the Lots to Own CO event.'
         : ''
 
   // Nothing is marked until the person tries to save; after that, it follows what they fix.
@@ -115,6 +141,8 @@ export default function ChangeOrderForm({
   const whereDone = Boolean(job) && hasLines
   const eventDone = whereDone && !calendarProblem
   const chargedDone = whereDone && !problemFields.has('lines')
+  const steps = formSteps({ requestDone, whereDone, eventDone, chargedDone, attempted })
+  const breakdown = useMemo(() => eventBreakdown(evaluations), [evaluations])
 
   useEffect(() => {
     if (failedSaves === 0) return
@@ -126,6 +154,27 @@ export default function ChangeOrderForm({
     setSaveError('')
     if ('internalNumber' in changes) setNumberEdited(true)
     setValues((current) => ({ ...current, ...changes }))
+  }
+
+  // A Plan: its Lots follow it, so the ones that had their own event let it go.
+  const choosePlanEvent = (planId, event) => {
+    const eventByLot = { ...values.eventByLot }
+    for (const row of rows) if (row.planId === planId) delete eventByLot[row.lotId]
+    handleChange({
+      eventByLot,
+      planRules: {
+        ...values.planRules,
+        [planId]: { scope: '', amount: '', ...values.planRules?.[planId], event },
+      },
+    })
+  }
+  // Some Lots: what they would follow anyway is not kept as their own.
+  const chooseLotEvents = (lotIds, event) => {
+    const followed = lotEventChooser({ ...values, eventByLot: {} })
+    const rowOf = new Map(rows.map((row) => [row.lotId, row]))
+    handleChange({
+      eventByLot: setLotEvents(values.eventByLot ?? {}, lotIds, event, (lotId) => followed(rowOf.get(lotId) ?? { lotId })),
+    })
   }
 
   const handleSave = async () => {
@@ -221,8 +270,10 @@ export default function ChangeOrderForm({
           )}
 
           <ChangeOrderFormSection
+            id="co-step-request"
             step={1}
             title="Request"
+            detail={builderName && job ? `#${job.code}` : undefined}
             hint="The Builder, the Job and who asked for it."
             done={requestDone}
             attention={attempted && !requestDone}
@@ -238,8 +289,10 @@ export default function ChangeOrderForm({
           </ChangeOrderFormSection>
 
           <ChangeOrderFormSection
+            id="co-step-where"
             step={2}
             title="Where the work is"
+            detail={coverage.lots > 0 ? `${coverage.lots} ${coverage.lots === 1 ? 'lot' : 'lots'}` : undefined}
             hint="The lots of the Job it reaches."
             done={whereDone}
             attention={attempted && !whereDone}
@@ -248,27 +301,30 @@ export default function ChangeOrderForm({
           </ChangeOrderFormSection>
 
           <ChangeOrderFormSection
+            id="co-step-event"
             step={3}
             title="Calendar event"
-            hint="Charge it with an event already on the Calendar, or give it one of its own."
+            hint="For every Lot, by Plan or Lot by Lot: an event already on the Calendar, or one of its own."
             done={eventDone}
             attention={attempted && Boolean(calendarProblem)}
           >
             <ChangeOrderEventCard
-              chargeEvent={values.chargeEvent}
-              onChange={handleChange}
+              plans={eventPlans}
+              evaluations={evaluations}
+              summary={eventSummary}
               hasJob={Boolean(job)}
-              hasLots={rows.length > 0}
               loading={eventsLoading}
               error={eventsError}
-              groups={eventGroups}
-              summary={eventSummary}
+              onPlan={choosePlanEvent}
+              onLots={chooseLotEvents}
             />
           </ChangeOrderFormSection>
 
           <ChangeOrderFormSection
+            id="co-step-charged"
             step={4}
             title="What is charged"
+            detail={amounts.total === null ? undefined : formatCurrency(amounts.total)}
             hint="The Scope of Work and the Amount of each line."
             done={chargedDone}
             attention={attempted && !chargedDone}
@@ -278,9 +334,19 @@ export default function ChangeOrderForm({
         </Stack>
 
         {!editing && (
-          <Box sx={{ position: { lg: 'sticky' }, top: { lg: 24 } }}>
+          <Stack spacing={3} sx={{ position: { lg: 'sticky' }, top: { lg: 24 }, minWidth: 0 }}>
+            <ChangeOrderSummaryCard
+              builderName={builderName}
+              job={job}
+              coverageMode={values.coverageMode}
+              coverage={coverage}
+              plans={byPlan ? eventPlans : []}
+              breakdown={breakdown}
+              amounts={amounts}
+              steps={steps}
+            />
             <RecentChangeOrdersCard />
-          </Box>
+          </Stack>
         )}
       </Box>
 

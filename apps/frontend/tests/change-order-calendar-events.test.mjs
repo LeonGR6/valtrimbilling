@@ -10,6 +10,11 @@ import {
   linkedEvents,
   summarizeEvaluations,
   toLotEvent,
+  groupLotsByRecord,
+  lotEventChooser,
+  needsCalendar,
+  planEventOf,
+  setLotEvents,
 } from '../src/features/change-orders/utils/calendarEvents.js'
 
 // Indigo 1295, Phase 2: three buildings, each with its own date for the event.
@@ -46,9 +51,12 @@ test('EXT, DM and HW are Calendar events; "Own CO event" is not', () => {
   assert.equal(OWN_EVENT, 'NONE')
 })
 
-test('with "Own CO event" no lot is evaluated and none is tied', () => {
-  assert.deepEqual(evaluateLots(rows, { chargeEvent: OWN_EVENT, events }), [])
-  assert.deepEqual(linkedEvents([], OWN_EVENT), {})
+test('with "Own CO event" every lot needs an event of its own and none is tied', () => {
+  const evaluations = evaluateLots(rows, { chargeEvent: OWN_EVENT, events })
+  assert.equal(evaluations.length, 6)
+  assert.equal(evaluations.every((item) => item.status === 'OWN' && !item.linked && item.event === OWN_EVENT), true)
+  assert.deepEqual(linkedEvents(evaluations), {})
+  assert.deepEqual(summarizeEvaluations(evaluations), { total: 6, linked: 0, own: 6 })
 })
 
 test('each lot is evaluated for the event chosen: far away can be charged, close or gone cannot', () => {
@@ -75,7 +83,7 @@ test('a lot with no such event on the Calendar is "not scheduled" and is not tie
 test('only the lots that are far enough are sent as charged with the event', () => {
   const evaluations = evaluateLots(rows, { chargeEvent: 'DM', events })
 
-  assert.deepEqual(linkedEvents(evaluations, 'DM'), { 1: 'DM', 2: 'DM', 3: 'DM' })
+  assert.deepEqual(linkedEvents(evaluations), { 1: 'DM', 2: 'DM', 3: 'DM' })
   assert.deepEqual(summarizeEvaluations(evaluations), { total: 6, linked: 3, own: 3 })
 })
 
@@ -143,4 +151,54 @@ test('what is left before a close event is said in business days', () => {
   assert.equal(businessDaysLeftText(3), '3 business days left')
   assert.equal(businessDaysLeftText(1), '1 business day left')
   assert.equal(businessDaysLeftText(0), 'No business days left')
+})
+
+test('a Lot follows its own event, else its Plan (Specific Plan Types only), else the one for every Lot', () => {
+  const planRows = [
+    { lotId: '1', planId: '7' }, { lotId: '2', planId: '7' }, { lotId: '3', planId: '8' }, { lotId: '4', planId: null },
+  ]
+  const values = {
+    chargeEvent: 'DM',
+    eventByLot: { 2: 'HW' },
+    planRules: { 7: { scope: 'x', amount: '1', event: 'EXT' }, 8: { scope: 'y', amount: '1' } },
+  }
+  const byPlan = lotEventChooser({ ...values, coverageMode: 'plans' })
+  assert.deepEqual(planRows.map(byPlan), ['EXT', 'HW', 'DM', 'DM'])
+  // The Plans only count with Specific Plan Types.
+  const byLot = lotEventChooser({ ...values, coverageMode: 'lots' })
+  assert.deepEqual(planRows.map(byLot), ['DM', 'HW', 'DM', 'DM'])
+  assert.equal(lotEventChooser()(planRows[0]), OWN_EVENT)
+  assert.equal(planEventOf(values.planRules, '7', 'DM'), 'EXT')
+  assert.equal(planEventOf(values.planRules, '8', 'DM'), 'DM')
+})
+
+test('each lot is evaluated with its own event, and mixed choices are sent each with its event', () => {
+  const chosen = { 1: 'DM', 2: OWN_EVENT, 7: 'DM', 14: 'EXT' }
+  const evaluations = evaluateLots(rows, { eventOf: (row) => chosen[row.lotId] ?? OWN_EVENT, events })
+  const byLot = Object.fromEntries(evaluations.map((item) => [item.row.lotId, item]))
+
+  assert.deepEqual([byLot[1].event, byLot[1].status, byLot[1].linked], ['DM', 'AVAILABLE', true])
+  assert.deepEqual([byLot[2].event, byLot[2].status, byLot[2].linked], [OWN_EVENT, 'OWN', false])
+  assert.deepEqual([byLot[7].status, byLot[7].linked], ['TOO_CLOSE', false])
+  // Lot 14 has no EXT event: its PASSED DM does not count for EXT.
+  assert.deepEqual([byLot[14].event, byLot[14].status], ['EXT', 'NOT_SCHEDULED'])
+  assert.deepEqual(linkedEvents(evaluations), { 1: 'DM' })
+  assert.equal(needsCalendar(rows, (row) => chosen[row.lotId] ?? OWN_EVENT), true)
+  assert.equal(needsCalendar(rows, () => OWN_EVENT), false)
+})
+
+test('a Lot set to what it follows anyway keeps nothing of its own', () => {
+  const followed = () => 'DM'
+  assert.deepEqual(setLotEvents({ 1: 'HW', 2: 'EXT' }, ['1', '3'], 'DM', followed), { 2: 'EXT' })
+  assert.deepEqual(setLotEvents({}, ['1', '3'], OWN_EVENT, followed), { 1: OWN_EVENT, 3: OWN_EVENT })
+})
+
+test('lots are listed one by one by Phase / Building, with the event they all share or none', () => {
+  const evaluations = evaluateLots(rows, { eventOf: (row) => (row.lotId === '8' ? OWN_EVENT : 'DM'), events })
+  const groups = groupLotsByRecord(evaluations)
+  assert.deepEqual(groups.map((group) => [group.label, group.items.length, group.event]), [
+    ['Phase 2, Building 1', 3, 'DM'],
+    ['Phase 2, Building 2', 2, ''],
+    ['Phase 2, Building 3', 1, 'DM'],
+  ])
 })

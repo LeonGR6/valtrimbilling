@@ -2,6 +2,7 @@ import { requireSupabase } from '../../../services/api.js'
 import { listAllRows } from '../../../services/pagedQuery.js'
 import { toLotEvent } from '../utils/calendarEvents.js'
 import { toPackageChargeRow } from '../utils/packageCharges.js'
+import { toChangeOrderEvent } from './changeOrderEventRecord.js'
 import {
   changeOrderErrorMessage,
   toChangeOrderDates,
@@ -61,7 +62,7 @@ const LINE_COLUMNS = [
 const HISTORY_COLUMNS = 'id, previous_status, new_status, note, changed_at'
 
 // The Plan is read through the key that ties the rule to a Plan of the same Job.
-const PLAN_RULE_COLUMNS = 'plan_id, scope_of_work, amount, plan:plans!change_order_plan_rules_plan_id_job_id_fkey(code, name)'
+const PLAN_RULE_COLUMNS = 'plan_id, scope_of_work, amount, billing_event, plan:plans!change_order_plan_rules_plan_id_job_id_fkey(code, name)'
 
 function fail(error) {
   throw new Error(changeOrderErrorMessage(error, 'The Extras / Change Orders could not be loaded.'), {
@@ -255,6 +256,20 @@ export async function listPackageCharges(jobId, lotIds) {
 }
 
 /**
+ * Saves the Lots ticked on Create Package (`lots` from `chosenCandidatePayload`; empty = none) for the Package
+ * about to be created: it charges exactly those.
+ */
+export async function stagePackageChangeOrderSelection(jobId, lots) {
+  const client = await requireSupabase()
+  const { error } = await client.rpc('stage_package_change_order_selection', {
+    p_job_id: Number(jobId),
+    p_lots: lots,
+  })
+
+  if (error) throw new Error('The Extras / Change Orders to charge could not be saved, so the Package was not created.', { cause: error })
+}
+
+/**
  * Every approved or cancelled Extra / CO (the ones Draw & Invoice works with), newest first, each with the
  * Phase of the Packages it points at (`sourcePackagePhaseId`, `invoicePackagePhaseId`), to open them.
  */
@@ -313,4 +328,73 @@ export async function listChangeOrderLines(changeOrderId) {
     fail,
   )
   return rows.map(toChangeOrderLine)
+}
+
+// Events of their own ---------------------------------------------------------------------------------
+
+const EVENT_COLUMNS = [
+  'id', 'change_order_id', 'change_order_number', 'po_co_number', 'change_order_status', 'job_id', 'job_code',
+  'community', 'builder_id', 'builder_name', 'scheduled_date', 'note', 'created_at', 'updated_at', 'lots',
+].join(', ')
+
+function failEvents(error) {
+  throw new Error(changeOrderErrorMessage(error, 'The Extra / CO events could not be loaded.'), { cause: error })
+}
+
+/** The events of one Extra / CO, by date. */
+export async function listChangeOrderEvents(changeOrderId) {
+  const client = await requireSupabase()
+  const { data, error } = await client
+    .from('change_order_event_overview')
+    .select(EVENT_COLUMNS)
+    .eq('change_order_id', Number(changeOrderId))
+    .order('scheduled_date', { ascending: true })
+    .order('id', { ascending: true })
+
+  if (error) failEvents(error)
+  return (data ?? []).map(toChangeOrderEvent)
+}
+
+/** Every event of an approved Extra / CO, for the Production Calendar. */
+export async function listCalendarChangeOrderEvents() {
+  const client = await requireSupabase()
+  const rows = await listAllRows(
+    () => client
+      .from('change_order_event_overview')
+      .select(EVENT_COLUMNS)
+      .eq('change_order_status', 'APPROVED')
+      .order('scheduled_date', { ascending: true })
+      .order('id', { ascending: true }),
+    failEvents,
+  )
+  return rows.map(toChangeOrderEvent)
+}
+
+function failEventWrite(error, fallback) {
+  if (error?.code === '42501') {
+    throw new Error('Only an Admin, Project Management or Scheduling can schedule Extra / CO events.', { cause: error })
+  }
+  throw new Error(changeOrderErrorMessage(error, fallback), { cause: error })
+}
+
+/** Creates an event of its own; returns its id. */
+export async function createChangeOrderEvent(payload) {
+  const client = await requireSupabase()
+  const { data, error } = await client.rpc('create_change_order_event', payload)
+  if (error) failEventWrite(error, 'The event could not be created.')
+  return data
+}
+
+/** Changes the date and the note of an event. */
+export async function updateChangeOrderEvent(payload) {
+  const client = await requireSupabase()
+  const { error } = await client.rpc('update_change_order_event', payload)
+  if (error) failEventWrite(error, 'The event could not be changed.')
+}
+
+/** Removes an event: its Lots need one again. */
+export async function deleteChangeOrderEvent(eventId) {
+  const client = await requireSupabase()
+  const { error } = await client.rpc('delete_change_order_event', { p_event_id: Number(eventId) })
+  if (error) failEventWrite(error, 'The event could not be removed.')
 }

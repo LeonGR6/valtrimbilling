@@ -56,7 +56,9 @@ import { priceChangeIssue, priceChangeRows, priceChangeTotals } from '../../util
 import { usePendingPriceDifferences } from '../../hooks/usePendingPriceDifferences.js'
 import JobNotesPanel from './JobNotesPanel.jsx'
 import PackageChargesPreview from '../../../change-orders/components/PackageChargesPreview.jsx'
-import { packageLotIds } from '../../../change-orders/utils/packageCharges.js'
+import { stagePackageChangeOrderSelection } from '../../../change-orders/services/changeOrderRepository.js'
+import { usePackageCharges } from '../../../change-orders/hooks/useChangeOrderData.js'
+import { chosenCandidatePayload, packageLotIds } from '../../../change-orders/utils/packageCharges.js'
 import PackageSplitNotice from './PackageSplitNotice.jsx'
 import {
   buildDrawWorksheet,
@@ -172,6 +174,8 @@ export default function CreateDrawDialog({
   const [ownOptionKeys, setOwnOptionKeys] = useState([])
   // The pending price differences of earlier Packages that this one collects. None until chosen.
   const [priceChangeIds, setPriceChangeIds] = useState([])
+  // The Extra / CO Lots the person ticked or unticked by hand (lot id -> charged); the rest follow the suggestion.
+  const [chargeDecisions, setChargeDecisions] = useState(() => new Map())
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState(null)
   const [notes, setNotes] = useState('')
@@ -723,8 +727,17 @@ export default function CreateDrawDialog({
     priceDifferences: chosenPriceChanges,
   })
   const split = createdPackages.length > 1 ? { packages: createdPackages } : null
-  // The Lots these Packages bill, to show what an approved Specific Plan Types Extra / CO charges for them.
-  const chargedLotIds = packageLotIds(createdPackages)
+  // The Lots these Packages bill that a Plan with an approved Specific Plan Types Extra / CO charges; all
+  // charged unless the person unticks them.
+  const chargeCandidates = usePackageCharges(job?.id, packageLotIds(createdPackages))
+  const chosenChargeIds = new Set(chargeCandidates.rows
+    .filter((row) => chargeDecisions.get(row.lotId) !== false)
+    .map((row) => row.lotId))
+  const changeCharges = (next) => setChargeDecisions((current) => {
+    const decisions = new Map(current)
+    for (const row of chargeCandidates.rows) decisions.set(row.lotId, next.has(row.lotId))
+    return decisions
+  })
   const optionRowOf = new Map(summary.availableOptionRows.map((option) => [
     optionBillingIdentity(option.lotId, option.optionId, option.unitNo),
     option,
@@ -822,6 +835,13 @@ export default function CreateDrawDialog({
     setSubmitting(true)
     setSubmitError(null)
     try {
+      // The Extra / CO Lots ticked, saved for the Package that is about to exist.
+      if (chargeCandidates.rows.length > 0) {
+        await stagePackageChangeOrderSelection(
+          job.id,
+          chosenCandidatePayload(chargeCandidates.rows, chosenChargeIds, asOfDate),
+        )
+      }
       if (createdPackages.length === 1 && createdPackages[0].kind === 'DRAW') {
         await onCreate(createdPackages[0].input)
       } else {
@@ -1465,7 +1485,14 @@ export default function CreateDrawDialog({
             </Card>
           )}
 
-          {hasScope && <PackageChargesPreview jobId={job?.id} lotIds={chargedLotIds} />}
+          {hasScope && (
+            <PackageChargesPreview
+              rows={chargeCandidates.rows}
+              error={chargeCandidates.error}
+              chosen={chosenChargeIds}
+              onChange={changeCharges}
+            />
+          )}
 
           {hasScope && (
             <TextField

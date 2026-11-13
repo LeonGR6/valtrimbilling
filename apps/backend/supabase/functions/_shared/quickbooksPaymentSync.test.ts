@@ -1,6 +1,8 @@
 import { assertEquals, assertRejects } from '@std/assert'
 import type { QuickbooksInvoiceDetail } from './quickbooksApi.ts'
 import {
+  APPLY_BATCH_SIZE,
+  type AppliedOutcome,
   type AppliedPaymentState,
   type PaymentSyncDeps,
   syncQuickbooksPayments,
@@ -29,10 +31,23 @@ const paidInvoice: QuickbooksInvoiceDetail = {
   lastUpdatedAt: '2026-10-14T20:00:00Z',
 }
 
-function harness(overrides: Partial<PaymentSyncDeps> = {}) {
+type Harness = Partial<PaymentSyncDeps> & {
+  /** The context of each Package; the harness reads them together, as the real loader does. */
+  loadContext?: (packageId: number) => Promise<SyncContext>
+}
+
+function harness(overrides: Harness = {}) {
+  const { loadContext = () => Promise.resolve(created), ...rest } = overrides
   const applied: AppliedPaymentState[] = []
+  const loads: number[][] = []
+  const saves: number[] = []
   const deps: PaymentSyncDeps = {
-    loadContext: () => Promise.resolve(created),
+    loadContexts: async (packageIds) => {
+      loads.push(packageIds)
+      const contexts = new Map<number, SyncContext>()
+      for (const packageId of packageIds) contexts.set(packageId, await loadContext(packageId))
+      return contexts
+    },
     openSession: () => Promise.resolve({
       environment: 'sandbox',
       realmId: '9341',
@@ -40,14 +55,22 @@ function harness(overrides: Partial<PaymentSyncDeps> = {}) {
       accessToken: 'token',
     }),
     getInvoice: () => Promise.resolve(paidInvoice),
-    apply: (input) => {
-      applied.push(input)
-      return Promise.resolve(input.state === 'PAID' ? 'PAID_CLOSED' : 'AWAITING_PAYMENT')
+    applyAll: (inputs) => {
+      saves.push(inputs.length)
+      const outcomes = new Map<number, AppliedOutcome>()
+      for (const input of inputs) {
+        applied.push(input)
+        outcomes.set(input.packageId, {
+          workflowStatus: input.state === 'PAID' ? 'PAID_CLOSED' : 'AWAITING_PAYMENT',
+          error: null,
+        })
+      }
+      return Promise.resolve(outcomes)
     },
     today: () => '2026-10-14',
-    ...overrides,
+    ...rest,
   }
-  return { deps, applied }
+  return { deps, applied, loads, saves }
 }
 
 Deno.test('a paid invoice is recorded and closes the Package', async () => {
@@ -103,4 +126,65 @@ Deno.test('today is read on the California calendar', () => {
   // 2026-10-14 02:00 UTC is still the evening of the 13th in California.
   assertEquals(todayInCalifornia(new Date('2026-10-14T02:00:00Z')), '2026-10-13')
   assertEquals(todayInCalifornia(new Date('2026-10-14T20:00:00Z')), '2026-10-14')
+})
+
+Deno.test('many Packages are read together and saved in batches, in the order they were given', async () => {
+  const ids = Array.from({ length: APPLY_BATCH_SIZE * 2 + 10 }, (_, index) => index + 1)
+  const { deps, loads, saves } = harness()
+  const results = await syncQuickbooksPayments(deps, ids, 'sandbox')
+
+  assertEquals(loads.length, 1)
+  assertEquals(saves, [APPLY_BATCH_SIZE, APPLY_BATCH_SIZE, 10])
+  assertEquals(results.map((item) => item.packageId), ids)
+  assertEquals(results.every((item) => item.error === null), true)
+})
+
+Deno.test('a Package that does not exist is reported on its own', async () => {
+  const { deps, applied } = harness({
+    loadContexts: (ids) => Promise.resolve(new Map(ids.filter((id) => id !== 9).map((id) => [id, created]))),
+  })
+  const results = await syncQuickbooksPayments(deps, [4, 9], 'sandbox')
+
+  assertEquals(applied.map((item) => item.packageId), [4])
+  assertEquals(results.map((item) => [item.packageId, item.error]), [
+    [4, null],
+    [9, 'The Package does not exist.'],
+  ])
+})
+
+Deno.test('a Package the database refuses is reported on its own and the others are saved', async () => {
+  const { deps } = harness({
+    applyAll: (inputs) => Promise.resolve(new Map(inputs.map((input) => [
+      input.packageId,
+      input.packageId === 5
+        ? { workflowStatus: null, error: 'Unknown QuickBooks payment state' }
+        : { workflowStatus: 'AWAITING_PAYMENT', error: null },
+    ]))),
+  })
+  const results = await syncQuickbooksPayments(deps, [4, 5, 6], 'sandbox')
+
+  assertEquals(results.map((item) => [item.packageId, item.error]), [
+    [4, null],
+    [5, 'Unknown QuickBooks payment state'],
+    [6, null],
+  ])
+})
+
+Deno.test('a batch that cannot be saved fails its Packages only, and the next batch is still saved', async () => {
+  let call = 0
+  const { deps } = harness({
+    applyAll: (inputs) => {
+      call += 1
+      if (call === 1) return Promise.reject(new Error('database busy'))
+      return Promise.resolve(new Map(inputs.map((input) => [
+        input.packageId,
+        { workflowStatus: 'AWAITING_PAYMENT', error: null },
+      ])))
+    },
+  })
+  const ids = Array.from({ length: APPLY_BATCH_SIZE + 2 }, (_, index) => index + 1)
+  const results = await syncQuickbooksPayments(deps, ids, 'sandbox')
+
+  assertEquals(results.slice(0, APPLY_BATCH_SIZE).every((item) => item.error === 'database busy'), true)
+  assertEquals(results.slice(APPLY_BATCH_SIZE).every((item) => item.error === null), true)
 })

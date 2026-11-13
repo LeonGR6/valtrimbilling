@@ -21,9 +21,19 @@ import { useBuilders } from '../../builders/context/useBuilders.js'
 import { usePeople } from '../../people/context/usePeople.js'
 import { useBuilderContacts } from '../../builder-contacts/context/useBuilderContacts.js'
 import {
+  activityTypeOptions,
+  calendarTypeOptions,
   createDraftFromProductionEvent,
   createEmptyProductionDraft,
 } from '../data/calendarEvents.js'
+import { CHANGE_ORDERS_ENABLED } from '../../../config/appConfig.js'
+import { useCalendarChangeOrderEvents } from '../../change-orders/hooks/useChangeOrderData.js'
+import {
+  calendarEventId,
+  parseCalendarEventParam,
+  toCalendarEvent,
+} from '../../change-orders/services/changeOrderEventRecord.js'
+import ChangeOrderEventPanel from './ChangeOrderEventPanel.jsx'
 import { useProductionActivities } from '../context/useProductionActivities.js'
 import { getBuilderDateConfiguration } from '../../builders/data/builders.js'
 import { useLoadingPhase } from '../hooks/useLoadingPhase.js'
@@ -80,7 +90,12 @@ import './CalendarScheduler.css'
 const CALENDAR_MODES = ['PRODUCTION']
 const CALENDAR_TABS = ['SCHEDULE', 'BUILDER_SETTINGS', 'FOLLOW_UPS', 'DM_REMINDERS', 'UNSCHEDULED']
 const CALENDAR_VIEWS = ['dayGridMonth', 'dayGridWeek', 'listWeek', 'multiMonthYear']
-const ACTIVITY_TYPES = ['EXT', 'SHUTTER', 'DM', 'HW']
+// The events of their own of an approved Extra / CO show with the Production ones (in green).
+const ACTIVITY_TYPES = CHANGE_ORDERS_ENABLED
+  ? ['EXT', 'SHUTTER', 'DM', 'HW', 'CHANGE_ORDER']
+  : ['EXT', 'SHUTTER', 'DM', 'HW']
+const TYPE_OPTIONS = CHANGE_ORDERS_ENABLED ? calendarTypeOptions : activityTypeOptions
+const CO_EVENT_PREFIX = calendarEventId('')
 
 const initialCalendarTitle = new Intl.DateTimeFormat('en-US', {
   month: 'long',
@@ -120,6 +135,23 @@ export default function CalendarScheduler() {
     cancelProductionActivity,
   } = useProductionActivities()
   const phaseCoverage = usePhaseCalendarCoverage()
+  const {
+    events: changeOrderEvents,
+    error: changeOrderEventsError,
+    refresh: refreshChangeOrderEvents,
+  } = useCalendarChangeOrderEvents(CHANGE_ORDERS_ENABLED)
+  const changeOrderCalendarEvents = useMemo(
+    () => changeOrderEvents.map(toCalendarEvent),
+    [changeOrderEvents],
+  )
+  // What the filters, the search and the grid work on: the Production events and the Extra / CO ones.
+  const allEvents = useMemo(
+    () => (changeOrderCalendarEvents.length > 0 ? [...events, ...changeOrderCalendarEvents] : events),
+    [events, changeOrderCalendarEvents],
+  )
+  // The Extra / CO event open in the drawer (its id on the Calendar), and a date to go to once the grid is there.
+  const [selectedChangeOrderEventId, setSelectedChangeOrderEventId] = useState(null)
+  const [pendingDate, setPendingDate] = useState(null)
   // An event is drawn from its Job's Phase and Lots, so none shows until both are in. Until then
   // the Calendar shows stand-ins where the events will be, instead of a bar that is easy to miss.
   const firstLoad = (productionLoading || jobsLoading || !productionLoaded)
@@ -223,23 +255,23 @@ export default function CalendarScheduler() {
   const [storedCommunity, setStoredCommunity] = useState('ALL')
   const [storedJobId, setStoredJobId] = useState('ALL')
   const scope = useMemo(
-    () => resolveCalendarScope(events, {
+    () => resolveCalendarScope(allEvents, {
       builder: storedBuilder,
       community: storedCommunity,
       jobId: storedJobId,
     }),
-    [events, storedBuilder, storedCommunity, storedJobId],
+    [allEvents, storedBuilder, storedCommunity, storedJobId],
   )
-  const filteredEvents = useMemo(() => filterCalendarEvents(events, {
+  const filteredEvents = useMemo(() => filterCalendarEvents(allEvents, {
     types: visibleTypes,
     builder: scope.builder,
     community: scope.community,
     jobId: scope.jobId,
-  }), [events, scope.builder, scope.community, scope.jobId, visibleTypes])
+  }), [allEvents, scope.builder, scope.community, scope.jobId, visibleTypes])
   // The search looks at every event, not only the ones the filters leave.
   const searchResults = useMemo(
-    () => searchCalendarEvents(events, search),
-    [events, search],
+    () => searchCalendarEvents(allEvents, search),
+    [allEvents, search],
   )
   const changeScope = (field, value) => {
     // Narrowing the Builder or Community clears the choices that depended on it.
@@ -289,6 +321,7 @@ export default function CalendarScheduler() {
   const closeDrawer = () => {
     setDrawerMode(null)
     setSelectedId(null)
+    setSelectedChangeOrderEventId(null)
     setDateMove(null)
     resetFormFeedback()
   }
@@ -360,7 +393,55 @@ export default function CalendarScheduler() {
   }, [requestedTab, requestedSchedule, jobs.length])
   /* eslint-enable react-hooks/set-state-in-effect */
 
+  const openChangeOrderEvent = (eventId) => {
+    setDateMove(null)
+    setSelectedId(null)
+    resetFormFeedback()
+    setSelectedChangeOrderEventId(eventId)
+    setDrawerMode('change-order')
+  }
+
+  // A link from an Extra / CO page: `?coEvent=<id>` goes to its date and opens it, once the events are in.
+  const requestedChangeOrderEvent = parseCalendarEventParam(searchParams.get('coEvent'))
+  /* eslint-disable react-hooks/set-state-in-effect */
+  useEffect(() => {
+    if (!requestedChangeOrderEvent) return
+    const found = changeOrderEvents.find((item) => item.id === requestedChangeOrderEvent)
+    if (!found && !changeOrderEventsError && changeOrderEvents.length === 0) return // Still loading.
+
+    const next = new URLSearchParams(searchParams)
+    next.delete('coEvent')
+    setSearchParams(next, { replace: true })
+    if (!found) {
+      setNotice('That Extra / CO event is no longer on the Calendar.')
+      return
+    }
+    setActiveTab('SCHEDULE')
+    setCalendarMode('PRODUCTION')
+    setSearch('')
+    setVisibleTypes((current) => (current.includes('CHANGE_ORDER') ? current : [...current, 'CHANGE_ORDER']))
+    setPendingDate(found.date)
+    openChangeOrderEvent(calendarEventId(found.id))
+    // The link is consumed once per change of the requested values.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [requestedChangeOrderEvent, changeOrderEvents, changeOrderEventsError])
+  /* eslint-enable react-hooks/set-state-in-effect */
+
+  // Goes to the date once the grid is on screen (the tab may have just changed).
+  useEffect(() => {
+    if (!pendingDate) return
+    const api = calendarRef.current?.getApi()
+    if (!api) return
+    api.gotoDate(pendingDate)
+    // Going to the date is done once; the grid keeps it from here.
+    setPendingDate(null)
+  }, [pendingDate, activeTab, calendarMode])
+
   const openEventOptions = (eventId) => {
+    if (String(eventId).startsWith(CO_EVENT_PREFIX)) {
+      openChangeOrderEvent(eventId)
+      return
+    }
     const calendarEvent = events.find((event) => event.id === eventId)
     if (!calendarEvent) return
 
@@ -685,6 +766,16 @@ export default function CalendarScheduler() {
               {productionError}
             </Alert>
           )}
+          {changeOrderEventsError && (
+            <Alert
+              severity="warning"
+              action={(
+                <Button color="inherit" size="small" onClick={refreshChangeOrderEvents}>Retry</Button>
+              )}
+            >
+              The Extra / CO events could not be loaded. {changeOrderEventsError}
+            </Alert>
+          )}
           {googleCalendarError && (
             <Alert severity="error" onClose={() => setGoogleCalendarError('')}>
               {googleCalendarError}
@@ -693,7 +784,8 @@ export default function CalendarScheduler() {
           <CalendarWorkspace
             calendarRef={calendarRef}
             events={filteredEvents}
-            totalEventCount={events.length}
+            totalEventCount={allEvents.length}
+            typeOptions={TYPE_OPTIONS}
             loadingPhase={loadingPhase}
             revealing={revealing}
             scope={scope}
@@ -738,7 +830,17 @@ export default function CalendarScheduler() {
           },
         }}
       >
-        {drawerMode === 'detail' ? (
+        {drawerMode === 'change-order' ? (
+          <ChangeOrderEventPanel
+            event={changeOrderEvents.find((item) => calendarEventId(item.id) === selectedChangeOrderEventId) ?? null}
+            onClose={closeDrawer}
+            onChanged={async (message, { closed = false } = {}) => {
+              if (closed) closeDrawer()
+              setNotice(message)
+              refreshChangeOrderEvents()
+            }}
+          />
+        ) : drawerMode === 'detail' ? (
           <ActivityDetail
             event={selectedEvent}
             jobs={jobs}

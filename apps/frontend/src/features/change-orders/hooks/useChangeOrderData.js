@@ -7,6 +7,8 @@ import {
   listChangeOrderLines,
   listLotCalendarEvents,
   listBillableChangeOrders,
+  listCalendarChangeOrderEvents,
+  listChangeOrderEvents,
   listPackageCharges,
   listRecentChangeOrders,
 } from '../services/changeOrderRepository.js'
@@ -173,4 +175,24 @@ export function usePackageCharges(jobId, lotIds) {
 
   if (!key) return { rows: NO_CHARGES, loading: false, error: '' }
   return { rows: state.rows, loading: state.key !== key, error: state.key === key ? state.error : '' }
+}
+
+/** The events of their own of one Extra / CO: `{ events, loading, error, refresh }`. */
+export function useChangeOrderEvents(changeOrderId) {
+  const load = useCallback(
+    () => (changeOrderId ? listChangeOrderEvents(changeOrderId) : Promise.resolve([])),
+    [changeOrderId],
+  )
+  const { data, ...rest } = useLoaded(load)
+  return { events: data ?? [], ...rest }
+}
+
+/** Every event of an approved Extra / CO, for the Production Calendar; nothing is read when `enabled` is false. */
+export function useCalendarChangeOrderEvents(enabled = true) {
+  const load = useCallback(
+    () => (enabled ? listCalendarChangeOrderEvents() : Promise.resolve([])),
+    [enabled],
+  )
+  const { data, ...rest } = useLoaded(load)
+  return { events: data ?? [], ...rest }
 }

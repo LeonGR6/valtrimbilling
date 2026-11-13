@@ -35,8 +35,12 @@ function ResultRow({ event, selected, onOpen }) {
         <span>
           {[
             props.builder,
-            [props.phase, props.building].filter(Boolean).join(' · '),
-            getLotsLabel(props.lotStart, props.lotEnd, props.lotNumbers),
+            ...(props.activityType === 'CHANGE_ORDER'
+              ? [props.changeOrderNumber, props.lotsText]
+              : [
+                [props.phase, props.building].filter(Boolean).join(' · '),
+                getLotsLabel(props.lotStart, props.lotEnd, props.lotNumbers),
+              ]),
             extra,
           ].filter(Boolean).join('  |  ')}
         </span>

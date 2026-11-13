@@ -146,6 +146,45 @@ export function addPlaceLine(places) {
   return [...places, { id, location: '', scope: '', amount: '' }]
 }
 
+/** The most lines one "add several" can make. */
+export const MAX_BULK_PLACE_LINES = 100
+
+/** The lines without a Lot plus `count` new empty ones (1 to MAX_BULK_PLACE_LINES), ids above all the others. */
+export function addPlaceLines(places, count) {
+  const total = Math.min(MAX_BULK_PLACE_LINES, Math.max(0, Math.trunc(Number(count) || 0)))
+  let id = places.reduce((highest, place) => Math.max(highest, place.id), 0)
+  return [...places, ...Array.from({ length: total }, () => {
+    id += 1
+    return { id, location: '', scope: '', amount: '' }
+  })]
+}
+
+/**
+ * The lines without a Lot plus one new empty line for each of `lotNumbers` ("Lot 12"): Lots that are not in a
+ * Sequence Sheet yet. A Lot that already has its line is skipped (`skipped`).
+ */
+export function addPlaceLinesForLots(places, lotNumbers) {
+  const taken = new Set(places.map((place) => place.location.trim().toUpperCase()))
+  const fresh = []
+  const skipped = []
+  for (const lot of lotNumbers) {
+    const location = `Lot ${lot}`
+    if (taken.has(location.toUpperCase())) skipped.push(lot)
+    else {
+      taken.add(location.toUpperCase())
+      fresh.push(location)
+    }
+  }
+  const withLines = addPlaceLines(places, Math.min(fresh.length, MAX_BULK_PLACE_LINES))
+  const added = withLines.slice(places.length).map((place, index) => ({ ...place, location: fresh[index] }))
+  return {
+    places: [...places, ...added],
+    added: added.length,
+    skipped,
+    tooMany: fresh.length > MAX_BULK_PLACE_LINES,
+  }
+}
+
 /** The lines without a Lot with `changes` ({ location, scope, amount }) on the one with `id`. */
 export function updatePlaceLine(places, id, changes) {
   return places.map((place) => (place.id === id ? { ...place, ...changes } : place))

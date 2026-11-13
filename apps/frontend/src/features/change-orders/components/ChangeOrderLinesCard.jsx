@@ -140,12 +140,6 @@ export default function ChangeOrderLinesCard({ values, onChange }) {
 
   return (
     <Box>
-      <Typography variant="body2" color="text.secondary" sx={{ mb: 2, maxWidth: 720 }}>
-        {byPlan
-          ? 'Every lot is a line of this order: what you write for a Plan goes to all its lots, and a row can be changed to give that lot something different. It is charged as its own order and does not change the prices the Job already has.'
-          : 'Every lot is a line of this order: what you write here goes to all of them, and a row can be changed to give that lot something different. It is charged as its own order and does not change the prices the Job already has.'}
-      </Typography>
-
       {byPlan ? (
         <ChangeOrderPlanRules
           plans={plans}
@@ -161,6 +155,9 @@ export default function ChangeOrderLinesCard({ values, onChange }) {
             gridTemplateColumns: { xs: 'minmax(0, 1fr)', md: 'minmax(0, 1fr) 200px' },
             alignItems: 'start',
             mb: 2.5,
+            p: 2,
+            borderRadius: 1.5,
+            bgcolor: 'action.hover',
           }}
         >
           <Field label="Scope of Work (every lot)">

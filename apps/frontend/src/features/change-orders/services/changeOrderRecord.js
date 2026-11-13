@@ -108,17 +108,20 @@ export function toLinesPayload({ lines, places, links = {} }) {
 }
 
 /**
- * The Scope and Amount of each Plan chosen, when the Extra / CO covers Specific Plan Types; null otherwise
- * (the database only takes them with that coverage, and needs one for each Plan chosen).
+ * The Scope, Amount and Calendar event of each Plan chosen, when the Extra / CO covers Specific Plan Types;
+ * null otherwise (the database only takes them with that coverage, and needs one for each Plan chosen).
+ * The event is the Plan's own or the one for every Lot; null when it is "Own CO event".
  */
 export function toPlanRulesPayload(values) {
   if (values.coverageMode !== 'plans') return null
   return [...values.planIds].map((planId) => {
     const rule = values.planRules?.[planId] ?? {}
+    const event = rule.event ?? values.chargeEvent
     return {
       plan_id: Number(planId),
       scope_of_work: String(rule.scope ?? '').trim(),
       amount: parseAmount(rule.amount ?? ''),
+      billing_event: ['EXT', 'DM', 'HW'].includes(event) ? event : null,
     }
   })
 }
@@ -263,7 +266,7 @@ export function toChangeOrderFormValues(order, { job = null } = {}) {
       const saved = (order.planRules ?? []).find((rule) => String(rule.planId) === String(planId))
       const ofPlan = lotLines.filter((line) => planOfLot.get(String(line.lotId)) === String(planId))
       planRules[String(planId)] = saved
-        ? { scope: saved.scope, amount: amountText(saved.amount) }
+        ? { scope: saved.scope, amount: amountText(saved.amount), event: saved.event ?? OWN_EVENT }
         : {
           scope: mostCommon(ofPlan.map((line) => line.scope)),
           amount: mostCommon(ofPlan.map((line) => amountText(line.amount))),
@@ -290,6 +293,16 @@ export function toChangeOrderFormValues(order, { job = null } = {}) {
     }
   }
   const chargeEvent = mostCommon(lotLines.map((line) => line.billingEvent).filter(Boolean)) || OWN_EVENT
+  // A Lot tied to another event than the one it follows keeps it as its own. A Lot saved without a tie
+  // follows what it did: its event may simply have been too close, which the Calendar will show again.
+  const eventByLot = {}
+  for (const line of lotLines) {
+    if (!line.billingEvent) continue
+    const followed = byPlan
+      ? planRules[planOfLot.get(String(line.lotId))]?.event ?? chargeEvent
+      : chargeEvent
+    if (line.billingEvent !== followed) eventByLot[String(line.lotId)] = line.billingEvent
+  }
 
   return {
     ...emptyChangeOrder,
@@ -317,6 +330,7 @@ export function toChangeOrderFormValues(order, { job = null } = {}) {
     recordIds: coverage.recordIds,
     planIds: coverage.planIds,
     chargeEvent,
+    eventByLot,
     savedLinks,
   }
 }
@@ -459,6 +473,8 @@ export function toChangeOrderPlanRule(row) {
     planName: row.plan?.name ?? '',
     scope: row.scope_of_work,
     amount: number(row.amount),
+    // The Calendar event the Lots of the Plan are charged with; null = an event of their own.
+    event: row.billing_event ?? null,
   }
 }
 

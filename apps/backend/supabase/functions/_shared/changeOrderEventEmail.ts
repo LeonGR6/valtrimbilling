@@ -1,19 +1,28 @@
 // The email that tells a Job's Scheduling contact which lots of an Extra / Change Order will be
 // charged with an event that is already on the Calendar (EXT, DM or HW), so the extra work is done
-// along with it. Pure: the Edge Function loads the data with the signed-in user's permissions and
+// along with it, and which lots have an event of their own (CO) on the Calendar, with its date. Pure: the Edge Function loads the data with the signed-in user's permissions and
 // passes it in, so nothing here touches the network.
 //
 // The message is HTML with a plain-text twin, has no attachment, no link back to the application and
 // no prices (Scheduling only needs to know where the work is and what it is). Sending it goes through
 // the same Resend helper as the other emails (sendSequenceSheetWithResend).
 
-export type CalendarEvent = "EXT" | "DM" | "HW";
+// CO is an event of its own of the Extra / CO; the others are Production events it rides on.
+export type CalendarEvent = "EXT" | "DM" | "HW" | "CO";
 
 // The order the events are listed in, and what each one is called in the Calendar.
 export const EVENT_NAMES: Record<CalendarEvent, string> = {
   EXT: "Exterior frames",
   DM: "Doors and Material",
   HW: "Hardware",
+  CO: "Extra / CO event",
+};
+// How the subject names each one: "the DM and own CO events".
+const EVENT_SHORT: Record<CalendarEvent, string> = {
+  EXT: "EXT",
+  DM: "DM",
+  HW: "HW",
+  CO: "own CO",
 };
 const EVENT_ORDER = Object.keys(EVENT_NAMES) as CalendarEvent[];
 
@@ -42,8 +51,11 @@ export interface ChangeOrderEmailGroup {
   eventName: string;
   // "Phase 2 · Building 1"; empty when the Phase has neither.
   place: string;
-  // "YYYY-MM-DD" as the Calendar had it when the Extra / CO was saved; null when it was not recorded.
+  // "YYYY-MM-DD": for EXT, DM and HW as the Calendar had it when the Extra / CO was saved (null when it
+  // was not recorded); for CO the date of the event of its own.
   eventDate: string | null;
+  // The note of an event of its own; empty otherwise.
+  note: string;
   lots: ChangeOrderEmailLot[];
 }
 
@@ -93,6 +105,9 @@ export interface ChangeOrderEmailLine {
   scopeOfWork: string;
   event: string;
   eventDate: string | null;
+  // For CO: which event of its own (lots of different events are never grouped together) and its note.
+  eventKey?: string;
+  note?: string;
 }
 
 export interface ChangeOrderEmailSource {
@@ -143,12 +158,14 @@ export function buildChangeOrderEmailSnapshot(
     const place = [phaseLabel(line.phaseCode), buildingLabel(line.building)]
       .filter(Boolean)
       .join(" · ");
-    const key = [line.event, place, line.eventDate ?? ""].join("|");
+    const key = [line.event, place, line.eventDate ?? "", line.eventKey ?? ""]
+      .join("|");
     const group = groups.get(key) ?? {
       event: line.event,
       eventName: EVENT_NAMES[line.event],
       place,
       eventDate: line.eventDate,
+      note: (line.note ?? "").trim(),
       lots: [],
     };
     group.lots.push({
@@ -217,6 +234,12 @@ function eventsOf(snapshot: ChangeOrderEmailSnapshot) {
   );
 }
 
+function lotsWith(snapshot: ChangeOrderEmailSnapshot, own: boolean) {
+  return snapshot.groups
+    .filter((group) => (group.event === "CO") === own)
+    .reduce((total, group) => total + group.lots.length, 0);
+}
+
 /** "EXT", "EXT and DM", "EXT, DM and HW". */
 function joinEvents(events: string[]) {
   return events.length > 1
@@ -242,7 +265,9 @@ export function changeOrderEmailSubject(snapshot: ChangeOrderEmailSnapshot) {
   const events = eventsOf(snapshot);
   const charged = events.length === 0
     ? "charged with a Calendar event"
-    : `charged with the ${joinEvents(events)} ${
+    : events.length === 1 && events[0] === "CO"
+    ? "own CO event"
+    : `charged with the ${joinEvents(events.map((event) => EVENT_SHORT[event]))} ${
       events.length === 1 ? "event" : "events"
     }`;
   return `Extra / Change Order ${snapshot.number} · Job #${snapshot.jobCode} · ${charged}`;
@@ -276,16 +301,38 @@ export function buildChangeOrderEmailDraft(
 }
 
 function intro(snapshot: ChangeOrderEmailSnapshot) {
-  const lots = lotCount(snapshot);
-  const events = eventsOf(snapshot);
+  const tied = lotsWith(snapshot, false);
+  const own = lotsWith(snapshot, true);
+  const events = eventsOf(snapshot).filter((event) => event !== "CO");
   const where = events.length === 1
     ? `${EVENT_NAMES[events[0]]} (${events[0]}) event`
     : `${joinEvents(events)} events`;
-  return `${
-    plural(lots, "lot has", "lots have")
-  } extra work that will be done and charged with ${
-    lots === 1 ? "its" : "their"
-  } ${where} already on the Calendar. Please make sure the work is included.`;
+  const parts = [];
+  if (tied > 0) {
+    parts.push(
+      `${plural(tied, "lot has", "lots have")} extra work that will be done and charged with ${
+        tied === 1 ? "its" : "their"
+      } ${where} already on the Calendar.`,
+    );
+  }
+  if (own > 0) {
+    parts.push(
+      `${plural(own, "lot has", "lots have")} an Extra / CO event of ${
+        own === 1 ? "its" : "their"
+      } own on the Calendar for this extra work, on the date below.`,
+    );
+  }
+  parts.push("Please make sure the work is included.");
+  return parts.join(" ");
+}
+
+/** The heading of a group: "Phase 2 · Building 1 — DM · Doors and Material — Fri, Nov 20, 2026". */
+function groupHeading(group: ChangeOrderEmailGroup) {
+  return [
+    group.place,
+    `${group.event} · ${group.eventName}`,
+    formatEmailDate(group.eventDate),
+  ].filter(Boolean).join(" — ");
 }
 
 const CELL =
@@ -296,10 +343,12 @@ const VALUE =
   "padding:0 0 8px;color:#1e293b;font-size:14px;font-weight:700;vertical-align:top;";
 
 function groupHtml(group: ChangeOrderEmailGroup) {
-  const date = formatEmailDate(group.eventDate);
-  const heading = [group.place, `${group.event} · ${group.eventName}`, date]
-    .filter(Boolean)
-    .join(" — ");
+  const heading = groupHeading(group);
+  const note = group.note
+    ? `<br><span style="font-weight:400;color:#475569;">Note: ${
+      escapeHtml(group.note)
+    }</span>`
+    : "";
   const rows = group.lots.map((lot, index) => {
     const last = index === group.lots.length - 1;
     const border = last ? "border-bottom:1px solid #e2e8f0;" : "";
@@ -318,7 +367,7 @@ function groupHtml(group: ChangeOrderEmailGroup) {
     <tr style="background-color:#f1f5f9;">
       <td colspan="3" style="padding:11px 14px;border-bottom:1px solid #cbd5e1;color:#334155;font-size:13px;font-weight:700;">${
     escapeHtml(heading)
-  }</td>
+  }${note}</td>
     </tr>${rows}`;
 }
 
@@ -331,11 +380,8 @@ export function renderChangeOrderEmail(
   const title = changeOrderEmailTitle(snapshot);
 
   const textGroups = snapshot.groups.flatMap((group) => [
-    [
-      group.place,
-      `${group.event} · ${group.eventName}`,
-      formatEmailDate(group.eventDate),
-    ].filter(Boolean).join(" — "),
+    groupHeading(group),
+    ...(group.note ? [`Note: ${group.note}`] : []),
     ...group.lots.map((lot) =>
       [`Lot ${lot.lotNumber}`, `Plan ${lot.planCode || "unavailable"}`, lot.scopeOfWork]
         .join("\t")
@@ -425,7 +471,7 @@ export function renderChangeOrderEmail(
           <td style="padding:0 26px 22px;background-color:#ffffff;border:1px solid #e2e8f0;border-top:0;border-radius:0 0 10px 10px;">
             <p style="margin:0;color:#64748b;font-size:12px;">Sent by ${
     escapeHtml(snapshot.sentBy)
-  } on ${escapeHtml(snapshot.sentOn)}. Event dates are the ones on the Calendar when the Extra / Change Order was saved.</p>
+  } on ${escapeHtml(snapshot.sentOn)}. EXT, DM and HW dates are the ones on the Calendar when the Extra / Change Order was saved.</p>
           </td>
         </tr>
       </table>

@@ -45,11 +45,12 @@ const changeOrdersRoute = {
 
 const changeOrdersContextualRoutes = [
   { path: '/change-orders/new', element: <NewChangeOrderPage />, allowedRoles: planningPage },
-  // Draw & Invoice opens an Extra / CO from its Change Orders tab to see it and invoice it; it changes nothing else.
+  // Draw & Invoice opens an Extra / CO from its Change Orders tab to see it and invoice it; Scheduling opens
+  // it from a CO event of the Calendar to schedule its Lots. Neither changes anything else of it.
   {
     path: '/change-orders/:changeOrderId',
     element: <ChangeOrderDetailPage />,
-    allowedRoles: [...new Set([...planningPage, ...drawInvoicePage])],
+    allowedRoles: [...new Set([...planningPage, ...drawInvoicePage, ...schedulingPage])],
   },
   { path: '/change-orders/:changeOrderId/edit', element: <EditChangeOrderPage />, allowedRoles: planningPage },
 ]

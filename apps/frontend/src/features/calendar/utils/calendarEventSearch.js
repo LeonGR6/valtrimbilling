@@ -68,6 +68,11 @@ function searchableText(event) {
     props.foreman,
     props.superintendent,
     props.notes,
+    // An Extra / CO event.
+    props.changeOrderNumber,
+    props.poCoNumber,
+    props.lotsText,
+    props.note,
     String(event.start ?? '').slice(0, 10),
     date && longDate.format(date),
     date && shortDate.format(date),

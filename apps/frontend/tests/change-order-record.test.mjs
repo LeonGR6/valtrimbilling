@@ -989,12 +989,12 @@ test('a value typed equal to its Plan is not a value of its own, Lot by Lot', ()
 test('the Scope and Amount by Plan are sent for each Plan chosen, trimmed; any other coverage sends none', () => {
   const values = byPlan({ planRules: { 1: { scope: ' Attic ladder ', amount: '120.5' }, 2: { scope: 'Door', amount: '-3' } } })
   assert.deepEqual(toPlanRulesPayload(values), [
-    { plan_id: 1, scope_of_work: 'Attic ladder', amount: 120.5 },
-    { plan_id: 2, scope_of_work: 'Door', amount: -3 },
+    { plan_id: 1, scope_of_work: 'Attic ladder', amount: 120.5, billing_event: null },
+    { plan_id: 2, scope_of_work: 'Door', amount: -3, billing_event: null },
   ])
   // A Plan that was chosen but not written yet goes empty, for the database to refuse it in words.
   assert.deepEqual(toPlanRulesPayload(byPlan({ planIds: new Set(['3']) })), [
-    { plan_id: 3, scope_of_work: '', amount: null },
+    { plan_id: 3, scope_of_work: '', amount: null, billing_event: null },
   ])
   assert.equal(toPlanRulesPayload(filled()), null)
   assert.equal(toUpdateChangeOrderRpc('12', values, { lines: [], places: [] }).p_plan_rules.length, 2)
@@ -1019,22 +1019,26 @@ test('a saved Specific Plan Types Extra / CO opens with its Scope and Amount by 
   const values = toChangeOrderFormValues(savedOrder({
     coverage: { mode: 'plans', lotIds: [], recordIds: [], planIds: ['1', '2'] },
     planRules: [
-      { planId: 1, plan: 'A', scope: 'Attic ladder', amount: 120 },
-      { planId: 2, plan: 'B', scope: 'Wider door', amount: 300 },
+      { planId: 1, plan: 'A', scope: 'Attic ladder', amount: 120, event: 'DM' },
+      { planId: 2, plan: 'B', scope: 'Wider door', amount: 300, event: null },
     ],
     lines: [
-      { isPlace: false, lotId: 101, scope: 'Attic ladder', amount: 120 },
-      { isPlace: false, lotId: 102, scope: 'Wider door', amount: 300 },
+      { isPlace: false, lotId: 101, scope: 'Attic ladder', amount: 120, billingEvent: 'DM', billingEventDate: '2026-12-01' },
+      { isPlace: false, lotId: 102, scope: 'Wider door', amount: 300, billingEvent: 'HW', billingEventDate: '2026-12-09' },
       { isPlace: false, lotId: 103, scope: 'Attic ladder', amount: 99 },
     ],
   }), { job: planJob })
 
   assert.equal(values.coverageMode, 'plans')
+  // Each Plan keeps its event; a Plan saved without one is an event of its own.
   assert.deepEqual(values.planRules, {
-    1: { scope: 'Attic ladder', amount: '120.00' },
-    2: { scope: 'Wider door', amount: '300.00' },
+    1: { scope: 'Attic ladder', amount: '120.00', event: 'DM' },
+    2: { scope: 'Wider door', amount: '300.00', event: 'NONE' },
   })
   assert.deepEqual(values.lineOverrides, { 103: { amount: '99.00' } })
+  // Lot 102 was tied to HW while its Plan is "own": that is its own choice. Lot 101 follows its Plan, and
+  // Lot 103 (saved without a tie) follows it too: its DM may just have been too close.
+  assert.deepEqual(values.eventByLot, { 102: 'HW' })
 })
 
 test('one saved before the Scope and Amount by Plan existed takes, for each Plan, what most of its Lots share', () => {
@@ -1052,13 +1056,15 @@ test('one saved before the Scope and Amount by Plan existed takes, for each Plan
     2: { scope: 'Wider door', amount: '300.00' },
   })
   assert.deepEqual(values.lineOverrides, {})
+  assert.deepEqual(values.eventByLot, {})
 })
 
 test('a rule and a row made from a Package are read', () => {
   assert.deepEqual(
     toChangeOrderPlanRule({ plan_id: 2, scope_of_work: 'Wider door', amount: '300.00', plan: { code: 'B', name: 'Bay' } }),
-    { planId: 2, plan: 'B', planName: 'Bay', scope: 'Wider door', amount: 300 },
+    { planId: 2, plan: 'B', planName: 'Bay', scope: 'Wider door', amount: 300, event: null },
   )
+  assert.equal(toChangeOrderPlanRule({ plan_id: 2, scope_of_work: 'x', amount: 1, billing_event: 'EXT' }).event, 'EXT')
   const row = toChangeOrderSummary(overviewRow({
     source_change_order_id: 2,
     source_change_order_number: 'CO-0002',
@@ -1078,4 +1084,31 @@ test('a rule and a row made from a Package are read', () => {
   })
   assert.deepEqual(detail.planRules.map((rule) => rule.plan), ['B2', 'B10'])
   assert.deepEqual(detail.packageOrders, [])
+})
+
+test('each Plan sends its own event, or the one for every Lot; "Own CO event" goes empty', () => {
+  const values = byPlan({
+    chargeEvent: 'DM',
+    planRules: { 1: { scope: 'a', amount: '1', event: 'EXT' }, 2: { scope: 'b', amount: '2' } },
+  })
+  assert.deepEqual(toPlanRulesPayload(values).map((rule) => rule.billing_event), ['EXT', 'DM'])
+  const own = byPlan({ chargeEvent: 'DM', planRules: { 1: { scope: 'a', amount: '1', event: 'NONE' }, 2: { scope: 'b', amount: '2' } } })
+  assert.deepEqual(toPlanRulesPayload(own).map((rule) => rule.billing_event), [null, 'DM'])
+})
+
+import { addPlaceLines, addPlaceLinesForLots } from '../src/features/change-orders/utils/pricing.js'
+
+test('several empty lines can be added at once, each with its own id', () => {
+  const next = addPlaceLines([{ id: 4, location: 'Sales Office', scope: '', amount: '' }], 3)
+  assert.deepEqual(next.map((place) => place.id), [4, 5, 6, 7])
+  assert.equal(addPlaceLines([], 500).length, 100)
+  assert.equal(addPlaceLines([], 0).length, 0)
+})
+
+test('a range of lots makes a line "Lot N" for each, skipping the ones that already have one', () => {
+  const start = [{ id: 1, location: 'Lot 13', scope: 'x', amount: '5' }]
+  const result = addPlaceLinesForLots(start, ['12', '13', '14'])
+  assert.deepEqual(result.places.map((place) => place.location), ['Lot 13', 'Lot 12', 'Lot 14'])
+  assert.deepEqual(result.skipped, ['13'])
+  assert.equal(result.added, 2)
 })

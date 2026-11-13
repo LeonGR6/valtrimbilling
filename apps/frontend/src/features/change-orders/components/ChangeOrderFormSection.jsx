@@ -10,9 +10,11 @@ import { visuallyHiddenSx } from '../../../components/common/CatalogPage'
  * is still incomplete (`attention`) is marked in red.
  */
 export default function ChangeOrderFormSection({
+  id,
   step,
   title,
   hint,
+  detail,
   done = false,
   attention = false,
   children,
@@ -24,8 +26,9 @@ export default function ChangeOrderFormSection({
     <Paper
       variant="outlined"
       component="section"
+      id={id}
       aria-labelledby={headingId}
-      sx={{ borderRadius: 2 }}
+      sx={{ borderRadius: 2, scrollMarginTop: 16 }}
     >
       <Box
         sx={{
@@ -57,7 +60,7 @@ export default function ChangeOrderFormSection({
         >
           {done ? <CheckRoundedIcon sx={{ fontSize: 18 }} /> : step}
         </Box>
-        <Box sx={{ minWidth: 0 }}>
+        <Box sx={{ minWidth: 0, flex: 1 }}>
           <Typography id={headingId} variant="subtitle1" component="h2" fontWeight={700}>
             {title}
           </Typography>
@@ -67,6 +70,16 @@ export default function ChangeOrderFormSection({
             </Typography>
           )}
         </Box>
+        {detail && (
+          <Typography
+            variant="body2"
+            fontWeight={700}
+            color={done ? 'success.main' : 'text.secondary'}
+            sx={{ flexShrink: 0, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}
+          >
+            {detail}
+          </Typography>
+        )}
         <Typography component="span" sx={visuallyHiddenSx}>
           {done ? 'Complete' : 'Not complete yet'}
         </Typography>

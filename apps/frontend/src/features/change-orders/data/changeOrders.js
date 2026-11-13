@@ -11,10 +11,10 @@ export const allChangeOrderStatuses = [
 ]
 
 export const coverageModes = [
-  { value: 'lots', label: 'Specific Lots' },
-  { value: 'phase', label: 'Entire Phase / Building' },
-  { value: 'job', label: 'Entire Job' },
-  { value: 'plans', label: 'Specific Plan Types' },
+  { value: 'lots', label: 'Specific Lots', description: 'Tick the lots one by one.' },
+  { value: 'phase', label: 'Entire Phase / Building', description: 'Every lot of the phases or buildings you tick.' },
+  { value: 'job', label: 'Entire Job', description: 'Every lot the Job has today.' },
+  { value: 'plans', label: 'Specific Plan Types', description: 'Every lot with the plans you tick, now and later.' },
 ]
 
 // How long the place of a line without a Lot can be (the database accepts the same).
@@ -48,9 +48,12 @@ export const emptyChangeOrder = {
   // Lines that are not on a Lot (Sales Office, restroom): [{ id, location, scope, amount }].
   // They always have a Scope and Amount of their own.
   placeLines: [],
-  // The Calendar event the lots are charged with ('EXT', 'DM', 'HW') or OWN_EVENT, and the ties the
-  // Extra / CO already had when it was opened: { [lotId]: { event, date } }.
+  // The Calendar event the lots are charged with ('EXT', 'DM', 'HW') or OWN_EVENT: `chargeEvent` for every
+  // Lot, `eventByLot` for a Lot that has its own ({ [lotId]: 'DM' }); with Specific Plan Types a Plan can
+  // have its own too (`planRules[planId].event`). `savedLinks` are the ties the Extra / CO already had when
+  // it was opened: { [lotId]: { event, date } }.
   chargeEvent: OWN_EVENT,
+  eventByLot: {},
   savedLinks: {},
   coverageMode: 'lots',
   // Each kind of coverage keeps its own selection while the person switches.

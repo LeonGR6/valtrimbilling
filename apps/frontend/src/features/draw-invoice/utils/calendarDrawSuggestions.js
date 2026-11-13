@@ -357,6 +357,7 @@ export function buildCalendarDrawSuggestion(options) {
     : (suggestion.windowEnd ?? options.asOfDate ?? localDateKey())
   return {
     ...suggestion,
+    latestDate,
     suggestedUtilitySelections: buildUtilityEventSuggestions({
       activities: options.activities,
       job: options.job,

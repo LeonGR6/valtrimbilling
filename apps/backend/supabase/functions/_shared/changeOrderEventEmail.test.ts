@@ -192,3 +192,44 @@ Deno.test("the status is written as the application writes it", () => {
   ));
   assertStringIncludes(text, "Status: Approved");
 });
+
+Deno.test("lots with an event of their own are told with its date and note, after the Calendar events", () => {
+  const snapshot = buildChangeOrderEmailSnapshot(source({
+    lines: [
+      line({ lotNumber: "3", event: "CO", eventDate: "2026-11-26", eventKey: "9", note: " Bring the ladder " }),
+      line({ lotNumber: "1", event: "CO", eventDate: "2026-11-26", eventKey: "9", note: "Bring the ladder" }),
+      // Same day and place but another event: its own group.
+      line({ lotNumber: "5", event: "CO", eventDate: "2026-11-26", eventKey: "10" }),
+      line({ lotNumber: "7", event: "DM" }),
+    ],
+  }));
+
+  assertEquals(
+    snapshot.groups.map((group) => [group.event, group.eventName, group.note, group.lots.map((lot) => lot.lotNumber)]),
+    [
+      ["DM", "Doors and Material", "", ["7"]],
+      ["CO", "Extra / CO event", "Bring the ladder", ["1", "3"]],
+      ["CO", "Extra / CO event", "", ["5"]],
+    ],
+  );
+  assertEquals(
+    changeOrderEmailSubject(snapshot),
+    "Extra / Change Order CO-0005 · Job #1295 · charged with the DM and own CO events",
+  );
+
+  const email = renderChangeOrderEmail(snapshot);
+  assertStringIncludes(email.text, "1 lot has extra work that will be done and charged with its Doors and Material (DM) event");
+  assertStringIncludes(email.text, "3 lots have an Extra / CO event of their own on the Calendar");
+  assertStringIncludes(email.text, "Phase 2 · Building 2 — CO · Extra / CO event — Thu, Nov 26, 2026\nNote: Bring the ladder");
+  assertStringIncludes(email.html, "Note: Bring the ladder");
+});
+
+Deno.test("only events of their own: the subject says so", () => {
+  const snapshot = buildChangeOrderEmailSnapshot(source({
+    lines: [line({ event: "CO", eventDate: "2026-11-26", eventKey: "9" })],
+  }));
+  assertEquals(changeOrderEmailSubject(snapshot), "Extra / Change Order CO-0005 · Job #1295 · own CO event");
+  const email = renderChangeOrderEmail(snapshot);
+  assert(!email.text.includes("charged with its"));
+  assertStringIncludes(email.text, "1 lot has an Extra / CO event of its own on the Calendar");
+});

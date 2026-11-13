@@ -3,8 +3,9 @@
 // only names the Extra / CO; the Job, the lots, their events and the Scheduling contact are all read
 // here, so a tampered request cannot make the email say something the database does not.
 //
-// Only the lines that are charged with an event (EXT, DM or HW) are in the email. Lines with no event
-// need an event of their own in the Extra / CO calendar and are not Scheduling's concern here.
+// The email has the lines that are charged with an event (EXT, DM or HW) and the lines that have an
+// event of their own (CO) on the Calendar, with its date and note. A line that still waits for its own
+// event is not in it.
 //
 // The email carries no prices, so none is read. Kept apart from the Edge Function so it can be tested
 // with a fake client.
@@ -53,7 +54,7 @@ export async function loadChangeOrderEmailSnapshot(
     throw new Error("A cancelled Extra / Change Order cannot be announced.");
   }
 
-  const [job, lines] = await Promise.all([
+  const [job, lines, ownEvents] = await Promise.all([
     caller
       .from("jobs")
       .select("id, code, builder_id, community, scheduling_id, is_active")
@@ -68,15 +69,21 @@ export async function loadChangeOrderEmailSnapshot(
       .eq("change_order_id", changeOrder.id)
       .not("billing_event", "is", null)
       .order("line_number", { ascending: true }),
+    caller
+      .from("change_order_event_overview")
+      .select("id, scheduled_date, note, lots")
+      .eq("change_order_id", changeOrder.id)
+      .order("scheduled_date", { ascending: true }),
   ]);
 
   const jobRow = one(job);
   if (!jobRow) throw new Error("The Job is no longer available.");
 
   const lineRows = many(lines);
-  if (lineRows.length === 0) {
+  const eventRows = many(ownEvents);
+  if (lineRows.length === 0 && eventRows.length === 0) {
     throw new Error(
-      "No lot of this Extra / Change Order is charged with a Calendar event.",
+      "No lot of this Extra / Change Order is charged with a Calendar event or has an event of its own.",
     );
   }
 
@@ -93,17 +100,34 @@ export async function loadChangeOrderEmailSnapshot(
   ]);
 
   const person = one(people);
-  const emailLines: ChangeOrderEmailLine[] = lineRows.map((line) => ({
-    lotNumber: String(line.lot_number ?? ""),
-    planCode: String(line.plan_code ?? ""),
-    phaseCode: String(line.phase_code ?? ""),
-    building: String(line.building ?? ""),
-    scopeOfWork: String(line.scope_of_work ?? ""),
-    event: String(line.billing_event ?? ""),
-    eventDate: line.billing_event_date
-      ? String(line.billing_event_date).slice(0, 10)
-      : null,
-  }));
+  const emailLines: ChangeOrderEmailLine[] = [
+    ...lineRows.map((line) => ({
+      lotNumber: String(line.lot_number ?? ""),
+      planCode: String(line.plan_code ?? ""),
+      phaseCode: String(line.phase_code ?? ""),
+      building: String(line.building ?? ""),
+      scopeOfWork: String(line.scope_of_work ?? ""),
+      event: String(line.billing_event ?? ""),
+      eventDate: line.billing_event_date
+        ? String(line.billing_event_date).slice(0, 10)
+        : null,
+    })),
+    ...eventRows.flatMap((event) =>
+      ((event.lots ?? []) as Row[]).map((lot) => ({
+        lotNumber: String(lot.lot_number ?? ""),
+        planCode: String(lot.plan_code ?? ""),
+        phaseCode: String(lot.phase_code ?? ""),
+        building: String(lot.building ?? ""),
+        scopeOfWork: String(lot.scope_of_work ?? ""),
+        event: "CO",
+        eventDate: event.scheduled_date
+          ? String(event.scheduled_date).slice(0, 10)
+          : null,
+        eventKey: String(event.id),
+        note: String(event.note ?? ""),
+      }))
+    ),
+  ];
 
   return {
     changeOrderId: String(changeOrder.id),

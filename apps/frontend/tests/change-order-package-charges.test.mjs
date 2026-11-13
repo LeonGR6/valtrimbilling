@@ -68,3 +68,51 @@ test('the rows go under the Extra / CO they charge for, with exact totals', () =
   ])
   assert.deepEqual(groupPackageCharges([]), { groups: [], lots: 0, total: 0 })
 })
+
+import {
+  candidateEventDate,
+  chosenCandidatePayload,
+  suggestedCandidateIds,
+  toPackageCandidateRow,
+} from '../src/features/change-orders/utils/packageCharges.js'
+
+const candidate = (lotId, event, ownEventDates = []) => toPackageCandidateRow({
+  source_change_order_id: 1, lot_id: lotId, phase_id: 5, amount: 10, billing_event: event || null,
+  own_event_dates: ownEventDates,
+})
+
+test('a candidate is suggested when the event of its Plan falls up to the last date the suggestion bills', () => {
+  const rows = [candidate(1, 'HW'), candidate(2, 'HW'), candidate(3, 'DM')]
+  const events = [
+    { lotId: '1', type: 'HW', date: '2026-11-20' },
+    { lotId: '2', type: 'HW', date: '2026-12-05' },
+    { lotId: '3', type: 'HW', date: '2026-11-01' }, // another event: not the one of the Plan
+  ]
+  assert.deepEqual([...suggestedCandidateIds(rows, events, '2026-11-30', '2026-11-12')], ['1'])
+})
+
+test('a Plan with an event of its own is suggested by the date of that event, like EXT, DM and HW', () => {
+  const rows = [candidate(4, '', ['2026-11-30']), candidate(5, '', ['2026-12-15'])]
+  assert.deepEqual([...suggestedCandidateIds(rows, [], '2026-11-30', '2026-11-12')], ['4'])
+  assert.deepEqual([...suggestedCandidateIds(rows, [], '2026-12-31', '2026-11-12')], ['4', '5'])
+})
+
+test('without a last date, or without an event, nothing is suggested', () => {
+  const rows = [candidate(1, 'HW'), candidate(2, '')]
+  assert.equal(suggestedCandidateIds(rows, [{ lotId: '1', type: 'HW', date: '2026-11-20' }], '', '2026-11-12').size, 0)
+  assert.equal(suggestedCandidateIds(rows, [], '2026-11-30', '2026-11-12').size, 0)
+})
+
+test('the date of an event of its own is the first one that is not in the past', () => {
+  const row = candidate(7, '', ['2026-11-01', '2026-11-30'])
+  assert.equal(candidateEventDate(row, [], '2026-11-12'), '2026-11-30')
+})
+
+test('the Lots ticked go to the database, a Lot of an event of its own with its date', () => {
+  const rows = [candidate(1, 'HW'), candidate(2, '', ['2026-11-30']), candidate(3, '')]
+  assert.deepEqual(
+    chosenCandidatePayload(rows, new Set(['1', '2', '3']), '2026-11-12'),
+    [{ lot_id: 1 }, { lot_id: 2, event_date: '2026-11-30' }, { lot_id: 3 }],
+  )
+  assert.deepEqual(chosenCandidatePayload(rows, new Set(), '2026-11-12'), [])
+})

@@ -109,22 +109,26 @@ function optionHtml(option: SequenceSheetEmailOption) {
   }</span>`;
 }
 
+function reverseBadgeHtml(reverse: boolean) {
+  return reverse
+    ? '<span style="display:inline-block;padding:4px 9px;border-radius:999px;background-color:#2563eb;color:#ffffff;font-size:12px;font-weight:700;">Yes</span>'
+    : '<span style="display:inline-block;padding:4px 9px;border:1px solid #cbd5e1;border-radius:999px;background-color:#ffffff;color:#475569;font-size:12px;font-weight:700;">No</span>';
+}
+
 function lotRowHtml(lot: SequenceSheetEmailLot, index: number) {
+  const reverse = reverseBadgeHtml(lot.reverse);
   if (lot.isUtilityBuilding) {
     return `
       <tr style="background-color:${index % 2 === 0 ? "#ffffff" : "#f8fafc"};">
         <td style="width:100px;padding:12px 14px;border-bottom:1px solid #e2e8f0;color:#1e293b;font-size:14px;font-weight:700;vertical-align:top;">${escapeHtml(lot.lotNumber)}</td>
         <td style="width:100px;padding:12px 14px;border-bottom:1px solid #e2e8f0;color:#1e293b;font-size:14px;vertical-align:top;">${escapeHtml(lot.planCode || "Plan unavailable")}</td>
-        <td align="center" style="width:82px;padding:12px 14px;border-bottom:1px solid #e2e8f0;color:#64748b;vertical-align:top;">—</td>
+        <td align="center" style="width:82px;padding:12px 14px;border-bottom:1px solid #e2e8f0;vertical-align:top;">${reverse}</td>
         <td style="padding:10px 14px;border-bottom:1px solid #e2e8f0;color:#64748b;font-size:13px;vertical-align:top;">Plan only</td>
       </tr>`;
   }
   const options = lot.options.length > 0
     ? lot.options.map(optionHtml).join("")
     : '<span style="color:#64748b;font-size:13px;">No options selected</span>';
-  const reverse = lot.reverse
-    ? '<span style="display:inline-block;padding:4px 9px;border-radius:999px;background-color:#2563eb;color:#ffffff;font-size:12px;font-weight:700;">Yes</span>'
-    : '<span style="display:inline-block;padding:4px 9px;border:1px solid #cbd5e1;border-radius:999px;background-color:#ffffff;color:#475569;font-size:12px;font-weight:700;">No</span>';
 
   return `
     <tr style="background-color:${index % 2 === 0 ? "#ffffff" : "#f8fafc"};">
@@ -198,7 +202,7 @@ export function renderSequenceSheetEmail(
     return [
         lot.lotNumber,
         planTextWithElevation(lot.planCode || "Plan unavailable", lot.isUtilityBuilding ? "" : lot.elevation),
-        lot.isUtilityBuilding ? "—" : lot.reverse ? "Yes" : "No",
+        lot.reverse ? "Yes" : "No",
         lot.isUtilityBuilding
           ? "Plan only"
           : lot.options.length > 0

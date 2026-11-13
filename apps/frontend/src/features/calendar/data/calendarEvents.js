@@ -29,15 +29,21 @@ export const activityTypeOptions = [
   },
 ]
 
-export const activityTypeMap = Object.fromEntries(
-  activityTypeOptions.map((type) => [type.value, type]),
-)
-
 export const changeOrderType = {
   value: 'CHANGE_ORDER',
-  label: 'Extra / Change Order',
+  label: 'Extra / CO',
+  shortLabel: 'CO',
+  description: 'Extra / Change Order event',
   tone: 'change-order',
 }
+
+// The events the Production Calendar can show: EXT, Shutter, DM, HW and the events of their own of an
+// approved Extra / CO. Only the first four are made from a Production activity.
+export const calendarTypeOptions = [...activityTypeOptions, changeOrderType]
+
+export const activityTypeMap = Object.fromEntries(
+  calendarTypeOptions.map((type) => [type.value, type]),
+)
 
 export const dateOwnerOptions = [
   { value: 'SUPERVISOR', label: 'Supervisor Date', shortLabel: 'Supervisor' },
@@ -730,6 +736,10 @@ function shortPhaseOrBuilding(prefix, value) {
  * community already says which job it is.
  */
 export function getMonthEventLabel(props) {
+  // An Extra / CO event: its Community, its number and its Lots, which can be in several Phases.
+  if (props.activityType === changeOrderType.value) {
+    return [props.community, props.lotsText, props.changeOrderNumber].filter(Boolean).join(' · ')
+  }
   const type = activityTypeMap[props.activityType]
   const extra = props.variant === 'install-only'
     ? 'INSTALL ONLY'

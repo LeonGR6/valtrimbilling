@@ -35,7 +35,7 @@ import {
 import { useAuth } from '../../auth/context/useAuth.js'
 import { canOpenPage } from '../../auth/authorization/roleAccess.js'
 import { allChangeOrderStatuses } from '../data/changeOrders.js'
-import { useChangeOrder, useSchedulingEmails } from '../hooks/useChangeOrderData.js'
+import { useChangeOrder, useChangeOrderEvents, useSchedulingEmails } from '../hooks/useChangeOrderData.js'
 import { canTellScheduling, describeEmailHistory } from '../services/changeOrderEmailRecord.js'
 import {
   canEditChangeOrders,
@@ -50,6 +50,7 @@ import ChangeOrderInvoiceButton from './ChangeOrderInvoiceButton.jsx'
 import ChangeOrderStatusChip from './ChangeOrderStatusChip.jsx'
 import PoCoNumberDialog from './PoCoNumberDialog.jsx'
 import SchedulingEmailDialog from './SchedulingEmailDialog.jsx'
+import ChangeOrderOwnEvents from './ChangeOrderOwnEvents.jsx'
 
 const plural = (count, singular) => `${count} ${singular}${count === 1 ? '' : 's'}`
 
@@ -242,9 +243,17 @@ function EventCard({ order }) {
   const { ties, own } = useMemo(() => groupDetailEvents(order.lines), [order.lines])
   const needsOwn = own.spots.length > 0 || own.places > 0
   const hasTies = ties.length > 0
-  // Scheduling is told about the lots charged with an event, once the Extra / CO is more than a Draft.
-  const canSend = hasTies && canEditChangeOrders(profile?.role) && canTellScheduling(order.status)
-  const { emails, refresh: refreshEmails } = useSchedulingEmails(order.id, hasTies)
+  const {
+    events: ownEvents,
+    loading: ownLoading,
+    error: ownError,
+    refresh: refreshOwnEvents,
+  } = useChangeOrderEvents(needsOwn ? order.id : null)
+  const hasDates = hasTies || ownEvents.length > 0
+  // Scheduling is told about the lots charged with an event or with an event of their own, once the
+  // Extra / CO is more than a Draft.
+  const canSend = hasDates && canEditChangeOrders(profile?.role) && canTellScheduling(order.status)
+  const { emails, refresh: refreshEmails } = useSchedulingEmails(order.id, hasDates)
   const [asking, setAsking] = useState(false)
   const [sentMessage, setSentMessage] = useState('')
   if (!hasTies && !needsOwn) return null
@@ -280,31 +289,23 @@ function EventCard({ order }) {
         ))}
 
         {needsOwn && (
-          <Box>
-            <Typography variant="body2" fontWeight={700} sx={{ mb: 0.25 }}>
-              Own CO event
-            </Typography>
-            <Typography variant="caption" color="text.secondary" component="p" sx={{ m: 0, mb: 0.75 }}>
-              Not tied to the Calendar: these need an event in the Extra / CO calendar.
-            </Typography>
-            <Box
-              component="dl"
-              sx={{ m: 0, display: 'grid', gridTemplateColumns: 'minmax(120px, auto) 1fr', columnGap: 2, rowGap: 0.5 }}
-            >
-              {own.spots.map((spot) => (
-                <Row key={`${spot.phase}-${spot.building}`} label={spotLabel(spot)}>
-                  {lotsText(spot.lots)}
-                </Row>
-              ))}
-              {own.places > 0 && (
-                <Row label="Not on a lot">{plural(own.places, 'line')}</Row>
-              )}
-            </Box>
-          </Box>
+          <ChangeOrderOwnEvents
+            order={order}
+            events={ownEvents}
+            loading={ownLoading}
+            error={ownError}
+            onChanged={refreshOwnEvents}
+            onEmailScheduling={canSend || (canEditChangeOrders(profile?.role) && canTellScheduling(order.status))
+              ? () => {
+                setSentMessage('')
+                setAsking(true)
+              }
+              : undefined}
+          />
         )}
       </Stack>
 
-      {hasTies && (
+      {hasDates && (
         <Box sx={{ mt: 2, pt: 2, borderTop: 1, borderColor: 'divider' }}>
           <Stack
             direction={{ xs: 'column', sm: 'row' }}
@@ -696,7 +697,10 @@ export default function ChangeOrderDetail() {
   const totals = useMemo(() => summarizeDetailLines(order?.lines ?? []), [order])
   const canSetPoCo = order ? canSetPoCoNumber(order.status, profile?.role) : false
   // Draw & Invoice comes from its Change Orders tab and goes back there; the list of Extras / COs is not theirs.
-  const list = canOpenPage(profile?.role, 'planning') ? LIST : { label: 'Draw & Invoice', to: '/draw-invoice' }
+  // Scheduling comes from a CO event of the Calendar and goes back there.
+  const list = canOpenPage(profile?.role, 'planning') ? LIST
+    : canOpenPage(profile?.role, 'drawInvoice') ? { label: 'Draw & Invoice', to: '/draw-invoice' }
+      : { label: 'Calendar', to: '/calendar' }
 
   if (loading) {
     return (

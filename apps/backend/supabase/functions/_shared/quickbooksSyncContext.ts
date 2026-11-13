@@ -44,6 +44,57 @@ export async function loadSyncContext(admin: Admin, packageId: number): Promise<
   }
 }
 
+/** How many Packages are read in one request, so the `in` filter stays short. */
+export const SYNC_CONTEXT_BATCH_SIZE = 100
+
+/**
+ * The contexts of many Packages in two requests per hundred, not two per Package: the payments
+ * check reads every open invoice, and each request to the API is logged. A Package that does not
+ * exist is missing from the answer.
+ */
+export async function loadSyncContexts(
+  admin: Admin,
+  packageIds: number[],
+): Promise<Map<number, SyncContext>> {
+  const contexts = new Map<number, SyncContext>()
+
+  for (let start = 0; start < packageIds.length; start += SYNC_CONTEXT_BATCH_SIZE) {
+    const ids = packageIds.slice(start, start + SYNC_CONTEXT_BATCH_SIZE)
+    const [headers, syncs] = await Promise.all([
+      admin
+        .from('draw_packages')
+        .select('id, package_number, quickbooks_status')
+        .in('id', ids),
+      admin
+        .from('quickbooks_invoice_syncs')
+        .select('package_id, qbo_invoice_id, qbo_doc_number, environment, realm_id, total_amount')
+        .in('package_id', ids),
+    ])
+    if (headers.error) throw new Error(headers.error.message)
+    if (syncs.error) throw new Error(syncs.error.message)
+
+    const syncByPackage = new Map<number, NonNullable<typeof syncs.data>[number]>()
+    for (const sync of syncs.data ?? []) {
+      if (!syncByPackage.has(Number(sync.package_id))) syncByPackage.set(Number(sync.package_id), sync)
+    }
+
+    for (const header of headers.data ?? []) {
+      const sync = syncByPackage.get(Number(header.id))
+      contexts.set(Number(header.id), {
+        packageNumber: header.package_number,
+        quickbooksStatus: header.quickbooks_status,
+        invoiceId: sync?.qbo_invoice_id ?? null,
+        docNumber: sync?.qbo_doc_number ?? null,
+        environment: sync?.environment ?? null,
+        realmId: sync?.realm_id ?? null,
+        totalAmount: sync?.total_amount == null ? null : Number(sync.total_amount),
+      })
+    }
+  }
+
+  return contexts
+}
+
 /** What editing an invoiced Package needs: the invoice as it was last sent, and whether a change is waiting. */
 export async function loadUpdateContext(admin: Admin, packageId: number): Promise<InvoiceUpdateContext> {
   const base = await loadSyncContext(admin, packageId)

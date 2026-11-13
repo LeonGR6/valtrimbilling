@@ -161,6 +161,28 @@ Deno.test("renders ordinary Lots and Utility Building rows in the same Phase", (
   assertMatch(rendered.text, /Clubhouse\tCLUB/u);
 });
 
+Deno.test("shows Reverse on a Utility Building row when it is on", () => {
+  const utilityRow = (reverse: boolean) => ({
+    lotNumber: "Clubhouse",
+    planCode: "CLUB",
+    reverse,
+    options: [],
+    isUtilityBuilding: true,
+  });
+  const utilityHtmlRow = (html: string) =>
+    html.split("<tr").find((row) => row.includes("Clubhouse")) ?? "";
+
+  const on = renderSequenceSheetEmail({ ...snapshot, lots: [utilityRow(true)] });
+  assertMatch(utilityHtmlRow(on.html), />Yes</u);
+  assertNotMatch(utilityHtmlRow(on.html), />No</u);
+  assertMatch(on.text, /Clubhouse\tCLUB\tYes\tPlan only/u);
+
+  const off = renderSequenceSheetEmail({ ...snapshot, lots: [utilityRow(false)] });
+  assertMatch(utilityHtmlRow(off.html), />No</u);
+  assertNotMatch(utilityHtmlRow(off.html), />Yes</u);
+  assertMatch(off.text, /Clubhouse\tCLUB\tNo\tPlan only/u);
+});
+
 Deno.test("sends only the HTML table email without attachments", async () => {
   const requests: Request[] = [];
   const fetcher = ((input: string | URL | Request, init?: RequestInit) => {

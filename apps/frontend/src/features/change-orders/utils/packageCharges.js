@@ -62,3 +62,60 @@ export function groupPackageCharges(rows = []) {
   const cents = groups.reduce((sum, group) => sum + Math.round(group.total * 100), 0)
   return { groups, lots: rows.length, total: cents / 100 }
 }
+
+// ---- Choosing the Lots one by one ----------------------------------------------------------------------------
+
+/** A row of `package_change_order_candidates`: a Lot of the Phases chosen a Plan with an approved Extra / CO could charge. */
+export function toPackageCandidateRow(row) {
+  return {
+    ...toPackageChargeRow(row),
+    phaseId: String(row.phase_id),
+    event: row.billing_event ?? '', // EXT, DM, HW; empty = an event of its own
+    ownEventDates: [...(row.own_event_dates ?? [])].sort(),
+  }
+}
+
+const dateKey = (value) => (value ? String(value).slice(0, 10) : '')
+
+/**
+ * The date of the event that decides whether a candidate is suggested, or '' when there is none:
+ * the Lot's own EXT / DM / HW date, or, for a Plan with an event of its own, the first of the dates of the
+ * events its Extra / CO already has that is not before `today`.
+ */
+export function candidateEventDate(row, lotEvents = [], today = '') {
+  if (row.event) {
+    const found = lotEvents.find((event) => String(event.lotId) === row.lotId && event.type === row.event)
+    return dateKey(found?.date)
+  }
+  const dates = (row.ownEventDates ?? []).map(dateKey).filter(Boolean)
+  return dates.find((date) => !today || date >= today) ?? ''
+}
+
+/**
+ * The candidates the Calendar suggestion charges: the ones whose event (see `candidateEventDate`) falls
+ * inside the same range the suggestion bills, up to `latestDate` (the cut-off, or the end of the window).
+ * Nothing is suggested without that date.
+ */
+export function suggestedCandidateIds(rows = [], lotEvents = [], latestDate = '', today = '') {
+  const ids = new Set()
+  if (!latestDate) return ids
+  for (const row of rows) {
+    const date = candidateEventDate(row, lotEvents, today)
+    if (date && date <= latestDate) ids.add(row.lotId)
+  }
+  return ids
+}
+
+/**
+ * What the Create Package screen sends to the database for the Lots ticked: `[{ lot_id, event_date? }]`.
+ * A Lot whose Plan goes with an event of its own carries the date of that event (when it is not in the past),
+ * so the Extra / CO made for it gets its event on that day.
+ */
+export function chosenCandidatePayload(rows = [], chosen = new Set(), today = '') {
+  return rows
+    .filter((row) => chosen.has(row.lotId))
+    .map((row) => {
+      const date = row.event ? '' : candidateEventDate(row, [], today)
+      return date ? { lot_id: Number(row.lotId), event_date: date } : { lot_id: Number(row.lotId) }
+    })
+}

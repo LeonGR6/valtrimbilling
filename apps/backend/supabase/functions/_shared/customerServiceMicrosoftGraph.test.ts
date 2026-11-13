@@ -1,6 +1,7 @@
 import { assert, assertEquals, assertRejects, assertThrows } from "@std/assert";
 import {
   createCustomerServiceMicrosoftGraph,
+  type GraphFailureDiagnostic,
   MicrosoftGraphSyncError,
   graphEmailSource,
   validateGraphAttachmentMetadata,
@@ -64,6 +65,7 @@ function fixture(
     now?: () => number;
     deadline?: number;
     requestTimeoutMs?: number;
+    diagnose?: (diagnostic: GraphFailureDiagnostic) => void;
   } = {},
 ) {
   const calls: { url: string; init: RequestInit }[] = [];
@@ -71,6 +73,8 @@ function fixture(
     tenantId,
     clientId,
     clientSecret: "FAKE-TEST-SECRET",
+    // Keep the test output quiet; the diagnostics test passes its own.
+    diagnose: () => {},
     ...options,
     fetcher: (async (input, init = {}) => {
       const url = String(input);
@@ -378,6 +382,82 @@ Deno.test("Graph maps forbidden, unavailable, missing folders and redirects to s
       MicrosoftGraphSyncError,
       expected,
     );
+  }
+});
+
+Deno.test("Graph failures log the step, status and Microsoft codes without URLs, tokens or messages", async () => {
+  const logged: GraphFailureDiagnostic[] = [];
+  const diagnose = (entry: GraphFailureDiagnostic) => logged.push(entry);
+  // Sign-in with Microsoft is unavailable.
+  const signIn = fixture([
+    Response.json({
+      error: "temporarily_unavailable",
+      error_description: "AADSTS90033: raw private data",
+      error_codes: [90033],
+    }, {
+      status: 503,
+      headers: { "x-ms-request-id": "req-1", "x-ms-ests-server": "2.1 - WUS2 ProdSlices" },
+    }),
+  ], { diagnose });
+  await assertRejects(
+    () => signIn.client.page(target, null),
+    MicrosoftGraphSyncError,
+    "GRAPH_UNAVAILABLE",
+  );
+  // The mailbox read is unavailable.
+  const mailbox = fixture([
+    auth(),
+    Response.json({
+      error: {
+        code: "ErrorServerBusy",
+        message: "raw private data",
+        innerError: { code: "MailboxStoreUnavailable" },
+      },
+    }, {
+      status: 503,
+      headers: {
+        "request-id": "req-2",
+        "x-ms-ags-diagnostic": JSON.stringify({ ServerInfo: { DataCenter: "West US", RoleInstance: "X" } }),
+      },
+    }),
+  ], { diagnose });
+  await assertRejects(
+    () => mailbox.client.page(target, delta),
+    MicrosoftGraphSyncError,
+    "GRAPH_UNAVAILABLE",
+  );
+  // No response arrives at all.
+  const network = fixture([
+    auth(),
+    () => {
+      throw new TypeError(`error sending request for url (${delta.url}): connection reset`);
+    },
+  ], { diagnose });
+  await assertRejects(
+    () => network.client.page(target, delta),
+    MicrosoftGraphSyncError,
+    "GRAPH_UNAVAILABLE",
+  );
+  assertEquals(logged, [
+    {
+      step: "token",
+      status: 503,
+      requestId: "req-1",
+      server: "2.1 - WUS2 ProdSlices",
+      providerCode: "temporarily_unavailable AADSTS90033",
+    },
+    {
+      step: "delta",
+      status: 503,
+      requestId: "req-2",
+      server: "West US",
+      providerCode: "ErrorServerBusy/MailboxStoreUnavailable",
+    },
+    { step: "delta", network: "TypeError: error sending request for url ([url] connection reset" },
+  ]);
+  const text = JSON.stringify(logged);
+  for (const hidden of ["raw private data", mailboxId, "FAKE-TEST-SECRET", "FAKE-ACCESS-TOKEN", "deltatoken"]) {
+    assertEquals(text.includes(hidden), false);
   }
 });
 

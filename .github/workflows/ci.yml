@@ -1,0 +1,66 @@
+name: CI/CD
+
+on:
+  push:
+    branches: [dev/leon, preview/roadmap]
+  pull_request:
+  workflow_dispatch:
+
+# A newer push to the same branch cancels the run that is still checking the old one.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: Lint, test and build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run test
+      - run: npm run build
+      - name: Type-check Edge Functions
+        run: npm run fn:check
+
+  # Continuous deployment: every green dev/leon commit is merged into preview/roadmap,
+  # and Vercel publishes that branch on push.
+  deliver-roadmap:
+    name: Deliver to preview/roadmap
+    needs: checks
+    if: github.ref == 'refs/heads/dev/leon'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    concurrency:
+      group: deliver-roadmap
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: preview/roadmap
+          fetch-depth: 0
+      - name: Merge dev/leon
+        run: |
+          git config user.name "$GITHUB_ACTOR"
+          git config user.email "$GITHUB_ACTOR_ID+$GITHUB_ACTOR@users.noreply.github.com"
+          before=$(git rev-parse HEAD)
+          git merge --no-edit -m "Merge branch 'dev/leon' into preview/roadmap" "$GITHUB_SHA"
+          # GITHUB_TOKEN may not push changes to workflow files.
+          if git diff --name-only "$before" HEAD -- .github/workflows | grep -q .; then
+            echo "::error::This merge changes .github/workflows. Merge dev/leon into preview/roadmap by hand and push it once."
+            exit 1
+          fi
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Check the merged branch
+        run: npm run lint && npm run test && npm run build
+      - run: git push origin HEAD:preview/roadmap

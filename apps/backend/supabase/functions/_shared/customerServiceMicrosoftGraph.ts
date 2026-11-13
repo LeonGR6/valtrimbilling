@@ -24,6 +24,73 @@ export class MicrosoftGraphSyncError extends Error {
   }
 }
 
+// One log line per failed call to Microsoft, so the Supabase logs show why a sync
+// answered 503 (added 12 Nov 2026). It keeps only the step, Microsoft's HTTP status,
+// its error codes, request id and server: never the URL, token, secret, mailbox
+// content or the provider's message.
+export type GraphFailureStep = "token" | "delta" | "source" | "attachment";
+export type GraphFailureDiagnostic = {
+  step: GraphFailureStep;
+  status?: number;
+  providerCode?: string;
+  requestId?: string;
+  server?: string;
+  network?: string;
+};
+export function logGraphFailure(diagnostic: GraphFailureDiagnostic) {
+  console.warn(
+    JSON.stringify({ event: "MICROSOFT_GRAPH_FAILURE", ...diagnostic }),
+  );
+}
+function diagnosticText(value: unknown, limit = 120): string {
+  return typeof value === "string"
+    ? value.replace(/https?:\/\/\S+/g, "[url]").slice(0, limit)
+    : "";
+}
+function responseDiagnostic(response: Response) {
+  let server = response.headers.get("x-ms-ests-server") ?? "";
+  try {
+    const ags = JSON.parse(response.headers.get("x-ms-ags-diagnostic") ?? "null");
+    if (typeof ags?.ServerInfo?.DataCenter === "string") {
+      server = ags.ServerInfo.DataCenter;
+    }
+  } catch { /* An unreadable diagnostic header is left out. */ }
+  return {
+    requestId: diagnosticText(
+      response.headers.get("request-id") ??
+        response.headers.get("x-ms-request-id"),
+    ),
+    server: diagnosticText(server),
+  };
+}
+// Microsoft's error code from an error body: Graph `error.code` (and
+// `innerError.code`) or the sign-in `error` with its AADSTS numbers. Empty when
+// the body is not JSON. The provider's message is never read.
+async function providerErrorCode(response: Response): Promise<string> {
+  try {
+    const bytes = await readBytes(response, 64_000, () => {
+      throw new Error("Error body too large");
+    });
+    const value: unknown = JSON.parse(new TextDecoder().decode(bytes));
+    if (!object(value)) return "";
+    if (object(value.error)) {
+      const inner = object(value.error.innerError)
+        ? value.error.innerError.code
+        : undefined;
+      return [value.error.code, inner]
+        .filter((code) => typeof code === "string" && code)
+        .map((code) => diagnosticText(code, 60)).join("/");
+    }
+    if (typeof value.error === "string") {
+      const codes = Array.isArray(value.error_codes)
+        ? value.error_codes.filter(Number.isInteger).map((code) => `AADSTS${code}`)
+        : [];
+      return diagnosticText([value.error, ...codes].join(" "));
+    }
+  } catch { /* Only the codes are kept; an unreadable body gives none. */ }
+  return "";
+}
+
 export type GraphMessage = Record<string, unknown> & { id: string };
 export type GraphDeltaPage = {
   messages: GraphMessage[];
@@ -244,6 +311,7 @@ export function createCustomerServiceMicrosoftGraph(options: {
   now?: () => number;
   deadline?: number;
   requestTimeoutMs?: number;
+  diagnose?: (diagnostic: GraphFailureDiagnostic) => void;
 }) {
   if (
     !uuid.test(options.tenantId) || !uuid.test(options.clientId) ||
@@ -255,9 +323,15 @@ export function createCustomerServiceMicrosoftGraph(options: {
   const now = options.now ?? Date.now;
   let accessToken = "";
   let expiresAt = 0;
+  const report = (diagnostic: GraphFailureDiagnostic) => {
+    try {
+      (options.diagnose ?? logGraphFailure)(diagnostic);
+    } catch { /* Logging never changes the result. */ }
+  };
   // Timers cover the response body as well as headers. No auto redirect, sleeps,
   // remote image access, mailbox write or retry storm occurs in this client.
   async function bounded<T>(
+    step: GraphFailureStep,
     run: (signal: AbortSignal) => Promise<T>,
   ): Promise<T> {
     const remaining = Math.min(
@@ -274,6 +348,14 @@ export function createCustomerServiceMicrosoftGraph(options: {
         error instanceof MicrosoftGraphSyncError ||
         error instanceof EmailAttachmentValidationError
       ) throw error;
+      // No response arrived: a network error or the timeout.
+      report({
+        step,
+        network: diagnosticText(
+          error instanceof Error ? `${error.name}: ${error.message}` : String(error),
+          300,
+        ),
+      });
       const interrupted = now() >= (options.deadline ?? Infinity);
       throw new MicrosoftGraphSyncError(
         interrupted ? "SYNC_INTERRUPTED" : "GRAPH_UNAVAILABLE",
@@ -287,7 +369,7 @@ export function createCustomerServiceMicrosoftGraph(options: {
     if (!refresh && accessToken && expiresAt > now() + 30_000) {
       return accessToken;
     }
-    await bounded(async (signal) => {
+    await bounded("token", async (signal) => {
       const response = await fetcher(
         `https://login.microsoftonline.com/${options.tenantId}/oauth2/v2.0/token`,
         {
@@ -304,7 +386,12 @@ export function createCustomerServiceMicrosoftGraph(options: {
         },
       );
       if (!response.ok) {
-        await response.body?.cancel();
+        report({
+          step: "token",
+          status: response.status,
+          ...responseDiagnostic(response),
+          providerCode: await providerErrorCode(response),
+        });
         throw new MicrosoftGraphSyncError(
           response.status === 429
             ? "GRAPH_THROTTLED"
@@ -367,10 +454,11 @@ export function createCustomerServiceMicrosoftGraph(options: {
       }
       throw new MicrosoftGraphSyncError("SYNC_ERROR");
     };
+    const step: GraphFailureStep = attachmentDownload ? "attachment" : kind;
     sameResource(url, path); // Before acquiring/sending any credential.
     for (let attempt = 0; attempt < 2; attempt++) {
       const bearer = await token(attempt === 1);
-      const result = await bounded(async (signal) => {
+      const result = await bounded(step, async (signal) => {
         const response = await fetcher(url, {
           method: "GET",
           redirect: "error",
@@ -388,20 +476,17 @@ export function createCustomerServiceMicrosoftGraph(options: {
           return null;
         }
         if (!response.ok) {
-          let providerCode = "";
-          if ([400, 404, 410].includes(response.status)) {
-            try {
-              const errorBytes = await readBytes(response, 64_000, () => {
-                throw new MicrosoftGraphSyncError("SYNC_ERROR");
-              });
-              providerCode = String(
-                JSON.parse(new TextDecoder().decode(errorBytes))?.error?.code ??
-                  "",
-              ).toLowerCase();
-            } catch {
-              /* Only the status is needed; never expose raw diagnostics. */
-            }
-          } else await response.body?.cancel();
+          const errorCode = await providerErrorCode(response);
+          report({
+            step,
+            status: response.status,
+            ...responseDiagnostic(response),
+            providerCode: errorCode,
+          });
+          // Only these statuses decide on the provider code (expired cursor).
+          const providerCode = [400, 404, 410].includes(response.status)
+            ? errorCode.split("/")[0].toLowerCase()
+            : "";
           if (
             kind === "delta" &&
             (response.status === 410 ||

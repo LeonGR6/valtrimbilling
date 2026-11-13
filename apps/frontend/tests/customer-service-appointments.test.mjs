@@ -7,7 +7,9 @@ import {
 import {
   buildAppointmentRegistration, suggestProposalTimes, validatePrototypeProposalDraft,
 } from '../src/features/customer-service/utils/proposalDraft.js'
-import { createServiceCalendarEventsFromRequests } from '../src/features/customer-service/data/serviceCalendarEvents.js'
+import {
+  createServiceCalendarEventsFromRequests, serviceCalendarEventForRequest,
+} from '../src/features/customer-service/data/serviceCalendarEvents.js'
 
 const roster = [
   { id: 4, name: 'Jorge Murillo', isActive: true },
@@ -48,6 +50,17 @@ test('a saved appointment is shown in California time on its request', () => {
   const [event] = createServiceCalendarEventsFromRequests([mapped])
   assert.equal(event.extendedProps.technician, 'Jorge Murillo, Helper')
   assert.equal(event.extendedProps.appointment.id, 7)
+})
+
+test('a visit picked in the Proposal Workspace agenda opens its request as in Calendar', () => {
+  const requests = applyAppointmentsToRequests([confirmed, ready], [appointment], roster)
+  // The agenda carries string request ids.
+  const event = serviceCalendarEventForRequest(requests, '10')
+  assert.equal(event.extendedProps.requestNumber, 'SR-10')
+  assert.equal(event.extendedProps.technician, 'Jorge Murillo, Helper')
+  assert.equal(event.start, '2026-11-09T08:00:00')
+  assert.deepEqual(event.extendedProps.internalSlot, { start: '08:00', end: '08:30' })
+  assert.equal(serviceCalendarEventForRequest(requests, '99'), null)
 })
 
 test('travel estimates are loaded only for appointments from today onward (California)', () => {

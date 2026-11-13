@@ -292,6 +292,7 @@ export default function ProposalDraftPlanner({ request, requests, technicians: r
             date={validation.dateIsValid ? values.date : ''}
             agenda={validation.agenda}
             margins={validation.delay?.entryMargins ?? {}}
+            requests={requests}
             hasTechnicians={values.technicianIds.length > 0}
             proposedVisit={validation.internalEnd && validation.pickupEnd
               ? {

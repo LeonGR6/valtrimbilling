@@ -1,19 +1,30 @@
-import { Alert, Box, Stack, Typography } from '@mui/material'
+import { useMemo, useState } from 'react'
+import { Alert, Box, Dialog, Stack, Typography } from '@mui/material'
 import { useColorScheme, useTheme } from '@mui/material/styles'
 import FullCalendar from '@fullcalendar/react'
 import timeGridPlugin from '@fullcalendar/timegrid'
+import { serviceCalendarEventForRequest } from '../data/serviceCalendarEvents.js'
 import { formatLongDate, formatTime } from '../utils/dates.js'
 import { prototypePlanningHours } from '../utils/proposalDraft.js'
+import CustomerServiceCalendarDetail from './CustomerServiceCalendarDetail.jsx'
 import '../../calendar/components/CalendarScheduler.css'
 import './CustomerServiceCalendar.css'
 
 // " · Margin N min" when the visit's delay margin is known for this draft.
 const marginText = (margin) => (Number.isInteger(margin) ? ` · Margin ${Math.max(0, margin)} min` : '')
 
-export default function ProposalDayAgenda({ date, agenda, hasTechnicians, proposedVisit = null, margins = {} }) {
+export default function ProposalDayAgenda({
+  date, agenda, hasTechnicians, proposedVisit = null, margins = {}, requests = [],
+}) {
   const theme = useTheme()
   const { mode, systemMode } = useColorScheme()
   const colorMode = (mode === 'system' ? systemMode : mode) === 'dark' ? 'dark' : 'light'
+  // A recorded visit picked in the agenda opens its request, read-only, as in Calendar.
+  const [selectedRequestId, setSelectedRequestId] = useState(null)
+  const selectedEvent = useMemo(
+    () => (selectedRequestId === null ? null : serviceCalendarEventForRequest(requests, selectedRequestId)),
+    [requests, selectedRequestId],
+  )
   if (!hasTechnicians) return <Alert severity="info" variant="outlined">Select technicians to view their recorded daily agenda.</Alert>
   if (!/^\d{4}-\d{2}-\d{2}$/u.test(date)) return <Alert severity="info" variant="outlined">Select a date to view the agenda.</Alert>
   const events = agenda.filter((entry) => entry.date && entry.start && entry.end).map((entry) => ({
@@ -41,7 +52,7 @@ export default function ProposalDayAgenda({ date, agenda, hasTechnicians, propos
         A visit without recorded work time keeps its whole window reserved.
         Drafts do not reserve time or appear in Calendar.
         With a valid draft, each visit shows its margin: how late it can start without it or a later visit leaving its
-        customer window.
+        customer window. Select a visit to view its request.
       </Typography>
       {agenda.length === 0 && <Alert severity="info" variant="outlined">No Customer Service appointments or sent proposals are recorded for these technicians on this date.</Alert>}
       {agenda.filter((entry) => !entry.date || entry.windowUncertain || !entry.start || !entry.end).map((entry) => (
@@ -65,6 +76,9 @@ export default function ProposalDayAgenda({ date, agenda, hasTechnicians, propos
             editable={false}
             selectable={false}
             eventMinHeight={54}
+            eventClick={({ event }) => {
+              if (!event.extendedProps.proposed) setSelectedRequestId(String(event.extendedProps.requestId))
+            }}
             eventContent={({ event }) => {
               const entry = event.extendedProps
               if (entry.proposed) {
@@ -78,7 +92,7 @@ export default function ProposalDayAgenda({ date, agenda, hasTechnicians, propos
                 )
               }
               return (
-                <Box sx={{ px: 0.75, py: 0.25, overflow: 'hidden', fontSize: '0.72rem', color: '#fff' }}
+                <Box sx={{ px: 0.75, py: 0.25, overflow: 'hidden', fontSize: '0.72rem', color: '#fff', cursor: 'pointer' }}
                   title={`${event.title} · ${entry.issue} · ${entry.stage === 'AWAITING_CUSTOMER' ? 'Reserved pending customer response' : entry.stage}`}>
                   <Typography component="div" variant="caption" fontWeight={800}>{event.title}</Typography>
                   <div>
@@ -94,6 +108,10 @@ export default function ProposalDayAgenda({ date, agenda, hasTechnicians, propos
           />
         </Box>
       </Box>
+      <Dialog open={Boolean(selectedEvent)} onClose={() => setSelectedRequestId(null)} fullWidth maxWidth="xs"
+        slotProps={{ paper: { 'aria-label': `Request ${selectedEvent?.extendedProps.requestNumber ?? ''}` } }}>
+        <CustomerServiceCalendarDetail event={selectedEvent} onClose={() => setSelectedRequestId(null)} canCancel={false} />
+      </Dialog>
     </Stack>
   )
 }

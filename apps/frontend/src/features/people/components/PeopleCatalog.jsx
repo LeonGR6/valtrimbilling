@@ -1,6 +1,4 @@
 import { useMemo, useState } from 'react'
-import { zodResolver } from '@hookform/resolvers/zod'
-import { Controller, useForm } from 'react-hook-form'
 import {
   Alert,
   Avatar,
@@ -12,7 +10,6 @@ import {
   DialogContent,
   DialogTitle,
   FormControl,
-  FormControlLabel,
   IconButton,
   InputAdornment,
   InputLabel,
@@ -21,13 +18,11 @@ import {
   Select,
   Snackbar,
   Stack,
-  Switch,
   Table,
   TableBody,
   TableCell,
   TableContainer,
   TableHead,
-  TablePagination,
   TableRow,
   TextField,
   Typography,
@@ -35,216 +30,28 @@ import {
 import BlockRoundedIcon from '@mui/icons-material/BlockRounded'
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined'
 import FilterListRoundedIcon from '@mui/icons-material/FilterListRounded'
-import MailOutlineRoundedIcon from '@mui/icons-material/MailOutlineRounded'
 import MoreHorizRoundedIcon from '@mui/icons-material/MoreHorizRounded'
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
 import ResponsiveCreateButton from '../../../components/common/ResponsiveCreateButton'
-import { FormPhoneInput } from '../../../components/common/InternationalPhoneInput.jsx'
-import {
-  formatPhoneNumber,
-  getNationalPhoneNumber,
-  getPhoneCountry,
-} from '../../../utils/phoneNumbers.js'
-import {
-  emptyPerson,
-  personTypeLabels,
-} from '../data/people.js'
+import { formatPhoneNumber } from '../../../utils/phoneNumbers.js'
+import { personTypeLabels } from '../data/people.js'
 import { usePeople } from '../context/usePeople.js'
-import { personSchema } from '../schemas/personSchema.js'
-
-function getInitials(name) {
-  return name
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0])
-    .join('')
-    .toUpperCase()
-}
-
-function getPersonFormValues(person) {
-  if (!person) {
-    return {
-      ...emptyPerson,
-      phoneCountry: 'US',
-      officePhoneCountry: 'US',
-    }
-  }
-
-  const phoneCountry = getPhoneCountry(person.phone)
-  const officePhoneCountry = getPhoneCountry(person.officePhone)
-  return {
-    ...person,
-    phoneCountry,
-    phone: getNationalPhoneNumber(person.phone, phoneCountry),
-    officePhoneCountry,
-    officePhone: getNationalPhoneNumber(person.officePhone, officePhoneCountry),
-  }
-}
-
-function PersonDialog({ person, onClose, onSave, submitting }) {
-  const {
-    control,
-    register,
-    handleSubmit,
-    formState: { errors },
-  } = useForm({
-    resolver: zodResolver(personSchema),
-    defaultValues: getPersonFormValues(person),
-    mode: 'onTouched',
-    reValidateMode: 'onChange',
-  })
-  return (
-    <Dialog
-      open
-      onClose={submitting ? undefined : onClose}
-      fullWidth
-      maxWidth="sm"
-      component="form"
-      onSubmit={handleSubmit(onSave)}
-      noValidate
-    >
-      <DialogTitle sx={{ pb: 1 }}>
-        <Typography variant="h6" component="div" fontWeight={700}>
-          {person ? 'Edit supervisor' : 'New supervisor'}
-        </Typography>
-        <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-          {person
-            ? 'Update the supervisor contact information and territory.'
-            : 'Add a Valtrim supervisor who can be assigned to jobs.'}
-        </Typography>
-      </DialogTitle>
-
-      <DialogContent sx={{ pt: '16px !important' }}>
-        <Stack spacing={2.25}>
-          <TextField
-            label="Name"
-            {...register('name')}
-            error={Boolean(errors.name)}
-            helperText={errors.name?.message ?? ' '}
-            fullWidth
-            slotProps={{ htmlInput: { maxLength: 100 } }}
-          />
-
-          <FormPhoneInput
-            control={control}
-            name="phone"
-            label="Phone number"
-            error={errors.phone}
-            helperText="Optional · choose +1 or +52"
-          />
-          <FormPhoneInput
-            control={control}
-            name="officePhone"
-            label="Office phone number"
-            error={errors.officePhone}
-            helperText="Optional · choose +1 or +52"
-          />
-
-          <TextField
-            label="Email"
-            type="email"
-            {...register('email')}
-            error={Boolean(errors.email)}
-            helperText={errors.email?.message ?? ' '}
-            fullWidth
-            slotProps={{
-              input: {
-                startAdornment: (
-                  <InputAdornment position="start">
-                    <MailOutlineRoundedIcon fontSize="small" />
-                  </InputAdornment>
-                ),
-              },
-              htmlInput: { maxLength: 160 },
-            }}
-          />
-
-
-          <TextField
-            label="Territory"
-            {...register('territory')}
-            error={Boolean(errors.territory)}
-            helperText={
-              errors.territory?.message
-              ?? 'Geographic area assigned to this Valtrim supervisor.'
-            }
-            required
-            fullWidth
-            slotProps={{ htmlInput: { maxLength: 80 } }}
-          />
-
-          {person && (
-            <Box
-              sx={{
-                border: 1,
-                borderColor: 'divider',
-                borderRadius: 2,
-                px: 2,
-                py: 1,
-              }}
-            >
-              <FormControlLabel
-                sx={{ m: 0, width: '100%', justifyContent: 'space-between' }}
-                labelPlacement="start"
-                control={(
-                  <Controller
-                    name="isActive"
-                    control={control}
-                    render={({ field }) => (
-                      <Switch
-                        checked={field.value}
-                        onChange={(_, checked) => field.onChange(checked)}
-                        slotProps={{ input: { ref: field.ref } }}
-                      />
-                    )}
-                  />
-                )}
-                label={(
-                  <Box>
-                    <Typography variant="body2" fontWeight={600}>
-                      Active supervisor
-                    </Typography>
-                    <Typography variant="caption" color="text.secondary">
-                      Inactive supervisors remain visible in the roster.
-                    </Typography>
-                  </Box>
-                )}
-              />
-            </Box>
-          )}
-        </Stack>
-      </DialogContent>
-
-      <DialogActions sx={{ px: 3, pb: 2.5, pt: 1.5 }}>
-        <Button color="inherit" onClick={onClose} disabled={submitting}>
-          Cancel
-        </Button>
-        <Button type="submit" variant="contained" disabled={submitting} disableElevation>
-          {submitting
-            ? 'Saving...'
-            : person ? 'Save changes' : 'Create supervisor'}
-        </Button>
-      </DialogActions>
-    </Dialog>
-  )
-}
+import { getInitials } from '../../../utils/initials.js'
+import PersonDialog from './PersonDialog.jsx'
 
 export default function PeopleCatalog() {
   const {
     people,
     loading,
     error,
-    canManageSupervisors,
+    canManageContacts,
     refreshPeople,
-    createSupervisor,
-    updateSupervisor,
-    deactivateSupervisor,
+    createContact,
+    updateContact,
+    deactivateContact,
   } = usePeople()
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState('all')
-  const [page, setPage] = useState(0)
-  const [rowsPerPage, setRowsPerPage] = useState(5)
   const [menuAnchor, setMenuAnchor] = useState(null)
   const [selectedPerson, setSelectedPerson] = useState(null)
   const [dialogState, setDialogState] = useState(null)
@@ -258,7 +65,14 @@ export default function PeopleCatalog() {
     return people.filter((person) => {
       const matchesSearch =
         !query ||
-        [person.name, person.phone, person.officePhone, person.email, person.territory]
+        [
+          person.name,
+          person.phone,
+          person.officePhone,
+          person.email,
+          person.territory,
+          ...person.types.map((type) => personTypeLabels[type]),
+        ]
           .join(' ')
           .toLowerCase()
           .includes(query)
@@ -269,11 +83,6 @@ export default function PeopleCatalog() {
       return matchesSearch && matchesStatus
     })
   }, [people, search, status])
-
-  const visiblePeople = filteredPeople.slice(
-    page * rowsPerPage,
-    page * rowsPerPage + rowsPerPage,
-  )
 
   const handleMenuOpen = (event, person) => {
     setMenuAnchor(event.currentTarget)
@@ -299,12 +108,11 @@ export default function PeopleCatalog() {
     setSubmitting(true)
     try {
       if (dialogState?.mode === 'edit') {
-        await updateSupervisor(dialogState.person.id, form)
-        setNotice({ severity: 'success', message: 'Supervisor updated.' })
+        await updateContact(dialogState.person.id, form)
+        setNotice({ severity: 'success', message: 'Contact updated.' })
       } else {
-        await createSupervisor(form)
-        setPage(0)
-        setNotice({ severity: 'success', message: 'Supervisor created.' })
+        await createContact(form)
+        setNotice({ severity: 'success', message: 'Contact created.' })
       }
 
       setDialogState(null)
@@ -318,10 +126,9 @@ export default function PeopleCatalog() {
   const handleDeactivate = async () => {
     setSubmitting(true)
     try {
-      await deactivateSupervisor(deactivateTarget.id)
+      await deactivateContact(deactivateTarget.id)
       setDeactivateTarget(null)
-      setPage(0)
-      setNotice({ severity: 'success', message: 'Supervisor deactivated.' })
+      setNotice({ severity: 'success', message: 'Contact deactivated.' })
     } catch (deactivateError) {
       setNotice({ severity: 'error', message: deactivateError.message })
     } finally {
@@ -347,15 +154,15 @@ export default function PeopleCatalog() {
       >
         <Box>
           <Typography variant="h5" fontWeight={700} color="text.primary">
-            Crews &amp; Foremen
+            Company Contacts
           </Typography>
           <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-            Manage Valtrim supervisors available for job assignments.
+            Manage the Valtrim people who can be assigned to jobs: supervisors, estimators, coordinators and more.
           </Typography>
         </Box>
-        {canManageSupervisors && (
+        {canManageContacts && (
           <ResponsiveCreateButton
-            label="New supervisor"
+            label="New contact"
             onClick={() => setDialogState({ mode: 'create' })}
           />
         )}
@@ -378,12 +185,9 @@ export default function PeopleCatalog() {
           >
             <TextField
               value={search}
-              onChange={(event) => {
-                setSearch(event.target.value)
-                setPage(0)
-              }}
+              onChange={(event) => setSearch(event.target.value)}
               size="small"
-              placeholder="Search supervisors or contact information..."
+              placeholder="Search contacts, types or contact information..."
               sx={{ width: { xs: '100%', md: 380 } }}
               slotProps={{
                 input: {
@@ -401,17 +205,14 @@ export default function PeopleCatalog() {
                 labelId="supervisor-status-filter-label"
                 label="Status"
                 value={status}
-                onChange={(event) => {
-                  setStatus(event.target.value)
-                  setPage(0)
-                }}
+                onChange={(event) => setStatus(event.target.value)}
                 startAdornment={(
                   <InputAdornment position="start">
                     <FilterListRoundedIcon fontSize="small" color="action" />
                   </InputAdornment>
                 )}
               >
-                <MenuItem value="all">All supervisors</MenuItem>
+                <MenuItem value="all">All contacts</MenuItem>
                 <MenuItem value="active">Active</MenuItem>
                 <MenuItem value="inactive">Inactive</MenuItem>
               </Select>
@@ -447,19 +248,19 @@ export default function PeopleCatalog() {
                     },
                   }}
                 >
-                  <TableCell>Person</TableCell>
+                  <TableCell>Contact</TableCell>
                   <TableCell>Phone number</TableCell>
                   <TableCell>Office phone number</TableCell>
-                  <TableCell>Person type</TableCell>
+                  <TableCell>Contact type</TableCell>
                   <TableCell>Territory</TableCell>
                   <TableCell>Status</TableCell>
-                  {canManageSupervisors && (
+                  {canManageContacts && (
                     <TableCell align="right" width={72}>Actions</TableCell>
                   )}
                 </TableRow>
               </TableHead>
               <TableBody>
-                {visiblePeople.map((person) => (
+                {filteredPeople.map((person) => (
                   <TableRow
                     key={person.id}
                     hover
@@ -544,7 +345,7 @@ export default function PeopleCatalog() {
                         }}
                       />
                     </TableCell>
-                    {canManageSupervisors && (
+                    {canManageContacts && (
                       <TableCell align="right">
                         <IconButton
                           size="small"
@@ -558,28 +359,28 @@ export default function PeopleCatalog() {
                   </TableRow>
                 ))}
 
-                {loading && visiblePeople.length === 0 && (
+                {loading && filteredPeople.length === 0 && (
                   <TableRow>
                     <TableCell
-                      colSpan={6 + Number(canManageSupervisors)}
+                      colSpan={6 + Number(canManageContacts)}
                       sx={{ py: 8, textAlign: 'center' }}
                     >
-                      <Typography color="text.secondary">Loading supervisors...</Typography>
+                      <Typography color="text.secondary">Loading contacts...</Typography>
                     </TableCell>
                   </TableRow>
                 )}
 
-                {!loading && visiblePeople.length === 0 && (
+                {!loading && filteredPeople.length === 0 && (
                   <TableRow>
                     <TableCell
-                      colSpan={6 + Number(canManageSupervisors)}
+                      colSpan={6 + Number(canManageContacts)}
                       sx={{ py: 8, textAlign: 'center' }}
                     >
                       <SearchRoundedIcon color="action" sx={{ fontSize: 40, mb: 1 }} />
-                      <Typography fontWeight={600}>No supervisors found</Typography>
+                      <Typography fontWeight={600}>No contacts found</Typography>
                       <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
                         {people.length === 0
-                          ? 'Create the first supervisor to start the roster.'
+                          ? 'Create the first contact to start the list.'
                           : 'Try changing your search or status filter.'}
                       </Typography>
                     </TableCell>
@@ -588,19 +389,6 @@ export default function PeopleCatalog() {
               </TableBody>
             </Table>
           </TableContainer>
-
-          <TablePagination
-            component="div"
-            count={filteredPeople.length}
-            page={page}
-            onPageChange={(_, nextPage) => setPage(nextPage)}
-            rowsPerPage={rowsPerPage}
-            onRowsPerPageChange={(event) => {
-              setRowsPerPage(Number(event.target.value))
-              setPage(0)
-            }}
-            rowsPerPageOptions={[5, 10, 25]}
-          />
         </Box>
       </Box>
 
@@ -641,11 +429,11 @@ export default function PeopleCatalog() {
         fullWidth
         maxWidth="xs"
       >
-        <DialogTitle>Deactivate supervisor?</DialogTitle>
+        <DialogTitle>Deactivate contact?</DialogTitle>
         <DialogContent>
           <Typography variant="body2" color="text.secondary">
             {deactivateTarget
-              ? `${deactivateTarget.name} will remain in the roster as inactive.`
+              ? `${deactivateTarget.name} will remain in the list as inactive.`
               : ''}
           </Typography>
         </DialogContent>
@@ -664,7 +452,7 @@ export default function PeopleCatalog() {
             disabled={submitting}
             disableElevation
           >
-            {submitting ? 'Deactivating...' : 'Deactivate supervisor'}
+            {submitting ? 'Deactivating...' : 'Deactivate contact'}
           </Button>
         </DialogActions>
       </Dialog>

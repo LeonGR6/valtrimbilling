@@ -1,24 +1,17 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { zodResolver } from '@hookform/resolvers/zod'
-import { Controller, useForm, useWatch } from 'react-hook-form'
 import {
   Alert,
   Box,
   Button,
-  Card,
-  CardContent,
+  Chip,
   Dialog,
   DialogActions,
   DialogContent,
   DialogTitle,
-  FormControl,
   IconButton,
   InputAdornment,
-  InputLabel,
-  Menu,
-  MenuItem,
-  Select,
+  Link,
   Snackbar,
   Stack,
   Table,
@@ -31,300 +24,110 @@ import {
   TextField,
   Typography,
 } from '@mui/material'
-import ApartmentRoundedIcon from '@mui/icons-material/ApartmentRounded'
-import BackupTableRoundedIcon from '@mui/icons-material/BackupTableRounded'
-import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded'
-import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
+import ArrowForwardRoundedIcon from '@mui/icons-material/ArrowForwardRounded'
+import BlockRoundedIcon from '@mui/icons-material/BlockRounded'
+import ClearRoundedIcon from '@mui/icons-material/ClearRounded'
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined'
-import HomeWorkRoundedIcon from '@mui/icons-material/HomeWorkRounded'
-import LayersRoundedIcon from '@mui/icons-material/LayersRounded'
-import MoreHorizRoundedIcon from '@mui/icons-material/MoreHorizRounded'
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
 import ResponsiveCreateButton from '../../../components/common/ResponsiveCreateButton'
+import {
+  CatalogEmptyState,
+  CatalogPageHeader,
+  CatalogSkeletonRows,
+  FigureStrip,
+  RowActionsMenu,
+  StatusChip,
+  StatusTabs,
+  catalogTableSx,
+  focusRingSx,
+  visuallyHiddenSx,
+} from '../../../components/common/CatalogPage'
+import { usePersistentState, isStoredString } from '../../../hooks/usePersistentState.js'
 import { BuildersCatalog } from '../../builders/index.js'
 import { useBuilders } from '../../builders/context/useBuilders.js'
 import { usePeople } from '../../people/context/usePeople.js'
-import {
-  builderLabels,
-  emptyContact,
-} from '../../builder-contacts'
+import { contactTypeLabels, emptyContact } from '../../builder-contacts'
+import { emptyPerson } from '../../people/data/people.js'
 import { useBuilderContacts } from '../../builder-contacts/context/useBuilderContacts.js'
 import JobDetails from './JobDetails.jsx'
-import PersonPickerField from './PersonPickerField.jsx'
-import {
-  emptyJob,
-  getJobPlanCount,
-  getJobUnitCount,
-} from '../data/jobs.js'
+import { getJobPlanCount, getJobUnitCount } from '../data/jobs.js'
+import { jobContactRoles } from '../data/jobContactRoles.js'
 import { useJobs } from '../context/useJobs.js'
-import { createJobSchema } from '../schemas/jobSchema.js'
-import {
-  builderJobsPath,
-  getJobBuilderId,
-  jobPlansOptionsPath,
-} from '../utils/jobRoutes.js'
+import { builderJobsPath, getJobBuilderId, jobPlansOptionsPath } from '../utils/jobRoutes.js'
+import { contactTypesToAdd, resolveJobContacts } from '../utils/jobAssignments.js'
+import { JobContactsSummary } from './JobContacts.jsx'
+import JobDialog from './JobDialog.jsx'
 
-const builderCodeByName = Object.fromEntries(
-  Object.entries(builderLabels).map(([code, name]) => [name, code]),
-)
-
-const personName = (index, id) => index.get(id)?.name ?? 'Unassigned'
-
-function JobDialog({
-  builderOptions,
-  defaultBuilder,
-  supervisors,
-  superintendents,
-  job,
-  jobs,
-  onClose,
-  onCreateSuperintendent,
-  onSave,
-}) {
-
-  const schema = useMemo(
-    () => createJobSchema(jobs, job?.id),
-    [job?.id, jobs],
-  )
-  const {
-    control,
-    register,
-    handleSubmit,
-    formState: { errors },
-  } = useForm({
-    resolver: zodResolver(schema),
-    defaultValues: job
-      ? {
-          code: job.code,
-          builder: job.builder,
-          community: job.community,
-          supervisorId: job.supervisorId ?? null,
-          superintendentId: job.superintendentId ?? null,
-        }
-      : { ...emptyJob, builder: defaultBuilder ?? '' },
-    mode: 'onTouched',
-    reValidateMode: 'onChange',
-  })
-  const selectedBuilderName = useWatch({ control, name: 'builder' })
-  const selectedBuilderCode = builderCodeByName[selectedBuilderName]
-  const availableSuperintendents = useMemo(
-    () => superintendents.filter(
-      (contact) =>
-        contact.type === 'JOBSITE_SUPERINTENDENT'
-        && (
-          !selectedBuilderCode
-          || contact.builder === selectedBuilderCode
-          || contact.id === job?.superintendentId
-        ),
-    ),
-    [job?.superintendentId, selectedBuilderCode, superintendents],
-  )
-
-  return (
-    <Dialog
-      open
-      onClose={onClose}
-      fullWidth
-      maxWidth="md"
-      component="form"
-      onSubmit={handleSubmit(onSave)}
-      noValidate
-    >
-      <DialogTitle sx={{ pb: 1 }}>
-        <Typography variant="h6" component="div" fontWeight={700}>
-          {job ? 'Edit job' : 'Create new job'}
-        </Typography>
-        <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-          Add the identifying and assigned team information for this job.
-        </Typography>
-      </DialogTitle>
-
-      <DialogContent sx={{ pt: '16px !important' }}>
-        <Stack spacing={3}>
-          <Box>
-            <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1.5 }}>
-              Job information
-            </Typography>
-            <Stack spacing={2}>
-              <TextField
-                label="Job#"
-                {...register('code')}
-                error={Boolean(errors.code)}
-                helperText={errors.code?.message ?? 'Example: JOB-1005'}
-                fullWidth
-                slotProps={{ htmlInput: { maxLength: 30 } }}
-              />
-              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
-                <FormControl fullWidth error={Boolean(errors.builder)}>
-                  <InputLabel id="job-builder-label">Builder / Client</InputLabel>
-                  <Controller
-                    name="builder"
-                    control={control}
-                    render={({ field }) => (
-                      <Select
-                        {...field}
-                        labelId="job-builder-label"
-                        label="Builder / Client"
-                      >
-                        {builderOptions.map((builder) => (
-                          <MenuItem key={builder} value={builder}>
-                            {builder}
-                          </MenuItem>
-                        ))}
-                      </Select>
-                    )}
-                  />
-                  <Typography
-                    variant="caption"
-                    color={errors.builder ? 'error' : 'text.secondary'}
-                    sx={{ mt: 0.5, ml: 1.75, minHeight: 18 }}
-                  >
-                    {errors.builder?.message ?? 'Select a builder from the catalog.'}
-                  </Typography>
-                </FormControl>
-
-                <TextField
-                  label="Community"
-                  {...register('community')}
-                  error={Boolean(errors.community)}
-                  helperText={errors.community?.message ?? 'Example: Andara'}
-                  fullWidth
-                  slotProps={{ htmlInput: { maxLength: 100 } }}
-                />
-              </Stack>
-            </Stack>
-          </Box>
-
-          <Box>
-            <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1.5 }}>
-              Job team
-            </Typography>
-            <Stack
-              direction={{ xs: 'column', sm: 'row' }}
-              spacing={2}
-              sx={{ alignItems: 'flex-start' }}
-            >
-              <PersonPickerField
-                name="supervisorId"
-                label="Supervisor"
-                helperText="Loaded from the saved Crews & Foremen roster."
-                control={control}
-                error={errors.supervisorId}
-                people={supervisors}
-              />
-              <PersonPickerField
-                name="superintendentId"
-                label="Jobsite Superintendent"
-                helperText="Builder contact responsible for the jobsite."
-                control={control}
-                error={errors.superintendentId}
-                people={availableSuperintendents}
-                onCreate={(draft) =>
-                  onCreateSuperintendent(draft, selectedBuilderName)
-                }
-                createTitle="Add new superintendent"
-                extraFields={['phone']}
-              />
-            </Stack>
-          </Box>
-
-          <Alert severity="info">
-            After creating the Job, open it to configure its Plans and Options sequence sheet.
-          </Alert>
-        </Stack>
-      </DialogContent>
-
-      <DialogActions sx={{ px: 3, pb: 2.5, pt: 1.5 }}>
-        <Button color="inherit" onClick={onClose}>
-          Cancel
-        </Button>
-        <Button type="submit" variant="contained" disableElevation>
-          {job ? 'Save changes' : 'Create job'}
-        </Button>
-      </DialogActions>
-    </Dialog>
-  )
-}
-
-function SummaryCard({ icon, label, value }) {
-  return (
-    <Card variant="outlined" sx={{ flex: 1, minWidth: 180 }}>
-      <CardContent sx={{ display: 'flex', alignItems: 'center', gap: 1.5, p: '16px !important' }}>
-        <Box
-          sx={{
-            width: 40,
-            height: 40,
-            borderRadius: 1.5,
-            display: 'grid',
-            placeItems: 'center',
-            bgcolor: 'primary.light',
-            color: 'primary.main',
-          }}
-        >
-          {icon}
-        </Box>
-        <Box>
-          <Typography variant="h6" fontWeight={700} sx={{ lineHeight: 1.2 }}>
-            {value}
-          </Typography>
-          <Typography variant="caption" color="text.secondary">
-            {label}
-          </Typography>
-        </Box>
-      </CardContent>
-    </Card>
-  )
-}
+const JOB_ROWS_PER_PAGE_OPTIONS = [5, 10, 25]
 
 export default function JobsCatalog() {
   const navigate = useNavigate()
   const { builderId, jobId } = useParams()
   const [searchParams] = useSearchParams()
-  const { jobs, setJobs } = useJobs()
+  const {
+    jobs,
+    loading,
+    error,
+    canManageJobs,
+    refreshJobs,
+    createJob,
+    updateJob,
+    deactivateJob,
+  } = useJobs()
   const { builders } = useBuilders()
-  const { people } = usePeople()
-  const { contacts, setContacts } = useBuilderContacts()
-  const [search, setSearch] = useState('')
+  const {
+    people,
+    canManageContacts,
+    createContact,
+    updateContact,
+  } = usePeople()
+  const {
+    contacts,
+    canManageBuilderContacts,
+    createBuilderContact,
+    updateBuilderContact,
+  } = useBuilderContacts()
+  const [search, setSearch] = usePersistentState('jobs:search', '', isStoredString)
   const [page, setPage] = useState(0)
-  const [rowsPerPage, setRowsPerPage] = useState(5)
-  const [menuAnchor, setMenuAnchor] = useState(null)
-  const [selectedJob, setSelectedJob] = useState(null)
+  const [rowsPerPage, setRowsPerPage] = usePersistentState(
+    'jobs:rows-per-page',
+    JOB_ROWS_PER_PAGE_OPTIONS[0],
+    (value) => JOB_ROWS_PER_PAGE_OPTIONS.includes(value),
+  )
+  const [statusFilter, setStatusFilter] = useState('all')
   const [editTarget, setEditTarget] = useState(null)
-  const [deleteTarget, setDeleteTarget] = useState(null)
+  const [deactivateTarget, setDeactivateTarget] = useState(null)
+  const [submitting, setSubmitting] = useState(false)
   const [notice, setNotice] = useState(null)
   const supervisors = useMemo(
     () => people.filter((person) => person.types.includes('SUPERVISOR')),
     [people],
   )
-  const superintendents = useMemo(
-    () => contacts.filter((contact) => contact.type === 'JOBSITE_SUPERINTENDENT'),
-    [contacts],
-  )
-  const supervisorsById = useMemo(
-    () => new Map(supervisors.map((person) => [person.id, person])),
-    [supervisors],
-  )
-  const superintendentsById = useMemo(
-    () => new Map(superintendents.map((person) => [person.id, person])),
-    [superintendents],
+  const builderIdsByName = useMemo(
+    () => new Map(builders.map((builder) => [builder.name, builder.id])),
+    [builders],
   )
 
   const createRequested = searchParams.get('create') === '1'
   const legacyBuilderId = searchParams.get('builder')
   const legacyJobId = searchParams.get('job')
   const dialogJob = editTarget ?? (createRequested ? null : undefined)
-  const dialogOpen = createRequested || Boolean(editTarget)
   const selectedBuilder = builders.find(
     (builder) => String(builder.id) === builderId,
   )
+  const dialogOpen = canManageJobs && (
+    Boolean(editTarget) || (createRequested && selectedBuilder?.isActive)
+  )
   const builderJobs = useMemo(
     () => selectedBuilder
-      ? jobs.filter((job) => job.builder === selectedBuilder.name)
+      ? jobs.filter(
+          (job) => String(job.builderId) === String(selectedBuilder.id),
+        )
       : [],
     [jobs, selectedBuilder],
   )
 
-  const filteredJobs = useMemo(() => {
+  const searchedJobs = useMemo(() => {
     const query = search.trim().toLowerCase()
 
     return builderJobs.filter((job) =>
@@ -333,14 +136,24 @@ export default function JobsCatalog() {
           job.code,
           job.community,
           job.builder,
-          personName(supervisorsById, job.supervisorId),
-          personName(superintendentsById, job.superintendentId),
+          ...resolveJobContacts(job, people, contacts).map((contact) => contact.name),
       ]
         .join(' ')
         .toLowerCase()
         .includes(query),
     )
-  }, [builderJobs, search, superintendentsById, supervisorsById])
+  }, [builderJobs, contacts, people, search])
+  const statusOptions = useMemo(() => [
+    { value: 'all', label: 'All', count: searchedJobs.length },
+    { value: 'active', label: 'Active', count: searchedJobs.filter((job) => job.isActive).length },
+    { value: 'inactive', label: 'Inactive', count: searchedJobs.filter((job) => !job.isActive).length },
+  ], [searchedJobs])
+  const filteredJobs = useMemo(
+    () => searchedJobs.filter((job) =>
+      statusFilter === 'all' || (statusFilter === 'active' ? job.isActive : !job.isActive),
+    ),
+    [searchedJobs, statusFilter],
+  )
 
   const visibleJobs = filteredJobs.slice(
     page * rowsPerPage,
@@ -365,12 +178,15 @@ export default function JobsCatalog() {
         builder.name === editTarget?.builder,
     )
     .map((builder) => builder.name)
+  const availableSupervisors = supervisors.filter(
+    (supervisor) => supervisor.isActive || supervisor.id === editTarget?.supervisorId,
+  )
   useEffect(() => {
     if (builderId || jobId || (!legacyBuilderId && !legacyJobId)) return
 
     const legacyJob = jobs.find((job) => String(job.id) === legacyJobId)
     const resolvedBuilderId = legacyJob
-      ? getJobBuilderId(legacyJob, builders)
+      ? getJobBuilderId(legacyJob)
       : legacyBuilderId
 
     if (legacyJob && resolvedBuilderId != null) {
@@ -385,7 +201,6 @@ export default function JobsCatalog() {
     }
   }, [
     builderId,
-    builders,
     jobId,
     jobs,
     legacyBuilderId,
@@ -400,14 +215,14 @@ export default function JobsCatalog() {
 
   const openBuilderJobs = (builder) => {
     setSearch('')
+    setStatusFilter('all')
     setPage(0)
-    navigate(builderJobsPath(builder.id))
-  }
-
-  const showBuilders = () => {
-    setSearch('')
-    setPage(0)
-    navigate('/jobs')
+    // Arriving from the sidebar's Create button: carry the intent to the Job form.
+    navigate(
+      createRequested && builder.isActive
+        ? `${builderJobsPath(builder.id)}?create=1`
+        : builderJobsPath(builder.id),
+    )
   }
 
   const openCreateDialog = () => {
@@ -422,106 +237,108 @@ export default function JobsCatalog() {
     }
   }
 
-  const handleMenuOpen = (event, job) => {
-    event.stopPropagation()
-    setMenuAnchor(event.currentTarget)
-    setSelectedJob(job)
-  }
-
-  const handleMenuClose = () => {
-    setMenuAnchor(null)
-    setSelectedJob(null)
-  }
-
-  const openEditDialog = () => {
-    setEditTarget(selectedJob)
-    handleMenuClose()
-  }
-
-  const openDeleteDialog = () => {
-    setDeleteTarget(selectedJob)
-    handleMenuClose()
-  }
-
   const openJobDetails = (job) => {
     navigate(jobPlansOptionsPath(selectedBuilder.id, job.id))
   }
 
-  const openSelectedJobDetails = () => {
-    const job = selectedJob
-    handleMenuClose()
-    if (job) openJobDetails(job)
+  const clearFilters = () => {
+    setSearch('')
+    setStatusFilter('all')
+    setPage(0)
   }
 
-  const handleCreateSuperintendent = (draft, builderName) => {
-    const created = {
+  const handleCreateContact = async (draft, builderName, type) => {
+    const builderIdForContact = builderIdsByName.get(builderName)
+    if (!builderIdForContact) {
+      throw new Error('Select a persisted Builder before adding a contact.')
+    }
+
+    return createBuilderContact({
       ...emptyContact,
       ...draft,
-      id: Date.now(),
-      type: 'JOBSITE_SUPERINTENDENT',
-      builder: builderCodeByName[builderName] ?? '',
-    }
-    setContacts((current) => [created, ...current])
-    return created
+      typeName: contactTypeLabels[type],
+      builderId: builderIdForContact,
+      isActive: true,
+    })
   }
 
-  const handleSave = (form) => {
-    const savedBuilderId = builders.find(
-      (builder) => builder.name === form.builder,
-    )?.id ?? editTarget?.builderId ?? selectedBuilder.id
+  const handleUpdateContact = (contactId, draft) => {
+    const existing = contacts.find((contact) => contact.id === contactId)
+    if (!existing) throw new Error('That contact no longer exists.')
 
-    if (editTarget) {
-      setJobs((current) =>
-        current.map((job) =>
-          job.id === editTarget.id
-            ? { ...job, ...form, builderId: savedBuilderId }
-            : job,
-        ),
-      )
-      setNotice({ severity: 'success', message: 'Job updated.' })
-    } else {
-      setJobs((current) => [
-        {
-          ...form,
-          id: Date.now(),
-          builderId: savedBuilderId,
-          sequenceSheet: {
-            name: 'Options Sequence Sheet',
-            plans: [],
-            phases: [],
-          },
-        },
-        ...current,
-      ])
+    return updateBuilderContact(contactId, { ...existing, ...draft })
+  }
+
+  const handleCreateCompanyContact = (draft, type) =>
+    createContact({ ...emptyPerson, ...draft, types: [type], isActive: true })
+
+  const handleUpdateCompanyContact = (contactId, draft) => {
+    const existing = people.find((person) => person.id === contactId)
+    if (!existing) throw new Error('That contact no longer exists.')
+
+    return updateContact(contactId, { ...existing, ...draft })
+  }
+
+  const handleSave = async (form) => {
+    const savedBuilderId = editTarget
+      ? builders.find((builder) => builder.name === form.builder)?.id
+        ?? editTarget.builderId
+      : selectedBuilder.id
+
+    setSubmitting(true)
+    try {
+      const mutation = { ...form, builderId: savedBuilderId }
+
+      // A person picked for a role they do not have yet gets that type first,
+      // because the Job only accepts contacts of the matching type.
+      for (const { person, types } of contactTypesToAdd(form, people, jobContactRoles)) {
+        await updateContact(person.id, { ...person, types })
+      }
+
+      if (editTarget) {
+        await updateJob(editTarget.id, mutation)
+        setNotice({ severity: 'success', message: 'Job updated.' })
+      } else {
+        await createJob(mutation)
+        setPage(0)
+        setNotice({ severity: 'success', message: 'Job created.' })
+      }
+
+      closeDialog()
+    } catch (saveError) {
+      setNotice({ severity: 'error', message: saveError.message })
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const handleDeactivate = async () => {
+    if (!deactivateTarget) return
+
+    setSubmitting(true)
+    try {
+      await deactivateJob(deactivateTarget.id)
+      setDeactivateTarget(null)
       setPage(0)
-      setNotice({ severity: 'success', message: 'Job created.' })
+      setNotice({ severity: 'success', message: 'Job deactivated.' })
+    } catch (deactivateError) {
+      setNotice({ severity: 'error', message: deactivateError.message })
+    } finally {
+      setSubmitting(false)
     }
-
-    closeDialog()
-  }
-
-  const handleDelete = () => {
-    setJobs((current) => current.filter((job) => job.id !== deleteTarget.id))
-    setDeleteTarget(null)
-    setPage(0)
-    setNotice({ severity: 'success', message: 'Job deleted.' })
-  }
-
-  const handleBuilderRenamed = (previousName, nextName) => {
-    setJobs((current) =>
-      current.map((job) =>
-        job.builder === previousName ? { ...job, builder: nextName } : job,
-      ),
-    )
   }
 
   if (!selectedBuilder) {
     return (
       <BuildersCatalog
+        banner={createRequested && (
+          <Alert severity="info" sx={{ mb: 2.5 }}>
+            Pick a builder to create the new job for. Jobs always belong to a builder.
+          </Alert>
+        )}
         getBuilderJobCount={(builder) =>
-          jobs.filter((job) => job.builder === builder.name).length
+          jobs.filter((job) => String(job.builderId) === String(builder.id)).length
         }
-        onBuilderRenamed={handleBuilderRenamed}
         onSelectBuilder={openBuilderJobs}
       />
     )
@@ -532,79 +349,62 @@ export default function JobsCatalog() {
       <JobDetails
         job={detailJob}
         builderId={selectedBuilder.id}
-        onBack={() => navigate(builderJobsPath(selectedBuilder.id))}
-        onChange={(updatedJob) => {
-          setJobs((current) =>
-            current.map((job) => (job.id === updatedJob.id ? updatedJob : job)),
-          )
-        }}
+        contacts={resolveJobContacts(detailJob, people, contacts)}
       />
     )
   }
 
+  const columnCount = 5 + Number(canManageJobs)
+  const hasFilters = Boolean(search.trim()) || statusFilter !== 'all'
+
   return (
     <Box sx={{ minHeight: '100%', bgcolor: 'background.default' }}>
-      <Box
-        sx={{
-          px: { xs: 2.5, md: 4 },
-          py: 3,
-          bgcolor: 'background.paper',
-          borderBottom: 1,
-          borderColor: 'divider',
-          display: 'flex',
-          alignItems: { xs: 'flex-start', sm: 'center' },
-          justifyContent: 'space-between',
-          gap: 2,
-          flexDirection: { xs: 'column', sm: 'row' },
-        }}
-      >
-        <Stack spacing={1.25} sx={{ alignItems: 'flex-start' }}>
-          <Button
-            color="inherit"
-            size="small"
-            startIcon={<ArrowBackRoundedIcon />}
-            onClick={showBuilders}
-            sx={{ ml: -1, color: 'text.secondary' }}
-          >
-            All builders
-          </Button>
-          <Box>
-            <Typography
-              variant="caption"
-              color="primary.main"
-              fontWeight={700}
-              sx={{ display: 'block', mb: 0.5, letterSpacing: '0.04em' }}
-            >
-              JOBS / BUILDERS / {selectedBuilder.name.toUpperCase()}
-            </Typography>
-            <Typography variant="h5" fontWeight={700} color="text.primary">
-              {selectedBuilder.name} jobs
-            </Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-              Viewing jobs assigned to this builder. Select one to manage its Plans &amp; Options.
-            </Typography>
-          </Box>
-        </Stack>
-        <ResponsiveCreateButton
-          label="New job"
-          onClick={openCreateDialog}
-        />
-      </Box>
+      <CatalogPageHeader
+        breadcrumbs={[
+          { label: 'Jobs', to: '/jobs' },
+          { label: selectedBuilder.name },
+        ]}
+        title={selectedBuilder.name}
+        titleAdornment={<StatusChip active={selectedBuilder.isActive} />}
+        subtitle={`Builder ${selectedBuilder.code} · select a job to manage its Plans & options.`}
+        meta={(
+          <FigureStrip
+            label={`${selectedBuilder.name} summary`}
+            figures={[
+              { label: builderJobs.length === 1 ? 'job' : 'jobs', value: builderJobs.length },
+              { label: totalPlans === 1 ? 'plan' : 'plans', value: totalPlans },
+              { label: 'lots from phases', value: totalUnits },
+            ]}
+          />
+        )}
+        actions={canManageJobs && selectedBuilder.isActive && (
+          <ResponsiveCreateButton
+            label="New job"
+            onClick={openCreateDialog}
+          />
+        )}
+      />
 
       <Box sx={{ p: { xs: 2.5, md: 4 } }}>
-        <Box sx={{ mb: 2.5 }}>
-          <Typography variant="subtitle1" fontWeight={700}>
-            Jobs for {selectedBuilder.name}
-          </Typography>
-          <Typography variant="body2" color="text.secondary" sx={{ mt: 0.25 }}>
-            This list only includes jobs belonging to the selected builder.
-          </Typography>
-        </Box>
-        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} sx={{ mb: 3 }}>
-          <SummaryCard icon={<HomeWorkRoundedIcon />} label="Jobs" value={builderJobs.length} />
-          <SummaryCard icon={<LayersRoundedIcon />} label="Plans" value={totalPlans} />
-          <SummaryCard icon={<ApartmentRoundedIcon />} label="Lots from phases" value={totalUnits} />
-        </Stack>
+        {error && (
+          <Alert
+            severity="error"
+            action={(
+              <Button color="inherit" size="small" onClick={() => refreshJobs().catch(() => {})}>
+                Retry
+              </Button>
+            )}
+            sx={{ mb: 2.5 }}
+          >
+            {error}
+          </Alert>
+        )}
+
+        {createRequested && !selectedBuilder.isActive && (
+          <Alert severity="info" sx={{ mb: 2.5 }}>
+            {selectedBuilder.name} is inactive, so it cannot receive new jobs. Pick another builder to create one.
+          </Alert>
+        )}
 
         <Box
           sx={{
@@ -616,51 +416,81 @@ export default function JobsCatalog() {
           }}
         >
           <Stack
-            direction={{ xs: 'column', md: 'row' }}
-            spacing={1.5}
-            sx={{ p: 2.5, borderBottom: 1, borderColor: 'divider' }}
+            direction={{ xs: 'column', lg: 'row' }}
+            sx={{
+              alignItems: { lg: 'center' },
+              justifyContent: 'space-between',
+              borderBottom: 1,
+              borderColor: 'divider',
+            }}
           >
-            <TextField
-              value={search}
-              onChange={(event) => {
-                setSearch(event.target.value)
-                setPage(0)
-              }}
-              size="small"
-              placeholder="Search jobs, communities or team members..."
-              sx={{ width: { xs: '100%', md: 380 } }}
-              slotProps={{
-                input: {
-                  startAdornment: (
-                    <InputAdornment position="start">
-                      <SearchRoundedIcon fontSize="small" color="action" />
-                    </InputAdornment>
-                  ),
-                },
-              }}
-            />
+            <Box sx={{ px: 1, borderBottom: { xs: 1, lg: 0 }, borderColor: 'divider' }}>
+              <StatusTabs
+                label="Filter jobs by status"
+                value={statusFilter}
+                onChange={(next) => {
+                  setStatusFilter(next)
+                  setPage(0)
+                }}
+                options={statusOptions}
+              />
+            </Box>
+            <Box sx={{ p: 1.25 }}>
+              <TextField
+                value={search}
+                onChange={(event) => {
+                  setSearch(event.target.value)
+                  setPage(0)
+                }}
+                size="small"
+                placeholder="Search jobs, communities or team members"
+                sx={{ width: { xs: '100%', lg: 380 } }}
+                slotProps={{
+                  htmlInput: { 'aria-label': 'Search jobs, communities or team members' },
+                  input: {
+                    startAdornment: (
+                      <InputAdornment position="start">
+                        <SearchRoundedIcon fontSize="small" color="action" />
+                      </InputAdornment>
+                    ),
+                    endAdornment: search ? (
+                      <InputAdornment position="end">
+                        <IconButton
+                          size="small"
+                          edge="end"
+                          aria-label="Clear search"
+                          onClick={() => {
+                            setSearch('')
+                            setPage(0)
+                          }}
+                        >
+                          <ClearRoundedIcon fontSize="small" />
+                        </IconButton>
+                      </InputAdornment>
+                    ) : null,
+                  },
+                }}
+              />
+            </Box>
           </Stack>
 
           <TableContainer>
-            <Table sx={{ minWidth: 840 }}>
+            <Table
+              size="small"
+              aria-label={`Jobs for ${selectedBuilder.name}`}
+              aria-busy={loading}
+              sx={[{ minWidth: 820 }, catalogTableSx]}
+            >
               <TableHead>
-                <TableRow
-                  sx={{
-                    bgcolor: 'sidebar.bg',
-                    '& .MuiTableCell-root': {
-                      color: 'text.secondary',
-                      fontSize: 12,
-                      fontWeight: 700,
-                      letterSpacing: '0.04em',
-                      textTransform: 'uppercase',
-                    },
-                  }}
-                >
+                <TableRow>
                   <TableCell>Job#</TableCell>
-                  <TableCell>Community / Builder</TableCell>
-                  <TableCell>Supervisor</TableCell>
-                  <TableCell>Jobsite Superintendent</TableCell>
-                  <TableCell width={150}>Lots from Phases</TableCell>
+                  <TableCell>Community</TableCell>
+                  <TableCell>Contacts</TableCell>
+                  <TableCell align="right" width={80}>Plans</TableCell>
+                  <TableCell align="right" width={130}>Lots from phases</TableCell>
+                  <TableCell align="right" width={canManageJobs ? 120 : 64}>
+                    <Box component="span" sx={visuallyHiddenSx}>Actions</Box>
+                  </TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
@@ -668,107 +498,128 @@ export default function JobsCatalog() {
                   <TableRow
                     key={job.id}
                     hover
-                    role="link"
-                    tabIndex={0}
-                    aria-label={`Open Job ${job.code}`}
                     onClick={() => openJobDetails(job)}
-                    onKeyDown={(event) => {
-                      if (event.target === event.currentTarget && event.key === 'Enter') {
-                        openJobDetails(job)
-                      }
-                    }}
-                    sx={{
-                      cursor: 'pointer',
-                      '&:last-child td': { borderBottom: 0 },
-                      '&:focus-visible': {
-                        outline: '2px solid',
-                        outlineColor: 'primary.main',
-                        outlineOffset: -2,
-                      },
-                    }}
+                    sx={{ cursor: 'pointer' }}
                   >
                     <TableCell>
-                      <Stack direction="row" spacing={1.25} sx={{ alignItems: 'center' }}>
-                        <Box
-                          sx={{
-                            width: 36,
-                            height: 36,
-                            borderRadius: 1.5,
-                            display: 'grid',
-                            placeItems: 'center',
-                            bgcolor: 'primary.light',
-                            color: 'primary.main',
-                            flexShrink: 0,
+                      <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+                        <Link
+                          component="button"
+                          type="button"
+                          underline="hover"
+                          variant="body2"
+                          fontWeight={700}
+                          aria-label={`Open Job ${job.code}`}
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            openJobDetails(job)
                           }}
+                          sx={[{ textAlign: 'left' }, focusRingSx]}
                         >
-                          <BackupTableRoundedIcon fontSize="small" />
-                        </Box>
-                        <Box>
-                          <Typography variant="body2" fontWeight={700} noWrap color="primary.main">
-                            {job.code}
-                          </Typography>
-                          <Typography variant="caption" color="text.secondary">
-                            {getJobPlanCount(job)}{' '}
-                            {getJobPlanCount(job) === 1 ? 'plan' : 'plans'}
-                          </Typography>
-                        </Box>
+                          {job.code}
+                        </Link>
+                        {!job.isActive && (
+                          <Chip label="Inactive" size="small" variant="outlined" />
+                        )}
                       </Stack>
                     </TableCell>
                     <TableCell>
                       <Typography variant="body2" fontWeight={600} noWrap>
                         {job.community}
                       </Typography>
-                      <Typography variant="caption" color="text.secondary" noWrap component="div">
-                        {job.builder}
+                    </TableCell>
+                    <TableCell sx={{ minWidth: 260 }}>
+                      <JobContactsSummary
+                        contacts={resolveJobContacts(job, people, contacts)}
+                      />
+                    </TableCell>
+                    <TableCell align="right">
+                      <Typography
+                        variant="body2"
+                        color={getJobPlanCount(job) ? 'text.primary' : 'text.disabled'}
+                      >
+                        {getJobPlanCount(job)}
                       </Typography>
                     </TableCell>
-                    <TableCell>
-                      <Typography variant="body2" fontWeight={600} noWrap>
-                        {personName(supervisorsById, job.supervisorId)}
+                    <TableCell align="right">
+                      <Typography
+                        variant="body2"
+                        color={getJobUnitCount(job) ? 'text.primary' : 'text.disabled'}
+                      >
+                        {getJobUnitCount(job)}
                       </Typography>
                     </TableCell>
-                    <TableCell>
-                      <Typography variant="body2" fontWeight={600} noWrap>
-                        {personName(superintendentsById, job.superintendentId)}
-                      </Typography>
-                    </TableCell>
-                    <TableCell>
+                    <TableCell align="right">
                       <Stack
                         direction="row"
-                        spacing={1}
-                        sx={{ alignItems: 'center', justifyContent: 'space-between' }}
+                        spacing={0.5}
+                        sx={{ alignItems: 'center', justifyContent: 'flex-end' }}
                       >
-                        <Typography variant="body2" fontWeight={600}>
-                          {getJobUnitCount(job)}
-                        </Typography>
-                        <IconButton
+                        <Button
                           size="small"
-                          aria-label={`Actions for ${job.code}`}
-                          onClick={(event) => handleMenuOpen(event, job)}
+                          color="inherit"
+                          endIcon={<ArrowForwardRoundedIcon />}
+                          aria-label={`Open Plans & options for Job ${job.code}`}
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            openJobDetails(job)
+                          }}
+                          sx={{ color: 'primary.main' }}
                         >
-                          <MoreHorizRoundedIcon />
-                        </IconButton>
+                          Open
+                        </Button>
+                        {canManageJobs && (
+                          <RowActionsMenu
+                            label={`Actions for ${job.code}`}
+                            items={[
+                              {
+                                label: 'Edit',
+                                icon: <EditOutlinedIcon fontSize="small" />,
+                                onClick: () => setEditTarget(job),
+                              },
+                              {
+                                label: 'Deactivate',
+                                icon: <BlockRoundedIcon fontSize="small" />,
+                                color: 'error.main',
+                                disabled: !job.isActive,
+                                onClick: () => setDeactivateTarget(job),
+                              },
+                            ]}
+                          />
+                        )}
                       </Stack>
                     </TableCell>
                   </TableRow>
                 ))}
 
-                {visibleJobs.length === 0 && (
-                  <TableRow>
-                    <TableCell colSpan={5} sx={{ py: 8, textAlign: 'center' }}>
-                      <SearchRoundedIcon color="action" sx={{ fontSize: 40, mb: 1 }} />
-                      <Typography fontWeight={600}>No jobs found</Typography>
-                      <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-                        {search
-                          ? 'Try changing your search.'
-                          : `Create the first job for ${selectedBuilder.name}.`}
-                      </Typography>
-                    </TableCell>
-                  </TableRow>
+                {loading && visibleJobs.length === 0 && (
+                  <CatalogSkeletonRows columns={columnCount} />
                 )}
               </TableBody>
             </Table>
           </TableContainer>
+
+          {!loading && visibleJobs.length === 0 && (
+            <CatalogEmptyState
+              title={builderJobs.length === 0 ? 'No jobs yet' : 'No jobs found'}
+              description={builderJobs.length === 0
+                ? `Create the first job for ${selectedBuilder.name}.`
+                : 'No job matches your search or status filter.'}
+              action={hasFilters && builderJobs.length > 0
+                ? (
+                  <Button size="small" variant="outlined" onClick={clearFilters}>
+                    Clear filters
+                  </Button>
+                )
+                : builderJobs.length === 0 && canManageJobs && selectedBuilder.isActive
+                  ? (
+                    <Button size="small" variant="outlined" onClick={openCreateDialog}>
+                      New job
+                    </Button>
+                  )
+                  : undefined}
+            />
+          )}
 
           <TablePagination
             component="div"
@@ -780,67 +631,67 @@ export default function JobsCatalog() {
               setRowsPerPage(Number(event.target.value))
               setPage(0)
             }}
-            rowsPerPageOptions={[5, 10, 25]}
+            rowsPerPageOptions={JOB_ROWS_PER_PAGE_OPTIONS}
+            labelRowsPerPage="Rows"
           />
         </Box>
       </Box>
 
-      <Menu
-        anchorEl={menuAnchor}
-        open={Boolean(menuAnchor)}
-        onClose={handleMenuClose}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-        transformOrigin={{ vertical: 'top', horizontal: 'right' }}
-      >
-        <MenuItem onClick={openSelectedJobDetails}>
-          <BackupTableRoundedIcon fontSize="small" sx={{ mr: 1.25 }} />
-          View Plans & Options for job #{selectedJob?.code}
-        </MenuItem>
-        <MenuItem onClick={openEditDialog}>
-          <EditOutlinedIcon fontSize="small" sx={{ mr: 1.25 }} />
-          Edit
-        </MenuItem>
-        <MenuItem onClick={openDeleteDialog} sx={{ color: 'error.main' }}>
-          <DeleteOutlineRoundedIcon fontSize="small" sx={{ mr: 1.25 }} />
-          Delete
-        </MenuItem>
-      </Menu>
-
       {dialogOpen && (
         <JobDialog
-          key={dialogJob?.id ?? 'new'}
+          key={dialogJob?.id ?? `new-${selectedBuilder.id}`}
           builderOptions={builderOptions}
+          builderIdsByName={builderIdsByName}
           defaultBuilder={selectedBuilder.name}
-          supervisors={supervisors}
-          superintendents={superintendents}
+          supervisors={availableSupervisors}
+          contacts={contacts}
+          companyContacts={people}
           job={dialogJob}
           jobs={jobs}
           onClose={closeDialog}
-          onCreateSuperintendent={handleCreateSuperintendent}
+          onCreateContact={
+            canManageBuilderContacts ? handleCreateContact : undefined
+          }
+          onCreateCompanyContact={
+            canManageContacts ? handleCreateCompanyContact : undefined
+          }
           onSave={handleSave}
+          onUpdateContact={
+            canManageBuilderContacts ? handleUpdateContact : undefined
+          }
+          onUpdateCompanyContact={
+            canManageContacts ? handleUpdateCompanyContact : undefined
+          }
+          submitting={submitting}
         />
       )}
 
       <Dialog
-        open={Boolean(deleteTarget)}
-        onClose={() => setDeleteTarget(null)}
+        open={Boolean(deactivateTarget)}
+        onClose={submitting ? undefined : () => setDeactivateTarget(null)}
         fullWidth
         maxWidth="xs"
       >
-        <DialogTitle>Delete job?</DialogTitle>
+        <DialogTitle>Deactivate Job?</DialogTitle>
         <DialogContent>
           <Typography variant="body2" color="text.secondary">
-            {deleteTarget
-              ? `${deleteTarget.code} — ${deleteTarget.community} / ${deleteTarget.builder} will be removed.`
+            {deactivateTarget
+              ? `${deactivateTarget.code} — ${deactivateTarget.community} / ${deactivateTarget.builder} will remain in the catalog as inactive. Its existing configuration will be preserved.`
               : ''}
           </Typography>
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2.5 }}>
-          <Button color="inherit" onClick={() => setDeleteTarget(null)}>
+          <Button color="inherit" onClick={() => setDeactivateTarget(null)} disabled={submitting}>
             Cancel
           </Button>
-          <Button color="error" variant="contained" onClick={handleDelete} disableElevation>
-            Delete job
+          <Button
+            color="error"
+            variant="contained"
+            onClick={handleDeactivate}
+            disabled={submitting}
+            disableElevation
+          >
+            Deactivate Job
           </Button>
         </DialogActions>
       </Dialog>

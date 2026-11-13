@@ -13,20 +13,32 @@ export const userRoleOptions = [
   {
     value: 'ACCOUNTING',
     label: 'Accounting',
-    description: 'Invoices, draws, invoice packages, QuickBooks, payments and releases.',
+    description: 'Draw & Invoice (Packages, QuickBooks, payments, releases and notes, A/R) and Builder Setup.',
+    scoped: false,
+  },
+  {
+    value: 'DRAW_INVOICE',
+    label: 'Draw & Invoice',
+    description: 'Only Draw & Invoice: Packages, Documents, notes and QuickBooks invoices. No A/R and no other module.',
     scoped: false,
   },
   {
     value: 'PROJECT_MANAGEMENT',
     label: 'Project Management',
-    description: 'Projects, proposals, sequence sheets, pricing and draw setup.',
+    description: 'Jobs, Plans & Options, Plan Pricing, Purchase Orders and Change Orders.',
     scoped: true,
   },
   {
     value: 'SCHEDULING',
     label: 'Scheduling',
-    description: 'Production calendar and job scheduling.',
+    description: 'Production Calendar and Sequence Sheets.',
     scoped: true,
+  },
+  {
+    value: 'CUSTOMER_SERVICE',
+    label: 'Customer Service',
+    description: 'The Customer Service module.',
+    scoped: false,
   },
   {
     value: 'FIELD',

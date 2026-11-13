@@ -1,16 +1,21 @@
+import { useEffect, useRef } from 'react'
 import {
   Alert,
+  AlertTitle,
   Box,
   Button,
   Chip,
   Divider,
+  ListSubheader,
   MenuItem,
   Paper,
   Stack,
   TextField,
   Typography,
 } from '@mui/material'
+import DateField from '../../../components/common/DateField.jsx'
 import EventAvailableRoundedIcon from '@mui/icons-material/EventAvailableRounded'
+import EventRepeatRoundedIcon from '@mui/icons-material/EventRepeatRounded'
 import { getBuilderDateConfiguration } from '../../builders/data/builders.js'
 import {
   activityTypeMap,
@@ -18,6 +23,7 @@ import {
   getLotsLabel,
 } from '../data/calendarEvents.js'
 import DrawerHeader from './DrawerHeader.jsx'
+import FormSaveStatus from './FormSaveStatus.jsx'
 import {
   DateOwnerSelector,
   OptionCheckbox,
@@ -26,15 +32,24 @@ import {
 } from './ProductionFormControls.jsx'
 import {
   createDefaultSplitParts,
-  formatBuilding,
-  formatPhase,
+  findJobBuilder,
   getPhasePatch,
+  formatPhaseBuilding,
 } from './calendarSchedulerUtils.js'
+import {
+  countUnscheduledPhases,
+  existingPhaseEvents,
+  formatEventDay,
+  sortJobsForScheduling,
+  sortPhasesForScheduling,
+} from '../utils/phaseCalendarCoverage.js'
 import {
   calculateProductionDates,
   calculateShutterDate,
   getProductionDateCascade,
 } from '../utils/calendarDateRules.js'
+import { errorsByKey, fieldErrorProps } from '../utils/calendarFormErrors.js'
+import { focusFormError } from '../utils/formErrorFocus.js'
 
 function AutoField({ label, value }) {
   return (
@@ -58,7 +73,7 @@ function ProductionSummary({ draft }) {
       <Box className="production-summary__grid">
         <AutoField label="Builder" value={draft.builder} />
         <AutoField label="Community" value={draft.community} />
-        <AutoField label="Building" value={draft.building} />
+        {draft.building && <AutoField label="Building" value={draft.building} />}
         <AutoField label="Lot range" value={getLotsLabel(draft.lotStart, draft.lotEnd, draft.lotNumbers)} />
         <AutoField label="Foreman / Supervisor" value={draft.foreman} />
         <AutoField label="Jobsite Superintendent" value={draft.superintendent} />
@@ -70,27 +85,137 @@ function ProductionSummary({ draft }) {
   )
 }
 
-function findJobBuilder(job, builders) {
-  return builders.find((builder) => (
-    builder.id === job?.builderId || builder.name === job?.builder
-  ))
-}
-
 export default function ActivityForm({
   jobs,
   builders = [],
+  people = [],
+  builderContacts = [],
+  events = [],
+  dateMove = null,
+  phaseStatusOf,
+  onOpenExisting,
   draft,
   isEditing,
   activeActivityType,
-  formError,
+  errors = [],
+  focusRequest = null,
   onChange,
   onClose,
   onSave,
+  saving = false,
 }) {
+  const scrollRef = useRef(null)
+  const errorByKey = errorsByKey(errors)
+  // A stage card is marked when anything inside it is wrong, so it shows from the card's edge too.
+  const stageHasError = (...prefixes) => errors.some(
+    (error) => error.key && prefixes.some((prefix) => error.key.startsWith(prefix)),
+  )
+
+  // After a Save that did not go through, the form takes the person to the first thing to fix:
+  // scrolled into view, with the focus on it.
+  useEffect(() => {
+    if (!focusRequest) return
+    focusRequest.keys.some((key) => focusFormError(scrollRef.current, key))
+  }, [focusRequest])
+
+  // The link in the list next to Save. A field that is not in this form (one of another event
+  // while a single event is open) has nothing to go to, so the form goes back to its top.
+  const jumpToField = (key) => {
+    if (!focusFormError(scrollRef.current, key)) {
+      scrollRef.current?.scrollTo({ top: 0 })
+    }
+  }
+
   const selectedJob = jobs.find((job) => job.id === Number(draft.jobId)) ?? null
   const builderDateConfiguration = getBuilderDateConfiguration(findJobBuilder(selectedJob, builders))
-  const phases = selectedJob?.sequenceSheet?.phases ?? []
+  const phases = (selectedJob?.sequenceSheet?.phases ?? []).filter(
+    (phase) => (phase.lots ?? []).some((lot) => !lot.isUtilityBuilding),
+  )
+  // Jobs with Phases still to schedule come first; the ones with everything on the Calendar follow,
+  // under their own heading, so it is clear what is left to schedule. Until the coverage has loaded
+  // the list stays as it is, with no headings.
+  const jobGroups = sortJobsForScheduling(jobs, phaseStatusOf)
+  const jobSections = [
+    { key: 'pending', title: 'Phases left to schedule', jobs: jobGroups.pending },
+    { key: 'scheduled', title: 'Already scheduled', jobs: jobGroups.scheduled },
+    { key: 'empty', title: 'No phases yet', jobs: jobGroups.empty },
+  ].filter((section) => section.jobs.length > 0)
+  const jobLabel = (job) => `#${job.code} · ${job.community} · ${job.builder}`
+  const jobOption = (job, sectionKey) => {
+    const left = phaseStatusOf && sectionKey === 'pending'
+      ? countUnscheduledPhases(job, phaseStatusOf)
+      : 0
+
+    return (
+      <MenuItem key={job.id} value={job.id}>
+        <Stack
+          direction="row"
+          spacing={1}
+          sx={{ width: '100%', alignItems: 'center', justifyContent: 'space-between' }}
+        >
+          <span>{jobLabel(job)}</span>
+          {left > 0 && (
+            <Chip
+              size="small"
+              color="primary"
+              variant="outlined"
+              label={`${left} ${left === 1 ? 'phase' : 'phases'} left`}
+            />
+          )}
+          {sectionKey === 'scheduled' && (
+            <Chip size="small" color="success" variant="outlined" label="Scheduled" />
+          )}
+        </Stack>
+      </MenuItem>
+    )
+  }
+  // Phases that still have no events come first; the ones already on the
+  // Calendar follow, marked, so it is clear what is left to schedule.
+  const statusOfPhase = phaseStatusOf ?? (() => null)
+  const { pending: pendingPhases, scheduled: scheduledPhases } = sortPhasesForScheduling(
+    phases,
+    (phase) => statusOfPhase(selectedJob, phase),
+  )
+  const selectedPhase = phases.find((phase) => phase.id === Number(draft.phaseId)) ?? null
+  const selectedPhaseEvents = selectedJob && selectedPhase
+    ? existingPhaseEvents(events, selectedJob.id, selectedPhase.id)
+    : []
+  const selectedPhaseIsScheduled = !isEditing && Boolean(selectedPhase) && (
+    statusOfPhase(selectedJob, selectedPhase) === 'scheduled' || selectedPhaseEvents.length > 0
+  )
   const totalLots = draft.lotNumbers.length
+  const phaseLabel = (phase) => (
+    `${formatPhaseBuilding(phase.name, phase.building)} · ${
+      (phase.lots ?? []).filter((lot) => !lot.isUtilityBuilding).length
+    } lots`
+  )
+  const phaseOption = (phase, scheduled) => {
+    const first = scheduled && selectedJob
+      ? existingPhaseEvents(events, selectedJob.id, phase.id)[0]
+      : null
+
+    return (
+      <MenuItem key={phase.id} value={phase.id}>
+        <Stack
+          direction="row"
+          spacing={1}
+          sx={{ width: '100%', alignItems: 'center', justifyContent: 'space-between' }}
+        >
+          <span>{phaseLabel(phase)}</span>
+          {scheduled && (
+            <Chip
+              size="small"
+              color="success"
+              variant="outlined"
+              label={first
+                ? `Scheduled · ${activityTypeMap[first.type]?.shortLabel ?? first.type} ${formatEventDay(first.date)}`
+                : 'Scheduled'}
+            />
+          )}
+        </Stack>
+      </MenuItem>
+    )
+  }
   const activeType = activityTypeMap[activeActivityType] ?? null
 
   const changeJob = (jobId) => {
@@ -98,7 +223,7 @@ export default function ActivityForm({
     const dateConfiguration = getBuilderDateConfiguration(findJobBuilder(job, builders))
     const automaticDates = job ? calculateProductionDates(draft.extDate, dateConfiguration) : {}
     onChange({
-      ...getPhasePatch(job, null),
+      ...getPhasePatch(job, null, people, builderContacts),
       jobId: job?.id ?? '',
       ...automaticDates,
       dmShutters: false,
@@ -108,27 +233,42 @@ export default function ActivityForm({
 
   const changePhase = (phaseId) => {
     const phase = phases.find((item) => item.id === Number(phaseId)) ?? null
-    onChange(getPhasePatch(selectedJob, phase))
+    onChange(getPhasePatch(selectedJob, phase, people, builderContacts))
   }
 
-  const toggleSplit = (prefix, checked, date, dateOwner, dateNote) => {
+  const toggleSplit = (prefix, checked, dateOwner) => {
     const partsField = `${prefix}SplitParts`
     onChange({
       [`${prefix}SplitPhase`]: checked,
-      [partsField]: checked ? createDefaultSplitParts(draft, date, dateOwner, dateNote) : [],
+      [partsField]: checked ? createDefaultSplitParts(draft, dateOwner) : [],
     })
   }
 
   return (
-    <Box component="form" className="activity-drawer__layout" onSubmit={onSave}>
+    <Box component="form" noValidate className="activity-drawer__layout" onSubmit={onSave}>
       <DrawerHeader
-        eyebrow={isEditing ? `CONFIGURE ${activeType?.shortLabel ?? 'EVENT'}` : 'NEW PRODUCTION ACTIVITY'}
+        eyebrow={dateMove
+          ? 'CONFIRM DATE CHANGE'
+          : isEditing ? `CONFIGURE ${activeType?.shortLabel ?? 'EVENT'}` : 'NEW PRODUCTION ACTIVITY'}
         title={isEditing ? `${activeType?.label ?? 'Event'} options` : 'Schedule production'}
         onClose={onClose}
       />
 
-      <Box className="activity-drawer__scroll">
-        {formError && <Alert severity="error">{formError}</Alert>}
+      <Box className="activity-drawer__scroll" ref={scrollRef}>
+        {dateMove && (
+          <Alert severity="warning" icon={<EventRepeatRoundedIcon />}>
+            <AlertTitle>Confirm the new date</AlertTitle>
+            {dateMove.changes.map((change) => (
+              <Box key={change.label} component="div" sx={{ fontWeight: 600 }}>
+                {change.label}: {formatEventDay(change.from, true)} → {formatEventDay(change.to, true)}
+              </Box>
+            ))}
+            <Box component="div" sx={{ mt: 0.75 }}>
+              Nothing changes until you press “Confirm date change”. Adjust anything
+              below first if you need to, or close this panel to keep the original dates.
+            </Box>
+          </Alert>
+        )}
 
         {!isEditing && (
           <Box className="activity-form__section">
@@ -146,13 +286,26 @@ export default function ActivityForm({
                 onChange={(event) => changeJob(event.target.value)}
                 required
                 fullWidth
+                {...fieldErrorProps('jobId', errorByKey.jobId)}
+                slotProps={{
+                  select: {
+                    renderValue: (value) => {
+                      const job = jobs.find((item) => item.id === Number(value))
+                      return job ? jobLabel(job) : ''
+                    },
+                  },
+                }}
               >
                 <MenuItem value="">Select a job</MenuItem>
-                {jobs.map((job) => (
-                  <MenuItem key={job.id} value={job.id}>
-                    #{job.code} · {job.community} · {job.builder}
-                  </MenuItem>
-                ))}
+                {jobSections.flatMap((section, index) => [
+                  ...(jobSections.length > 1
+                    ? [
+                        ...(index > 0 ? [<Divider key={`${section.key}-divider`} />] : []),
+                        <ListSubheader key={`${section.key}-heading`}>{section.title}</ListSubheader>,
+                      ]
+                    : []),
+                  ...section.jobs.map((job) => jobOption(job, section.key)),
+                ])}
               </TextField>
               <TextField
                 select
@@ -162,15 +315,49 @@ export default function ActivityForm({
                 disabled={!selectedJob || phases.length === 0}
                 required
                 fullWidth
+                {...fieldErrorProps('phaseId', errorByKey.phaseId)}
+                slotProps={{
+                  select: {
+                    renderValue: (value) => {
+                      const phase = phases.find((item) => item.id === Number(value))
+                      return phase ? phaseLabel(phase) : ''
+                    },
+                  },
+                }}
               >
                 <MenuItem value="">Select a phase</MenuItem>
-                {phases.map((phase) => (
-                  <MenuItem key={phase.id} value={phase.id}>
-                    {formatPhase(phase.name)} · {formatBuilding(phase.building)} · {phase.lots?.length ?? 0} lots
-                  </MenuItem>
-                ))}
+                {scheduledPhases.length > 0 && pendingPhases.length > 0 && (
+                  <ListSubheader>Not scheduled yet</ListSubheader>
+                )}
+                {pendingPhases.map((phase) => phaseOption(phase, false))}
+                {scheduledPhases.length > 0 && (
+                  <ListSubheader>Already on the calendar</ListSubheader>
+                )}
+                {scheduledPhases.map((phase) => phaseOption(phase, true))}
               </TextField>
             </Box>
+            {selectedPhaseIsScheduled && (
+              <Alert
+                severity="info"
+                action={onOpenExisting && selectedPhaseEvents[0] && (
+                  <Button
+                    color="inherit"
+                    size="small"
+                    onClick={() => onOpenExisting(selectedPhaseEvents[0].eventId)}
+                  >
+                    Open existing
+                  </Button>
+                )}
+              >
+                <AlertTitle>This phase already has events on the calendar</AlertTitle>
+                {selectedPhaseEvents.length > 0
+                  ? selectedPhaseEvents
+                    .map((item) => `${activityTypeMap[item.type]?.shortLabel ?? item.type} ${formatEventDay(item.date)}${item.count > 1 ? ` (+${item.count - 1})` : ''}`)
+                    .join(' · ')
+                  : 'It is already scheduled.'}
+                {' '}Open them to edit instead of creating the same events again.
+              </Alert>
+            )}
             {selectedJob && phases.length === 0 && (
               <Alert severity="warning">This job has no phases yet. Add a phase and its lots in Sequence Sheets first.</Alert>
             )}
@@ -219,6 +406,8 @@ export default function ActivityForm({
               <StageCard
                 activityType="EXT"
                 tone={getActivityTone('EXT', draft.extOrderMaterial)}
+                dateError={errorByKey.extDate}
+                hasError={stageHasError('ext')}
                 date={draft.extDate}
                 dateOwner={draft.extDateOwner}
                 note={draft.extDateNote}
@@ -245,7 +434,7 @@ export default function ActivityForm({
                       description="Add a separate EXT install-only event."
                       onChange={(checked) => onChange({
                         extInstallOnly: checked,
-                        extInstallDate: checked ? (draft.extInstallDate || draft.extDate) : '',
+                        extInstallDate: checked ? draft.extInstallDate : '',
                         extInstallDateOwner: checked
                           ? (draft.extInstallDateOwner || draft.extDateOwner)
                           : '',
@@ -254,16 +443,15 @@ export default function ActivityForm({
                     />
                     {draft.extInstallOnly && (
                       <Box className="activity-option-date-group">
-                        <TextField
+                        <DateField
                           label="EXT install-only date"
-                          type="date"
                           value={draft.extInstallDate}
-                          onChange={(event) => onChange({ extInstallDate: event.target.value })}
-                          slotProps={{ inputLabel: { shrink: true } }}
+                          onChange={(date) => onChange({ extInstallDate: date })}
                           fullWidth
                           required
                           size="small"
                           className="activity-option-date"
+                          {...fieldErrorProps('extInstallDate', errorByKey.extInstallDate)}
                         />
                         <DateOwnerSelector
                           value={draft.extInstallDateOwner}
@@ -294,6 +482,8 @@ export default function ActivityForm({
               <StageCard
                 activityType="SHUTTER"
                 tone="shutter"
+                dateError={errorByKey.shutterDate}
+                hasError={stageHasError('shutter')}
                 date={draft.shutterDate}
                 dateOwner={draft.shutterDateOwner}
                 note={draft.shutterDateNote}
@@ -312,6 +502,8 @@ export default function ActivityForm({
               <StageCard
                 activityType="DM"
                 tone="dm"
+                dateError={errorByKey.dmDate}
+                hasError={stageHasError('dm')}
                 date={draft.dmDate}
                 dateOwner={draft.dmDateOwner}
                 note={draft.dmDateNote}
@@ -333,7 +525,7 @@ export default function ActivityForm({
                         description="Add a separate DM install-only event."
                         onChange={(checked) => onChange({
                           dmInstallOnly: checked,
-                          dmInstallDate: checked ? (draft.dmInstallDate || draft.dmDate) : '',
+                          dmInstallDate: checked ? draft.dmInstallDate : '',
                           dmInstallDateOwner: checked
                             ? (draft.dmInstallDateOwner || draft.dmDateOwner)
                             : '',
@@ -342,16 +534,15 @@ export default function ActivityForm({
                       />
                       {draft.dmInstallOnly && (
                         <Box className="activity-option-date-group">
-                          <TextField
+                          <DateField
                             label="DM install-only date"
-                            type="date"
                             value={draft.dmInstallDate}
-                            onChange={(event) => onChange({ dmInstallDate: event.target.value })}
-                            slotProps={{ inputLabel: { shrink: true } }}
+                            onChange={(date) => onChange({ dmInstallDate: date })}
                             fullWidth
                             required
                             size="small"
                             className="activity-option-date"
+                            {...fieldErrorProps('dmInstallDate', errorByKey.dmInstallDate)}
                           />
                           <DateOwnerSelector
                             value={draft.dmInstallDateOwner}
@@ -374,17 +565,56 @@ export default function ActivityForm({
                         </Box>
                       )}
                       <OptionCheckbox
+                        checked={draft.dmBaseboardInstall}
+                        label="Baseboard install"
+                        description="Add a separate DM baseboard install event."
+                        onChange={(checked) => onChange({
+                          dmBaseboardInstall: checked,
+                          dmBaseboardInstallDate: checked ? draft.dmBaseboardInstallDate : '',
+                          dmBaseboardInstallDateOwner: checked
+                            ? (draft.dmBaseboardInstallDateOwner || draft.dmDateOwner)
+                            : '',
+                          dmBaseboardInstallDateNote: checked ? draft.dmBaseboardInstallDateNote : '',
+                        })}
+                      />
+                      {draft.dmBaseboardInstall && (
+                        <Box className="activity-option-date-group">
+                          <DateField
+                            label="DM baseboard install date"
+                            value={draft.dmBaseboardInstallDate}
+                            onChange={(date) => onChange({ dmBaseboardInstallDate: date })}
+                            fullWidth
+                            required
+                            size="small"
+                            className="activity-option-date"
+                            {...fieldErrorProps('dmBaseboardInstallDate', errorByKey.dmBaseboardInstallDate)}
+                          />
+                          <DateOwnerSelector
+                            value={draft.dmBaseboardInstallDateOwner}
+                            onChange={(value) => onChange({ dmBaseboardInstallDateOwner: value })}
+                            label="DM baseboard install date ownership"
+                            compact
+                          />
+                          <TextField
+                            label="DM baseboard install date note (optional)"
+                            value={draft.dmBaseboardInstallDateNote}
+                            onChange={(event) => onChange({ dmBaseboardInstallDateNote: event.target.value })}
+                            slotProps={{ htmlInput: { maxLength: 100 } }}
+                            helperText={`${draft.dmBaseboardInstallDateNote.length}/100`}
+                            multiline
+                            minRows={2}
+                            fullWidth
+                            size="small"
+                            className="date-note-field"
+                          />
+                        </Box>
+                      )}
+                      <OptionCheckbox
                         checked={draft.dmSplitPhase}
                         disabled={totalLots < 2}
                         label="Split phase"
                         description="Schedule groups of lots on different dates."
-                        onChange={(checked) => toggleSplit(
-                          'dm',
-                          checked,
-                          draft.dmDate,
-                          draft.dmDateOwner,
-                          draft.dmDateNote,
-                        )}
+                        onChange={(checked) => toggleSplit('dm', checked, draft.dmDateOwner)}
                       />
                       <OptionCheckbox
                         checked={draft.dmShutters}
@@ -404,16 +634,14 @@ export default function ActivityForm({
                     {draft.dmSplitPhase && (
                       <SplitScheduleEditor
                         activityType="DM"
+                        partsKey="dmSplitParts"
+                        errors={errorByKey}
                         parts={draft.dmSplitParts}
                         totalLots={totalLots}
+                        lotNumbers={draft.lotNumbers}
                         onChange={(parts) => onChange({ dmSplitParts: parts })}
                         onReset={() => onChange({
-                          dmSplitParts: createDefaultSplitParts(
-                            draft,
-                            draft.dmDate,
-                            draft.dmDateOwner,
-                            draft.dmDateNote,
-                          ),
+                          dmSplitParts: createDefaultSplitParts(draft, draft.dmDateOwner),
                         })}
                       />
                     )}
@@ -426,6 +654,8 @@ export default function ActivityForm({
               <StageCard
                 activityType="HW"
                 tone="hw"
+                dateError={errorByKey.hwDate}
+                hasError={stageHasError('hw')}
                 date={draft.hwDate}
                 dateOwner={draft.hwDateOwner}
                 note={draft.hwDateNote}
@@ -446,13 +676,7 @@ export default function ActivityForm({
                         disabled={totalLots < 2}
                         label="Split phase"
                         description="Schedule groups of lots on different dates."
-                        onChange={(checked) => toggleSplit(
-                          'hw',
-                          checked,
-                          draft.hwDate,
-                          draft.hwDateOwner,
-                          draft.hwDateNote,
-                        )}
+                        onChange={(checked) => toggleSplit('hw', checked, draft.hwDateOwner)}
                       />
                       <OptionCheckbox
                         checked={draft.hwLockUp}
@@ -460,7 +684,7 @@ export default function ActivityForm({
                         description="Add a separate Hardware lock-up event."
                         onChange={(checked) => onChange({
                           hwLockUp: checked,
-                          hwLockUpDate: checked ? (draft.hwLockUpDate || draft.hwDate) : '',
+                          hwLockUpDate: checked ? draft.hwLockUpDate : '',
                           hwLockUpDateOwner: checked
                             ? (draft.hwLockUpDateOwner || draft.hwDateOwner)
                             : '',
@@ -469,16 +693,15 @@ export default function ActivityForm({
                       />
                       {draft.hwLockUp && (
                         <Box className="activity-option-date-group">
-                          <TextField
+                          <DateField
                             label="Hardware lock-up date"
-                            type="date"
                             value={draft.hwLockUpDate}
-                            onChange={(event) => onChange({ hwLockUpDate: event.target.value })}
-                            slotProps={{ inputLabel: { shrink: true } }}
+                            onChange={(date) => onChange({ hwLockUpDate: date })}
                             fullWidth
                             required
                             size="small"
                             className="activity-option-date"
+                            {...fieldErrorProps('hwLockUpDate', errorByKey.hwLockUpDate)}
                           />
                           <DateOwnerSelector
                             value={draft.hwLockUpDateOwner}
@@ -504,16 +727,14 @@ export default function ActivityForm({
                     {draft.hwSplitPhase && (
                       <SplitScheduleEditor
                         activityType="HW"
+                        partsKey="hwSplitParts"
+                        errors={errorByKey}
                         parts={draft.hwSplitParts}
                         totalLots={totalLots}
+                        lotNumbers={draft.lotNumbers}
                         onChange={(parts) => onChange({ hwSplitParts: parts })}
                         onReset={() => onChange({
-                          hwSplitParts: createDefaultSplitParts(
-                            draft,
-                            draft.hwDate,
-                            draft.hwDateOwner,
-                            draft.hwDateNote,
-                          ),
+                          hwSplitParts: createDefaultSplitParts(draft, draft.hwDateOwner),
                         })}
                       />
                     )}
@@ -533,6 +754,7 @@ export default function ActivityForm({
             rows={3}
             fullWidth
             slotProps={{ htmlInput: { maxLength: 500 } }}
+            {...fieldErrorProps('notes', errorByKey.notes)}
           />
         </Box>
 
@@ -544,9 +766,14 @@ export default function ActivityForm({
       </Box>
 
       <Box className="activity-drawer__footer">
-        <Button variant="outlined" color="inherit" onClick={onClose}>Cancel</Button>
-        <Button type="submit" variant="contained" disableElevation>
-          {isEditing
+        <FormSaveStatus errors={errors} onJump={jumpToField} />
+        <Button variant="outlined" color="inherit" onClick={onClose} disabled={saving}>Cancel</Button>
+        <Button type="submit" variant="contained" disabled={saving} disableElevation>
+          {saving
+            ? 'Saving...'
+            : dateMove
+            ? 'Confirm date change'
+            : isEditing
             ? `Save ${activeType?.shortLabel ?? 'event'}`
             : 'Create 3 events'}
         </Button>

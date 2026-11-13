@@ -122,7 +122,8 @@ function CancelAppointment({ appointment, requestNumber, onCancelled }) {
   )
 }
 
-export default function CustomerServiceCalendarDetail({ event, onClose, onEdit, onViewRequest }) {
+// canCancel: false shows the visit read-only (the Proposal Workspace day agenda).
+export default function CustomerServiceCalendarDetail({ event, onClose, onEdit, onViewRequest, canCancel = true }) {
   if (!event) return null
 
   const props = event.extendedProps
@@ -232,7 +233,7 @@ export default function CustomerServiceCalendarDetail({ event, onClose, onEdit, 
             View full request
           </Button>
         )}
-        {props.appointment?.state === 'SCHEDULED' && props.status === 'CONFIRMED' && (
+        {canCancel && props.appointment?.state === 'SCHEDULED' && props.status === 'CONFIRMED' && (
           <CancelAppointment appointment={props.appointment} requestNumber={props.requestNumber} onCancelled={onClose} />
         )}
         {onEdit && (

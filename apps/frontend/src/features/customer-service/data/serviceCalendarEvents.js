@@ -240,6 +240,13 @@ export function createServiceCalendarEventsFromRequests(requests) {
     .filter(Boolean)
 }
 
+// The Calendar event of one request's visit, so a visit picked in the Proposal Workspace day
+// agenda opens the same detail as in Calendar. Null when the request has no dated visit.
+export function serviceCalendarEventForRequest(requests, requestId) {
+  const request = requests.find((entry) => String(entry.id) === String(requestId))
+  return request ? createServiceCalendarEventsFromRequests([request])[0] ?? null : null
+}
+
 function startOfWeek(referenceDate) {
   const date = new Date(referenceDate)
   date.setHours(12, 0, 0, 0)

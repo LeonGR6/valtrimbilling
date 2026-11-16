@@ -54,6 +54,80 @@ export function listCoverageLots(job) {
 }
 
 /**
+ * The Lot numbers a line without a Lot seems to name, as the person may write them: "Lot 14", "LOT 14",
+ * "LOT14", "lot #14", "Lt. 14", "14", '"14"', "#14" or several ("14, 15 and 16"). A range ("14-16") is not
+ * read. Only the numbers are returned, upper-cased; whether the Job has them is another matter.
+ */
+export function lotNumbersInPlace(location) {
+  const text = String(location ?? '')
+    .toUpperCase()
+    .replace(/["'`“”‘’«»]/g, '')
+    .trim()
+  if (!text) return []
+  return text
+    .split(/\s*(?:[,;/&+]|\bAND\b|\bY\b)\s*/)
+    .map((part) => part
+      // "LOT", "LOTS", "LT" (with a dot, #, dash or space after), or a bare "L" right before a digit.
+      .replace(/^(?:LOTS?|LT|L(?=\d))[\s#.:_-]*/, '')
+      .replace(/^(?:NO\.?|NUM\.?|NUMBER)\s*/, '')
+      .replace(/^[#\s]+/, '')
+      .replace(/[\s.:;]+$/, ''))
+    // A Lot number has at least one digit ("Lobby" is a place, "12A" is a Lot).
+    .filter((part) => /\d/.test(part) && /^[A-Z0-9]+(?:\.[A-Z0-9]+)*$/.test(part))
+}
+
+// "014" and "14" are the same Lot; "12A" only matches "12A".
+const sameLotNumber = (left, right) => (
+  left === right || (/^\d+$/.test(left) && /^\d+$/.test(right) && Number(left) === Number(right))
+)
+
+/**
+ * The Lots of the Job a line without a Lot names (see `lotNumbersInPlace`), as rows of `listCoverageLots`.
+ * A text that is more than a Lot number ("Sales Office", "Lot 14 restroom") names none.
+ */
+export function lotsNamedByPlace(location, jobLots) {
+  const numbers = lotNumbersInPlace(location)
+  if (numbers.length === 0) return []
+  return jobLots.filter((row) => numbers.some((number) => sameLotNumber(row.lot.toUpperCase(), number)))
+}
+
+const lotLabel = (row) => {
+  const where = [row.phase && `Phase ${row.phase}`, row.building && `Building ${row.building}`]
+    .filter(Boolean).join(', ')
+  return `Lot ${row.lot}${where ? ` (${where})` : ''}`
+}
+
+/**
+ * What to tell about a line without a Lot whose place is a Lot of the Job, or null when it names none. It
+ * never stops the line: the same Lot as a line of the order and as a line without a Lot would be charged
+ * twice, so it only warns. `targets` are the Lots it can be turned into (`{ lotId, label }`, those not in
+ * the order yet; empty when the coverage cannot take a single Lot, `canAdd` false); `covered` says
+ * the Lot is a line of the order already.
+ */
+export function placeLotHint(location, jobLots, coveredLotIds, { canAdd = true } = {}) {
+  const named = lotsNamedByPlace(location, jobLots)
+  if (named.length === 0) return null
+  const covered = named.filter((row) => coveredLotIds.has(row.lotId))
+  const free = named.filter((row) => !coveredLotIds.has(row.lotId))
+  const names = named.map(lotLabel).join(' and ')
+
+  if (covered.length > 0) {
+    return {
+      covered: true,
+      targets: [],
+      message: `${names} ${named.length === 1 ? 'is' : 'are'} already in this Job and ${covered.length === 1 ? 'is a line' : 'are lines'} of this order above, so it would be charged twice.`,
+    }
+  }
+  return {
+    covered: false,
+    targets: canAdd ? free.slice(0, 3).map((row) => ({ lotId: row.lotId, label: lotLabel(row) })) : [],
+    message: canAdd
+      ? `${names} already ${named.length === 1 ? 'exists' : 'exist'} in this Job.`
+      : `${names} already ${named.length === 1 ? 'exists' : 'exist'} in this Job. Choose ${named.length === 1 ? 'it' : 'them'} in the coverage above to charge ${named.length === 1 ? 'it' : 'them'} as a Lot.`,
+  }
+}
+
+/**
  * The tree the person ticks: Phase -> Building -> Lot ("lots" coverage), or
  * Phase -> Building ("phase" coverage). Each node carries the leaf keys under
  * it, so a node is ticked when all of them are.

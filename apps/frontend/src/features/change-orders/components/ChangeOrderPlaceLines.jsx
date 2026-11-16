@@ -19,6 +19,7 @@ import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
 
 import { parseLotRange } from '../../sequence-sheets/utils/lotRange.js'
 import { maxPlaceLength } from '../data/changeOrders.js'
+import { placeLotHint } from '../utils/coverage.js'
 import {
   MAX_BULK_PLACE_LINES,
   addPlaceLine,
@@ -33,7 +34,8 @@ import {
 const dollarAdornment = { startAdornment: <InputAdornment position="start">$</InputAdornment> }
 
 /** One line; it only draws again when its own place, Scope or Amount changes, so a long list stays quick. */
-const PlaceRow = memo(function PlaceRow({ place, index, autoFocus, onChange, onRemove }) {
+const PlaceRow = memo(function PlaceRow({ place, index, autoFocus, warning, covered, targets: targetsText, onChange, onRemove, onUseLot }) {
+  const targets = JSON.parse(targetsText)
   return (
         <TableRow hover>
           <TableCell sx={{ py: 1 }}>
@@ -44,7 +46,40 @@ const PlaceRow = memo(function PlaceRow({ place, index, autoFocus, onChange, onR
               value={place.location}
               autoFocus={autoFocus}
               onChange={(event) => onChange(place.id, { location: event.target.value })}
+              helperText={warning ? (
+                <>
+                  {warning}
+                  {(targets.length > 0 || covered) && (
+                    <Box component="span" sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 0.5 }}>
+                      {targets.map((target) => (
+                        <Button
+                          key={target.lotId}
+                          size="small"
+                          variant="outlined"
+                          color="warning"
+                          sx={{ py: 0, textTransform: 'none' }}
+                          onClick={() => onUseLot(place.id, target.lotId)}
+                        >
+                          {`Make it a line of ${target.label}`}
+                        </Button>
+                      ))}
+                      {covered && (
+                        <Button
+                          size="small"
+                          variant="outlined"
+                          color="warning"
+                          sx={{ py: 0, textTransform: 'none' }}
+                          onClick={() => onRemove(place.id)}
+                        >
+                          Remove this line
+                        </Button>
+                      )}
+                    </Box>
+                  )}
+                </>
+              ) : undefined}
               slotProps={{
+                formHelperText: { component: 'div', sx: { color: 'warning.dark', mx: 0 } },
                 htmlInput: {
                   maxLength: maxPlaceLength,
                   'aria-label': `Place, line without a lot ${index + 1}`,
@@ -107,7 +142,15 @@ const PlaceRow = memo(function PlaceRow({ place, index, autoFocus, onChange, onR
  * of its own; the defaults of the order are only for Lots. Several can be added at once: a number of empty
  * lines, or a range of Lots ("12-20") that makes one line "Lot 12" ... "Lot 20".
  */
-export default function ChangeOrderPlaceLines({ places, canAdd, onChange }) {
+export default function ChangeOrderPlaceLines({
+  places,
+  canAdd,
+  onChange,
+  jobLots = [],
+  coveredLotIds = new Set(),
+  canUseLot = false,
+  onUseLot = () => {},
+}) {
   // The line just added takes the cursor so the person can type its place right away.
   const [addedId, setAddedId] = useState(null)
 
@@ -166,18 +209,26 @@ export default function ChangeOrderPlaceLines({ places, canAdd, onChange }) {
   }
 
   // Stable handlers (reading the latest lines from a ref) so the rows that did not change are not drawn again.
-  const latest = useRef({ places, onChange })
+  const latest = useRef({ places, onChange, onUseLot })
   useEffect(() => {
-    latest.current = { places, onChange }
+    latest.current = { places, onChange, onUseLot }
   })
   const handleChange = useCallback(
     (id, changes) => latest.current.onChange(updatePlaceLine(latest.current.places, id, changes)),
     [],
   )
+  const handleUseLot = useCallback((id, lotId) => latest.current.onUseLot(id, lotId), [])
   const handleRemove = useCallback(
     (id) => latest.current.onChange(removePlaceLine(latest.current.places, id)),
     [],
   )
+
+  // A place named like a Lot of the Job. The targets travel as text so a row only draws again when its own hint changes.
+  const hints = new Map()
+  for (const place of places) {
+    const hint = placeLotHint(place.location, jobLots, coveredLotIds, { canAdd: canUseLot })
+    if (hint) hints.set(place.id, hint)
+  }
 
   return (
     <Box sx={{ mt: 3, pt: 3, borderTop: 1, borderColor: 'divider' }}>
@@ -218,8 +269,12 @@ export default function ChangeOrderPlaceLines({ places, canAdd, onChange }) {
                   place={place}
                   index={index}
                   autoFocus={place.id === addedId}
+                  warning={hints.get(place.id)?.message ?? ''}
+                  covered={Boolean(hints.get(place.id)?.covered)}
+                  targets={hints.has(place.id) ? JSON.stringify(hints.get(place.id).targets) : '[]'}
                   onChange={handleChange}
                   onRemove={handleRemove}
+                  onUseLot={handleUseLot}
                 />
               ))}
             </TableBody>

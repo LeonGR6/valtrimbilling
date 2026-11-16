@@ -93,6 +93,7 @@ import {
   formatPhaseBuilding,
 } from '../utils/phaseBuildingCodes.js'
 import { addLotRanges, lotNumbersOfRanges } from '../utils/lotRange.js'
+import PriorChangeOrderNotice from '../../change-orders/components/PriorChangeOrderNotice.jsx'
 import LotRangeField from './LotRangeField.jsx'
 import PhasesTable from './PhasesTable.jsx'
 import LotOptionPicker from './LotOptionPicker.jsx'
@@ -252,6 +253,11 @@ function PhaseDetails({
           <Alert severity="error" sx={{ mb: 2.5 }}>{orders.openError}</Alert>
         )}
         <OptionsBillingNotice job={job} optionCount={selectedOptionCount} sx={{ mb: 2.5 }} />
+        <PriorChangeOrderNotice
+          jobId={job.id}
+          lotNumbers={(phase.lots ?? []).filter((lot) => !lot.isUtilityBuilding).map((lot) => lot.lotNumber)}
+          sx={{ mb: 2.5 }}
+        />
 
         <Box
           sx={{
@@ -740,6 +746,11 @@ function PhaseDialog({
     keyName: 'fieldKey',
   })
   const hasPlans = (job.sequenceSheet?.plans?.length ?? 0) > 0
+  // The Lots being added or edited, to tell if an Extra / CO was made for any of them before they existed.
+  const typedLotNumbers = (useWatch({ control, name: 'lots' }) ?? [])
+    .filter((lot) => !lot.isUtilityBuilding)
+    .map((lot) => lot.lotNumber?.trim())
+    .filter(Boolean)
 
   // What the Phase already holds and how many Lots it can still take. An empty first row is not a Lot:
   // the new ones take its place.
@@ -973,6 +984,8 @@ function PhaseDialog({
               </Alert>
             )}
           </Box>
+
+          <PriorChangeOrderNotice jobId={job.id} lotNumbers={typedLotNumbers} />
 
           {!hasPlans && (
             <Alert severity="warning">

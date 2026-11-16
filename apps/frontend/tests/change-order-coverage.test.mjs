@@ -4,6 +4,10 @@ import {
   buildCoverageTree,
   coveredLots,
   filterCoverageTree,
+  listCoverageLots,
+  lotsNamedByPlace,
+  lotNumbersInPlace,
+  placeLotHint,
   nodeSelectionState,
   restoreCoverage,
   summarizeCoverage,
@@ -124,4 +128,49 @@ test('Specific Plan Types opens as it was saved even when a Lot of those Plans w
   assert.equal(restored.mode, 'plans')
   assert.deepEqual([...restored.planIds], ['2'])
   assert.deepEqual(coveredLots(job, restored).map((row) => row.lotId), ['110', '200'])
+})
+
+test('the Lot numbers a place seems to name, however they are written', () => {
+  for (const text of ['Lot 14', 'LOT 14', 'lot14', 'LOT14', '14', '"14"', "'14'", '“14”', '#14', 'Lot #14', 'Lot# 14', 'Lt. 14', 'L14', 'No. 14', ' 14 ']) {
+    assert.deepEqual(lotNumbersInPlace(text), ['14'], text)
+  }
+  assert.deepEqual(lotNumbersInPlace('Lots 14, 15 and 16'), ['14', '15', '16'])
+  assert.deepEqual(lotNumbersInPlace('lot 12a'), ['12A'])
+  assert.deepEqual(lotNumbersInPlace('Lot 12.1'), ['12.1'])
+  for (const text of ['Sales Office', 'Lot 14 restroom', 'Lobby', 'Lot', '', null, 'Lots 14-16']) {
+    assert.deepEqual(lotNumbersInPlace(text), [], String(text))
+  }
+})
+
+test('a place that names a Lot of the Job is found whatever the way it is written', () => {
+  const lots = listCoverageLots(job)
+  const first = lots[0]
+  for (const text of [`Lot ${first.lot}`, `lot ${first.lot}`, `LOT${first.lot}`, first.lot, `"${first.lot}"`, `#${first.lot}`, `0${first.lot}`]) {
+    assert.ok(lotsNamedByPlace(text, lots).some((row) => row.lotId === first.lotId), text)
+  }
+  assert.deepEqual(lotsNamedByPlace('Sales Office', lots), [])
+  assert.deepEqual(lotsNamedByPlace('Lot 9999', lots), [])
+  assert.deepEqual(lotsNamedByPlace('', lots), [])
+})
+
+test('the hint says if the Lot is only in the Job or already a line of the order', () => {
+  const lots = listCoverageLots(job)
+  const first = lots[0]
+  assert.equal(placeLotHint('Sales Office', lots, new Set()), null)
+  assert.equal(placeLotHint('Lot 9999', lots, new Set()), null)
+
+  const free = placeLotHint(`LOT${first.lot}`, lots, new Set())
+  assert.match(free.message, /already exists? in this Job/)
+  assert.ok(free.targets.some((target) => target.lotId === first.lotId))
+  assert.equal(free.covered, false)
+
+  // A coverage that cannot take one Lot: it only says where to choose it.
+  const fixed = placeLotHint(first.lot, lots, new Set(), { canAdd: false })
+  assert.deepEqual(fixed.targets, [])
+  assert.match(fixed.message, /Choose it in the coverage above/)
+
+  const twice = placeLotHint(`"${first.lot}"`, lots, new Set([first.lotId]))
+  assert.equal(twice.covered, true)
+  assert.deepEqual(twice.targets, [])
+  assert.match(twice.message, /charged twice/)
 })

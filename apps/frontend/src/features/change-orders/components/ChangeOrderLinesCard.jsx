@@ -20,7 +20,7 @@ import RestartAltRoundedIcon from '@mui/icons-material/RestartAltRounded'
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
 
 import { useChangeOrderCoverage } from '../hooks/useChangeOrderCoverage.js'
-import { filterCoverageRows } from '../utils/coverage.js'
+import { filterCoverageRows, listCoverageLots } from '../utils/coverage.js'
 import {
   clearLineOverrides,
   dropAmountsEqualToDefault,
@@ -53,6 +53,9 @@ export default function ChangeOrderLinesCard({ values, onChange }) {
   const [checked, setChecked] = useState(() => new Set())
   const [bulk, setBulk] = useState({ amount: '', scope: '' })
   const byPlan = values.coverageMode === 'plans'
+  // Every Lot the Job has, and the ones this order already charges, to warn about a place named like one.
+  const jobLots = useMemo(() => (job ? listCoverageLots(job) : []), [job])
+  const coveredLotIds = useMemo(() => new Set(lines.map((line) => line.lotId)), [lines])
 
   // The Plans chosen, in the Job's order, with how many Lots each reaches today.
   const plans = useMemo(() => {
@@ -118,6 +121,26 @@ export default function ChangeOrderLinesCard({ values, onChange }) {
     visible.forEach((line) => (allChecked ? next.delete(line.lotId) : next.add(line.lotId)))
     return next
   })
+
+  // A line without a Lot that was a Lot of the Job after all: the Lot joins the order and keeps the Scope
+  // of Work and Amount that were typed on the line, which is then taken off.
+  const makeLotLine = (placeId, lotId) => {
+    const place = values.placeLines.find((item) => item.id === placeId)
+    if (!place) return
+    const defaults = defaultsFor(values.planRules)
+    let lineOverrides = values.lineOverrides
+    if (place.scope.trim() !== '') {
+      lineOverrides = setLineOverride(lineOverrides, [lotId], 'scope', place.scope, defaults)
+    }
+    if (place.amount !== '') {
+      lineOverrides = setLineOverride(lineOverrides, [lotId], 'amount', settlePriceText(place.amount), defaults)
+    }
+    onChange({
+      lotIds: new Set(values.lotIds).add(lotId),
+      lineOverrides: dropAmountsEqualToDefault(lineOverrides, amountFor(values.planRules)),
+      placeLines: values.placeLines.filter((item) => item.id !== placeId),
+    })
+  }
 
   const removeLot = (lotId) => {
     const next = new Set(values.lotIds)
@@ -411,6 +434,10 @@ export default function ChangeOrderLinesCard({ values, onChange }) {
         places={values.placeLines}
         canAdd={Boolean(job)}
         onChange={(placeLines) => onChange({ placeLines })}
+        jobLots={jobLots}
+        coveredLotIds={coveredLotIds}
+        canUseLot={values.coverageMode === 'lots'}
+        onUseLot={makeLotLine}
       />
 
     </Box>

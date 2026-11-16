@@ -330,6 +330,40 @@ export async function listChangeOrderLines(changeOrderId) {
   return rows.map(toChangeOrderLine)
 }
 
+/**
+ * What the Lots of a Job had before: the lines without a Lot of its Extras / COs and those Extras / COs
+ * (`{ placeLines: [{ changeOrderId, location }], changeOrders: [{ id, number, status }] }`).
+ */
+export async function listJobPlaceLines(jobId) {
+  const client = await requireSupabase()
+  const id = Number(jobId)
+  if (!Number.isInteger(id) || id < 1) return { placeLines: [], changeOrders: [] }
+
+  const [lines, orders] = await Promise.all([
+    listAllRows(
+      () => client
+        .from('change_order_lines')
+        .select('id, change_order_id, location')
+        .eq('job_id', id)
+        .not('location', 'is', null)
+        .order('id', { ascending: true }),
+      fail,
+    ),
+    listAllRows(
+      () => client
+        .from('change_orders')
+        .select('id, change_order_number, status')
+        .eq('job_id', id)
+        .order('id', { ascending: true }),
+      fail,
+    ),
+  ])
+  return {
+    placeLines: lines.map((row) => ({ changeOrderId: row.change_order_id, location: row.location })),
+    changeOrders: orders.map((row) => ({ id: row.id, number: row.change_order_number, status: row.status })),
+  }
+}
+
 // Events of their own ---------------------------------------------------------------------------------
 
 const EVENT_COLUMNS = [

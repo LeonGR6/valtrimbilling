@@ -8,10 +8,6 @@
 
 export const customerServiceTimeZone = 'America/Los_Angeles'
 export const customerServicePickupMinutes = 10
-// Decision D4 (10 Nov 2026): a visit is suggested next to others only when it can start
-// at least this many minutes late without it or a later visit leaving its customer
-// window. Planning a visit by hand below it only warns.
-export const customerServiceMinimumMarginMinutes = 15
 export const customerServiceWorkday = { startsAt: '07:00', endsAt: '15:30' }
 export const customerServiceWindows = [
   { start: '08:00', end: '10:00', label: '8:00 AM–10:00 AM', exceptional: false },
@@ -38,6 +34,26 @@ export function parseServiceDate(value) {
   const date = new Date(Date.UTC(year, month - 1, day, 12))
   return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day
     ? date : null
+}
+
+const serviceDateLabel = new Intl.DateTimeFormat('en-US', {
+  weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC',
+})
+
+// '2026-11-17' reads as 'Tue, Nov 17', the format the planner shows everywhere.
+/** @param {string | null | undefined} date */
+export function formatServiceDate(date) {
+  const day = parseServiceDate(date)
+  return day ? serviceDateLabel.format(day) : String(date ?? '')
+}
+
+// '13:05' reads as '1:05 PM'.
+/** @param {string | null | undefined} time */
+export function formatServiceTime(time) {
+  const value = timeToMinutes(time)
+  if (value === null) return String(time ?? '')
+  const hour = Math.floor(value / 60)
+  return `${hour % 12 || 12}:${String(value % 60).padStart(2, '0')} ${hour < 12 ? 'AM' : 'PM'}`
 }
 
 const californiaClock = new Intl.DateTimeFormat('en-US', {
@@ -103,14 +119,14 @@ export function checkVisitDate({ date, workStart, today, nowMinutes, unavailable
   // be registered; it only carries the late warning. Drafts only warn.
   if (day && parseServiceDate(dueOn) && date > dueOn) {
     if (today <= dueOn) {
-      warnings.push({ field: 'date', pastDue: true, message: `This date is after the due date ${dueOn}. Choose a date on or before the due date to register the appointment.` })
+      warnings.push({ field: 'date', pastDue: true, message: `This date is after the due date (${formatServiceDate(dueOn)}). Choose a date on or before it to register the appointment.` })
     } else {
-      warnings.push({ field: 'date', message: `This request was due on ${dueOn}. The work will be completed late.` })
+      warnings.push({ field: 'date', message: `This request was due on ${formatServiceDate(dueOn)}. The work will be completed late.` })
     }
   }
   const start = timeToMinutes(workStart)
   if (day && date === today && start !== null && start <= nowMinutes) {
-    errors.push({ field: 'internalStart', message: 'The internal work start time cannot be in the past (California time).' })
+    errors.push({ field: 'internalStart', message: 'The work start time cannot be in the past (California time).' })
   }
   return { errors, warnings, dateIsValid: Boolean(day) }
 }
@@ -129,15 +145,17 @@ export function checkVisitCapacity({ visit, technicians, agenda, travelMinutes =
   const start = timeToMinutes(visit.workStart)
   const duration = Number(visit.durationMinutes)
   const end = start !== null && Number.isInteger(duration) && duration > 0 ? start + duration : null
-  if (start === null) addError('internalStart', 'Select the internal work start time.')
+  if (start === null) addError('internalStart', 'Select the work start time.')
   else if (window && (start < timeToMinutes(window.start) || start >= timeToMinutes(window.end))) {
     addError('internalStart', 'Work must start within the selected customer arrival window.')
   }
   if (start !== null && end !== null && (
     start < timeToMinutes(customerServiceWorkday.startsAt) || end > timeToMinutes(customerServiceWorkday.endsAt)
-  )) addError('internalStart', 'Internal work must fit within 7:00 AM–3:30 PM.')
+  )) {
+    addError('internalStart', `Work must fit within the ${formatServiceTime(customerServiceWorkday.startsAt)}–${formatServiceTime(customerServiceWorkday.endsAt)} workday.`)
+  }
   if (window && end !== null && end + customerServicePickupMinutes > timeToMinutes(window.end)) {
-    addError('internalStart', `Work and pickup must finish before the customer window closes at ${window.end}.`)
+    addError('internalStart', `Work and pickup must finish before the customer window closes at ${formatServiceTime(window.end)}.`)
   }
 
   // One leg per origin→destination pair; technicians sharing a leg share its estimate.
@@ -175,9 +193,10 @@ export function checkVisitCapacity({ visit, technicians, agenda, travelMinutes =
       known.sort((left, right) => left.from - right.from)
       for (const entry of known) {
         if (visitStart < entry.to && entry.from < visitEnd) {
-          addError('agenda', `${name} has an internal work conflict with the reserved schedule of ${entry.requestNumber} (${entry.start}–${entry.end}). Choose another window, technician or day.`)
+          addError('agenda', `${name} is already busy with ${entry.requestNumber} from ${formatServiceTime(entry.start)} to ${formatServiceTime(entry.end)} (work plus pickup). Choose another time, technician or day.`)
         }
       }
+      const arrival = (leaveAt, travel) => formatServiceTime(minutesToTime(leaveAt + travel))
       // The previous visit is the one this technician leaves last before the new start.
       const before = known.filter((entry) => entry.to <= visitStart)
         .reduce((latest, entry) => (!latest || entry.to > latest.to ? entry : latest), null)
@@ -186,18 +205,18 @@ export function checkVisitCapacity({ visit, technicians, agenda, travelMinutes =
         addLeg(before.requestId, visit.requestId, before.requestNumber, visitLabel, name, departureFor(before.end))
         const travel = travelMinutesFor(travelMinutes, before.requestId, visit.requestId)
         if (travel === null) {
-          warnings.push({ field: 'agenda', travelPending: true, message: `Travel time pending: enter the manual estimate from ${before.requestNumber} to this visit for ${name}.` })
+          warnings.push({ field: 'agenda', travelPending: true, message: `Travel time from ${before.requestNumber} to this visit is missing for ${name}. Calculate it with Google Maps or type it.` })
         } else if (before.to + travel > visitStart) {
-          addError('agenda', `${name} cannot reach this visit from ${before.requestNumber} in time, including the manual travel estimate.`)
+          addError('agenda', `${name} cannot reach this visit in time from ${before.requestNumber}: leaving at ${formatServiceTime(before.end)} with ${travel} min of travel, they arrive at ${arrival(before.to, travel)}.`)
         }
       }
       if (after) {
         addLeg(visit.requestId, after.requestId, visitLabel, after.requestNumber, name, departureFor(minutesToTime(visitEnd)))
         const travel = travelMinutesFor(travelMinutes, visit.requestId, after.requestId)
         if (travel === null) {
-          warnings.push({ field: 'agenda', travelPending: true, message: `Travel time pending: enter the manual estimate from this visit to ${after.requestNumber} for ${name}.` })
+          warnings.push({ field: 'agenda', travelPending: true, message: `Travel time from this visit to ${after.requestNumber} is missing for ${name}. Calculate it with Google Maps or type it.` })
         } else if (visitEnd + travel > after.from) {
-          addError('agenda', `${name} cannot reach ${after.requestNumber} after this visit in time, including the manual travel estimate.`)
+          addError('agenda', `${name} cannot reach ${after.requestNumber} in time: leaving this visit at ${formatServiceTime(minutesToTime(visitEnd))} with ${travel} min of travel, they arrive at ${arrival(visitEnd, travel)} and ${after.requestNumber} starts at ${formatServiceTime(after.start)}.`)
         }
       }
     }

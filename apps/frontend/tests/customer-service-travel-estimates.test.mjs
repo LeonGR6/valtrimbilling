@@ -204,6 +204,6 @@ test('the leg label shows the traffic time and the minutes without traffic', () 
     travelLegHelperText({ leg: { ...base, departureAt: '2026-11-09T20:40:00.000Z' }, source: 'ROUTES_API', details, trafficMode: 'BEST_GUESS', now: NOW }),
     'Departure moved: calculate again · Jorge Murillo',
   )
-  assert.equal(travelLegHelperText({ leg: { ...base, minutes: null }, source: null }), 'Travel time pending · Jorge Murillo')
+  assert.equal(travelLegHelperText({ leg: { ...base, minutes: null }, source: null }), 'Missing: calculate it with Google Maps or type it · Jorge Murillo')
   assert.equal(travelLegHelperText({ leg: base, source: 'MANUAL', details }), 'Manual estimate · Jorge Murillo')
 })

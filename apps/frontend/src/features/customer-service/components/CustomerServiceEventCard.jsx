@@ -3,7 +3,6 @@ import {
   formatWorkTypes,
   getServiceEventTone,
 } from '../data/serviceCalendarEvents.js'
-import { customerServiceMinimumMarginMinutes } from '../utils/customerServiceScheduling.js'
 import './CustomerServiceCalendar.css'
 
 const timeFormatter = new Intl.DateTimeFormat('en-US', {
@@ -37,12 +36,11 @@ function formatWorkSlot(slot) {
   return `Work ${at(slot.start)} – ${at(slot.end)}`
 }
 
-// How late the visit can start without it or a later visit leaving its window.
+// How late the visit can start without it or a later visit leaving its window. Negative
+// when the refreshed traffic no longer fits (there is no minimum since 17 Nov 2026).
 function formatDelayMargin(margin) {
   if (!Number.isInteger(margin)) return ''
-  return margin < customerServiceMinimumMarginMinutes
-    ? `Low margin · ${Math.max(0, margin)} min`
-    : `Margin ${margin} min`
+  return margin < 0 ? `Misses window by ${-margin} min` : `Margin ${margin} min`
 }
 
 function formatPreviousVisit(lastVisit) {

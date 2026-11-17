@@ -48,11 +48,9 @@ export default function ProposalDayAgenda({
     <Stack spacing={1.5}>
       <Typography variant="subtitle1" fontWeight={800}>Technician agenda · {formatLongDate(date)} · California time</Typography>
       <Typography variant="caption" color="text.secondary">
-        Confirmed, in-progress and sent visits reserve their work time plus 10 minutes of pickup, not the whole customer window.
-        A visit without recorded work time keeps its whole window reserved.
-        Drafts do not reserve time or appear in Calendar.
-        With a valid draft, each visit shows its margin: how late it can start without it or a later visit leaving its
-        customer window. Select a visit to view its request.
+        Each visit reserves its work time plus 10 minutes of pickup; one without a recorded work time reserves its whole
+        window. Drafts reserve nothing. Margin is how late a visit can start and still finish inside its window. Select a
+        visit to view its request.
       </Typography>
       {agenda.length === 0 && <Alert severity="info" variant="outlined">No Customer Service appointments or sent proposals are recorded for these technicians on this date.</Alert>}
       {agenda.filter((entry) => !entry.date || entry.windowUncertain || !entry.start || !entry.end).map((entry) => (

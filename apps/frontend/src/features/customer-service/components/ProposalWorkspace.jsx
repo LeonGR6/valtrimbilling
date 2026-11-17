@@ -1,8 +1,9 @@
 import { useMemo, useState } from 'react'
 import {
-  Alert, Box, Button, Chip, FormControl, InputLabel, MenuItem,
+  Alert, Box, Button, Chip, FormControl, InputLabel, Link, MenuItem,
   Paper, Select, Stack, TextField, Typography,
 } from '@mui/material'
+import { formatPhoneNumber } from '../../../utils/phoneNumbers.js'
 import {
   defaultProposalStage, effectiveRequestWorkflowStage, filterAndSortRequestInbox,
   findRequestForView, isRequestOverdue,
@@ -53,9 +54,9 @@ export default function ProposalWorkspace({
   return (
     <Stack spacing={2.5}>
       <Alert severity="info" variant="outlined">
-        Prepare a planning draft for a Ready to propose request. Saving a draft does not send a proposal or schedule a visit.
-        Route convenience and proposal sending are not implemented in this stage.
-        {' '}Request information is read-only here. Edit requests in the Requests view before proposing.
+        Pick a Ready to propose request, use its recommended slot or plan it by hand, and offer it to the customer.
+        Register the appointment once they accept. Proposals are not emailed from here yet.
+        {' '}Request information is read-only here; edit it in Requests.
       </Alert>
 
       <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: 'wrap' }} aria-label="Proposal workflow stages">
@@ -119,7 +120,12 @@ export default function ProposalWorkspace({
               </Box>
               <Box>
                 <Typography variant="caption" color="text.secondary">Customer</Typography>
-                <Typography variant="body2">{selected.contactName} · {selected.contactEmail || 'Email pending'}</Typography>
+                <Typography variant="body2">
+                  {selected.contactName || 'Customer pending'} · {selected.contactPhone
+                    ? <Link href={`tel:${selected.contactPhone}`}>{formatPhoneNumber(selected.contactPhone)}</Link>
+                    : 'Phone pending'}
+                  {' · '}{selected.contactEmail || 'Email pending'}
+                </Typography>
               </Box>
               <Box>
                 <Typography variant="caption" color="text.secondary">Work and planning estimate</Typography>

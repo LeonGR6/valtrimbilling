@@ -5,10 +5,10 @@ import { applyAppointmentsToRequests, toPlanningTechnicians } from '../src/featu
 import { californiaInstant } from '../src/features/customer-service/utils/customerServiceScheduling.js'
 import {
   businessDaysLeft, deadlineLabel, earliestAvailableSlot, finalDaysSlot, insertionDetails, nearbySlotSuggestions,
-  suggestionLegsToCheck, technicianSets,
+  recommendSlot, suggestionLegsToCheck, technicianSets, techniciansByPreference,
 } from '../src/features/customer-service/utils/nearbySlotSuggestions.js'
 import {
-  fitStatus, fitStatusLabels, validatePrototypeProposalDraft,
+  fitStatus, fitStatusLabels, getPrototypePlanningTechnicians, suggestionStartDate, validatePrototypeProposalDraft,
 } from '../src/features/customer-service/utils/proposalDraft.js'
 
 const roster = [
@@ -52,13 +52,17 @@ const visit = (requestId, date, start, technicianIds = ['4']) => ({
 })
 const nearMonday = [visit(10, '2026-11-09', '08:00'), visit(11, '2026-11-09', '10:30')]
 
+// These grouping tests plan for Monday from Friday, so they leave out the two business
+// days of notice (17 Nov 2026); the notice has its own tests below.
 function plan({ request = ready, appointments = monday, extraRequests = [], candidates = nearMonday, drivingById, travelMinutes = {} }) {
   const requests = applyAppointmentsToRequests(
     [confirmed(10), confirmed(11), ...extraRequests, request], appointments, roster,
   )
   return {
     requests,
-    result: nearbySlotSuggestions({ request, requests, technicians, candidates, drivingById, travelMinutes, now }),
+    result: nearbySlotSuggestions({
+      request, requests, technicians, candidates, drivingById, travelMinutes, now, leadBusinessDays: 0,
+    }),
   }
 }
 
@@ -125,26 +129,24 @@ test('a drive that leaves no room next to the nearby visit does not fit', () => 
   assert.equal(result.suggestions[0].fits, false)
 })
 
-test('a slot with less than 15 minutes of margin is not offered, and the row says how tight it was', () => {
+test('a slot with little margin is still offered: pessimistic travel and pickup are enough (17 Nov 2026)', () => {
   // 60 minutes after SR-10: 8:45–9:45, pickup until 9:55, and the window closes at 10:00.
   const { requests, result } = plan({
     drivingById: { 10: { drivingMiles: 2, band: 'GREEN' } },
     travelMinutes: { '10>20': 5, '20>11': 15, '10>11': 12 },
   })
   const [slot] = result.suggestions
-  assert.deepEqual([slot.fits, slot.tightMargin], [false, 5])
+  assert.deepEqual([slot.fits, slot.internalStart, slot.margin], [true, '08:45', 5])
 
-  // Typed by hand it is still a valid draft, with a warning that does not block.
+  // The same time typed by hand is a valid draft, without a margin warning.
   const values = { technicianIds: ['4'], date: '2026-11-09', windowStart: '08:00', internalStart: '08:45', travelMinutes: { '10>20': 5, '20>11': 15 } }
   const draft = validatePrototypeProposalDraft({ requestId: 20, values, requests, technicians, now })
   assert.equal(draft.isValid, true)
   assert.equal(draft.delay.margin, 5)
-  assert.deepEqual(draft.warnings.filter((warning) => warning.field === 'margin').map((warning) => warning.message), [
-    'This visit can start only 5 min late before it or a later visit leaves its customer window. Suggestions keep at least 15 min.',
-  ])
+  assert.deepEqual(draft.warnings.filter((warning) => warning.field === 'margin'), [])
 })
 
-test('between two slots with the same extra driving, a tight one gives way to one with margin', () => {
+test('between two slots with the same extra driving, the earlier one stays', () => {
   // Like CS-2497 on Thursday: SR-10 is 10:00–10:45 in the 10:00–12:00 window, 8 min away.
   const { result } = plan({
     request: quick,
@@ -153,8 +155,8 @@ test('between two slots with the same extra driving, a tight one gives way to on
     drivingById: { 10: { drivingMiles: 3, band: 'GREEN' } },
     travelMinutes: { '10>20': 8 },
   })
-  // It arrives at 11:03. With starts every 5 minutes (P3, 12 Nov 2026) 11:05 keeps exactly
-  // 15 min of margin and is offered; 11:15 would keep only 5 and is not.
+  // It arrives at 11:03. With starts every 5 minutes (P3, 12 Nov 2026) the first start is
+  // 11:05, with 15 min of margin; later starts add the same driving and lose margin.
   const [slot] = result.suggestions
   assert.deepEqual([slot.fits, slot.windowStart, slot.internalStart, slot.extraMinutes, slot.margin], [true, '10:00', '11:05', 8, 15])
 })
@@ -221,13 +223,20 @@ test('a high priority request follows the same rules as any other request (D3, 1
   assert.equal(result.finalDays.date, '2026-11-13')
 })
 
-test('the earliest slot considers every technician of the crew size', () => {
-  // Jorge is busy Friday 10:00–10:30; Helper is free at 10:00.
+test('the earliest slot keeps the technician registered first while he has room that day', () => {
+  // Jorge is busy Friday 10:00–10:30; Helper is free at 10:00, but Jorge still has room at 10:40.
   const requests = applyAppointmentsToRequests(
     [confirmed(12), ready], [appointment(12, [4], '2026-11-06', '10:00', '12:00', '10:00', '10:30')], roster,
   )
   const earliest = earliestAvailableSlot({ request: ready, requests, technicians, now })
-  assert.deepEqual([earliest.date, earliest.internalStart, earliest.technicianNames], ['2026-11-06', '10:00', ['Helper']])
+  assert.deepEqual([earliest.date, earliest.internalStart, earliest.technicianNames], ['2026-11-06', '10:40', ['Jorge Murillo']])
+
+  // Jorge busy the rest of Friday: Helper takes it.
+  const full = applyAppointmentsToRequests(
+    [confirmed(12), ready], [appointment(12, [4], '2026-11-06', '10:00', '12:00', '09:00', '15:00')], roster,
+  )
+  const other = earliestAvailableSlot({ request: ready, requests: full, technicians, now })
+  assert.deepEqual([other.date, other.technicianNames], ['2026-11-06', ['Helper']])
 })
 
 test('the extra driving compares with the direct drive it replaces, at the same departure', () => {
@@ -331,8 +340,8 @@ test('CS-A goes to its due date first (D1)', () => {
     ['2026-11-23', '08:00', ['Jorge Murillo'], false],
   )
   assert.deepEqual(plan.suggestions, [])
-  // The earliest time stays visible: today, Monday 16, at 8:00.
-  assert.deepEqual([plan.earliest.date, plan.earliest.internalStart], ['2026-11-16', '08:00'])
+  // The earliest time stays visible, two business days after Monday 16: Wednesday 18.
+  assert.deepEqual([plan.earliest.date, plan.earliest.internalStart], ['2026-11-18', '08:00'])
 })
 
 test('CS-B joins CS-A on Monday 23 because it is near and within its due date (D2)', () => {
@@ -411,7 +420,7 @@ test('an overdue request has no final days: the earliest time is the suggestion'
   const overdue = fitRequest(34, 'CS-D', '2026-11-13')
   const plan = finalDaysPlan({ request: overdue })
   assert.deepEqual([plan.finalDays, plan.overdue], [null, true])
-  assert.equal(plan.earliest.date, '2026-11-16')
+  assert.equal(plan.earliest.date, '2026-11-18')
   const requests = applyAppointmentsToRequests([overdue], [], roster)
   assert.equal(finalDaysSlot({ request: overdue, requests, technicians, now: monday16 }), null)
 })
@@ -420,5 +429,77 @@ test('the draft and every suggestion use one of three states (block R5)', () => 
   assert.equal(fitStatus({ fits: true, travelPending: false }), 'FITS')
   assert.equal(fitStatus({ fits: true, travelPending: true }), 'TRAVEL_PENDING')
   assert.equal(fitStatus({ fits: false, travelPending: true }), 'DOESNT_FIT')
-  assert.deepEqual(fitStatusLabels, { FITS: 'Fits', TRAVEL_PENDING: 'Fits · travel pending', DOESNT_FIT: "Doesn't fit" })
+  assert.deepEqual(fitStatusLabels, { FITS: 'Fits', TRAVEL_PENDING: 'Fits once travel is calculated', DOESNT_FIT: "Doesn't fit" })
+})
+
+test('the recommended slot follows the approved order and says why in plain words (review of 13 Nov 2026)', () => {
+  // A nearby visit with room comes first.
+  const grouped = finalDaysPlan({
+    request: csB, appointments: [csAOnMonday], extraRequests: [registeredA],
+    candidates: [{ ...visit(31, '2026-11-23', '08:00'), requestNumber: 'CS-A', technicianNames: ['Jorge Murillo'] }],
+    drivingById: { 31: { drivingMiles: 4, band: 'GREEN' } },
+    travelMinutes: { '31>32': 8 },
+  })
+  const nextTo = recommendSlot({ plan: grouped, groupingMiles: 10 })
+  assert.equal(nextTo.kind, 'NEXT_TO')
+  assert.equal(nextTo.slot, grouped.suggestions[0])
+  assert.equal(nextTo.reason, 'Next to CS-A, a nearby visit already scheduled for Jorge Murillo.')
+
+  // Nothing nearby: the final days, saying that nothing was close.
+  const alone = finalDaysPlan({ request: csA })
+  const finalDays = recommendSlot({ plan: alone, groupingMiles: 10 })
+  assert.deepEqual([finalDays.kind, finalDays.slot.date], ['FINAL_DAYS', '2026-11-23'])
+  assert.equal(finalDays.reason, 'No visit is scheduled within 10 driving miles before the due date. It goes on the latest '
+    + 'on-time day with room, so earlier days stay open to group nearby requests.')
+  assert.match(recommendSlot({ plan: alone, hasCoordinates: false }).reason, /^No coordinates, so nearby visits cannot be checked\./u)
+
+  // A nearby visit without room is named as the reason the final days are used.
+  const full = recommendSlot({ plan: { ...alone, suggestions: [{ fits: false, anchor: { requestNumber: 'CS-A' } }] } })
+  assert.match(full.reason, /^No time fits next to the nearby visits\./u)
+
+  // Overdue: the earliest time.
+  const overdue = recommendSlot({ plan: finalDaysPlan({ request: fitRequest(34, 'CS-D', '2026-11-13') }) })
+  assert.deepEqual([overdue.kind, overdue.slot.date], ['EARLIEST', '2026-11-18'])
+  assert.equal(overdue.reason, 'This request is overdue, so the earliest available time comes first.')
+
+  // Nothing fits at all.
+  assert.equal(recommendSlot({ plan: { suggestions: [], finalDays: null, earliest: null, overdue: false } }), null)
+})
+
+test('suggestions start two business days after today, or on a sooner due date as short notice (17 Nov 2026)', () => {
+  assert.deepEqual(suggestionStartDate({ today: '2026-11-16', dueOn: '2026-11-23' }), { date: '2026-11-18', leadDate: '2026-11-18' })
+  // Friday → Tuesday; Saturday → Tuesday.
+  assert.equal(suggestionStartDate({ today: '2026-11-20' }).date, '2026-11-24')
+  assert.equal(suggestionStartDate({ today: '2026-11-21' }).date, '2026-11-24')
+  // Due Tuesday 17 while planning on Monday 16: the due date, before the usual lead.
+  assert.deepEqual(suggestionStartDate({ today: '2026-11-16', dueOn: '2026-11-17' }), { date: '2026-11-17', leadDate: '2026-11-18' })
+  // Already overdue: the usual lead.
+  assert.equal(suggestionStartDate({ today: '2026-11-16', dueOn: '2026-11-13' }).date, '2026-11-18')
+
+  // A nearby visit tomorrow is too soon to group with; the final days stay.
+  const csE = fitRequest(35, 'CS-E', '2026-11-23')
+  const registeredF = { ...confirmed(36), requestNumber: 'CS-F' }
+  const soon = finalDaysPlan({
+    request: csE, extraRequests: [registeredF],
+    appointments: [appointment(36, [4], '2026-11-17', '08:00', '10:00', '08:00', '08:30')],
+    candidates: [visit(36, '2026-11-17', '08:00')],
+    drivingById: { 36: { drivingMiles: 2, band: 'GREEN' } },
+  })
+  assert.deepEqual([soon.startsOn, soon.suggestions, soon.finalDays.date, soon.finalDays.shortNotice], ['2026-11-18', [], '2026-11-23', false])
+
+  // Due tomorrow: the due date is suggested, marked as short notice.
+  const tomorrow = finalDaysPlan({ request: fitRequest(37, 'CS-G', '2026-11-17') })
+  assert.deepEqual([tomorrow.finalDays.date, tomorrow.finalDays.shortNotice], ['2026-11-17', true])
+  assert.deepEqual([tomorrow.earliest.date, tomorrow.earliest.shortNotice], ['2026-11-17', true])
+})
+
+test('on a day without nearby visits the technician registered first is suggested, not the first by name', () => {
+  // The planner lists technicians by name: Helper before Jorge Murillo.
+  const byName = getPrototypePlanningTechnicians(roster)
+  assert.deepEqual(byName.map((person) => person.name), ['Helper', 'Jorge Murillo'])
+  assert.deepEqual(techniciansByPreference(byName).map((person) => person.name), ['Jorge Murillo', 'Helper'])
+  const requests = applyAppointmentsToRequests([csA], [], roster)
+  const result = nearbySlotSuggestions({ request: csA, requests, technicians: byName, now: monday16 })
+  assert.deepEqual(result.finalDays.technicianNames, ['Jorge Murillo'])
+  assert.deepEqual(result.earliest.technicianNames, ['Jorge Murillo'])
 })

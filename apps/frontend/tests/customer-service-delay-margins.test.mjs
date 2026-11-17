@@ -1,8 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import {
-  customerServiceMinimumMarginMinutes, visitDelayMargins,
-} from '../src/features/customer-service/utils/customerServiceScheduling.js'
+import { visitDelayMargins } from '../src/features/customer-service/utils/customerServiceScheduling.js'
 
 // Thursday 12 Nov 2026, Jorge Murillo (docs/customer-service-proposal-fit-plan.md, section 3).
 // end = work end + 10 minutes of pickup, as in the planner agenda.
@@ -12,10 +10,6 @@ const thursday = [
   { requestId: '1022', start: '08:45', end: '09:25', windowEnd: '10:00' }, // CS-2022 8:45–9:15
 ]
 const travel = { '1496>1022': 0, '1022>1497': 23 }
-
-test('the minimum delay margin is 15 minutes (decision D4)', () => {
-  assert.equal(customerServiceMinimumMarginMinutes, 15)
-})
 
 test('each visit carries the delay the visits after it can still absorb', () => {
   const margins = visitDelayMargins({ visits: thursday, travelMinutes: travel })

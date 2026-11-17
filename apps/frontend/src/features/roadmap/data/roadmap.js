@@ -2,7 +2,7 @@
 // the Roadmap page: every item needs a title, a description and one of the
 // statuses below.
 
-export const roadmapUpdatedOn = 'November 13, 2026'
+export const roadmapUpdatedOn = 'November 17, 2026'
 
 export const roadmapStatuses = {
   DONE: { label: 'Done', color: 'success' },
@@ -98,7 +98,7 @@ export const roadmapAreas = [
         title: 'Nearby visits and suggested times',
         status: 'DONE',
         description:
-          'The planner lists the visits near a new request with their driving miles, and suggests times next to them with at least 15 minutes of margin, in 5-minute steps.',
+          'The planner lists the visits near a new request with their driving miles, and suggests times next to them in 5-minute steps.',
       },
       {
         title: 'Final-days rule',
@@ -110,13 +110,25 @@ export const roadmapAreas = [
         title: 'Day-before traffic check',
         status: 'DONE',
         description:
-          'The afternoon before, the drives are checked again with traffic. The screen warns when a margin gets too small or when a time typed by hand is shorter than Google’s.',
+          'The afternoon before, the drives are checked again with traffic. The screen warns when a visit would no longer fit inside its customer window or when a time typed by hand is shorter than Google’s.',
       },
       {
         title: 'Visit details while planning',
         status: 'DONE',
         description:
           'While planning a request, selecting a visit in the technician’s day agenda opens that visit’s request: homeowner, lot, work type, customer window, work time and technician. It is read-only, so nothing is cancelled by mistake.',
+      },
+      {
+        title: 'Recommended slot',
+        status: 'DONE',
+        description:
+          'Each request opens with one recommended slot and the reason for it in plain words. Using it fills the form and calculates the drive times. The homeowner’s phone, clearer messages and a folded list of nearby visits are on the same screen.',
+      },
+      {
+        title: 'Suggestions that can be kept',
+        status: 'DONE',
+        description:
+          'Suggestions start two business days ahead so the homeowner can answer, or on the due date when it is sooner, marked as short notice. The heavy-traffic drive and 10 minutes of pickup are the only buffer. On days without nearby visits, Jorge is suggested first.',
       },
       {
         title: 'Sent proposals hold their time',

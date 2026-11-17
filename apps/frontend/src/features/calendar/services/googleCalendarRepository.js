@@ -1,5 +1,6 @@
 import { requireSupabase } from '../../../services/api.js'
 import {
+  combineGoogleCalendarSyncRounds,
   toGoogleCalendarConnection,
   toGoogleCalendarSyncResult,
 } from './googleCalendarRecord.js'
@@ -56,15 +57,30 @@ export async function startGoogleCalendarOAuth() {
   return authorizationUrl.toString()
 }
 
+// The function stops starting Google writes after about 90 s so it is never cut
+// off mid-sync; it saves what it did and reports `remaining`. Ask again until
+// nothing is left, as long as each call makes progress.
+const MAX_SYNC_ROUNDS = 12
+
 export async function syncGoogleCalendarNow() {
   const client = await requireSupabase()
-  const { data, error } = await client.functions.invoke(SYNC_FUNCTION, {
-    body: {},
-  })
+  const rounds = []
 
-  if (error) {
-    throw new Error(await functionErrorMessage(error, data, 'The Google Calendar request failed.'), { cause: error })
+  for (let round = 0; round < MAX_SYNC_ROUNDS; round += 1) {
+    const { data, error } = await client.functions.invoke(SYNC_FUNCTION, {
+      body: {},
+    })
+
+    if (error) {
+      throw new Error(await functionErrorMessage(error, data, 'The Google Calendar request failed.'), { cause: error })
+    }
+
+    const result = toGoogleCalendarSyncResult(data)
+    rounds.push(result)
+
+    const previous = rounds[rounds.length - 2]
+    if (result.remaining === 0 || (previous && result.remaining >= previous.remaining)) break
   }
 
-  return toGoogleCalendarSyncResult(data)
+  return combineGoogleCalendarSyncRounds(rounds)
 }

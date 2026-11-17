@@ -48,6 +48,8 @@ export function toGoogleCalendarSyncResult(data) {
     unchanged: Number(data.unchanged),
     deleted: Number(data.deleted),
     failed: Number(data.failed),
+    // Absent from older deployments of the function: nothing left to ask for.
+    remaining: Number(data.remaining ?? 0),
     error: data.error ?? '',
     syncedAt: data.syncedAt ?? null,
   }
@@ -58,11 +60,28 @@ export function toGoogleCalendarSyncResult(data) {
     result.unchanged,
     result.deleted,
     result.failed,
+    result.remaining,
   ].some((count) => !Number.isInteger(count) || count < 0)) {
     throw new Error('Google Calendar returned invalid synchronization counters.')
   }
 
   return result
+}
+
+// A big sync is answered in several calls, each one saving what it finished.
+// Creates, updates and deletions happen once, so they add up; "unchanged",
+// "failed" and "remaining" describe the calendar as the last call found it
+// (events created by an earlier call are unchanged by the next one).
+export function combineGoogleCalendarSyncRounds(rounds) {
+  const last = rounds[rounds.length - 1]
+  const total = (key) => rounds.reduce((sum, round) => sum + round[key], 0)
+
+  return {
+    ...last,
+    created: total('created'),
+    updated: total('updated'),
+    deleted: total('deleted'),
+  }
 }
 
 export function googleSyncSummary(result) {
@@ -75,8 +94,14 @@ export function googleSyncSummary(result) {
     .map(([count, label]) => `${count} ${label}`)
 
   const detail = counts.length > 0 ? counts.join(', ') : 'no Production events'
-  return result.failed > 0
-    ? `Google Calendar partially synced: ${detail}; ${result.failed} failed.`
+  const pending = result.remaining > 0
+    ? ` ${result.remaining} still pending: press Sync now again to finish.`
+    : ''
+  if (result.failed > 0) {
+    return `Google Calendar partially synced: ${detail}; ${result.failed} failed.${pending}`
+  }
+  return result.remaining > 0
+    ? `Google Calendar partially synced: ${detail}.${pending}`
     : `Google Calendar synced: ${detail}.`
 }
 

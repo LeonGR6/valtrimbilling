@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
+  combineGoogleCalendarSyncRounds,
   googleCalendarLastSyncLabel,
   googleOAuthReturnMessage,
   googleSyncSummary,
@@ -66,6 +67,46 @@ test('Google Calendar sync results validate counters and produce a useful summar
   assert.equal(
     googleSyncSummary(result),
     'Google Calendar synced: 3 created, 1 updated, 2 unchanged, 1 deleted.',
+  )
+})
+
+test('Google Calendar sync results keep what is still pending and default to none', () => {
+  const base = { ok: true, created: 0, updated: 0, unchanged: 4, deleted: 0, failed: 0 }
+
+  assert.equal(toGoogleCalendarSyncResult(base).remaining, 0)
+
+  const partial = toGoogleCalendarSyncResult({ ...base, created: 3, remaining: 5 })
+  assert.equal(partial.remaining, 5)
+  assert.equal(
+    googleSyncSummary(partial),
+    'Google Calendar partially synced: 3 created, 4 unchanged. 5 still pending: press Sync now again to finish.',
+  )
+  assert.throws(
+    () => toGoogleCalendarSyncResult({ ...base, remaining: -1 }),
+    /invalid synchronization counters/,
+  )
+})
+
+test('Google Calendar sync rounds add up writes but keep the last view of the calendar', () => {
+  const rounds = [
+    { ok: true, created: 300, updated: 2, unchanged: 10, deleted: 0, failed: 1, remaining: 142, error: 'x', syncedAt: 'first' },
+    { ok: true, created: 142, updated: 0, unchanged: 311, deleted: 4, failed: 0, remaining: 0, error: '', syncedAt: 'last' },
+  ]
+
+  assert.deepEqual(combineGoogleCalendarSyncRounds(rounds), {
+    ok: true,
+    created: 442,
+    updated: 2,
+    unchanged: 311,
+    deleted: 4,
+    failed: 0,
+    remaining: 0,
+    error: '',
+    syncedAt: 'last',
+  })
+  assert.equal(
+    googleSyncSummary(combineGoogleCalendarSyncRounds(rounds)),
+    'Google Calendar synced: 442 created, 2 updated, 311 unchanged, 4 deleted.',
   )
 })
 

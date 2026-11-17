@@ -4,6 +4,7 @@ import {
   googleEventColorId,
   hashGoogleCalendarEvent,
   refreshGoogleAccessToken,
+  requiresGoogleReconnect,
   synchronizeGoogleCalendar,
   type GoogleCalendarSchedule,
   type GoogleCalendarSyncSnapshot,
@@ -184,6 +185,212 @@ Deno.test('recreates an event when its previous Google ID no longer exists', asy
   assertEquals(methods, ['GET', 'PUT', 'POST'])
   assertEquals(outcome.created, 1)
   assertEquals(outcome.results[0].googleEventId, 'replacement-google-event')
+})
+
+function manySchedules(count: number): GoogleCalendarSchedule[] {
+  return Array.from({ length: count }, (_, index) => ({
+    ...schedule,
+    scheduleId: String(1000 + index),
+    activityId: String(2000 + index),
+    lotNumbers: [String(index + 1)],
+  }))
+}
+
+const noSleep = () => Promise.resolve()
+
+Deno.test('creates many events with a bounded number of Google writes in flight', async () => {
+  let inFlight = 0
+  let maxInFlight = 0
+  const fetcher = (async (_input: string | URL | Request, init?: RequestInit) => {
+    if (!init?.method) return Response.json({ items: [] })
+    inFlight += 1
+    maxInFlight = Math.max(maxInFlight, inFlight)
+    await new Promise((resolve) => setTimeout(resolve, 2))
+    inFlight -= 1
+    return Response.json({ id: `event-${crypto.randomUUID()}` })
+  }) as typeof fetch
+
+  const outcome = await synchronizeGoogleCalendar(
+    snapshot(manySchedules(25)),
+    'access-token',
+    fetcher,
+    { concurrency: 4, sleep: noSleep },
+  )
+
+  assertEquals(outcome.created, 25)
+  assertEquals(outcome.failed, 0)
+  assertEquals(outcome.remaining, 0)
+  assertEquals(outcome.results.length, 25)
+  assertEquals(maxInFlight, 4)
+})
+
+Deno.test('stops starting Google writes at the deadline and reports what is left', async () => {
+  const methods: string[] = []
+  let clock = 0
+  const fetcher = ((_input: string | URL | Request, init?: RequestInit) => {
+    const method = init?.method ?? 'GET'
+    methods.push(method)
+    if (method === 'GET') return Promise.resolve(Response.json({ items: [] }))
+    clock += 10
+    return Promise.resolve(Response.json({ id: `event-${methods.length}` }))
+  }) as typeof fetch
+
+  const outcome = await synchronizeGoogleCalendar(
+    snapshot(manySchedules(10), [{
+      scheduleId: '77',
+      googleEventId: 'google-event-77',
+      payloadHash: 'c'.repeat(64),
+      status: 'SYNCED',
+    }]),
+    'access-token',
+    fetcher,
+    { concurrency: 1, deadline: 30, now: () => clock, sleep: noSleep },
+  )
+
+  // Three creates reach the deadline; the 7 left and the pending deletion wait.
+  assertEquals(outcome.created, 3)
+  assertEquals(outcome.remaining, 8)
+  assertEquals(outcome.results.length, 3)
+  assertEquals(methods, ['GET', 'POST', 'POST', 'POST'])
+  assertMatch(outcome.lastError ?? '', /8 Google Calendar operations still pending/u)
+})
+
+Deno.test('a second call resumes from what Google already holds without repeating creates', async () => {
+  const stored = new Map<string, Record<string, unknown>>()
+  let clock = 0
+  const fetcher = ((_input: string | URL | Request, init?: RequestInit) => {
+    if (!init?.method) {
+      return Promise.resolve(Response.json({ items: [...stored.values()] }))
+    }
+    clock += 10
+    const body = JSON.parse(String(init.body))
+    const id = `event-${body.extendedProperties.private.valtrimScheduleId}`
+    stored.set(id, { id, ...body })
+    return Promise.resolve(Response.json({ id }))
+  }) as typeof fetch
+  const schedules = manySchedules(6)
+
+  const first = await synchronizeGoogleCalendar(
+    snapshot(schedules),
+    'access-token',
+    fetcher,
+    { concurrency: 1, deadline: 40, now: () => clock, sleep: noSleep },
+  )
+  const second = await synchronizeGoogleCalendar(
+    snapshot(schedules),
+    'access-token',
+    fetcher,
+    { concurrency: 1, sleep: noSleep },
+  )
+
+  assertEquals(first.created, 4)
+  assertEquals(first.remaining, 2)
+  assertEquals(second.created, 2)
+  assertEquals(second.unchanged, 4)
+  assertEquals(second.remaining, 0)
+  assertEquals(stored.size, 6)
+})
+
+Deno.test('retries a Google rate limit with a pause and then succeeds', async () => {
+  const sleeps: number[] = []
+  let posts = 0
+  const fetcher = ((_input: string | URL | Request, init?: RequestInit) => {
+    if (!init?.method) return Promise.resolve(Response.json({ items: [] }))
+    posts += 1
+    if (posts < 3) {
+      return Promise.resolve(Response.json(
+        { error: { code: 403, message: 'Rate Limit Exceeded', errors: [{ reason: 'rateLimitExceeded' }] } },
+        { status: 403 },
+      ))
+    }
+    return Promise.resolve(Response.json({ id: 'google-event-101' }))
+  }) as typeof fetch
+
+  const outcome = await synchronizeGoogleCalendar(
+    snapshot(),
+    'access-token',
+    fetcher,
+    { sleep: (ms) => { sleeps.push(ms); return Promise.resolve() } },
+  )
+
+  assertEquals(posts, 3)
+  assertEquals(sleeps.length, 2)
+  assert(sleeps[1] > sleeps[0])
+  assertEquals(outcome.created, 1)
+  assertEquals(outcome.failed, 0)
+})
+
+Deno.test('gives up on a persistent 429 and records the event as failed', async () => {
+  let posts = 0
+  const fetcher = ((_input: string | URL | Request, init?: RequestInit) => {
+    if (!init?.method) return Promise.resolve(Response.json({ items: [] }))
+    posts += 1
+    return Promise.resolve(Response.json(
+      { error: { code: 429, message: 'Too Many Requests' } },
+      { status: 429 },
+    ))
+  }) as typeof fetch
+
+  const outcome = await synchronizeGoogleCalendar(
+    snapshot(),
+    'access-token',
+    fetcher,
+    { sleep: noSleep },
+  )
+
+  assertEquals(posts, 4)
+  assertEquals(outcome.created, 0)
+  assertEquals(outcome.failed, 1)
+  assertEquals(outcome.results[0].status, 'ERROR')
+})
+
+Deno.test('does not retry an error that is not a rate limit', async () => {
+  let posts = 0
+  const fetcher = ((_input: string | URL | Request, init?: RequestInit) => {
+    if (!init?.method) return Promise.resolve(Response.json({ items: [] }))
+    posts += 1
+    return Promise.resolve(Response.json(
+      { error: { code: 400, message: 'Invalid value' } },
+      { status: 400 },
+    ))
+  }) as typeof fetch
+
+  const outcome = await synchronizeGoogleCalendar(
+    snapshot(),
+    'access-token',
+    fetcher,
+    { sleep: noSleep },
+  )
+
+  assertEquals(posts, 1)
+  assertEquals(outcome.failed, 1)
+})
+
+Deno.test('an expired Google authorization stops the whole sync', async () => {
+  let posts = 0
+  const fetcher = ((_input: string | URL | Request, init?: RequestInit) => {
+    if (!init?.method) return Promise.resolve(Response.json({ items: [] }))
+    posts += 1
+    return Promise.resolve(Response.json(
+      { error: { code: 401, message: 'Invalid Credentials' } },
+      { status: 401 },
+    ))
+  }) as typeof fetch
+
+  let rejected = false
+  try {
+    await synchronizeGoogleCalendar(
+      snapshot(manySchedules(20)),
+      'access-token',
+      fetcher,
+      { concurrency: 2, sleep: noSleep },
+    )
+  } catch (error) {
+    rejected = requiresGoogleReconnect(error)
+  }
+
+  assert(rejected)
+  assert(posts <= 4)
 })
 
 Deno.test('a baseboard install is named in its Google Calendar event', () => {

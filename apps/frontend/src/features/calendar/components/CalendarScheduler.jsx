@@ -685,7 +685,7 @@ export default function CalendarScheduler() {
       const result = await syncGoogleCalendarNow()
       const connection = await getGoogleCalendarConnection()
       setGoogleCalendarConnection(connection)
-      if (result.failed > 0) {
+      if (result.failed > 0 || result.remaining > 0) {
         setGoogleCalendarError(googleSyncSummary(result))
       } else {
         setNotice(googleSyncSummary(result))

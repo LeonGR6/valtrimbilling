@@ -23,6 +23,13 @@ function isSnapshot(value: unknown): value is GoogleCalendarSyncSnapshot {
     && Array.isArray(snapshot.links)
 }
 
+// Edge Functions are cut off by the platform (504) after 150 s on some plans,
+// and a cut-off run never releases its lease. New Google writes therefore stop
+// at this budget, the progress is saved, and the caller asks again for the
+// rest (`remaining`). The real work is resumable: events already in Google are
+// matched by schedule id and cost no write.
+const SYNC_TIME_BUDGET_MS = 90_000
+
 function emptyFailure(message: string): GoogleCalendarSyncOutcome {
   return {
     created: 0,
@@ -30,6 +37,7 @@ function emptyFailure(message: string): GoogleCalendarSyncOutcome {
     unchanged: 0,
     deleted: 0,
     failed: 1,
+    remaining: 0,
     lastError: message.slice(0, 1000),
     results: [],
   }
@@ -62,6 +70,7 @@ Deno.serve(async (req) => {
 
   if (req.method !== 'POST') return json({ error: 'Use POST.' }, 405)
 
+  const startedAt = Date.now()
   let admin: ReturnType<typeof serviceClient> | null = null
   let syncUserId: string | null = null
   let leaseAcquired = false
@@ -111,7 +120,12 @@ Deno.serve(async (req) => {
       requiredEnv('GOOGLE_CALENDAR_CLIENT_SECRET'),
       rawSnapshot.refreshToken,
     )
-    const outcome = await synchronizeGoogleCalendar(rawSnapshot, accessToken)
+    const outcome = await synchronizeGoogleCalendar(
+      rawSnapshot,
+      accessToken,
+      fetch,
+      { deadline: startedAt + SYNC_TIME_BUDGET_MS },
+    )
     const syncedAt = await finishSync(admin, user.id, outcome, false)
     leaseAcquired = false
 
@@ -122,6 +136,7 @@ Deno.serve(async (req) => {
       unchanged: outcome.unchanged,
       deleted: outcome.deleted,
       failed: outcome.failed,
+      remaining: outcome.remaining,
       error: outcome.lastError,
       syncedAt,
     })

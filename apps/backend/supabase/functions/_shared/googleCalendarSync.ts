@@ -94,8 +94,22 @@ export interface GoogleCalendarSyncOutcome {
   unchanged: number
   deleted: number
   failed: number
+  /** Google operations left for the next call because the time budget ran out. */
+  remaining: number
   lastError: string | null
   results: GoogleCalendarSyncResult[]
+}
+
+export interface GoogleCalendarSyncOptions {
+  /** Google writes in flight at once. */
+  concurrency?: number
+  /**
+   * Epoch milliseconds. Once reached, no new Google write starts; the rest is
+   * counted in `remaining` and picked up by the next call.
+   */
+  deadline?: number
+  now?: () => number
+  sleep?: (ms: number) => Promise<void>
 }
 
 export class GoogleCalendarRequestError extends Error {
@@ -502,11 +516,93 @@ function shortError(error: unknown) {
   return message.slice(0, 1000)
 }
 
+// Google asks clients that hit its per-user rate limit to back off and retry.
+// Only answers that guarantee the request was not applied are retried, so a
+// create is never repeated after Google may already have stored it.
+const GOOGLE_RETRY_DELAYS_MS = [500, 1500, 3500]
+const GOOGLE_RATE_LIMIT_REASONS = new Set(['rateLimitExceeded', 'userRateLimitExceeded'])
+const DEFAULT_GOOGLE_WRITE_CONCURRENCY = 3
+
+async function isTransientGoogleFailure(response: Response) {
+  if (response.ok) return false
+  if (response.status === 429 || response.status === 503) return true
+  if (response.status !== 403) return false
+
+  const payload = await responsePayload(response.clone())
+  return GOOGLE_RATE_LIMIT_REASONS.has(googleErrorDetails(response, payload).reason ?? '')
+}
+
+function retryingFetcher(
+  fetcher: Fetcher,
+  sleep: (ms: number) => Promise<void>,
+): Fetcher {
+  return (async (input: string | URL | Request, init?: RequestInit) => {
+    for (let attempt = 0; ; attempt += 1) {
+      const response = await fetcher(input, init)
+      if (
+        attempt >= GOOGLE_RETRY_DELAYS_MS.length
+        || !(await isTransientGoogleFailure(response))
+      ) return response
+
+      await response.body?.cancel().catch(() => {})
+      await sleep(GOOGLE_RETRY_DELAYS_MS[attempt] * (0.75 + Math.random() * 0.5))
+    }
+  }) as Fetcher
+}
+
+/**
+ * Runs `handler` over `items` with a bounded number in flight. No new item
+ * starts once `shouldStop()` is true; the number of items that never started
+ * is returned. An error thrown by a handler stops the pool and propagates.
+ */
+async function runPool<T>(
+  items: T[],
+  concurrency: number,
+  shouldStop: () => boolean,
+  handler: (item: T) => Promise<void>,
+) {
+  let next = 0
+  let aborted = false
+
+  const worker = async () => {
+    while (!aborted && next < items.length && !shouldStop()) {
+      const item = items[next]
+      next += 1
+      try {
+        await handler(item)
+      } catch (error) {
+        aborted = true
+        throw error
+      }
+    }
+  }
+
+  const workers = Math.min(Math.max(1, Math.floor(concurrency)), items.length)
+  await Promise.all(Array.from({ length: workers }, worker))
+  return items.length - next
+}
+
+interface PendingUpsert {
+  schedule: GoogleCalendarSchedule
+  desired: GoogleEventPayload
+  payloadHash: string
+  remote: ManagedGoogleEvent | undefined
+  linkedId: string | null
+}
+
 export async function synchronizeGoogleCalendar(
   snapshot: GoogleCalendarSyncSnapshot,
   accessToken: string,
-  fetcher: Fetcher = fetch,
+  baseFetcher: Fetcher = fetch,
+  options: GoogleCalendarSyncOptions = {},
 ): Promise<GoogleCalendarSyncOutcome> {
+  const now = options.now ?? Date.now
+  const sleep = options.sleep
+    ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)))
+  const concurrency = options.concurrency ?? DEFAULT_GOOGLE_WRITE_CONCURRENCY
+  const shouldStop = () => options.deadline !== undefined && now() >= options.deadline
+  const fetcher = retryingFetcher(baseFetcher, sleep)
+
   const remoteEvents = await listManagedGoogleEvents(
     accessToken,
     snapshot.calendarId,
@@ -533,25 +629,36 @@ export async function synchronizeGoogleCalendar(
     }
   }
 
+  // Events that already match cost no Google call, so only the rest is queued.
+  const pendingUpserts: PendingUpsert[] = []
   for (const schedule of snapshot.schedules) {
     const desired = buildGoogleCalendarEvent(schedule)
     const payloadHash = await hashGoogleCalendarEvent(desired)
     const remote = remoteBySchedule.get(schedule.scheduleId)
-    const linkedId = links.get(schedule.scheduleId)?.googleEventId ?? null
 
+    if (remote && googleEventMatches(remote.resource, desired)) {
+      unchanged += 1
+      results.set(schedule.scheduleId, {
+        scheduleId: schedule.scheduleId,
+        googleEventId: remote.id,
+        payloadHash,
+        status: 'SYNCED',
+        lastError: null,
+      })
+      continue
+    }
+
+    pendingUpserts.push({
+      schedule,
+      desired,
+      payloadHash,
+      remote,
+      linkedId: links.get(schedule.scheduleId)?.googleEventId ?? null,
+    })
+  }
+
+  const upsert = async ({ schedule, desired, payloadHash, remote, linkedId }: PendingUpsert) => {
     try {
-      if (remote && googleEventMatches(remote.resource, desired)) {
-        unchanged += 1
-        results.set(schedule.scheduleId, {
-          scheduleId: schedule.scheduleId,
-          googleEventId: remote.id,
-          payloadHash,
-          status: 'SYNCED',
-          lastError: null,
-        })
-        continue
-      }
-
       const saved = await upsertGoogleEvent(
         accessToken,
         snapshot.calendarId,
@@ -583,7 +690,7 @@ export async function synchronizeGoogleCalendar(
     }
   }
 
-  for (const remote of remoteToDelete) {
+  const removeRemote = async (remote: ManagedGoogleEvent) => {
     try {
       if (await deleteGoogleEvent(
         accessToken,
@@ -619,10 +726,7 @@ export async function synchronizeGoogleCalendar(
     }
   }
 
-  for (const link of snapshot.links) {
-    if (activeScheduleIds.has(link.scheduleId) || link.status === 'DELETED') continue
-    if (results.has(link.scheduleId)) continue
-
+  const removeLink = async (link: GoogleCalendarLink) => {
     try {
       if (link.googleEventId && !deletedEventIds.has(link.googleEventId)) {
         if (await deleteGoogleEvent(
@@ -654,15 +758,39 @@ export async function synchronizeGoogleCalendar(
     }
   }
 
+  const orphanLinks = () => snapshot.links.filter((link) =>
+    !activeScheduleIds.has(link.scheduleId)
+    && link.status !== 'DELETED'
+    && !results.has(link.scheduleId)
+  )
+
+  // Creates and updates first, then deletions; each phase only starts once the
+  // previous one finished, and a phase that runs out of time hands the rest
+  // (and every later phase) to the next call.
+  let remaining = await runPool(pendingUpserts, concurrency, shouldStop, upsert)
+  if (remaining > 0) {
+    remaining += remoteToDelete.length + orphanLinks().length
+  } else {
+    remaining = await runPool(remoteToDelete, concurrency, shouldStop, removeRemote)
+    if (remaining > 0) {
+      remaining += orphanLinks().length
+    } else {
+      remaining = await runPool(orphanLinks(), concurrency, shouldStop, removeLink)
+    }
+  }
+
   return {
     created,
     updated,
     unchanged,
     deleted,
     failed,
+    remaining,
     lastError: failed > 0
       ? `${failed} Google Calendar operation${failed === 1 ? '' : 's'} failed. ${errors[0]}`
         .slice(0, 1000)
+      : remaining > 0
+      ? `${remaining} Google Calendar operation${remaining === 1 ? '' : 's'} still pending. Run Sync now again.`
       : null,
     results: [...results.values()],
   }

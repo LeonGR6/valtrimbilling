@@ -40,6 +40,34 @@ export function toPlanOption(row, currentPrice = null) {
   }
 }
 
+// An Option read together with its open price: the Data API sends the price inside the Option
+// (`option_prices`). Only one price per Option is open (a unique index says so), so there is one at most.
+export function toPlanOptionWithPrice(row) {
+  return toPlanOption(row, row.option_prices?.[0] ?? null)
+}
+
+/**
+ * The Plans of many Jobs, each with its price and its Options, from the rows the Data API returned:
+ * Plans (in the order they were read), the open price of each Plan, and Options that carry their own
+ * open price. A Job's Plans keep that order; a Plan's Options are sorted by code.
+ */
+export function groupJobPlans(planRows, planPriceRows, optionRows) {
+  const planPrices = new Map(planPriceRows.map((price) => [price.plan_id, price]))
+  const optionsByPlanId = new Map()
+  optionRows.forEach((row) => {
+    const planOptions = optionsByPlanId.get(row.plan_id) ?? []
+    planOptions.push(toPlanOptionWithPrice(row))
+    optionsByPlanId.set(row.plan_id, planOptions)
+  })
+
+  return planRows.reduce((grouped, row) => {
+    const jobPlans = grouped.get(row.job_id) ?? []
+    jobPlans.push(toJobPlan(row, planPrices.get(row.id), optionsByPlanId.get(row.id) ?? []))
+    grouped.set(row.job_id, jobPlans)
+    return grouped
+  }, new Map())
+}
+
 export function toJobPlan(row, currentPrice = null, options = []) {
   return {
     id: row.id,

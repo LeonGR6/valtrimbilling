@@ -31,7 +31,7 @@ const PurchaseOrderReviewDialog = lazy(
  * open Draw & Invoice, so the same review opens from here.
  */
 export default function JobPurchaseOrders({ job }) {
-  const { canManageJobs, refreshJobs } = useJobs()
+  const { canManageJobs, refreshJob } = useJobs()
   const [reviewing, setReviewing] = useState(null)
   // Only what the library reads from a Job, so a refreshed Job does not reload the documents.
   const libraryJobs = useMemo(
@@ -49,7 +49,7 @@ export default function JobPurchaseOrders({ job }) {
 
   // An import adds Options and a price changes one, so the Plans & Options on this page are read again.
   const closeReview = () => {
-    if (reviewing && purchaseOrders.revision !== reviewing.revision) refreshJobs().catch(() => {})
+    if (reviewing && purchaseOrders.revision !== reviewing.revision) refreshJob(job.id).catch(() => {})
     setReviewing(null)
   }
 

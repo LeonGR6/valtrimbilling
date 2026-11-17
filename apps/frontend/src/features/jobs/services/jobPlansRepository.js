@@ -1,6 +1,7 @@
 import { requireSupabase } from '../../../services/api.js'
 import { listAllRowsByIds } from '../../../services/pagedQuery.js'
 import {
+  groupJobPlans,
   toJobPlan,
   toJobPlanMutation,
   toOptionPriceRpc,
@@ -39,14 +40,12 @@ const PLAN_PRICE_COLUMNS = [
   'effective_to',
 ].join(', ')
 
-const OPTION_PRICE_COLUMNS = [
-  'id',
-  'option_id',
-  'price',
-  'is_not_applicable',
-  'effective_from',
-  'effective_to',
-].join(', ')
+// The open price of an Option, read together with the Option (see listJobPlans).
+const OPTION_OPEN_PRICE_EMBED = 'option_prices(price, is_not_applicable)'
+
+// Plans per request when the Options of many Plans are read: the Options of 20 Plans are about one page
+// (1000 rows), so a batch is about one request.
+const OPTION_PLAN_BATCH_SIZE = 20
 
 function throwRepositoryError(error) {
   if (!error) return
@@ -92,15 +91,6 @@ function throwRepositoryError(error) {
   })
 }
 
-function optionsByPlan(options) {
-  return options.reduce((grouped, option) => {
-    const planOptions = grouped.get(option.planId) ?? []
-    planOptions.push(option)
-    grouped.set(option.planId, planOptions)
-    return grouped
-  }, new Map())
-}
-
 export async function listJobPlans(jobIds) {
   const normalizedJobIds = [...new Set(jobIds.map(Number).filter(Number.isFinite))]
   if (normalizedJobIds.length === 0) return new Map()
@@ -120,12 +110,15 @@ export async function listJobPlans(jobIds) {
 
   const planIds = planRows.map(({ id }) => id)
   const [optionRows, planPriceRows] = await Promise.all([
+    // Each Option comes with its open price, so the prices are not asked for again, 200 Options at a
+    // time (that was one request for every 200 of the Job catalog's tens of thousands of Options).
     listAllRowsByIds(planIds, (batch) => client
       .from('plan_options')
-      .select(OPTION_COLUMNS)
+      .select(`${OPTION_COLUMNS}, ${OPTION_OPEN_PRICE_EMBED}`)
       .in('plan_id', batch)
       .eq('is_active', true)
-      .order('id', { ascending: true }), throwRepositoryError),
+      .is('option_prices.effective_to', null)
+      .order('id', { ascending: true }), throwRepositoryError, undefined, undefined, OPTION_PLAN_BATCH_SIZE),
     listAllRowsByIds(planIds, (batch) => client
       .from('plan_prices')
       .select(PLAN_PRICE_COLUMNS)
@@ -134,36 +127,8 @@ export async function listJobPlans(jobIds) {
       .order('effective_from', { ascending: false })
       .order('id', { ascending: true }), throwRepositoryError),
   ])
-  // The Options come in batches of Plans: all the Options of a Plan are in one batch, in order.
-  const optionIds = optionRows.map(({ id }) => id)
-  const optionPriceRows = await listAllRowsByIds(optionIds, (batch) => client
-    .from('option_prices')
-    .select(OPTION_PRICE_COLUMNS)
-    .in('option_id', batch)
-    .is('effective_to', null)
-    .order('effective_from', { ascending: false })
-    .order('id', { ascending: true }), throwRepositoryError)
 
-  const planPrices = new Map(
-    planPriceRows.map((price) => [price.plan_id, price]),
-  )
-  const optionPrices = new Map(
-    optionPriceRows.map((price) => [price.option_id, price]),
-  )
-  const groupedOptions = optionsByPlan(optionRows.map((row) => (
-    toPlanOption(row, optionPrices.get(row.id))
-  )))
-
-  return planRows.reduce((grouped, row) => {
-    const jobPlans = grouped.get(row.job_id) ?? []
-    jobPlans.push(toJobPlan(
-      row,
-      planPrices.get(row.id),
-      groupedOptions.get(row.id) ?? [],
-    ))
-    grouped.set(row.job_id, jobPlans)
-    return grouped
-  }, new Map())
+  return groupJobPlans(planRows, planPriceRows, optionRows)
 }
 
 export async function createJobPlan(jobId, plan) {

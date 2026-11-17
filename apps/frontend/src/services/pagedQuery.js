@@ -67,7 +67,8 @@ async function mapWithLimit(items, limit, mapper) {
 /**
  * Every row of a query that filters on a list of ids: the ids go in batches, a few at a time, each
  * batch read in full. The rows come back batch after batch in the order of `ids`, whatever the
- * order the batches finished in.
+ * order the batches finished in. `batchSize` is how many ids go in one batch: a list whose ids own a
+ * lot of rows (Plans and their Options) uses a small one so a batch is about one page.
  */
 export async function listAllRowsByIds(
   ids,
@@ -75,9 +76,10 @@ export async function listAllRowsByIds(
   onError,
   pageSize = PAGE_SIZE,
   concurrency = FILTER_CONCURRENCY,
+  batchSize = FILTER_BATCH_SIZE,
 ) {
   const batches = await mapWithLimit(
-    inBatches(ids),
+    inBatches(ids, batchSize),
     concurrency,
     (batch) => listAllRows(() => queryFactory(batch), onError, pageSize),
   )

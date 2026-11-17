@@ -127,3 +127,14 @@ test('after a batch fails no new batch is started, and the error is the one repo
   // Two were running; the one that did not fail stopped instead of taking the next.
   assert.deepEqual(state.started, [1, 201])
 })
+
+test('the size of a batch can be chosen, so a batch holds about one page of rows', async () => {
+  const sizes = []
+  const read = await listAllRowsByIds(idsUpTo(65), (batch) => {
+    sizes.push(batch.length)
+    return fakeTable(options(65))((row) => batch.includes(row.id))
+  }, never, PAGE_SIZE, FILTER_CONCURRENCY, 20)
+
+  assert.deepEqual(sizes.sort((a, b) => a - b), [5, 20, 20, 20])
+  assert.deepEqual(read.map(({ id }) => id), idsUpTo(65))
+})

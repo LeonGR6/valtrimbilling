@@ -1,4 +1,5 @@
 import { requireSupabase } from '../../../services/api.js'
+import { listAllRows } from '../../../services/pagedQuery.js'
 import { toJob, toJobMutation } from './jobRecord.js'
 
 const JOB_COLUMNS = [
@@ -66,13 +67,28 @@ function throwRepositoryError(error) {
 
 export async function listJobs() {
   const client = await requireSupabase()
-  const { data, error } = await client
+  // Every page is read: the Data API returns at most 1000 rows per request, and a Job list that grew
+  // past it would lose its last Jobs without an error. Ordered by code, then id, so pages do not overlap.
+  const rows = await listAllRows(() => client
     .from('jobs')
     .select(JOB_COLUMNS)
     .order('code', { ascending: true })
+    .order('id', { ascending: true }), throwRepositoryError)
+
+  return rows.map(toJob)
+}
+
+// One Job, read again: the record of the Job, not its Plans or Phases.
+export async function getJob(jobId) {
+  const client = await requireSupabase()
+  const { data, error } = await client
+    .from('jobs')
+    .select(JOB_COLUMNS)
+    .eq('id', jobId)
+    .maybeSingle()
 
   throwRepositoryError(error)
-  return (data ?? []).map(toJob)
+  return data ? toJob(data) : null
 }
 
 export async function createJob(job) {

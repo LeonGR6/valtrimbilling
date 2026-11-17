@@ -4,6 +4,7 @@ import { useBuilders } from '../../builders/context/useBuilders.js'
 import {
   createJob as createJobRecord,
   deactivateJob as deactivateJobRecord,
+  getJob as getJobRecord,
   listJobs,
   updateJob as updateJobRecord,
 } from '../services/jobsRepository.js'
@@ -109,6 +110,45 @@ export function JobsProvider({ children }) {
       throw loadError
     } finally {
       setLoading(false)
+    }
+  }, [profile?.id])
+
+  // Reads one Job again (its record, Plans and Phases) and leaves the other Jobs as they are. A page
+  // that knows which Job changed uses this instead of refreshJobs, which reads the Plans and Options of
+  // every Job (tens of thousands of rows) and so is for the screens that do not know.
+  const refreshJob = useCallback(async (jobId) => {
+    if (!profile?.id) return null
+    const id = Number(jobId)
+
+    try {
+      const [record, plansByJob, phasesByJob] = await Promise.all([
+        getJobRecord(id),
+        listJobPlans([id]),
+        listSequenceSheetPhases([id]),
+      ])
+      if (!record) {
+        setJobRecords((current) => current.filter((job) => job.id !== id))
+        return null
+      }
+
+      const fresh = {
+        ...record,
+        sequenceSheet: {
+          ...record.sequenceSheet,
+          plans: plansByJob.get(id) ?? [],
+          phases: phasesByJob.get(id) ?? [],
+        },
+      }
+      setJobRecords((current) => sortJobs(
+        current.some((job) => job.id === id)
+          ? current.map((job) => (job.id === id ? fresh : job))
+          : [fresh, ...current],
+      ))
+      setError(null)
+      return fresh
+    } catch (loadError) {
+      setError(loadError.message)
+      throw loadError
     }
   }, [profile?.id])
 
@@ -427,6 +467,7 @@ export function JobsProvider({ children }) {
     error,
     canManageJobs,
     refreshJobs,
+    refreshJob,
     createJob,
     updateJob,
     deactivateJob,
@@ -457,6 +498,7 @@ export function JobsProvider({ children }) {
     error,
     jobs,
     loading,
+    refreshJob,
     refreshJobs,
     reorderJobPlans,
     saveJobPlanPrice,

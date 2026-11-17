@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   applyJobPriceChanges,
+  groupJobPlans,
   mergeJobPlanRecord,
   mergePlanOptionRecord,
   toJobPlan,
@@ -10,6 +11,7 @@ import {
   toOptionPriceRpc,
   toPlanOption,
   toPlanOptionMutation,
+  toPlanOptionWithPrice,
   toPlanPriceRpc,
 } from '../src/features/jobs/services/jobPlanRecord.js'
 
@@ -221,4 +223,51 @@ test('saving the sheet changes only the prices that were saved, in one pass', ()
   // What was not changed is the same object, so it does not render again.
   assert.equal(saved[1], plans[1])
   assert.equal(plans[0].price, 7000)
+})
+
+test('an Option read with its open price becomes the Option the screens use', () => {
+  const row = { id: 7, plan_id: 3, code: 'A10', name: 'Door', description: 'Door', is_active: true }
+
+  assert.deepEqual(toPlanOptionWithPrice({ ...row, option_prices: [{ price: '125.50', is_not_applicable: false }] }), {
+    id: 7, planId: 3, code: 'A10', description: 'Door', price: 125.5, priceNotApplicable: false, isActive: true,
+  })
+  // NA keeps its flag; an Option that was never priced has none, whether the list is empty or missing.
+  assert.equal(toPlanOptionWithPrice({ ...row, option_prices: [{ price: '0', is_not_applicable: true }] }).priceNotApplicable, true)
+  assert.equal(toPlanOptionWithPrice({ ...row, option_prices: [] }).price, null)
+  assert.equal(toPlanOptionWithPrice(row).price, null)
+  // The same as reading the price apart and passing it in.
+  assert.deepEqual(
+    toPlanOptionWithPrice({ ...row, option_prices: [{ price: 9, is_not_applicable: false }] }),
+    toPlanOption(row, { price: 9, is_not_applicable: false }),
+  )
+})
+
+test('Plans of many Jobs are grouped by Job, with their price and their Options sorted by code', () => {
+  const planRows = [
+    { id: 11, job_id: 1, code: 'P1', name: 'Plan 1', description: null, is_active: true },
+    { id: 12, job_id: 1, code: 'P2', name: 'Plan 2', description: null, is_active: true },
+    { id: 21, job_id: 2, code: 'P1', name: 'Plan 1', description: null, is_active: true },
+  ]
+  const planPriceRows = [
+    { plan_id: 11, base_price: '7000', hardware_price: '80' },
+    { plan_id: 21, base_price: '5000', hardware_price: null },
+  ]
+  const optionRows = [
+    { id: 102, plan_id: 11, code: 'B2', name: 'B', description: 'B', is_active: true, option_prices: [{ price: '20', is_not_applicable: false }] },
+    { id: 101, plan_id: 11, code: 'A1', name: 'A', description: 'A', is_active: true, option_prices: [] },
+    { id: 201, plan_id: 21, code: 'A1', name: 'A', description: 'A', is_active: true, option_prices: [{ price: '0', is_not_applicable: true }] },
+  ]
+
+  const byJob = groupJobPlans(planRows, planPriceRows, optionRows)
+
+  assert.deepEqual([...byJob.keys()], [1, 2])
+  assert.deepEqual(byJob.get(1).map(({ id }) => id), [11, 12])
+  assert.equal(byJob.get(1)[0].price, 7000)
+  assert.equal(byJob.get(1)[0].hardwarePrice, 80)
+  assert.deepEqual(byJob.get(1)[0].options.map(({ code, price }) => [code, price]), [['A1', null], ['B2', 20]])
+  // A Plan with no price and no Options is still listed.
+  assert.equal(byJob.get(1)[1].price, null)
+  assert.deepEqual(byJob.get(1)[1].options, [])
+  assert.equal(byJob.get(2)[0].options[0].priceNotApplicable, true)
+  assert.equal(groupJobPlans([], [], []).size, 0)
 })

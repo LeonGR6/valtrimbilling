@@ -38,7 +38,7 @@ function describeLastChange(change) {
  */
 export default function JobBillingSetupCard({ job }) {
   const { builderDrawSchedules, jobBillingSetupVersions } = useBuilderDrawSchedules()
-  const { canManageJobs, refreshJobs } = useJobs()
+  const { canManageJobs, refreshJob } = useJobs()
   const [state, setState] = useState(null)
   const [reloads, setReloads] = useState(0)
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -70,8 +70,9 @@ export default function JobBillingSetupCard({ job }) {
     setNotice(message)
     setState(null)
     setReloads((current) => current + 1)
-    await refreshJobs().catch(() => {})
-  }, [refreshJobs])
+    // Only this Job changed: read it again, not the Plans and Options of every Job.
+    await refreshJob(job.id).catch(() => {})
+  }, [job.id, refreshJob])
 
   if (!setup) return null
 

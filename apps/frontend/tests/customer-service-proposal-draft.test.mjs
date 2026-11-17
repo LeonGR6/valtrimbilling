@@ -134,7 +134,7 @@ test('a date after the due date is flagged as late without blocking an overdue r
   assert.equal(validate({ date: '2026-10-14' }, due).warnings.length, 0)
   const late = validate({ date: '2026-10-15' }, due)
   assert.equal(late.isValid, true)
-  assert.ok(late.warnings.some((warning) => warning.message.includes('after the due date 2026-10-14')))
+  assert.ok(late.warnings.some((warning) => warning.message.includes('after the due date (Wed, Oct 14)')))
 })
 
 test('unknown, duplicated or insufficient technicians cannot imply crew capacity', () => {
@@ -189,7 +189,7 @@ test('work and pickup must finish before the customer window closes, not only st
     assert.ok(validate({ internalStart }).errors.some((error) => error.field === 'internalStart'), internalStart)
   }
   assert.equal(validate({ internalStart: '10:00' }).isValid, true)
-  assert.ok(validate({ internalStart: '11:00' }).errors.some((error) => error.message.includes('before the customer window closes at 12:00')))
+  assert.ok(validate({ internalStart: '11:00' }).errors.some((error) => error.message.includes('before the customer window closes at 12:00 PM')))
   // 60 minutes from 10:50 ends at 11:50 and pickup ends exactly at 12:00; one minute later does not fit.
   assert.equal(validate({ internalStart: '10:50' }).isValid, true)
   assert.equal(validate({ internalStart: '10:51' }).isValid, false)
@@ -212,12 +212,12 @@ test('a confirmed visit occupies only its work and pickup, so a later visit can 
   const busyUntil = '10:40' // 10:30 work end plus 10 minutes pickup
   const unknownTravel = validate({ internalStart: busyUntil }, [ready, confirmed], now)
   assert.equal(unknownTravel.isValid, true, 'a draft can be saved, but travel is not claimed as verified')
-  assert.ok(unknownTravel.warnings.some((warning) => warning.message.includes('Travel time pending')))
+  assert.ok(unknownTravel.warnings.some((warning) => warning.message.includes('is missing for')))
   const withTravel = { travelMinutes: { [`${confirmed.id}>${ready.id}`]: 0 } }
   assert.equal(validate({ internalStart: busyUntil, ...withTravel }, [ready, confirmed]).isValid, true)
   const slowTravel = { travelMinutes: { [`${confirmed.id}>${ready.id}`]: 5 } }
   assert.ok(validate({ internalStart: busyUntil, ...slowTravel }, [ready, confirmed]).errors.some((error) => error.message.includes('cannot reach')))
-  assert.ok(validate({ internalStart: '10:20' }, [ready, confirmed]).errors.some((error) => error.message.includes('internal work conflict')))
+  assert.ok(validate({ internalStart: '10:20' }, [ready, confirmed]).errors.some((error) => error.message.includes('is already busy with')))
 })
 
 test('sent proposals reserve their occupied time until response, not the whole customer window', () => {
@@ -231,7 +231,7 @@ test('sent proposals reserve their occupied time until response, not the whole c
   assert.deepEqual(agenda[0].internalSlot, { start: '08:00', end: '09:00' })
   // The new visit cannot start before the pending work plus pickup, and needs a manual travel estimate.
   const selection = { windowStart: '10:00', internalStart: '10:00' }
-  assert.ok(validate(selection, [ready, pending]).warnings.some((warning) => warning.message.includes('Travel time pending')))
+  assert.ok(validate(selection, [ready, pending]).warnings.some((warning) => warning.message.includes('is missing for')))
   assert.equal(validate({ ...selection, travelMinutes: { [`${pending.id}>${ready.id}`]: 50 } }, [ready, pending]).isValid, true)
   assert.ok(validate({ ...selection, travelMinutes: { [`${pending.id}>${ready.id}`]: 51 } }, [ready, pending])
     .errors.some((error) => error.message.includes('cannot reach')))
@@ -248,10 +248,10 @@ test('a new visit between two neighbours needs travel from each neighbour to it,
   }
   assert.equal(validate({ travelMinutes: fits }, collection).isValid, true)
   assert.ok(validate({ travelMinutes: { ...fits, [`${ready.id}>${after.id}`]: 60 } }, collection)
-    .errors.some((error) => error.message.includes('after this visit')))
+    .errors.some((error) => error.message.includes('leaving this visit at')))
   // A direct before→after estimate is not used when the visit sits between them.
   const shortcut = validate({ travelMinutes: { [`${before.id}>${after.id}`]: 0 } }, collection)
-  assert.equal(shortcut.warnings.filter((warning) => warning.message.includes('Travel time pending')).length, 2)
+  assert.equal(shortcut.warnings.filter((warning) => warning.message.includes('is missing for')).length, 2)
 })
 
 test('the previous neighbour is the visit that ends last before the new start, not the one that starts last', () => {
@@ -330,7 +330,7 @@ test('administrative edits preserve a draft signature but changes to reviewed sc
 test('saving revalidates availability rather than trusting an earlier successful check', () => {
   assert.equal(validate().isValid, true)
   const changedAgenda = [ready, booked('mock-1063', { technicianIds: [jorge], slot: ['10:00', '11:00'] })]
-  assert.throws(() => createPrototypeProposalDraft({ requestId: ready.id, values, requests: changedAgenda, now }), /internal work conflict/)
+  assert.throws(() => createPrototypeProposalDraft({ requestId: ready.id, values, requests: changedAgenda, now }), /is already busy with/)
 })
 
 test('California clock owns operational dates and handles summer, winter and daylight saving transitions', () => {

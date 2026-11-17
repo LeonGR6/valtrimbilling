@@ -85,7 +85,7 @@ test('a saved appointment blocks capacity and registration waits for every trave
   const requests = applyAppointmentsToRequests([confirmed, ready], [appointment], roster)
   const values = { technicianIds: ['4'], date: '2026-11-09', windowStart: '08:00', internalStart: '08:15', travelMinutes: {} }
   const conflict = validatePrototypeProposalDraft({ requestId: 20, values, requests, technicians, now })
-  assert.ok(conflict.errors.some((error) => error.message.startsWith('Jorge Murillo has an internal work conflict with the reserved schedule of SR-10')))
+  assert.ok(conflict.errors.some((error) => error.message.startsWith('Jorge Murillo is already busy with SR-10 from 8:00 AM to 8:40 AM')))
 
   const later = validatePrototypeProposalDraft({
     requestId: 20, values: { ...values, windowStart: '10:00', internalStart: '10:00' }, requests, technicians, now,
@@ -117,12 +117,12 @@ test('a late date blocks registration only while the request can still be done o
   const late = validate('2026-11-06')
   assert.equal(late.isValid, true)
   assert.equal(late.pastDue, true)
-  assert.ok(late.warnings.some((warning) => warning.message.startsWith('This date is after the due date 2026-11-06.')))
+  assert.ok(late.warnings.some((warning) => warning.message.startsWith('This date is after the due date (Fri, Nov 6).')))
 
   // Already overdue: only the late warning, registration stays possible.
   const overdue = validate('2026-09-04')
   assert.equal(overdue.pastDue, false)
-  assert.ok(overdue.warnings.some((warning) => warning.message === 'This request was due on 2026-09-04. The work will be completed late.'))
+  assert.ok(overdue.warnings.some((warning) => warning.message === 'This request was due on Fri, Sep 4. The work will be completed late.'))
 })
 
 test('the earliest viable start per window (used by Earliest available) only describes values', () => {
@@ -173,4 +173,22 @@ test('suggestions stay within the due date while on time and look ahead when alr
     requests: applyAppointmentsToRequests([confirmed, ready], [appointment], roster),
   })
   assert.deepEqual(noTechnician, { suggestions: [], searchedThrough: null })
+})
+
+test('planner messages use one date and time format and say what is wrong', async () => {
+  const { formatServiceDate, formatServiceTime } = await import('../src/features/customer-service/utils/customerServiceScheduling.js')
+  assert.equal(formatServiceDate('2026-11-17'), 'Tue, Nov 17')
+  assert.equal(formatServiceDate('not a date'), 'not a date')
+  assert.deepEqual(['08:00', '12:00', '13:05', '00:30'].map(formatServiceTime), ['8:00 AM', '12:00 PM', '1:05 PM', '12:30 AM'])
+
+  const requests = applyAppointmentsToRequests([confirmed, ready], [appointment], roster)
+  const validate = (internalStart, travelMinutes) => validatePrototypeProposalDraft({
+    requestId: 20, requests, technicians, now,
+    values: { technicianIds: ['4'], date: '2026-11-09', windowStart: '08:00', internalStart, travelMinutes },
+  })
+  // SR-10 keeps Jorge busy until 8:40 (work until 8:30 plus pickup).
+  assert.ok(validate('08:45', { '10>20': 15 }).errors.some((error) => error.message
+    === 'Jorge Murillo cannot reach this visit in time from SR-10: leaving at 8:40 AM with 15 min of travel, they arrive at 8:55 AM.'))
+  assert.ok(validate('08:45', {}).warnings.some((warning) => warning.message
+    === 'Travel time from SR-10 to this visit is missing for Jorge Murillo. Calculate it with Google Maps or type it.'))
 })

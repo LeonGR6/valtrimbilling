@@ -280,7 +280,7 @@ export default function CustomerServiceCatalog() {
   const saveProposalDraft = (requestId, values) => {
     const draft = createPrototypeProposalDraft({ requestId, values, requests, technicians })
     setProposalDrafts((current) => ({ ...current, [requestId]: draft }))
-    setNotice({ severity: 'success', message: 'Proposal draft saved in session memory. The request remains Ready to propose; no appointment was created or email sent.' })
+    setNotice({ severity: 'success', message: 'Draft saved until the page is reloaded. The request stays Ready to propose; nothing was registered or sent.' })
   }
 
   const appointmentRegistered = (request) => {
@@ -367,10 +367,12 @@ export default function CustomerServiceCatalog() {
 
       <Box sx={{ p: { xs: 2.5, md: 4 } }}>
         <TravelCheckAlert requests={requests} />
-        <Alert severity="info" variant="outlined" sx={{ mb: 2 }}>
-          Requests, edits, review approval and original sources are saved. Proposal drafts and planning
-          are still session-only and reset when you reload. No email is sent or appointment created by approval.
-        </Alert>
+        {activeView === 'REQUESTS' && (
+          <Alert severity="info" variant="outlined" sx={{ mb: 2 }}>
+            Requests, edits, review approval and original sources are saved. Approving a request sends no email and
+            creates no appointment.
+          </Alert>
+        )}
         {activeView === 'REQUESTS' && profile?.id && profile.isActive
           && ['ADMIN', 'SCHEDULING'].includes(profile.role) && (
           <EmailInboxPanel key={`${profile.id}-${profile.role}-${importPanelRevision}`}

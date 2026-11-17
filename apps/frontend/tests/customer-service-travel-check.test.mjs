@@ -46,14 +46,19 @@ test('each scheduled visit of a day has its delay margin from the saved legs', (
   assert.deepEqual(scheduledDelayMargins({ requests, technicians, date: '2026-11-13', travelMinutes }), {})
 })
 
-test('the traffic check note lists the visits left with less than 15 minutes', () => {
+test('the traffic check note lists only the visits whose day no longer fits (no minimum since 17 Nov 2026)', () => {
   const quiet = travelCheckSummary({ check, requests, technicians, travelMinutes: { '1496>1022': 0, '1022>1497': 23 } })
-  assert.deepEqual([quiet.visits, quiet.tight, quiet.unknown, quiet.failedLegs], [3, [], [], 0])
+  assert.deepEqual([quiet.visits, quiet.late, quiet.unknown, quiet.failedLegs], [3, [], [], 0])
 
-  // Tomorrow's traffic turns CS-2022 → CS-2497 into 92 minutes: CS-2022 can start only
-  // 8 min late, and CS-2496 before it 13.
+  // Tomorrow's traffic turns CS-2022 → CS-2497 into 92 minutes: CS-2497 starts at 10:57,
+  // still inside its window, and CS-2022 can start only 8 min late. Little margin is not a warning.
   const slow = travelCheckSummary({ check, requests, technicians, travelMinutes: { '1496>1022': 0, '1022>1497': 92 } })
-  assert.deepEqual(slow.tight.map((visit) => [visit.requestNumber, visit.margin]), [['CS-2022', 8], ['CS-2496', 13]])
+  assert.deepEqual(slow.late, [])
+
+  // With 160 minutes CS-2497 would finish 60 min after its window closes at 12:00, so the
+  // visits before it are listed, worst first.
+  const stuck = travelCheckSummary({ check, requests, technicians, travelMinutes: { '1496>1022': 0, '1022>1497': 160 } })
+  assert.deepEqual(stuck.late.map((visit) => [visit.requestNumber, visit.margin]), [['CS-2022', -60], ['CS-2496', -55]])
 
   // A leg without minutes leaves the visits before it unknown.
   const pending = travelCheckSummary({ check, requests, technicians, travelMinutes: { '1496>1022': 0 } })
@@ -93,5 +98,5 @@ test('a leg typed by hand below what Google gives is listed, without changing it
     { key: '1022>1497', from: 'CS-2022', to: 'CS-2497', minutes: 15, googleMinutes: 23 },
   ])
   // The margins still use the typed minutes.
-  assert.deepEqual(summary.tight, [])
+  assert.deepEqual(summary.late, [])
 })

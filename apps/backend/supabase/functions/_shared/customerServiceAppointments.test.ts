@@ -78,14 +78,14 @@ Deno.test("a valid visit becomes RPC arguments with UTC instants and the expecte
 Deno.test("pending travel blocks registration although it only warns in a draft", () => {
   const result = validateRegistration({ input: input(), request, technicians, dayAppointments: [earlier], now });
   assert(!result.rpcArgs);
-  assert(result.errors.some((error) => error.message.startsWith("Travel time pending")));
+  assert(result.errors.some((error) => error.message.startsWith("Travel time from")));
 });
 
 Deno.test("the server rejects conflicts, short travel, late pickup and the wrong crew", () => {
   const cases: [Partial<RegisterAppointmentInput>, Partial<RequestRow>, string][] = [
-    [{ windowStart: "08:00", workStart: "08:15" }, {}, "internal work conflict"],
+    [{ windowStart: "08:00", workStart: "08:15" }, {}, "is already busy with"],
     [{ travelMinutes: { "10>20": 90 } }, {}, "cannot reach this visit"],
-    [{ workStart: "11:10" }, {}, "Work and pickup must finish before the customer window closes at 12:00."],
+    [{ workStart: "11:10" }, {}, "Work and pickup must finish before the customer window closes at 12:00 PM."],
     [{}, { crew_size: 2 }, "This work requires 2 people; 1 selected."],
     [{ technicianIds: [4, 4] }, {}, "Select distinct active technicians"],
     [{ technicianIds: [99] }, {}, "Select distinct active technicians"],
@@ -110,7 +110,7 @@ Deno.test("a date after the due date is blocked only while on-time days remain",
     technicians, dayAppointments: [earlier], now,
   });
   assert(!blocked.rpcArgs);
-  assert(blocked.errors.some((error) => error.message.startsWith("This date is after the due date 2026-11-06.")));
+  assert(blocked.errors.some((error) => error.message.startsWith("This date is after the due date (Fri, Nov 6).")));
 
   // Already overdue (due 2026-09-04): registering stays possible.
   const overdue = validateRegistration({
@@ -136,7 +136,7 @@ Deno.test("a crew of two is checked against both technicians' days", () => {
     input: input({ technicianIds: [4, 5], windowStart: "08:00", workStart: "08:00" }),
     request: { ...request, crew_size: 2 }, technicians, dayAppointments: [earlier], now,
   });
-  assert(result.errors.some((error) => error.message.startsWith("Tech One has an internal work conflict")));
+  assert(result.errors.some((error) => error.message.startsWith("Tech One is already busy with")));
   assert(!result.errors.some((error) => error.message.startsWith("Tech Two")));
 });
 

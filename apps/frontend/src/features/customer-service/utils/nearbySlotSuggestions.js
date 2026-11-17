@@ -9,20 +9,26 @@
 //   technician free that day is added with a warning; with nobody free, no suggestion.
 // - The earliest available slot is always shown next to them.
 // Rules approved on 10 Nov 2026 (docs/customer-service-proposal-fit-plan.md):
-// - D4: a slot next to a visit keeps at least 15 min of delay margin; tighter slots are
-//   not offered. A slot whose margin is still unknown (travel pending) stays, ranked last.
 // - Order: next to a nearby visit within the due date (D2), then the final days, then
 //   the earliest available time.
 // - Final days: the due date first (D1), then one business day back at a time.
 // - D3: a HIGH priority request follows the same rules; it no longer only groups on its
 //   earliest date (this replaces decision 4 of 9 Nov). Overdue requests have no final
 //   days: the earliest time is the suggestion.
+// Rules approved on 17 Nov 2026 (docs/customer-service-proposal-workspace-review.md):
+// - Suggestions start 2 business days after today, or on the due date when it is sooner
+//   (short notice).
+// - No minimum delay margin (replaces D4's 15 min): pessimistic travel and the 10 minutes
+//   of pickup are enough. The margin is still shown.
+// - On a day without nearby visits the technician registered first (Jorge) is preferred;
+//   another one is used only when that technician has no room that day.
 import { serviceCustomerWindowOptions } from '../data/serviceCalendarEvents.js'
 import {
-  customerServiceMinimumMarginMinutes, minutesToTime, parseServiceDate, timeToMinutes, travelLegKey, travelMinutesFor,
+  minutesToTime, parseServiceDate, timeToMinutes, travelLegKey, travelMinutesFor,
 } from './customerServiceScheduling.js'
 import {
-  delayMarginLimit, proposalSuggestionStepMinutes, suggestProposalTimes, validatePrototypeProposalDraft,
+  proposalSuggestionLeadBusinessDays, proposalSuggestionStepMinutes, suggestionStartDate, suggestProposalTimes,
+  validatePrototypeProposalDraft,
 } from './proposalDraft.js'
 import { formatWeekdayDate, getCustomerServiceClock } from './dates.js'
 
@@ -32,6 +38,15 @@ const groupingBands = ['GREEN', 'YELLOW']
 const maxTechnicianSets = 30
 
 const crewSize = (request) => Math.max(1, Number(request.crewSize) || 1)
+
+// Preference when nothing nearby decides: registration order (catalog id), then name.
+const registrationRank = (person) => (Number.isFinite(Number(person.id)) ? Number(person.id) : Number.POSITIVE_INFINITY)
+export function techniciansByPreference(technicians) {
+  return [...technicians].sort((left, right) => {
+    const [a, b] = [registrationRank(left), registrationRank(right)]
+    return (a === b ? 0 : a < b ? -1 : 1) || left.name.localeCompare(right.name)
+  })
+}
 
 const joinNames = (names) => (names.length < 2 ? names.join('') : `${names.slice(0, -1).join(', ')} and ${names.at(-1)}`)
 
@@ -85,12 +100,8 @@ export function insertionDetails({ validation, requestId, anchorId = null, techn
 // Fewer extra minutes first; unknown minutes last; on a tie the earlier time stays.
 const rank = (slot) => slot.insertion.extraMinutes ?? Number.POSITIVE_INFINITY
 
-// Highest margin among the slots dropped for being too tight, so the row can say why.
-const widest = (current, value) => (current === null || value > current ? value : current)
-
 function bestSlotNextTo({ request, requests, technicians, technicianIds, anchor, technicianName, travelMinutes, now }) {
   let best = null
-  let tightMargin = null
   for (const window of serviceCustomerWindowOptions) {
     for (let start = timeToMinutes(window.start); start < timeToMinutes(window.end); start += proposalSuggestionStepMinutes) {
       const values = { technicianIds, date: anchor.date, windowStart: window.start, internalStart: minutesToTime(start), travelMinutes }
@@ -100,40 +111,32 @@ function bestSlotNextTo({ request, requests, technicians, technicianIds, anchor,
         validation, requestId: request.id, anchorId: anchor.requestId, technicianName, travelMinutes,
       })
       if (!insertion) continue
-      const limit = delayMarginLimit(validation.delay)
-      if (limit !== null && limit < customerServiceMinimumMarginMinutes) {
-        tightMargin = widest(tightMargin, Math.max(0, limit))
-        continue
-      }
       const slot = { window, values, validation, insertion }
       if (!best || rank(slot) < rank(best)) best = slot
     }
   }
-  return { best, tightMargin }
+  return best
 }
 
 function suggestNextTo({ request, requests, technicians, anchor, travelMinutes, now }) {
   const names = new Map(technicians.map((person) => [person.id, person.name]))
   const anchorIds = (anchor.technicianIds ?? []).filter((id) => names.has(id))
-  if (!anchorIds.length) return { anchor, fits: false, tightMargin: null }
+  if (!anchorIds.length) return { anchor, fits: false }
   const crew = crewSize(request)
-  const others = technicians.map((person) => person.id).filter((id) => !anchorIds.includes(id))
+  const others = techniciansByPreference(technicians).map((person) => person.id).filter((id) => !anchorIds.includes(id))
   const sets = anchorIds.length >= crew
     ? technicianSets(anchorIds, crew)
     : technicianSets(others, crew - anchorIds.length).map((added) => [...anchorIds, ...added])
 
   let best = null
-  let tightMargin = null
   for (const technicianIds of sets) {
     const lead = technicianIds.find((id) => anchorIds.includes(id))
     const found = bestSlotNextTo({
       request, requests, technicians, technicianIds, anchor, technicianName: names.get(lead), travelMinutes, now,
     })
-    if (found.tightMargin !== null) tightMargin = widest(tightMargin, found.tightMargin)
-    if (found.best && (!best || rank(found.best) < rank(best))) best = found.best
+    if (found && (!best || rank(found) < rank(best))) best = found
   }
-  // tightMargin: it would fit, but only with less margin than the minimum.
-  if (!best) return { anchor, fits: false, tightMargin }
+  if (!best) return { anchor, fits: false }
 
   const added = best.values.technicianIds.filter((id) => !anchorIds.includes(id)).map((id) => names.get(id))
   return {
@@ -158,17 +161,18 @@ function suggestNextTo({ request, requests, technicians, anchor, travelMinutes, 
   }
 }
 
-// The first viable slot for any technician combination of the crew size, so grouping
-// can always be compared with the earliest date.
-export function earliestAvailableSlot({ request, requests, technicians, travelMinutes = {}, now = new Date() }) {
+// The first day with a viable slot for any technician combination of the crew size, so
+// grouping can always be compared with the earliest date. On that day the preferred
+// technicians keep it while they have room, even at a later time.
+export function earliestAvailableSlot({ request, requests, technicians, travelMinutes = {}, now = new Date(), fromDate = null }) {
   const names = new Map(technicians.map((person) => [person.id, person.name]))
   let best = null
-  for (const technicianIds of technicianSets(technicians.map((person) => person.id), crewSize(request))) {
+  for (const technicianIds of technicianSets(techniciansByPreference(technicians).map((person) => person.id), crewSize(request))) {
     const { suggestions: [first] } = suggestProposalTimes({
-      requestId: request.id, requests, technicians, now, limit: 1,
+      requestId: request.id, requests, technicians, now, limit: 1, fromDate,
       values: { technicianIds, date: '', windowStart: '', internalStart: '', travelMinutes },
     })
-    if (first && (!best || `${first.date} ${first.internalStart}` < `${best.date} ${best.internalStart}`)) {
+    if (first && (!best || first.date < best.date)) {
       best = { ...first, technicianIds, technicianNames: technicianIds.map((id) => names.get(id)) }
     }
   }
@@ -202,29 +206,26 @@ export function deadlineLabel({ date, request, now = new Date() }) {
   return `${due} · ${left} business ${left === 1 ? 'day' : 'days'} left`
 }
 
-// The first time that fits on one day for any technician combination. On a day the
-// technician already works, each neighbouring visit must be Near or Medium and the visit
-// keeps the minimum margin (fit plan, section 4, point 3).
+// The first time that fits on one day, for the preferred technicians first: another
+// combination is tried only when they have no room that day (decision of 17 Nov 2026). On
+// a day the technician already works, each neighbouring visit must be Near or Medium (fit
+// plan, section 4, point 3).
 function firstSlotOnDay({ request, requests, technicians, date, drivingById, travelMinutes, now }) {
   const names = new Map(technicians.map((person) => [person.id, person.name]))
-  let best = null
-  for (const technicianIds of technicianSets(technicians.map((person) => person.id), crewSize(request))) {
-    search: for (const window of serviceCustomerWindowOptions) {
+  for (const technicianIds of technicianSets(techniciansByPreference(technicians).map((person) => person.id), crewSize(request))) {
+    for (const window of serviceCustomerWindowOptions) {
       for (let start = timeToMinutes(window.start); start < timeToMinutes(window.end); start += proposalSuggestionStepMinutes) {
         const internalStart = minutesToTime(start)
-        if (best && internalStart >= best.internalStart) break search
         const values = { technicianIds, date, windowStart: window.start, internalStart, travelMinutes }
         const validation = validatePrototypeProposalDraft({ requestId: request.id, values, requests, technicians, now })
         if (!validation.isValid || validation.pastDue) continue
         const neighbours = validation.travelLegs.map((leg) => (
           String(leg.fromRequestId) === String(request.id) ? leg.toRequestId : leg.fromRequestId))
         if (neighbours.some((id) => !groupingBands.includes(drivingById[id]?.band))) continue
-        const limit = delayMarginLimit(validation.delay)
-        if (neighbours.length && limit !== null && limit < customerServiceMinimumMarginMinutes) continue
         const insertions = technicianIds.map((id) => insertionDetails({
           validation, requestId: request.id, technicianName: names.get(id), travelMinutes,
         }))
-        best = {
+        return {
           date, windowStart: window.start, windowLabel: window.label, internalStart,
           internalEnd: validation.internalEnd, pickupEnd: validation.pickupEnd,
           technicianIds, technicianNames: technicianIds.map((id) => names.get(id)),
@@ -236,21 +237,24 @@ function firstSlotOnDay({ request, requests, technicians, date, drivingById, tra
           travelLegs: validation.travelLegs,
           baselineLegs: insertions.map((entry) => entry.baselineLeg).filter(Boolean),
         }
-        break search
       }
     }
   }
-  return best
+  return null
 }
 
 // Final days (rule approved 10 Nov 2026): the due date first (D1), then one business day
-// back at a time, skipping weekends and days the customer cannot; on each day the first
-// time that fits. Null for an overdue request, which goes to the earliest date.
-export function finalDaysSlot({ request, requests, technicians, drivingById = {}, travelMinutes = {}, now = new Date() }) {
+// back at a time down to fromDate (default today), skipping weekends and days the customer
+// cannot; on each day the first time that fits. Null for an overdue request, which goes
+// to the earliest date.
+export function finalDaysSlot({
+  request, requests, technicians, drivingById = {}, travelMinutes = {}, now = new Date(), fromDate = null,
+}) {
   const today = getCustomerServiceClock(now).date
   if (!parseServiceDate(request.dueOn) || request.dueOn < today) return null
+  const first = parseServiceDate(fromDate) && fromDate > today ? fromDate : today
   const unavailable = request.customerUnavailableDates ?? []
-  for (const cursor = new Date(`${request.dueOn}T12:00:00Z`); dayOf(cursor) >= today; cursor.setUTCDate(cursor.getUTCDate() - 1)) {
+  for (const cursor = new Date(`${request.dueOn}T12:00:00Z`); dayOf(cursor) >= first; cursor.setUTCDate(cursor.getUTCDate() - 1)) {
     if (!isBusinessDay(cursor) || unavailable.includes(dayOf(cursor))) continue
     const slot = firstSlotOnDay({ request, requests, technicians, date: dayOf(cursor), drivingById, travelMinutes, now })
     if (slot) return slot
@@ -277,18 +281,61 @@ export function suggestionLegsToCheck(plan) {
   return [...legs.values()]
 }
 
+// The single slot shown first (review of 13 Nov 2026, phase 1), in the approved order: next
+// to a nearby visit, then the final days, then the earliest time. It adds no rule; the
+// reason says in plain words why this slot, and why the options before it did not apply.
+// Null when nothing fits.
+export function recommendSlot({ plan, hasCoordinates = true, groupingMiles = null }) {
+  const nextTo = plan.suggestions.find((suggestion) => suggestion.fits)
+  if (nextTo) {
+    const names = nextTo.anchor.technicianNames?.length ? nextTo.anchor.technicianNames : nextTo.technicianNames
+    return {
+      kind: 'NEXT_TO', slot: nextTo, sharesDay: true,
+      reason: `Next to ${nextTo.anchor.requestNumber}, a nearby visit already scheduled for ${joinNames(names)}.`,
+    }
+  }
+  const noGrouping = !hasCoordinates
+    ? 'No coordinates, so nearby visits cannot be checked.'
+    : plan.suggestions.length
+      ? 'No time fits next to the nearby visits.'
+      : `No visit is scheduled within ${groupingMiles === null ? 'a short drive' : `${groupingMiles} driving miles`} before the due date.`
+  if (plan.finalDays) {
+    return {
+      kind: 'FINAL_DAYS', slot: plan.finalDays, sharesDay: plan.finalDays.sharesDay,
+      reason: `${noGrouping} It goes on the latest on-time day with room, so earlier days stay open to group nearby requests.${
+        plan.finalDays.sharesDay ? ' It shares that day with nearby visits.' : ''}`,
+    }
+  }
+  if (plan.earliest) {
+    return {
+      kind: 'EARLIEST', slot: plan.earliest, sharesDay: false,
+      reason: plan.overdue
+        ? 'This request is overdue, so the earliest available time comes first.'
+        : `${noGrouping} No time fits on the final days, so this is the earliest time that fits before the due date.`,
+    }
+  }
+  return null
+}
+
+// leadBusinessDays: days the customer gets to answer before the first suggested day.
 export function nearbySlotSuggestions({
   request, requests, technicians, candidates = [], drivingById = {}, travelMinutes = {}, now = new Date(),
+  leadBusinessDays = proposalSuggestionLeadBusinessDays,
 }) {
+  const start = suggestionStartDate({ today: getCustomerServiceClock(now).date, dueOn: request.dueOn, leadBusinessDays })
   const anchors = candidates
-    .filter((candidate) => candidate.kind === 'VISIT' && groupingBands.includes(drivingById[candidate.requestId]?.band))
+    .filter((candidate) => candidate.kind === 'VISIT' && candidate.date >= start.date
+      && groupingBands.includes(drivingById[candidate.requestId]?.band))
     .sort((left, right) => drivingById[left.requestId].drivingMiles - drivingById[right.requestId].drivingMiles
       || left.date.localeCompare(right.date) || String(left.start).localeCompare(String(right.start)))
     .slice(0, nearbySlotLimit)
+  // A slot before the usual lead (only when the due date is sooner) is short notice.
+  const mark = (slot) => (slot && slot.fits !== false ? { ...slot, shortNotice: slot.date < start.leadDate } : slot)
   return {
-    suggestions: anchors.map((anchor) => suggestNextTo({ request, requests, technicians, anchor, travelMinutes, now })),
-    finalDays: finalDaysSlot({ request, requests, technicians, drivingById, travelMinutes, now }),
-    earliest: earliestAvailableSlot({ request, requests, technicians, travelMinutes, now }),
+    suggestions: anchors.map((anchor) => mark(suggestNextTo({ request, requests, technicians, anchor, travelMinutes, now }))),
+    finalDays: mark(finalDaysSlot({ request, requests, technicians, drivingById, travelMinutes, now, fromDate: start.date })),
+    earliest: mark(earliestAvailableSlot({ request, requests, technicians, travelMinutes, now, fromDate: start.date })),
     overdue: parseServiceDate(request.dueOn) ? getCustomerServiceClock(now).date > request.dueOn : false,
+    startsOn: start.date,
   }
 }

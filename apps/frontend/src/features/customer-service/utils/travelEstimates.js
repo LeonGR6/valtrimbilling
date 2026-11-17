@@ -124,7 +124,7 @@ export function travelLegSource(key, travelMinutes = {}, routesMinutes = {}) {
 // Google value used traffic.
 export function travelLegHelperText({ leg, source, details, trafficMode = 'OFF', now = new Date() }) {
   const names = leg.technicianNames.join(', ')
-  if (leg.minutes === null) return `Travel time pending · ${names}`
+  if (leg.minutes === null) return `Missing: calculate it with Google Maps or type it · ${names}`
   if (source !== 'ROUTES_API') return `Manual estimate · ${names}`
   const staleReason = travelLegStaleReason(leg, details, trafficMode, now)
   if (staleReason === 'TRAFFIC_SETTING') return `Traffic setting changed: calculate again · ${names}`

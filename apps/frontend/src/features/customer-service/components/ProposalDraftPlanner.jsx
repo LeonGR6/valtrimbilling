@@ -13,8 +13,7 @@ import {
   applyTravelEstimates, mergeTravelEstimateResults, outdatedTravelLegs, travelEstimateMessages, travelLegHelperText,
   travelLegSource, travelLegsToEstimate,
 } from '../utils/travelEstimates.js'
-import { getCustomerServiceClock } from '../utils/dates.js'
-import { customerServiceMinimumMarginMinutes } from '../utils/customerServiceScheduling.js'
+import { formatTime, formatWeekdayDate, getCustomerServiceClock } from '../utils/dates.js'
 import { useCustomerServicePrototype } from '../context/customerServicePrototypeContext.js'
 import ProposalDayAgenda from './ProposalDayAgenda.jsx'
 import ProposalNearbyVisits from './ProposalNearbyVisits.jsx'
@@ -58,10 +57,10 @@ export default function ProposalDraftPlanner({ request, requests, technicians: r
   const pendingKeys = new Set(validation.travelLegs.filter((leg) => leg.minutes === null).map((leg) => leg.key))
   const travelMessages = travelEstimateMessages(travelEstimate.results
     .filter((result) => pendingKeys.has(`${result.fromRequestId}>${result.toRequestId}`) || result.status === 'STORED'))
-  const calculateTravel = async () => {
+  const calculateTravel = async (legs = legsToEstimate) => {
     setTravelEstimate((current) => ({ ...current, loading: true, error: '', results: [] }))
     try {
-      const results = await estimateTravel(legsToEstimate)
+      const results = await estimateTravel(legs)
       setSaveError('')
       setValues((current) => applyTravelEstimates(current, results, routesMinutes))
       setTravelEstimate((current) => ({
@@ -71,14 +70,20 @@ export default function ProposalDraftPlanner({ request, requests, technicians: r
       setTravelEstimate((current) => ({ ...current, loading: false, error: error.message }))
     }
   }
-  // A nearby slot fills technicians, day, window and start, plus the Google minutes
-  // already checked for its legs; the coordinator can still change everything.
+  // A suggested slot fills technicians, day, window and start, plus the Google minutes
+  // already checked for its legs; the coordinator can still change everything. Legs it
+  // still lacks are calculated right away, so using a slot needs no second click.
   const applyNearbySlot = (slot, results = []) => {
     setSaveError('')
-    setValues((current) => applyTravelEstimates({ ...current, ...slot }, results, routesMinutes))
-    if (results.length) {
-      setTravelEstimate((current) => ({ ...current, error: '', results: [], ...mergeTravelEstimateResults(current, results) }))
-    }
+    const next = applyTravelEstimates({ ...values, ...slot }, results, routesMinutes)
+    const known = mergeTravelEstimateResults(travelEstimate, results)
+    setValues(next)
+    if (results.length) setTravelEstimate((current) => ({ ...current, error: '', results: [], ...known }))
+    const nextLegs = validatePrototypeProposalDraft({ requestId: request.id, requests, technicians, values: next }).travelLegs
+    const missing = travelLegsToEstimate(
+      nextLegs, { ...storedRoutesMinutes, ...known.routes }, { ...storedTravelDetails, ...known.details }, travelTrafficMode,
+    )
+    if (missing.length) void calculateTravel(missing)
   }
   // A Google leg marked "calculate again" cannot be registered; one Google could not
   // refresh keeps its saved value, as the server does.
@@ -89,8 +94,15 @@ export default function ProposalDraftPlanner({ request, requests, technicians: r
       .map((result) => `${result.fromRequestId}>${result.toRequestId}`),
   })
   const canRegister = validation.isValid && !validation.travelPending && !validation.pastDue && outdatedLegs.length === 0
-  // Same three states as the suggestions; an unfinished form only lists what is missing.
+  // Same three states as the suggestions. An unfinished form points to the suggestions
+  // and lists only real problems, not "Select…" for each field still empty.
   const formIncomplete = !values.technicianIds.length || !values.date || !values.windowStart || !values.internalStart
+  const emptyFields = new Set([
+    !values.technicianIds.length && 'technicianIds', !values.date && 'date',
+    !values.windowStart && 'windowStart', !values.internalStart && 'internalStart',
+  ].filter(Boolean))
+  const formProblems = validation.errors.filter((error) => !emptyFields.has(error.field))
+  const margin = validation.delay?.margin
   const draftStatus = fitStatus({
     fits: validation.isValid, travelPending: validation.travelPending || outdatedLegs.length > 0,
   })
@@ -126,13 +138,13 @@ export default function ProposalDraftPlanner({ request, requests, technicians: r
         <Box>
           <Typography variant="h6" fontWeight={800}>Prepare proposal · {request.requestNumber}</Typography>
           <Typography variant="body2" color="text.secondary">
-            Drafts stay in this session and are never saved. Register the appointment only after the customer
-            accepts the proposal, or after you accept the customer&apos;s counter-proposal.
+            A saved draft lasts until the page is reloaded; it reserves no time and contacts nobody. Register the
+            appointment only after the customer accepts the proposal, or after you accept their counter-proposal.
           </Typography>
         </Box>
         <Alert severity="info" variant="outlined">
-          Technicians come from the technician catalog in People. This checks registered Customer Service appointments,
-          not Production work. Travel comes from Google Maps driving estimates or values you type; no fixed travel buffer is added.
+          Only registered Customer Service appointments are checked. Production work and days off are not known here, so
+          confirm the technician is free.
         </Alert>
         {technicians.length === 0 && <Alert severity="warning">No active technicians are registered. Add them in People → Technicians before planning.</Alert>}
         {savedIsStale && <Alert severity="warning" variant="outlined">The request changed after this draft was saved. Review the selection and save it again using the current duration and crew.</Alert>}
@@ -140,10 +152,8 @@ export default function ProposalDraftPlanner({ request, requests, technicians: r
         <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: 'wrap' }}>
           <Chip label={`${request.estimatedDurationMinutes} min · reviewed duration`} variant="outlined" />
           <Chip label={`${request.crewSize} ${Number(request.crewSize) === 1 ? 'person' : 'people'} required · ${values.technicianIds.length} selected`} variant="outlined" />
-          {validation.delay?.margin !== null && validation.delay?.margin !== undefined && (
-            <Chip variant="outlined" color={validation.delay.margin < customerServiceMinimumMarginMinutes ? 'warning' : 'success'}
-              label={`Margin ${Math.max(0, validation.delay.margin)} min`}
-              title="How late this visit can start without it or a later visit leaving its customer window" />
+          {Number.isInteger(margin) && (
+            <Chip variant="outlined" label={`Margin ${Math.max(0, margin)} min`} />
           )}
           {!savedDraft && hasUnsavedChanges && <Chip label="Unsaved draft changes" color="warning" variant="outlined" />}
           {savedDraft && <Chip label={savedIsStale || savedNeedsRevalidation ? 'Saved draft needs review' : hasUnsavedChanges ? 'Unsaved draft changes' : 'Draft saved · not sent'} color={savedIsStale || savedNeedsRevalidation ? 'warning' : hasUnsavedChanges ? 'default' : 'success'} variant="outlined" />}
@@ -189,17 +199,18 @@ export default function ProposalDraftPlanner({ request, requests, technicians: r
             </FormControl>
             <Stack direction="row" spacing={2} useFlexGap sx={fieldRowSx}>
               <TextField
-                label="Internal work starts" type="time" value={values.internalStart} fullWidth
+                label="Work starts" type="time" value={values.internalStart} fullWidth
                 onChange={(event) => change('internalStart', event.target.value)}
                 slotProps={{ inputLabel: { shrink: true } }}
                 error={Boolean(values.internalStart && errorFor('internalStart'))}
-                helperText={errorFor('internalStart') ?? 'Changing the window resets this start. Adjust it inside the window.'}
+                helperText={(values.internalStart && errorFor('internalStart'))
+                  || 'When the technician starts working. Changing the window resets it to the window start.'}
               />
-              <TextField label="Internal work ends" type="time" value={validation.internalEnd} fullWidth
+              <TextField label="Work ends" type="time" value={validation.internalEnd} fullWidth
                 slotProps={{ inputLabel: { shrink: true }, htmlInput: { readOnly: true } }}
                 helperText={validation.pickupEnd
-                  ? `Reviewed work duration. Pickup until ${validation.pickupEnd}.`
-                  : 'Calculated using the reviewed work duration, not the two-hour window.'} />
+                  ? `From the reviewed duration. Pickup until ${formatTime(validation.pickupEnd)}.`
+                  : 'Calculated from the reviewed work duration.'} />
             </Stack>
             {validation.travelLegs.length > 0 && (
               <Stack spacing={1.5}>
@@ -212,7 +223,7 @@ export default function ProposalDraftPlanner({ request, requests, technicians: r
                     </Typography>
                   </Box>
                   {legsToEstimate.length > 0 && (
-                    <Button variant="text" onClick={calculateTravel} disabled={travelEstimate.loading} sx={{ flexShrink: 0 }}>
+                    <Button variant="text" onClick={() => calculateTravel()} disabled={travelEstimate.loading} sx={{ flexShrink: 0 }}>
                       {travelEstimate.loading ? 'Calculating…' : 'Calculate with Google Maps'}
                     </Button>
                   )}
@@ -250,13 +261,17 @@ export default function ProposalDraftPlanner({ request, requests, technicians: r
               </Stack>
             )}
             {formIncomplete ? (
-              <Alert severity="info" variant="outlined">
-                <Box component="ul" sx={{ m: 0, pl: 2 }}>{validation.errors.map((error, index) => <li key={`${error.field}-${index}`}>{error.message}</li>)}</Box>
+              <Alert severity={formProblems.length ? 'warning' : 'info'} variant="outlined">
+                Use a suggested slot above, or choose the technicians, date, customer window and work start.
+                {formProblems.length > 0 && (
+                  <Box component="ul" sx={{ m: 0, mt: 0.5, pl: 2 }}>{formProblems.map((error, index) => <li key={`${error.field}-${index}`}>{error.message}</li>)}</Box>
+                )}
               </Alert>
             ) : (
               <Alert severity={draftStatus === 'FITS' ? 'success' : 'warning'} variant="outlined">
                 <Typography variant="body2" fontWeight={700}>{fitStatusLabels[draftStatus]}</Typography>
-                {draftStatus === 'FITS' && 'The recorded Customer Service schedule has room for it. The draft can be saved.'}
+                {draftStatus === 'FITS' && 'The technicians’ recorded Customer Service schedule has room for it.'}
+                {draftStatus === 'FITS' && Number.isInteger(margin) && ` Margin ${Math.max(0, margin)} min: it can start that late and still finish, with pickup, inside its customer window.`}
                 {draftStatus === 'TRAVEL_PENDING' && 'Calculate or type the travel marked below to confirm it fits.'}
                 {draftStatus === 'DOESNT_FIT' && (
                   <Box component="ul" sx={{ m: 0, pl: 2 }}>{validation.errors.map((error, index) => <li key={`${error.field}-${index}`}>{error.message}</li>)}</Box>
@@ -279,13 +294,17 @@ export default function ProposalDraftPlanner({ request, requests, technicians: r
               </Button>
             </Stack>
             <Typography variant="caption" color="text.secondary">
-              {validation.isValid && validation.pastDue
-                ? 'Choose a date on or before the due date to register this appointment.'
-                : validation.isValid && validation.travelPending
-                  ? 'Enter every travel estimate before registering: a registered appointment reserves the technicians’ time.'
-                  : validation.isValid && outdatedLegs.length > 0
-                    ? 'Calculate the travel marked “calculate again” with Google Maps, or type its minutes, before registering.'
-                    : 'Drafts are kept while navigating during the session; reloading removes them. Registered appointments are saved.'}
+              {!validation.isValid
+                ? (formIncomplete
+                  ? 'Saving and registering open once the date, window, work start and technicians fit.'
+                  : 'Resolve the problems listed above to save the draft or register the appointment.')
+                : validation.pastDue
+                  ? 'Choose a date on or before the due date to register this appointment.'
+                  : validation.travelPending
+                    ? 'Calculate or type every travel time before registering: a registered appointment reserves the technicians’ time.'
+                    : outdatedLegs.length > 0
+                      ? 'Calculate the travel marked “calculate again” with Google Maps, or type its minutes, before registering.'
+                      : 'Register the appointment once the customer accepts. It is saved and appears in Calendar.'}
             </Typography>
           </Stack>
           <ProposalDayAgenda
@@ -308,7 +327,7 @@ export default function ProposalDraftPlanner({ request, requests, technicians: r
         <DialogContent>
           <Stack spacing={2}>
             <Typography variant="body2">
-              {request.requestNumber} · {values.date} · {values.internalStart}–{validation.internalEnd} ·{' '}
+              {request.requestNumber} · {formatWeekdayDate(values.date)} · work {formatTime(values.internalStart)}–{formatTime(validation.internalEnd)} ·{' '}
               {values.technicianIds.map((id) => technicians.find((person) => person.id === id)?.name).filter(Boolean).join(', ')}
             </Typography>
             <FormControl>

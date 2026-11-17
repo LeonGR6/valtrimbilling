@@ -195,7 +195,7 @@ export default function CustomerServiceCalendarDetail({ event, onClose, onEdit, 
           {props.customerWindow?.exceptional ? ' · Exception window' : ''}
         </Field>
         {formatInternalSlot(event) && (
-          <Field icon={<BuildOutlinedIcon fontSize="small" />} label="Internal planned work">
+          <Field icon={<BuildOutlinedIcon fontSize="small" />} label="Planned work">
             {formatInternalSlot(event)}
           </Field>
         )}

@@ -4,7 +4,7 @@ import { buildRequestReviewSummary, effectiveRequestWorkflowStage } from './requ
 import { customerServiceTimeZone, getCustomerServiceClock } from './dates.js'
 import { assignedPrototypeTechnicianIds, prototypeTechnicians } from '../data/prototypeTechnicians.js'
 import {
-  checkVisitCapacity, checkVisitDate, customerServiceMinimumMarginMinutes, customerServicePickupMinutes,
+  checkVisitCapacity, checkVisitDate, customerServicePickupMinutes,
   customerServiceWorkday, minutesToTime as timeFromMinutes, parseServiceDate as validDate, timeToMinutes as minutes,
   travelLegKey, visitDelayMargins,
 } from './customerServiceScheduling.js'
@@ -181,12 +181,9 @@ function scheduledDay({ requests, technicians, date, travelMinutes = {} }) {
 
 // One of three states for the draft and for each suggestion (block R5): it fits, it fits
 // with what is known but a travel leg is unknown or must be calculated again, or it does
-// not fit.
-export const fitStatusLabels = { FITS: 'Fits', TRAVEL_PENDING: 'Fits · travel pending', DOESNT_FIT: "Doesn't fit" }
+// not fit. The middle one cannot be registered yet, so its label says what is missing.
+export const fitStatusLabels = { FITS: 'Fits', TRAVEL_PENDING: 'Fits once travel is calculated', DOESNT_FIT: "Doesn't fit" }
 export const fitStatus = ({ fits, travelPending }) => (!fits ? 'DOESNT_FIT' : travelPending ? 'TRAVEL_PENDING' : 'FITS')
-
-// The most delay the visit can take: its margin, or while that is unknown, its own slack.
-export const delayMarginLimit = (delay) => (delay ? delay.margin ?? delay.ownSlack : null)
 
 export function validatePrototypeProposalDraft({ requestId, values, requests, technicians = prototypeTechnicians, now = new Date() }) {
   const request = requests.find((entry) => String(entry.id) === String(requestId))
@@ -207,7 +204,7 @@ export function validatePrototypeProposalDraft({ requestId, values, requests, te
   const uniqueIds = [...new Set(ids)]
   if (!ids.length) addError('technicianIds', 'Select the technicians assigned to this work.')
   else if (ids.length !== uniqueIds.length || uniqueIds.some((id) => !roster.some((person) => person.id === id))) {
-    addError('technicianIds', 'Select distinct technicians recorded in this simulation.')
+    addError('technicianIds', 'Select distinct active technicians from the technician catalog.')
   } else if (uniqueIds.length < crew) {
     addError('technicianIds', `This work requires ${crew} people; ${uniqueIds.length} selected.`)
   }
@@ -237,20 +234,15 @@ export function validatePrototypeProposalDraft({ requestId, values, requests, te
   errors.push(...capacity.errors)
   warnings.push(...capacity.warnings)
 
-  // Margin against delays (decision D4): only a warning when planning by hand.
+  // Margin against delays, shown as information. Since 17 Nov 2026 no minimum is required
+  // (it replaces D4): Google's pessimistic travel and the 10 minutes of pickup already
+  // leave room for a late arrival.
   const delay = errors.length === 0 && capacity.window
     ? draftDelayMargins({
       requestId, agenda, technicianIds: uniqueIds, travelMinutes: values.travelMinutes,
       visit: { start: values.internalStart, end: capacity.pickupEnd, windowEnd: capacity.window.end },
     })
     : null
-  const limit = delayMarginLimit(delay)
-  if (limit !== null && limit < customerServiceMinimumMarginMinutes) {
-    warnings.push({
-      field: 'margin',
-      message: `This visit can start ${delay.margin === null ? 'at most' : 'only'} ${Math.max(0, limit)} min late before it or a later visit leaves its customer window. Suggestions keep at least ${customerServiceMinimumMarginMinutes} min.`,
-    })
-  }
   return {
     isValid: errors.length === 0, errors, warnings,
     // Registering reserves capacity, so every travel leg must be known first.
@@ -298,6 +290,21 @@ export function createPrototypeProposalDraft({ requestId, values, requests, tech
 
 // Business days searched when the request is already overdue (no on-time day left).
 export const proposalSuggestionSearchBusinessDays = 10
+// Suggestions start this many business days after today (decision of 17 Nov 2026): the
+// customer needs time to answer the proposal. Planning on Monday suggests Wednesday on.
+export const proposalSuggestionLeadBusinessDays = 2
+
+// First day a suggestion may use. A request due before the usual lead starts on its due
+// date, so it stays on time; those slots are short notice (date before leadDate).
+export function suggestionStartDate({ today, dueOn = null, leadBusinessDays = proposalSuggestionLeadBusinessDays }) {
+  const cursor = new Date(`${today}T12:00:00Z`)
+  for (let added = 0; added < leadBusinessDays;) {
+    cursor.setUTCDate(cursor.getUTCDate() + 1)
+    if (![0, 6].includes(cursor.getUTCDay())) added += 1
+  }
+  const leadDate = cursor.toISOString().slice(0, 10)
+  return { date: validDate(dueOn) && dueOn >= today && dueOn < leadDate ? dueOn : leadDate, leadDate }
+}
 // Suggested start times are tried every 5 minutes (decision P3, 12 Nov 2026): a quarter-hour
 // grid wasted room, for example arriving at 9:03 meant starting at 9:15 instead of 9:05.
 export const proposalSuggestionStepMinutes = 5
@@ -307,7 +314,11 @@ export const proposalSuggestionStepMinutes = 5
 // registering still goes through the server. The first viable start of each window is
 // listed, earliest first, using the same validator as the form. "Earliest available"
 // uses it; the planner's own "Suggested times" section was removed in block R5.
-export function suggestProposalTimes({ requestId, values, requests, technicians = prototypeTechnicians, now = new Date(), limit = 3 }) {
+// fromDate (default today) is the first day searched; the overdue search counts its
+// business days from there.
+export function suggestProposalTimes({
+  requestId, values, requests, technicians = prototypeTechnicians, now = new Date(), limit = 3, fromDate = null,
+}) {
   const request = requests.find((entry) => String(entry.id) === String(requestId))
   const current = validatePrototypeProposalDraft({ requestId, values, requests, technicians, now })
   // Request or technician problems make every time invalid; the form already explains them.
@@ -320,7 +331,8 @@ export function suggestProposalTimes({ requestId, values, requests, technicians 
   const suggestions = []
   let searchedThrough = null
   let businessDays = 0
-  for (const cursor = new Date(`${today}T12:00:00Z`); suggestions.length < limit; cursor.setUTCDate(cursor.getUTCDate() + 1)) {
+  const first = validDate(fromDate) && fromDate > today ? fromDate : today
+  for (const cursor = new Date(`${first}T12:00:00Z`); suggestions.length < limit; cursor.setUTCDate(cursor.getUTCDate() + 1)) {
     const date = cursor.toISOString().slice(0, 10)
     if (onTimeUntil && date > onTimeUntil) break
     if ([0, 6].includes(cursor.getUTCDay())) continue

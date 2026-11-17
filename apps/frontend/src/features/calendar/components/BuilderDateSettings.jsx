@@ -50,7 +50,7 @@ export default function BuilderDateSettings() {
     builders,
     loading,
     error,
-    canManageBuilders,
+    canManageBuilderDateConfiguration,
     updateBuilderDateConfiguration,
   } = useBuilders()
   const [drafts, setDrafts] = useState(() => createDrafts(builders))
@@ -131,7 +131,7 @@ export default function BuilderDateSettings() {
       </Alert>
 
       {error && <Alert severity="error">{error}</Alert>}
-      {!canManageBuilders && !loading && (
+      {!canManageBuilderDateConfiguration && !loading && (
         <Alert severity="info">Your role has read-only access to builder date settings.</Alert>
       )}
       {loading && <Typography color="text.secondary">Loading builders...</Typography>}
@@ -173,7 +173,7 @@ export default function BuilderDateSettings() {
                   type="number"
                   value={draft.extToDmWeeks}
                   onChange={(event) => changeDraft(builder.id, 'extToDmWeeks', event.target.value)}
-                  disabled={!canManageBuilders || savingBuilderId === builder.id}
+                  disabled={!canManageBuilderDateConfiguration || savingBuilderId === builder.id}
                   error={!extToDmValid}
                   helperText={extToDmValid ? 'Weeks' : 'Use 0–52 whole weeks.'}
                   size="small"
@@ -191,7 +191,7 @@ export default function BuilderDateSettings() {
                   type="number"
                   value={draft.dmToHwWeeks}
                   onChange={(event) => changeDraft(builder.id, 'dmToHwWeeks', event.target.value)}
-                  disabled={!canManageBuilders || savingBuilderId === builder.id}
+                  disabled={!canManageBuilderDateConfiguration || savingBuilderId === builder.id}
                   error={!dmToHwValid}
                   helperText={dmToHwValid ? 'Weeks' : 'Use 0–52 whole weeks.'}
                   size="small"
@@ -218,7 +218,7 @@ export default function BuilderDateSettings() {
                   type="number"
                   value={draft.shutterBeforeDmWeeks}
                   onChange={(event) => changeDraft(builder.id, 'shutterBeforeDmWeeks', event.target.value)}
-                  disabled={!canManageBuilders || savingBuilderId === builder.id}
+                  disabled={!canManageBuilderDateConfiguration || savingBuilderId === builder.id}
                   error={!shutterBeforeDmValid}
                   helperText={shutterBeforeDmValid ? 'Weeks before DM' : 'Use 1–52 whole weeks.'}
                   size="small"
@@ -235,7 +235,7 @@ export default function BuilderDateSettings() {
                   color="inherit"
                   startIcon={<RestartAltRoundedIcon />}
                   onClick={() => resetConfiguration(builder)}
-                  disabled={!canManageBuilders || savingBuilderId === builder.id}
+                  disabled={!canManageBuilderDateConfiguration || savingBuilderId === builder.id}
                 >
                   Reset default
                 </Button>
@@ -245,7 +245,7 @@ export default function BuilderDateSettings() {
                   startIcon={<SaveRoundedIcon />}
                   onClick={() => saveConfiguration(builder)}
                   disabled={
-                    !canManageBuilders
+                    !canManageBuilderDateConfiguration
                     || savingBuilderId === builder.id
                     || !extToDmValid
                     || !shutterBeforeDmValid

@@ -1,0 +1,1068 @@
+import { compareOptionCodes } from '../../../utils/optionOrder.js'
+import { submissionMethodOptions } from '../../builder-draw-schedules/data/builderDrawSchedules.js'
+
+// A Package is a Draft until it is submitted, then it waits for payment.
+export const DRAW_PACKAGE_STATUSES = [
+  'DRAFT',
+  'AWAITING_PAYMENT',
+  'PAID_CLOSED',
+]
+
+export const DRAW_PACKAGE_STATUS_LABELS = {
+  DRAFT: 'Draft',
+  AWAITING_PAYMENT: 'Awaiting payment',
+  PAID_CLOSED: 'Paid / Closed',
+  CANCELLED: 'Cancelled',
+}
+
+// Every Package is a Draw Package unless it is one of these.
+const PACKAGE_TYPES_OTHER_THAN_DRAW = ['RETENTION_RELEASE', 'PRICE_ADJUSTMENT', 'OPTIONS', 'CHANGE_ORDER']
+
+/** The Extra / Change Order a CHANGE_ORDER Package invoices, from a row of `change_order_overview`. */
+export function toInvoicedChangeOrder(row) {
+  return {
+    id: row.id,
+    number: row.change_order_number,
+    poCoNumber: row.po_co_number ?? '',
+    lineCount: Number(row.line_count ?? 0),
+    totalAmount: toNumber(row.total_amount),
+    sourceNumber: row.source_change_order_number ?? '',
+  }
+}
+
+function toNumber(value) {
+  const number = Number(value)
+  return Number.isFinite(number) ? number : 0
+}
+
+function uniqueSortedNumbers(values) {
+  return [...new Set(values.map(Number).filter(Number.isFinite))]
+    .sort((left, right) => left - right)
+}
+
+function getDrawEventType(drawRow) {
+  return drawRow.event_type ?? null
+}
+
+function utilityLabel(lotNumber) {
+  const match = /^UTILITY-(\d+)$/i.exec(String(lotNumber ?? ''))
+  return match ? `Utility ${match[1]}` : 'Utility Building'
+}
+
+function parseDateKey(value) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(value ?? ''))
+  if (!match) return null
+
+  const [, yearText, monthText, dayText] = match
+  const year = Number(yearText)
+  const month = Number(monthText) - 1
+  const day = Number(dayText)
+  const date = new Date(year, month, day)
+
+  if (
+    date.getFullYear() !== year
+    || date.getMonth() !== month
+    || date.getDate() !== day
+  ) return null
+
+  return date
+}
+
+function dateOnMonthDay(year, month, day) {
+  const lastDay = new Date(year, month + 1, 0).getDate()
+  return new Date(year, month, Math.min(day, lastDay))
+}
+
+function toDateKey(date) {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+export function resolveBillingCutoffDate(packageDate, setupVersion) {
+  const date = parseDateKey(packageDate)
+  if (!date || !setupVersion || setupVersion.cutoff_any_date) return null
+
+  if (setupVersion.frequency === 'MONTHLY') {
+    const cutoffDay = Number(setupVersion.cutoff_day)
+    if (!Number.isInteger(cutoffDay) || cutoffDay < 1 || cutoffDay > 31) return null
+
+    let cutoffDate = dateOnMonthDay(
+      date.getFullYear(),
+      date.getMonth(),
+      cutoffDay,
+    )
+    if (cutoffDate < date) {
+      cutoffDate = dateOnMonthDay(
+        date.getFullYear(),
+        date.getMonth() + 1,
+        cutoffDay,
+      )
+    }
+    return toDateKey(cutoffDate)
+  }
+
+  if (setupVersion.frequency === 'SEMIMONTHLY') {
+    const cutoffDays = [...new Set((setupVersion.cutoff_days ?? [])
+      .map(Number)
+      .filter((day) => Number.isInteger(day) && day >= 1 && day <= 31))]
+      .sort((left, right) => left - right)
+
+    for (let monthOffset = 0; monthOffset <= 1; monthOffset += 1) {
+      const candidates = cutoffDays
+        .map((day) => dateOnMonthDay(
+          date.getFullYear(),
+          date.getMonth() + monthOffset,
+          day,
+        ))
+        .sort((left, right) => left - right)
+      const cutoffDate = candidates.find((candidate) => candidate >= date)
+      if (cutoffDate) return toDateKey(cutoffDate)
+    }
+    return null
+  }
+
+  if (setupVersion.frequency === 'WEEKLY') {
+    const cutoffWeekday = Number(setupVersion.cutoff_weekday)
+    if (!Number.isInteger(cutoffWeekday) || cutoffWeekday < 0 || cutoffWeekday > 6) {
+      return null
+    }
+
+    const cutoffDate = new Date(date)
+    const daysUntilCutoff = (cutoffWeekday - date.getDay() + 7) % 7
+    cutoffDate.setDate(cutoffDate.getDate() + daysUntilCutoff)
+    return toDateKey(cutoffDate)
+  }
+
+  return null
+}
+
+/**
+ * The latest cutoff date strictly before `packageDate`: the cutoff a Builder with fixed
+ * cutoffs last had. Null for a Builder that bills any date, or a setup that cannot say.
+ */
+export function resolvePreviousBillingCutoffDate(packageDate, setupVersion) {
+  const date = parseDateKey(packageDate)
+  if (!date || !setupVersion || setupVersion.cutoff_any_date) return null
+
+  if (setupVersion.frequency === 'MONTHLY') {
+    const cutoffDay = Number(setupVersion.cutoff_day)
+    if (!Number.isInteger(cutoffDay) || cutoffDay < 1 || cutoffDay > 31) return null
+
+    for (let monthOffset = 0; monthOffset >= -1; monthOffset -= 1) {
+      const candidate = dateOnMonthDay(
+        date.getFullYear(),
+        date.getMonth() + monthOffset,
+        cutoffDay,
+      )
+      if (candidate < date) return toDateKey(candidate)
+    }
+    return null
+  }
+
+  if (setupVersion.frequency === 'SEMIMONTHLY') {
+    const cutoffDays = [...new Set((setupVersion.cutoff_days ?? [])
+      .map(Number)
+      .filter((day) => Number.isInteger(day) && day >= 1 && day <= 31))]
+      .sort((left, right) => right - left)
+
+    for (let monthOffset = 0; monthOffset >= -1; monthOffset -= 1) {
+      const candidate = cutoffDays
+        .map((day) => dateOnMonthDay(
+          date.getFullYear(),
+          date.getMonth() + monthOffset,
+          day,
+        ))
+        .sort((left, right) => right - left)
+        .find((day) => day < date)
+      if (candidate) return toDateKey(candidate)
+    }
+    return null
+  }
+
+  if (setupVersion.frequency === 'WEEKLY') {
+    const cutoffWeekday = Number(setupVersion.cutoff_weekday)
+    if (!Number.isInteger(cutoffWeekday) || cutoffWeekday < 0 || cutoffWeekday > 6) {
+      return null
+    }
+
+    // The most recent such weekday before the date (a full week back when it is today's).
+    const daysSinceCutoff = (date.getDay() - cutoffWeekday + 7) % 7 || 7
+    const cutoffDate = new Date(date)
+    cutoffDate.setDate(cutoffDate.getDate() - daysSinceCutoff)
+    return toDateKey(cutoffDate)
+  }
+
+  return null
+}
+
+/**
+ * The manual difference line of a QuickBooks invoice, from its sync row; null when the invoice has none
+ * (or the columns were not read).
+ */
+export function toInvoiceDifference(syncRow) {
+  if (syncRow?.difference_amount == null || syncRow.difference_description == null) return null
+  return {
+    description: syncRow.difference_description,
+    amount: Number(syncRow.difference_amount),
+    limit: syncRow.difference_limit == null ? null : Number(syncRow.difference_limit),
+    reason: syncRow.difference_reason ?? null,
+    addedAt: syncRow.difference_at ?? null,
+  }
+}
+
+/** One price difference a Package collected, as the Package shows it. */
+function toPriceDifferenceLine(row) {
+  return {
+    id: row.id,
+    sourcePackageId: row.source_package_id,
+    sourcePackageNumber: row.source_package_number,
+    kind: row.line_kind,
+    lotId: row.lot_id,
+    lotNumber: row.lot_number,
+    phaseId: row.phase_id,
+    phaseCode: row.phase_code,
+    building: row.building ?? '',
+    planCode: row.plan_code,
+    drawNumber: row.draw_number == null ? null : Number(row.draw_number),
+    hardwareEventType: row.hardware_event_type ?? null,
+    base: toNumber(row.delta_base),
+    hardware: toNumber(row.delta_hardware),
+    utility: toNumber(row.delta_utility),
+    options: toNumber(row.delta_options),
+    gross: toNumber(row.gross),
+    retention: toNumber(row.retention),
+    wrap: toNumber(row.wrap),
+    net: toNumber(row.net),
+  }
+}
+
+/** The lines a Draw Package carries and what they add up to, in cents so the sums are exact. */
+function toCarriedPriceDifferences(lineRows) {
+  const lines = lineRows.map(toPriceDifferenceLine)
+  const sum = (field) => lines.reduce((total, line) => total + Math.round(line[field] * 100), 0) / 100
+
+  return {
+    lineCount: lines.length,
+    sourcePackageCount: new Set(lines.map((line) => line.sourcePackageId)).size,
+    grossAmount: sum('gross'),
+    retentionAmount: sum('retention'),
+    wrapAmount: sum('wrap'),
+    netAmount: sum('net'),
+    lines,
+  }
+}
+
+export function toDrawInvoicePackage(
+  packageRow,
+  invoiceRow,
+  drawRows = [],
+  optionRows = [],
+  setupVersion = null,
+  corrections = [],
+  retentionReleaseRow = null,
+  retentionReleaseLineRows = [],
+  hardwareRows = [],
+  retentionReleaseHardwareLineRows = [],
+  priceAdjustmentRow = null,
+  priceAdjustmentLineRows = [],
+  retentionReleaseAdjustmentLineRows = [],
+  retentionReleaseOptionLineRows = [],
+  utilityRows = [],
+  retentionReleaseUtilityLineRows = [],
+) {
+  const sortedDrawRows = [...drawRows].sort(
+    (left, right) => String(left.phase_code ?? '').localeCompare(
+      String(right.phase_code ?? ''),
+      'en',
+      { numeric: true, sensitivity: 'base' },
+    )
+      || left.draw_number - right.draw_number
+      || String(left.lot_number).localeCompare(String(right.lot_number), 'en', {
+        numeric: true,
+        sensitivity: 'base',
+      }),
+  )
+  const drawRowsByLotAndDraw = new Map(
+    sortedDrawRows.map((row) => [`${row.lot_id}:${row.draw_id}`, row]),
+  )
+  const optionsBillingDrawNumber = setupVersion?.options_billing_draw_number
+  // The Utility shares billed by Calendar event: by Phase, Utility row, then EXT, DM, HW.
+  const utilityEventOrder = { EXT: 1, DM: 2, HW: 3 }
+  const sortedUtilityRows = [...utilityRows].sort(
+    (left, right) => String(left.phase_code ?? '').localeCompare(
+      String(right.phase_code ?? ''),
+      'en',
+      { numeric: true, sensitivity: 'base' },
+    )
+      || String(left.lot_number).localeCompare(String(right.lot_number), 'en', {
+        numeric: true,
+        sensitivity: 'base',
+      })
+      || (utilityEventOrder[left.utility_event_type] ?? 9)
+        - (utilityEventOrder[right.utility_event_type] ?? 9),
+  )
+  const sortedHardwareRows = [...hardwareRows].sort(
+    (left, right) => String(left.phase_code ?? '').localeCompare(
+      String(right.phase_code ?? ''),
+      'en',
+      { numeric: true, sensitivity: 'base' },
+    )
+      || String(left.lot_number).localeCompare(String(right.lot_number), 'en', {
+        numeric: true,
+        sensitivity: 'base',
+      })
+      || String(left.hardware_event_type ?? '').localeCompare(
+        String(right.hardware_event_type ?? ''),
+      ),
+  )
+  const isOptionsPackage = packageRow.package_type === 'OPTIONS'
+  const phaseIds = uniqueSortedNumbers([
+    ...sortedDrawRows.map((row) => row.phase_id),
+    ...sortedHardwareRows.map((row) => row.phase_id),
+    // An Options Package has no Lot / Draw cells: its Phases are those of the Options it bills.
+    ...(isOptionsPackage ? optionRows.map((row) => row.phase_id) : []),
+  ])
+  const primaryPhaseId = packageRow.phase_id ?? phaseIds[0] ?? null
+  const submissionMethod = submissionMethodOptions.some(
+    (option) => option.value === setupVersion?.submission_method,
+  )
+    ? setupVersion.submission_method
+    : 'PORTAL'
+  const submissionDestination = setupVersion?.submission_destination
+    ?? (submissionMethod === 'PORTAL' ? setupVersion?.portal_name : null)
+    ?? ''
+
+  return {
+    id: packageRow.id,
+    packageNumber: packageRow.package_number,
+    packageType: PACKAGE_TYPES_OTHER_THAN_DRAW.includes(packageRow.package_type)
+      ? packageRow.package_type
+      : 'DRAW',
+    builderId: packageRow.builder_id,
+    jobId: packageRow.job_id,
+    changeOrderId: packageRow.change_order_id ?? null,
+    phaseId: primaryPhaseId,
+    phaseIds,
+    setupVersionId: packageRow.setup_version_id,
+    packageDate: packageRow.package_date,
+    billingCutoffDate: resolveBillingCutoffDate(
+      packageRow.package_date,
+      setupVersion,
+    ),
+    billingCutoffAnyDate: Boolean(setupVersion?.cutoff_any_date),
+    paymentTermsDays: setupVersion?.payment_terms_days ?? null,
+    invoiceLineFormat: packageRow.invoice_line_format,
+    submissionMethod,
+    submissionDestination,
+    portalName: submissionMethod === 'PORTAL' ? submissionDestination : '',
+    quickbooksStatus: packageRow.quickbooks_status ?? 'NOT_CREATED',
+    quickbooksReference: packageRow.quickbooks_reference ?? null,
+    // The QuickBooks environment (sandbox = Test, production) the Package was sent to.
+    quickbooksEnvironment: packageRow.quickbooks_environment ?? null,
+    paymentState: packageRow.quickbooks_invoice_syncs?.qbo_state ?? null,
+    paymentOverdue: Boolean(packageRow.quickbooks_invoice_syncs?.qbo_overdue),
+    // What QuickBooks reports of the invoice: what is still owed, its total and when it is due.
+    paymentBalance: packageRow.quickbooks_invoice_syncs?.qbo_balance == null
+      ? null
+      : Number(packageRow.quickbooks_invoice_syncs.qbo_balance),
+    paymentTotal: packageRow.quickbooks_invoice_syncs?.qbo_total == null
+      ? null
+      : Number(packageRow.quickbooks_invoice_syncs.qbo_total),
+    paymentDueDate: packageRow.quickbooks_invoice_syncs?.qbo_due_date ?? null,
+    // A change made to the Package after its invoice was sent that QuickBooks has not received yet.
+    // The manual extra line the invoice carries (e.g. DIFFERENCE), with the limit it had; null if none.
+    invoiceDifference: toInvoiceDifference(packageRow.quickbooks_invoice_syncs),
+    quickbooksUpdatePending: packageRow.quickbooks_invoice_syncs?.update_pending === true,
+    quickbooksUpdateError: packageRow.quickbooks_invoice_syncs?.update_error ?? null,
+    submissionStatus: packageRow.submission_status ?? 'NOT_SUBMITTED',
+    submittedAt: packageRow.submitted_at ?? null,
+    // "Ready to submit" no longer exists: a Package still stored in it is a Draft.
+    status: packageRow.status === 'VOIDED'
+      ? 'CANCELLED'
+      : packageRow.workflow_status === 'READY_TO_SUBMIT' ? 'DRAFT' : packageRow.workflow_status,
+    cancelledAt: packageRow.voided_at ?? null,
+    cancellationReason: packageRow.void_reason ?? null,
+    corrections,
+    notes: packageRow.notes ?? '',
+    statusChangedAt: packageRow.status_changed_at,
+    statusChangedBy: packageRow.status_changed_by,
+    createdAt: packageRow.created_at,
+    updatedAt: packageRow.updated_at,
+    retentionRelease: retentionReleaseRow
+      ? {
+          scopeType: retentionReleaseRow.scope_type,
+          phaseId: retentionReleaseRow.phase_id,
+          phaseCode: retentionReleaseRow.phase_code,
+          building: retentionReleaseRow.building,
+          sourceCutoffDate: retentionReleaseRow.source_cutoff_date,
+          availableDate: retentionReleaseRow.available_date,
+          retainedAmount: toNumber(retentionReleaseRow.retained_amount),
+          sourceLines: retentionReleaseLineRows.map((row) => ({
+            sourcePackageId: row.source_package_id,
+            sourceLotId: row.source_lot_id,
+            sourceDrawId: row.source_draw_id,
+            phaseId: row.phase_id,
+            retentionAmount: toNumber(row.retention_amount),
+          })),
+          // What Price Adjustments retained; a credit makes it negative.
+          sourceAdjustmentLines: retentionReleaseAdjustmentLineRows.map((row) => ({
+            sourceAdjustmentLineId: row.source_adjustment_line_id,
+            sourcePackageId: row.source_package_id,
+            phaseId: row.phase_id,
+            retentionAmount: toNumber(row.retention_amount),
+          })),
+          sourceHardwareLines: retentionReleaseHardwareLineRows.map((row) => ({
+            sourceHardwareLineId: row.source_hardware_line_id,
+            sourcePackageId: row.source_package_id,
+            sourceLotId: row.source_lot_id,
+            hardwareEventType: row.hardware_event_type,
+            phaseId: row.phase_id,
+            retentionAmount: toNumber(row.retention_amount),
+          })),
+          // What the Utility shares billed by Calendar event retained.
+          sourceUtilityLines: retentionReleaseUtilityLineRows.map((row) => ({
+            sourceUtilityLineId: row.source_utility_line_id,
+            sourcePackageId: row.source_package_id,
+            sourceLotId: row.source_lot_id,
+            utilityEventType: row.utility_event_type,
+            phaseId: row.phase_id,
+            retentionAmount: toNumber(row.retention_amount),
+          })),
+          // What Options billed on their own (an Options Package) retained.
+          sourceOptionLines: retentionReleaseOptionLineRows.map((row) => ({
+            sourcePackageId: row.source_package_id,
+            sourceLotId: row.source_lot_id,
+            sourceOptionId: row.source_option_id,
+            sourceUnitNo: Number(row.source_unit_no ?? 1),
+            phaseId: row.phase_id,
+            retentionAmount: toNumber(row.retention_amount),
+          })),
+        }
+      : null,
+    // The price differences of issued Packages that this Package invoices.
+    priceAdjustment: priceAdjustmentRow
+      ? {
+          sourcePackageCount: Number(priceAdjustmentRow.source_package_count),
+          lineCount: Number(priceAdjustmentRow.line_count),
+          grossAmount: toNumber(priceAdjustmentRow.gross_amount),
+          retentionAmount: toNumber(priceAdjustmentRow.retention_amount),
+          wrapAmount: toNumber(priceAdjustmentRow.wrap_amount),
+          netAmount: toNumber(priceAdjustmentRow.net_amount),
+          lines: priceAdjustmentLineRows.map(toPriceDifferenceLine),
+        }
+      : null,
+    // The price differences of earlier Packages that this Draw Package collects, one invoice row
+    // each (a Price Adjustment keeps its own in `priceAdjustment`).
+    priceDifferences: priceAdjustmentRow == null && priceAdjustmentLineRows.length > 0
+      ? toCarriedPriceDifferences(priceAdjustmentLineRows)
+      : null,
+    lotIds: uniqueSortedNumbers([
+      ...sortedDrawRows.map((row) => row.lot_id),
+      ...sortedHardwareRows.map((row) => row.lot_id),
+      ...sortedUtilityRows.map((row) => row.lot_id),
+    ]),
+    drawIndexes: uniqueSortedNumbers(
+      sortedDrawRows.map((row) => Number(row.draw_number) - 1),
+    ),
+    selections: sortedDrawRows.map((row) => ({
+      phaseId: row.phase_id,
+      lotId: row.lot_id,
+      drawIndex: Number(row.draw_number) - 1,
+      chargeHardware: toNumber(row.hardware_percentage) > 0
+        || toNumber(row.hardware_amount) > 0,
+    })),
+    separateHardwarePrice: Boolean(setupVersion?.separate_hardware_price),
+    hardwareBillingMode: setupVersion?.hardware_billing_mode === 'BY_EVENT'
+      ? 'BY_EVENT'
+      : 'FULL',
+    hardwareEventPercentages: {
+      EXT: toNumber(setupVersion?.hardware_ext_percentage),
+      DM: toNumber(setupVersion?.hardware_dm_percentage),
+      HW: toNumber(setupVersion?.hardware_hw_percentage),
+    },
+    utilityBuilding: Boolean(setupVersion?.utility_building),
+    utilityBillingMode: setupVersion?.utility_billing_mode === 'BY_EVENT'
+      ? 'BY_EVENT'
+      : 'FULL',
+    utilityEventPercentages: {
+      EXT: toNumber(setupVersion?.utility_ext_percentage),
+      DM: toNumber(setupVersion?.utility_dm_percentage),
+      HW: toNumber(setupVersion?.utility_hw_percentage),
+    },
+    optionsBillingDrawIndex: optionsBillingDrawNumber == null
+      ? null
+      : Number(optionsBillingDrawNumber) - 1,
+    invoiceNumber: invoiceRow?.invoice_number ?? null,
+    invoiceDate: invoiceRow?.invoice_date ?? null,
+    dueDate: invoiceRow?.due_date ?? null,
+    persistedInvoice: invoiceRow
+      ? {
+          id: invoiceRow.id,
+          status: invoiceRow.status,
+          grossAmount: toNumber(invoiceRow.gross_amount),
+          retentionAmount: toNumber(invoiceRow.retention_amount),
+          wrapAmount: toNumber(invoiceRow.wrap_amount),
+          netAmount: toNumber(invoiceRow.net_amount),
+          paidAmount: toNumber(invoiceRow.paid_amount),
+        }
+      : null,
+    persistedDrawLines: sortedDrawRows.map((row) => ({
+      phaseId: row.phase_id,
+      phaseCode: row.phase_code,
+      building: row.building,
+      lotId: row.lot_id,
+      drawId: row.draw_id,
+      lotNumber: row.lot_number,
+      utilityLabel: row.is_utility_building
+        ? row.utility_name?.trim() || utilityLabel(row.lot_number)
+        : null,
+      isUtilityBuilding: Boolean(row.is_utility_building),
+      planCode: row.plan_code,
+      // The elevation the Lot had when the Package was made; empty on Packages made before it existed.
+      lotElevation: row.lot_elevation ?? '',
+      basePrice: toNumber(row.base_price),
+      drawIndex: Number(row.draw_number) - 1,
+      drawName: row.draw_name ?? '',
+      eventType: getDrawEventType(row),
+      baseDrawAmount: toNumber(row.base_draw_amount),
+      hardwareAmount: toNumber(row.hardware_amount),
+      hardwareBillingMode: row.hardware_billing_mode === 'BY_EVENT'
+        ? 'BY_EVENT'
+        : 'FULL',
+      hardwareEventType: row.hardware_event_type ?? null,
+      hardwarePercentage: toNumber(row.hardware_percentage),
+      optionsAmount: toNumber(row.options_amount),
+      utilityAmount: toNumber(row.utility_amount),
+      utilityBillingMode: row.utility_billing_mode === 'BY_EVENT'
+        ? 'BY_EVENT'
+        : 'FULL',
+      utilityEventType: row.utility_event_type ?? null,
+      utilityPercentage: toNumber(row.utility_percentage),
+      grossAmount: toNumber(row.gross_amount),
+      retentionAmount: toNumber(row.retention_amount),
+      wrapAmount: toNumber(row.wrap_amount),
+      netAmount: toNumber(row.net_amount),
+    })),
+    persistedHardwareLines: sortedHardwareRows.map((row) => ({
+      id: row.id,
+      packageId: row.package_id,
+      phaseId: row.phase_id,
+      phaseCode: row.phase_code,
+      building: row.building,
+      lotId: row.lot_id,
+      lotNumber: row.lot_number,
+      planCode: row.plan_code,
+      lotElevation: row.lot_elevation ?? '',
+      hardwarePrice: toNumber(row.hardware_price),
+      hardwareBillingMode: 'BY_EVENT',
+      hardwareEventType: row.hardware_event_type,
+      eventType: row.hardware_event_type,
+      hardwarePercentage: toNumber(row.hardware_percentage),
+      hardwareAmount: toNumber(row.hardware_amount),
+      grossAmount: toNumber(row.gross_amount),
+      retentionAmount: toNumber(row.retention_amount),
+      wrapAmount: toNumber(row.wrap_amount),
+      netAmount: toNumber(row.net_amount),
+      drawIndex: null,
+      drawName: '',
+      isUtilityBuilding: false,
+    })),
+    // The Utility shares billed by Calendar event, each a line of its own (not on a Draw).
+    persistedUtilityLines: sortedUtilityRows.map((row) => ({
+      id: row.id,
+      packageId: row.package_id,
+      phaseId: row.phase_id,
+      phaseCode: row.phase_code,
+      building: row.building,
+      lotId: row.lot_id,
+      lotNumber: row.lot_number,
+      utilityLabel: row.utility_name?.trim() || utilityLabel(row.lot_number),
+      isUtilityBuilding: true,
+      planCode: row.plan_code,
+      lotElevation: '',
+      basePrice: toNumber(row.base_price),
+      drawIndex: null,
+      drawName: '',
+      eventType: row.utility_event_type,
+      baseDrawAmount: 0,
+      hardwareAmount: 0,
+      optionsAmount: 0,
+      utilityAmount: toNumber(row.utility_amount),
+      utilityBillingMode: 'BY_EVENT',
+      utilityEventType: row.utility_event_type,
+      utilityPercentage: toNumber(row.utility_percentage),
+      grossAmount: toNumber(row.gross_amount),
+      retentionAmount: toNumber(row.retention_amount),
+      wrapAmount: toNumber(row.wrap_amount),
+      netAmount: toNumber(row.net_amount),
+    })),
+    // Lot by Lot, and by option code within each Lot.
+    persistedOptionLines: [...optionRows].sort(
+      (left, right) => left.lot_id - right.lot_id
+        || compareOptionCodes(left.option_code, right.option_code)
+        || Number(left.unit_no ?? 1) - Number(right.unit_no ?? 1),
+    ).map((row) => {
+      const drawRow = drawRowsByLotAndDraw.get(`${row.lot_id}:${row.draw_id}`)
+      const billingDrawRow = drawRowsByLotAndDraw.get(
+        `${row.billing_lot_id ?? row.lot_id}:${row.draw_id}`,
+      )
+      const hasOriginSnapshot = row.phase_id != null
+      return {
+        id: `${row.lot_id}:${row.option_id}:${row.unit_no ?? 1}`,
+        phaseId: row.phase_id ?? drawRow?.phase_id ?? null,
+        phaseCode: row.phase_code ?? drawRow?.phase_code ?? null,
+        building: hasOriginSnapshot ? row.building : (drawRow?.building ?? null),
+        lotId: row.lot_id,
+        // The Lot and Draw whose line carries this option's amount, which a Retention Release
+        // points back to.
+        billingLotId: row.billing_lot_id ?? row.lot_id,
+        drawId: row.draw_id,
+        lotNumber: row.lot_number ?? drawRow?.lot_number ?? '',
+        planCode: row.plan_code ?? drawRow?.plan_code ?? null,
+        lotElevation: row.lot_elevation ?? '',
+        optionId: row.option_id,
+        // Each unit of an Option on a Lot is a row of its own: the one that goes to the 2nd floor.
+        unitNo: Number(row.unit_no ?? 1),
+        unitLabel: row.unit_label ?? null,
+        optionCode: row.option_code,
+        description: row.option_name,
+        quantity: 1,
+        price: toNumber(row.option_price),
+        // What an Options Package withholds of the Option; a Draw Package withholds it on the
+        // Draw line that carries the Option instead.
+        retentionAmount: toNumber(row.retention_amount),
+        wrapAmount: toNumber(row.wrap_amount),
+        priceNotApplicable: row.option_not_applicable === true,
+        billingDrawIndex: billingDrawRow == null
+          ? null
+          : Number(billingDrawRow.draw_number) - 1,
+        issue: null,
+      }
+    }),
+  }
+}
+
+export function toCreateDrawPackageRpc({
+  jobId,
+  selections,
+  hardwareSelections = [],
+  // The Utility shares chosen by Calendar event: { lotId, eventType }.
+  utilityEventSelections = [],
+  optionSelections,
+  optionsBillingDrawIndex,
+  priceDifferenceIds = [],
+  notes = null,
+}) {
+  const note = String(notes ?? '').trim()
+  const differenceIds = [...new Set(priceDifferenceIds.map(Number))].sort((left, right) => left - right)
+  const parsedOptionsBillingDrawIndex = Number(optionsBillingDrawIndex)
+  const hasExplicitOptionSelection = Array.isArray(optionSelections)
+    && optionsBillingDrawIndex !== null
+    && optionsBillingDrawIndex !== ''
+    && Number.isInteger(parsedOptionsBillingDrawIndex)
+  const packageOptions = new Map()
+
+  if (hasExplicitOptionSelection) {
+    for (const { lotId, optionId, unitNo = 1 } of optionSelections) {
+      const normalized = {
+        lot_id: Number(lotId),
+        option_id: Number(optionId),
+        unit_no: Number(unitNo ?? 1),
+      }
+      packageOptions.set(
+        `${normalized.lot_id}:${normalized.option_id}:${normalized.unit_no}`,
+        normalized,
+      )
+    }
+  }
+
+  const anchorIndex = hasExplicitOptionSelection
+    ? selections
+        .map(({ drawIndex }, index) => ({
+          drawIndex: Number(drawIndex),
+          index,
+        }))
+        .filter(({ drawIndex }) => drawIndex >= parsedOptionsBillingDrawIndex)
+        .sort((left, right) => (
+          left.drawIndex - right.drawIndex || left.index - right.index
+        ))[0]?.index ?? -1
+    : -1
+  const sortedPackageOptions = [...packageOptions.values()].sort(
+    (left, right) => left.lot_id - right.lot_id
+      || left.option_id - right.option_id
+      || left.unit_no - right.unit_no,
+  )
+  const legacyHardwareKeys = new Set(hardwareSelections
+    .filter(({ eventType }) => eventType == null)
+    .map(({ phaseId, lotId, drawIndex }) => `${phaseId}:${lotId}:${drawIndex}`))
+  const eventHardwareSelections = [...new Map(hardwareSelections
+    .filter(({ eventType }) => eventType != null)
+    .map(({ lotId, eventType }) => {
+      const normalized = {
+        lot_id: Number(lotId),
+        event_type: String(eventType),
+      }
+      return [`${normalized.lot_id}:${normalized.event_type}`, normalized]
+    })).values()].sort((left, right) => (
+    left.lot_id - right.lot_id
+      || left.event_type.localeCompare(right.event_type)
+  ))
+
+  const utilitySelections = [...new Map(utilityEventSelections
+    .filter(({ eventType }) => eventType != null)
+    .map(({ lotId, eventType }) => {
+      const normalized = { lot_id: Number(lotId), event_type: String(eventType) }
+      return [`${normalized.lot_id}:${normalized.event_type}`, normalized]
+    })).values()].sort((left, right) => (
+    left.lot_id - right.lot_id
+      || left.event_type.localeCompare(right.event_type)
+  ))
+
+  return {
+    p_job_id: Number(jobId),
+    p_selections: selections.map(({ phaseId, lotId, drawIndex }, index) => {
+      const selection = {
+        lot_id: Number(lotId),
+        draw_number: Number(drawIndex) + 1,
+      }
+
+      if (legacyHardwareKeys.has(`${phaseId}:${lotId}:${drawIndex}`)) {
+        selection.charge_hardware = true
+      }
+
+      if (
+        hasExplicitOptionSelection
+        && index === anchorIndex
+      ) {
+        selection.package_options = sortedPackageOptions
+      }
+
+      return selection
+    }),
+    ...(eventHardwareSelections.length > 0
+      ? { p_hardware_selections: eventHardwareSelections }
+      : {}),
+    ...(utilitySelections.length > 0
+      ? { p_utility_selections: utilitySelections }
+      : {}),
+    // The pending price differences of earlier Packages that this one collects, one invoice row each.
+    ...(differenceIds.length > 0 ? { p_difference_ids: differenceIds } : {}),
+    // The database keeps it as the first note of the Package, with the author and the time.
+    ...(note ? { p_notes: note } : {}),
+  }
+}
+
+export function toPackageStatusRpc(packageId, status) {
+  if (!DRAW_PACKAGE_STATUSES.includes(status)) {
+    throw new Error('Select a valid Package status.')
+  }
+
+  return {
+    p_package_id: Number(packageId),
+    p_status: status,
+  }
+}
+
+export function toCreateRetentionReleasePackageRpc({
+  jobId,
+  phaseId = null,
+  notes = null,
+}) {
+  return {
+    p_job_id: Number(jobId),
+    p_phase_id: phaseId == null ? null : Number(phaseId),
+    p_notes: String(notes ?? '').trim() || null,
+  }
+}
+
+/**
+ * Bills Options on a Package of their own, with no Lot / Draw cell: `optionSelections` are the
+ * { lotId, optionId, unitNo } units, which the database checks are unbilled and belong to a Lot that already
+ * reached the Options billing Draw.
+ */
+export function toCreateOptionsPackageRpc({
+  jobId,
+  optionSelections,
+  packageDate = null,
+  notes = null,
+}) {
+  const options = [...new Map((optionSelections ?? []).map(({ lotId, optionId, unitNo = 1 }) => {
+    const normalized = {
+      lot_id: Number(lotId),
+      option_id: Number(optionId),
+      unit_no: Number(unitNo ?? 1),
+    }
+    return [`${normalized.lot_id}:${normalized.option_id}:${normalized.unit_no}`, normalized]
+  })).values()].sort(
+    (left, right) => left.lot_id - right.lot_id
+      || left.option_id - right.option_id
+      || left.unit_no - right.unit_no,
+  )
+  if (options.length === 0) {
+    throw new Error('Select at least one Option to bill.')
+  }
+
+  return {
+    p_job_id: Number(jobId),
+    p_options: options,
+    ...(packageDate ? { p_package_date: packageDate } : {}),
+    p_notes: String(notes ?? '').trim() || null,
+  }
+}
+
+export function toCreatePriceAdjustmentPackageRpc({
+  jobId,
+  sourcePackageIds,
+  notes = null,
+}) {
+  const ids = [...new Set((sourcePackageIds ?? []).map(Number).filter(Number.isFinite))]
+  if (ids.length === 0) {
+    throw new Error('Select at least one Package with a pending price difference.')
+  }
+  return {
+    p_job_id: Number(jobId),
+    p_source_package_ids: ids,
+    p_notes: String(notes ?? '').trim() || null,
+  }
+}
+
+function toSelectionRecords(selections) {
+  if (!Array.isArray(selections) || selections.length === 0) {
+    throw new Error('Select at least one Lot / Draw cell.')
+  }
+  return selections.map(({ lotId, drawIndex, chargeHardware }) => ({
+    lot_id: Number(lotId),
+    draw_number: Number(drawIndex) + 1,
+    charge_hardware: Boolean(chargeHardware),
+  }))
+}
+
+export function canManageDraftDrawPackage(record) {
+  return record != null
+    && record.packageType === 'DRAW'
+    && record.status === 'DRAFT'
+    && record.persistedInvoice?.status === 'DRAFT'
+    && !record.invoiceNumber
+    && !record.invoiceDate
+    && record.persistedInvoice.paidAmount === 0
+    && record.quickbooksStatus === 'NOT_CREATED'
+    && !record.quickbooksReference
+    && record.submissionStatus === 'NOT_SUBMITTED'
+    && !record.submittedAt
+}
+
+/**
+ * A draft whose QuickBooks invoice was voided can still be deleted, but not
+ * edited: the invoice number stays in QuickBooks, so its cells are not reused.
+ */
+export function canDeleteVoidedQuickbooksPackage(record) {
+  return record != null
+    && ['DRAW', 'PRICE_ADJUSTMENT', 'OPTIONS', 'CHANGE_ORDER'].includes(record.packageType)
+    && record.status === 'DRAFT'
+    && record.quickbooksStatus === 'VOIDED'
+    && record.persistedInvoice?.status === 'DRAFT'
+    && !record.invoiceNumber
+    && !record.invoiceDate
+    && record.persistedInvoice.paidAmount === 0
+    && record.submissionStatus === 'NOT_SUBMITTED'
+    && !record.submittedAt
+}
+
+/**
+ * Why a Draft Package can no longer be edited, moved or deleted, in the words
+ * shown to the person; null when the Package is not a locked Draft.
+ */
+export function draftLockReason(record) {
+  if (record == null || record.status !== 'DRAFT' || canManageDraftDrawPackage(record)) {
+    return null
+  }
+  if (record.packageType === 'RETENTION_RELEASE') {
+    return 'A Retention Release cannot be edited. Cancel it from the Packages list if it was created by mistake.'
+  }
+  if (record.packageType === 'PRICE_ADJUSTMENT') {
+    return 'A Price Adjustment cannot be edited. Cancel it from the Packages list to give its differences back.'
+  }
+  if (record.packageType === 'OPTIONS') {
+    return 'An Options Package cannot be edited. Cancel it from the Packages list to bill its Options again.'
+  }
+  if (record.packageType === 'CHANGE_ORDER') {
+    return 'The Package of an Extra / CO cannot be edited. Cancel it from the Packages list to invoice the Extra / CO again.'
+  }
+  if (record.submissionStatus !== 'NOT_SUBMITTED' || record.submittedAt) {
+    return 'This Package was already sent to the Builder, so its cells are locked.'
+  }
+  if (record.quickbooksStatus === 'CREATED') {
+    return invoicedEditLockReason(record)
+      ?? 'This Package already has a QuickBooks invoice, so its cells are locked.'
+  }
+  if (record.quickbooksStatus === 'VOIDED') {
+    return 'The QuickBooks invoice was voided. The Package can be deleted but not edited.'
+  }
+  if (record.invoiceNumber || record.invoiceDate || record.quickbooksReference) {
+    return 'This Package already has an invoice number, so its cells are locked.'
+  }
+  if (record.persistedInvoice?.paidAmount > 0) {
+    return 'This Package has a payment recorded, so its cells are locked.'
+  }
+  return 'This Package can no longer be changed.'
+}
+
+/**
+ * A Package whose invoice was sent to QuickBooks can still be edited while it waits for payment:
+ * nothing paid, credited or recorded against it. The invoice keeps its number; QuickBooks gets the
+ * new lines. Returns why it cannot, in the words shown to the person, or null when it can.
+ */
+export function invoicedEditLockReason(record, { ignorePriceChanges = false } = {}) {
+  if (record == null || record.packageType !== 'DRAW' || record.quickbooksStatus !== 'CREATED') {
+    return 'This Package has no QuickBooks invoice to edit.'
+  }
+  if (record.status !== 'AWAITING_PAYMENT') {
+    return 'Only a Package that is awaiting payment can be edited after its invoice was sent.'
+  }
+  if ((record.persistedInvoice?.paidAmount ?? 0) > 0
+    || (record.paymentState != null && record.paymentState !== 'OPEN')
+    || (record.paymentBalance != null && record.paymentTotal != null
+      && Math.round(record.paymentBalance * 100) !== Math.round(record.paymentTotal * 100))) {
+    return 'The invoice already has a payment or credit, so it cannot be edited.'
+  }
+  if (!ignorePriceChanges && (record.priceDifferences?.lineCount ?? 0) > 0) {
+    return 'This Package collects price changes, so its cells cannot be edited. Void the invoice and create it again.'
+  }
+  if (record.quickbooksUpdatePending) {
+    return 'The last change has not reached QuickBooks yet. Send it again from the notice on this page first.'
+  }
+  return null
+}
+
+export function canEditInvoicedDrawPackage(record) {
+  return record != null && invoicedEditLockReason(record) === null
+}
+
+/**
+ * Whether the difference line of the invoice can be added, changed or taken off: the same conditions as
+ * editing an invoiced Package (waiting for payment, nothing paid, no change waiting for QuickBooks), except
+ * that collecting price changes does not matter, because the cells are not touched.
+ */
+export function invoiceDifferenceLockReason(record) {
+  return invoicedEditLockReason(record, { ignorePriceChanges: true })
+}
+
+export function canChangeInvoiceDifference(record) {
+  return record != null && invoiceDifferenceLockReason(record) === null
+}
+
+/**
+ * Whether the generated Release / Payment Schedule of a Package let the correction go on. A Draft cannot be
+ * corrected while it holds one: the person removes them first (the database only lets them be removed from
+ * a Draft with no invoice). An invoiced Package can always be edited: they print the amount, so saving the
+ * edit removes them on its own, and the review says so.
+ */
+export function documentsAllowCorrection({ isInvoiced, loading, documentCount }) {
+  if (isInvoiced) return true
+  return !loading && documentCount === 0
+}
+
+/** True when the failure of an edit means nothing was saved: the Package is exactly as it was. */
+export function invoicedEditLeftNothingSaved(code) {
+  return [
+    'INVALID_REQUEST',
+    'NOT_CREATED',
+    'UPDATE_PENDING',
+    'WRONG_COMPANY',
+    'MISSING_IN_QUICKBOOKS',
+    'VOIDED_IN_QUICKBOOKS',
+    'HAS_PAYMENTS',
+    'EDITED_IN_QUICKBOOKS',
+    'EDIT_REFUSED',
+    'NOT_CONNECTED',
+    'BUSY',
+    'PACKAGE_NOT_FOUND',
+  ].includes(code)
+}
+
+/**
+ * The body of the edit of an invoiced Package: the cells, the Separate Hardware lines and the Option
+ * units that stay. An Option left out is released; so are those of a Lot that leaves. Free Separate
+ * Hardware lines and Option units can be put on the Package: `addedHardwareLines` are { lotId, eventType }
+ * and `addedOptions` { lotId, optionId, unitNo }.
+ */
+export function toInvoicedEditRequest({
+  packageId,
+  selections,
+  keptHardwareLines,
+  addedHardwareLines = [],
+  releasedOptions,
+  addedOptions = [],
+  reason,
+  notes,
+}) {
+  return {
+    packageId: Number(packageId),
+    selections: (selections ?? []).map(({ lotId, drawIndex }) => ({
+      lot_id: Number(lotId),
+      draw_number: Number(drawIndex) + 1,
+    })),
+    hardwareSelections: [...(keptHardwareLines ?? []), ...(addedHardwareLines ?? [])].map((line) => ({
+      lot_id: Number(line.lotId),
+      event_type: String(line.hardwareEventType ?? line.eventType),
+    })),
+    releasedOptions: (releasedOptions ?? []).map((option) => ({
+      lot_id: Number(option.lotId),
+      option_id: Number(option.optionId),
+      unit_no: Number(option.unitNo),
+    })),
+    addedOptions: (addedOptions ?? []).map((option) => ({
+      lot_id: Number(option.lotId),
+      option_id: Number(option.optionId),
+      unit_no: Number(option.unitNo ?? 1),
+    })),
+    reason: String(reason ?? '').trim(),
+    notes: String(notes ?? '').trim() || null,
+  }
+}
+
+export function canCorrectDrawPackage(record) {
+  return canManageDraftDrawPackage(record)
+    && (record.persistedHardwareLines?.length ?? 0) === 0
+    // Utility shares by Calendar event are not cells either: cancel it and create it again.
+    && (record.persistedUtilityLines?.length ?? 0) === 0
+    // The amounts it collected were worked out against its cells: cancel it and create it again.
+    && (record.priceDifferences?.lineCount ?? 0) === 0
+}
+
+export function toEditDrawPackageRpc({
+  packageId,
+  selections,
+  reason,
+  notes,
+}) {
+  return {
+    p_package_id: Number(packageId),
+    p_selections: toSelectionRecords(selections),
+    p_reason: String(reason ?? '').trim(),
+    p_notes: String(notes ?? '').trim() || null,
+  }
+}
+
+export function toTransferDrawPackageRpc({
+  toPackageId,
+  fromPackageId,
+  selections,
+  reason,
+}) {
+  return {
+    p_to_package_id: Number(toPackageId),
+    p_from_package_id: Number(fromPackageId),
+    p_selections: toSelectionRecords(selections),
+    p_reason: String(reason ?? '').trim(),
+  }
+}
+
+export function toCancelDrawPackageRpc(packageId, reason) {
+  return {
+    p_package_id: Number(packageId),
+    p_reason: String(reason ?? '').trim(),
+  }
+}

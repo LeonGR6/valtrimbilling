@@ -16,29 +16,14 @@ function monthLabel(date) {
   return date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
 }
 
-function resolveInvoiceDate(rule, cutoffDate, submissionDate) {
-  if (rule === 'CUTOFF') return cutoffDate
-  if (rule === 'MONTH_END') {
-    return dateOnMonthDay(cutoffDate.getFullYear(), cutoffDate.getMonth(), 31)
-  }
-  return submissionDate
-}
-
-function buildPeriod(setup, periodStart, cutoffDate, submissionDate, index) {
-  const invoiceDate = resolveInvoiceDate(
-    setup.invoiceDateRule,
-    cutoffDate,
-    submissionDate,
-  )
-
+function buildPeriod(setup, periodStart, cutoffDate, index) {
   return {
     key: `${cutoffDate.getTime()}-${index}`,
     label: monthLabel(cutoffDate),
     periodStart,
     cutoffDate,
-    submissionDate,
-    invoiceDate,
-    estimatedPaymentDate: addDays(invoiceDate, setup.paymentTermsDays ?? 0),
+    invoiceDate: cutoffDate,
+    estimatedPaymentDate: addDays(cutoffDate, setup.paymentTermsDays ?? 0),
   }
 }
 
@@ -49,11 +34,9 @@ function monthlyPeriods(setup, count, from) {
 
   for (let index = 0; index < count; index += 1) {
     const cutoffDate = dateOnMonthDay(year, month, setup.cutoffDay)
-    const submissionMonth = setup.submissionDay < setup.cutoffDay ? month + 1 : month
-    const submissionDate = dateOnMonthDay(year, submissionMonth, setup.submissionDay)
     const periodStart = dateOnMonthDay(year, month - 1, setup.cutoffDay + 1)
 
-    periods.push(buildPeriod(setup, periodStart, cutoffDate, submissionDate, index))
+    periods.push(buildPeriod(setup, periodStart, cutoffDate, index))
     month += 1
   }
 
@@ -71,7 +54,6 @@ function semimonthlyPeriods(setup, count, from) {
 
   for (let index = 0; index < count; index += 1) {
     const cutoffDate = dateOnMonthDay(year, month, days[dayIndex])
-    const submissionDate = addDays(cutoffDate, setup.submissionOffsetDays ?? 0)
     const previousDay = dayIndex === 0 ? days[days.length - 1] : days[dayIndex - 1]
     const periodStart = dateOnMonthDay(
       year,
@@ -79,7 +61,7 @@ function semimonthlyPeriods(setup, count, from) {
       previousDay + 1,
     )
 
-    periods.push(buildPeriod(setup, periodStart, cutoffDate, submissionDate, index))
+    periods.push(buildPeriod(setup, periodStart, cutoffDate, index))
 
     dayIndex += 1
     if (dayIndex >= days.length) {
@@ -102,17 +84,16 @@ function weeklyPeriods(setup, count, from) {
 
   for (let index = 0; index < count; index += 1) {
     const cutoffDate = addDays(cursor, index * 7)
-    const submissionDate = addDays(cutoffDate, setup.submissionOffsetDays ?? 0)
     const periodStart = addDays(cutoffDate, -6)
 
-    periods.push(buildPeriod(setup, periodStart, cutoffDate, submissionDate, index))
+    periods.push(buildPeriod(setup, periodStart, cutoffDate, index))
   }
 
   return periods
 }
 
 export function computeDrawPeriods(setup, count = 3, from = new Date()) {
-  if (!setup) return []
+  if (!setup || setup.anyDate) return []
 
   switch (setup.frequency) {
     case 'SEMIMONTHLY':
@@ -134,13 +115,16 @@ export function formatPeriodDate(date) {
 export function describeSchedule(setup) {
   switch (setup.frequency) {
     case 'MONTHLY':
-      return `Cutoff day ${setup.cutoffDay}, due day ${setup.submissionDay}`
+      if (setup.anyDate) {
+        return 'Any date · highest-value rolling 14-day Calendar window'
+      }
+      return `Cutoff date: day ${setup.cutoffDay}`
     case 'SEMIMONTHLY':
-      return `Cutoff days ${(setup.cutoffDays ?? []).join(' and ')}, due ${setup.submissionOffsetDays}d later`
+      return `Cutoff dates: days ${(setup.cutoffDays ?? []).join(' and ')}`
     case 'WEEKLY': {
       const weekday = new Date(2024, 0, 7 + (setup.cutoffWeekday ?? 0))
         .toLocaleDateString('en-US', { weekday: 'long' })
-      return `Cutoff every ${weekday}, due ${setup.submissionOffsetDays}d later`
+      return `Cutoff every ${weekday}`
     }
     default:
       return 'Not configured'

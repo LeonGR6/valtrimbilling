@@ -1,4 +1,5 @@
 import {
+  Alert,
   Box,
   Button,
   Checkbox,
@@ -9,9 +10,12 @@ import {
   TextField,
   Typography,
 } from '@mui/material'
+import DateField from '../../../components/common/DateField.jsx'
 import AddRoundedIcon from '@mui/icons-material/AddRounded'
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
-import { activityTypeMap, dateOwnerOptions } from '../data/calendarEvents.js'
+import { activityTypeMap, dateOwnerOptions, getLotsLabel } from '../data/calendarEvents.js'
+import { divisionMessages, fieldErrorProps } from '../utils/calendarFormErrors.js'
+import { lotsInRange } from '../utils/splitLotGroups.js'
 import { addSplitDivision, removeSplitDivision } from './calendarSchedulerUtils.js'
 
 export function OptionCheckbox({ checked, disabled = false, label, description, onChange, endAdornment = null }) {
@@ -66,16 +70,63 @@ export function DateOwnerSelector({ value, onChange, label = 'Date ownership', c
   )
 }
 
-export function SplitScheduleEditor({ activityType, parts, totalLots, onChange, onReset }) {
-  const type = activityTypeMap[activityType]
-  const canAddDivision = parts.length < totalLots
+// Tells which Lots of the Phase a division covers. The Phase can hold separate
+// groups of Lots, so the From–To range alone does not say it.
+function SplitDivisionLots({ part, lotNumbers, hideEmptyNotice = false }) {
+  if (!lotNumbers.length) return null
+
+  const lots = lotsInRange(lotNumbers, part.lotStart, part.lotEnd)
+  // The error of the division says the same, with more: it is not said twice.
+  if (!lots.length && hideEmptyNotice) return null
 
   return (
-    <Box className="stage-split-editor">
+    <Typography variant="caption" color={lots.length ? 'text.secondary' : 'error'} component="p">
+      {lots.length
+        ? `Covers ${getLotsLabel(part.lotStart, part.lotEnd, lots)}`
+        : 'No lot of this phase falls in this range.'}
+    </Typography>
+  )
+}
+
+export function SplitScheduleEditor({
+  activityType,
+  parts,
+  totalLots,
+  lotNumbers = [],
+  onChange,
+  onReset,
+  partsKey,
+  errors = {},
+}) {
+  const type = activityTypeMap[activityType]
+  const canAddDivision = parts.length < totalLots
+  // What is wrong with the split as a whole (a Lot left out or repeated), and the id the editor
+  // is described by while that is on screen.
+  const sectionError = errors[partsKey]
+  const sectionErrorId = `${partsKey}-error`
+  const hasError = Object.keys(errors).some(
+    (key) => key === partsKey || key.startsWith(`${partsKey}.`),
+  )
+
+  return (
+    <Box
+      className={`stage-split-editor${hasError ? ' stage-split-editor--error' : ''}`}
+      data-error-key={partsKey}
+      // The error list next to Save takes the focus here when the split is what failed.
+      tabIndex={-1}
+      role="group"
+      aria-label={`${type.shortLabel} split schedule`}
+      aria-describedby={sectionError ? sectionErrorId : undefined}
+    >
       <Box className="activity-form__heading activity-form__heading--actions">
         <Box>
           <Typography variant="subtitle2" fontWeight={800}>Split schedule</Typography>
           <Typography variant="caption" color="text.secondary">Each division becomes an all-day calendar event.</Typography>
+          {lotNumbers.length > 0 && (
+            <Typography variant="caption" color="text.secondary" component="p">
+              Lots of this phase: {getLotsLabel(null, null, lotNumbers).replace(/^Lots? /, '')}
+            </Typography>
+          )}
         </Box>
         <Stack direction="row" spacing={0.5}>
           <Button size="small" onClick={onReset}>Reset</Button>
@@ -83,82 +134,116 @@ export function SplitScheduleEditor({ activityType, parts, totalLots, onChange, 
             size="small"
             startIcon={<AddRoundedIcon />}
             disabled={!canAddDivision}
-            onClick={() => onChange(addSplitDivision(parts))}
+            onClick={() => onChange(addSplitDivision(parts, lotNumbers))}
           >
             Division
           </Button>
         </Stack>
       </Box>
+      {sectionError && (
+        <Alert severity="error" id={sectionErrorId} className="stage-split-editor__error">
+          {sectionError}
+        </Alert>
+      )}
       <Stack spacing={1}>
-        {parts.map((part, index) => (
-          <Paper key={part.id} variant="outlined" className={`split-part activity-tone--${type.tone}`}>
-            <Box className="split-part__heading">
-              <Typography variant="caption" fontWeight={800}>DIVISION {index + 1}</Typography>
-              <IconButton
+        {parts.map((part, index) => {
+          const fieldKey = (field) => `${partsKey}.${index}.${field}`
+          const messages = divisionMessages(errors, partsKey, index)
+          const messagesId = `${partsKey}-${part.id}-errors`
+          // One message can belong to From and To together (a range), so both boxes turn red.
+          const rangeError = Boolean(errors[fieldKey('lotStart')] || errors[fieldKey('lotEnd')])
+          const describedBy = messages.length ? { 'aria-describedby': messagesId } : {}
+
+          return (
+            <Paper key={part.id} variant="outlined" className={`split-part activity-tone--${type.tone}`}>
+              <Box className="split-part__heading">
+                <Typography variant="caption" fontWeight={800}>DIVISION {index + 1}</Typography>
+                <IconButton
+                  size="small"
+                  aria-label={`Remove division ${index + 1}`}
+                  disabled={parts.length <= 2}
+                  onClick={() => onChange(removeSplitDivision(parts, index))}
+                >
+                  <DeleteOutlineRoundedIcon fontSize="small" />
+                </IconButton>
+              </Box>
+              <Box className="split-part__fields">
+                <TextField
+                  label="From"
+                  type="number"
+                  value={part.lotStart}
+                  onChange={(event) => onChange(parts.map((item) => item.id === part.id
+                    ? { ...item, lotStart: event.target.value }
+                    : item))}
+                  // "any": a Lot such as 12.1 is not a mistake of the step.
+                  slotProps={{ htmlInput: { min: 1, step: 'any', ...describedBy } }}
+                  required
+                  data-error-key={fieldKey('lotStart')}
+                  error={rangeError}
+                />
+                <TextField
+                  label="To"
+                  type="number"
+                  value={part.lotEnd}
+                  onChange={(event) => onChange(parts.map((item) => item.id === part.id
+                    ? { ...item, lotEnd: event.target.value }
+                    : item))}
+                  slotProps={{ htmlInput: { min: 1, step: 'any', ...describedBy } }}
+                  required
+                  data-error-key={fieldKey('lotEnd')}
+                  error={rangeError}
+                />
+                <DateField
+                  label="Date"
+                  value={part.date}
+                  onChange={(date) => onChange(parts.map((item) => item.id === part.id
+                    ? { ...item, date }
+                    : item))}
+                  required
+                  slotProps={{ htmlInput: describedBy }}
+                  data-error-key={fieldKey('date')}
+                  error={Boolean(errors[fieldKey('date')])}
+                />
+              </Box>
+              {messages.length > 0 && (
+                <Box id={messagesId} className="split-part__errors">
+                  {messages.map((message) => (
+                    <Typography key={message} variant="caption" color="error" component="p">
+                      {message}
+                    </Typography>
+                  ))}
+                </Box>
+              )}
+              <SplitDivisionLots
+                part={part}
+                lotNumbers={lotNumbers}
+                hideEmptyNotice={messages.length > 0}
+              />
+              <DateOwnerSelector
+                value={part.dateOwner}
+                onChange={(dateOwner) => onChange(parts.map((item) => item.id === part.id
+                  ? { ...item, dateOwner }
+                  : item))}
+                label={`${type.shortLabel} division ${index + 1} date ownership`}
+                compact
+              />
+              <TextField
+                label="Date note (optional)"
+                value={part.note ?? ''}
+                onChange={(event) => onChange(parts.map((item) => item.id === part.id
+                  ? { ...item, note: event.target.value }
+                  : item))}
+                slotProps={{ htmlInput: { maxLength: 100 } }}
+                helperText={`${(part.note ?? '').length}/100`}
+                multiline
+                minRows={2}
+                fullWidth
                 size="small"
-                aria-label={`Remove division ${index + 1}`}
-                disabled={parts.length <= 2}
-                onClick={() => onChange(removeSplitDivision(parts, index))}
-              >
-                <DeleteOutlineRoundedIcon fontSize="small" />
-              </IconButton>
-            </Box>
-            <Box className="split-part__fields">
-              <TextField
-                label="From"
-                type="number"
-                value={part.lotStart}
-                onChange={(event) => onChange(parts.map((item) => item.id === part.id
-                  ? { ...item, lotStart: event.target.value }
-                  : item))}
-                slotProps={{ htmlInput: { min: 1 } }}
-                required
+                className="date-note-field"
               />
-              <TextField
-                label="To"
-                type="number"
-                value={part.lotEnd}
-                onChange={(event) => onChange(parts.map((item) => item.id === part.id
-                  ? { ...item, lotEnd: event.target.value }
-                  : item))}
-                slotProps={{ htmlInput: { min: 1 } }}
-                required
-              />
-              <TextField
-                label="Date"
-                type="date"
-                value={part.date}
-                onChange={(event) => onChange(parts.map((item) => item.id === part.id
-                  ? { ...item, date: event.target.value }
-                  : item))}
-                slotProps={{ inputLabel: { shrink: true } }}
-                required
-              />
-            </Box>
-            <DateOwnerSelector
-              value={part.dateOwner}
-              onChange={(dateOwner) => onChange(parts.map((item) => item.id === part.id
-                ? { ...item, dateOwner }
-                : item))}
-              label={`${type.shortLabel} division ${index + 1} date ownership`}
-              compact
-            />
-            <TextField
-              label="Date note (optional)"
-              value={part.note ?? ''}
-              onChange={(event) => onChange(parts.map((item) => item.id === part.id
-                ? { ...item, note: event.target.value }
-                : item))}
-              slotProps={{ htmlInput: { maxLength: 100 } }}
-              helperText={`${(part.note ?? '').length}/100`}
-              multiline
-              minRows={2}
-              fullWidth
-              size="small"
-              className="date-note-field"
-            />
-          </Paper>
-        ))}
+            </Paper>
+          )
+        })}
       </Stack>
     </Box>
   )
@@ -173,12 +258,17 @@ export function StageCard({
   onDateOwnerChange,
   onNoteChange,
   tone,
+  dateError,
+  hasError = false,
   children,
 }) {
   const type = activityTypeMap[activityType]
 
   return (
-    <Paper variant="outlined" className={`production-stage-card activity-tone--${tone}`}>
+    <Paper
+      variant="outlined"
+      className={`production-stage-card activity-tone--${tone}${hasError ? ' production-stage-card--error' : ''}`}
+    >
       <Box className="production-stage-card__header">
         <Box className="production-stage-card__identity">
           <span className="production-stage-card__number">{activityType}</span>
@@ -187,15 +277,14 @@ export function StageCard({
             <Typography variant="caption" color="text.secondary">{type.description}</Typography>
           </Box>
         </Box>
-        <TextField
+        <DateField
           label={`${activityType} date`}
-          type="date"
           value={date}
-          onChange={(event) => onDateChange(event.target.value)}
-          slotProps={{ inputLabel: { shrink: true } }}
+          onChange={onDateChange}
           required
           size="small"
           className="production-stage-card__date"
+          {...fieldErrorProps(`${activityType.toLowerCase()}Date`, dateError)}
         />
       </Box>
       <DateOwnerSelector

@@ -22,6 +22,7 @@
     "fn:new": "npm run functions:new --workspace=@valtrimbilling/backend --",
     "fn:deploy": "npm run functions:deploy --workspace=@valtrimbilling/backend --",
     "fn:check": "npm run functions:check --workspace=@valtrimbilling/backend",
+    "fn:test": "npm run functions:test --workspace=@valtrimbilling/backend",
     "types:gen": "npm run types:gen --workspace=@valtrimbilling/backend"
   }
 }

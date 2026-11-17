@@ -36,3 +36,6 @@ docs/architecture.md
 
 # Supabase CLI temporary files created from the repository root
 /supabase/.temp/*
+
+# Private sample documents (real/anonymized PDFs) — never committed
+/fixtures/private/

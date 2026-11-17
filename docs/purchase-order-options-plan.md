@@ -1,0 +1,361 @@
+# Plan técnico: Purchase Orders (options) — análisis, verificación e importación
+
+Estado: **propuesta, sin código escrito.** Los PDFs de ejemplo ya están en
+`fixtures/private/purchase-orders/` (carpeta ignorada por git: son datos reales de contrato).
+
+## 1. Objetivo
+
+1. Al subir un PDF en **Documents → Purchase Orders**, leer las options que trae.
+2. Compararlas contra las options del sistema y **avisar** (nunca bloquear) de cualquier diferencia.
+3. Permitir **crear** las options que falten.
+4. Sugerir (nunca aplicar solo) el precio del PO cuando difiera del sistema.
+5. Al crear un **Package**, mostrar si cada option cargada está respaldada por un PO.
+
+## 2. Lo que traen los PDFs (formato Olson "Vendor Notice")
+
+- Cada página del PDF es un documento independiente (todas dicen "Page 1 of 1"). Un Work Order puede ocupar
+  más de una página (LOT 28: la página 2 es solo el pie). Se separa por el encabezado "Vendor Notice", no por página.
+- Encabezado: `Lot/Unit · Phase · Plan · Tract · Elevation` + `Work Order`.
+- Línea: fecha · code (`2FIN5006`) · Reference# · cantidad · precio unitario · total.
+- Debajo: descripción (1 a 3 líneas), `Stage`, y "Revised on … Cost has changed from $X to $Y".
+- Negativos entre paréntesis: `($14.00)`.
+- Un Work Order puede traer total (LOT 28: `$2,222.00` = 1,935 + 287), útil como checksum.
+
+Resultado esperado de los fixtures (se usará en los tests):
+
+| Archivo | Lot | Phase | Plan | Code | Precio |
+|---|---|---|---|---|---|
+| olson-lot-27.pdf | 27 | MDL | 4 | 2FIN5006 | $81.00 |
+| | 27 | MDL | 4 | 1STR0024 | $1,126.00 |
+| | 27 | MDL | 4 | 2CAB3033 | -$14.00 |
+| olson-lot-28.pdf | 28 | MDL | 2 | 2FIN7002 | $1,935.00 |
+| | 28 | MDL | 2 | 2WRD0009 | $287.00 |
+
+## 3. Cómo encaja con lo que ya existe
+
+- `job_documents` ya acepta `PURCHASE_ORDER` (bucket privado, PDF, 25 MB).
+- El patrón de análisis ya existe: `payment-schedule-analyze` (autoriza con el JWT, descarga con service role,
+  guarda `needs_review`, una persona confirma). Se reutiliza `releasePdf.ts` (`unpdf`/pdf.js) para el texto.
+- Modelo de options: `plan_options` (por **Plan**, code + nombre + descripción), `option_prices` (vigencias),
+  `lot_options` (qué options tiene cada Lot).
+- **Importante:** desde `phase_pinned_prices` cada `lot_options` tiene `option_price_id` fijado. El precio
+  "del sistema" para comparar es el que el Lot **realmente factura** (`lot_options.option_price_id`), y si es
+  `NULL` el precio vigente.
+- Un Plan puede tener el **mismo code más de una vez** si describe trabajos distintos (migración phase 6).
+  Por eso code solo no basta para identificar una option: se desempata con la descripción.
+- Precios negativos y "precio no aplica" ya están soportados.
+
+## 4. Arquitectura
+
+### 4.1 Parser (puro, sin base de datos) — `functions/_shared/purchaseOrder/`
+
+| Archivo | Responsabilidad |
+|---|---|
+| `poTypes.ts` | Tipo canónico `ParsedPurchaseOrder` (igual para cualquier builder) |
+| `poParserOlson.ts` | Parser determinista del formato Olson |
+| `poParsers.ts` | Registro de parsers; detecta el formato por firma de texto ("Vendor Notice", "The Olson Company") |
+| `poNormalize.ts` | Normalización de Phase / Plan / Lot / code / descripción |
+| `poMatch.ts` | Emparejamiento y similitud |
+| `*.test.ts` | Tests con fixtures y con texto sintético |
+
+Tipo canónico (lo único que el resto del sistema conoce):
+
+```
+ParsedPurchaseOrder {
+  parser, pageCount,
+  workOrders: [{ workOrderNo, lotRaw, phaseRaw, planRaw, tract, elevation, declaredTotal,
+    lines: [{ optionCodeRaw, referenceNo, date, revisedOn, quantity, unitPrice, total,
+              descriptionLines[], previousCost }] }],
+  issues: [{ code, message, page?, workOrderNo? }]
+}
+```
+
+Validaciones del parser (generan `issues`, no excepciones): `quantity × unitPrice = total`, suma de líneas =
+total declarado, línea sin code, formato no reconocido.
+
+Otros builders (otro layout, misma información): se añade otro parser que produzca el mismo tipo. Si el
+formato no se reconoce, fallback opcional a **LLM** (Mistral, ya configurado) que devuelve el mismo JSON y se
+verifica que cada code y monto aparezca literalmente en el texto del PDF. Va en la última etapa.
+
+### 4.2 Normalización y similitud
+
+Orden de emparejamiento, siempre de más a menos estricto, **sin elegir en silencio cuando hay duda**:
+
+1. **Normalizado exacto.** Minúsculas, sin acentos/puntuación, se quitan las palabras `phase`, `fase`, `ph`,
+   `plan`, `lot`, `unit`, `#` y ceros a la izquierda; singular/plural. `Model`, `Models`, `MDL` →
+   alias de modelo; `Phase 4` y `4` → `4`.
+2. **Alias aprendidos** por Job (tabla `purchase_order_aliases`): si un usuario resuelve a mano "Models → MDL",
+   se recuerda para los siguientes PDFs.
+3. **Similitud** (coeficiente de Dice sobre tokens/bigramas) con umbral. Si hay **un único** candidato sobre el umbral
+   alto se propone como "sugerido"; si hay empate o queda bajo el umbral, el usuario elige de una lista.
+4. El **Lot** se desambigua con el Plan: el mismo número de lot puede existir en dos Phases.
+
+Para las **options**:
+
+- **Code:** mayúsculas y sin separadores (`2FIN-5006` = `2FIN5006`).
+- **Descripción** (punto 4 de tus respuestas): se normaliza y se compara por similitud. Se usa para
+  (a) desempatar cuando hay varios `plan_options` con el mismo code, y
+  (b) avisar cuando el code coincide pero el trabajo parece otro (similitud baja).
+  Para el nombre de una option nueva se usa la primera línea de la descripción del PO, y el resto va como descripción.
+
+### 4.3 Base de datos (una migración, mismo estilo que `payment_schedule_templates`)
+
+- `valtrim.purchase_order_analyses` — una fila por `job_documents` (`unique`, `on delete cascade`).
+  Estados `analyzing | needs_review | reviewed | failed | not_option_po`, `parser`, `page_count`, `issues jsonb`,
+  `error`, `requested_by`, `analyzed_at`. Un trigger valida que el documento sea `PURCHASE_ORDER`.
+- `valtrim.purchase_order_lines` — una fila por línea del PO: Work Order, lot/phase/plan crudos, code crudo y
+  normalizado, Reference#, fechas, cantidad, precio unitario, total, descripción, y los ids resueltos
+  (`lot_id`, `plan_id`, `plan_option_id`) que se rellenan al emparejar o al resolver a mano.
+  No se guarda el texto completo del PDF (mismo criterio que los otros análisis).
+- `valtrim.purchase_order_aliases` — alias aprendidos por Job (tipo, valor normalizado, destino).
+- **Vista `purchase_order_current_lines`:** deja una sola línea por (Lot, code) — la **más reciente** por
+  `revised_on`, luego `po_date`, luego `reference_no` (es creciente). Así "gana la revisión más nueva" y los
+  PDFs viejos se conservan como historial. Subir dos veces el mismo PDF es idempotente (clave Work Order + Reference#).
+- **RPC de comparación** `valtrim.compare_purchase_orders(p_job_id)`: calcula en el momento (no se guarda, porque
+  los precios cambian) y devuelve por línea el estado:
+
+| Estado | Condición |
+|---|---|
+| `MATCH` | Code existe en el Plan, está en el Lot, mismo precio |
+| `PRICE_DIFF` | Mismo code, precio distinto (sistema vs PO) |
+| `MISSING_OPTION` | El Plan no tiene esa option → se puede crear |
+| `NOT_IN_LOT` | Existe en el Plan, pero el Lot no la tiene en `lot_options` |
+| `HEADER_UNRESOLVED` | Lot/Phase/Plan del PDF no se pudo emparejar → el usuario elige |
+| `AMBIGUOUS_OPTION` | Varios `plan_options` con ese code y descripción poco clara |
+| `NO_PO` (inversa) | El Lot tiene el PO cargado pero esta option del sistema no aparece en él |
+
+  La inversa solo se evalúa en Lots **que ya tienen al menos un PO**; los Lots sin ningún PO se resumen aparte
+  ("12 lots sin PO") para no llenar de falsas alarmas.
+- **RPC de importación** `valtrim.import_purchase_order_options(p_line_ids bigint[])` (`security definer`,
+  solo ADMIN y PROJECT_MANAGEMENT): en una transacción crea `plan_options`, su precio (con `set_option_price`)
+  y la fila de `lot_options` con el precio fijado. Idempotente. **Salta y reporta** los Lots cuyo Phase ya tiene
+  Packages facturados.
+- **Permisos:** el análisis lo dispara ADMIN / ACCOUNTING / PROJECT_MANAGEMENT (como Payment Schedules);
+  los navegadores nunca escriben las tablas, solo la edge function (service role) y las RPC. La lectura de
+  precios de PO sigue la misma regla que hoy rige los precios de options (se verifica antes de implementar).
+
+### 4.4 Edge function `purchase-order-analyze`
+
+Copia el esqueleto de `payment-schedule-analyze`: JWT + rol → descarga el PDF privado con service role →
+`parsePurchaseOrder` → empareja → guarda `needs_review` → nada del documento se loguea.
+Entrada: `{ job_document_id, force? }`. Si el PDF no se reconoce como PO de options (por ejemplo una matriz de
+PO de pagos), termina en `not_option_po` sin error.
+
+### 4.5 Frontend — `features/purchase-orders/`
+
+- **Documents → Purchase Orders:** tras subir, se dispara el análisis. Cada archivo muestra un chip
+  ("5 lines · 1 price differs · 1 to review") y un botón **Review**.
+- **Diálogo de revisión** por PO: tabla Lot / Code / Descripción / Precio PO / Precio sistema / Estado.
+  Encabezados sin resolver → selector con la sugerencia preseleccionada. Acciones por fila:
+  - **Create option** (y asignarla al Lot) cuando falta; también "Create all missing" con confirmación.
+  - **Use PO price** cuando el precio difiere: es una **sugerencia** con un diálogo de confirmación.
+- **Packages (`SelectableOptionsTable`):** insignia por option (Respaldada por PO / Precio distinto / Sin PO) y
+  un aviso arriba con los conteos. Solo informa; nunca deshabilita el botón de crear.
+
+## 5. Decisión de diseño que necesito que confirmes: "Usar precio del PO"
+
+El precio de una option es **por Plan**, y cada Lot lo tiene **fijado** (`pinned`) desde que se creó su Phase.
+Entonces "Use PO price" no es un simple update. Propongo un diálogo de dos pasos, ambos explícitos:
+
+1. Fijar el nuevo precio de la option con `set_option_price` (afecta a los Phases que se creen **después**).
+2. Aplicarlo al Lot de este PO con el flujo que ya existe, `preview_phase_price_changes` /
+   `apply_phase_price_changes`, que exige un motivo (se pre-llena con "Purchase Order <Work Order>") y no toca
+   lo que ya se facturó.
+
+Si dos POs del mismo Plan traen precios distintos para el mismo code, el diálogo lo advierte, porque el paso 1
+cambiaría el precio de todo el Plan.
+
+## 6. Pruebas
+
+- **Deno:** parser contra los 2 fixtures (valores de la tabla de arriba, checksum de $2,222.00, negativo
+  `($14.00)`, separación por "Vendor Notice"); normalización (`Model/Models/MDL`, `Phase 4/4`, `Lot 027/27`);
+  similitud de descripciones; texto sintético sin datos reales para que corra en CI aun sin los fixtures privados.
+- **pgTAP:** cada estado de comparación, la vista de "más reciente gana", idempotencia de la importación,
+  salto de Phases ya facturados, permisos por rol.
+- **Frontend:** mapeadores de registros y la lógica de insignias.
+
+## 7. Etapas (cada una es una feature cerrable)
+
+| # | Etapa | Entrega |
+|---|---|---|
+| 1 | Parser Olson + normalización + tests | Código puro, sin tocar base ni UI |
+| 2 | Migración + edge function + RPC de comparación + pgTAP | Análisis guardado y comparable |
+| 3 | UI de revisión en Documents | Ver líneas, estados, resolver encabezados |
+| 4 | Importar options faltantes | RPC + diálogo |
+| 5 | "Use PO price" (sugerencia en dos pasos) | Diálogo + reuso de recalculation |
+| 6 | Insignias en Packages | Aviso informativo |
+| 7 | Segundo builder / fallback LLM | Cuando llegue el primer PDF de otro layout |
+
+## 8. Decisiones tomadas
+
+1. **Purchase Orders = solo POs de options.** Las Payment Schedules / PO Matrix van en su propia sección.
+   Un PDF que no sea un PO de options termina en `not_option_po`, nunca en un error.
+2. **El precio de una option es por Plan.** No puede costar distinto en Lots distintos. Si dos POs del mismo
+   Plan traen precios distintos para el mismo code, es una discrepancia del PO y se avisa.
+3. **Phases con Packages facturados:** la importación no las toca; se saltan y se reportan.
+4. **Nombres reales del sistema:** la Phase se llama `MODELS` (el PDF dice `MDL`) y el Plan es **Plan + Elevation**
+   (`4` + `B` = `4B`; la plataforma no maneja elevation por separado).
+5. **Los precios del PO los ven los mismos roles que ya ven precios de options.**
+6. **Stage del PO:** se ignora.
+7. **Otros builders:** otro layout, misma información → un parser por builder sobre el mismo tipo canónico.
+
+## 9. Avance
+
+| Etapa | Estado |
+|---|---|
+| 1. Parser Olson + normalización + emparejamiento + tests | **Hecha** (`_shared/purchaseOrder*.ts`, 17 tests) |
+| 2. Migración + edge function + RPC de comparación | **Hecha** (sin aplicar ni desplegar; ver notas) |
+| 3. UI de revisión en Documents | **Hecha** (`features/purchase-orders`; la edge function necesita un nuevo despliegue) |
+| 4. Importar options faltantes | **Hecha** (migración `20261026120000`; sin aplicar) |
+| 5. "Use PO price" | **Hecha** (migración `20261027120000`; sin aplicar) |
+| 6. Insignias en Packages | **Hecha** (solo frontend) |
+| 7. Segundo builder / fallback LLM | Pendiente |
+
+Notas de la etapa 1:
+
+- Con los PDFs reales apareció que "Revised by …" comparte fila con la primera línea de la descripción; el
+  parser lo separa.
+- `MDL` → `MODELS` se resuelve como **sugerida** (abreviatura), no como coincidencia automática: el revisor la
+  confirma una vez y queda como alias del Job. `Model` y `Models` sí coinciden solos (singular/plural).
+- Los Plans y los Lots nunca se emparejan por parecido (`4B` no se confunde con `4C`).
+
+Notas de la etapa 2:
+
+- Migración `20261025120000_purchase_order_analyses.sql`: `purchase_order_analyses`, `purchase_order_lines`,
+  `purchase_order_aliases`, la vista `purchase_order_current_lines` (la revisión más reciente gana),
+  `save_purchase_order_analysis` (solo `service_role`, reemplaza las líneas en una transacción),
+  `compare_purchase_orders(job_id)` y `purchase_order_uncovered_options(job_id)` (con los permisos de quien llama).
+- El análisis termina en `analyzed`, `failed` o `not_option_po` (un PDF que no es PO de options es un resultado,
+  no un error). No hay paso de confirmación: la comparación siempre es en vivo.
+- Estados de la comparación: `HEADER_UNRESOLVED`, `PLAN_MISMATCH`, `MISSING_OPTION`, `AMBIGUOUS_OPTION`,
+  `NOT_IN_LOT`, `PRICE_DIFF`, `MATCH`, más `conflicting_po_prices` (POs del mismo Plan con precios distintos).
+- El encabezado del PO se empareja con el Lot en la edge function (`purchaseOrderResolve.ts`); el Lot manda y su
+  Plan es el que se compara. Si el Plan impreso no coincide con el del Lot, queda `PLAN_MISMATCH`.
+- Una Phase repetida en varios buildings se distingue por el número de Lot y el Plan.
+- Pendiente para la etapa 3: la similitud de descripción (umbral 0.5) se calibrará con nombres reales del sistema,
+  que suelen ser más largos que lo que imprime el PO.
+
+Notas de la etapa 3:
+
+- La tarjeta de Purchase Orders muestra por PDF su estado ("Analyzing…", "3 to review", "All match",
+  "Not a PO of options") y un botón Analyze / Review. Subir un PO abre la revisión de inmediato (en cola si son varios).
+- El diálogo compara cada opción del PDF con el sistema (tabla por work order) y lista las options que el sistema
+  tiene en esos Lots y ningún PO cubre. Solo informa.
+- "Confirm match" acepta un encabezado sugerido (MDL → MODELS) y lo recuerda como alias del Job; "Match again"
+  vuelve a emparejar las líneas con los Lots del Job sin leer el PDF. Ambas acciones viven en la edge function
+  (`action: 'confirm_header' | 'rematch'`) porque la normalización está ahí.
+- Fuera de esta etapa: elegir a mano el Lot de un encabezado sin resolver y elegir una option cuando varias
+  comparten el código (se muestran con su explicación).
+
+Notas de la etapa 4:
+
+- `valtrim.import_purchase_order_options(line_ids[])` (solo ADMIN y PROJECT_MANAGEMENT, una transacción):
+  `MISSING_OPTION` crea la option en el Plan (nombre = primera línea del PDF, descripción = el resto, precio = el del PDF)
+  y la selecciona para el Lot; `NOT_IN_LOT` solo la selecciona al precio que el Plan tiene hoy. Un precio distinto en
+  el PDF no se aplica aquí (etapa 5).
+- Se omite y se reporta, sin adivinar: Lot solo sugerido (`header_not_confirmed`), línea ya importada o reemplazada,
+  Lot de utility building, Job/Phase/Plan inactivo, Phase con Packages ya facturados (`phase_billed`) y option sin precio.
+- La misma option faltante en varios Lots del mismo Plan se crea una sola vez. Un bloqueo asesor por Job evita
+  duplicados si dos personas importan a la vez.
+- UI: botón "Add missing options (N)" y un "Add" por fila, ambos abren un diálogo de confirmación donde se puede
+  quitar cualquier línea antes de escribir.
+
+Notas de la etapa 5:
+
+- `valtrim.use_purchase_order_price(line_ids[], reason, remove_documents)` (solo ADMIN y PROJECT_MANAGEMENT, una
+  transacción): (1) el precio de la option en su Plan pasa a ser el del PDF con `set_option_price` (si el Plan ya lo
+  tiene no se toca), y (2) los Lots elegidos se mueven a ese precio con `apply_phase_price_changes`, el mismo paso de
+  la pantalla de Pricing: pide un motivo, recalcula los Draft Packages que facturan la option, deja intactos los
+  Packages emitidos y registra la diferencia pendiente. Si el paso 2 falla, el paso 1 se deshace.
+- Una option tiene un solo precio por Plan: todas las líneas de una llamada deben ser de la misma option y el mismo
+  precio. El diálogo ofrece, sin marcarlos, los demás Lots del Plan cuyo PO imprime ese mismo precio.
+- Repetir la llamada no cambia nada (las líneas que ya coinciden se omiten). Es siempre una sugerencia: nada cambia
+  hasta confirmar con un motivo.
+- Si un Draft Package tiene Release o Payment Schedule generados, el diálogo pide un "sí" explícito para quitarlos
+  (error `P0003` del paso 2) y vuelve a intentar.
+
+Notas de la etapa 6:
+
+- Solo frontend: reutiliza `compare_purchase_orders(job)`; no hay migración ni despliegue.
+- En el diálogo de **crear un Package** (tabla de options) y en el **detalle del Package** aparece una columna
+  "Purchase Order" con una insignia por option: "In the PO" (el PO la imprime al mismo precio), "PO price differs",
+  "Not in the PO" (el Lot tiene PO y no la imprime) o "No PO" (el Lot no tiene PO).
+- Se compara el precio que muestra la fila del Package (el del Lot al crearlo, el snapshot en uno emitido), no el
+  precio de hoy. Un precio NA coincide con un PDF que imprime $0.
+- Al crear, un aviso cuenta las options seleccionadas que el PO no respalda. Solo informa: nunca bloquea el botón.
+- Un Job sin ningún PO no ve la columna ni el aviso.
+
+### 9.1 Plan: la R (reverse) y las especificaciones no cambian el Plan
+
+Con POs reales apareció que el PO imprime el Plan y la elevación aparte, a veces con una **R** (reverse, el mismo Plan
+en espejo): `1` + `CR`, `2` + `B-R`, `4` + `CR`. El sistema lo llama `1C`, `2B STC32`, `4C`. Esas líneas quedaban en
+`PLAN_MISMATCH` y su comparación no se hacía.
+
+- `planParts` (`purchaseOrderNormalize.ts`) separa un Plan en número, elevación y ADA: ignora la R tras la elevación y lo
+  que el sistema agrega después (`STC32`, `B200A`). `planFitsLotPlan` (`purchaseOrderMatch.ts`) dice si lo impreso es el
+  Plan del Lot.
+- `resolveHeader` la usa para verificar el Lot y para desempatar Lots con el mismo número en distintos buildings. Si el
+  Plan encaja, la cabecera queda `resolved` sin pedir confirmación.
+- Sigue siendo `PLAN_MISMATCH` cuando cambia el número, la letra de elevación o la versión ADA (`3` + `AR ADA` contra
+  `3B-ADA`). Un Plan que el sistema nombra sin elevación (`3`) sigue quedando `suggested`, como antes.
+- Las líneas ya guardadas se corrigen con "Match again" (acción `rematch`), después de desplegar `purchase-order-analyze`.
+
+## 10. Aviso por correo al agregar options (extra)
+
+Cuando una importación agrega options al Sequence Sheet, se ofrece avisar por correo a **Purchasing** y al **Job
+Coordinator** (los de la tabla `people` del Job):
+
+- Al terminar la importación se abre "Tell Purchasing and the Job Coordinator?" con la **vista previa del correo**
+  (el HTML tal como saldrá), el asunto editable y los destinatarios precargados como chips. Se quita uno con ✕ y se
+  agrega cualquiera escribiendo el correo y pulsando Enter o coma (se pegan varios a la vez; máximo 10).
+- No se envía nada hasta pulsar "Send email". "Don't send" deja las options agregadas y no avisa a nadie.
+- Si Purchasing o el Job Coordinator no tienen correo registrado, el diálogo lo dice y se puede escribir otro.
+- El correo lista, por Lot, cada option agregada con su descripción y el Work Order del PO que la imprimió,
+  marcando las que se crearon como options nuevas del Plan. No muestra precios.
+- Migración `20261028120000`: la importación ahora devuelve `added` (qué option quedó en qué Lot), para que el correo
+  diga exactamente lo que cambió.
+- Edge function `purchase-order-options-email` (`preview` / `send`, solo ADMIN y PROJECT_MANAGEMENT). El navegador solo
+  dice qué (Lot, option) se agregó; todo lo demás se lee en el servidor con los permisos del usuario y se descarta lo
+  que no esté realmente en el Sequence Sheet. Envía con Resend y reutiliza los secrets del correo del Sequence Sheet
+  (`PURCHASE_ORDER_OPTIONS_FROM_EMAIL` / `_REPLY_TO` si existen; si no, `SEQUENCE_SHEET_*` y luego `FOLLOW_UP_*`).
+  Usa una clave de idempotencia por apertura del diálogo: reintentar tras un fallo no duplica el correo.
+
+### 10.1 Aviso también al quitar una option del Sequence Sheet
+
+Al **editar un Phase** y quitar una o más options de un Lot (desmarcarlas, o cambiar el Plan del Lot, lo que
+suelta las del Plan anterior), se ofrece el mismo aviso a Purchasing y al Job Coordinator, con la misma vista
+previa, los mismos destinatarios precargados (que se pueden quitar o ampliar) y el mismo "Send email" / "Don't send":
+
+- La pantalla compara el Phase antes y después de guardar (`removedOptionChanges`) y manda solo los pares (Lot,
+  option) quitados. Todo lo demás lo lee el servidor; un par que siga seleccionado no entra en el correo.
+- Un Lot que se elimina por completo no genera aviso: el correo habla de options y el Lot ya no está para describirlo.
+- Nueva edge function `sequence-sheet-options-removed-email`. Las dos funciones de aviso (`added` y `removed`) comparten
+  `_shared/optionsEmailRequest.ts`; el cuerpo de la petición pasó de `additions` a `changes`, así que **las dos
+  funciones y el frontend deben desplegarse juntos**.
+- El correo dice "Options removed from the Sequence Sheet", sin referencia a Purchase Order, y "If they were already
+  ordered, the order may need to change."
+
+### 10.2 Aviso también al agregar una option editando un Phase
+
+Al guardar la edición de un Phase que ya existía y que **agrega options a un Lot** (marcarlas en el Phase, o
+cambiar el Plan del Lot, que trae las del Plan nuevo), se ofrece el mismo aviso que al agregarlas desde un PO:
+misma vista previa, mismos destinatarios precargados (Purchasing y Job Coordinator, editables) y mismo "Send email" /
+"Don't send".
+
+- La pantalla compara el Phase antes de editar con el que quedó guardado (`addedOptionChanges`); así también cuenta un
+  Lot nuevo creado en la misma edición, con todas sus options. Un Lot que se elimina no genera aviso.
+- Nueva edge function `sequence-sheet-options-added-email` (tipo `added_manually`). El correo dice "N options were
+  added to the Sequence Sheet of this Job." y, a diferencia del de un PO, **no** cita Purchase Order ni marca
+  "New option".
+- Si una edición agrega y quita options a la vez, salen dos avisos, uno tras otro: primero el de agregadas y luego el
+  de quitadas.
+- Resumen de los tres avisos: `added` (desde un PO), `added_manually` (editando un Phase) y `removed`; los tres
+  comparten `_shared/optionsEmailRequest.ts`, y hay que desplegar sus tres funciones juntas.
+
+### 10.3 Ajustes de los tres correos
+
+- **Sin precios:** ninguno de los tres correos (options agregadas desde un PO, agregadas editando un Phase y quitadas)
+  muestra precio, ni columna ni monto. La tabla queda con Lot, Plan y las options; el servidor tampoco lee ni recibe
+  precios para armarlos.
+- **Color del encabezado según lo que pasó:** verde (`#16a34a`) cuando se agregan options, desde un PO o editando un
+  Phase, y rojo (`#dc2626`) cuando se quitan. Antes era azul en todos.

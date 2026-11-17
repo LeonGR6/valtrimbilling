@@ -1,4 +1,6 @@
 import { z } from 'zod'
+import { MAX_ELEVATION_LENGTH } from '../utils/lotElevation.js'
+import { MAX_LOCATION_LENGTH, MAX_OPTION_QUANTITY } from '../utils/optionDetails.js'
 import {
   normalizeBuildingCode,
   normalizePhaseCode,
@@ -12,32 +14,59 @@ const phaseCodeSchema = z
   .string()
   .trim()
   .min(1, 'Enter a phase number or code.')
-  .max(100, 'Use 100 characters or fewer.')
+  .max(40, 'Use 40 characters or fewer.')
   .transform(normalizePhaseCode)
   .refine((value) => value.length > 0, 'Enter a phase number or code.')
 
+// A Phase does not need a Building: empty stays empty.
 const buildingCodeSchema = z
   .string()
   .trim()
-  .min(1, 'Enter a building number or code.')
   .max(50, 'Use 50 characters or fewer.')
   .transform(normalizeBuildingCode)
-  .refine((value) => value.length > 0, 'Enter a building number or code.')
+
+// The quantity and places of the Options that are more than one unit or have a place, by Option id.
+const optionDetailSchema = z.object({
+  quantity: z.coerce
+    .number()
+    .int('Use a whole number.')
+    .min(1, 'The quantity is at least 1.')
+    .max(MAX_OPTION_QUANTITY, `The quantity is at most ${MAX_OPTION_QUANTITY}.`),
+  locations: z.array(
+    z.string().trim().min(1, 'Enter a location.').max(MAX_LOCATION_LENGTH, `Use ${MAX_LOCATION_LENGTH} characters or fewer.`),
+  ),
+})
 
 const lotAssignmentSchema = z.object({
   id: z.union([z.string(), z.number()]).optional(),
   lotNumber: z
     .string()
     .trim()
-    .min(1, 'Enter a lot number.')
     .max(30, 'Use 30 characters or fewer.')
     .transform((value) => value.toUpperCase()),
+  utilityName: z
+    .string()
+    .trim()
+    .max(80, 'Use 80 characters or fewer.')
+    .optional(),
   planId: z.coerce.number().int().positive('Select a plan.'),
   reverse: z.boolean(),
+  elevation: z
+    .string()
+    .trim()
+    .max(MAX_ELEVATION_LENGTH, `Use ${MAX_ELEVATION_LENGTH} characters or fewer.`)
+    .transform((value) => value.toUpperCase())
+    .default(''),
   optionIds: z.array(z.coerce.number().int().positive()),
+  optionDetails: z.record(z.string(), optionDetailSchema).optional(),
+  isUtilityBuilding: z.boolean().default(false),
 })
 
-export function createPhaseByLotSchema(job, currentPhaseId) {
+export function createPhaseByLotSchema(
+  job,
+  currentPhaseId,
+  utilityBuildingRequired = false,
+) {
   const phases = job.sequenceSheet?.phases ?? []
   const plans = job.sequenceSheet?.plans ?? []
 
@@ -47,36 +76,94 @@ export function createPhaseByLotSchema(job, currentPhaseId) {
       building: buildingCodeSchema,
       lots: z
         .array(lotAssignmentSchema)
-        .min(1, 'Add at least one lot.')
-        .max(500, 'A phase can contain up to 500 lots.'),
+        .min(1, 'Add at least one row.')
+        .max(500, 'A phase can contain up to 500 rows.'),
     })
     .superRefine((data, context) => {
       if (
         phases.some(
           (phase) =>
             phase.id !== currentPhaseId &&
-            normalizePhaseCode(phase.name) === normalizePhaseCode(data.phaseName),
+            normalizePhaseCode(phase.name) === normalizePhaseCode(data.phaseName) &&
+            normalizeBuildingCode(phase.building) === normalizeBuildingCode(data.building),
+        )
+      ) {
+        // The same Phase code may be used by several Buildings; only the pair repeats.
+        context.addIssue({
+          code: 'custom',
+          path: ['building'],
+          message: data.building
+            ? 'This phase and building already exist for the selected Job.'
+            : 'This phase already exists for the selected Job.',
+        })
+      }
+
+      // One Phase code is used with Buildings or without them in a Job, never both.
+      const usesBuilding = (phase) => normalizeBuildingCode(phase.building).length > 0
+      if (
+        phases.some(
+          (phase) =>
+            phase.id !== currentPhaseId &&
+            normalizePhaseCode(phase.name) === normalizePhaseCode(data.phaseName) &&
+            usesBuilding(phase) !== (data.building.length > 0),
         )
       ) {
         context.addIssue({
           code: 'custom',
-          path: ['phaseName'],
-          message: 'This phase already exists for the selected Job.',
+          path: ['building'],
+          message: data.building
+            ? 'This phase is already used without a building in this Job. Use no building for every row of it.'
+            : 'This phase is already used with a building in this Job. Enter the building.',
+        })
+      }
+
+      if (
+        utilityBuildingRequired
+        && !data.lots.some((lot) => lot.isUtilityBuilding)
+      ) {
+        context.addIssue({
+          code: 'custom',
+          path: ['lots'],
+          message: 'Add at least one Utility Building row to this phase.',
         })
       }
 
       const usedLots = new Set()
 
       data.lots.forEach((lot, index) => {
+        if (lot.isUtilityBuilding && !lot.utilityName?.length) {
+          context.addIssue({
+            code: 'custom',
+            path: ['lots', index, 'utilityName'],
+            message: 'Enter a Utility name.',
+          })
+        }
+
+        if (!lot.isUtilityBuilding && lot.lotNumber.length === 0) {
+          context.addIssue({
+            code: 'custom',
+            path: ['lots', index, 'lotNumber'],
+            message: 'Enter a lot number.',
+          })
+        }
+
+        if (lot.isUtilityBuilding && lot.optionIds.length > 0) {
+          context.addIssue({
+            code: 'custom',
+            path: ['lots', index],
+            message: 'Utility Building rows cannot include Options.',
+          })
+        }
+
         const normalizedLot = normalized(lot.lotNumber)
-        if (usedLots.has(normalizedLot)) {
+        if (!lot.isUtilityBuilding && usedLots.has(normalizedLot)) {
           context.addIssue({
             code: 'custom',
             path: ['lots', index, 'lotNumber'],
             message: 'Each lot can only appear once in the phase.',
           })
         }
-        usedLots.add(normalizedLot)
+        if (!lot.isUtilityBuilding) usedLots.add(normalizedLot)
 
         const selectedPlan = plans.find((plan) => plan.id === lot.planId)
         if (!selectedPlan) {
@@ -97,6 +184,23 @@ export function createPhaseByLotSchema(job, currentPhaseId) {
             path: ['lots', index, 'optionIds'],
             message: 'An option does not belong to the selected plan.',
           })
+        }
+
+        const selectedIds = new Set(lot.optionIds.map(String))
+        for (const [optionId, detail] of Object.entries(lot.optionDetails ?? {})) {
+          if (!selectedIds.has(optionId)) {
+            context.addIssue({
+              code: 'custom',
+              path: ['lots', index, 'optionDetails'],
+              message: 'A quantity or location belongs to an option that is not selected.',
+            })
+          } else if (detail.locations.length > detail.quantity) {
+            context.addIssue({
+              code: 'custom',
+              path: ['lots', index, 'optionDetails'],
+              message: 'An option cannot have more locations than its quantity.',
+            })
+          }
         }
       })
     })

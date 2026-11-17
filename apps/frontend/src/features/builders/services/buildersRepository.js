@@ -2,6 +2,7 @@ import { requireSupabase } from '../../../services/api.js'
 import {
   defaultBuilderDateConfiguration,
   normalizeBuilderDateConfiguration,
+  toBuilderDateConfigurationRpc,
 } from '../data/builders.js'
 
 const BUILDER_COLUMNS = [
@@ -9,7 +10,12 @@ const BUILDER_COLUMNS = [
   'code',
   'name',
   'description',
-  'address',
+  'address_line1',
+  'address_line2',
+  'city',
+  'state',
+  'zip_code',
+  'country',
   'contact_name',
   'contact_email',
   'contact_phone',
@@ -29,7 +35,12 @@ function toCatalogMutation(builder) {
     code: builder.code.trim().toUpperCase(),
     name: builder.name.trim(),
     description: optionalValue(builder.description),
-    address: optionalValue(builder.address),
+    address_line1: optionalValue(builder.addressLine1),
+    address_line2: optionalValue(builder.addressLine2),
+    city: optionalValue(builder.city),
+    state: optionalValue(builder.state),
+    zip_code: optionalValue(builder.zipCode),
+    country: builder.country || 'US',
     contact_name: optionalValue(builder.contactName),
     contact_email: optionalValue(builder.contactEmail),
     contact_phone: optionalValue(builder.contactPhone),
@@ -43,7 +54,12 @@ function toBuilder(row) {
     code: row.code,
     name: row.name,
     description: row.description ?? '',
-    address: row.address ?? '',
+    addressLine1: row.address_line1 ?? '',
+    addressLine2: row.address_line2 ?? '',
+    city: row.city ?? '',
+    state: row.state ?? '',
+    zipCode: row.zip_code ?? '',
+    country: row.country ?? 'US',
     contactName: row.contact_name ?? '',
     contactEmail: row.contact_email ?? '',
     contactPhone: row.contact_phone ?? '',
@@ -65,6 +81,10 @@ function throwRepositoryError(error) {
 
   if (error.code === '42501') {
     throw new Error('You do not have permission to change builders.', { cause: error })
+  }
+
+  if (error.code === '23503' || error.code === 'P0002') {
+    throw new Error('The selected builder is no longer available.', { cause: error })
   }
 
   throw new Error(error.message || 'The builders request failed.', { cause: error })
@@ -129,16 +149,17 @@ export async function deactivateBuilder(builderId) {
 
 export async function updateBuilderDateConfiguration(builderId, configuration) {
   const client = await requireSupabase()
-  const normalized = normalizeBuilderDateConfiguration(configuration)
+  const { error: saveError } = await client.rpc(
+    'save_builder_date_configuration',
+    toBuilderDateConfigurationRpc(builderId, configuration),
+  )
+
+  throwRepositoryError(saveError)
+
   const { data, error } = await client
     .from('builders')
-    .update({
-      ext_to_dm_weeks: normalized.extToDmWeeks,
-      shutter_before_dm_weeks: normalized.shutterBeforeDmWeeks,
-      dm_to_hw_weeks: normalized.dmToHwWeeks,
-    })
-    .eq('id', builderId)
     .select(BUILDER_COLUMNS)
+    .eq('id', builderId)
     .single()
 
   throwRepositoryError(error)

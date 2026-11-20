@@ -73,7 +73,21 @@ export function proposalDraftHasChanges(values, baseline) {
 // arrival window. If the work time is unknown, the whole arrival window stays busy.
 export function getPrototypeTechnicianAgenda(requests, technicianIds, date, technicians = prototypeTechnicians) {
   const ids = new Set(technicianIds)
+  const nameOf = (id) => technicians.find((person) => String(person.id) === id)?.name ?? 'Unknown technician'
   return requests.flatMap((request) => {
+    // A sent proposal holds each offered day for its technicians until the customer answers.
+    if (request.proposalHolds?.length) {
+      return request.proposalHolds.filter((hold) => hold.date === date).flatMap((hold) => hold.technicianIds
+        .filter((id) => ids.has(id))
+        .map((id) => ({
+          requestId: request.id, requestNumber: request.requestNumber, technicianId: id, technicianName: nameOf(id),
+          stage: 'AWAITING_CUSTOMER', date, customerWindow: { date, start: hold.windowStart, end: hold.windowEnd },
+          internalSlot: { start: hold.start, end: hold.end },
+          start: hold.start, end: timeFromMinutes(minutes(hold.end) + hold.pickupMinutes),
+          windowUncertain: false, timingUncertain: false, blocksAvailability: true,
+          issue: request.issue || request.description || '', proposalOption: hold.optionNumber,
+        })))
+    }
     const stage = effectiveRequestWorkflowStage(request)
     const assignedIds = assignedPrototypeTechnicianIds(request, technicians).filter((id) => ids.has(id))
     if (!assignedIds.length || !busyStages.includes(stage)) return []
@@ -92,7 +106,7 @@ export function getPrototypeTechnicianAgenda(requests, technicianIds, date, tech
     const occupiedEnd = hasInternalSlot ? end + prototypePickupMinutes : (hasWindow ? windowEnd : null)
     return assignedIds.map((id) => ({
       requestId: request.id, requestNumber: request.requestNumber,
-      technicianId: id, technicianName: technicians.find((person) => String(person.id) === id)?.name ?? 'Unknown technician', stage,
+      technicianId: id, technicianName: nameOf(id), stage,
       date: validDate(entryDate) ? entryDate : null,
       customerWindow: request.customerWindow ?? null,
       internalSlot: hasInternalSlot ? { start: request.internalSlot.start, end: request.internalSlot.end } : null,
@@ -256,7 +270,9 @@ export function validatePrototypeProposalDraft({ requestId, values, requests, te
 
 // Body for the customer-service-appointments Edge Function, which revalidates it.
 // Only the travel legs of this sequence are sent, and all of them are known.
-export function buildAppointmentRegistration({ request, values, validation, acceptance }) {
+// confirmationEmail ({ greeting, message }) asks the server to email the customer a
+// confirmation after registering (block B, step B4, path a); without it, none is sent.
+export function buildAppointmentRegistration({ request, values, validation, acceptance, confirmationEmail = null }) {
   return {
     requestId: Number(request.id),
     expectedRequestUpdatedAt: request.updatedAt,
@@ -267,7 +283,26 @@ export function buildAppointmentRegistration({ request, values, validation, acce
     travelMinutes: Object.fromEntries(validation.travelLegs
       .filter((leg) => leg.minutes !== null).map((leg) => [leg.key, leg.minutes])),
     acceptance,
+    ...(confirmationEmail ? { confirmationEmail } : {}),
   }
+}
+
+// What the coordinator reads after registering: the visit is always saved; the
+// confirmation email may have been sent, failed or not been sent.
+export function registrationNotice(requestNumber, result) {
+  const registered = `${requestNumber} was registered as a confirmed appointment and appears in Calendar.`
+  const confirmation = result?.confirmation
+  if (!confirmation) return { severity: 'success', message: registered }
+  if (confirmation.status === 'SENT') {
+    return {
+      severity: 'success',
+      message: `${registered} The confirmation was emailed to ${confirmation.to}${confirmation.testMode ? ' (test inbox)' : ''}.`,
+    }
+  }
+  if (confirmation.status === 'FAILED') {
+    return { severity: 'warning', message: `${registered} The confirmation email failed: ${confirmation.message}` }
+  }
+  return { severity: 'warning', message: `${registered} ${confirmation.message}` }
 }
 
 export function createPrototypeProposalDraft({ requestId, values, requests, technicians = prototypeTechnicians, now = new Date() }) {
@@ -315,9 +350,10 @@ export const proposalSuggestionStepMinutes = 5
 // listed, earliest first, using the same validator as the form. "Earliest available"
 // uses it; the planner's own "Suggested times" section was removed in block R5.
 // fromDate (default today) is the first day searched; the overdue search counts its
-// business days from there.
+// business days from there. skipDates are searched past, still counting as business days.
 export function suggestProposalTimes({
   requestId, values, requests, technicians = prototypeTechnicians, now = new Date(), limit = 3, fromDate = null,
+  skipDates = [],
 }) {
   const request = requests.find((entry) => String(entry.id) === String(requestId))
   const current = validatePrototypeProposalDraft({ requestId, values, requests, technicians, now })
@@ -339,6 +375,7 @@ export function suggestProposalTimes({
     businessDays += 1
     if (!onTimeUntil && businessDays > proposalSuggestionSearchBusinessDays) break
     searchedThrough = date
+    if (skipDates.includes(date)) continue
 
     for (const window of serviceCustomerWindowOptions) {
       for (let start = minutes(window.start); start < minutes(window.end); start += proposalSuggestionStepMinutes) {

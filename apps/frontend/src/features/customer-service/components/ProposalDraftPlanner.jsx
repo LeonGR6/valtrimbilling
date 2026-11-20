@@ -1,13 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
-  Alert, Box, Button, Chip, Dialog, DialogActions, DialogContent, DialogTitle, FormControl, FormControlLabel,
-  FormHelperText, InputLabel, MenuItem, Paper, Radio, RadioGroup, Select, Stack, TextField, Typography,
+  Alert, Box, Button, Chip, FormControl, FormHelperText, InputLabel, MenuItem, Paper, Select, Stack, TextField, Typography,
 } from '@mui/material'
 import { serviceCustomerWindowOptions } from '../data/serviceCalendarEvents.js'
 import {
   buildAppointmentRegistration, changePrototypeProposalWindow, changePrototypeTravelMinutes, fitStatus, fitStatusLabels,
-  getPrototypePlanningTechnicians, proposalDraftFormValues, proposalDraftHasChanges, proposalPlanningSignature,
-  validatePrototypeProposalDraft,
+  getPrototypePlanningTechnicians, getPrototypeTechnicianAgenda, proposalDraftFormValues, proposalDraftHasChanges,
+  proposalPlanningSignature, validatePrototypeProposalDraft,
 } from '../utils/proposalDraft.js'
 import {
   applyTravelEstimates, mergeTravelEstimateResults, outdatedTravelLegs, travelEstimateMessages, travelLegHelperText,
@@ -15,8 +14,10 @@ import {
 } from '../utils/travelEstimates.js'
 import { formatTime, formatWeekdayDate, getCustomerServiceClock } from '../utils/dates.js'
 import { useCustomerServicePrototype } from '../context/customerServicePrototypeContext.js'
+import { useAuth } from '../../auth/context/useAuth.js'
 import ProposalDayAgenda from './ProposalDayAgenda.jsx'
 import ProposalNearbyVisits from './ProposalNearbyVisits.jsx'
+import SendToCustomerDialog from './SendToCustomerDialog.jsx'
 
 // The form column sits next to the agenda, so it can be narrow even on a wide screen.
 // Its rows wrap by the space they get instead of switching at a screen breakpoint.
@@ -25,16 +26,13 @@ const sectionTitleSx = { flex: '1 1 240px' }
 const fieldRowSx = { flexWrap: 'wrap', '& > *': { flex: '1 1 160px' } }
 const actionRowSx = { flexWrap: 'wrap', '& > *': { flex: '1 1 200px' } }
 
-const acceptanceOptions = [
-  { value: 'CUSTOMER_ACCEPTED_PROPOSAL', label: 'Customer accepted the proposal' },
-  { value: 'COUNTER_PROPOSAL_ACCEPTED', label: 'Counter-proposal accepted' },
-]
-
 export default function ProposalDraftPlanner({ request, requests, technicians: roster, savedDraft, onSave, onDirtyChange, onRegistered }) {
   const {
     registerAppointment, storedTravelMinutes, storedRoutesMinutes, storedTravelDetails, travelTrafficMode, estimateTravel,
     distanceBands,
   } = useCustomerServicePrototype()
+  // Customer emails leave from the signed-in coordinator's mailbox, signed with their name.
+  const { profile } = useAuth()
   // Travel saved with earlier appointments fills the same legs; typed values win.
   const withStoredTravel = (formValues) => ({
     ...formValues, travelMinutes: { ...storedTravelMinutes, ...formValues.travelMinutes },
@@ -42,7 +40,7 @@ export default function ProposalDraftPlanner({ request, requests, technicians: r
   const [initialValues] = useState(() => withStoredTravel(proposalDraftFormValues(savedDraft)))
   const [values, setValues] = useState(initialValues)
   const [saveError, setSaveError] = useState('')
-  const [registration, setRegistration] = useState(null)
+  const [sending, setSending] = useState(false)
   const technicians = useMemo(() => getPrototypePlanningTechnicians(roster), [roster])
   const validation = validatePrototypeProposalDraft({ requestId: request.id, requests, technicians, values })
   const errorFor = (field) => validation.errors.find((error) => error.field === field)?.message
@@ -103,21 +101,47 @@ export default function ProposalDraftPlanner({ request, requests, technicians: r
   ].filter(Boolean))
   const formProblems = validation.errors.filter((error) => !emptyFields.has(error.field))
   const margin = validation.delay?.margin
+  // Until technicians, a window or a start are chosen, the day agenda previews the
+  // recommended slot, so it is visible before using it.
+  const [recommendedSlot, setRecommendedSlot] = useState(null)
+  const preview = !values.technicianIds.length && !values.windowStart && !values.internalStart ? recommendedSlot : null
+  const technicianNames = (ids) => ids.map((id) => technicians.find((person) => person.id === id)?.name).filter(Boolean)
+  const agendaProps = preview
+    ? {
+      date: preview.date,
+      agenda: getPrototypeTechnicianAgenda(requests, preview.technicianIds, preview.date, technicians),
+      margins: {},
+      hasTechnicians: true,
+      proposedVisit: {
+        label: request.requestNumber, recommended: true, date: preview.date, windowStart: preview.windowStart,
+        start: preview.internalStart, workEnd: preview.internalEnd, end: preview.pickupEnd, margin: preview.margin,
+        technicianNames: preview.technicianNames,
+      },
+    }
+    : {
+      date: validation.dateIsValid ? values.date : '',
+      agenda: validation.agenda,
+      margins: validation.delay?.entryMargins ?? {},
+      hasTechnicians: values.technicianIds.length > 0,
+      proposedVisit: validation.internalEnd && validation.pickupEnd
+        ? {
+          label: request.requestNumber, date: values.date, windowStart: values.windowStart,
+          start: values.internalStart, workEnd: validation.internalEnd, end: validation.pickupEnd,
+          margin: validation.delay?.margin ?? null, technicianNames: technicianNames(values.technicianIds),
+        }
+        : null,
+    }
   const draftStatus = fitStatus({
     fits: validation.isValid, travelPending: validation.travelPending || outdatedLegs.length > 0,
   })
-  const register = async () => {
-    setRegistration((current) => ({ ...current, saving: true, error: '' }))
-    try {
-      await registerAppointment(buildAppointmentRegistration({
-        request, values, validation, acceptance: registration.acceptance,
-      }))
-      setRegistration(null)
-      onDirtyChange(false)
-      onRegistered?.(request)
-    } catch (error) {
-      setRegistration((current) => ({ ...current, saving: false, error: error.message }))
-    }
+  // Registers the visit and, when asked, emails the customer; a failure stays in the dialog.
+  const send = async ({ acceptance, confirmationEmail }) => {
+    const result = await registerAppointment(buildAppointmentRegistration({
+      request, values, validation, acceptance, confirmationEmail,
+    }))
+    setSending(false)
+    onDirtyChange(false)
+    onRegistered?.(request, result)
   }
   useEffect(() => {
     onDirtyChange(hasUnsavedChanges)
@@ -159,7 +183,9 @@ export default function ProposalDraftPlanner({ request, requests, technicians: r
           {savedDraft && <Chip label={savedIsStale || savedNeedsRevalidation ? 'Saved draft needs review' : hasUnsavedChanges ? 'Unsaved draft changes' : 'Draft saved · not sent'} color={savedIsStale || savedNeedsRevalidation ? 'warning' : hasUnsavedChanges ? 'default' : 'success'} variant="outlined" />}
         </Stack>
         <ProposalNearbyVisits request={request} requests={requests} technicians={technicians}
-          distanceBands={distanceBands} onUseSlot={applyNearbySlot} />
+          distanceBands={distanceBands} formDate={formIncomplete ? null : values.date}
+          formFits={validation.isValid && !validation.pastDue}
+          onUseSlot={applyNearbySlot} onRecommendedChange={setRecommendedSlot} />
         <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'minmax(0, 1fr) minmax(0, 1fr)' }, gap: 2.5 }}>
           <Stack spacing={2}>
             <FormControl fullWidth error={values.technicianIds.length > 0 && Boolean(errorFor('technicianIds'))}>
@@ -288,9 +314,8 @@ export default function ProposalDraftPlanner({ request, requests, technicians: r
               <Button variant="outlined" onClick={save} disabled={!validation.isValid}>
                 {savedDraft ? 'Update proposal draft' : 'Save proposal draft'}
               </Button>
-              <Button variant="contained" disabled={!canRegister}
-                onClick={() => setRegistration({ acceptance: acceptanceOptions[0].value, saving: false, error: '' })}>
-                Register accepted appointment
+              <Button variant="contained" disabled={!canRegister} onClick={() => setSending(true)}>
+                Send to customer
               </Button>
             </Stack>
             <Typography variant="caption" color="text.secondary">
@@ -304,54 +329,19 @@ export default function ProposalDraftPlanner({ request, requests, technicians: r
                     ? 'Calculate or type every travel time before registering: a registered appointment reserves the technicians’ time.'
                     : outdatedLegs.length > 0
                       ? 'Calculate the travel marked “calculate again” with Google Maps, or type its minutes, before registering.'
-                      : 'Register the appointment once the customer accepts. It is saved and appears in Calendar.'}
+                      : 'Once the customer accepts, send it: the visit is saved, appears in Calendar and the customer can get a confirmation email.'}
             </Typography>
           </Stack>
-          <ProposalDayAgenda
-            date={validation.dateIsValid ? values.date : ''}
-            agenda={validation.agenda}
-            margins={validation.delay?.entryMargins ?? {}}
-            requests={requests}
-            hasTechnicians={values.technicianIds.length > 0}
-            proposedVisit={validation.internalEnd && validation.pickupEnd
-              ? {
-                label: request.requestNumber, start: values.internalStart, workEnd: validation.internalEnd, end: validation.pickupEnd,
-                margin: validation.delay?.margin ?? null,
-              }
-              : null}
-          />
+          <ProposalDayAgenda {...agendaProps} requests={requests} plannedRequest={request} />
         </Box>
       </Stack>
-      <Dialog open={Boolean(registration)} onClose={() => !registration?.saving && setRegistration(null)} fullWidth maxWidth="xs">
-        <DialogTitle>Register accepted appointment</DialogTitle>
-        <DialogContent>
-          <Stack spacing={2}>
-            <Typography variant="body2">
-              {request.requestNumber} · {formatWeekdayDate(values.date)} · work {formatTime(values.internalStart)}–{formatTime(validation.internalEnd)} ·{' '}
-              {values.technicianIds.map((id) => technicians.find((person) => person.id === id)?.name).filter(Boolean).join(', ')}
-            </Typography>
-            <FormControl>
-              <Typography variant="caption" color="text.secondary">How was it accepted?</Typography>
-              <RadioGroup value={registration?.acceptance ?? ''}
-                onChange={(event) => setRegistration((current) => ({ ...current, acceptance: event.target.value }))}>
-                {acceptanceOptions.map((option) => (
-                  <FormControlLabel key={option.value} value={option.value} control={<Radio />} label={option.label} />
-                ))}
-              </RadioGroup>
-            </FormControl>
-            <Typography variant="body2" color="text.secondary">
-              The schedule is checked again before saving. The request moves to Confirmed and the technicians&apos; time is reserved.
-            </Typography>
-            {registration?.error && <Alert severity="error">{registration.error}</Alert>}
-          </Stack>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setRegistration(null)} disabled={registration?.saving}>Cancel</Button>
-          <Button variant="contained" onClick={register} disabled={registration?.saving}>
-            {registration?.saving ? 'Registering…' : 'Register appointment'}
-          </Button>
-        </DialogActions>
-      </Dialog>
+      {sending && (
+        <SendToCustomerDialog request={request} values={values}
+          summary={`${request.requestNumber} · ${formatWeekdayDate(values.date)} · work ${formatTime(values.internalStart)}–${
+            formatTime(validation.internalEnd)} · ${technicianNames(values.technicianIds).join(', ')}`}
+          senderName={profile?.name ?? ''} senderEmail={profile?.email ?? ''}
+          onClose={() => setSending(false)} onSend={send} />
+      )}
     </Paper>
   )
 }

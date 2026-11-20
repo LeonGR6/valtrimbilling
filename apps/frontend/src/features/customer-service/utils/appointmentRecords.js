@@ -52,10 +52,30 @@ export function manualTravelChecks(rows = []) {
     }]))
 }
 
-export function applyAppointmentsToRequests(requests, appointments = [], technicians = []) {
+// The days a sent proposal holds until the customer answers, in California time.
+function toProposalHold(row) {
+  const window = { start: californiaClockAt(new Date(row.window_starts_at)), end: californiaClockAt(new Date(row.window_ends_at)) }
+  return {
+    optionId: row.option_id, optionNumber: row.option_number, proposalId: row.proposal_id, sentAt: row.sent_at,
+    date: window.start.date, windowStart: window.start.time, windowEnd: window.end.time,
+    start: californiaClockAt(new Date(row.starts_at)).time, end: californiaClockAt(new Date(row.ends_at)).time,
+    pickupMinutes: row.pickup_minutes, technicianIds: row.technician_ids.map(String),
+  }
+}
+
+export function applyAppointmentsToRequests(requests, appointments = [], technicians = [], proposalHolds = []) {
   const byRequest = new Map(appointments.map((row) => [String(row.request_id), row]))
+  const holdsByRequest = new Map()
+  for (const row of proposalHolds) {
+    const key = String(row.request_id)
+    holdsByRequest.set(key, [...(holdsByRequest.get(key) ?? []), row])
+  }
   const names = new Map(technicians.map((person) => [String(person.id), person.name]))
   return requests.map((request) => {
+    const holds = holdsByRequest.get(String(request.id))
+    if (holds) {
+      return { ...request, proposalHolds: holds.map(toProposalHold).sort((left, right) => left.optionNumber - right.optionNumber) }
+    }
     const row = byRequest.get(String(request.id))
     if (!row) return request
     const window = { start: californiaClockAt(new Date(row.window_starts_at)), end: californiaClockAt(new Date(row.window_ends_at)) }

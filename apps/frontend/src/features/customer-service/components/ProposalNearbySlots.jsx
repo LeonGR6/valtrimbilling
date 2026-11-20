@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Alert, Box, Button, Chip, Paper, Stack, Typography } from '@mui/material'
-import { deadlineLabel, nearbySlotSuggestions, recommendSlot, suggestionLegsToCheck } from '../utils/nearbySlotSuggestions.js'
+import {
+  deadlineLabel, nearbySlotSuggestions, recommendSlot, secondOptionSlot, suggestionLegsToCheck,
+} from '../utils/nearbySlotSuggestions.js'
 import { mergeTravelEstimateResults, travelLegsToEstimate } from '../utils/travelEstimates.js'
 import { travelLegKey } from '../utils/customerServiceScheduling.js'
 import { formatTime, formatWeekdayDate } from '../utils/dates.js'
@@ -78,9 +80,11 @@ function RecommendedSlot({ children }) {
 // Traffic minutes are asked only for the legs of those slots and the direct drives they
 // replace, through the same travel Edge Function the planner uses (saved minutes are
 // reused there).
+// A proposal offers a second day with the slot in the form (formDate, once the form is
+// complete; formFits when it can be offered), or with the recommended slot until then.
 export default function ProposalNearbySlots({
   request, requests, technicians, candidates, hasCoordinates = true, distanceBands = null, drivingById, drivingLoading,
-  onUseSlot,
+  formDate = null, formFits = false, onUseSlot, onRecommendedChange,
 }) {
   const {
     estimateTravel, storedTravelMinutes, storedRoutesMinutes, storedTravelDetails, travelTrafficMode,
@@ -95,15 +99,23 @@ export default function ProposalNearbySlots({
     () => nearbySlotSuggestions({ request, requests, technicians, candidates, drivingById, travelMinutes, now }),
     [request, requests, technicians, candidates, drivingById, travelMinutes, now],
   )
-  const recommended = recommendSlot({
-    plan, hasCoordinates, groupingMiles: distanceBands?.distanceYellowMaxMiles ?? null,
-  })
+  const groupingMiles = distanceBands?.distanceYellowMaxMiles ?? null
+  const recommended = useMemo(() => recommendSlot({ plan, hasCoordinates, groupingMiles }), [plan, hasCoordinates, groupingMiles])
+  // A form that does not fit cannot be offered, so it gets no second day.
+  const firstOption = formDate
+    ? (formFits ? { date: formDate, label: 'the slot in the form' } : null)
+    : recommended && { date: recommended.slot.date, label: 'the recommended slot' }
+  const firstDate = drivingLoading ? null : firstOption?.date ?? null
+  const second = useMemo(
+    () => (firstDate ? secondOptionSlot({ request, requests, technicians, firstDate, drivingById, travelMinutes, now }) : null),
+    [request, requests, technicians, firstDate, drivingById, travelMinutes, now],
+  )
 
-  // Legs of the suggested slots, the direct drives they replace and the earliest slot,
-  // still without minutes or saved without the current traffic setting or departure
-  // slot; each is asked once.
+  // Legs of the suggested slots, the direct drives they replace, the earliest slot and the
+  // second day, still without minutes or saved without the current traffic setting or
+  // departure slot; each is asked once.
   const unchecked = travelLegsToEstimate(
-    suggestionLegsToCheck(plan), { ...storedRoutesMinutes, ...traffic.routes }, { ...storedTravelDetails, ...traffic.details },
+    suggestionLegsToCheck({ ...plan, second: second?.slot }), { ...storedRoutesMinutes, ...traffic.routes }, { ...storedTravelDetails, ...traffic.details },
     travelTrafficMode,
   ).filter((leg) => !traffic.attempted.includes(attemptKey(leg)))
   const toFetch = unchecked.slice(0, maxLegsPerCall)
@@ -140,6 +152,20 @@ export default function ProposalNearbySlots({
       })
     return () => { active = false }
   }, [fetchKey, estimateTravel])
+
+  // The planner previews the recommended slot in its day agenda until a slot is chosen. Only
+  // plain values travel up; the key keeps the parent from updating on every render.
+  const previewKey = !drivingLoading && recommended
+    ? JSON.stringify({
+      date: recommended.slot.date, windowStart: recommended.slot.windowStart,
+      internalStart: recommended.slot.internalStart, internalEnd: recommended.slot.internalEnd,
+      pickupEnd: recommended.slot.pickupEnd, technicianIds: recommended.slot.technicianIds,
+      technicianNames: recommended.slot.technicianNames, margin: recommended.slot.margin ?? null,
+    })
+    : ''
+  useEffect(() => {
+    onRecommendedChange?.(previewKey ? JSON.parse(previewKey) : null)
+  }, [previewKey, onRecommendedChange])
 
   // Checked again at the moment it is used: a slot from a screen left open may be in the past.
   const use = (slot) => () => {
@@ -235,6 +261,24 @@ export default function ProposalNearbySlots({
             : `No time fits before the due date${request.dueOn ? ` (${formatWeekdayDate(request.dueOn)})` : ''} for the active technicians.`}
           {' '}Check their agendas below or plan it by hand.
         </Alert>
+      )}
+      {firstOption && second && (
+        <Stack spacing={1}>
+          <Box>
+            <Typography variant="subtitle2" fontWeight={800}>Second day for the customer</Typography>
+            <Typography variant="caption" color="text.secondary">
+              A proposal offers two days so the customer can choose. This one goes with{' '}
+              {formatWeekdayDate(firstOption.date)}, {firstOption.label}. {second.slot && second.reason}
+            </Typography>
+          </Box>
+          {second.slot ? (
+            <SlotRow title={second.kind === 'FINAL_DAYS' ? 'Final days' : 'Earliest available'} detail={slotDetail(second.slot)}
+              deadline={deadline(second.slot.date)} warning={slotWarning(second.slot)}
+              chips={fitChips(second.slot, second.slot.sharesDay ?? false)} />
+          ) : (
+            <Typography variant="body2" color="text.secondary">{second.reason}</Typography>
+          )}
+        </Stack>
       )}
       {fetchKey && <Typography variant="caption" color="text.secondary">Checking traffic for the suggested slots…</Typography>}
       {traffic.error && (

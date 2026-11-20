@@ -46,7 +46,7 @@ import {
   proposalWorkspacePath,
   requestsForView,
 } from '../utils/requestInbox.js'
-import { createPrototypeProposalDraft, prototypePlanningHours } from '../utils/proposalDraft.js'
+import { createPrototypeProposalDraft, prototypePlanningHours, registrationNotice } from '../utils/proposalDraft.js'
 import CustomerServiceCalendar from './CustomerServiceCalendar.jsx'
 import EmailInboxPanel from './EmailInboxPanel.jsx'
 import NewRequestPrototypeDialog from './NewRequestPrototypeDialog.jsx'
@@ -85,7 +85,7 @@ export default function CustomerServiceCatalog() {
     recoverRequest: persistRecovery,
     completeRecovery,
     markRequestReady: persistApproval,
-    proposalDrafts, setProposalDrafts, technicians,
+    proposalDrafts, setProposalDrafts, technicians, scheduleError,
   } = useCustomerServicePrototype()
   const draftDirty = useRef(false)
   const [pendingDraftNavigation, setPendingDraftNavigation] = useState(null)
@@ -283,14 +283,14 @@ export default function CustomerServiceCatalog() {
     setNotice({ severity: 'success', message: 'Draft saved until the page is reloaded. The request stays Ready to propose; nothing was registered or sent.' })
   }
 
-  const appointmentRegistered = (request) => {
+  const appointmentRegistered = (request, result) => {
     // The accepted appointment replaces the draft; drafts are never stored.
     setProposalDrafts((current) => {
       const next = { ...current }
       delete next[request.id]
       return next
     })
-    setNotice({ severity: 'success', message: `${request.requestNumber} was registered as a confirmed appointment and appears in Calendar.` })
+    setNotice(registrationNotice(request.requestNumber, result))
   }
 
   return (
@@ -367,6 +367,13 @@ export default function CustomerServiceCatalog() {
 
       <Box sx={{ p: { xs: 2.5, md: 4 } }}>
         <TravelCheckAlert requests={requests} />
+        {/* Without the schedule every technician looks free, so planning must not look normal. */}
+        {scheduleError && activeView !== 'REQUESTS' && (
+          <Alert severity="error" sx={{ mb: 2 }} action={<Button color="inherit" onClick={reloadRequests}>Retry</Button>}>
+            Appointments and days held by sent proposals could not be loaded, so technicians may look free when they are
+            not. Retry before planning. {scheduleError}
+          </Alert>
+        )}
         {activeView === 'REQUESTS' && (
           <Alert severity="info" variant="outlined" sx={{ mb: 2 }}>
             Requests, edits, review approval and original sources are saved. Approving a request sends no email and
@@ -692,7 +699,8 @@ export default function CustomerServiceCatalog() {
 
       <Snackbar
         open={Boolean(notice) && ((!viewRequest && !requestDialog) || notice.severity === 'error')}
-        autoHideDuration={3500}
+        // A warning (for example a confirmation email that failed) stays long enough to read.
+        autoHideDuration={notice?.severity === 'success' ? 3500 : 10000}
         onClose={() => setNotice(null)}
         anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
       >

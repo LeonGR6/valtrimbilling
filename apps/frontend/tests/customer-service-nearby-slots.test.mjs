@@ -5,7 +5,7 @@ import { applyAppointmentsToRequests, toPlanningTechnicians } from '../src/featu
 import { californiaInstant } from '../src/features/customer-service/utils/customerServiceScheduling.js'
 import {
   businessDaysLeft, deadlineLabel, earliestAvailableSlot, finalDaysSlot, insertionDetails, nearbySlotSuggestions,
-  recommendSlot, suggestionLegsToCheck, technicianSets, techniciansByPreference,
+  recommendSlot, secondOptionSlot, suggestionLegsToCheck, technicianSets, techniciansByPreference,
 } from '../src/features/customer-service/utils/nearbySlotSuggestions.js'
 import {
   fitStatus, fitStatusLabels, getPrototypePlanningTechnicians, suggestionStartDate, validatePrototypeProposalDraft,
@@ -502,4 +502,62 @@ test('on a day without nearby visits the technician registered first is suggeste
   const result = nearbySlotSuggestions({ request: csA, requests, technicians: byName, now: monday16 })
   assert.deepEqual(result.finalDays.technicianNames, ['Jorge Murillo'])
   assert.deepEqual(result.earliest.technicianNames, ['Jorge Murillo'])
+})
+
+// The second day of a proposal (block B, decisions of 19 Nov 2026), planning on Monday 16.
+function secondDay({ request, firstDate, appointments = [], extraRequests = [], drivingById = {} }) {
+  const requests = applyAppointmentsToRequests([...extraRequests, request], appointments, roster)
+  return secondOptionSlot({ request, requests, technicians, firstDate, drivingById, now: monday16 })
+}
+
+test('the second day is the due date, or the business day before it when the first option takes it', () => {
+  // CS-A is due Monday 23. With the due date first, Friday 20 is the second day.
+  const onDueDate = secondDay({ request: csA, firstDate: '2026-11-23' })
+  assert.deepEqual(
+    [onDueDate.kind, onDueDate.slot.date, onDueDate.slot.internalStart, onDueDate.slot.technicianNames],
+    ['FINAL_DAYS', '2026-11-20', '08:00', ['Jorge Murillo']],
+  )
+  assert.equal(onDueDate.reason,
+    'The latest other on-time day with room, so the customer still has a day on time if Mon, Nov 23 does not work.')
+  // A first option planned by hand on Friday 20 leaves the due date for the second day.
+  assert.equal(secondDay({ request: csA, firstDate: '2026-11-20' }).slot.date, '2026-11-23')
+  // A day the customer cannot is skipped too: Thursday 19.
+  const unavailable = secondDay({ request: { ...csA, customerUnavailableDates: ['2026-11-20'] }, firstDate: '2026-11-23' })
+  assert.equal(unavailable.slot.date, '2026-11-19')
+})
+
+test('next to a nearby visit before the due date, the second day is the due date', () => {
+  // CS-B joins CS-A on Monday 23 and is due Wednesday 25.
+  const second = secondDay({
+    request: csB, firstDate: '2026-11-23', appointments: [csAOnMonday], extraRequests: [registeredA],
+    drivingById: { 31: { drivingMiles: 4, band: 'GREEN' } },
+  })
+  assert.deepEqual([second.kind, second.slot.date, second.slot.shortNotice], ['FINAL_DAYS', '2026-11-25', false])
+})
+
+test('without other room on the final days, the second day is the earliest other day before the due date', () => {
+  // Both technicians have a visit that is not nearby on Wednesday 18, Thursday 19 and Friday 20.
+  const far = [40, 41, 42].map((id) => ({ ...confirmed(id), requestNumber: `SR-${id}` }))
+  const busy = ['2026-11-18', '2026-11-19', '2026-11-20']
+    .map((date, index) => appointment(40 + index, [4, 5], date, '10:00', '12:00', '10:00', '10:30'))
+  const second = secondDay({ request: csA, firstDate: '2026-11-23', appointments: busy, extraRequests: far })
+  assert.deepEqual([second.kind, second.slot.date, second.slot.internalStart], ['EARLIEST', '2026-11-18', '08:00'])
+  assert.equal(second.reason, 'The final days have no other room, so this is the earliest other day that fits before the due date.')
+  // Its travel to the visit after it is checked with traffic like the other suggestions.
+  assert.deepEqual(suggestionLegsToCheck({ suggestions: [], second: second.slot }).map((leg) => leg.key), ['31>40'])
+})
+
+test('without another on-time day the proposal offers one day, never one after the due date', () => {
+  // Due Wednesday 18: two business days after Monday 16, it is the only day on time.
+  const second = secondDay({ request: fitRequest(38, 'CS-H', '2026-11-18'), firstDate: '2026-11-18' })
+  assert.deepEqual([second.kind, second.slot], ['NONE', null])
+  assert.equal(second.reason, 'No other day before the due date has room, so the proposal offers only Wed, Nov 18.')
+})
+
+test('an overdue request gets the earliest other day with room', () => {
+  const overdue = fitRequest(34, 'CS-D', '2026-11-13')
+  const second = secondDay({ request: overdue, firstDate: '2026-11-18' })
+  assert.deepEqual([second.kind, second.slot.date], ['EARLIEST', '2026-11-19'])
+  assert.equal(second.reason, 'This request is overdue, so this is the earliest other day with room.')
+  assert.equal(secondDay({ request: overdue, firstDate: '' }), null)
 })

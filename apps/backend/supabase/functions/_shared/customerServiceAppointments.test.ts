@@ -4,6 +4,7 @@ import {
   type AppointmentRow,
   californiaDayRange,
   changedTravelLegs,
+  type HoldRow,
   parseRegisterInput,
   type RegisterAppointmentInput,
   type RequestRow,
@@ -66,6 +67,7 @@ Deno.test("a valid visit becomes RPC arguments with UTC instants and the expecte
   });
   assertEquals(result.errors, []);
   assertEquals(result.rpcArgs?.p_expected_appointment_ids, [7]);
+  assertEquals(result.rpcArgs?.p_expected_option_ids, []);
   assertEquals(result.rpcArgs?.p_appointment, {
     technicianIds: [4],
     windowStartsAt: "2026-11-09T18:00:00.000Z", windowEndsAt: "2026-11-09T20:00:00.000Z",
@@ -73,6 +75,29 @@ Deno.test("a valid visit becomes RPC arguments with UTC instants and the expecte
     pickupMinutes: 10, acceptance: "CUSTOMER_ACCEPTED_PROPOSAL",
   });
   assertEquals(result.rpcArgs?.p_travel, [{ fromRequestId: 10, toRequestId: 20, minutes: 30 }]);
+});
+
+// A sent proposal holds 08:00–08:30 for Tech One on the same day until the customer answers.
+const held: HoldRow = {
+  option_id: 31, request_id: 11, folio: "SR-00000011", technician_ids: [4],
+  starts_at: "2026-11-09T16:00:00Z", ends_at: "2026-11-09T16:30:00Z", pickup_minutes: 10,
+};
+
+Deno.test("a held proposal option occupies its technician like an appointment", () => {
+  const conflict = validateRegistration({
+    input: input({ windowStart: "08:00", workStart: "08:15" }), request, technicians, dayAppointments: [],
+    dayHolds: [held], now,
+  });
+  assert(!conflict.rpcArgs);
+  assert(conflict.errors.some((error) => error.message.includes("is already busy with SR-00000011")));
+
+  const after = validateRegistration({
+    input: input({ travelMinutes: { "11>20": 30 } }), request, technicians, dayAppointments: [], dayHolds: [held], now,
+  });
+  assertEquals(after.errors, []);
+  assertEquals(after.rpcArgs?.p_expected_appointment_ids, []);
+  assertEquals(after.rpcArgs?.p_expected_option_ids, [31]);
+  assertEquals(after.rpcArgs?.p_travel, [{ fromRequestId: 11, toRequestId: 20, minutes: 30 }]);
 });
 
 Deno.test("pending travel blocks registration although it only warns in a draft", () => {

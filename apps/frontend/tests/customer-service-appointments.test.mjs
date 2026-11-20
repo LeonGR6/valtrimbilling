@@ -5,10 +5,14 @@ import {
   applyAppointmentsToRequests, toPlanningTechnicians, travelEstimatesToMinutes, upcomingAppointmentRequestIds,
 } from '../src/features/customer-service/utils/appointmentRecords.js'
 import {
-  buildAppointmentRegistration, suggestProposalTimes, validatePrototypeProposalDraft,
+  buildAppointmentRegistration, getPrototypeTechnicianAgenda, registrationNotice, suggestProposalTimes,
+  validatePrototypeProposalDraft,
 } from '../src/features/customer-service/utils/proposalDraft.js'
 import {
-  createServiceCalendarEventsFromRequests, serviceCalendarEventForRequest,
+  confirmationEmail, defaultConfirmationText, mailingAddress,
+} from '../src/features/customer-service/utils/customerServiceEmailTemplates.js'
+import {
+  createServiceCalendarEventsFromRequests, proposedServiceCalendarEvent, serviceCalendarEventForRequest,
 } from '../src/features/customer-service/data/serviceCalendarEvents.js'
 
 const roster = [
@@ -61,6 +65,67 @@ test('a visit picked in the Proposal Workspace agenda opens its request as in Ca
   assert.equal(event.start, '2026-11-09T08:00:00')
   assert.deepEqual(event.extendedProps.internalSlot, { start: '08:00', end: '08:30' })
   assert.equal(serviceCalendarEventForRequest(requests, '99'), null)
+})
+
+// SR-30 has a proposal waiting for the customer: Monday 10:00–12:00 (work 10:00–10:45) and
+// Tuesday 08:00–10:00 (work 08:00–08:45), both with Jorge.
+const awaiting = { ...ready, id: 30, requestNumber: 'SR-30', workflowStage: 'AWAITING_CUSTOMER' }
+const hold = (optionId, optionNumber, windowStartsAt, startsAt, endsAt) => ({
+  option_id: optionId, option_number: optionNumber, proposal_id: 3, request_id: 30, sent_at: '2026-11-06T16:00:00Z',
+  technician_ids: [4], window_starts_at: windowStartsAt,
+  window_ends_at: new Date(Date.parse(windowStartsAt) + 2 * 3600_000).toISOString(),
+  starts_at: startsAt, ends_at: endsAt, pickup_minutes: 10,
+})
+const holds = [
+  hold(42, 2, '2026-11-10T16:00:00Z', '2026-11-10T16:00:00Z', '2026-11-10T16:45:00Z'),
+  hold(41, 1, '2026-11-09T18:00:00Z', '2026-11-09T18:00:00Z', '2026-11-09T18:45:00Z'),
+]
+
+test('a sent proposal shows the days it holds on its request, in California time', () => {
+  const [, untouched, held] = applyAppointmentsToRequests([confirmed, ready, awaiting], [appointment], roster, holds)
+  assert.equal(untouched, ready)
+  assert.deepEqual(held.proposalHolds, [
+    {
+      optionId: 41, optionNumber: 1, proposalId: 3, sentAt: '2026-11-06T16:00:00Z', date: '2026-11-09',
+      windowStart: '10:00', windowEnd: '12:00', start: '10:00', end: '10:45', pickupMinutes: 10, technicianIds: ['4'],
+    },
+    {
+      optionId: 42, optionNumber: 2, proposalId: 3, sentAt: '2026-11-06T16:00:00Z', date: '2026-11-10',
+      windowStart: '08:00', windowEnd: '10:00', start: '08:00', end: '08:45', pickupMinutes: 10, technicianIds: ['4'],
+    },
+  ])
+  // A held request is not a Calendar visit yet.
+  assert.deepEqual(createServiceCalendarEventsFromRequests([held]), [])
+})
+
+test('each held day occupies its technicians like an appointment until the customer answers', () => {
+  const requests = applyAppointmentsToRequests([confirmed, ready, awaiting], [appointment], roster, holds)
+  const monday = getPrototypeTechnicianAgenda(requests, ['4'], '2026-11-09', technicians)
+  const mondayHold = monday.find((entry) => entry.requestId === 30)
+  assert.equal(mondayHold.start, '10:00')
+  assert.equal(mondayHold.end, '10:55')
+  assert.equal(mondayHold.blocksAvailability, true)
+  assert.equal(mondayHold.proposalOption, 1)
+  assert.equal(mondayHold.stage, 'AWAITING_CUSTOMER')
+  const tuesday = getPrototypeTechnicianAgenda(requests, ['4'], '2026-11-10', technicians)
+  assert.deepEqual(tuesday.map((entry) => [entry.requestNumber, entry.proposalOption, entry.start]), [['SR-30', 2, '08:00']])
+  // Helper is not in the proposal, so nothing is held for him.
+  assert.equal(getPrototypeTechnicianAgenda(requests, ['5'], '2026-11-10', technicians).length, 0)
+
+  const values = { technicianIds: ['4'], date: '2026-11-09', windowStart: '10:00', internalStart: '10:00', travelMinutes: {} }
+  const result = validatePrototypeProposalDraft({ requestId: 20, values, requests, technicians, now })
+  assert.equal(result.isValid, false)
+  assert.ok(result.errors.some((error) => error.message.includes('is already busy with SR-30')))
+})
+
+test('a held day picked in the agenda opens as sent and held', () => {
+  const event = proposedServiceCalendarEvent(awaiting, {
+    date: '2026-11-09', windowStart: '10:00', start: '10:00', end: '10:45', technicianNames: ['Jorge Murillo'],
+  }, 'AWAITING_CUSTOMER')
+  assert.equal(event.extendedProps.status, 'AWAITING_CUSTOMER')
+  assert.equal(event.extendedProps.requestNumber, 'SR-30')
+  assert.equal(event.extendedProps.technician, 'Jorge Murillo')
+  assert.equal(event.start, '2026-11-09T10:00:00')
 })
 
 test('travel estimates are loaded only for appointments from today onward (California)', () => {
@@ -191,4 +256,80 @@ test('planner messages use one date and time format and say what is wrong', asyn
     === 'Jorge Murillo cannot reach this visit in time from SR-10: leaving at 8:40 AM with 15 min of travel, they arrive at 8:55 AM.'))
   assert.ok(validate('08:45', {}).warnings.some((warning) => warning.message
     === 'Travel time from SR-10 to this visit is missing for Jorge Murillo. Calculate it with Google Maps or type it.'))
+})
+
+test('the planned visit opens like a Calendar visit, marked as proposed, with the property coordinates', () => {
+  const planned = { ...ready, latitude: 33.63717377010304, longitude: -117.89873154408701 }
+  const event = proposedServiceCalendarEvent(planned, {
+    date: '2026-11-19', windowStart: '08:00', start: '08:00', end: '09:00', technicianNames: ['Jorge Murillo'],
+  })
+  assert.equal(event.start, '2026-11-19T08:00:00')
+  assert.equal(event.end, '2026-11-19T10:00:00')
+  assert.deepEqual(
+    [event.extendedProps.status, event.extendedProps.requestNumber, event.extendedProps.technician, event.extendedProps.appointment],
+    ['PROPOSED', 'SR-20', 'Jorge Murillo', null],
+  )
+  assert.deepEqual(event.extendedProps.internalSlot, { start: '08:00', end: '09:00' })
+  assert.deepEqual(event.extendedProps.coordinates, { latitude: 33.63717377010304, longitude: -117.89873154408701 })
+  // Without a window or a request there is nothing to show; missing coordinates stay null.
+  assert.equal(proposedServiceCalendarEvent(planned, { date: '2026-11-19', windowStart: '09:00' }), null)
+  assert.equal(proposedServiceCalendarEvent({ ...ready, latitude: null }, {
+    date: '2026-11-19', windowStart: '08:00', start: '08:00', end: '09:00',
+  }).extendedProps.coordinates, null)
+
+  // A registered visit carries its coordinates too.
+  const requests = applyAppointmentsToRequests([{ ...confirmed, latitude: 33.5, longitude: -117.2 }, ready], [appointment], roster)
+  assert.deepEqual(serviceCalendarEventForRequest(requests, '10').extendedProps.coordinates, { latitude: 33.5, longitude: -117.2 })
+})
+
+test('a visit shows the day its request was reported and its last on-time day', () => {
+  const reported = { reportedAt: '2026-11-04', dueOn: '2026-11-13' }
+  const planned = proposedServiceCalendarEvent({ ...ready, ...reported }, {
+    date: '2026-11-12', windowStart: '08:00', start: '08:00', end: '09:00', technicianNames: ['Jorge Murillo'],
+  })
+  assert.deepEqual([planned.extendedProps.reportedOn, planned.extendedProps.dueOn], ['2026-11-04', '2026-11-13'])
+  const requests = applyAppointmentsToRequests([{ ...confirmed, ...reported }, ready], [appointment], roster)
+  const registered = serviceCalendarEventForRequest(requests, '10')
+  assert.deepEqual([registered.extendedProps.reportedOn, registered.extendedProps.dueOn], ['2026-11-04', '2026-11-13'])
+})
+
+test('sending to the customer registers the visit and asks for a confirmation email only when chosen', () => {
+  const requests = applyAppointmentsToRequests([confirmed, ready], [appointment], roster)
+  const values = { technicianIds: ['4'], date: '2026-11-12', windowStart: '08:00', internalStart: '08:00', travelMinutes: {} }
+  const validation = validatePrototypeProposalDraft({ requestId: ready.id, values, requests, technicians, now })
+  const text = { greeting: 'Hi Ana,', message: 'Thanks for the call.' }
+  const withEmail = buildAppointmentRegistration({
+    request: ready, values, validation, acceptance: 'CUSTOMER_ACCEPTED_PROPOSAL', confirmationEmail: text,
+  })
+  assert.deepEqual(withEmail.confirmationEmail, text)
+  const withoutEmail = buildAppointmentRegistration({ request: ready, values, validation, acceptance: 'CUSTOMER_ACCEPTED_PROPOSAL' })
+  assert.equal('confirmationEmail' in withoutEmail, false)
+})
+
+test('the coordinator reads whether the confirmation was emailed, failed or not sent', () => {
+  const registered = 'SR-20 was registered as a confirmed appointment and appears in Calendar.'
+  assert.deepEqual(registrationNotice('SR-20', { appointmentId: 1, confirmation: null }), { severity: 'success', message: registered })
+  assert.deepEqual(registrationNotice('SR-20', { confirmation: { status: 'SENT', to: 'tester@example.com', testMode: true } }), {
+    severity: 'success', message: `${registered} The confirmation was emailed to tester@example.com (test inbox).`,
+  })
+  assert.deepEqual(registrationNotice('SR-20', { confirmation: { status: 'FAILED', message: 'Microsoft 365 rejected the email.' } }), {
+    severity: 'warning', message: `${registered} The confirmation email failed: Microsoft 365 rejected the email.`,
+  })
+  assert.deepEqual(registrationNotice('SR-20', { confirmation: { status: 'NOT_SENT', message: 'This request has no customer email, so no confirmation was sent.' } }), {
+    severity: 'warning', message: `${registered} This request has no customer email, so no confirmation was sent.`,
+  })
+})
+
+test('the planner previews the confirmation with the same template the server sends', () => {
+  assert.deepEqual(defaultConfirmationText({ homeownerName: 'Yesenia Hernandez' }), {
+    greeting: 'Hi Yesenia Hernandez,',
+    message: 'Thank you for confirming your service visit with Valtrim. Here are the details:',
+  })
+  const email = confirmationEmail({
+    folio: 'CS-2031', homeownerName: 'Yesenia Hernandez', date: '2026-11-24', windowStart: '10:00',
+    address: mailingAddress({ street: '12720 Azure Way-Unit 33', city: 'Hawthorne', state: 'CA', postalCode: '90250' }),
+    work: 'Shelving replacement', greeting: 'Hi Yesenia,', message: 'Thanks!', senderName: 'Victor',
+  })
+  assert.equal(email.subject, 'Your Valtrim service visit is confirmed for Tue, Nov 24 (CS-2031)')
+  assert.ok(email.text.includes('Arrival window: 10:00 AM–12:00 PM\nAddress: 12720 Azure Way-Unit 33, Hawthorne, CA 90250'))
 })

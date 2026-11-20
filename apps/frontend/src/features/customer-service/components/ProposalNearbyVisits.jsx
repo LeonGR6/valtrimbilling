@@ -72,7 +72,9 @@ function useNearbyDriving(requestId, ids) {
 // The suggestions come first; the nearby list they are based on stays folded below
 // (review of 13 Nov 2026). Colors come from driving miles (Google Route Matrix, no
 // traffic); "≈" marks straight-line miles while they are being checked or when Google fails.
-export default function ProposalNearbyVisits({ request, requests, technicians, distanceBands, onUseSlot }) {
+export default function ProposalNearbyVisits({
+  request, requests, technicians, distanceBands, formDate, formFits, onUseSlot, onRecommendedChange,
+}) {
   const [open, setOpen] = useState(false)
   const [showFarther, setShowFarther] = useState(false)
   const { hasCoordinates, through, candidates } = useMemo(() => getProposalNearbyVisits({ request, requests }), [request, requests])
@@ -88,7 +90,8 @@ export default function ProposalNearbyVisits({ request, requests, technicians, d
     <Stack spacing={1.5}>
       <ProposalNearbySlots request={request} requests={requests} technicians={technicians} candidates={candidates}
         hasCoordinates={hasCoordinates} distanceBands={distanceBands} drivingById={driving.byId}
-        drivingLoading={driving.loading} onUseSlot={onUseSlot} />
+        drivingLoading={driving.loading} formDate={formDate} formFits={formFits}
+        onUseSlot={onUseSlot} onRecommendedChange={onRecommendedChange} />
       <Divider />
       <Stack spacing={1}>
         <Stack direction="row" spacing={1} useFlexGap sx={{ alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap' }}>

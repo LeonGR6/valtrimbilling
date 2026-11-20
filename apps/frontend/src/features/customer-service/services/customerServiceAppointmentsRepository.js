@@ -13,6 +13,12 @@ async function functionErrorMessage(error, data, fallback) {
   return payload?.error || error?.message || fallback
 }
 
+// Options of proposals still waiting for the customer: they occupy their technicians.
+const HOLD_COLUMNS = [
+  'option_id', 'option_number', 'proposal_id', 'request_id', 'sent_at', 'technician_ids',
+  'window_starts_at', 'window_ends_at', 'starts_at', 'ends_at', 'pickup_minutes',
+].join(', ')
+
 const SETTINGS_COLUMNS = [
   'travel_traffic_mode', 'distance_green_max_miles', 'distance_yellow_max_miles', 'distance_orange_max_miles',
 ].join(', ')
@@ -30,18 +36,19 @@ async function loadTravelChecks(client, now) {
   }))
 }
 
-// Current (not cancelled) appointments, the travel estimates that touch an
-// appointment from today onward (the only legs the planner can prefill), the
+// Current (not cancelled) appointments, the days held by sent proposals, the travel
+// estimates that touch one of them from today onward (the only legs the planner can prefill), the
 // travel traffic mode, so the planner knows which Google legs to calculate again,
 // the distance bands used for nearby visits and the day-before traffic checks.
 export async function loadCustomerServiceSchedule(now = new Date()) {
   const client = await requireSupabase()
-  const [appointments, settings, travelChecks] = await Promise.all([
+  const [appointments, holds, settings, travelChecks] = await Promise.all([
     client.from('service_appointments').select(APPOINTMENT_COLUMNS).eq('is_current', true),
+    client.from('service_proposal_holds').select(HOLD_COLUMNS),
     client.from('service_scheduling_settings').select(SETTINGS_COLUMNS).eq('id', 1).maybeSingle(),
     loadTravelChecks(client, now),
   ])
-  for (const result of [appointments, settings]) {
+  for (const result of [appointments, holds, settings]) {
     if (result.error) {
       throw new Error(result.error.message || 'The schedule could not be loaded.', { cause: result.error })
     }
@@ -49,10 +56,10 @@ export async function loadCustomerServiceSchedule(now = new Date()) {
   const travelTrafficMode = settings.data?.travel_traffic_mode ?? 'OFF'
   const distanceBands = toDistanceBands(settings.data)
 
-  const requestIds = upcomingAppointmentRequestIds(appointments.data, now)
-  if (!requestIds.length) {
-    return { appointments: appointments.data, travelEstimates: [], travelTrafficMode, distanceBands, travelChecks }
-  }
+  const loaded = { appointments: appointments.data, proposalHolds: holds.data, travelTrafficMode, distanceBands, travelChecks }
+
+  const requestIds = upcomingAppointmentRequestIds([...appointments.data, ...holds.data], now)
+  if (!requestIds.length) return { ...loaded, travelEstimates: [] }
 
   const list = requestIds.join(',')
   const travel = await client.from('service_travel_estimates')
@@ -61,7 +68,7 @@ export async function loadCustomerServiceSchedule(now = new Date()) {
   if (travel.error) {
     throw new Error(travel.error.message || 'The schedule could not be loaded.', { cause: travel.error })
   }
-  return { appointments: appointments.data, travelEstimates: travel.data, travelTrafficMode, distanceBands, travelChecks }
+  return { ...loaded, travelEstimates: travel.data }
 }
 
 // The Edge Function revalidates capacity on the server before saving.

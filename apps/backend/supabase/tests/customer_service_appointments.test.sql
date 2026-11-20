@@ -15,9 +15,9 @@ select has_table('valtrim', 'service_travel_estimates', 'Travel minutes are stor
 select ok(not has_table_privilege('authenticated', 'valtrim.service_appointments', 'insert'), 'Browsers cannot insert appointments');
 select ok(not has_table_privilege('authenticated', 'valtrim.service_appointments', 'update'), 'Browsers cannot update appointments');
 select ok(not has_table_privilege('authenticated', 'valtrim.service_travel_estimates', 'insert'), 'Browsers cannot insert travel estimates');
-select ok(not has_function_privilege('authenticated', 'valtrim.register_customer_service_appointment(uuid,bigint,timestamptz,bigint[],jsonb,jsonb)', 'execute'),
+select ok(not has_function_privilege('authenticated', 'valtrim.register_customer_service_appointment(uuid,bigint,timestamptz,bigint[],jsonb,jsonb,bigint[])', 'execute'),
   'Browsers cannot bypass the Edge Function validation');
-select ok(has_function_privilege('service_role', 'valtrim.register_customer_service_appointment(uuid,bigint,timestamptz,bigint[],jsonb,jsonb)', 'execute'),
+select ok(has_function_privilege('service_role', 'valtrim.register_customer_service_appointment(uuid,bigint,timestamptz,bigint[],jsonb,jsonb,bigint[])', 'execute'),
   'The Edge Function can register');
 select ok(has_function_privilege('authenticated', 'valtrim.cancel_customer_service_appointment(bigint,timestamptz,text)', 'execute'),
   'Signed-in coordinators can call the guarded cancellation');

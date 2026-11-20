@@ -58,6 +58,18 @@ export interface AppointmentRow {
   service_requests: { folio: string } | null;
 }
 
+// An option of a proposal still waiting for the customer (view service_proposal_holds).
+// It occupies its technicians like an appointment.
+export interface HoldRow {
+  option_id: number;
+  request_id: number;
+  folio: string;
+  technician_ids: number[];
+  starts_at: string;
+  ends_at: string;
+  pickup_minutes: number;
+}
+
 export interface ValidationMessage {
   field: string;
   message: string;
@@ -128,11 +140,12 @@ export function californiaDayRange(date: string) {
 
 const plusMinutes = (iso: string, minutes: number) => new Date(Date.parse(iso) + minutes * 60_000);
 
-export function validateRegistration({ input, request, technicians, dayAppointments, now = new Date() }: {
+export function validateRegistration({ input, request, technicians, dayAppointments, dayHolds = [], now = new Date() }: {
   input: RegisterAppointmentInput;
   request: RequestRow | null;
   technicians: TechnicianRow[];
   dayAppointments: AppointmentRow[];
+  dayHolds?: HoldRow[];
   now?: Date;
 }) {
   const errors: ValidationMessage[] = [];
@@ -167,19 +180,39 @@ export function validateRegistration({ input, request, technicians, dayAppointme
   }
 
   const ids = new Set(uniqueIds);
-  const agenda = dayAppointments.flatMap((appointment) => appointment.technician_ids
-    .filter((id) => ids.has(id))
-    .map((id) => ({
-      requestId: String(appointment.request_id),
-      requestNumber: appointment.service_requests?.folio ?? `Request ${appointment.request_id}`,
-      technicianId: String(id),
-      date: input.date,
-      start: californiaClockAt(new Date(appointment.starts_at)).time,
-      end: californiaClockAt(plusMinutes(appointment.ends_at, appointment.pickup_minutes)).time,
-      windowUncertain: false,
+  const visits = [
+    ...dayAppointments.map((appointment) => ({
+      requestId: appointment.request_id,
+      folio: appointment.service_requests?.folio,
+      technicianIds: appointment.technician_ids,
+      startsAt: appointment.starts_at,
+      endsAt: appointment.ends_at,
+      pickupMinutes: appointment.pickup_minutes,
       // A COMPLETED window no longer reserves time (same rule as the planner); it
       // still counts in the expected-ids fingerprint.
       blocksAvailability: appointment.state !== "COMPLETED",
+    })),
+    ...dayHolds.map((hold) => ({
+      requestId: hold.request_id,
+      folio: hold.folio,
+      technicianIds: hold.technician_ids,
+      startsAt: hold.starts_at,
+      endsAt: hold.ends_at,
+      pickupMinutes: hold.pickup_minutes,
+      blocksAvailability: true,
+    })),
+  ];
+  const agenda = visits.flatMap((visit) => visit.technicianIds
+    .filter((id) => ids.has(id))
+    .map((id) => ({
+      requestId: String(visit.requestId),
+      requestNumber: visit.folio ?? `Request ${visit.requestId}`,
+      technicianId: String(id),
+      date: input.date,
+      start: californiaClockAt(new Date(visit.startsAt)).time,
+      end: californiaClockAt(plusMinutes(visit.endsAt, visit.pickupMinutes)).time,
+      windowUncertain: false,
+      blocksAvailability: visit.blocksAvailability,
     })));
   const capacity = checkVisitCapacity({
     visit: {
@@ -206,6 +239,7 @@ export function validateRegistration({ input, request, technicians, dayAppointme
       p_request_id: request.id,
       p_expected_request_updated_at: input.expectedRequestUpdatedAt,
       p_expected_appointment_ids: dayAppointments.map((appointment) => appointment.id),
+      p_expected_option_ids: dayHolds.map((hold) => hold.option_id),
       p_appointment: {
         technicianIds: uniqueIds,
         windowStartsAt: windowStartsAt.toISOString(),

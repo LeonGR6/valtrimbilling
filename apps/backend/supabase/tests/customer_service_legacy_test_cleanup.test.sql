@@ -15,7 +15,8 @@ select is((select count(*) from valtrim.service_request_contacts where request_i
 select is((select count(*) from valtrim.service_request_items where request_id in (3,4)), 0::bigint, 'No legacy items remain');
 select is((select count(*) from valtrim.service_request_sources where request_id in (3,4)), 0::bigint, 'No legacy sources remain');
 select is((select count(*) from valtrim.service_communications where request_id in (3,4) or appointment_id in (2,3)), 0::bigint, 'No communication references remain');
-select is((select count(*) from private.service_confirmation_tokens where appointment_id in (2,3)), 0::bigint, 'No confirmation tokens remain');
+-- The confirmation tokens table itself was dropped in 20261119120000.
+select ok(to_regclass('private.service_confirmation_tokens') is null, 'No confirmation tokens remain');
 select is((select count(*) from valtrim.audit_events where action = 'SERVICE_REQUEST_TEST_DATA_DELETED'
   and metadata ->> 'migration' = '20261020210000' and entity_id in ('3','4')), 2::bigint, 'Each removed request has a dedicated audit event');
 select ok(not exists(select 1 from valtrim.audit_events where action = 'SERVICE_REQUEST_TEST_DATA_DELETED'

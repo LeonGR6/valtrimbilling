@@ -139,6 +139,15 @@ export function getServiceEventTone(status) {
   return 'scheduled'
 }
 
+// The property's saved coordinates, or null when either one is missing.
+function requestCoordinates(request) {
+  const latitude = Number(request.latitude)
+  const longitude = Number(request.longitude)
+  return request.latitude != null && request.longitude != null && Number.isFinite(latitude) && Number.isFinite(longitude)
+    ? { latitude, longitude }
+    : null
+}
+
 function createPrototypeCalendarEvent(request) {
   const isCalendarVisit = ['CONFIRMED', 'WORKING', 'COMPLETED'].includes(request.workflowStage)
   const date = request.customerWindow?.date
@@ -166,6 +175,8 @@ function createPrototypeCalendarEvent(request) {
       calendarType: 'CUSTOMER_SERVICE',
       requestId: request.id,
       requestNumber: request.requestNumber,
+      reportedOn: request.reportedAt ?? null,
+      dueOn: request.dueOn ?? null,
       status: ['COMPLETED', 'WORKING'].includes(request.workflowStage) ? request.workflowStage : 'CONFIRMED',
       workTypes,
       technicianId,
@@ -176,6 +187,7 @@ function createPrototypeCalendarEvent(request) {
       community: request.community,
       lotNumber: request.lotNumber,
       address: request.address ?? '',
+      coordinates: requestCoordinates(request),
       issue: request.issue,
       notes: request.customerAvailabilityNotes ?? '',
       lastVisit: null,
@@ -217,6 +229,8 @@ export function createServiceCalendarEventsFromRequests(requests) {
           calendarType: 'CUSTOMER_SERVICE',
           requestId: request.id,
           requestNumber: request.requestNumber,
+          reportedOn: request.reportedAt ?? null,
+          dueOn: request.dueOn ?? null,
           status,
           workTypes,
           technicianId: request.technicianId,
@@ -226,6 +240,7 @@ export function createServiceCalendarEventsFromRequests(requests) {
           lotNumber: request.lotNumber,
           address: [request.street, request.city, request.state, request.postalCode]
             .filter(Boolean).join(', '),
+          coordinates: requestCoordinates(request),
           issue: request.issue,
           notes: request.internalNotes,
           lastVisit: null,
@@ -245,6 +260,44 @@ export function createServiceCalendarEventsFromRequests(requests) {
 export function serviceCalendarEventForRequest(requests, requestId) {
   const request = requests.find((entry) => String(entry.id) === String(requestId))
   return request ? createServiceCalendarEventsFromRequests([request])[0] ?? null : null
+}
+
+// The visit being planned, as the same detail Calendar shows, for the slot shown in the
+// Proposal Workspace day agenda. It is not saved and reserves nothing (status PROPOSED).
+// A day offered in a sent proposal uses status AWAITING_CUSTOMER: it is held until the
+// customer answers. visit: { date, windowStart, start, end, technicianNames }
+export function proposedServiceCalendarEvent(request, visit, status = 'PROPOSED') {
+  const customerWindow = serviceCustomerWindowOptions.find((window) => window.start === visit?.windowStart)
+  if (!request || !customerWindow || !visit.date) return null
+  const workTypes = normalizeServiceWorkTypes(request.workType)
+  return {
+    id: `${status === 'PROPOSED' ? 'proposed' : 'held'}-${request.id}-${visit.date}`,
+    title: `CS · ${formatWorkTypes(workTypes)}`,
+    start: `${visit.date}T${customerWindow.start}:00`,
+    end: `${visit.date}T${customerWindow.end}:00`,
+    allDay: false,
+    extendedProps: {
+      calendarType: 'CUSTOMER_SERVICE',
+      requestId: request.id,
+      requestNumber: request.requestNumber,
+      reportedOn: request.reportedAt ?? null,
+      dueOn: request.dueOn ?? null,
+      status,
+      workTypes,
+      technician: (visit.technicianNames ?? []).join(', '),
+      homeowner: request.contactName,
+      community: request.community,
+      lotNumber: request.lotNumber,
+      address: request.address ?? '',
+      coordinates: requestCoordinates(request),
+      issue: request.issue || request.description || '',
+      notes: request.customerAvailabilityNotes ?? '',
+      lastVisit: null,
+      customerWindow: { ...customerWindow, derived: false },
+      internalSlot: { start: visit.start, end: visit.end },
+      appointment: null,
+    },
+  }
 }
 
 function startOfWeek(referenceDate) {
@@ -479,6 +532,8 @@ export function createServiceCalendarEvent({
       calendarType: 'CUSTOMER_SERVICE',
       requestId: request.id,
       requestNumber: request.requestNumber,
+      reportedOn: request.reportedAt ?? null,
+      dueOn: request.dueOn ?? null,
       status,
       workTypes: normalizedWorkTypes,
       technicianId,

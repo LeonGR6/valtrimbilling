@@ -37,10 +37,11 @@ select has_table(
   'Customer communications are persisted'
 );
 
-select has_table(
+-- Replaced by signed proposal links in 20261119120000.
+select hasnt_table(
   'private',
   'service_confirmation_tokens',
-  'Appointment confirmation tokens stay in the private schema'
+  'Appointment confirmation tokens were retired'
 );
 
 select has_column(
@@ -204,10 +205,10 @@ select ok(
     from pg_class table_record
     join pg_namespace schema_record
       on schema_record.oid = table_record.relnamespace
-    where schema_record.nspname = 'private'
-      and table_record.relname = 'service_confirmation_tokens'
+    where schema_record.nspname = 'valtrim'
+      and table_record.relname = 'service_proposals'
   ),
-  'Confirmation tokens have RLS enabled in the private schema'
+  'Sent proposals have RLS enabled'
 );
 
 select ok(
@@ -251,10 +252,10 @@ select ok(
 select ok(
   not has_table_privilege(
     'authenticated',
-    'private.service_confirmation_tokens',
-    'select'
+    'valtrim.service_proposals',
+    'update'
   ),
-  'Browser clients cannot read confirmation token hashes'
+  'Browser clients cannot change sent proposals'
 );
 
 select ok(

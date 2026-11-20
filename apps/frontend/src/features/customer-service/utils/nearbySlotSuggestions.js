@@ -22,13 +22,18 @@
 //   of pickup are enough. The margin is still shown.
 // - On a day without nearby visits the technician registered first (Jorge) is preferred;
 //   another one is used only when that technician has no room that day.
+// Rules approved on 19 Nov 2026 (docs/customer-service-block-b-plan.md, section 5):
+// - A proposal offers a second day: the final days on another day than the first option,
+//   then the earliest other day before the due date. Never a day after the due date while
+//   the request can still be on time: without another on-time day it offers one day.
+// - An overdue request's second day is the earliest other day with room.
 import { serviceCustomerWindowOptions } from '../data/serviceCalendarEvents.js'
 import {
   minutesToTime, parseServiceDate, timeToMinutes, travelLegKey, travelMinutesFor,
 } from './customerServiceScheduling.js'
 import {
-  proposalSuggestionLeadBusinessDays, proposalSuggestionStepMinutes, suggestionStartDate, suggestProposalTimes,
-  validatePrototypeProposalDraft,
+  proposalSuggestionLeadBusinessDays, proposalSuggestionSearchBusinessDays, proposalSuggestionStepMinutes,
+  suggestionStartDate, suggestProposalTimes, validatePrototypeProposalDraft,
 } from './proposalDraft.js'
 import { formatWeekdayDate, getCustomerServiceClock } from './dates.js'
 
@@ -164,12 +169,14 @@ function suggestNextTo({ request, requests, technicians, anchor, travelMinutes, 
 // The first day with a viable slot for any technician combination of the crew size, so
 // grouping can always be compared with the earliest date. On that day the preferred
 // technicians keep it while they have room, even at a later time.
-export function earliestAvailableSlot({ request, requests, technicians, travelMinutes = {}, now = new Date(), fromDate = null }) {
+export function earliestAvailableSlot({
+  request, requests, technicians, travelMinutes = {}, now = new Date(), fromDate = null, skipDates = [],
+}) {
   const names = new Map(technicians.map((person) => [person.id, person.name]))
   let best = null
   for (const technicianIds of technicianSets(techniciansByPreference(technicians).map((person) => person.id), crewSize(request))) {
     const { suggestions: [first] } = suggestProposalTimes({
-      requestId: request.id, requests, technicians, now, limit: 1, fromDate,
+      requestId: request.id, requests, technicians, now, limit: 1, fromDate, skipDates,
       values: { technicianIds, date: '', windowStart: '', internalStart: '', travelMinutes },
     })
     if (first && (!best || first.date < best.date)) {
@@ -244,18 +251,18 @@ function firstSlotOnDay({ request, requests, technicians, date, drivingById, tra
 }
 
 // Final days (rule approved 10 Nov 2026): the due date first (D1), then one business day
-// back at a time down to fromDate (default today), skipping weekends and days the customer
-// cannot; on each day the first time that fits. Null for an overdue request, which goes
-// to the earliest date.
+// back at a time down to fromDate (default today), skipping weekends, days the customer
+// cannot and skipDates; on each day the first time that fits. Null for an overdue request,
+// which goes to the earliest date.
 export function finalDaysSlot({
-  request, requests, technicians, drivingById = {}, travelMinutes = {}, now = new Date(), fromDate = null,
+  request, requests, technicians, drivingById = {}, travelMinutes = {}, now = new Date(), fromDate = null, skipDates = [],
 }) {
   const today = getCustomerServiceClock(now).date
   if (!parseServiceDate(request.dueOn) || request.dueOn < today) return null
   const first = parseServiceDate(fromDate) && fromDate > today ? fromDate : today
-  const unavailable = request.customerUnavailableDates ?? []
+  const skipped = [...(request.customerUnavailableDates ?? []), ...skipDates]
   for (const cursor = new Date(`${request.dueOn}T12:00:00Z`); dayOf(cursor) >= first; cursor.setUTCDate(cursor.getUTCDate() - 1)) {
-    if (!isBusinessDay(cursor) || unavailable.includes(dayOf(cursor))) continue
+    if (!isBusinessDay(cursor) || skipped.includes(dayOf(cursor))) continue
     const slot = firstSlotOnDay({ request, requests, technicians, date: dayOf(cursor), drivingById, travelMinutes, now })
     if (slot) return slot
   }
@@ -265,7 +272,8 @@ export function finalDaysSlot({
 // Legs whose traffic minutes the suggestions need, each pair once (the travel function
 // takes distinct pairs), in the order the rows show: the legs of each fitting slot next
 // to a visit and the direct drive it replaces, then the final days, then the earliest
-// slot (blocks R3 and R4). The first departure of a pair wins.
+// slot (blocks R3 and R4), then the second day of the proposal. The first departure of a
+// pair wins.
 export function suggestionLegsToCheck(plan) {
   const legs = new Map()
   const add = (leg) => {
@@ -275,11 +283,15 @@ export function suggestionLegsToCheck(plan) {
     slot.travelLegs.forEach(add)
     add(slot.baselineLeg)
   }
-  ;(plan.finalDays?.travelLegs ?? []).forEach(add)
-  ;(plan.finalDays?.baselineLegs ?? []).forEach(add)
-  ;(plan.earliest?.travelLegs ?? []).forEach(add)
+  for (const slot of [plan.finalDays, plan.earliest, plan.second]) {
+    ;(slot?.travelLegs ?? []).forEach(add)
+    ;(slot?.baselineLegs ?? []).forEach(add)
+  }
   return [...legs.values()]
 }
+
+// A slot before the usual lead (only when the due date is sooner) is short notice.
+const markShortNotice = (slot, start) => (slot && slot.fits !== false ? { ...slot, shortNotice: slot.date < start.leadDate } : slot)
 
 // The single slot shown first (review of 13 Nov 2026, phase 1), in the approved order: next
 // to a nearby visit, then the final days, then the earliest time. It adds no rule; the
@@ -317,6 +329,49 @@ export function recommendSlot({ plan, hasCoordinates = true, groupingMiles = nul
   return null
 }
 
+// The second day a proposal offers with the first one, on another day (block B, decisions
+// of 19 Nov 2026), and why in plain words:
+// - the final days: the due date, or the business day before it when the first option
+//   already takes it, so the customer still has a day on time if the first one does not work;
+// - when the final days have no other room, the earliest other day before the due date;
+// - for an overdue request, the earliest other day with room.
+// Without another day, slot is null and the proposal offers one day: never a day after
+// the due date while the request can still be on time. Null for an invalid first date.
+export function secondOptionSlot({
+  request, requests, technicians, firstDate, drivingById = {}, travelMinutes = {}, now = new Date(),
+  leadBusinessDays = proposalSuggestionLeadBusinessDays,
+}) {
+  if (!parseServiceDate(firstDate)) return null
+  const today = getCustomerServiceClock(now).date
+  const onTime = Boolean(parseServiceDate(request.dueOn)) && request.dueOn >= today
+  const start = suggestionStartDate({ today, dueOn: request.dueOn, leadBusinessDays })
+  const search = { request, requests, technicians, travelMinutes, now, fromDate: start.date, skipDates: [firstDate] }
+  const first = formatWeekdayDate(firstDate)
+
+  const finalDays = finalDaysSlot({ ...search, drivingById })
+  if (finalDays) {
+    return {
+      kind: 'FINAL_DAYS', slot: markShortNotice(finalDays, start),
+      reason: `The latest other on-time day with room, so the customer still has a day on time if ${first} does not work.`,
+    }
+  }
+  const earliest = earliestAvailableSlot(search)
+  if (earliest) {
+    return {
+      kind: 'EARLIEST', slot: markShortNotice(earliest, start),
+      reason: onTime
+        ? 'The final days have no other room, so this is the earliest other day that fits before the due date.'
+        : 'This request is overdue, so this is the earliest other day with room.',
+    }
+  }
+  return {
+    kind: 'NONE', slot: null,
+    reason: onTime
+      ? `No other day before the due date has room, so the proposal offers only ${first}.`
+      : `No other day in the next ${proposalSuggestionSearchBusinessDays} business days has room, so the proposal offers only ${first}.`,
+  }
+}
+
 // leadBusinessDays: days the customer gets to answer before the first suggested day.
 export function nearbySlotSuggestions({
   request, requests, technicians, candidates = [], drivingById = {}, travelMinutes = {}, now = new Date(),
@@ -329,8 +384,7 @@ export function nearbySlotSuggestions({
     .sort((left, right) => drivingById[left.requestId].drivingMiles - drivingById[right.requestId].drivingMiles
       || left.date.localeCompare(right.date) || String(left.start).localeCompare(String(right.start)))
     .slice(0, nearbySlotLimit)
-  // A slot before the usual lead (only when the due date is sooner) is short notice.
-  const mark = (slot) => (slot && slot.fits !== false ? { ...slot, shortNotice: slot.date < start.leadDate } : slot)
+  const mark = (slot) => markShortNotice(slot, start)
   return {
     suggestions: anchors.map((anchor) => mark(suggestNextTo({ request, requests, technicians, anchor, travelMinutes, now }))),
     finalDays: mark(finalDaysSlot({ request, requests, technicians, drivingById, travelMinutes, now, fromDate: start.date })),

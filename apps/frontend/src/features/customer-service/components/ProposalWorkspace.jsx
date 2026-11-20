@@ -55,7 +55,8 @@ export default function ProposalWorkspace({
     <Stack spacing={2.5}>
       <Alert severity="info" variant="outlined">
         Pick a Ready to propose request, use its recommended slot or plan it by hand, and offer it to the customer.
-        Register the appointment once they accept. Proposals are not emailed from here yet.
+        Once they accept by phone, use Send to customer: the visit is registered and they can get a confirmation email.
+        Proposal invitations with two days are not emailed from here yet.
         {' '}Request information is read-only here; edit it in Requests.
       </Alert>
 

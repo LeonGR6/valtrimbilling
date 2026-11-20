@@ -28,7 +28,22 @@ export class MicrosoftGraphSyncError extends Error {
 // answered 503 (added 12 Nov 2026). It keeps only the step, Microsoft's HTTP status,
 // its error codes, request id and server: never the URL, token, secret, mailbox
 // content or the provider's message.
-export type GraphFailureStep = "token" | "delta" | "source" | "attachment";
+export type GraphFailureStep = "token" | "delta" | "source" | "attachment" | "send";
+
+// Why Microsoft did not take an email to send (block B, step B4). Like sync errors,
+// it keeps only a code, never the provider's message.
+export type GraphSendErrorCode =
+  | "FORBIDDEN" // the mailbox is outside the app's Exchange sending scope
+  | "MAILBOX_NOT_FOUND"
+  | "REJECTED"
+  | "THROTTLED"
+  | "UNAVAILABLE"
+  | "AUTH_FAILED";
+export class MicrosoftGraphSendError extends Error {
+  constructor(readonly code: GraphSendErrorCode) {
+    super(code);
+  }
+}
 export type GraphFailureDiagnostic = {
   step: GraphFailureStep;
   status?: number;
@@ -329,7 +344,8 @@ export function createCustomerServiceMicrosoftGraph(options: {
     } catch { /* Logging never changes the result. */ }
   };
   // Timers cover the response body as well as headers. No auto redirect, sleeps,
-  // remote image access, mailbox write or retry storm occurs in this client.
+  // remote image access or retry storm occurs in this client. The only mailbox write
+  // is sendMail, used for customer emails.
   async function bounded<T>(
     step: GraphFailureStep,
     run: (signal: AbortSignal) => Promise<T>,
@@ -346,6 +362,7 @@ export function createCustomerServiceMicrosoftGraph(options: {
     } catch (error) {
       if (
         error instanceof MicrosoftGraphSyncError ||
+        error instanceof MicrosoftGraphSendError ||
         error instanceof EmailAttachmentValidationError
       ) throw error;
       // No response arrived: a network error or the timeout.
@@ -598,6 +615,68 @@ export function createCustomerServiceMicrosoftGraph(options: {
   }
   return {
     tenantId: options.tenantId.toLowerCase(),
+    // Sends a plain-text email from a mailbox the app may send as (Exchange limits it to
+    // the "Valtrim proposal senders" scope) and keeps it in that mailbox's Sent Items.
+    // Microsoft answers 202 without a message id. Only a 401 is retried, with a fresh
+    // token: any other failure may have been half processed, so it is never resent here.
+    async sendMail(
+      mailbox: string,
+      mail: { to: string; subject: string; text: string },
+    ): Promise<void> {
+      const url = `${graphOrigin}/v1.0/users/${encodeURIComponent(mailbox.trim())}/sendMail`;
+      const body = JSON.stringify({
+        message: {
+          subject: mail.subject,
+          body: { contentType: "Text", content: mail.text },
+          toRecipients: [{ emailAddress: { address: mail.to } }],
+        },
+        saveToSentItems: true,
+      });
+      for (let attempt = 0; attempt < 2; attempt++) {
+        const bearer = await token(attempt === 1);
+        const sent = await bounded("send", async (signal) => {
+          const response = await fetcher(url, {
+            method: "POST",
+            redirect: "error",
+            signal,
+            headers: {
+              Authorization: `Bearer ${bearer}`,
+              "Content-Type": "application/json",
+            },
+            body,
+          });
+          if (response.status === 401 && attempt === 0) {
+            await response.body?.cancel();
+            return false;
+          }
+          if (response.status === 202) {
+            await response.body?.cancel();
+            return true;
+          }
+          report({
+            step: "send",
+            status: response.status,
+            ...responseDiagnostic(response),
+            providerCode: await providerErrorCode(response),
+          });
+          throw new MicrosoftGraphSendError(
+            response.status === 403
+              ? "FORBIDDEN"
+              : response.status === 404
+              ? "MAILBOX_NOT_FOUND"
+              : response.status === 429
+              ? "THROTTLED"
+              : response.status === 401
+              ? "AUTH_FAILED"
+              : response.status >= 500 || response.status === 408
+              ? "UNAVAILABLE"
+              : "REJECTED",
+          );
+        });
+        if (sent) return;
+      }
+      throw new MicrosoftGraphSendError("AUTH_FAILED");
+    },
     // An independent, metadata-only inventory. Never a substitute delta cursor.
     async folderMessageIds(target: EmailConnectionIdentity, nextUrl: string | null = null) {
       const path = folderPath(target);

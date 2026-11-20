@@ -15,7 +15,8 @@ import {
 } from '../utils/appointmentRecords.js'
 
 const emptySchedule = {
-  roster: [], appointments: [], travelEstimates: [], travelTrafficMode: 'OFF', distanceBands: null, travelChecks: [],
+  roster: [], appointments: [], proposalHolds: [], travelEstimates: [], travelTrafficMode: 'OFF', distanceBands: null,
+  travelChecks: [],
 }
 
 // Requests, accepted appointments, travel estimates and technicians come from
@@ -87,7 +88,7 @@ export default function CustomerServicePrototypeProvider({ children }) {
     }
     return {
       ...state,
-      requests: applyAppointmentsToRequests(state.requests, schedule.appointments, schedule.roster),
+      requests: applyAppointmentsToRequests(state.requests, schedule.appointments, schedule.roster, schedule.proposalHolds),
       emailAutomation, emailAutomationError,
       refreshEmailAutomation: () => automationMonitor.current?.refresh(),
       setRequests: store.setRequests,

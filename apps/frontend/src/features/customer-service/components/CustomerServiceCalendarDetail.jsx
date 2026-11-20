@@ -12,12 +12,18 @@ import {
   IconButton,
   Stack,
   TextField,
+  Tooltip,
   Typography,
 } from '@mui/material'
+import ContentCopyRoundedIcon from '@mui/icons-material/ContentCopyRounded'
+import GoogleIcon from '@mui/icons-material/Google'
+import PlaceOutlinedIcon from '@mui/icons-material/PlaceOutlined'
 import { useCustomerServicePrototype } from '../context/customerServicePrototypeContext.js'
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded'
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined'
 import EventAvailableRoundedIcon from '@mui/icons-material/EventAvailableRounded'
+import EventNoteOutlinedIcon from '@mui/icons-material/EventNoteOutlined'
+import FlagOutlinedIcon from '@mui/icons-material/FlagOutlined'
 import HomeWorkOutlinedIcon from '@mui/icons-material/HomeWorkOutlined'
 import PersonOutlineRoundedIcon from '@mui/icons-material/PersonOutlineRounded'
 import TaskAltRoundedIcon from '@mui/icons-material/TaskAltRounded'
@@ -26,6 +32,7 @@ import {
   formatWorkTypes,
   serviceAppointmentStatusLabels,
 } from '../data/serviceCalendarEvents.js'
+import { formatWeekdayDate } from '../utils/dates.js'
 
 const dateFormatter = new Intl.DateTimeFormat('en-US', {
   month: 'short',
@@ -73,6 +80,46 @@ function formatInternalSlot(event) {
   start.setHours(startHours, startMinutes, 0, 0)
   end.setHours(endHours, endMinutes, 0, 0)
   return `${timeFormatter.format(start)}–${timeFormatter.format(end)}`
+}
+
+// Coordinates as saved on the property, with buttons that copy them (for a map app) and
+// open them in Google Maps in a new tab.
+function CoordinatesField({ coordinates }) {
+  const [copyState, setCopyState] = useState('')
+  const text = coordinates ? `${coordinates.latitude}, ${coordinates.longitude}` : ''
+  const mapUrl = coordinates
+    ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${coordinates.latitude},${coordinates.longitude}`)}`
+    : ''
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(text)
+      setCopyState('Copied')
+    } catch {
+      setCopyState('Copy failed')
+    }
+  }
+  return (
+    <Field icon={<PlaceOutlinedIcon fontSize="small" />} label="Coordinates">
+      {coordinates ? (
+        <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5, flexWrap: 'wrap', wordBreak: 'break-all' }}>
+          {text}
+          <Box component="span" sx={{ display: 'inline-flex' }}>
+            <Tooltip title={copyState || 'Copy coordinates'} onClose={() => setCopyState('')}>
+              <IconButton size="small" onClick={copy} aria-label="Copy coordinates">
+                <ContentCopyRoundedIcon fontSize="inherit" />
+              </IconButton>
+            </Tooltip>
+            <Tooltip title="Open in Google Maps">
+              <IconButton size="small" component="a" href={mapUrl} target="_blank" rel="noopener noreferrer"
+                aria-label="Open in Google Maps">
+                <GoogleIcon fontSize="inherit" />
+              </IconButton>
+            </Tooltip>
+          </Box>
+        </Box>
+      ) : 'No coordinates saved'}
+    </Field>
+  )
 }
 
 // A saved appointment can be cancelled with a reason; the request returns to
@@ -174,9 +221,21 @@ export default function CustomerServiceCalendarDetail({ event, onClose, onEdit, 
       </Box>
 
       <Stack spacing={2.5} sx={{ p: 3 }}>
+        {/* The day the request was reported, which its deadline counts from, and its last on-time day. */}
+        <Stack direction="row" spacing={3} useFlexGap sx={{ flexWrap: 'wrap' }}>
+          <Field icon={<EventNoteOutlinedIcon fontSize="small" />} label="Reported on">
+            {formatWeekdayDate(props.reportedOn)}
+          </Field>
+          <Field icon={<FlagOutlinedIcon fontSize="small" />} label="Last on-time day">
+            {formatWeekdayDate(props.dueOn)}
+          </Field>
+        </Stack>
         <Chip
-          label={serviceAppointmentStatusLabels[props.status] ?? props.status}
-          color={props.status === 'OVERDUE' ? 'error' : props.status === 'COMPLETED' ? 'success' : 'primary'}
+          label={props.status === 'PROPOSED' ? 'Proposed · not reserved'
+            : props.status === 'AWAITING_CUSTOMER' ? 'Sent · held until the customer answers'
+              : serviceAppointmentStatusLabels[props.status] ?? props.status}
+          color={props.status === 'OVERDUE' ? 'error' : props.status === 'COMPLETED' ? 'success'
+            : props.status === 'PROPOSED' ? 'secondary' : props.status === 'AWAITING_CUSTOMER' ? 'warning' : 'primary'}
           size="small"
           sx={{ alignSelf: 'flex-start' }}
         />
@@ -186,7 +245,9 @@ export default function CustomerServiceCalendarDetail({ event, onClose, onEdit, 
         </Field>
         <Field icon={<HomeWorkOutlinedIcon fontSize="small" />} label="Property">
           {props.community} · Lot {props.lotNumber}
+          {props.address ? ` · ${props.address}` : ''}
         </Field>
+        <CoordinatesField coordinates={props.coordinates} />
         <Field icon={<BuildOutlinedIcon fontSize="small" />} label="Work type">
           {formatWorkTypes(props.workTypes)}
         </Field>

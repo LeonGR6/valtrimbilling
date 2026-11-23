@@ -65,10 +65,9 @@ const request = {
 };
 const options = [{ number: 1, date: "2026-11-27", windowStart: "08:00" }, { number: 2, date: "2026-11-30", windowStart: "10:00" }];
 
-Deno.test("the reminder is the invitation with a fixed text, from the same mailbox", () => {
+Deno.test("the reminder is the invitation with a fixed text", () => {
   const email = reminderEmail({
-    folio: "CS-2023", homeownerName: "Charline", options, address: "", work: "General fix", senderName: "Victor",
-    senderEmail: "victor@valtriminc.com",
+    folio: "CS-2023", homeownerName: "Charline", options, address: "", work: "General fix",
   });
   assertEquals(email.subject, "Reminder: choose a day for your Valtrim service visit (CS-2023)");
   assert(email.text.startsWith("Hi Charline,\n\nWe have not heard back about your service visit yet, so we are still holding these times for you:"));
@@ -76,20 +75,19 @@ Deno.test("the reminder is the invitation with a fixed text, from the same mailb
   assert(email.html.includes(">Option 2</div>"));
   // A single remaining day keeps the single-day wording but names it.
   const single = reminderEmail({
-    folio: "CS-2023", homeownerName: "", options: [options[1]], address: "", work: "", senderName: "",
+    folio: "CS-2023", homeownerName: "", options: [options[1]], address: "", work: "",
   });
   assertEquals(single.subject, "Reminder: can we visit on Mon, Nov 30? Your Valtrim service visit (CS-2023)");
   assert(single.text.includes("still holding this time for you"));
 
   const test = prepareReminder({
-    request, options, senderName: "Victor", senderEmail: "victor@valtriminc.com",
-    delivery: { mode: "TEST", recipient: "tester@example.com" },
+    request, options, delivery: { mode: "TEST", recipient: "tester@example.com" },
   });
   assert(test.send);
   assertEquals([test.to, test.testMode], ["tester@example.com", true]);
   assertEquals(test.subject, "[TEST for customer@example.com] Reminder: choose a day for your Valtrim service visit (CS-2023)");
-  assert(!prepareReminder({ request, options, senderName: "", senderEmail: "", delivery: { mode: "OFF" } }).send);
+  assert(!prepareReminder({ request, options, delivery: { mode: "OFF" } }).send);
   assert(!prepareReminder({
-    request: { ...request, homeowner_email: null }, options, senderName: "", senderEmail: "", delivery: { mode: "LIVE" },
+    request: { ...request, homeowner_email: null }, options, delivery: { mode: "LIVE" },
   }).send);
 });

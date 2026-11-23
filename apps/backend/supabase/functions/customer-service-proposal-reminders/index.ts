@@ -51,18 +51,11 @@ Deno.serve(async (req) => {
     const reminders = due.filter((reminder) => claimed.has(reminder.proposalId));
     if (!reminders.length) return json({ status: "NONE_DUE" });
 
-    const senderIds = [...new Set(reminders.map((reminder) => reminder.createdBy).filter(Boolean))] as string[];
-    const [requests, senders] = await Promise.all([
-      admin.from("service_requests").select(REQUEST_COLUMNS).in("id", reminders.map((reminder) => reminder.requestId)),
-      senderIds.length
-        ? admin.from("app_users").select("id, name").in("id", senderIds)
-        : Promise.resolve({ data: [], error: null }),
-    ]);
+    const requests = await admin.from("service_requests").select(REQUEST_COLUMNS)
+      .in("id", reminders.map((reminder) => reminder.requestId));
     if (requests.error) throw requests.error;
-    if (senders.error) throw senders.error;
     // deno-lint-ignore no-explicit-any
     const requestById = new Map((requests.data ?? []).map((request: any) => [Number(request.id), request]));
-    const nameById = new Map((senders.data ?? []).map((sender: { id: string; name: string | null }) => [sender.id, sender.name ?? ""]));
 
     let sent = 0;
     let failed = 0;
@@ -71,8 +64,6 @@ Deno.serve(async (req) => {
       const prepared = request && prepareReminder({
         request,
         options: reminder.options,
-        senderName: (reminder.createdBy && nameById.get(reminder.createdBy)) || "",
-        senderEmail: reminder.senderMailbox,
         delivery,
       });
       if (!prepared || !prepared.send) {

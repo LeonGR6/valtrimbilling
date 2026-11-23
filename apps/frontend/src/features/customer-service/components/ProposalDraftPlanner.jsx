@@ -33,7 +33,7 @@ export default function ProposalDraftPlanner({
     registerAppointment, sendProposal, storedTravelMinutes, storedRoutesMinutes, storedTravelDetails, travelTrafficMode, estimateTravel,
     distanceBands,
   } = useCustomerServicePrototype()
-  // Customer emails leave from the signed-in coordinator's mailbox, signed with their name.
+  // Customer emails leave from the signed-in coordinator's mailbox.
   const { profile } = useAuth()
   // Travel saved with earlier appointments fills the same legs; typed values win.
   const withStoredTravel = (formValues) => ({
@@ -376,7 +376,7 @@ export default function ProposalDraftPlanner({
         <SendToCustomerDialog request={request} values={values}
           summary={`${request.requestNumber} · ${formatWeekdayDate(values.date)} · work ${formatTime(values.internalStart)}–${
             formatTime(validation.internalEnd)} · ${technicianNames(values.technicianIds).join(', ')}`}
-          secondOffer={secondOffer} senderName={profile?.name ?? ''} senderEmail={profile?.email ?? ''}
+          secondOffer={secondOffer} senderEmail={profile?.email ?? ''}
           onClose={() => setSending(false)} onSend={send} onSendProposal={sendInvitation} />
       )}
     </Paper>

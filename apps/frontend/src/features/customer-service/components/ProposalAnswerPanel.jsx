@@ -32,7 +32,7 @@ function optionSummary(option, technicians) {
     formatTime(option.end)} · ${names}`
 }
 
-function AcceptDialog({ request, option, summary, senderName, senderEmail, onClose, onAccept }) {
+function AcceptDialog({ request, option, summary, senderEmail, onClose, onAccept }) {
   const customerEmail = String(request.contactEmail ?? '').trim()
   const [emailOn, setEmailOn] = useState(Boolean(customerEmail))
   const [text, setText] = useState(() => defaultConfirmationText({ homeownerName: request.contactName }))
@@ -45,7 +45,7 @@ function AcceptDialog({ request, option, summary, senderName, senderEmail, onClo
       address: mailingAddress({
         street: request.street || request.address, city: request.city, state: request.state, postalCode: request.postalCode,
       }),
-      work: request.issue, greeting: text.greeting, message: text.message, senderName, senderEmail,
+      work: request.issue, greeting: text.greeting, message: text.message,
     })
     : null
   const submit = async () => {
@@ -334,7 +334,7 @@ export default function ProposalAnswerPanel({ request, technicians, onAnswered }
       </Stack>
       {dialog?.kind === 'ACCEPT' && (
         <AcceptDialog request={request} option={dialog.option} summary={optionSummary(dialog.option, technicians)}
-          senderName={profile?.name ?? ''} senderEmail={profile?.email ?? ''}
+          senderEmail={profile?.email ?? ''}
           onClose={() => setDialog(null)} onAccept={(confirmation) => accept(dialog.option, confirmation)} />
       )}
       {dialog?.kind === 'DECLINE' && <DeclineDialog onClose={() => setDialog(null)} onDecline={decline} />}

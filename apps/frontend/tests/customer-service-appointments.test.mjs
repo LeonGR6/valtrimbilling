@@ -328,7 +328,7 @@ test('the planner previews the confirmation with the same template the server se
   const email = confirmationEmail({
     folio: 'CS-2031', homeownerName: 'Yesenia Hernandez', date: '2026-11-24', windowStart: '10:00',
     address: mailingAddress({ street: '12720 Azure Way-Unit 33', city: 'Hawthorne', state: 'CA', postalCode: '90250' }),
-    work: 'Shelving replacement', greeting: 'Hi Yesenia,', message: 'Thanks!', senderName: 'Victor',
+    work: 'Shelving replacement', greeting: 'Hi Yesenia,', message: 'Thanks!',
   })
   assert.equal(email.subject, 'Your Valtrim service visit is confirmed for Tue, Nov 24 (CS-2031)')
   assert.ok(email.text.includes('Arrival window: 10:00 AM–12:00 PM\nAddress: 12720 Azure Way-Unit 33, Hawthorne, CA 90250'))

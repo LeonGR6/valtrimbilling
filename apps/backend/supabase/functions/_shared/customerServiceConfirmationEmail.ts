@@ -58,13 +58,11 @@ export type PreparedConfirmation =
   | { send: true; to: string; customerEmail: string; testMode: boolean; subject: string; text: string; html: string }
   | { send: false; message: string };
 
-export function prepareConfirmation({ input, request, date, windowStart, senderName, senderEmail = "", delivery }: {
+export function prepareConfirmation({ input, request, date, windowStart, delivery }: {
   input: ConfirmationInput;
   request: ConfirmationRequest;
   date: string;
   windowStart: string;
-  senderName: string;
-  senderEmail?: string;
   delivery: CustomerEmailDelivery;
 }): PreparedConfirmation {
   const customerEmail = request.homeowner_email?.trim() ?? "";
@@ -89,8 +87,6 @@ export function prepareConfirmation({ input, request, date, windowStart, senderN
     work: request.description,
     greeting: input.greeting,
     message: input.message,
-    senderName,
-    senderEmail,
   });
   const testMode = delivery.mode === "TEST";
   return {

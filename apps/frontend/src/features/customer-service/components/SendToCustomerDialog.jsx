@@ -29,7 +29,7 @@ const acceptanceOptions = [
 // onSend({ acceptance, confirmationEmail }) registers; onSendProposal({ includeSecond,
 // invitation }) sends. Both reject with the error to show.
 export default function SendToCustomerDialog({
-  request, values, summary, secondOffer, senderName, senderEmail, onClose, onSend, onSendProposal,
+  request, values, summary, secondOffer, senderEmail, onClose, onSend, onSendProposal,
 }) {
   const customerEmail = String(request.contactEmail ?? '').trim()
   const [path, setPath] = useState(customerEmail ? 'PROPOSAL' : 'ACCEPTED')
@@ -57,7 +57,7 @@ export default function SendToCustomerDialog({
     address: mailingAddress({
       street: request.street || request.address, city: request.city, state: request.state, postalCode: request.postalCode,
     }),
-    work: request.issue, greeting: text.greeting, message: text.message, senderName, senderEmail,
+    work: request.issue, greeting: text.greeting, message: text.message,
   }
   const preview = !writesEmail
     ? null

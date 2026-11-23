@@ -31,7 +31,6 @@ Deno.test("the confirmation keeps the typed greeting and message and fixes the v
     folio: "CS-2031", homeownerName: "Yesenia Hernandez", date: "2026-11-24", windowStart: "08:00",
     address: mailingAddress({ street: "12720 Azure Way-Unit 33", city: "Hawthorne", state: "CA", postalCode: "90250" }),
     work: "Shelving\nreplacement", greeting: " Hi Yesenia, ", message: "Thanks for the call.\r\n  See you then. ",
-    senderName: "Anelda Calvillo",
   });
   assertEquals(email.subject, "Your Valtrim service visit is confirmed for Tue, Nov 24 (CS-2031)");
   assertEquals(email.text, [
@@ -45,11 +44,6 @@ Deno.test("the confirmation keeps the typed greeting and message and fixes the v
     "Address: 12720 Azure Way-Unit 33, Hawthorne, CA 90250",
     "Work: Shelving replacement",
     "Reference: CS-2031",
-    "",
-    "If this day no longer works for you, reply to this email.",
-    "",
-    "Anelda Calvillo",
-    "Valtrim Customer Service",
   ].join("\n"));
   assertEquals(defaultConfirmationText({ homeownerName: "" }).greeting, "Hello,");
 });
@@ -75,7 +69,7 @@ Deno.test("while testing every customer email goes to the test inbox; real custo
   assertEquals(customerEmailDelivery({ customerEmails: "LIVE" }), { mode: "LIVE" });
   assertEquals(customerEmailDelivery({}), { mode: "OFF" });
 
-  const base = { input: typed, request, date: "2026-11-24", windowStart: "08:00", senderName: "Anelda Calvillo" };
+  const base = { input: typed, request, date: "2026-11-24", windowStart: "08:00" };
   const test = prepareConfirmation({ ...base, delivery: { mode: "TEST", recipient: "tester@example.com" } });
   assert(test.send);
   assertEquals([test.to, test.customerEmail, test.testMode], ["tester@example.com", "customer@example.com", true]);
@@ -161,7 +155,6 @@ Deno.test("the HTML email follows the team layout and escapes what was typed", (
     folio: "CS-2031", homeownerName: "Yesenia", date: "2026-11-24", windowStart: "08:00",
     address: "12720 Azure Way & Co, Hawthorne, CA 90250", work: "Shelving <replacement>",
     greeting: "Hi <b>Yesenia</b>,", message: "Line one\nLine two\n\n<script>alert(1)</script>",
-    senderName: "Anelda Calvillo", senderEmail: "acalvillo@valtriminc.com",
   });
   const html = email.html;
   // The frame of the team's other emails: light page, white 600 px card, dark header.
@@ -180,8 +173,9 @@ Deno.test("the HTML email follows the team layout and escapes what was typed", (
   assert(html.includes("Shelving &lt;replacement&gt;"));
   // A line break stays inside its paragraph; a blank line starts a new one.
   assert(html.includes("Line one<br>Line two</p>"));
-  assert(html.includes('href="mailto:acalvillo@valtriminc.com"'));
   assert(html.includes("about your Valtrim service request CS-2031"));
-  // The plain text keeps the same signature, with the coordinator's email.
-  assert(email.text.endsWith("Anelda Calvillo\nValtrim Customer Service\nacalvillo@valtriminc.com"));
+  // No closing note and no signature (removed 23 Nov 2026): the details end the email.
+  assert(!html.includes("If this day no longer works"));
+  assert(!html.includes("Valtrim Customer Service"));
+  assert(email.text.endsWith("Reference: CS-2031"));
 });

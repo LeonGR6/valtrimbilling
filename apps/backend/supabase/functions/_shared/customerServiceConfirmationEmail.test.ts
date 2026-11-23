@@ -149,3 +149,39 @@ Deno.test("only an expired token is retried; other failures are never resent", a
     assertEquals([error.code, failed.calls.length], [code, 2]);
   }
 });
+
+Deno.test("the HTML version is sent as HTML", async () => {
+  const { client, calls } = graph([auth(), new Response(null, { status: 202 })]);
+  await client.sendMail("anelda@valtriminc.com", { ...mail, html: "<p>Body</p>" });
+  assertEquals(JSON.parse(String(calls[1].init.body)).message.body, { contentType: "HTML", content: "<p>Body</p>" });
+});
+
+Deno.test("the HTML email follows the team layout and escapes what was typed", () => {
+  const email = confirmationEmail({
+    folio: "CS-2031", homeownerName: "Yesenia", date: "2026-11-24", windowStart: "08:00",
+    address: "12720 Azure Way & Co, Hawthorne, CA 90250", work: "Shelving <replacement>",
+    greeting: "Hi <b>Yesenia</b>,", message: "Line one\nLine two\n\n<script>alert(1)</script>",
+    senderName: "Anelda Calvillo", senderEmail: "acalvillo@valtriminc.com",
+  });
+  const html = email.html;
+  // The frame of the team's other emails: light page, white 600 px card, dark header.
+  assert(html.startsWith("<!doctype html>"));
+  assert(html.includes("background-color: #f4f7fb;"));
+  assert(html.includes("width: 600px; max-width: 600px;"));
+  assert(html.includes("background-color: #111827;"));
+  assert(html.includes(">Your service visit is confirmed</h1>"));
+  assert(html.includes("Your Valtrim service visit is confirmed for Tuesday, November 24, 2026, 8:00 AM–10:00 AM."));
+  // Typed or stored text never becomes markup.
+  assert(!html.includes("<script>"));
+  assert(!html.includes("<b>Yesenia</b>"));
+  assert(html.includes("&lt;script&gt;alert(1)&lt;/script&gt;"));
+  assert(html.includes("Hi &lt;b&gt;Yesenia&lt;/b&gt;,"));
+  assert(html.includes("12720 Azure Way &amp; Co, Hawthorne, CA 90250"));
+  assert(html.includes("Shelving &lt;replacement&gt;"));
+  // A line break stays inside its paragraph; a blank line starts a new one.
+  assert(html.includes("Line one<br>Line two</p>"));
+  assert(html.includes('href="mailto:acalvillo@valtriminc.com"'));
+  assert(html.includes("about your Valtrim service request CS-2031"));
+  // The plain text keeps the same signature, with the coordinator's email.
+  assert(email.text.endsWith("Anelda Calvillo\nValtrim Customer Service\nacalvillo@valtriminc.com"));
+});

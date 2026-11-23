@@ -158,16 +158,17 @@ export function validateProposalOptions({ input, request, technicians, days, now
 }
 
 export type PreparedInvitation =
-  | { send: true; to: string; customerEmail: string; testMode: boolean; subject: string; text: string }
+  | { send: true; to: string; customerEmail: string; testMode: boolean; subject: string; text: string; html: string }
   | { send: false; message: string };
 
 // An invitation always needs the customer's email (decision of 20 Nov 2026): without one
 // the coordinator uses "Customer accepted by phone" and nothing is held.
-export function prepareInvitation({ input, request, options, senderName, delivery }: {
+export function prepareInvitation({ input, request, options, senderName, senderEmail = "", delivery }: {
   input: ConfirmationInput;
   request: ConfirmationRequest;
   options: { date: string; windowStart: string }[];
   senderName: string;
+  senderEmail?: string;
   delivery: CustomerEmailDelivery;
 }): PreparedInvitation {
   const customerEmail = request.homeowner_email?.trim() ?? "";
@@ -200,6 +201,7 @@ export function prepareInvitation({ input, request, options, senderName, deliver
     greeting: input.greeting,
     message: input.message,
     senderName,
+    senderEmail,
   });
   const testMode = delivery.mode === "TEST";
   return {
@@ -209,6 +211,7 @@ export function prepareInvitation({ input, request, options, senderName, deliver
     testMode,
     subject: testMode ? `[TEST for ${customerEmail}] ${email.subject}` : email.subject,
     text: email.text,
+    html: email.html,
   };
 }
 

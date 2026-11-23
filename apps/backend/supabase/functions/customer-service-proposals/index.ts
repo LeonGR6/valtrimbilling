@@ -71,6 +71,7 @@ async function send(req: Request, actor: Actor, body: unknown) {
     request,
     options: input.options.map((option) => ({ date: option.date, windowStart: option.windowStart })),
     senderName: actor.name,
+    senderEmail: actor.email,
     delivery: customerEmailDeliveryFromEnv(),
   });
   if (invitation && !invitation.send) throw new RequestError(invitation.message, 422);

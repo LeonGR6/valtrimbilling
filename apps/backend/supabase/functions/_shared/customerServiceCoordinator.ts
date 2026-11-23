@@ -99,7 +99,14 @@ export function customerEmailDeliveryFromEnv() {
   });
 }
 
-export type CustomerEmail = { to: string; customerEmail: string; testMode: boolean; subject: string; text: string };
+export type CustomerEmail = {
+  to: string;
+  customerEmail: string;
+  testMode: boolean;
+  subject: string;
+  text: string;
+  html?: string;
+};
 
 // Sends one email from the coordinator's mailbox and records the attempt in
 // service_communications. It never throws: the caller decides what a failure means.
@@ -119,7 +126,7 @@ export async function deliverCustomerEmail({ admin, actor, requestId, appointmen
       clientId: Deno.env.get("MS365_CLIENT_ID") ?? "",
       clientSecret: Deno.env.get("MS365_CLIENT_SECRET") ?? "",
     });
-    await graph.sendMail(actor.email, { to: email.to, subject: email.subject, text: email.text });
+    await graph.sendMail(actor.email, { to: email.to, subject: email.subject, text: email.text, html: email.html });
   } catch (error) {
     console.error(`Customer Service ${type} email failed.`, error instanceof Error ? error.message : error);
     failure = { certain: sendFailureIsCertain(error), message: confirmationFailureMessage(error, actor.email) };
@@ -164,6 +171,7 @@ export async function sendConfirmation({ admin, actor, input, request, appointme
     date,
     windowStart,
     senderName: actor.name,
+    senderEmail: actor.email,
     delivery: customerEmailDeliveryFromEnv(),
   });
   if (!prepared.send) return { status: "NOT_SENT", message: prepared.message };

@@ -55,15 +55,16 @@ export type ConfirmationRequest = {
 };
 
 export type PreparedConfirmation =
-  | { send: true; to: string; customerEmail: string; testMode: boolean; subject: string; text: string }
+  | { send: true; to: string; customerEmail: string; testMode: boolean; subject: string; text: string; html: string }
   | { send: false; message: string };
 
-export function prepareConfirmation({ input, request, date, windowStart, senderName, delivery }: {
+export function prepareConfirmation({ input, request, date, windowStart, senderName, senderEmail = "", delivery }: {
   input: ConfirmationInput;
   request: ConfirmationRequest;
   date: string;
   windowStart: string;
   senderName: string;
+  senderEmail?: string;
   delivery: CustomerEmailDelivery;
 }): PreparedConfirmation {
   const customerEmail = request.homeowner_email?.trim() ?? "";
@@ -89,6 +90,7 @@ export function prepareConfirmation({ input, request, date, windowStart, senderN
     greeting: input.greeting,
     message: input.message,
     senderName,
+    senderEmail,
   });
   const testMode = delivery.mode === "TEST";
   return {
@@ -98,6 +100,7 @@ export function prepareConfirmation({ input, request, date, windowStart, senderN
     testMode,
     subject: testMode ? `[TEST for ${customerEmail}] ${email.subject}` : email.subject,
     text: email.text,
+    html: email.html,
   };
 }
 

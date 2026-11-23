@@ -200,3 +200,28 @@ Deno.test("recorded answers: an accepted option, a rejection or one to three cou
     assertThrows(() => parseProposalAnswerInput(bad), AppointmentInputError);
   }
 });
+
+Deno.test("the HTML invitation shows each held day as an option card", () => {
+  const two = invitationEmail({
+    folio: "CS-2031", homeownerName: "Yesenia", options, address: "", work: "Shelving", greeting: "Hi,",
+    message: "These times work:", senderName: "Anelda Calvillo", senderEmail: "acalvillo@valtriminc.com",
+  });
+  assert(two.html.includes(">Choose a day for your service visit</h1>"));
+  assert(two.html.includes(">Option 1</div>"));
+  assert(two.html.includes(">Option 2</div>"));
+  assert(two.html.includes("Tuesday, November 24, 2026"));
+  assert(two.html.includes("Arrival window: 10:00 AM–12:00 PM"));
+  assert(two.html.includes("We are holding both times for you until you answer."));
+  assert(two.html.includes("We are holding 2 times for your Valtrim service visit. Reply to choose one."));
+  // An empty address is left out of the details card.
+  assert(!two.html.includes(">Address</td>"));
+  assert(two.html.includes(">Work</td>"));
+
+  const one = invitationEmail({
+    folio: "CS-2031", homeownerName: "", options: [options[0]], address: "", work: "", greeting: "Hello,",
+    message: "One day:", senderName: "",
+  });
+  assert(one.html.includes(">Can we visit on this day?</h1>"));
+  assert(!one.html.includes("Option 1"));
+  assert(one.html.includes("We are holding it for you until you answer."));
+});

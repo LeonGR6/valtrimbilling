@@ -57,7 +57,7 @@ export default function SendToCustomerDialog({
     address: mailingAddress({
       street: request.street || request.address, city: request.city, state: request.state, postalCode: request.postalCode,
     }),
-    work: request.issue, greeting: text.greeting, message: text.message, senderName,
+    work: request.issue, greeting: text.greeting, message: text.message, senderName, senderEmail,
   }
   const preview = !writesEmail
     ? null

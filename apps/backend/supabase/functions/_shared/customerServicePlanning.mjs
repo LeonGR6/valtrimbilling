@@ -11,6 +11,13 @@ export const serviceWorkTypeOptions = [
   "Shelving",
   multipleServiceWorkType,
 ].map((value) => ({ value, label: value }));
+
+// The name of a request's work category (DOORS, EXTERIOR_FRAMES…) as the app shows it:
+// what customer emails and the customer page call the work (decided 23 Nov 2026).
+export function serviceWorkTypeLabel(category) {
+  const key = String(category ?? "").replaceAll("_", " ").trim().toLowerCase();
+  return serviceWorkTypeOptions.find((option) => option.value.toLowerCase() === key)?.label ?? "";
+}
 export const serviceTaskOptions = [
   {
     value: "GENERAL_FIX",

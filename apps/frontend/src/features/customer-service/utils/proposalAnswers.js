@@ -2,6 +2,7 @@
 // step B6). Until the customer page exists (step B5) the customer answers by replying to
 // the invitation or by phone, and the coordinator records it here.
 import { customerServiceTimeZone, formatWeekdayDate, getCustomerServiceClock } from './dates.js'
+import { customerServiceEmailTime } from './customerServiceScheduling.js'
 
 export const counterDayParts = [
   { value: 'MORNING', label: 'Morning' },
@@ -42,6 +43,8 @@ export function formatCaliforniaDateTime(value) {
 export function proposalFollowUp(proposal, now = new Date(), options = []) {
   const hours = hoursSinceSent(proposal, now)
   const sentAt = Date.parse(proposal?.sentAt ?? '')
+  // 24 hours after sending, moved to 8:00 AM when that falls outside 8 AM–6 PM.
+  const dueAt = Number.isFinite(sentAt) ? customerServiceEmailTime(new Date(sentAt + reminderAfterHours * 3_600_000)) : null
   const attempt = proposal?.reminder
   let reminder
   if (attempt?.status === 'SENT') {
@@ -50,15 +53,15 @@ export function proposalFollowUp(proposal, now = new Date(), options = []) {
     reminder = { severity: 'warning', text: `The reminder email failed: ${attempt.message || 'Microsoft 365 did not take it.'}` }
   } else if (proposal?.reminderSentAt) {
     reminder = { severity: 'warning', text: 'The reminder could not be emailed. Call the customer instead.' }
-  } else if (Number.isFinite(sentAt) && options.length && options.every((option) => {
-    const due = getCustomerServiceClock(new Date(sentAt + reminderAfterHours * 3_600_000))
+  } else if (dueAt && options.length && options.every((option) => {
+    const due = getCustomerServiceClock(dueAt)
     return option.date < due.date || (option.date === due.date && minutesOf(option.windowStart) <= due.minutesSinceMidnight)
   })) {
     reminder = { severity: 'info', text: 'No reminder is emailed: every offered day starts before it would go out.' }
-  } else if (Number.isFinite(sentAt) && hours < reminderAfterHours) {
+  } else if (dueAt && now.getTime() < dueAt.getTime()) {
     reminder = {
       severity: 'info',
-      text: `If there is no answer, a reminder is emailed ${formatCaliforniaDateTime(new Date(sentAt + reminderAfterHours * 3_600_000).toISOString())}.`,
+      text: `If there is no answer, a reminder is emailed ${formatCaliforniaDateTime(dueAt.toISOString())}.`,
     }
   } else {
     reminder = { severity: 'info', text: 'The reminder is due and goes out within 15 minutes.' }
@@ -123,6 +126,48 @@ export function latestProposalAnswer(request, stage) {
   }
   if (proposal.status === 'CANCELLED' && stage === 'READY_TO_PROPOSE') {
     return { severity: 'info', title: 'The last proposal was cancelled', detail: proposal.cancelReason, note: '' }
+  }
+  return null
+}
+
+// The part of the day the customer page records for a picked window (same rule as the
+// server's dayPartForWindow).
+const dayPartOf = (windowStart) => (windowStart < '10:00' ? 'MORNING' : windowStart < '12:00' ? 'MIDDAY' : 'AFTERNOON')
+
+// The other day the customer picked on the proposal page (step B5), as a slot the planner
+// can use: the request is back in Ready to propose for the coordinator to approve it.
+export function customerChosenSlot(request) {
+  const proposal = request?.latestProposal
+  if (proposal?.status !== 'COUNTER_PROPOSED' || proposal.counterDates?.length !== 1) return null
+  const chosen = (proposal.alternatives ?? []).find((alternative) => alternative.date === proposal.counterDates[0]
+    && dayPartOf(alternative.windowStart) === proposal.counterDayPart)
+  if (!chosen) return null
+  return {
+    technicianIds: chosen.technicianIds.map(String), date: chosen.date, windowStart: chosen.windowStart,
+    internalStart: chosen.workStart,
+  }
+}
+
+// The best time to call that the customer typed on the proposal page, from the note the
+// server writes ("… Best time to call: after 5 PM. Phone: …").
+export function bestTimeToCall(note) {
+  return /Best time to call: (.+?)\.(?: Phone: |$)/u.exec(note ?? '')?.[1] ?? ''
+}
+
+// The label the request list shows only when the coordinator must act on a proposal
+// (decided 23 Nov 2026): the offered days passed, the Builder call is due, the customer
+// picked another day to approve, or the customer asked for a call.
+export function proposalListFlag(request, stage, now = new Date()) {
+  const proposal = request?.latestProposal
+  if (!proposal) return null
+  if (stage === 'AWAITING_CUSTOMER' && proposal.status === 'SENT') {
+    if (proposalOptionsStatus(request, now).allStarted) return { label: 'Days passed', color: 'error' }
+    return proposalFollowUp(proposal, now).builderCallDue ? { label: 'Call the Builder', color: 'warning' } : null
+  }
+  if (stage === 'READY_TO_PROPOSE' && customerChosenSlot(request)) return { label: 'Customer picked a day', color: 'info' }
+  if (stage === 'NEEDS_CONTACT' && proposal.status === 'REJECTED') {
+    const bestTime = bestTimeToCall(proposal.customerNote)
+    return { label: bestTime ? `Call the customer · ${bestTime}` : 'Call the customer', color: 'warning' }
   }
   return null
 }

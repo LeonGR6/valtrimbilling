@@ -22,6 +22,7 @@ import {
   parseConfirmationInput,
 } from "./customerServiceConfirmationEmail.ts";
 import { invitationEmail, mailingAddress } from "./customerServiceEmailTemplates.mjs";
+import { serviceWorkTypeLabel } from "./customerServicePlanning.mjs";
 
 export interface ProposalOptionInput {
   technicianIds: number[];
@@ -31,11 +32,50 @@ export interface ProposalOptionInput {
   travelMinutes: Record<string, number>;
 }
 
+// Other days the planner found when sending (step B5): shown to the customer only when
+// no offered day works, never held. The coordinator approves the one the customer picks.
+export interface ProposalAlternative {
+  date: string;
+  windowStart: string;
+  workStart: string;
+  technicianIds: number[];
+}
+
 export interface SendProposalInput {
   requestId: number;
   expectedRequestUpdatedAt: string;
   options: ProposalOptionInput[];
   invitation: ConfirmationInput;
+  alternatives: ProposalAlternative[];
+}
+
+const clockTime = (value: unknown) => typeof value === "string" && /^([01]\d|2[0-3]):[0-5]\d$/u.test(value);
+
+// Up to three, each on its own day and none on an offered day. Absent means none.
+function parseAlternatives(value: unknown, optionDates: string[]): ProposalAlternative[] {
+  if (value === undefined || value === null) return [];
+  if (!Array.isArray(value) || value.length > 3) throw new AppointmentInputError("Offer up to three other days.");
+  const alternatives = value.map((entry) => {
+    const alternative = (entry ?? {}) as Record<string, unknown>;
+    const technicianIds = Array.isArray(alternative.technicianIds) ? alternative.technicianIds.map(positiveId) : [];
+    if (
+      !isoDate(alternative.date) || !clockTime(alternative.windowStart) || !clockTime(alternative.workStart) ||
+      !technicianIds.length || technicianIds.some((id) => id === null)
+    ) {
+      throw new AppointmentInputError("Each other day needs a date, a window, a start and technicians.");
+    }
+    return {
+      date: alternative.date as string,
+      windowStart: alternative.windowStart as string,
+      workStart: alternative.workStart as string,
+      technicianIds: technicianIds as number[],
+    };
+  });
+  const dates = alternatives.map((alternative) => alternative.date);
+  if (new Set(dates).size !== dates.length || dates.some((date) => optionDates.includes(date))) {
+    throw new AppointmentInputError("Offer the other days on different days from the proposal.");
+  }
+  return alternatives;
 }
 
 const positiveId = (value: unknown) =>
@@ -91,7 +131,10 @@ export function parseSendProposalInput(body: unknown): SendProposalInput {
   }
   const invitation = parseConfirmationInput(value.invitation);
   if (!invitation) throw new AppointmentInputError("Write the invitation before sending it.");
-  return { requestId, expectedRequestUpdatedAt: value.expectedRequestUpdatedAt, options, invitation };
+  const alternatives = parseAlternatives(value.alternatives, options.map((option) => option.date));
+  // The customer reads the days by date: option 1 is the earliest (decided 23 Nov 2026).
+  options.sort((left, right) => left.date.localeCompare(right.date));
+  return { requestId, expectedRequestUpdatedAt: value.expectedRequestUpdatedAt, options, invitation, alternatives };
 }
 
 // The agenda the server read for one option's day and technicians.
@@ -157,17 +200,26 @@ export function validateProposalOptions({ input, request, technicians, days, now
   };
 }
 
+// Every offered day of a proposal has started (its window began): nobody can accept it
+// any more, so a new proposal may replace it (decided 23 Nov 2026).
+export function proposalDaysPassed(options: { window_starts_at: string }[], now = new Date()) {
+  return options.length > 0 && options.every((option) => Date.parse(option.window_starts_at) <= now.getTime());
+}
+
 export type PreparedInvitation =
   | { send: true; to: string; customerEmail: string; testMode: boolean; subject: string; text: string; html: string }
   | { send: false; message: string };
 
 // An invitation always needs the customer's email (decision of 20 Nov 2026): without one
 // the coordinator uses "Customer accepted by phone" and nothing is held.
-export function prepareInvitation({ input, request, options, delivery }: {
+// links: the customer page's buttons (step B5), once the proposal exists; without them
+// the customer replies to the email.
+export function prepareInvitation({ input, request, options, delivery, links = null }: {
   input: ConfirmationInput;
   request: ConfirmationRequest;
   options: { date: string; windowStart: string }[];
   delivery: CustomerEmailDelivery;
+  links?: { options: { number: number; url: string }[]; none: string } | null;
 }): PreparedInvitation {
   const customerEmail = request.homeowner_email?.trim() ?? "";
   if (!customerEmail) {
@@ -195,9 +247,10 @@ export function prepareInvitation({ input, request, options, delivery }: {
       state: property?.state,
       postalCode: property?.postal_code,
     }),
-    work: request.description,
+    work: serviceWorkTypeLabel(request.work_category),
     greeting: input.greeting,
     message: input.message,
+    links,
   });
   const testMode = delivery.mode === "TEST";
   return {

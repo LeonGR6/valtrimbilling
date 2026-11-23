@@ -24,10 +24,11 @@ const HOLD_COLUMNS = [
 const PROPOSAL_COLUMNS = [
   'id', 'request_id', 'status', 'sender_mailbox', 'sent_at', 'reminder_sent_at', 'builder_contacted_at',
   'responded_at', 'response_via', 'counter_dates', 'counter_day_part', 'customer_note', 'cancelled_at', 'cancel_reason',
+  'alternatives',
 ].join(', ')
 
 const SETTINGS_COLUMNS = [
-  'travel_traffic_mode', 'distance_green_max_miles', 'distance_yellow_max_miles', 'distance_orange_max_miles',
+  'travel_traffic_mode', 'distance_green_max_miles', 'distance_yellow_max_miles', 'distance_orange_max_miles', 'test_mode',
 ].join(', ')
 
 // Follow-ups of the proposals still waiting for the customer (block B, step B7): the
@@ -82,9 +83,11 @@ export async function loadCustomerServiceSchedule(now = new Date()) {
   }
   const travelTrafficMode = settings.data?.travel_traffic_mode ?? 'OFF'
   const distanceBands = toDistanceBands(settings.data)
+  // Cancelling a visit or a proposal is for cleaning up tests only (decided 23 Nov 2026).
+  const testMode = settings.data?.test_mode === true
 
   const loaded = {
-    appointments: appointments.data, proposalHolds: holds.data, proposals: proposals.data, travelTrafficMode, distanceBands,
+    appointments: appointments.data, proposalHolds: holds.data, proposals: proposals.data, travelTrafficMode, distanceBands, testMode,
     travelChecks, proposalFollowUps: await loadProposalFollowUps(client, proposals.data),
   }
 

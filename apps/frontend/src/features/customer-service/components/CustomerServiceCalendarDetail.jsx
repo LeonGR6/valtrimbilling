@@ -122,8 +122,9 @@ function CoordinatesField({ coordinates }) {
   )
 }
 
-// A saved appointment can be cancelled with a reason; the request returns to
-// Ready to propose so it can be planned again. Rescheduling is cancel + register.
+// In test mode only, a saved appointment can be cancelled with a reason; the request
+// returns to Ready to propose. Otherwise a confirmed visit is not cancelled (decided
+// 23 Nov 2026): the coordinator calls the customer, until the Reschedule block exists.
 function CancelAppointment({ appointment, requestNumber, onCancelled }) {
   const { cancelAppointment } = useCustomerServicePrototype()
   const [dialog, setDialog] = useState(null)
@@ -171,6 +172,7 @@ function CancelAppointment({ appointment, requestNumber, onCancelled }) {
 
 // canCancel: false shows the visit read-only (the Proposal Workspace day agenda).
 export default function CustomerServiceCalendarDetail({ event, onClose, onEdit, onViewRequest, canCancel = true }) {
+  const { testMode } = useCustomerServicePrototype()
   if (!event) return null
 
   const props = event.extendedProps
@@ -294,7 +296,7 @@ export default function CustomerServiceCalendarDetail({ event, onClose, onEdit, 
             View full request
           </Button>
         )}
-        {canCancel && props.appointment?.state === 'SCHEDULED' && props.status === 'CONFIRMED' && (
+        {canCancel && testMode && props.appointment?.state === 'SCHEDULED' && props.status === 'CONFIRMED' && (
           <CancelAppointment appointment={props.appointment} requestNumber={props.requestNumber} onCancelled={onClose} />
         )}
         {onEdit && (

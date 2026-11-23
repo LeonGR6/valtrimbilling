@@ -6,7 +6,9 @@
 // With confirmationEmail (block B, step B4, path a "Customer accepted by phone"), the
 // customer then gets a confirmation from the coordinator's own mailbox, recorded in
 // service_communications. The appointment stays registered if that email fails.
-// Cancelling has no capacity rule and is a guarded RPC the browser calls directly.
+// A request still waiting on a proposal whose offered days all started can be registered:
+// the system closes that proposal first (decided 23 Nov 2026).
+// Cancelling (test mode only) has no capacity rule and is a guarded RPC the browser calls.
 import { handlePreflight, json } from "../_shared/cors.ts";
 import {
   AppointmentInputError,
@@ -18,6 +20,7 @@ import { type ConfirmationInput, parseConfirmationInput } from "../_shared/custo
 import {
   type Actor,
   authorizeCoordinator,
+  closePassedProposal,
   loadTechnicianDay,
   onlyChangedTravel,
   REQUEST_COLUMNS,
@@ -61,10 +64,13 @@ async function register(req: Request, actor: Actor) {
     throw new RequestError("The appointment cannot be registered.", 422, validation.errors);
   }
   const travel = await onlyChangedTravel(admin, validation.rpcArgs.p_travel);
+  // deno-lint-ignore no-explicit-any
+  const replacedAt = await closePassedProposal(admin, requestResult.data as any, input.expectedRequestUpdatedAt);
 
   const { data, error } = await admin.rpc("register_customer_service_appointment", {
     p_actor_id: actor.id,
     ...validation.rpcArgs,
+    ...(replacedAt ? { p_expected_request_updated_at: replacedAt } : {}),
     p_travel: travel,
   });
   if (error) {

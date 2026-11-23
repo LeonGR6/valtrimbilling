@@ -2,6 +2,7 @@ import { serviceCustomerWindowOptions } from '../data/serviceCalendarEvents.js'
 import { requestToPrototypeFormValues } from './newRequestPrototype.js'
 import { buildRequestReviewSummary, effectiveRequestWorkflowStage } from './requestInbox.js'
 import { customerServiceTimeZone, getCustomerServiceClock } from './dates.js'
+import { proposalOptionsStatus } from './proposalAnswers.js'
 import { assignedPrototypeTechnicianIds, prototypeTechnicians } from '../data/prototypeTechnicians.js'
 import {
   checkVisitCapacity, checkVisitDate, customerServicePickupMinutes,
@@ -206,8 +207,11 @@ export function validatePrototypeProposalDraft({ requestId, values, requests, te
   // Warnings never claim viability, but they do not block a draft: drafts reserve nothing.
   const warnings = []
   // After a declined proposal the coordinator calls the customer and plans again from
-  // Needs contact; the server accepts both stages (block B, step B6).
-  if (!request || !['READY_TO_PROPOSE', 'NEEDS_CONTACT'].includes(effectiveRequestWorkflowStage(request))) {
+  // Needs contact; the server accepts both stages (block B, step B6). A proposal whose
+  // offered days all started is replaced by the new plan (decided 23 Nov 2026).
+  const stage = request && effectiveRequestWorkflowStage(request)
+  const replacesPassed = stage === 'AWAITING_CUSTOMER' && proposalOptionsStatus(request, now).allStarted
+  if (!request || (!['READY_TO_PROPOSE', 'NEEDS_CONTACT'].includes(stage) && !replacesPassed)) {
     addError('request', 'Only Ready to propose or Needs contact requests can have a planning draft.')
   } else if (!request.review?.valtrimItemsConfirmed || !buildRequestReviewSummary(request).isComplete) {
     addError('request', 'Complete and approve the request information in Requests before planning.')
@@ -292,7 +296,8 @@ export function buildAppointmentRegistration({ request, values, validation, acce
 // Body for "Send proposal" (block B, step B4, path b): one or two days, each with the
 // travel of its own sequence. The Edge Function validates both, holds them and emails the
 // invitation. options: [{ values, validation }] in the order the customer reads them.
-export function buildProposalSend({ request, options, invitation }) {
+// alternatives (step B5): other days the customer may pick when none works, not held.
+export function buildProposalSend({ request, options, invitation, alternatives = [] }) {
   return {
     requestId: Number(request.id),
     expectedRequestUpdatedAt: request.updatedAt,
@@ -305,6 +310,7 @@ export function buildProposalSend({ request, options, invitation }) {
         .filter((leg) => leg.minutes !== null).map((leg) => [leg.key, leg.minutes])),
     })),
     invitation,
+    alternatives,
   }
 }
 

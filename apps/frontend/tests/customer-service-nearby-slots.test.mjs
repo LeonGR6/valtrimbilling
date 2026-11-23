@@ -5,7 +5,7 @@ import { applyAppointmentsToRequests, toPlanningTechnicians } from '../src/featu
 import { californiaInstant } from '../src/features/customer-service/utils/customerServiceScheduling.js'
 import {
   businessDaysLeft, deadlineLabel, earliestAvailableSlot, finalDaysSlot, insertionDetails, nearbySlotSuggestions,
-  recommendSlot, secondOptionSlot, suggestionLegsToCheck, technicianSets, techniciansByPreference,
+  proposalAlternatives, recommendSlot, secondOptionSlot, suggestionLegsToCheck, technicianSets, techniciansByPreference,
 } from '../src/features/customer-service/utils/nearbySlotSuggestions.js'
 import {
   fitStatus, fitStatusLabels, getPrototypePlanningTechnicians, suggestionStartDate, validatePrototypeProposalDraft,
@@ -560,4 +560,20 @@ test('an overdue request gets the earliest other day with room', () => {
   assert.deepEqual([second.kind, second.slot.date], ['EARLIEST', '2026-11-19'])
   assert.equal(second.reason, 'This request is overdue, so this is the earliest other day with room.')
   assert.equal(secondDay({ request: overdue, firstDate: '' }), null)
+})
+
+test('a proposal keeps up to three other days for the same technicians, skipping the offered ones', () => {
+  // From Friday 6, the suggestions start Tuesday 10 (two business days to answer); the
+  // request is due Friday 13. Tuesday and Wednesday are the offered days.
+  const alternatives = proposalAlternatives({
+    request: ready, requests: [ready], technicians, technicianIds: ['4'], skipDates: ['2026-11-10', '2026-11-11'], now,
+  })
+  assert.deepEqual(alternatives, [
+    { date: '2026-11-12', windowStart: '08:00', workStart: '08:00', technicianIds: [4] },
+    { date: '2026-11-13', windowStart: '08:00', workStart: '08:00', technicianIds: [4] },
+  ])
+  assert.deepEqual(proposalAlternatives({
+    request: ready, requests: [ready], technicians, technicianIds: ['4'],
+    skipDates: ['2026-11-10', '2026-11-11', '2026-11-12', '2026-11-13'], now,
+  }), [])
 })

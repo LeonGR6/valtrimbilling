@@ -90,6 +90,7 @@ function toProposal(row, followUps) {
     reminderSentAt: row.reminder_sent_at ?? null, builderContactedAt: row.builder_contacted_at ?? null,
     respondedAt: row.responded_at ?? null, responseVia: row.response_via ?? null,
     counterDates: row.counter_dates ?? [], counterDayPart: row.counter_day_part ?? null,
+    alternatives: row.alternatives ?? [],
     customerNote: row.customer_note ?? '', cancelledAt: row.cancelled_at ?? null, cancelReason: row.cancel_reason ?? '',
     reminder: proposalReminder(row, followUps.reminders ?? []),
     builderContact: proposalBuilderContact(row, followUps.builderContacts ?? []),

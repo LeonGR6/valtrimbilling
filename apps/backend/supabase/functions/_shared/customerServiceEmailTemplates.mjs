@@ -1,5 +1,6 @@
 // Emails to Customer Service customers, built the same way for the planner's preview
-// and for the Edge Function that sends them (block B, step B4). Pure functions only.
+// and for the Edge Function that sends them (block B, step B4), and the notices to the
+// coordinator who sent a proposal. Pure functions only.
 //
 // Each email has an HTML version, laid out like the team's other Valtrim emails (dark
 // header, white card, centered title, light footer; decided 23 Nov 2026), and a plain
@@ -83,7 +84,22 @@ ${shown.map(([label, value]) => `      <tr>
 </table>`
 }
 
-function optionCard({ label, date, windowStart }) {
+// A button like the team's other emails: a table cell, so Outlook draws it too.
+// primary: the blue "Accept"; otherwise the light "None of these days work".
+function buttonHtml({ url, label, primary = true, margin = '12px 0 0' }) {
+  const colors = primary
+    ? 'background-color: #2563eb; color: #ffffff; border: 1px solid #2563eb;'
+    : 'background-color: #ffffff; color: #374151; border: 1px solid #d1d5db;'
+  return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin: ${margin};">
+<tr>
+  <td align="center" bgcolor="${primary ? '#2563eb' : '#ffffff'}" style="border-radius: 8px;">
+    <a href="${escapeHtml(url)}" target="_blank" style="display: inline-block; padding: 12px 22px; ${colors} ${font} font-size: 15px; font-weight: 700; line-height: 1; text-decoration: none; border-radius: 8px;">${escapeHtml(label)}</a>
+  </td>
+</tr>
+</table>`
+}
+
+function optionCard({ label, date, windowStart, acceptUrl = '' }) {
   const window = windowLabel(windowStart)
   return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin: 0 0 12px; border: 1px solid #bfdbfe; border-radius: 12px; background-color: #eff6ff;">
 <tr>
@@ -91,6 +107,7 @@ function optionCard({ label, date, windowStart }) {
     ${label ? `<div style="margin: 0 0 4px; color: #2563eb; font-size: 12px; font-weight: 700; line-height: 1.4; text-transform: uppercase; letter-spacing: 0.6px;">${escapeHtml(label)}</div>` : ''}
     <div style="color: #111827; font-size: 18px; font-weight: 700; line-height: 1.4;">${escapeHtml(longDate(date))}</div>
     ${window ? `<div style="margin: 4px 0 0; color: #374151; font-size: 15px; line-height: 1.5;">Arrival window: ${escapeHtml(window)}</div>` : ''}
+    ${acceptUrl ? buttonHtml({ url: acceptUrl, label: 'Accept this day' }) : ''}
   </td>
 </tr>
 </table>`
@@ -187,6 +204,8 @@ ${optionCard({ label: '', date, windowStart })}
 
 // --- Invitation (path b, "Send proposal") ---
 
+/** @typedef {{ options: { number: number, url: string }[], none: string }} ProposalLinks */
+
 export function defaultInvitationText({ homeownerName } = {}) {
   const name = singleLine(homeownerName)
   return {
@@ -201,8 +220,14 @@ export function defaultInvitationText({ homeownerName } = {}) {
 // options: [{ date: 'YYYY-MM-DD', windowStart: '08:00', number? }], in California time;
 // number keeps an option's place in the proposal when an earlier one is left out.
 // reminder: the 24-hour reminder of step B7 (see reminderEmail).
+// links (step B5): { options: [{ number, url }], none } from the server; each opens the
+// customer page, where the customer confirms. Without links the customer replies.
+/**
+ * @param {{ folio: any, homeownerName: any, options: any, address: any, work: any, greeting: any, message: any,
+ *   reminder?: boolean, links?: ProposalLinks | null }} params
+ */
 export function invitationEmail({
-  folio, homeownerName, options: offered, address, work, greeting, message, reminder = false,
+  folio, homeownerName, options: offered, address, work, greeting, message, reminder = false, links = null,
 }) {
   const fallback = defaultInvitationText({ homeownerName })
   const options = offered ?? []
@@ -219,30 +244,46 @@ export function invitationEmail({
     singleLine(work) && `Work: ${singleLine(work)}`,
     `Reference: ${singleLine(folio)}`,
   ].filter(Boolean)
-  const answer = several
-    ? 'Reply to this email with the option that works for you. We are holding both times for you until you answer.'
-    : 'Reply to this email to confirm this time. We are holding it for you until you answer.'
+  const acceptUrl = (option, index) => links?.options?.find((entry) => entry.number === (option.number ?? index + 1))?.url ?? ''
+  const buttons = Boolean(links?.none) && options.every((option, index) => acceptUrl(option, index))
+  const holding = several ? 'We are holding both times for you until you answer.' : 'We are holding it for you until you answer.'
+  const answer = buttons
+    ? `${several ? 'Choose the day that works for you with its button.' : 'Confirm this day with the button above.'} ${holding}`
+    : `${several ? 'Reply to this email with the option that works for you.' : 'Reply to this email to confirm this time.'} ${holding}`
+  const textLinks = buttons
+    ? [
+      ...options.map((option, index) => `Accept ${several ? `option ${option.number ?? index + 1}` : 'this day'}: ${acceptUrl(option, index)}`),
+      `None of these days work: ${links.none}`,
+    ].join('\n')
+    : ''
   return {
     subject: `${reminder ? 'Reminder: ' : ''}${several
       ? `${reminder ? 'choose' : 'Choose'} a day for your Valtrim service visit (${singleLine(folio)})`
       : `${reminder ? 'can' : 'Can'} we visit on ${shortDate(options[0]?.date)}? Your Valtrim service visit (${singleLine(folio)})`}`,
-    text: [typedGreeting, typedMessage, days.join('\n'), details.join('\n'), answer].join('\n\n'),
+    text: [typedGreeting, typedMessage, days.join('\n'), details.join('\n'), answer, textLinks].filter(Boolean).join('\n\n'),
     html: emailLayout({
       title: `${reminder ? 'Reminder: ' : ''}${several
         ? `${reminder ? 'choose' : 'Choose'} a day for your service visit`
         : `${reminder ? 'can' : 'Can'} we visit on this day?`}`,
       preheader: several
-        ? `We are ${reminder ? 'still ' : ''}holding ${options.length} times for your Valtrim service visit. Reply to choose one.`
-        : `We are ${reminder ? 'still ' : ''}holding ${longDate(options[0]?.date)} for your Valtrim service visit. Reply to confirm.`,
+        ? `We are ${reminder ? 'still ' : ''}holding ${options.length} times for your Valtrim service visit. ${buttons ? 'Choose one' : 'Reply to choose one'}.`
+        : `We are ${reminder ? 'still ' : ''}holding ${longDate(options[0]?.date)} for your Valtrim service visit. ${buttons ? 'Confirm it' : 'Reply to confirm'}.`,
       content: [
         messageHtml(typedGreeting),
         messageHtml(typedMessage),
         `<div style="margin: 8px 0 16px;">\n${options.map((option, index) => optionCard({
           label: several ? `Option ${option.number ?? index + 1}` : '', date: option.date, windowStart: option.windowStart,
+          acceptUrl: buttons ? acceptUrl(option, index) : '',
         })).join('\n')}\n</div>`,
         detailsCard([['Address', address], ['Work', work], ['Reference', folio]]),
         `<p style="margin: 0; color: #111827; font-size: 16px; font-weight: 700; line-height: 1.6; text-align: center;">${escapeHtml(answer)}</p>`,
-      ].join('\n'),
+        buttons
+          ? `<div style="text-align: center;">\n${buttonHtml({
+            url: links.none, label: several ? 'None of these days work' : 'This day does not work', primary: false,
+            margin: '20px auto 0',
+          })}\n</div>`
+          : '',
+      ].filter(Boolean).join('\n'),
       footer: footerHtml(folio),
     }),
   }
@@ -252,12 +293,109 @@ export function invitationEmail({
 
 // 24 hours after the invitation without an answer, sent automatically from the same
 // mailbox: the same email with a fixed text, listing only the days that have not started.
-export function reminderEmail({ folio, homeownerName, options, address, work }) {
+/**
+ * @param {{ folio: any, homeownerName: any, options: any, address: any, work: any, links?: ProposalLinks | null }} params
+ */
+export function reminderEmail({ folio, homeownerName, options, address, work, links = null }) {
   const name = singleLine(homeownerName)
   const several = (options ?? []).length > 1
   return invitationEmail({
-    folio, homeownerName, options, address, work, reminder: true,
+    folio, homeownerName, options, address, work, reminder: true, links,
     greeting: name ? `Hi ${name},` : 'Hello,',
     message: `We have not heard back about your service visit yet, so we are still holding ${several ? 'these times' : 'this time'} for you:`,
   })
+}
+
+// --- Visit reminder (decided 23 Nov 2026) ---
+
+// The business day before the visit, from 3:00 PM California time, from the mailbox that
+// confirmed it: the visit details again, with no closing note.
+export function visitReminderEmail({ folio, homeownerName, date, windowStart, address, work }) {
+  const window = windowLabel(windowStart)
+  const name = singleLine(homeownerName)
+  const greeting = name ? `Hi ${name},` : 'Hello,'
+  const message = 'This is a reminder of your upcoming Valtrim service visit. Here are the details:'
+  const details = [
+    `Date: ${longDate(date)}`,
+    window && `Arrival window: ${window}`,
+    singleLine(address) && `Address: ${singleLine(address)}`,
+    singleLine(work) && `Work: ${singleLine(work)}`,
+    `Reference: ${singleLine(folio)}`,
+  ].filter(Boolean)
+  return {
+    subject: `Reminder: your Valtrim service visit is on ${shortDate(date)} (${singleLine(folio)})`,
+    text: [greeting, message, details.join('\n')].join('\n\n'),
+    html: emailLayout({
+      title: 'Your service visit is coming up',
+      preheader: `Your Valtrim service visit is on ${longDate(date)}${window ? `, ${window}` : ''}.`,
+      content: [
+        messageHtml(greeting),
+        messageHtml(message),
+        `<div style="margin: 8px 0 16px;">
+${optionCard({ label: '', date, windowStart })}
+</div>`,
+        detailsCard([['Address', address], ['Work', work], ['Reference', folio]]),
+      ].join('\n'),
+      footer: footerHtml(folio),
+    }),
+  }
+}
+
+// --- Notices to the coordinator who sent a proposal (decided 23 Nov 2026) ---
+
+// Only when they must act: the customer picked another day or asked for a call on the
+// proposal page, 48 hours passed without an answer, or every offered day started.
+// kind: 'CUSTOMER_PICKED_DAY' (date, windowStart), 'CALL_CUSTOMER' (bestTime, phone),
+// 'BUILDER_CALL' (builder: { name, superintendent, phone, email }) or 'DAYS_PASSED'.
+/**
+ * @param {{ kind: string, folio: any, customerName: any, address: any, date?: string, windowStart?: string,
+ *   bestTime?: string, phone?: string,
+ *   builder?: { name?: string, superintendent?: string, phone?: string, email?: string } | null }} params
+ */
+export function coordinatorNoticeEmail({
+  kind, folio, customerName, address, date = '', windowStart = '', bestTime = '', phone = '', builder = null,
+}) {
+  const reference = singleLine(folio)
+  const customer = singleLine(customerName) || 'The customer'
+  const window = windowLabel(windowStart)
+  const notice = {
+    CUSTOMER_PICKED_DAY: {
+      subject: `${reference}: the customer picked another day (${date ? shortDate(date) : 'see the request'})`,
+      title: 'The customer picked another day',
+      message: `None of the offered days worked for ${customer}, who picked ${date ? longDate(date) : 'another day'}${
+        window ? `, arrival window ${window}` : ''} on the proposal page. Approve it in the Proposal Workspace: the request is in Ready to propose.`,
+      rows: [],
+    },
+    CALL_CUSTOMER: {
+      subject: `${reference}: call the customer`,
+      title: 'Call the customer',
+      message: `None of the offered days work for ${customer}, who asked for a call on the proposal page. Call them to find another time: the request is in Needs contact.`,
+      rows: [['Best time', bestTime], ['Phone', phone]],
+    },
+    BUILDER_CALL: {
+      subject: `${reference}: no answer after 48 hours, call the Builder`,
+      title: 'No answer after 48 hours',
+      message: `${customer} has not answered the proposal in 48 hours. Call the Builder's superintendent, then record it with Builder contacted in the Proposal Workspace.`,
+      rows: [['Builder', builder?.name], ['Contact', builder?.superintendent], ['Phone', builder?.phone], ['Email', builder?.email]],
+    },
+    DAYS_PASSED: {
+      subject: `${reference}: the offered days passed without an answer`,
+      title: 'The offered days passed',
+      message: `Every day offered to ${customer} has started without an answer. Call the customer and plan a new day in the Proposal Workspace: the new proposal or visit closes this one.`,
+      rows: [],
+    },
+  }[kind]
+  if (!notice) throw new Error(`Unknown coordinator notice: ${kind}`)
+  const rows = [['Customer', customerName], ['Address', address], ...notice.rows, ['Reference', reference]]
+  return {
+    subject: notice.subject,
+    text: [notice.message, rows.filter(([, value]) => singleLine(value)).map(([label, value]) => `${label}: ${singleLine(value)}`).join('\n')]
+      .join('\n\n'),
+    html: emailLayout({
+      title: notice.title,
+      preheader: notice.message,
+      content: [messageHtml(notice.message), detailsCard(rows)].join('\n'),
+      footer: 'An automatic notice from Valtrim Customer Service.',
+    }),
+  }
 }

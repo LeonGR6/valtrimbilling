@@ -6,12 +6,14 @@
 // the Edge Function customer-service-proposal-reminders claims and sends them.
 import type { ConfirmationRequest, CustomerEmailDelivery } from "./customerServiceConfirmationEmail.ts";
 import { mailingAddress, reminderEmail } from "./customerServiceEmailTemplates.mjs";
-import { californiaClockAt } from "./customerServiceScheduling.mjs";
+import { serviceWorkTypeLabel } from "./customerServicePlanning.mjs";
+import { californiaClockAt, withinCustomerServiceEmailHours } from "./customerServiceScheduling.mjs";
 
 export const REMINDER_AFTER_HOURS = 24;
 
 export interface ReminderProposalRow {
   id: number;
+  public_id?: string;
   request_id: number;
   status: string;
   sender_mailbox: string;
@@ -23,6 +25,7 @@ export interface ReminderProposalRow {
 
 export interface DueReminder {
   proposalId: number;
+  publicId: string;
   requestId: number;
   senderMailbox: string;
   createdBy: string | null;
@@ -33,7 +36,9 @@ export function reminderCutoff(now: Date) {
   return new Date(now.getTime() - REMINDER_AFTER_HOURS * 3_600_000);
 }
 
+// Only from 8:00 AM to 6:00 PM in California: one due at night goes out at 8:00 AM.
 export function dueReminders(rows: ReminderProposalRow[], now: Date): DueReminder[] {
+  if (!withinCustomerServiceEmailHours(now)) return [];
   const cutoff = reminderCutoff(now).getTime();
   return rows.flatMap((row) => {
     if (row.status !== "SENT" || row.reminder_sent_at || Date.parse(row.sent_at) > cutoff) return [];
@@ -47,6 +52,7 @@ export function dueReminders(rows: ReminderProposalRow[], now: Date): DueReminde
     if (!options.length) return [];
     return [{
       proposalId: row.id,
+      publicId: row.public_id ?? "",
       requestId: row.request_id,
       senderMailbox: row.sender_mailbox,
       createdBy: row.created_by,
@@ -59,10 +65,11 @@ export type PreparedReminder =
   | { send: true; to: string; customerEmail: string; testMode: boolean; subject: string; text: string; html: string }
   | { send: false; message: string };
 
-export function prepareReminder({ request, options, delivery }: {
+export function prepareReminder({ request, options, delivery, links = null }: {
   request: ConfirmationRequest;
   options: DueReminder["options"];
   delivery: CustomerEmailDelivery;
+  links?: { options: { number: number; url: string }[]; none: string } | null;
 }): PreparedReminder {
   const customerEmail = request.homeowner_email?.trim() ?? "";
   if (!customerEmail) return { send: false, message: "The request has no customer email." };
@@ -78,7 +85,8 @@ export function prepareReminder({ request, options, delivery }: {
       state: property?.state,
       postalCode: property?.postal_code,
     }),
-    work: request.description,
+    work: serviceWorkTypeLabel(request.work_category),
+    links,
   });
   const testMode = delivery.mode === "TEST";
   return {

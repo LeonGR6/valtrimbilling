@@ -441,9 +441,20 @@ verify_jwt = true
 [functions.customer-service-proposals]
 verify_jwt = true
 
-# 24-hour reminders of proposals still waiting for the customer, called by pg_cron
-# every 15 minutes. No caller credential: each proposal is reminded once, only when due.
+# Follow-ups of proposals still waiting for the customer (24-hour reminder, 48-hour and
+# days-passed notices), called by pg_cron every 15 minutes. No caller credential: each
+# email goes out once, only when due.
 [functions.customer-service-proposal-reminders]
+verify_jwt = false
+
+# The reminder of a confirmed visit the business day before, called by pg_cron every 15
+# minutes. No caller credential: each visit is reminded once, only when due.
+[functions.customer-service-visit-reminders]
+verify_jwt = false
+
+# The customer's page for a proposal (step B5). No sign-in: the signed token in the
+# link is the credential, and it only works while the proposal waits for an answer.
+[functions.customer-service-proposal-response]
 verify_jwt = false
 
 # Travel minutes between visits from Google Routes API for ADMIN/SCHEDULING

@@ -125,6 +125,13 @@ const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const graphOrigin = "https://graph.microsoft.com";
 const jsonLimit = 16 * 1024 * 1024; // Transport protection; never truncate a source.
 
+// UTF-8 text as base64, for a file attachment's contentBytes.
+function base64(text: string) {
+  let binary = "";
+  for (const byte of new TextEncoder().encode(text)) binary += String.fromCharCode(byte);
+  return btoa(binary);
+}
+
 function object(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
@@ -619,9 +626,16 @@ export function createCustomerServiceMicrosoftGraph(options: {
     // the "Valtrim proposal senders" scope) and keeps it in that mailbox's Sent Items.
     // Microsoft answers 202 without a message id. Only a 401 is retried, with a fresh
     // token: any other failure may have been half processed, so it is never resent here.
+    // attachments: small text files (the visit's .ics), sent as file attachments.
     async sendMail(
       mailbox: string,
-      mail: { to: string; subject: string; text: string; html?: string },
+      mail: {
+        to: string;
+        subject: string;
+        text: string;
+        html?: string;
+        attachments?: { name: string; contentType: string; content: string }[];
+      },
     ): Promise<void> {
       const url = `${graphOrigin}/v1.0/users/${encodeURIComponent(mailbox.trim())}/sendMail`;
       // The HTML version when there is one; the plain text otherwise.
@@ -630,6 +644,16 @@ export function createCustomerServiceMicrosoftGraph(options: {
           subject: mail.subject,
           body: mail.html ? { contentType: "HTML", content: mail.html } : { contentType: "Text", content: mail.text },
           toRecipients: [{ emailAddress: { address: mail.to } }],
+          ...(mail.attachments?.length
+            ? {
+              attachments: mail.attachments.map((file) => ({
+                "@odata.type": "#microsoft.graph.fileAttachment",
+                name: file.name,
+                contentType: file.contentType,
+                contentBytes: base64(file.content),
+              })),
+            }
+            : {}),
         },
         saveToSentItems: true,
       });

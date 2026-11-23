@@ -115,6 +115,13 @@ test('only fully reviewed Ready to propose or Needs contact requests can be plan
   }
   // After a declined proposal the coordinator calls the customer and plans again.
   assert.equal(validate({}, [{ ...ready, workflowStage: 'NEEDS_CONTACT' }]).isValid, true)
+  // A waiting proposal whose offered days all started is replaced by the new plan.
+  const hold = (date) => ({
+    optionNumber: 1, date, windowStart: '08:00', windowEnd: '10:00', start: '08:00', end: '08:30', pickupMinutes: 10,
+    technicianIds: [jorge],
+  })
+  assert.equal(validate({}, [{ ...ready, workflowStage: 'AWAITING_CUSTOMER', proposalHolds: [hold('2026-10-12')] }]).isValid, true)
+  assert.equal(validate({}, [{ ...ready, workflowStage: 'AWAITING_CUSTOMER', proposalHolds: [hold('2026-10-15')] }]).isValid, false)
   assert.equal(validate({}, [{ ...ready, review: null }]).isValid, false)
   assert.equal(validate({}, [{ ...ready, crewSize: null }]).isValid, false)
   assert.equal(validate({}, [{ ...ready, contactPhone: '', contactEmail: '' }]).isValid, false)

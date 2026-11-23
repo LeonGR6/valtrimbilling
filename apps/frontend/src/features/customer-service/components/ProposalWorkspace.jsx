@@ -35,6 +35,13 @@ export default function ProposalWorkspace({
   const selectedStage = selected && effectiveRequestWorkflowStage(selected)
   const selectedWorkflow = selected && requestWorkflowStages[selectedStage]
   const lastAnswer = selected && latestProposalAnswer(selected, selectedStage)
+  // A request just registered (by phone or an accepted proposal) leaves the workspace.
+  const leftRequest = selectedRequestId && !selected
+    ? requests.find((request) => String(request.id) === String(selectedRequestId))
+    : null
+  const confirmedElsewhere = leftRequest && ['CONFIRMED', 'WORKING', 'COMPLETED'].includes(effectiveRequestWorkflowStage(leftRequest))
+    ? leftRequest
+    : null
   const changeStage = (value) => {
     const change = () => {
       setStage(value)
@@ -93,11 +100,16 @@ export default function ProposalWorkspace({
         </Select>
       </FormControl>
 
-      {selectedRequestId && !selected && (
+      {selectedRequestId && !selected && (confirmedElsewhere ? (
+        <Alert severity="success" variant="outlined"
+          action={<Button color="inherit" onClick={() => onSelectRequest(undefined)}>Close</Button>}>
+          {confirmedElsewhere.requestNumber} is confirmed and appears in Calendar.
+        </Alert>
+      ) : (
         <Alert severity="warning" action={<Button color="inherit" onClick={onBackToRequests}>Requests</Button>}>
           This request is not available for proposals. It may require review again.
         </Alert>
-      )}
+      ))}
 
       {selected && (
         <Paper variant="outlined" sx={{ p: { xs: 2, md: 3 } }}>

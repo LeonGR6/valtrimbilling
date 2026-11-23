@@ -621,13 +621,14 @@ export function createCustomerServiceMicrosoftGraph(options: {
     // token: any other failure may have been half processed, so it is never resent here.
     async sendMail(
       mailbox: string,
-      mail: { to: string; subject: string; text: string },
+      mail: { to: string; subject: string; text: string; html?: string },
     ): Promise<void> {
       const url = `${graphOrigin}/v1.0/users/${encodeURIComponent(mailbox.trim())}/sendMail`;
+      // The HTML version when there is one; the plain text otherwise.
       const body = JSON.stringify({
         message: {
           subject: mail.subject,
-          body: { contentType: "Text", content: mail.text },
+          body: mail.html ? { contentType: "HTML", content: mail.html } : { contentType: "Text", content: mail.text },
           toRecipients: [{ emailAddress: { address: mail.to } }],
         },
         saveToSentItems: true,

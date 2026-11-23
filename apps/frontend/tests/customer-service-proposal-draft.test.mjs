@@ -109,10 +109,12 @@ test('manual travel input accepts whole minutes only, and an empty value is unkn
   assert.equal(proposalDraftHasChanges({ ...baseline, travelMinutes: {} }, baseline), true)
 })
 
-test('only fully reviewed Ready to propose requests can be planned', () => {
-  for (const workflowStage of ['NEEDS_REVIEW', 'AWAITING_CUSTOMER', 'NEEDS_CONTACT', 'CONFIRMED', 'COMPLETED']) {
+test('only fully reviewed Ready to propose or Needs contact requests can be planned', () => {
+  for (const workflowStage of ['NEEDS_REVIEW', 'AWAITING_CUSTOMER', 'CONFIRMED', 'COMPLETED']) {
     assert.equal(validate({}, [{ ...ready, workflowStage }]).isValid, false)
   }
+  // After a declined proposal the coordinator calls the customer and plans again.
+  assert.equal(validate({}, [{ ...ready, workflowStage: 'NEEDS_CONTACT' }]).isValid, true)
   assert.equal(validate({}, [{ ...ready, review: null }]).isValid, false)
   assert.equal(validate({}, [{ ...ready, crewSize: null }]).isValid, false)
   assert.equal(validate({}, [{ ...ready, contactPhone: '', contactEmail: '' }]).isValid, false)

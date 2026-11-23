@@ -1,7 +1,7 @@
 export const GOOGLE_CALENDAR_SCOPE =
   'https://www.googleapis.com/auth/calendar.app.created'
 
-export const GOOGLE_CALENDAR_SUMMARY = 'ValtrimBilling Test'
+export const GOOGLE_CALENDAR_SUMMARY = 'ValtrimBilling'
 export const GOOGLE_CALENDAR_TIME_ZONE = 'America/Mexico_City'
 
 const GOOGLE_AUTHORIZATION_URL = 'https://accounts.google.com/o/oauth2/v2/auth'

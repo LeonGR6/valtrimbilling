@@ -22,7 +22,7 @@ test('Google Calendar connection rows omit the Vault secret boundary', () => {
   const connection = toGoogleCalendarConnection({
     user_id: '00000000-0000-4000-8000-000000000001',
     google_calendar_id: 'calendar@group.calendar.google.com',
-    calendar_summary: 'ValtrimBilling Test',
+    calendar_summary: 'ValtrimBilling',
     granted_scope: 'https://www.googleapis.com/auth/calendar.app.created',
     status: 'CONNECTED',
     connected_at: '2026-09-14T20:00:00Z',
@@ -38,7 +38,7 @@ test('Google Calendar connection rows omit the Vault secret boundary', () => {
     refresh_token_secret_id: 'must-not-cross-the-browser-boundary',
   })
 
-  assert.equal(connection.calendarSummary, 'ValtrimBilling Test')
+  assert.equal(connection.calendarSummary, 'ValtrimBilling')
   assert.equal(connection.status, 'CONNECTED')
   assert.equal(connection.lastSyncStatus, 'SUCCESS')
   assert.equal(connection.lastSyncCreatedCount, 3)

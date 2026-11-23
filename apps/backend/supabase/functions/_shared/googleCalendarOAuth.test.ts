@@ -56,7 +56,7 @@ Deno.test('reuses an accessible dedicated calendar', async () => {
     calls.push(String(input))
     return Promise.resolve(Response.json({
       id: 'existing@group.calendar.google.com',
-      summary: 'ValtrimBilling Test',
+      summary: 'ValtrimBilling',
       timeZone: 'America/Mexico_City',
     }))
   }) as typeof fetch
@@ -77,7 +77,7 @@ Deno.test('creates a dedicated calendar when no connection exists', async () => 
     calls.push({ url: String(input), method: init?.method })
     return Promise.resolve(Response.json({
       id: 'new@group.calendar.google.com',
-      summary: 'ValtrimBilling Test',
+      summary: 'ValtrimBilling',
       timeZone: 'America/Mexico_City',
     }))
   }) as typeof fetch

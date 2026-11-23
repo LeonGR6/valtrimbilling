@@ -47,6 +47,14 @@
   --activity-soft: #eef2fb;
 }
 
+/* A DM saved with a Tentative date is orange until its date owner confirms it. */
+.activity-tone--dm-tentative {
+  --activity-color: #f97316;
+  --activity-strong: #c2410c;
+  --activity-background: #ffedd5;
+  --activity-soft: #fff7ed;
+}
+
 [data-mui-color-scheme="dark"] .activity-tone--ext {
   --activity-color: #a78bfa;
   --activity-strong: #ddd6fe;
@@ -96,6 +104,13 @@
   --activity-soft: #1b2540;
 }
 
+[data-mui-color-scheme="dark"] .activity-tone--dm-tentative {
+  --activity-color: #fb923c;
+  --activity-strong: #fed7aa;
+  --activity-background: #4a2c15;
+  --activity-soft: #38281a;
+}
+
 /* Calendar events use flat, solid fills (the same in light and dark themes). */
 .activity-tone--ext {
   --activity-solid: #8e24aa;
@@ -129,6 +144,11 @@
 
 .activity-tone--baseboard {
   --activity-solid: #1e3a8a;
+  --activity-on-solid: #ffffff;
+}
+
+.activity-tone--dm-tentative {
+  --activity-solid: #f4511e;
   --activity-on-solid: #ffffff;
 }
 
@@ -208,6 +228,13 @@
   --activity-strong: #c7d6f7;
   --activity-background: #1c2a52;
   --activity-soft: #1b2540;
+}
+
+.calendar-theme--dark .activity-tone--dm-tentative {
+  --activity-color: #fb923c;
+  --activity-strong: #fed7aa;
+  --activity-background: #4a2c15;
+  --activity-soft: #38281a;
 }
 
 .calendar-page__header {

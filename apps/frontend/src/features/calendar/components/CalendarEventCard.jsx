@@ -11,7 +11,7 @@ import {
 export default function CalendarEventCard({ event, isList = false, isMonth = false }) {
   const props = event.extendedProps
   const type = activityTypeMap[props.activityType]
-  const tone = getActivityTone(props.activityType, props.orderMaterial, props.variant)
+  const tone = getActivityTone(props.activityType, props.orderMaterial, props.variant, props.dateOwner)
   const followUp = getFollowUpStatusMeta(props.followUp)
 
   // An event of its own of an Extra / CO: its number, Job and Lots (and the note), no Production details.

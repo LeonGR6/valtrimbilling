@@ -368,7 +368,7 @@ export default function ActivityDetail({
   // its own; any other event belongs to an activity that is deleted as a whole.
   const extraLabel = extraEventLabel(props.variant)
   const type = activityTypeMap[props.activityType]
-  const tone = getActivityTone(props.activityType, props.orderMaterial, props.variant)
+  const tone = getActivityTone(props.activityType, props.orderMaterial, props.variant, props.dateOwner)
   const phaseLotNumbers = props.phaseLotNumbers ?? props.lotNumbers ?? []
   const lotStart = phaseLotNumbers[0] ?? props.lotStart
   const lotEnd = phaseLotNumbers.at(-1) ?? props.lotEnd

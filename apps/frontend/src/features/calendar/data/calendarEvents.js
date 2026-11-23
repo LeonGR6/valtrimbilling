@@ -88,9 +88,11 @@ export function getFollowUpStatusMeta(followUp) {
   }
 }
 
-export function getActivityTone(activityType, orderMaterial = false, variant = null) {
+export function getActivityTone(activityType, orderMaterial = false, variant = null, dateOwner = null) {
   // The Baseboard install is a DM event with a color of its own.
   if (variant === 'baseboard-install') return 'baseboard'
+  // A DM whose date is still Tentative is orange until someone owns the date.
+  if (activityType === 'DM' && dateOwner === 'TENTATIVE') return 'dm-tentative'
   if (activityType === 'EXT' && orderMaterial) return 'ext-order'
   return activityTypeMap[activityType]?.tone ?? 'ext'
 }

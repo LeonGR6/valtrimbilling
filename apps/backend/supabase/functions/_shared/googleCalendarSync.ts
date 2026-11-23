@@ -6,6 +6,7 @@ const GOOGLE_EVENT_COLOR_IDS = {
   EXT: '3',
   EXT_ORDER_MATERIAL: '5',
   DM: '11',
+  DM_TENTATIVE: '6',
   HW: '9',
 } as const
 
@@ -303,14 +304,22 @@ function dateOwnerLabel(owner: GoogleCalendarSchedule['dateOwner']) {
 }
 
 export function googleEventColorId(
-  schedule: Pick<GoogleCalendarSchedule, 'stageType' | 'orderMaterial'>,
+  schedule: Pick<GoogleCalendarSchedule, 'stageType' | 'orderMaterial'> &
+    Partial<Pick<GoogleCalendarSchedule, 'dateOwner' | 'variant'>>,
 ) {
   if (schedule.stageType === 'EXT') {
     return schedule.orderMaterial
       ? GOOGLE_EVENT_COLOR_IDS.EXT_ORDER_MATERIAL
       : GOOGLE_EVENT_COLOR_IDS.EXT
   }
-  if (schedule.stageType === 'DM') return GOOGLE_EVENT_COLOR_IDS.DM
+  if (schedule.stageType === 'DM') {
+    // A DM whose date is still Tentative is orange (Tangerine), like in the app.
+    // The Baseboard install keeps its own color there, so it is left out here too.
+    if (schedule.dateOwner === 'TENTATIVE' && schedule.variant !== 'BASEBOARD_INSTALL') {
+      return GOOGLE_EVENT_COLOR_IDS.DM_TENTATIVE
+    }
+    return GOOGLE_EVENT_COLOR_IDS.DM
+  }
   if (schedule.stageType === 'HW') return GOOGLE_EVENT_COLOR_IDS.HW
   return undefined
 }

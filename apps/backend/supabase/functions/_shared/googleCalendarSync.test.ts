@@ -84,6 +84,22 @@ Deno.test('maps ValtrimBilling Production tones to Google event colors', () => {
   assertEquals(googleEventColorId({ stageType: 'EXT', orderMaterial: true }), '5')
   assertEquals(googleEventColorId({ stageType: 'DM', orderMaterial: false }), '11')
   assertEquals(googleEventColorId({ stageType: 'HW', orderMaterial: false }), '9')
+  assertEquals(
+    googleEventColorId({ stageType: 'DM', orderMaterial: false, dateOwner: 'TENTATIVE', variant: 'BASE' }),
+    '6',
+  )
+  assertEquals(
+    googleEventColorId({ stageType: 'DM', orderMaterial: false, dateOwner: 'SUPERVISOR', variant: 'BASE' }),
+    '11',
+  )
+  assertEquals(
+    googleEventColorId({ stageType: 'DM', orderMaterial: false, dateOwner: 'TENTATIVE', variant: 'BASEBOARD_INSTALL' }),
+    '11',
+  )
+  assertEquals(
+    googleEventColorId({ stageType: 'HW', orderMaterial: false, dateOwner: 'TENTATIVE', variant: 'BASE' }),
+    '9',
+  )
   assertEquals(googleEventColorId({ stageType: 'SHUTTER', orderMaterial: false }), undefined)
 })
 

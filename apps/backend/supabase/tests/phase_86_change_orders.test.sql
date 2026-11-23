@@ -205,20 +205,20 @@ select ok(
 select ok(
   coalesce((
     select procedure.prosecdef
-      and procedure.prosrc like '%has_app_role(''ADMIN'', ''PROJECT_MANAGEMENT'')%'
+      and procedure.prosrc like '%has_app_role(''ADMIN'', ''PROJECT_MANAGEMENT'', ''SCHEDULING'')%'
       and procedure.prosrc like '%(select auth.uid())%'
       and procedure.prosrc like '%has_app_role(''ADMIN'')%'
     from pg_proc procedure
     where procedure.oid = 'private.create_change_order(bigint,text,text,jsonb,text,date,date,jsonb,valtrim.change_order_status)'::regprocedure
   ), false)
   and coalesce((
-    select procedure.prosrc like '%has_app_role(''ADMIN'', ''PROJECT_MANAGEMENT'')%'
+    select procedure.prosrc like '%has_app_role(''ADMIN'', ''PROJECT_MANAGEMENT'', ''SCHEDULING'')%'
       and procedure.prosrc like '%has_app_role(''ADMIN'')%'
       and procedure.prosrc like '%Write the reason for cancelling%'
     from pg_proc procedure
     where procedure.oid = 'private.set_change_order_status(bigint,valtrim.change_order_status,text)'::regprocedure
   ), false),
-  'ADMIN and PROJECT_MANAGEMENT write Change Orders as the signed-in user; only ADMIN approves, and cancelling needs a reason'
+  'ADMIN, PROJECT_MANAGEMENT and SCHEDULING write Change Orders as the signed-in user; only ADMIN approves, and cancelling needs a reason'
 );
 
 select ok(
@@ -237,7 +237,7 @@ select ok(
   and not has_function_privilege('authenticated', 'private.format_change_order_number(bigint)', 'execute')
   and coalesce((
     select procedure.prosecdef
-      and procedure.prosrc like '%has_app_role(''ADMIN'', ''PROJECT_MANAGEMENT'')%'
+      and procedure.prosrc like '%has_app_role(''ADMIN'', ''PROJECT_MANAGEMENT'', ''SCHEDULING'')%'
       and procedure.prosrc like '%(select auth.uid())%'
     from pg_proc procedure
     where procedure.oid = 'private.peek_change_order_number()'::regprocedure
@@ -258,13 +258,13 @@ select ok(
   and not has_function_privilege('anon', 'valtrim.delete_change_order(bigint)', 'execute')
   and coalesce((
     select procedure.prosecdef
-      and procedure.prosrc like '%has_app_role(''ADMIN'', ''PROJECT_MANAGEMENT'')%'
+      and procedure.prosrc like '%has_app_role(''ADMIN'', ''PROJECT_MANAGEMENT'', ''SCHEDULING'')%'
       and procedure.prosrc like '%(select auth.uid())%'
       and procedure.prosrc like '%Only a Draft Change Order can be deleted%'
     from pg_proc procedure
     where procedure.oid = 'private.delete_change_order(bigint)'::regprocedure
   ), false),
-  'ADMIN and PROJECT_MANAGEMENT delete a Change Order as the signed-in user, and only a Draft; anonymous users cannot'
+  'ADMIN, PROJECT_MANAGEMENT and SCHEDULING delete a Change Order as the signed-in user, and only a Draft; anonymous users cannot'
 );
 
 select ok(

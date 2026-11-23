@@ -38,7 +38,7 @@ const accessByPath = new Map([
   ['/sequence-sheets', PAGE_ROLES.scheduling],
   ['/calendar', PAGE_ROLES.scheduling],
   ['/draw-invoice', PAGE_ROLES.drawInvoice],
-  ['/change-orders', PAGE_ROLES.planning],
+  ['/change-orders', PAGE_ROLES.changeOrders],
   ['/pricing', PAGE_ROLES.planning],
   ['/builder-draw-schedules', PAGE_ROLES.billing],
   ['/customer-service', PAGE_ROLES.customerService],
@@ -86,9 +86,10 @@ test('DRAW_INVOICE sees Draw & Invoice only, with no Builder Setup', () => {
   ])
 })
 
-test('SCHEDULING sees the Calendar and the Sequence Sheets only', () => {
+test('SCHEDULING sees the Calendar, the Sequence Sheets and Change Orders only', () => {
   assert.deepEqual(menuOf('SCHEDULING'), [
     { section: 'OPERATION', pages: ['Sequence Sheets', 'Calendar'] },
+    { section: 'BILLING', pages: ['Extra / Change Orders'] },
     { section: 'REPORTING', pages: [] },
   ])
 })

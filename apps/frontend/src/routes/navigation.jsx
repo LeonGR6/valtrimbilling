@@ -26,6 +26,7 @@ import { CHANGE_ORDERS_ENABLED } from '../config/appConfig.js'
 // except the roles that start on a page of their own (see StartPageGate).
 const {
   planning: planningPage,
+  changeOrders: changeOrdersPage,
   drawInvoice: drawInvoicePage,
   billing: billingPage,
   scheduling: schedulingPage,
@@ -40,19 +41,19 @@ const changeOrdersRoute = {
   label: 'Extra / Change Orders',
   icon: 'change-orders',
   element: <ChangeOrdersPage />,
-  allowedRoles: planningPage,
+  allowedRoles: changeOrdersPage,
 }
 
 const changeOrdersContextualRoutes = [
-  { path: '/change-orders/new', element: <NewChangeOrderPage />, allowedRoles: planningPage },
-  // Draw & Invoice opens an Extra / CO from its Change Orders tab to see it and invoice it; Scheduling opens
-  // it from a CO event of the Calendar to schedule its Lots. Neither changes anything else of it.
+  { path: '/change-orders/new', element: <NewChangeOrderPage />, allowedRoles: changeOrdersPage },
+  // Draw & Invoice opens an Extra / CO from its Change Orders tab to see it and invoice it, and changes nothing
+  // else of it. Scheduling works Extras / COs like Project Management (and opens one from a CO event of the Calendar).
   {
     path: '/change-orders/:changeOrderId',
     element: <ChangeOrderDetailPage />,
-    allowedRoles: [...new Set([...planningPage, ...drawInvoicePage, ...schedulingPage])],
+    allowedRoles: [...new Set([...changeOrdersPage, ...drawInvoicePage])],
   },
-  { path: '/change-orders/:changeOrderId/edit', element: <EditChangeOrderPage />, allowedRoles: planningPage },
+  { path: '/change-orders/:changeOrderId/edit', element: <EditChangeOrderPage />, allowedRoles: changeOrdersPage },
 ]
 
 export const navigationRoutes = [

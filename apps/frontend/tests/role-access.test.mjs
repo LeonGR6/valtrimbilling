@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs'
 import {
   ADMIN_ROLES,
   BILLING_ROLES,
+  CHANGE_ORDER_ROLES,
   CUSTOMER_SERVICE_ROLES,
   DRAW_INVOICE_ROLES,
   PAGE_ROLES,
@@ -93,22 +94,35 @@ test('every role opens exactly its own pages and Home', () => {
     .map(([area]) => area)
     .sort()
 
-  const everyArea = ['admin', 'billing', 'customerService', 'drawInvoice', 'planning', 'scheduling']
+  const everyArea = ['admin', 'billing', 'changeOrders', 'customerService', 'drawInvoice', 'planning', 'scheduling']
 
   assert.deepEqual(opens('ADMIN'), everyArea)
-  assert.deepEqual(opens('PROJECT_MANAGEMENT'), ['planning'])
+  assert.deepEqual(opens('PROJECT_MANAGEMENT'), ['changeOrders', 'planning'])
   assert.deepEqual(opens('ACCOUNTING'), ['billing', 'drawInvoice'])
   assert.deepEqual(opens('DRAW_INVOICE'), ['drawInvoice'])
-  assert.deepEqual(opens('SCHEDULING'), ['scheduling'])
+  assert.deepEqual(opens('SCHEDULING'), ['changeOrders', 'scheduling'])
   assert.deepEqual(opens('CUSTOMER_SERVICE'), ['customerService'])
   // The observers look at every page except Users, which is not an area page.
   assert.deepEqual(opens('FIELD'), everyArea)
   assert.deepEqual(opens('READ_ONLY'), everyArea)
 })
 
+test('Scheduling works Extras / COs next to Project Management, and nothing else of planning', () => {
+  assert.deepEqual(CHANGE_ORDER_ROLES, ['ADMIN', 'PROJECT_MANAGEMENT', 'SCHEDULING'])
+  for (const role of ['ADMIN', 'PROJECT_MANAGEMENT', 'SCHEDULING']) {
+    assert.equal(canWork(role, CHANGE_ORDER_ROLES), true, role)
+  }
+  for (const role of ['ACCOUNTING', 'DRAW_INVOICE', 'CUSTOMER_SERVICE', 'FIELD', 'READ_ONLY']) {
+    assert.equal(canWork(role, CHANGE_ORDER_ROLES), false, role)
+  }
+  // Jobs, Plans & Options and Pricing stay with Project Management.
+  assert.equal(canWork('SCHEDULING', PLANNING_ROLES), false)
+  assert.equal(canOpenPage('SCHEDULING', 'planning'), false)
+})
+
 test('the Draw & Invoice role opens Draw & Invoice and no other page', () => {
   assert.equal(canOpenPage('DRAW_INVOICE', 'drawInvoice'), true)
-  for (const area of ['billing', 'planning', 'scheduling', 'customerService', 'admin']) {
+  for (const area of ['billing', 'changeOrders', 'planning', 'scheduling', 'customerService', 'admin']) {
     assert.equal(canOpenPage('DRAW_INVOICE', area), false, area)
   }
   assert.equal(isRoleAllowed('DRAW_INVOICE', ADMIN_ROLES), false)

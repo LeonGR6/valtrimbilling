@@ -4,7 +4,10 @@ export function isRoleAllowed(role, allowedRoles) {
 
 // Who works in each area. ADMIN is in every list. These mirror the roles the
 // database checks, so a button is only offered to someone who can use it.
-export const PLANNING_ROLES = ['ADMIN', 'PROJECT_MANAGEMENT'] // Jobs, Plans & Options, Pricing, Change Orders
+export const PLANNING_ROLES = ['ADMIN', 'PROJECT_MANAGEMENT'] // Jobs, Plans & Options, Pricing
+// Extras / Change Orders are written by Project Management and also by Scheduling, who owns the Calendar
+// the approved ones are scheduled on. Only ADMIN approves (the database says the same).
+export const CHANGE_ORDER_ROLES = ['ADMIN', 'PROJECT_MANAGEMENT', 'SCHEDULING']
 // Draw & Invoice: Packages, Documents, notes and the QuickBooks invoice of a Package.
 // DRAW_INVOICE works only here; ACCOUNTING also owns Builder Setup and A/R.
 export const DRAW_INVOICE_ROLES = ['ADMIN', 'ACCOUNTING', 'DRAW_INVOICE']
@@ -29,6 +32,7 @@ export function canWork(role, workingRoles) {
 // Who may open the pages of each area.
 export const PAGE_ROLES = {
   planning: pageRoles(PLANNING_ROLES),
+  changeOrders: pageRoles(CHANGE_ORDER_ROLES),
   drawInvoice: pageRoles(DRAW_INVOICE_ROLES),
   billing: pageRoles(BILLING_ROLES),
   scheduling: pageRoles(SCHEDULING_ROLES),

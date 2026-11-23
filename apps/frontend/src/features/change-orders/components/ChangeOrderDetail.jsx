@@ -697,8 +697,8 @@ export default function ChangeOrderDetail() {
   const totals = useMemo(() => summarizeDetailLines(order?.lines ?? []), [order])
   const canSetPoCo = order ? canSetPoCoNumber(order.status, profile?.role) : false
   // Draw & Invoice comes from its Change Orders tab and goes back there; the list of Extras / COs is not theirs.
-  // Scheduling comes from a CO event of the Calendar and goes back there.
-  const list = canOpenPage(profile?.role, 'planning') ? LIST
+  // Whoever works Extras / COs (Project Management, Scheduling) goes back to the list.
+  const list = canOpenPage(profile?.role, 'changeOrders') ? LIST
     : canOpenPage(profile?.role, 'drawInvoice') ? { label: 'Draw & Invoice', to: '/draw-invoice' }
       : { label: 'Calendar', to: '/calendar' }
 

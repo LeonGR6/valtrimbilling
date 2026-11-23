@@ -42,7 +42,7 @@ function Fact({ label, children }) {
 export default function ChangeOrderEventPanel({ event, onClose, onChanged }) {
   const { profile } = useAuth()
   const canWrite = canScheduleChangeOrderEvents(profile?.role)
-  const canOpenOrder = ['planning', 'drawInvoice', 'scheduling'].some((area) => canOpenPage(profile?.role, area))
+  const canOpenOrder = ['changeOrders', 'drawInvoice', 'scheduling'].some((area) => canOpenPage(profile?.role, area))
   const [editing, setEditing] = useState(false)
   const [confirming, setConfirming] = useState(false)
   const [removing, setRemoving] = useState(false)

@@ -3,7 +3,7 @@
 // again (these limits are its limits); the checks here are so the person is told what to fix, on the
 // screen, before anything is sent.
 
-import { PLANNING_ROLES, canWork } from '../../auth/authorization/roleAccess.js'
+import { CHANGE_ORDER_ROLES, canWork } from '../../auth/authorization/roleAccess.js'
 import { OWN_EVENT, allChangeOrderStatuses, emptyChangeOrder, maxPlaceLength } from '../data/changeOrders.js'
 import { listCoverageLots, restoreCoverage } from '../utils/coverage.js'
 import { parseAmount } from '../utils/pricing.js'
@@ -16,9 +16,9 @@ export const CHANGE_ORDER_CANCEL_REASON_MAX = 500
 export const CHANGE_ORDER_MAX_LINES = 5000
 const MAX_AMOUNT = 999999999999.99
 
-/** Project Management and Admin create Extras / COs; everyone else who may open the page only reads. */
+/** Project Management, Scheduling and Admin create Extras / COs; everyone else who may open the page only reads. */
 export function canEditChangeOrders(role) {
-  return canWork(role, PLANNING_ROLES)
+  return canWork(role, CHANGE_ORDER_ROLES)
 }
 
 /** Only Admin creates an Extra / CO already approved (and later approves one). */
@@ -30,7 +30,7 @@ export function canApproveChangeOrders(role) {
  * What the person can do with an Extra / CO in `status`: edit it (only while it is a Draft or Pending)
  * and move it to another status. Each move says where it goes (`to`), what the button says (`label`),
  * whether the person must confirm it (`confirm`) and whether a reason is needed (`needsReason`).
- * The database allows the same: Project Management and Admin move it between Draft, Pending and
+ * The database allows the same: Project Management, Scheduling and Admin move it between Draft, Pending and
  * Cancelled; only Admin approves, or cancels an approved one. A Draft or a cancelled one can be deleted
  * (`canDelete`): keeping a cancelled one as history is the person's choice; anything else is cancelled first.
  */

@@ -70,13 +70,14 @@ const placeLines = (places) => buildPlaceLines(places)
 
 const office = { id: 1, location: ' Sales Office ', scope: ' Electronic locks ', amount: '250.50' }
 
-test('only Project Management and Admin create Extras / COs, and only Admin approves', () => {
-  for (const role of ['ADMIN', 'PROJECT_MANAGEMENT']) assert.equal(canEditChangeOrders(role), true, role)
-  for (const role of ['ACCOUNTING', 'SCHEDULING', 'CUSTOMER_SERVICE', 'FIELD', 'READ_ONLY']) {
+test('only Project Management, Scheduling and Admin create Extras / COs, and only Admin approves', () => {
+  for (const role of ['ADMIN', 'PROJECT_MANAGEMENT', 'SCHEDULING']) assert.equal(canEditChangeOrders(role), true, role)
+  for (const role of ['ACCOUNTING', 'DRAW_INVOICE', 'CUSTOMER_SERVICE', 'FIELD', 'READ_ONLY']) {
     assert.equal(canEditChangeOrders(role), false, role)
   }
   assert.equal(canApproveChangeOrders('ADMIN'), true)
   assert.equal(canApproveChangeOrders('PROJECT_MANAGEMENT'), false)
+  assert.equal(canApproveChangeOrders('SCHEDULING'), false)
 })
 
 test('the coverage keeps how the lots were chosen, as lists', () => {
@@ -419,13 +420,13 @@ const moveTargets = (status, role) => changeOrderActions(status, role).moves.map
 
 test('who can edit and where each role can move an Extra / CO, as the database allows', () => {
   // Draft and Pending are edited; approved and cancelled are frozen.
-  for (const role of ['PROJECT_MANAGEMENT', 'ADMIN']) {
+  for (const role of ['PROJECT_MANAGEMENT', 'SCHEDULING', 'ADMIN']) {
     assert.equal(changeOrderActions('DRAFT', role).canEdit, true, role)
     assert.equal(changeOrderActions('PENDING', role).canEdit, true, role)
     assert.equal(changeOrderActions('APPROVED', role).canEdit, false, role)
     assert.equal(changeOrderActions('CANCELLED', role).canEdit, false, role)
   }
-  for (const role of ['ACCOUNTING', 'SCHEDULING', 'CUSTOMER_SERVICE', 'FIELD', 'READ_ONLY', undefined]) {
+  for (const role of ['ACCOUNTING', 'DRAW_INVOICE', 'CUSTOMER_SERVICE', 'FIELD', 'READ_ONLY', undefined]) {
     assert.deepEqual(changeOrderActions('DRAFT', role), { canEdit: false, canDelete: false, moves: [] }, String(role))
     assert.deepEqual(changeOrderActions('APPROVED', role), { canEdit: false, canDelete: false, moves: [] }, String(role))
   }
@@ -644,15 +645,15 @@ test('the pieces of work add up to what the lines add up to, to the cent', () =>
   assert.deepEqual(groupDetailLines([]), { works: [], places: [] })
 })
 
-test('a Draft or a cancelled Extra / CO can be deleted, by Project Management and Admin', () => {
-  for (const role of ['PROJECT_MANAGEMENT', 'ADMIN']) {
+test('a Draft or a cancelled Extra / CO can be deleted, by Project Management, Scheduling and Admin', () => {
+  for (const role of ['PROJECT_MANAGEMENT', 'SCHEDULING', 'ADMIN']) {
     assert.equal(changeOrderActions('DRAFT', role).canDelete, true, role)
     assert.equal(changeOrderActions('CANCELLED', role).canDelete, true, role)
     for (const status of ['PENDING', 'APPROVED']) {
       assert.equal(changeOrderActions(status, role).canDelete, false, `${role} ${status}`)
     }
   }
-  for (const role of ['ACCOUNTING', 'SCHEDULING', 'CUSTOMER_SERVICE', 'FIELD', 'READ_ONLY', 'DRAW_INVOICE', undefined]) {
+  for (const role of ['ACCOUNTING', 'CUSTOMER_SERVICE', 'FIELD', 'READ_ONLY', 'DRAW_INVOICE', undefined]) {
     assert.equal(changeOrderActions('DRAFT', role).canDelete, false, String(role))
     assert.equal(changeOrderActions('CANCELLED', role).canDelete, false, String(role))
   }
@@ -860,6 +861,7 @@ test('the PO / CO # can be written on anything that is not cancelled, by the rol
   for (const status of ['DRAFT', 'PENDING', 'APPROVED']) {
     assert.equal(canSetPoCoNumber(status, 'ADMIN'), true, `Admin on ${status}`)
     assert.equal(canSetPoCoNumber(status, 'PROJECT_MANAGEMENT'), true, `Project Management on ${status}`)
+    assert.equal(canSetPoCoNumber(status, 'SCHEDULING'), true, `Scheduling on ${status}`)
     assert.equal(canSetPoCoNumber(status, 'READ_ONLY'), false, `a reader on ${status}`)
     assert.equal(canSetPoCoNumber(status, 'ACCOUNTING'), false, `Accounting on ${status}`)
   }

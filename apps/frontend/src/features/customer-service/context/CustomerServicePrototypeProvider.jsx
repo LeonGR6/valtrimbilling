@@ -7,16 +7,17 @@ import { requireSupabase } from '../../../services/api.js'
 import { createCustomerServiceEmailAutomationMonitor } from '../services/customerServiceEmailAutomation.js'
 import { listTechnicians } from '../services/techniciansRepository.js'
 import {
-  cancelCustomerServiceAppointment, estimateCustomerServiceNearby, estimateCustomerServiceTravel, loadCustomerServiceSchedule,
-  registerCustomerServiceAppointment,
+  answerCustomerServiceProposal, cancelCustomerServiceAppointment, cancelCustomerServiceProposal,
+  estimateCustomerServiceNearby, estimateCustomerServiceTravel, loadCustomerServiceSchedule,
+  registerCustomerServiceAppointment, sendCustomerServiceProposal,
 } from '../services/customerServiceAppointmentsRepository.js'
 import {
   applyAppointmentsToRequests, manualTravelChecks, toPlanningTechnicians, travelEstimateDetails, travelEstimatesToMinutes,
 } from '../utils/appointmentRecords.js'
 
 const emptySchedule = {
-  roster: [], appointments: [], proposalHolds: [], travelEstimates: [], travelTrafficMode: 'OFF', distanceBands: null,
-  travelChecks: [],
+  roster: [], appointments: [], proposalHolds: [], proposals: [], travelEstimates: [], travelTrafficMode: 'OFF',
+  distanceBands: null, travelChecks: [],
 }
 
 // Requests, accepted appointments, travel estimates and technicians come from
@@ -88,7 +89,9 @@ export default function CustomerServicePrototypeProvider({ children }) {
     }
     return {
       ...state,
-      requests: applyAppointmentsToRequests(state.requests, schedule.appointments, schedule.roster, schedule.proposalHolds),
+      requests: applyAppointmentsToRequests(
+        state.requests, schedule.appointments, schedule.roster, schedule.proposalHolds, schedule.proposals,
+      ),
       emailAutomation, emailAutomationError,
       refreshEmailAutomation: () => automationMonitor.current?.refresh(),
       setRequests: store.setRequests,
@@ -114,6 +117,18 @@ export default function CustomerServicePrototypeProvider({ children }) {
       scheduleError,
       registerAppointment: async (payload) => afterScheduleChange(await registerCustomerServiceAppointment(payload)),
       cancelAppointment: async (payload) => afterScheduleChange(await cancelCustomerServiceAppointment(payload)),
+      // A refused invitation cancels its proposal on the server, which still changes the
+      // request, so the schedule reloads after a failure too.
+      sendProposal: async (payload) => {
+        try {
+          return await afterScheduleChange(await sendCustomerServiceProposal(payload))
+        } catch (error) {
+          await Promise.all([store.reloadRequests(), reloadSchedule()]).catch(() => {})
+          throw error
+        }
+      },
+      answerProposal: async (payload) => afterScheduleChange(await answerCustomerServiceProposal(payload)),
+      cancelProposal: async (payload) => afterScheduleChange(await cancelCustomerServiceProposal(payload)),
     }
   }, [state, store, proposalDrafts, emailAutomation, emailAutomationError, schedule, scheduleError, reloadSchedule])
   return (

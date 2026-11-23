@@ -10,12 +10,14 @@ import {
   paginateRequestInbox, proposalFilterOptions, requestLocationLabel,
   requestsForView, requestWorkflowStages,
 } from '../utils/requestInbox.js'
+import { latestProposalAnswer } from '../utils/proposalAnswers.js'
 import RequestInboxList from './RequestInboxList.jsx'
+import ProposalAnswerPanel from './ProposalAnswerPanel.jsx'
 import ProposalDraftPlanner from './ProposalDraftPlanner.jsx'
 
 export default function ProposalWorkspace({
   requests, selectedRequestId, onSelectRequest, onView, onViewSource, onBackToRequests,
-  proposalDrafts, onSaveDraft, technicians, onDraftDirtyChange, onBeforeLeave, onRegistered,
+  proposalDrafts, onSaveDraft, technicians, onDraftDirtyChange, onBeforeLeave, onRegistered, onProposalSent, onProposalAnswered,
 }) {
   const [search, setSearch] = useState('')
   const [stage, setStage] = useState(() => {
@@ -30,7 +32,9 @@ export default function ProposalWorkspace({
   }), [requests, search, stage])
   const pagination = paginateRequestInbox(matches, page, rowsPerPage)
   const selected = findRequestForView(requests, selectedRequestId, 'PROPOSALS')
-  const selectedWorkflow = selected && requestWorkflowStages[effectiveRequestWorkflowStage(selected)]
+  const selectedStage = selected && effectiveRequestWorkflowStage(selected)
+  const selectedWorkflow = selected && requestWorkflowStages[selectedStage]
+  const lastAnswer = selected && latestProposalAnswer(selected, selectedStage)
   const changeStage = (value) => {
     const change = () => {
       setStage(value)
@@ -54,10 +58,9 @@ export default function ProposalWorkspace({
   return (
     <Stack spacing={2.5}>
       <Alert severity="info" variant="outlined">
-        Pick a Ready to propose request, use its recommended slot or plan it by hand, and offer it to the customer.
-        Once they accept by phone, use Send to customer: the visit is registered and they can get a confirmation email.
-        Proposal invitations with two days are not emailed from here yet.
-        {' '}Request information is read-only here; edit it in Requests.
+        Pick a Ready to propose request, use its recommended slot or plan it by hand, and use Send to customer: email a
+        proposal that holds its days until the customer answers, or register the visit they accepted by phone. Record
+        their answer in Awaiting customer. Request information is read-only here; edit it in Requests.
       </Alert>
 
       <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: 'wrap' }} aria-label="Proposal workflow stages">
@@ -104,12 +107,19 @@ export default function ProposalWorkspace({
               <Chip size="small" color={selectedWorkflow.color} label={selectedWorkflow.label} />
               {isRequestOverdue(selected) && <Chip size="small" color="error" variant="outlined" label="Overdue" />}
             </Stack>
-            {effectiveRequestWorkflowStage(selected) === 'NEEDS_CONTACT' && (
+            {selectedStage === 'NEEDS_CONTACT' && !lastAnswer && (
               <Alert severity="warning" variant="outlined">
                 Request review is complete. Contact the customer before continuing with a new proposal.
               </Alert>
             )}
-            {effectiveRequestWorkflowStage(selected) === 'AWAITING_CUSTOMER' && (
+            {lastAnswer && (
+              <Alert severity={lastAnswer.severity} variant="outlined">
+                <Typography variant="body2" fontWeight={700}>{lastAnswer.title}</Typography>
+                {lastAnswer.detail}
+                {lastAnswer.note && <Typography variant="body2" sx={{ mt: 0.5 }}>Customer note: {lastAnswer.note}</Typography>}
+              </Alert>
+            )}
+            {selectedStage === 'AWAITING_CUSTOMER' && (
               <Alert severity="info" variant="outlined">
                 A proposal has been sent. The appointment is not confirmed until the customer accepts it.
               </Alert>
@@ -152,7 +162,12 @@ export default function ProposalWorkspace({
         </Paper>
       )}
 
-      {selected && effectiveRequestWorkflowStage(selected) === 'READY_TO_PROPOSE' && (
+      {selectedStage === 'AWAITING_CUSTOMER' && (
+        <ProposalAnswerPanel key={selected.id} request={selected} technicians={technicians} onAnswered={onProposalAnswered} />
+      )}
+
+      {/* After a rejection the coordinator calls the customer, then plans again from Needs contact. */}
+      {['READY_TO_PROPOSE', 'NEEDS_CONTACT'].includes(selectedStage) && (
         <ProposalDraftPlanner
           key={selected.id}
           request={selected}
@@ -162,6 +177,7 @@ export default function ProposalWorkspace({
           onSave={onSaveDraft}
           onDirtyChange={onDraftDirtyChange}
           onRegistered={onRegistered}
+          onProposalSent={onProposalSent}
         />
       )}
 

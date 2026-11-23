@@ -101,6 +101,14 @@ export function prepareConfirmation({ input, request, date, windowStart, senderN
   };
 }
 
+// True when Microsoft answered that it did not take the email. A timeout or an outage
+// leaves it unknown: the email may still have been sent.
+export function sendFailureIsCertain(error: unknown): boolean {
+  if (error instanceof MicrosoftGraphSendError) return error.code !== "UNAVAILABLE";
+  // Sign-in refusals happen before anything is posted; a network error may come from either step.
+  return error instanceof MicrosoftGraphSyncError && ["AUTH_FAILED", "GRAPH_THROTTLED"].includes(error.code);
+}
+
 // What the coordinator reads when Microsoft did not take the email. The appointment
 // is already registered at that point.
 export function confirmationFailureMessage(error: unknown, mailbox: string): string {
@@ -117,7 +125,10 @@ export function confirmationFailureMessage(error: unknown, mailbox: string): str
     return "Microsoft 365 rejected the email. Check the customer's email address.";
   }
   if (code === "AUTH_FAILED") {
-    return "The app could not sign in to Microsoft 365, so the confirmation was not sent.";
+    return "The app could not sign in to Microsoft 365, so the email was not sent.";
+  }
+  if (code === "THROTTLED" || code === "GRAPH_THROTTLED") {
+    return "Microsoft 365 is busy and did not take the email. Try again in a few minutes.";
   }
   return "Microsoft 365 did not take the email right now, so it may not have been sent. Confirm the visit with the customer.";
 }

@@ -435,6 +435,12 @@ verify_jwt = true
 [functions.customer-service-appointments]
 verify_jwt = true
 
+# Sends a Customer Service proposal (one or two held days) from the coordinator's
+# mailbox and records the customer's answer, for ADMIN/SCHEDULING staff. Capacity is
+# revalidated with the shared planner rules before the service-role-only RPCs.
+[functions.customer-service-proposals]
+verify_jwt = true
+
 # Travel minutes between visits from Google Routes API for ADMIN/SCHEDULING
 # staff. The GOOGLE_MAPS_API_KEY secret stays on the server.
 [functions.customer-service-travel-estimates]

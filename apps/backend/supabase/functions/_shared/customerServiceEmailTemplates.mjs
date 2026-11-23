@@ -81,3 +81,51 @@ export function confirmationEmail({
     ].join('\n\n'),
   }
 }
+
+export function defaultInvitationText({ homeownerName } = {}) {
+  const name = singleLine(homeownerName)
+  return {
+    greeting: name ? `Hi ${name},` : 'Hello,',
+    message: 'We would like to schedule your service visit with Valtrim. Here is when we can come:',
+  }
+}
+
+// The invitation of path b, "Send proposal": one or two days, each with its arrival
+// window, held until the customer answers. Until the customer page exists (step B5) the
+// customer answers by replying, and the coordinator records the answer.
+// options: [{ date: 'YYYY-MM-DD', windowStart: '08:00' }], in California time.
+export function invitationEmail({
+  folio, homeownerName, options: offered, address, work, greeting, message, senderName,
+}) {
+  const fallback = defaultInvitationText({ homeownerName })
+  const options = offered ?? []
+  const days = options.map((option, index) => {
+    const window = customerServiceWindows.find((entry) => entry.start === option.windowStart)
+    const label = [longDate(option.date), window && `arrival window ${window.label}`].filter(Boolean).join(', ')
+    return options.length > 1 ? `Option ${index + 1}: ${label}` : label
+  })
+  const details = [
+    singleLine(address) && `Address: ${singleLine(address)}`,
+    singleLine(work) && `Work: ${singleLine(work)}`,
+    `Reference: ${singleLine(folio)}`,
+  ].filter(Boolean)
+  const answer = options.length > 1
+    ? 'Reply to this email with the option that works for you. We are holding both times for you until you answer.'
+    : 'Reply to this email to confirm this time. We are holding it for you until you answer.'
+  const signature = [singleLine(senderName), 'Valtrim Customer Service'].filter(Boolean)
+  return {
+    subject: options.length > 1
+      ? `Choose a day for your Valtrim service visit (${singleLine(folio)})`
+      : `Can we visit on ${shortDate(options[0]?.date)}? Your Valtrim service visit (${singleLine(folio)})`,
+    text: [
+      singleLine(greeting) || fallback.greeting,
+      paragraph(message) || fallback.message,
+      days.join('\n'),
+      details.join('\n'),
+      answer,
+      `If ${options.length > 1 ? 'none of these days work' : 'this day does not work'}, reply with up to three dates and the ` +
+        'part of the day (morning, midday or afternoon) that suit you.',
+      signature.join('\n'),
+    ].join('\n\n'),
+  }
+}

@@ -46,7 +46,9 @@ import {
   proposalWorkspacePath,
   requestsForView,
 } from '../utils/requestInbox.js'
-import { createPrototypeProposalDraft, prototypePlanningHours, registrationNotice } from '../utils/proposalDraft.js'
+import {
+  createPrototypeProposalDraft, proposalSentNotice, prototypePlanningHours, registrationNotice,
+} from '../utils/proposalDraft.js'
 import CustomerServiceCalendar from './CustomerServiceCalendar.jsx'
 import EmailInboxPanel from './EmailInboxPanel.jsx'
 import NewRequestPrototypeDialog from './NewRequestPrototypeDialog.jsx'
@@ -293,6 +295,16 @@ export default function CustomerServiceCatalog() {
     setNotice(registrationNotice(request.requestNumber, result))
   }
 
+  // A sent proposal also replaces the draft; its days are held on the server.
+  const proposalSent = (request, result) => {
+    setProposalDrafts((current) => {
+      const next = { ...current }
+      delete next[request.id]
+      return next
+    })
+    setNotice(proposalSentNotice(request.requestNumber, result))
+  }
+
   return (
     <Box sx={{ minHeight: '100%', bgcolor: 'background.default' }}>
       <Box
@@ -416,6 +428,8 @@ export default function CustomerServiceCatalog() {
             onDraftDirtyChange={reportDraftDirty}
             onBeforeLeave={beforeDraftNavigation}
             onRegistered={appointmentRegistered}
+            onProposalSent={proposalSent}
+            onProposalAnswered={(_request, answerNotice) => setNotice(answerNotice)}
           />
         ) : (
           <>

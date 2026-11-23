@@ -287,6 +287,40 @@ export function buildAppointmentRegistration({ request, values, validation, acce
   }
 }
 
+// Body for "Send proposal" (block B, step B4, path b): one or two days, each with the
+// travel of its own sequence. The Edge Function validates both, holds them and emails the
+// invitation. options: [{ values, validation }] in the order the customer reads them.
+export function buildProposalSend({ request, options, invitation }) {
+  return {
+    requestId: Number(request.id),
+    expectedRequestUpdatedAt: request.updatedAt,
+    options: options.map(({ values, validation }) => ({
+      technicianIds: values.technicianIds.map(Number),
+      date: values.date,
+      windowStart: values.windowStart,
+      workStart: values.internalStart,
+      travelMinutes: Object.fromEntries(validation.travelLegs
+        .filter((leg) => leg.minutes !== null).map((leg) => [leg.key, leg.minutes])),
+    })),
+    invitation,
+  }
+}
+
+// What the coordinator reads after sending: the days are held, and the invitation went
+// out or its outcome is unknown (a refused invitation comes back as an error instead).
+export function proposalSentNotice(requestNumber, result) {
+  const count = result?.optionIds?.length ?? 1
+  const held = `${requestNumber} is waiting for the customer: ${count === 1 ? 'its day is' : `its ${count} days are`} held.`
+  const invitation = result?.invitation
+  if (invitation?.status === 'SENT') {
+    return {
+      severity: 'success',
+      message: `${held} The invitation was emailed to ${invitation.to}${invitation.testMode ? ' (test inbox)' : ''}.`,
+    }
+  }
+  return { severity: 'warning', message: `${held} ${invitation?.message ?? ''}`.trim() }
+}
+
 // What the coordinator reads after registering: the visit is always saved; the
 // confirmation email may have been sent, failed or not been sent.
 export function registrationNotice(requestNumber, result) {

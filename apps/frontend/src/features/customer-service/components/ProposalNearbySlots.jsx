@@ -82,9 +82,10 @@ function RecommendedSlot({ children }) {
 // reused there).
 // A proposal offers a second day with the slot in the form (formDate, once the form is
 // complete; formFits when it can be offered), or with the recommended slot until then.
+// onSecondChange receives the second day the send dialog offers with the form's slot.
 export default function ProposalNearbySlots({
   request, requests, technicians, candidates, hasCoordinates = true, distanceBands = null, drivingById, drivingLoading,
-  formDate = null, formFits = false, onUseSlot, onRecommendedChange,
+  formDate = null, formFits = false, onUseSlot, onRecommendedChange, onSecondChange,
 }) {
   const {
     estimateTravel, storedTravelMinutes, storedRoutesMinutes, storedTravelDetails, travelTrafficMode,
@@ -166,6 +167,25 @@ export default function ProposalNearbySlots({
   useEffect(() => {
     onRecommendedChange?.(previewKey ? JSON.parse(previewKey) : null)
   }, [previewKey, onRecommendedChange])
+
+  // The second day travels up only for the slot in the form, the one a proposal sends; its
+  // travel minutes go with it. Still pending while its legs are checked with traffic.
+  const secondKey = !drivingLoading && formDate && formFits && second
+    ? JSON.stringify(second.slot
+      ? {
+        date: second.slot.date, windowStart: second.slot.windowStart, internalStart: second.slot.internalStart,
+        technicianIds: second.slot.technicianIds, technicianNames: second.slot.technicianNames,
+        travelMinutes: Object.fromEntries((second.slot.travelLegs ?? [])
+          .filter((leg) => Number.isInteger(leg.minutes)).map((leg) => [leg.key, leg.minutes])),
+        pending: Boolean(second.slot.travelPending) || [...(second.slot.travelLegs ?? []), ...(second.slot.baselineLegs ?? [])]
+          .some((leg) => uncheckedKeys.has(leg.key)),
+        firstDate: formDate, reason: second.reason,
+      }
+      : { firstDate: formDate, date: null, reason: second.reason })
+    : ''
+  useEffect(() => {
+    onSecondChange?.(secondKey ? JSON.parse(secondKey) : null)
+  }, [secondKey, onSecondChange])
 
   // Checked again at the moment it is used: a slot from a screen left open may be in the past.
   const use = (slot) => () => {

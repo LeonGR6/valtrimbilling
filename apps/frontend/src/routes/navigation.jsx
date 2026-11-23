@@ -14,6 +14,7 @@ import {
   UsersPage,
   ActivityHistoryPage,
   RoadmapPage,
+  HyphenRequestsPage,
 } from './lazyPages.jsx'
 
 // Single source of truth for the app's navigable routes.
@@ -47,6 +48,13 @@ export const navigationRoutes = [
     label: 'Users',
     icon: 'users',
     element: <UsersPage />,
+    allowedRoles: ['ADMIN'],
+  },
+  {
+    path: '/hyphen-requests',
+    label: 'Hyphen Requests',
+    icon: 'hyphen-requests',
+    element: <HyphenRequestsPage />,
     allowedRoles: ['ADMIN'],
   },
   { path: '/builder-contacts', label: 'Builder Contacts', icon: 'builder-contacts', element: <BuilderContactsPage /> },

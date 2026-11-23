@@ -4,7 +4,7 @@ import {
 } from '@mui/material'
 import { serviceCustomerWindowOptions } from '../data/serviceCalendarEvents.js'
 import {
-  buildAppointmentRegistration, changePrototypeProposalWindow, changePrototypeTravelMinutes, fitStatus, fitStatusLabels,
+  buildAppointmentRegistration, buildProposalSend, changePrototypeProposalWindow, changePrototypeTravelMinutes, fitStatus, fitStatusLabels,
   getPrototypePlanningTechnicians, getPrototypeTechnicianAgenda, proposalDraftFormValues, proposalDraftHasChanges,
   proposalPlanningSignature, validatePrototypeProposalDraft,
 } from '../utils/proposalDraft.js'
@@ -26,9 +26,11 @@ const sectionTitleSx = { flex: '1 1 240px' }
 const fieldRowSx = { flexWrap: 'wrap', '& > *': { flex: '1 1 160px' } }
 const actionRowSx = { flexWrap: 'wrap', '& > *': { flex: '1 1 200px' } }
 
-export default function ProposalDraftPlanner({ request, requests, technicians: roster, savedDraft, onSave, onDirtyChange, onRegistered }) {
+export default function ProposalDraftPlanner({
+  request, requests, technicians: roster, savedDraft, onSave, onDirtyChange, onRegistered, onProposalSent,
+}) {
   const {
-    registerAppointment, storedTravelMinutes, storedRoutesMinutes, storedTravelDetails, travelTrafficMode, estimateTravel,
+    registerAppointment, sendProposal, storedTravelMinutes, storedRoutesMinutes, storedTravelDetails, travelTrafficMode, estimateTravel,
     distanceBands,
   } = useCustomerServicePrototype()
   // Customer emails leave from the signed-in coordinator's mailbox, signed with their name.
@@ -104,6 +106,8 @@ export default function ProposalDraftPlanner({ request, requests, technicians: r
   // Until technicians, a window or a start are chosen, the day agenda previews the
   // recommended slot, so it is visible before using it.
   const [recommendedSlot, setRecommendedSlot] = useState(null)
+  // The second day suggested with the form's slot, offered as option 2 of a proposal.
+  const [secondSlot, setSecondSlot] = useState(null)
   const preview = !values.technicianIds.length && !values.windowStart && !values.internalStart ? recommendedSlot : null
   const technicianNames = (ids) => ids.map((id) => technicians.find((person) => person.id === id)?.name).filter(Boolean)
   const agendaProps = preview
@@ -134,6 +138,38 @@ export default function ProposalDraftPlanner({ request, requests, technicians: r
   const draftStatus = fitStatus({
     fits: validation.isValid, travelPending: validation.travelPending || outdatedLegs.length > 0,
   })
+  // Checked again when the dialog opens, against the same schedule as the form.
+  const secondOffer = (() => {
+    if (!sending || !secondSlot || secondSlot.firstDate !== values.date) return null
+    if (!secondSlot.date) return { available: false, reason: secondSlot.reason }
+    if (secondSlot.pending) {
+      return { available: false, reason: 'Travel for the second day is still being checked with traffic; close this and try again in a moment to offer it.' }
+    }
+    const secondValues = {
+      technicianIds: secondSlot.technicianIds, date: secondSlot.date, windowStart: secondSlot.windowStart,
+      internalStart: secondSlot.internalStart, travelMinutes: { ...storedTravelMinutes, ...secondSlot.travelMinutes },
+    }
+    const secondValidation = validatePrototypeProposalDraft({ requestId: request.id, requests, technicians, values: secondValues })
+    if (!secondValidation.isValid || secondValidation.travelPending || secondValidation.pastDue) {
+      return { available: false, reason: 'The suggested second day no longer fits the schedule.' }
+    }
+    return {
+      available: true, values: secondValues, validation: secondValidation,
+      summary: `${formatWeekdayDate(secondValues.date)} · work ${formatTime(secondValues.internalStart)}–${
+        formatTime(secondValidation.internalEnd)} · ${technicianNames(secondValues.technicianIds).join(', ')}`,
+    }
+  })()
+  // Holds the days and emails the invitation; a failure stays in the dialog.
+  const sendInvitation = async ({ includeSecond, invitation }) => {
+    const result = await sendProposal(buildProposalSend({
+      request,
+      options: [{ values, validation }, ...(includeSecond && secondOffer?.available ? [secondOffer] : [])],
+      invitation,
+    }))
+    setSending(false)
+    onDirtyChange(false)
+    onProposalSent?.(request, result)
+  }
   // Registers the visit and, when asked, emails the customer; a failure stays in the dialog.
   const send = async ({ acceptance, confirmationEmail }) => {
     const result = await registerAppointment(buildAppointmentRegistration({
@@ -162,8 +198,9 @@ export default function ProposalDraftPlanner({ request, requests, technicians: r
         <Box>
           <Typography variant="h6" fontWeight={800}>Prepare proposal · {request.requestNumber}</Typography>
           <Typography variant="body2" color="text.secondary">
-            A saved draft lasts until the page is reloaded; it reserves no time and contacts nobody. Register the
-            appointment only after the customer accepts the proposal, or after you accept their counter-proposal.
+            A saved draft lasts until the page is reloaded; it reserves no time and contacts nobody. Send to customer
+            emails a proposal that holds its days until the customer answers, or registers the visit they already
+            accepted by phone.
           </Typography>
         </Box>
         <Alert severity="info" variant="outlined">
@@ -185,7 +222,7 @@ export default function ProposalDraftPlanner({ request, requests, technicians: r
         <ProposalNearbyVisits request={request} requests={requests} technicians={technicians}
           distanceBands={distanceBands} formDate={formIncomplete ? null : values.date}
           formFits={validation.isValid && !validation.pastDue}
-          onUseSlot={applyNearbySlot} onRecommendedChange={setRecommendedSlot} />
+          onUseSlot={applyNearbySlot} onRecommendedChange={setRecommendedSlot} onSecondChange={setSecondSlot} />
         <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'minmax(0, 1fr) minmax(0, 1fr)' }, gap: 2.5 }}>
           <Stack spacing={2}>
             <FormControl fullWidth error={values.technicianIds.length > 0 && Boolean(errorFor('technicianIds'))}>
@@ -321,15 +358,15 @@ export default function ProposalDraftPlanner({ request, requests, technicians: r
             <Typography variant="caption" color="text.secondary">
               {!validation.isValid
                 ? (formIncomplete
-                  ? 'Saving and registering open once the date, window, work start and technicians fit.'
-                  : 'Resolve the problems listed above to save the draft or register the appointment.')
+                  ? 'Saving and sending open once the date, window, work start and technicians fit.'
+                  : 'Resolve the problems listed above to save the draft or send it to the customer.')
                 : validation.pastDue
-                  ? 'Choose a date on or before the due date to register this appointment.'
+                  ? 'Choose a date on or before the due date to send it to the customer.'
                   : validation.travelPending
-                    ? 'Calculate or type every travel time before registering: a registered appointment reserves the technicians’ time.'
+                    ? 'Calculate or type every travel time before sending: a proposal or a visit reserves the technicians’ time.'
                     : outdatedLegs.length > 0
-                      ? 'Calculate the travel marked “calculate again” with Google Maps, or type its minutes, before registering.'
-                      : 'Once the customer accepts, send it: the visit is saved, appears in Calendar and the customer can get a confirmation email.'}
+                      ? 'Calculate the travel marked “calculate again” with Google Maps, or type its minutes, before sending.'
+                      : 'Send to customer: email a proposal that holds the days until the customer answers, or register the visit if they already accepted by phone.'}
             </Typography>
           </Stack>
           <ProposalDayAgenda {...agendaProps} requests={requests} plannedRequest={request} />
@@ -339,8 +376,8 @@ export default function ProposalDraftPlanner({ request, requests, technicians: r
         <SendToCustomerDialog request={request} values={values}
           summary={`${request.requestNumber} · ${formatWeekdayDate(values.date)} · work ${formatTime(values.internalStart)}–${
             formatTime(validation.internalEnd)} · ${technicianNames(values.technicianIds).join(', ')}`}
-          senderName={profile?.name ?? ''} senderEmail={profile?.email ?? ''}
-          onClose={() => setSending(false)} onSend={send} />
+          secondOffer={secondOffer} senderName={profile?.name ?? ''} senderEmail={profile?.email ?? ''}
+          onClose={() => setSending(false)} onSend={send} onSendProposal={sendInvitation} />
       )}
     </Paper>
   )

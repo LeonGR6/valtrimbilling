@@ -22,6 +22,7 @@ import VisibilityOutlinedIcon from '@mui/icons-material/VisibilityOutlined'
 import { formatPhoneNumber } from '../../../utils/phoneNumbers.js'
 import { prioritiesByValue } from '../data/customerService.js'
 import { formatLongDate, formatTime } from '../utils/dates.js'
+import { sentAgoLabel } from '../utils/proposalAnswers.js'
 import {
   effectiveRequestWorkflowStage,
   inboxPageSizeOptions,
@@ -53,10 +54,22 @@ function workSummary(request) {
   return details.join(' · ')
 }
 
+// "Sent 26 hours ago" under a request waiting on a proposal (block B, step B6).
+function ProposalWaiting({ request }) {
+  const proposal = request.latestProposal
+  if (effectiveRequestWorkflowStage(request) !== 'AWAITING_CUSTOMER' || proposal?.status !== 'SENT') return null
+  return (
+    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+      {sentAgoLabel(proposal)}
+    </Typography>
+  )
+}
+
 function RequestActions({ request, onView, onEdit, onViewPdf, onOpenProposal, compact = false }) {
   const pdfAvailable = hasSourcePdf(request)
   const needsReview = effectiveRequestWorkflowStage(request) === 'NEEDS_REVIEW'
-  const opensProposal = effectiveRequestWorkflowStage(request) === 'READY_TO_PROPOSE'
+  // Awaiting customer and Needs contact open there too, to record the answer or plan again.
+  const opensProposal = ['READY_TO_PROPOSE', 'AWAITING_CUSTOMER', 'NEEDS_CONTACT'].includes(effectiveRequestWorkflowStage(request))
     && Boolean(onOpenProposal)
 
   return (
@@ -128,6 +141,7 @@ function DesktopRequestTable({ requests, onView, onEdit, onViewPdf, onOpenPropos
                     <Pill dense label={stage.label} color={stage.color} />
                     {isRequestOverdue(request) && <Chip size="small" color="error" variant="outlined" label="Overdue" />}
                   </Stack>
+                  <ProposalWaiting request={request} />
                   <Typography
                     variant="caption"
                     fontWeight={700}
@@ -215,6 +229,7 @@ function MobileRequestCards({ requests, onView, onEdit, onViewPdf, onOpenProposa
                 <Pill dense label={stage.label} color={stage.color} />
                 {isRequestOverdue(request) && <Chip size="small" color="error" variant="outlined" label="Overdue" />}
               </Stack>
+              <ProposalWaiting request={request} />
               <Typography variant="body2" fontWeight={700} sx={{ mt: 1.25 }}>
                 {requestLocationLabel(request) || 'Location not provided'}
               </Typography>

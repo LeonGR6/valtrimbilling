@@ -73,7 +73,7 @@ function useNearbyDriving(requestId, ids) {
 // (review of 13 Nov 2026). Colors come from driving miles (Google Route Matrix, no
 // traffic); "≈" marks straight-line miles while they are being checked or when Google fails.
 export default function ProposalNearbyVisits({
-  request, requests, technicians, distanceBands, formDate, formFits, onUseSlot, onRecommendedChange,
+  request, requests, technicians, distanceBands, formDate, formFits, onUseSlot, onRecommendedChange, onSecondChange,
 }) {
   const [open, setOpen] = useState(false)
   const [showFarther, setShowFarther] = useState(false)
@@ -91,7 +91,7 @@ export default function ProposalNearbyVisits({
       <ProposalNearbySlots request={request} requests={requests} technicians={technicians} candidates={candidates}
         hasCoordinates={hasCoordinates} distanceBands={distanceBands} drivingById={driving.byId}
         drivingLoading={driving.loading} formDate={formDate} formFits={formFits}
-        onUseSlot={onUseSlot} onRecommendedChange={onRecommendedChange} />
+        onUseSlot={onUseSlot} onRecommendedChange={onRecommendedChange} onSecondChange={onSecondChange} />
       <Divider />
       <Stack spacing={1}>
         <Stack direction="row" spacing={1} useFlexGap sx={{ alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap' }}>

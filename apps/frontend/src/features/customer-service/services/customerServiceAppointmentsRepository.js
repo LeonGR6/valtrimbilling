@@ -19,6 +19,13 @@ const HOLD_COLUMNS = [
   'window_starts_at', 'window_ends_at', 'starts_at', 'ends_at', 'pickup_minutes',
 ].join(', ')
 
+// Each request's proposals, newest first: the one waiting for the customer, or the
+// customer's last answer (a counter-proposal or a rejection) shown while re-planning.
+const PROPOSAL_COLUMNS = [
+  'id', 'request_id', 'status', 'sender_mailbox', 'sent_at', 'reminder_sent_at', 'builder_contacted_at',
+  'responded_at', 'response_via', 'counter_dates', 'counter_day_part', 'customer_note', 'cancelled_at', 'cancel_reason',
+].join(', ')
+
 const SETTINGS_COLUMNS = [
   'travel_traffic_mode', 'distance_green_max_miles', 'distance_yellow_max_miles', 'distance_orange_max_miles',
 ].join(', ')
@@ -36,19 +43,20 @@ async function loadTravelChecks(client, now) {
   }))
 }
 
-// Current (not cancelled) appointments, the days held by sent proposals, the travel
+// Current (not cancelled) appointments, the days held by sent proposals, the proposals, the travel
 // estimates that touch one of them from today onward (the only legs the planner can prefill), the
 // travel traffic mode, so the planner knows which Google legs to calculate again,
 // the distance bands used for nearby visits and the day-before traffic checks.
 export async function loadCustomerServiceSchedule(now = new Date()) {
   const client = await requireSupabase()
-  const [appointments, holds, settings, travelChecks] = await Promise.all([
+  const [appointments, holds, proposals, settings, travelChecks] = await Promise.all([
     client.from('service_appointments').select(APPOINTMENT_COLUMNS).eq('is_current', true),
     client.from('service_proposal_holds').select(HOLD_COLUMNS),
+    client.from('service_proposals').select(PROPOSAL_COLUMNS).order('sent_at', { ascending: false }),
     client.from('service_scheduling_settings').select(SETTINGS_COLUMNS).eq('id', 1).maybeSingle(),
     loadTravelChecks(client, now),
   ])
-  for (const result of [appointments, holds, settings]) {
+  for (const result of [appointments, holds, proposals, settings]) {
     if (result.error) {
       throw new Error(result.error.message || 'The schedule could not be loaded.', { cause: result.error })
     }
@@ -56,7 +64,10 @@ export async function loadCustomerServiceSchedule(now = new Date()) {
   const travelTrafficMode = settings.data?.travel_traffic_mode ?? 'OFF'
   const distanceBands = toDistanceBands(settings.data)
 
-  const loaded = { appointments: appointments.data, proposalHolds: holds.data, travelTrafficMode, distanceBands, travelChecks }
+  const loaded = {
+    appointments: appointments.data, proposalHolds: holds.data, proposals: proposals.data, travelTrafficMode, distanceBands,
+    travelChecks,
+  }
 
   const requestIds = upcomingAppointmentRequestIds([...appointments.data, ...holds.data], now)
   if (!requestIds.length) return { ...loaded, travelEstimates: [] }
@@ -111,5 +122,30 @@ export async function cancelCustomerServiceAppointment({ appointmentId, expected
     p_appointment_id: appointmentId, p_expected_updated_at: expectedUpdatedAt, p_reason: reason,
   })
   if (error) throw new Error(error.message || 'The appointment could not be cancelled.', { cause: error })
+  return data
+}
+
+// Proposals (block B, steps B4 path b and B6). The Edge Function revalidates capacity,
+// holds the days and emails the invitation; it also records the customer's answer.
+async function invokeProposals(body, fallback) {
+  const client = await requireSupabase()
+  const { data, error } = await client.functions.invoke('customer-service-proposals', { body })
+  if (error || data?.error) throw new Error(await functionErrorMessage(error, data, fallback), { cause: error })
+  return data
+}
+
+export function sendCustomerServiceProposal(payload) {
+  return invokeProposals({ action: 'send', ...payload }, 'The proposal could not be sent.')
+}
+
+export function answerCustomerServiceProposal(payload) {
+  return invokeProposals(payload, 'The answer could not be recorded.')
+}
+
+// No capacity rule: the guarded RPC releases the held days.
+export async function cancelCustomerServiceProposal({ proposalId, reason }) {
+  const client = await requireSupabase()
+  const { data, error } = await client.rpc('cancel_customer_service_proposal', { p_proposal_id: proposalId, p_reason: reason })
+  if (error) throw new Error(error.message || 'The proposal could not be cancelled.', { cause: error })
   return data
 }

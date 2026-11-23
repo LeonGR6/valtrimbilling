@@ -63,15 +63,34 @@ function toProposalHold(row) {
   }
 }
 
-export function applyAppointmentsToRequests(requests, appointments = [], technicians = [], proposalHolds = []) {
+// A request's latest proposal: the one waiting for the customer, or the customer's last
+// answer (block B, step B6). Times stay as stored; screens format them.
+function toProposal(row) {
+  return {
+    id: row.id, status: row.status, senderMailbox: row.sender_mailbox, sentAt: row.sent_at,
+    reminderSentAt: row.reminder_sent_at ?? null, builderContactedAt: row.builder_contacted_at ?? null,
+    respondedAt: row.responded_at ?? null, responseVia: row.response_via ?? null,
+    counterDates: row.counter_dates ?? [], counterDayPart: row.counter_day_part ?? null,
+    customerNote: row.customer_note ?? '', cancelledAt: row.cancelled_at ?? null, cancelReason: row.cancel_reason ?? '',
+  }
+}
+
+export function applyAppointmentsToRequests(requests, appointments = [], technicians = [], proposalHolds = [], proposals = []) {
   const byRequest = new Map(appointments.map((row) => [String(row.request_id), row]))
   const holdsByRequest = new Map()
   for (const row of proposalHolds) {
     const key = String(row.request_id)
     holdsByRequest.set(key, [...(holdsByRequest.get(key) ?? []), row])
   }
+  const latestByRequest = new Map()
+  for (const row of proposals) {
+    const key = String(row.request_id)
+    if (!latestByRequest.has(key) || row.sent_at > latestByRequest.get(key).sent_at) latestByRequest.set(key, row)
+  }
   const names = new Map(technicians.map((person) => [String(person.id), person.name]))
-  return requests.map((request) => {
+  return requests.map((original) => {
+    const latest = latestByRequest.get(String(original.id))
+    const request = latest ? { ...original, latestProposal: toProposal(latest) } : original
     const holds = holdsByRequest.get(String(request.id))
     if (holds) {
       return { ...request, proposalHolds: holds.map(toProposalHold).sort((left, right) => left.optionNumber - right.optionNumber) }

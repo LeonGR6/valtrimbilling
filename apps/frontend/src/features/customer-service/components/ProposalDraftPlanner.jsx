@@ -8,6 +8,8 @@ import {
   getPrototypePlanningTechnicians, getPrototypeTechnicianAgenda, proposalDraftFormValues, proposalDraftHasChanges,
   proposalPlanningSignature, validatePrototypeProposalDraft,
 } from '../utils/proposalDraft.js'
+import { proposalAlternatives } from '../utils/nearbySlotSuggestions.js'
+import { customerChosenSlot } from '../utils/proposalAnswers.js'
 import {
   applyTravelEstimates, mergeTravelEstimateResults, outdatedTravelLegs, travelEstimateMessages, travelLegHelperText,
   travelLegSource, travelLegsToEstimate,
@@ -138,6 +140,14 @@ export default function ProposalDraftPlanner({
   const draftStatus = fitStatus({
     fits: validation.isValid, travelPending: validation.travelPending || outdatedLegs.length > 0,
   })
+  // The other day the customer picked on the proposal page (step B5): the coordinator
+  // approves it by using it and registering the visit.
+  const customerChoice = customerChosenSlot(request)
+  const choiceCheck = customerChoice && validatePrototypeProposalDraft({
+    requestId: request.id, requests, technicians, values: { ...customerChoice, travelMinutes: values.travelMinutes },
+  })
+  const formIsCustomerChoice = Boolean(customerChoice) && values.date === customerChoice.date
+    && values.windowStart === customerChoice.windowStart
   // Checked again when the dialog opens, against the same schedule as the form.
   const secondOffer = (() => {
     if (!sending || !secondSlot || secondSlot.firstDate !== values.date) return null
@@ -161,10 +171,18 @@ export default function ProposalDraftPlanner({
   })()
   // Holds the days and emails the invitation; a failure stays in the dialog.
   const sendInvitation = async ({ includeSecond, invitation }) => {
+    // Option 1 is the earliest day, as the customer reads them.
+    const options = [{ values, validation }, ...(includeSecond && secondOffer?.available ? [secondOffer] : [])]
+      .sort((left, right) => left.values.date.localeCompare(right.values.date))
     const result = await sendProposal(buildProposalSend({
       request,
-      options: [{ values, validation }, ...(includeSecond && secondOffer?.available ? [secondOffer] : [])],
+      options,
       invitation,
+      // Other days for the customer page, for the same technicians (step B5).
+      alternatives: proposalAlternatives({
+        request, requests, technicians, technicianIds: values.technicianIds, travelMinutes: values.travelMinutes,
+        skipDates: options.map((option) => option.values.date),
+      }),
     }))
     setSending(false)
     onDirtyChange(false)
@@ -219,6 +237,19 @@ export default function ProposalDraftPlanner({
           {!savedDraft && hasUnsavedChanges && <Chip label="Unsaved draft changes" color="warning" variant="outlined" />}
           {savedDraft && <Chip label={savedIsStale || savedNeedsRevalidation ? 'Saved draft needs review' : hasUnsavedChanges ? 'Unsaved draft changes' : 'Draft saved · not sent'} color={savedIsStale || savedNeedsRevalidation ? 'warning' : hasUnsavedChanges ? 'default' : 'success'} variant="outlined" />}
         </Stack>
+        {customerChoice && (
+          <Alert severity={choiceCheck?.isValid ? 'info' : 'warning'} variant="outlined"
+            action={choiceCheck?.isValid && !formIsCustomerChoice && (
+              <Button color="inherit" size="small" onClick={() => applyNearbySlot(customerChoice)}>Use this slot</Button>
+            )}>
+            <Typography variant="body2" fontWeight={700}>The customer picked this day on the proposal page</Typography>
+            {formatWeekdayDate(customerChoice.date)} · {serviceCustomerWindowOptions.find((window) => window.start === customerChoice.windowStart)?.label}
+            {' '}window · work from {formatTime(customerChoice.internalStart)} · {technicianNames(customerChoice.technicianIds).join(', ')}.
+            {' '}{choiceCheck?.isValid
+              ? 'Use it, then Send to customer registers the visit and confirms it by email.'
+              : 'It no longer fits the schedule: call the customer and plan another day.'}
+          </Alert>
+        )}
         <ProposalNearbyVisits request={request} requests={requests} technicians={technicians}
           distanceBands={distanceBands} formDate={formIncomplete ? null : values.date}
           formFits={validation.isValid && !validation.pastDue}
@@ -376,7 +407,7 @@ export default function ProposalDraftPlanner({
         <SendToCustomerDialog request={request} values={values}
           summary={`${request.requestNumber} · ${formatWeekdayDate(values.date)} · work ${formatTime(values.internalStart)}–${
             formatTime(validation.internalEnd)} · ${technicianNames(values.technicianIds).join(', ')}`}
-          secondOffer={secondOffer} senderEmail={profile?.email ?? ''}
+          secondOffer={secondOffer} senderEmail={profile?.email ?? ''} customerChoice={formIsCustomerChoice}
           onClose={() => setSending(false)} onSend={send} onSendProposal={sendInvitation} />
       )}
     </Paper>

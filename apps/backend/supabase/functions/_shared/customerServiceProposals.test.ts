@@ -7,6 +7,7 @@ import {
   parseProposalAnswerInput,
   parseSendProposalInput,
   prepareInvitation,
+  proposalDaysPassed,
   type SendProposalInput,
   validateProposalOptions,
 } from "./customerServiceProposals.ts";
@@ -50,6 +51,9 @@ Deno.test("a proposal offers one or two days, on different days, with an invitat
   assertEquals(parsed.options.length, 2);
   assertEquals(parsed.invitation, typed);
   assertEquals(parseSendProposalInput(body({ options: [body().options[0]] })).options.length, 1);
+  // The customer reads the days by date: option 1 is the earliest, whatever the order sent.
+  assertEquals(parseSendProposalInput(body({ options: [body().options[1], body().options[0]] })).options
+    .map((option) => option.date), ["2026-11-09", "2026-11-10"]);
   for (const bad of [
     body({ options: [] }),
     body({ options: [...body().options, body().options[0]] }),
@@ -117,7 +121,7 @@ const emailRequest = {
   folio: "CS-2031",
   homeowner_name: "Yesenia Hernandez",
   homeowner_email: "customer@example.com",
-  description: "Shelving replacement",
+  work_category: "SHELVING",
   service_properties: { address: "12720 Azure Way-Unit 33", city: "Hawthorne", state: "CA", postal_code: "90250" },
 };
 const options = [{ date: "2026-11-24", windowStart: "08:00" }, { date: "2026-11-23", windowStart: "10:00" }];
@@ -225,4 +229,13 @@ Deno.test("the HTML invitation shows each held day as an option card", () => {
   assert(one.html.includes(">Can we visit on this day?</h1>"));
   assert(!one.html.includes("Option 1"));
   assert(one.html.includes("We are holding it for you until you answer."));
+});
+
+Deno.test("a proposal can be replaced only once every offered day has started", () => {
+  const now = new Date("2026-11-25T17:00:00Z"); // Wednesday 9:00 AM
+  const started = { window_starts_at: "2026-11-25T16:00:00Z" }; // today 8:00 AM
+  const ahead = { window_starts_at: "2026-11-27T16:00:00Z" };
+  assert(proposalDaysPassed([started], now));
+  assert(!proposalDaysPassed([started, ahead], now));
+  assert(!proposalDaysPassed([], now));
 });

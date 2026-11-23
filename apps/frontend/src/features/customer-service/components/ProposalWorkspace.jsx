@@ -10,7 +10,7 @@ import {
   paginateRequestInbox, proposalFilterOptions, requestLocationLabel,
   requestsForView, requestWorkflowStages,
 } from '../utils/requestInbox.js'
-import { latestProposalAnswer } from '../utils/proposalAnswers.js'
+import { latestProposalAnswer, proposalOptionsStatus } from '../utils/proposalAnswers.js'
 import RequestInboxList from './RequestInboxList.jsx'
 import ProposalAnswerPanel from './ProposalAnswerPanel.jsx'
 import ProposalDraftPlanner from './ProposalDraftPlanner.jsx'
@@ -35,6 +35,9 @@ export default function ProposalWorkspace({
   const selectedStage = selected && effectiveRequestWorkflowStage(selected)
   const selectedWorkflow = selected && requestWorkflowStages[selectedStage]
   const lastAnswer = selected && latestProposalAnswer(selected, selectedStage)
+  // Every offered day started without an answer: plan again; the new proposal or visit
+  // closes the old one (decided 23 Nov 2026).
+  const daysPassed = selectedStage === 'AWAITING_CUSTOMER' && proposalOptionsStatus(selected).allStarted
   // A request just registered (by phone or an accepted proposal) leaves the workspace.
   const leftRequest = selectedRequestId && !selected
     ? requests.find((request) => String(request.id) === String(selectedRequestId))
@@ -179,7 +182,7 @@ export default function ProposalWorkspace({
       )}
 
       {/* After a rejection the coordinator calls the customer, then plans again from Needs contact. */}
-      {['READY_TO_PROPOSE', 'NEEDS_CONTACT'].includes(selectedStage) && (
+      {(['READY_TO_PROPOSE', 'NEEDS_CONTACT'].includes(selectedStage) || daysPassed) && (
         <ProposalDraftPlanner
           key={selected.id}
           request={selected}

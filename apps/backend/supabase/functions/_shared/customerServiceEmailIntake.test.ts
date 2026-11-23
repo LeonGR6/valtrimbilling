@@ -364,6 +364,39 @@ Deno.test("ambiguous or invalid catalog location is not filled with zero coordin
     null,
   );
 });
+Deno.test("when the email text and the work order name different communities, the work order PDF wins", () => {
+  // Like Magnolia: the email says "Magnolia at Arcadia Phase 4", the PDF "Magnolia Townhomes".
+  const email = importFacts(), pdf = importFacts();
+  email.property.builderName = pdf.property.builderName = "KB Homes";
+  email.property.communityName = "Arroyo Phase 4";
+  pdf.property.communityName = "Arroyo";
+  const result = buildEmailImportIntake(wrap(email, pdf), testCatalog, "2026-10-22");
+  assertEquals(result.intakePayload?.property.jobId, 10);
+  assertEquals(result.conflicts.some((conflict) => conflict.path === "property.communityName"), false);
+  assertEquals(
+    result.warnings.includes(
+      'The sources disagree on property.communityName; the Builder\'s work order ("Arroyo") was used over "Arroyo Phase 4".',
+    ),
+    true,
+  );
+  // Two PDFs that disagree, or only the email text: still pending for the review.
+  const other = importFacts();
+  other.property.builderName = "KB Homes";
+  other.property.communityName = "Another";
+  const twoPdfs = buildEmailImportIntake(wrap(email, pdf, other), testCatalog, "2026-10-22");
+  assertEquals(twoPdfs.intakePayload?.property.jobId, null);
+  assertEquals(twoPdfs.conflicts.some((conflict) => conflict.path === "property.communityName"), true);
+  const emails = buildEmailImportIntake(
+    [
+      { sourceId: "email:0", kind: "EMAIL", structuredData: email },
+      { sourceId: "email:1", kind: "EMAIL", structuredData: pdf },
+    ],
+    testCatalog,
+    "2026-10-22",
+  );
+  assertEquals(emails.intakePayload?.property.jobId, null);
+});
+
 Deno.test("contradictory explicit Builder facts cannot be bypassed by a globally matching Job", () => {
   const one = importFacts(), two = importFacts();
   one.property.builderName = "KB Home";

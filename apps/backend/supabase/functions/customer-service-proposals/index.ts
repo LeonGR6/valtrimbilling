@@ -2,20 +2,23 @@
 //
 // send     validates one or two days with the shared capacity rules, holds them through
 //          send_customer_service_proposal and emails the invitation from the coordinator's
-//          own mailbox. If Microsoft refuses the email the proposal is cancelled at once,
-//          so nothing stays held for a customer who was never told. If the outcome is
-//          unknown (a timeout), the days stay held and the coordinator checks Sent Items.
+//          own mailbox. If Microsoft refuses the email the system closes the proposal at
+//          once, so nothing stays held for a customer who was never told. If the outcome
+//          is unknown (a timeout), the days stay held and the coordinator checks Sent Items.
+//          A request still waiting on a proposal whose offered days all started gets the
+//          new one: the system closes the old one first (decided 23 Nov 2026).
 // accept   records that the customer accepted one option: it becomes the appointment and
 //          the customer can get the same confirmation email as path a.
 // decline  records a rejection (the request needs contact) or a counter-proposal of one to
 //          three dates (back to Ready to propose). Both release the held days.
-// Cancelling a proposal has no capacity rule: the browser calls that RPC directly.
+// Cancelling a proposal (test mode only) has no capacity rule: the browser calls that RPC.
 import { handlePreflight, json } from "../_shared/cors.ts";
 import { AppointmentInputError, statusForDatabaseError } from "../_shared/customerServiceAppointments.ts";
 import {
   type Actor,
   type AdminClient,
   authorizeCoordinator,
+  closePassedProposal,
   customerEmailDeliveryFromEnv,
   deliverCustomerEmail,
   loadTechnicianDay,
@@ -30,8 +33,9 @@ import {
   prepareInvitation,
   validateProposalOptions,
 } from "../_shared/customerServiceProposals.ts";
+import { proposalLinksFromEnv } from "../_shared/customerServiceProposalLink.ts";
 import { californiaClockAt } from "../_shared/customerServiceScheduling.mjs";
-import { serviceClient, userClient } from "../_shared/supabase.ts";
+import { serviceClient } from "../_shared/supabase.ts";
 
 const parse = <T>(read: () => T): T => {
   try {
@@ -48,7 +52,7 @@ function databaseFailure(error: { code?: string; message: string }): never {
   throw new RequestError(error.message, status);
 }
 
-async function send(req: Request, actor: Actor, body: unknown) {
+async function send(actor: Actor, body: unknown) {
   const input = parse(() => parseSendProposalInput(body));
   if (!actor.email.trim()) {
     throw new RequestError("Your user has no email, so a proposal cannot be sent from your mailbox.", 422);
@@ -84,15 +88,34 @@ async function send(req: Request, actor: Actor, body: unknown) {
     throw new RequestError("The proposal cannot be sent.", 422, validation.errors);
   }
 
+  const replacedAt = await closePassedProposal(admin, request, input.expectedRequestUpdatedAt);
   const { data, error } = await admin.rpc("send_customer_service_proposal", {
     p_actor_id: actor.id,
     p_sender_mailbox: actor.email,
     ...validation.rpcArgs,
+    ...(replacedAt ? { p_expected_request_updated_at: replacedAt } : {}),
     p_travel: await onlyChangedTravel(admin, validation.rpcArgs.p_travel),
   });
   if (error) databaseFailure(error);
 
-  const { send: _send, ...email } = invitation;
+  // The other days the customer can pick when none of the offered ones works (step B5).
+  if (input.alternatives.length) {
+    const stored = await admin.from("service_proposals").update({ alternatives: input.alternatives })
+      .eq("id", data.proposalId);
+    if (stored.error) console.error("The other days of a proposal were not stored.", stored.error.message);
+  }
+  // The final invitation carries the customer page's buttons when the links are set up.
+  const links = await proposalLinksFromEnv(data.publicId, input.options.map((_option, index) => index + 1));
+  const final = links
+    ? prepareInvitation({
+      input: input.invitation,
+      request,
+      options: input.options.map((option) => ({ date: option.date, windowStart: option.windowStart })),
+      delivery: customerEmailDeliveryFromEnv(),
+      links,
+    })
+    : invitation;
+  const { send: _send, ...email } = final.send ? final : invitation;
   const delivered = await deliverCustomerEmail({
     admin,
     actor,
@@ -114,20 +137,20 @@ async function send(req: Request, actor: Actor, body: unknown) {
       invitation: {
         status: "UNCERTAIN",
         message: `Microsoft 365 did not answer, so the invitation may not have been sent. The days stay held: check ` +
-          `Sent Items in ${actor.email}. If it is not there, cancel the proposal and send it again.`,
+          `Sent Items in ${actor.email}. If it is not there, call the customer and record their answer.`,
       },
     });
   }
 
-  // Microsoft refused it: release the days. The cancel RPC runs as the coordinator.
-  const { error: cancelError } = await userClient(req).rpc("cancel_customer_service_proposal", {
+  // Microsoft refused it: the system closes the proposal and releases the days.
+  const { error: closeError } = await admin.rpc("close_customer_service_proposal", {
     p_proposal_id: data.proposalId,
     p_reason: "The invitation email could not be sent.",
   });
-  if (cancelError) {
-    console.error("A proposal whose invitation failed was not cancelled.", cancelError.message);
+  if (closeError) {
+    console.error("A proposal whose invitation failed was not closed.", closeError.message);
     throw new RequestError(
-      `The invitation was not sent, and the proposal is still holding its days: cancel it in Awaiting customer. ${delivered.message}`,
+      `The invitation was not sent, and the proposal is still holding its days: call the customer and record their answer. ${delivered.message}`,
       502,
     );
   }
@@ -192,7 +215,7 @@ Deno.serve(async (req) => {
   try {
     const actor = await authorizeCoordinator(req, "You do not have permission to manage Customer Service proposals.");
     const body = await req.json().catch(() => null) as Record<string, unknown> | null;
-    if (body?.action === "send") return await send(req, actor, body);
+    if (body?.action === "send") return await send(actor, body);
     const answer = parse(() => parseProposalAnswerInput(body));
     const admin = serviceClient();
     return answer.action === "accept" ? await accept(admin, actor, answer) : await decline(admin, actor, answer);

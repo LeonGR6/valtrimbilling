@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  formatChangeType,
   formatHyphenDate,
   listSpconnectLines,
   listSpconnectOptions,
@@ -137,6 +138,67 @@ test('a change order is recognized from the stored kind', () => {
   assert.equal(summary.kind, 'CHANGE_ORDER')
   assert.equal(summary.changeOrderNumber, '3')
   assert.equal(summary.changeOrderSequence, 2)
+})
+
+// Shaped like the Reschedule Hyphen sent for the same order (23 Nov 2026):
+// issueDate becomes orderIssueDate and every line is wrapped.
+const rescheduleRow = {
+  ...orderRow,
+  id: 3,
+  kind: 'CHANGE_ORDER',
+  change_order_number: '92DA127B-2834-4317-B822-EF312833717D',
+  change_order_sequence: 2,
+  payload: {
+    ...orderRow.payload,
+    header: {
+      ...orderRow.payload.header,
+      issueDate: undefined,
+      orderIssueDate: '2026-11-20T12:10:39',
+      changeType: 'Reschedule',
+      changeOrderNumber: '92DA127B-2834-4317-B822-EF312833717D',
+      changeOrderSequence: '2',
+      changeOrderIssueDate: '2026-11-23T10:32:12',
+      changeOrderHeaderNote: 'test reschedule',
+      startDate: '2026-12-02T00:00:00',
+      endDate: '2026-12-04T00:00:00',
+    },
+    items: orderRow.payload.items.map((item) => ({
+      changeCode: 'ReplaceAllValues',
+      originalLineNum: item.builderLineItemNum,
+      originalItemDetailWithChanges: item,
+    })),
+  },
+}
+
+test('a change order shows its type, number, note and new dates', () => {
+  const summary = summarizeSpconnectMessage(rescheduleRow)
+
+  assert.equal(summary.kind, 'CHANGE_ORDER')
+  assert.equal(summary.changeType, 'Reschedule')
+  assert.equal(summary.changeOrderSequence, 2)
+  assert.equal(summary.changeIssuedAt, 'Nov 23, 2026')
+  assert.equal(summary.changeNote, 'test reschedule')
+  assert.equal(summary.issuedAt, 'Nov 20, 2026')
+  assert.equal(summary.workStart, 'Dec 2, 2026')
+  assert.equal(summary.workEnd, 'Dec 4, 2026')
+})
+
+test('change order lines are read from inside their wrapper', () => {
+  const [baseLine, optionLine] = listSpconnectLines(rescheduleRow.payload)
+
+  assert.equal(baseLine.lineNumber, '115910482')
+  assert.equal(baseLine.changeCode, 'ReplaceAllValues')
+  assert.equal(baseLine.description, 'Finish Carpentry - Lot: 0043 Pln: AD8  Ele: 0W')
+  assert.equal(baseLine.total, 6325.2)
+  assert.equal(optionLine.options[0].name, 'INDH0001')
+})
+
+test('change types read the way Austin named them', () => {
+  assert.equal(formatChangeType('NotesOnly'), 'Notes only')
+  assert.equal(formatChangeType('Notes Only'), 'Notes only')
+  assert.equal(formatChangeType('ChangeInDetail (Items)'), 'Items')
+  assert.equal(formatChangeType('ChangeInHeadingSection'), 'Options')
+  assert.equal(formatChangeType(null), null)
 })
 
 test('lines carry their options, locations and preferences', () => {

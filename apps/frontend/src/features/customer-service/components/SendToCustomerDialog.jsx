@@ -7,6 +7,7 @@ import {
   confirmationEmail, confirmationTextProblems, defaultConfirmationText, defaultInvitationText, invitationEmail,
   mailingAddress,
 } from '../utils/customerServiceEmailTemplates.js'
+import { serviceWorkTypeLabel } from '../utils/customerServicePlanning.js'
 import CustomerEmailEditor from './CustomerEmailEditor.jsx'
 
 // A radio whose label has a title and a caption lines up with the title.
@@ -29,11 +30,12 @@ const acceptanceOptions = [
 // onSend({ acceptance, confirmationEmail }) registers; onSendProposal({ includeSecond,
 // invitation }) sends. Both reject with the error to show.
 export default function SendToCustomerDialog({
-  request, values, summary, secondOffer, senderEmail, onClose, onSend, onSendProposal,
+  request, values, summary, secondOffer, senderEmail, onClose, onSend, onSendProposal, customerChoice = false,
 }) {
   const customerEmail = String(request.contactEmail ?? '').trim()
-  const [path, setPath] = useState(customerEmail ? 'PROPOSAL' : 'ACCEPTED')
-  const [acceptance, setAcceptance] = useState(acceptanceOptions[0].value)
+  // The day the customer picked on the proposal page: approving it registers the visit.
+  const [path, setPath] = useState(customerEmail && !customerChoice ? 'PROPOSAL' : 'ACCEPTED')
+  const [acceptance, setAcceptance] = useState(customerChoice ? 'COUNTER_PROPOSAL_ACCEPTED' : acceptanceOptions[0].value)
   const [emailOn, setEmailOn] = useState(Boolean(customerEmail))
   const [confirmationText, setConfirmationText] = useState(() => defaultConfirmationText({ homeownerName: request.contactName }))
   const [invitationText, setInvitationText] = useState(() => defaultInvitationText({ homeownerName: request.contactName }))
@@ -45,24 +47,30 @@ export default function SendToCustomerDialog({
   const writesEmail = proposing || emailOn
   const text = proposing ? invitationText : confirmationText
   const problems = writesEmail ? confirmationTextProblems(text) : []
+  // The customer reads the days by date, as the server numbers them (decided 23 Nov 2026).
   const days = [
     { date: values.date, windowStart: values.windowStart },
     ...(includeSecond && secondOffer?.available
       ? [{ date: secondOffer.values.date, windowStart: secondOffer.values.windowStart }]
       : []),
-  ]
+  ].sort((left, right) => left.date.localeCompare(right.date))
   const details = {
     folio: request.requestNumber, homeownerName: request.contactName,
     // Saved requests carry the property's one-line address; the server reads the same column.
     address: mailingAddress({
       street: request.street || request.address, city: request.city, state: request.state, postalCode: request.postalCode,
     }),
-    work: request.issue, greeting: text.greeting, message: text.message,
+    // The type of work, never the Builder's text (decided 23 Nov 2026).
+    work: serviceWorkTypeLabel(request.workType), greeting: text.greeting, message: text.message,
   }
   const preview = !writesEmail
     ? null
     : proposing
-      ? invitationEmail({ ...details, options: days })
+      // The real buttons get the customer's signed link on the server.
+      ? invitationEmail({
+        ...details, options: days,
+        links: { options: days.map((_day, index) => ({ number: index + 1, url: '#' })), none: '#' },
+      })
       : confirmationEmail({ ...details, date: values.date, windowStart: values.windowStart })
 
   const submit = async () => {

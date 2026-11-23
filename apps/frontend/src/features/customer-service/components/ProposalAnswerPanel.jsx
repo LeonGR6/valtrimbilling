@@ -17,6 +17,7 @@ import {
   sentAgoLabel,
 } from '../utils/proposalAnswers.js'
 import { registrationNotice } from '../utils/proposalDraft.js'
+import { serviceWorkTypeLabel } from '../utils/customerServicePlanning.js'
 import CustomerEmailEditor from './CustomerEmailEditor.jsx'
 
 // A radio whose label has a title and a caption lines up with the title.
@@ -45,7 +46,7 @@ function AcceptDialog({ request, option, summary, senderEmail, onClose, onAccept
       address: mailingAddress({
         street: request.street || request.address, city: request.city, state: request.state, postalCode: request.postalCode,
       }),
-      work: request.issue, greeting: text.greeting, message: text.message,
+      work: serviceWorkTypeLabel(request.workType), greeting: text.greeting, message: text.message,
     })
     : null
   const submit = async () => {
@@ -246,7 +247,7 @@ function CancelDialog({ onClose, onCancel }) {
 // it was sent and its held days, with the answers a coordinator records from the
 // customer's email reply or call. onAnswered(request, notice) reports the outcome.
 export default function ProposalAnswerPanel({ request, technicians, onAnswered }) {
-  const { answerProposal, cancelProposal, markBuilderContacted } = useCustomerServicePrototype()
+  const { answerProposal, cancelProposal, markBuilderContacted, testMode } = useCustomerServicePrototype()
   const { profile } = useAuth()
   const [dialog, setDialog] = useState(null)
   const proposal = request.latestProposal?.status === 'SENT' ? request.latestProposal : null
@@ -295,7 +296,8 @@ export default function ProposalAnswerPanel({ request, technicians, onAnswered }
         </Box>
         {allStarted && (
           <Alert severity="warning" variant="outlined">
-            Every offered day has started without an answer. Cancel this proposal and send a new one.
+            Every offered day has started without an answer. Call the customer and plan a new day below: sending a new
+            proposal or registering the visit closes this one.
           </Alert>
         )}
         {followUp.reminder.severity === 'warning'
@@ -325,11 +327,12 @@ export default function ProposalAnswerPanel({ request, technicians, onAnswered }
         </Stack>
         <Stack direction="row" spacing={1.5} useFlexGap sx={{ flexWrap: 'wrap' }}>
           <Button variant="outlined" onClick={() => setDialog({ kind: 'DECLINE' })}>Customer did not accept</Button>
-          <Button color="error" onClick={() => setDialog({ kind: 'CANCEL' })}>Cancel proposal</Button>
+          {/* A sent proposal is not cancelled; only while customer emails are in test mode. */}
+          {testMode && <Button color="error" onClick={() => setDialog({ kind: 'CANCEL' })}>Cancel proposal</Button>}
         </Stack>
         <Typography variant="caption" color="text.secondary">
-          Each day stays held for its technicians until you record the answer or cancel. Accepting registers the visit;
-          any other answer releases the days.
+          Each day stays held for its technicians until the customer answers or you record the answer. Accepting
+          registers the visit; any other answer releases the days.
         </Typography>
       </Stack>
       {dialog?.kind === 'ACCEPT' && (

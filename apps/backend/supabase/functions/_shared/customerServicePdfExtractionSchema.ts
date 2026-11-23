@@ -292,19 +292,46 @@ function nullableBoolean(value: unknown, path: string): boolean | null {
   );
 }
 
-function isoDate(value: unknown, path: string): string | null {
-  const normalized = nullableText(value, path, 10);
-  if (normalized === null) return null;
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(normalized)) {
-    throw new CustomerServicePdfExtractionValidationError(
-      path,
-      "must use YYYY-MM-DD or null",
-    );
-  }
-  return normalized;
+const monthNumbers: Record<string, number> = {
+  jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12,
+};
+
+function calendarDay(year: number, month: number, day: number): string | null {
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day
+    ? date.toISOString().slice(0, 10)
+    : null;
 }
 
-function parseDocument(value: unknown): CustomerServicePdfDocument {
+// A document date as YYYY-MM-DD. The model sometimes returns the date with its time
+// ("2026-10-19T17:15"), in US form ("10/19/2026") or with the month name ("Monday,
+// October 19, 2026 5:15 PM"); those are read as the same day. Anything else becomes
+// null with a warning for the reviewer instead of failing the whole import (decided
+// 23 Nov 2026: one unreadable date must not stop the PDF from being analyzed).
+function documentDate(value: unknown, path: string, warnings: string[]): string | null {
+  if (value === null) return null;
+  const text = typeof value === "string" ? value.trim() : "";
+  if (typeof value === "string" && !text) return null;
+  let day: string | null = null;
+  const iso = /^(\d{4})-(\d{2})-(\d{2})(?:[T ].*)?$/u.exec(text);
+  const us = /^(\d{1,2})\/(\d{1,2})\/(\d{2}|\d{4})$/u.exec(text);
+  const named = /(?:^|[\s,])([A-Za-z]{3,9})\.?\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+(\d{4})(?:\D|$)/u.exec(text);
+  if (iso) day = calendarDay(Number(iso[1]), Number(iso[2]), Number(iso[3]));
+  else if (us) {
+    const year = Number(us[3]) + (us[3].length === 2 ? 2000 : 0);
+    day = calendarDay(year, Number(us[1]), Number(us[2]));
+  } else if (named) {
+    const month = monthNumbers[named[1].slice(0, 3).toLowerCase()];
+    if (month) day = calendarDay(Number(named[3]), month, Number(named[2]));
+  }
+  if (!day) {
+    const shown = text ? `"${text.slice(0, 60)}"` : "a value that is not text";
+    warnings.push(`The ${path} could not be read (${shown}); it was left empty for review.`);
+  }
+  return day;
+}
+
+function parseDocument(value: unknown, warnings: string[]): CustomerServicePdfDocument {
   const path = "document";
   const source = record(value, path);
   onlyKeys(source, [
@@ -340,17 +367,20 @@ function parseDocument(value: unknown): CustomerServicePdfDocument {
       20,
       100,
     ),
-    orderDate: isoDate(
+    orderDate: documentDate(
       field(source, "orderDate", path),
       `${path}.orderDate`,
+      warnings,
     ),
-    scheduledDate: isoDate(
+    scheduledDate: documentDate(
       field(source, "scheduledDate", path),
       `${path}.scheduledDate`,
+      warnings,
     ),
-    sourceEmailSentDate: isoDate(
+    sourceEmailSentDate: documentDate(
       field(source, "sourceEmailSentDate", path),
       `${path}.sourceEmailSentDate`,
+      warnings,
     ),
     sourceEmailFrom: nullableText(
       field(source, "sourceEmailFrom", path),
@@ -637,17 +667,21 @@ export function parseCustomerServicePdfExtraction(
     );
   }
 
+  const dateWarnings: string[] = [];
+  const document = parseDocument(field(source, "document", "root"), dateWarnings);
+  const warnings = textArray(
+    field(source, "warnings", "root"),
+    "warnings",
+    50,
+    500,
+  );
   return {
     schemaVersion,
-    document: parseDocument(field(source, "document", "root")),
+    document,
     property: parseProperty(field(source, "property", "root")),
     contacts: parseContacts(field(source, "contacts", "root")),
     serviceItems: parseServiceItems(field(source, "serviceItems", "root")),
-    warnings: textArray(
-      field(source, "warnings", "root"),
-      "warnings",
-      50,
-      500,
-    ),
+    // The model's own warnings first; the unreadable dates after, within the limit.
+    warnings: [...warnings, ...dateWarnings].slice(0, 50),
   };
 }

@@ -17,7 +17,7 @@ import {
 
 const emptySchedule = {
   roster: [], appointments: [], proposalHolds: [], proposals: [], proposalFollowUps: { reminders: [], builderContacts: [] },
-  travelEstimates: [], travelTrafficMode: 'OFF', distanceBands: null, travelChecks: [],
+  travelEstimates: [], travelTrafficMode: 'OFF', distanceBands: null, travelChecks: [], testMode: false,
 }
 
 // Requests, accepted appointments, travel estimates and technicians come from
@@ -113,12 +113,23 @@ export default function CustomerServicePrototypeProvider({ children }) {
       travelTrafficMode: schedule.travelTrafficMode,
       distanceBands: schedule.distanceBands,
       travelChecks: schedule.travelChecks ?? [],
+      // Cancel appointment and Cancel proposal show only in test mode.
+      testMode: schedule.testMode === true,
       estimateTravel: estimateCustomerServiceTravel,
       estimateNearby: estimateCustomerServiceNearby,
       scheduleError,
-      registerAppointment: async (payload) => afterScheduleChange(await registerCustomerServiceAppointment(payload)),
+      // Registering may close a proposal whose days all passed before failing, so the
+      // schedule reloads after a failure too.
+      registerAppointment: async (payload) => {
+        try {
+          return await afterScheduleChange(await registerCustomerServiceAppointment(payload))
+        } catch (error) {
+          await Promise.all([store.reloadRequests(), reloadSchedule()]).catch(() => {})
+          throw error
+        }
+      },
       cancelAppointment: async (payload) => afterScheduleChange(await cancelCustomerServiceAppointment(payload)),
-      // A refused invitation cancels its proposal on the server, which still changes the
+      // A refused invitation closes its proposal on the server, which still changes the
       // request, so the schedule reloads after a failure too.
       sendProposal: async (payload) => {
         try {

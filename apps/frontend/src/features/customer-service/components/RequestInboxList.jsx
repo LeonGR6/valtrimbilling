@@ -22,7 +22,7 @@ import VisibilityOutlinedIcon from '@mui/icons-material/VisibilityOutlined'
 import { formatPhoneNumber } from '../../../utils/phoneNumbers.js'
 import { prioritiesByValue } from '../data/customerService.js'
 import { formatLongDate, formatTime } from '../utils/dates.js'
-import { proposalFollowUp, sentAgoLabel } from '../utils/proposalAnswers.js'
+import { proposalListFlag, sentAgoLabel } from '../utils/proposalAnswers.js'
 import {
   effectiveRequestWorkflowStage,
   inboxPageSizeOptions,
@@ -54,19 +54,23 @@ function workSummary(request) {
   return details.join(' · ')
 }
 
-// "Sent 26 hours ago" under a request waiting on a proposal (block B, step B6), and the
-// Builder call due after 48 hours without an answer (step B7).
+// "Sent 26 hours ago" under a request waiting on a proposal (block B, step B6), and a
+// label when the coordinator must act: days passed, Builder call due (step B7), a day
+// the customer picked or a call they asked for (step B5).
 function ProposalWaiting({ request }) {
   const proposal = request.latestProposal
-  if (effectiveRequestWorkflowStage(request) !== 'AWAITING_CUSTOMER' || proposal?.status !== 'SENT') return null
+  const stage = effectiveRequestWorkflowStage(request)
+  const waiting = stage === 'AWAITING_CUSTOMER' && proposal?.status === 'SENT'
+  const flag = proposalListFlag(request, stage)
+  if (!waiting && !flag) return null
   return (
     <>
-      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
-        {sentAgoLabel(proposal)}
-      </Typography>
-      {proposalFollowUp(proposal).builderCallDue && (
-        <Chip size="small" color="warning" variant="outlined" label="Call the Builder" sx={{ mt: 0.5 }} />
+      {waiting && (
+        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+          {sentAgoLabel(proposal)}
+        </Typography>
       )}
+      {flag && <Chip size="small" color={flag.color} variant="outlined" label={flag.label} sx={{ mt: 0.5, maxWidth: '100%' }} />}
     </>
   )
 }

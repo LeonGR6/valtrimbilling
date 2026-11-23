@@ -21,7 +21,7 @@ const request = {
   folio: "CS-2031",
   homeowner_name: "Yesenia Hernandez",
   homeowner_email: "customer@example.com",
-  description: "Shelving\nreplacement",
+  work_category: "SHELVING",
   service_properties: { address: "12720 Azure Way-Unit 33", city: "Hawthorne", state: "CA", postal_code: "90250" },
 };
 const typed = { greeting: "Hi Yesenia,", message: "Thanks for the call.\nSee you then." };
@@ -78,6 +78,9 @@ Deno.test("while testing every customer email goes to the test inbox; real custo
   const live = prepareConfirmation({ ...base, delivery: { mode: "LIVE" } });
   assert(live.send);
   assertEquals([live.to, live.testMode], ["customer@example.com", false]);
+  // The visit goes along as a calendar file the customer can add.
+  assertEquals(live.attachments.map((file) => [file.name, file.contentType]), [["valtrim-service-visit.ics", "text/calendar"]]);
+  assert(live.attachments[0].content.includes("LOCATION:12720 Azure Way-Unit 33\\, Hawthorne\\, CA 90250"));
 
   assertEquals(prepareConfirmation({ ...base, delivery: { mode: "OFF" } }), {
     send: false, message: "Customer emails are turned off on the server, so no confirmation was sent.",
@@ -142,6 +145,20 @@ Deno.test("only an expired token is retried; other failures are never resent", a
     const error = await assertRejects(() => failed.client.sendMail("anelda@valtriminc.com", mail), MicrosoftGraphSendError);
     assertEquals([error.code, failed.calls.length], [code, 2]);
   }
+});
+
+Deno.test("a calendar file is sent as a file attachment", async () => {
+  const { client, calls } = graph([auth(), new Response(null, { status: 202 })]);
+  await client.sendMail("anelda@valtriminc.com", {
+    ...mail, attachments: [{ name: "visit.ics", contentType: "text/calendar", content: "BEGIN:VCALENDAR\r\nX:–\r\n" }],
+  });
+  assertEquals(JSON.parse(String(calls[1].init.body)).message.attachments, [{
+    "@odata.type": "#microsoft.graph.fileAttachment",
+    name: "visit.ics",
+    contentType: "text/calendar",
+    // UTF-8, so the en dash survives.
+    contentBytes: "QkVHSU46VkNBTEVOREFSDQpYOuKAkw0K",
+  }]);
 });
 
 Deno.test("the HTML version is sent as HTML", async () => {

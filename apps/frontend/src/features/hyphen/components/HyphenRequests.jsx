@@ -71,12 +71,13 @@ const headerRowSx = {
 
 function KindChip({ summary }) {
   if (summary.kind === 'CHANGE_ORDER') {
+    const number = summary.changeOrderSequence === null ? '' : ` #${summary.changeOrderSequence}`
     return (
       <Chip
         size="small"
         color="warning"
         variant="outlined"
-        label={summary.changeOrderNumber ? `Change Order ${summary.changeOrderNumber}` : 'Change Order'}
+        label={joinParts([`Change${number}`, summary.changeType])}
       />
     )
   }
@@ -160,14 +161,23 @@ function MessageDetailsDrawer({ row, onClose }) {
             {summary.kind === 'CHANGE_ORDER' && (
               <>
                 <DetailField label="Change type" value={summary.changeType} />
-                <DetailField label="Change order" value={summary.changeOrderNumber} />
-                <DetailField label="Sequence" value={summary.changeOrderSequence} />
+                <DetailField label="Change number" value={summary.changeOrderSequence} />
+                <DetailField label="Change issued" value={summary.changeIssuedAt} />
               </>
             )}
             <DetailField label="Work start" value={summary.workStart} />
             <DetailField label="Work end" value={summary.workEnd} />
             <DetailField label="Order total" value={formatCurrency(summary.orderTotal)} />
           </Box>
+          {(summary.changeNote || summary.orderNote || summary.kind === 'CHANGE_ORDER') && (
+            <Box sx={{ display: 'grid', gap: 2, mt: 2 }}>
+              {summary.kind === 'CHANGE_ORDER' && (
+                <DetailField label="Change order ID" value={summary.changeOrderNumber} />
+              )}
+              {summary.changeNote && <DetailField label="Change note" value={summary.changeNote} />}
+              {summary.orderNote && <DetailField label="Order note" value={summary.orderNote} />}
+            </Box>
+          )}
 
           <SectionTitle>House</SectionTitle>
           <Box sx={{ display: 'grid', gap: 2, gridTemplateColumns: { xs: '1fr 1fr', sm: 'repeat(3, 1fr)' } }}>

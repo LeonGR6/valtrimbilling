@@ -11,6 +11,7 @@ import {
 const now = new Date("2026-11-25T17:00:00Z");
 const row = (overrides: Partial<ReminderProposalRow> = {}): ReminderProposalRow => ({
   id: 43,
+  public_id: "8f7c2c9e-3b1a-4c55-9d2e-1f0a6b7c8d9e",
   request_id: 1023,
   status: "SENT",
   sender_mailbox: "victor@valtriminc.com",
@@ -30,6 +31,7 @@ Deno.test("a proposal gets its reminder 24 calendar hours after it was sent", ()
   assertEquals(reminderCutoff(now).toISOString(), "2026-11-24T17:00:00.000Z");
   assertEquals(dueReminders([row()], now), [{
     proposalId: 43,
+    publicId: "8f7c2c9e-3b1a-4c55-9d2e-1f0a6b7c8d9e",
     requestId: 1023,
     senderMailbox: "victor@valtriminc.com",
     createdBy: "00000000-0000-0000-0000-000000000001",
@@ -42,6 +44,17 @@ Deno.test("a proposal gets its reminder 24 calendar hours after it was sent", ()
   assertEquals(dueReminders([row({ sent_at: "2026-11-24T17:01:00Z" })], now), []);
   assertEquals(dueReminders([row({ reminder_sent_at: "2026-11-25T16:45:00Z" })], now), []);
   assertEquals(dueReminders([row({ status: "ACCEPTED" })], now), []);
+});
+
+Deno.test("reminders go out only from 8:00 AM to 6:00 PM in California", () => {
+  const sent = "2026-11-24T05:00:00Z"; // Monday 9:00 PM
+  // Due Tuesday 9:00 PM: it waits then and Wednesday at 7:59 AM, goes out from 8:00 AM
+  // to 5:59 PM, and waits again at 6:00 PM.
+  assertEquals(dueReminders([row({ sent_at: sent })], new Date("2026-11-25T05:00:00Z")), []);
+  assertEquals(dueReminders([row({ sent_at: sent })], new Date("2026-11-25T15:59:00Z")), []);
+  assertEquals(dueReminders([row({ sent_at: sent })], new Date("2026-11-25T16:00:00Z")).length, 1);
+  assertEquals(dueReminders([row({ sent_at: sent })], new Date("2026-11-26T01:59:00Z")).length, 1);
+  assertEquals(dueReminders([row({ sent_at: sent })], new Date("2026-11-26T02:00:00Z")), []);
 });
 
 Deno.test("the reminder lists only the days that have not started, and none when all have", () => {
@@ -60,7 +73,7 @@ const request = {
   folio: "CS-2023",
   homeowner_name: "Charline",
   homeowner_email: "customer@example.com",
-  description: "General fix",
+  work_category: "DOORS",
   service_properties: { address: "5242 Guava Lane", city: "Banning", state: "CA", postal_code: "92220" },
 };
 const options = [{ number: 1, date: "2026-11-27", windowStart: "08:00" }, { number: 2, date: "2026-11-30", windowStart: "10:00" }];

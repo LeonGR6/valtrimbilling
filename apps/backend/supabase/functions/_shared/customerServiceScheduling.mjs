@@ -88,6 +88,29 @@ export function californiaInstant(date, time) {
   return new Date(wall - offset(wall - offset(wall)))
 }
 
+// Emails to customers and coordinators go out only from 8:00 AM to 6:00 PM in
+// California (decided 23 Nov 2026); one due outside those hours waits for 8:00 AM.
+export const customerServiceEmailHours = { startsAt: '08:00', endsAt: '18:00' }
+
+/** @param {Date} instant */
+export function withinCustomerServiceEmailHours(instant) {
+  const minutes = californiaClockAt(instant).minutesSinceMidnight
+  return minutes >= Number(timeToMinutes(customerServiceEmailHours.startsAt))
+    && minutes < Number(timeToMinutes(customerServiceEmailHours.endsAt))
+}
+
+// When an email due at an instant actually goes out: then, or the next 8:00 AM.
+/** @param {Date} due */
+export function customerServiceEmailTime(due) {
+  if (withinCustomerServiceEmailHours(due)) return due
+  const clock = californiaClockAt(due)
+  const day = /** @type {Date} */ (parseServiceDate(clock.date))
+  if (clock.minutesSinceMidnight >= Number(timeToMinutes(customerServiceEmailHours.endsAt))) {
+    day.setUTCDate(day.getUTCDate() + 1)
+  }
+  return /** @type {Date} */ (californiaInstant(day.toISOString().slice(0, 10), customerServiceEmailHours.startsAt))
+}
+
 export function travelLegKey(fromRequestId, toRequestId) {
   return `${fromRequestId}>${toRequestId}`
 }

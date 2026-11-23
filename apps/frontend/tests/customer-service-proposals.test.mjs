@@ -3,9 +3,12 @@ import assert from 'node:assert/strict'
 import { applyAppointmentsToRequests } from '../src/features/customer-service/utils/appointmentRecords.js'
 import { buildProposalSend, proposalSentNotice } from '../src/features/customer-service/utils/proposalDraft.js'
 import {
-  buildProposalAcceptance, buildProposalDecline, cancelNotice, counterProposalLabel, counterProposalProblems, declineNotice,
-  formatCaliforniaDateTime, hoursSinceSent, latestProposalAnswer, proposalFollowUp, proposalOptionsStatus, sentAgoLabel,
+  bestTimeToCall, buildProposalAcceptance, buildProposalDecline, cancelNotice, counterProposalLabel, counterProposalProblems,
+  customerChosenSlot, declineNotice,
+  formatCaliforniaDateTime, hoursSinceSent, latestProposalAnswer, proposalFollowUp, proposalListFlag, proposalOptionsStatus,
+  sentAgoLabel,
 } from '../src/features/customer-service/utils/proposalAnswers.js'
+import { customerServiceEmailTime } from '../src/features/customer-service/utils/customerServiceScheduling.js'
 import { invitationEmail } from '../src/features/customer-service/utils/customerServiceEmailTemplates.js'
 
 // Friday 2026-11-20, 9:00 AM in California.
@@ -123,6 +126,7 @@ test('a proposal sends each day with the travel of its own sequence', () => {
       { technicianIds: [4], date: '2026-11-23', windowStart: '08:00', workStart: '08:00', travelMinutes: {} },
     ],
     invitation,
+    alternatives: [],
   })
 })
 
@@ -174,10 +178,13 @@ test('the screen shows when the reminder goes out, how it went and when to call 
   // Sent Thursday 19 at 7:00 AM California time.
   const proposal = { sentAt: '2026-11-19T15:00:00Z', reminder: null, reminderSentAt: null, builderContactedAt: null }
   assert.equal(formatCaliforniaDateTime('2026-11-20T15:00:00Z'), 'Fri, Nov 20, 7:00 AM')
+  // 24 hours later is 7:00 AM, before emails go out: it waits for 8:00 AM.
   const early = proposalFollowUp(proposal, new Date('2026-11-19T20:00:00Z'))
-  assert.deepEqual(early.reminder, { severity: 'info', text: 'If there is no answer, a reminder is emailed Fri, Nov 20, 7:00 AM.' })
+  assert.deepEqual(early.reminder, { severity: 'info', text: 'If there is no answer, a reminder is emailed Fri, Nov 20, 8:00 AM.' })
   assert.equal(early.builderCallDue, false)
   assert.equal(proposalFollowUp(proposal, new Date('2026-11-20T15:05:00Z')).reminder.text,
+    'If there is no answer, a reminder is emailed Fri, Nov 20, 8:00 AM.')
+  assert.equal(proposalFollowUp(proposal, new Date('2026-11-20T16:05:00Z')).reminder.text,
     'The reminder is due and goes out within 15 minutes.')
   const sent = proposalFollowUp({ ...proposal, reminderSentAt: '2026-11-20T15:00:00Z',
     reminder: { status: 'SENT', at: '2026-11-20T15:00:00Z', message: '' } }, new Date('2026-11-20T18:00:00Z'))
@@ -189,12 +196,14 @@ test('the screen shows when the reminder goes out, how it went and when to call 
   // 48 calendar hours: Saturday 21 at 7:00 AM.
   assert.equal(proposalFollowUp(proposal, new Date('2026-11-21T14:59:00Z')).builderCallDue, false)
   assert.equal(proposalFollowUp(proposal, new Date('2026-11-21T15:00:00Z')).builderCallDue, true)
-  // Every held day starts before the reminder would go out (Friday 20 at 7:00 AM).
+  // Every held day starts before the reminder would go out (Friday 20 at 8:00 AM).
   assert.equal(proposalFollowUp(proposal, new Date('2026-11-19T20:00:00Z'), [{ date: '2026-11-20', windowStart: '06:00' }]).reminder.text,
     'No reminder is emailed: every offered day starts before it would go out.')
   assert.equal(proposalFollowUp(proposal, new Date('2026-11-19T20:00:00Z'), [
     { date: '2026-11-20', windowStart: '06:00' }, { date: '2026-11-23', windowStart: '08:00' },
-  ]).reminder.text, 'If there is no answer, a reminder is emailed Fri, Nov 20, 7:00 AM.')
+  ]).reminder.text, 'If there is no answer, a reminder is emailed Fri, Nov 20, 8:00 AM.')
+  assert.equal(proposalFollowUp(proposal, new Date('2026-11-19T20:00:00Z'), [{ date: '2026-11-20', windowStart: '07:30' }]).reminder.text,
+    'No reminder is emailed: every offered day starts before it would go out.')
   const called = proposalFollowUp({ ...proposal, builderContactedAt: '2026-11-21T17:30:00Z' }, new Date('2026-11-21T18:00:00Z'))
   assert.equal(called.builderCallDue, false)
   assert.equal(called.builderContacted, 'Builder contacted Sat, Nov 21, 9:30 AM.')
@@ -206,4 +215,61 @@ test('the proposal waiting for the customer is the current one, whatever its sen
     proposalRow({ id: 30, status: 'SENT', sent_at: '2026-11-18T15:00:00Z' }),
   ])
   assert.equal(request.latestProposal.id, 30)
+})
+
+test('the day the customer picked on the proposal page becomes a slot the planner can use', () => {
+  const alternatives = [
+    { date: '2026-11-26', windowStart: '10:00', workStart: '10:15', technicianIds: [4] },
+    { date: '2026-11-27', windowStart: '12:00', workStart: '12:00', technicianIds: [5] },
+  ]
+  const request = (overrides) => ({
+    latestProposal: { status: 'COUNTER_PROPOSED', counterDates: ['2026-11-27'], counterDayPart: 'AFTERNOON', alternatives, ...overrides },
+  })
+  assert.deepEqual(customerChosenSlot(request()), {
+    technicianIds: ['5'], date: '2026-11-27', windowStart: '12:00', internalStart: '12:00',
+  })
+  // Dates the coordinator typed by hand, or any other answer, are not a picked slot.
+  assert.equal(customerChosenSlot(request({ counterDates: ['2026-11-26', '2026-11-27'] })), null)
+  assert.equal(customerChosenSlot(request({ counterDayPart: 'MORNING' })), null)
+  assert.equal(customerChosenSlot(request({ status: 'REJECTED' })), null)
+  assert.equal(customerChosenSlot({}), null)
+})
+
+test('emails go out from 8 AM to 6 PM in California; one due outside waits for 8 AM', () => {
+  const at = (iso) => customerServiceEmailTime(new Date(iso)).toISOString()
+  assert.equal(at('2026-11-20T20:00:00Z'), '2026-11-20T20:00:00.000Z') // Fri 12:00 PM: as is
+  assert.equal(at('2026-11-20T15:00:00Z'), '2026-11-20T16:00:00.000Z') // Fri 7:00 AM → 8:00 AM
+  assert.equal(at('2026-11-21T02:00:00Z'), '2026-11-21T16:00:00.000Z') // Fri 6:00 PM → Sat 8:00 AM
+  assert.equal(at('2026-11-21T07:30:00Z'), '2026-11-21T16:00:00.000Z') // Fri 11:30 PM → Sat 8:00 AM
+})
+
+test('the list labels a proposal only when the coordinator must act', () => {
+  const now = new Date('2026-11-20T17:00:00Z') // Friday 9:00 AM
+  const waiting = (overrides = {}) => ({
+    latestProposal: { status: 'SENT', sentAt: '2026-11-20T15:00:00Z', builderContactedAt: null, ...overrides },
+    proposalHolds: [{ optionNumber: 1, date: '2026-11-24', windowStart: '08:00' }],
+  })
+  assert.equal(proposalListFlag(waiting(), 'AWAITING_CUSTOMER', now), null)
+  assert.deepEqual(proposalListFlag(waiting({ sentAt: '2026-11-18T15:00:00Z' }), 'AWAITING_CUSTOMER', now),
+    { label: 'Call the Builder', color: 'warning' })
+  assert.deepEqual(proposalListFlag({ ...waiting(), proposalHolds: [{ optionNumber: 1, date: '2026-11-20', windowStart: '08:00' }] },
+    'AWAITING_CUSTOMER', now), { label: 'Days passed', color: 'error' })
+  const picked = {
+    latestProposal: {
+      status: 'COUNTER_PROPOSED', counterDates: ['2026-11-27'], counterDayPart: 'AFTERNOON',
+      alternatives: [{ date: '2026-11-27', windowStart: '12:00', workStart: '12:00', technicianIds: [5] }],
+    },
+  }
+  assert.deepEqual(proposalListFlag(picked, 'READY_TO_PROPOSE', now), { label: 'Customer picked a day', color: 'info' })
+  const note = 'From the proposal page: none of the days work for the customer. Call them to find another time. ' +
+    'Best time to call: after 5 p.m.. Phone: (951) 555-0101.'
+  assert.equal(bestTimeToCall(note), 'after 5 p.m.')
+  assert.equal(bestTimeToCall('Best time to call: mornings.'), 'mornings')
+  assert.equal(bestTimeToCall('Called back.'), '')
+  assert.deepEqual(proposalListFlag({ latestProposal: { status: 'REJECTED', customerNote: note } }, 'NEEDS_CONTACT', now),
+    { label: 'Call the customer · after 5 p.m.', color: 'warning' })
+  assert.deepEqual(proposalListFlag({ latestProposal: { status: 'REJECTED', customerNote: '' } }, 'NEEDS_CONTACT', now),
+    { label: 'Call the customer', color: 'warning' })
+  assert.equal(proposalListFlag({ latestProposal: { status: 'ACCEPTED' } }, 'CONFIRMED', now), null)
+  assert.equal(proposalListFlag({}, 'READY_TO_PROPOSE', now), null)
 })

@@ -393,3 +393,26 @@ export function nearbySlotSuggestions({
     startsOn: start.date,
   }
 }
+
+// The other days a proposal keeps for the customer (block B, step B5; decided 23 Nov
+// 2026): up to three days with room for the same technicians, from the first suggested
+// day on and with the same rules as the suggestions, skipping the offered days. They are
+// not held; the customer may pick one only when no offered day works, and the
+// coordinator approves it.
+export function proposalAlternatives({
+  request, requests, technicians, technicianIds, travelMinutes = {}, skipDates = [], now = new Date(), limit = 3,
+  leadBusinessDays = proposalSuggestionLeadBusinessDays,
+}) {
+  const start = suggestionStartDate({ today: getCustomerServiceClock(now).date, dueOn: request.dueOn, leadBusinessDays })
+  // The search gives the first time of each window; the customer is offered other days, so
+  // only the first time of each day is kept.
+  const { suggestions } = suggestProposalTimes({
+    requestId: request.id, requests, technicians, now, limit: limit * serviceCustomerWindowOptions.length,
+    fromDate: start.date, skipDates,
+    values: { technicianIds, date: '', windowStart: '', internalStart: '', travelMinutes },
+  })
+  const firstOfEachDay = suggestions.filter((slot, index) => suggestions.findIndex((other) => other.date === slot.date) === index)
+  return firstOfEachDay.slice(0, limit).map((slot) => ({
+    date: slot.date, windowStart: slot.windowStart, workStart: slot.internalStart, technicianIds: technicianIds.map(Number),
+  }))
+}

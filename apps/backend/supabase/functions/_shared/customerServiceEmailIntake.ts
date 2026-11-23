@@ -166,12 +166,20 @@ export function buildEmailImportIntake(
     )
   );
   const issues: string[] = [];
+  const kindOf = new Map(sources.map((source) => [source.sourceId, source.kind]));
+  const fromWorkOrder = (sourceId: string) =>
+    ["PDF", "PDF_FIELDS"].includes(kindOf.get(sourceId) ?? "");
+  // preferWorkOrder: when the sources disagree and every Builder PDF agrees, the PDF
+  // wins and the other values stay as a note (decided 23 Nov 2026 for the community:
+  // the email text may say "Magnolia at Arcadia Phase 4" while the work order says
+  // "Magnolia Townhomes", the name in use).
   function select<T>(
     path: string,
     candidates: Array<
       { sourceId: string; value: T | null; sourcePage?: number | null }
     >,
     opaque = false,
+    preferWorkOrder = false,
   ): T | null {
     const present = candidates.filter((entry) =>
       entry.value !== null && entry.value !== undefined && entry.value !== ""
@@ -180,13 +188,31 @@ export function buildEmailImportIntake(
       ...entry,
       sourcePage: entry.sourcePage ?? null,
     }));
-    const keys = new Set(
-      present.map(({ value }) =>
-        typeof value === "string" && !opaque
-          ? normalized(value)
-          : JSON.stringify(value)
-      ),
-    );
+    const key = (value: T | null) =>
+      typeof value === "string" && !opaque
+        ? normalized(value)
+        : JSON.stringify(value);
+    const keys = new Set(present.map(({ value }) => key(value)));
+    const workOrder = preferWorkOrder
+      ? present.filter((entry) => fromWorkOrder(entry.sourceId))
+      : [];
+    if (
+      keys.size > 1 && workOrder.length &&
+      new Set(workOrder.map(({ value }) => key(value))).size === 1
+    ) {
+      const chosen = workOrder[0].value;
+      const others = unique(
+        present.filter((entry) => key(entry.value) !== key(chosen)).map((entry) =>
+          String(entry.value)
+        ),
+      );
+      warnings.push(
+        `The sources disagree on ${path}; the Builder's work order ("${
+          String(chosen)
+        }") was used over ${others.map((value) => `"${value}"`).join(", ")}.`,
+      );
+      return chosen;
+    }
     if (keys.size > 1) {
       conflicts.push({ path, candidates: provenance[path] });
       warnings.push(
@@ -232,6 +258,7 @@ export function buildEmailImportIntake(
       `property.${key}`,
       values((data) => data.property[key]),
       key === "lotNumber",
+      key === "communityName",
     );
   }
   for (

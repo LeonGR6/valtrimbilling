@@ -9,6 +9,8 @@ import {
   mailingAddress,
 } from "./customerServiceEmailTemplates.mjs";
 import { MicrosoftGraphSendError, MicrosoftGraphSyncError } from "./customerServiceMicrosoftGraph.ts";
+import { serviceWorkTypeLabel } from "./customerServicePlanning.mjs";
+import { type EmailAttachment, visitCalendarFile } from "./customerServiceVisitCalendar.ts";
 
 export type ConfirmationInput = { greeting: string; message: string };
 
@@ -45,7 +47,7 @@ export type ConfirmationRequest = {
   folio: string;
   homeowner_name: string | null;
   homeowner_email: string | null;
-  description: string | null;
+  work_category: string | null;
   service_properties: {
     address: string | null;
     city: string | null;
@@ -55,7 +57,16 @@ export type ConfirmationRequest = {
 };
 
 export type PreparedConfirmation =
-  | { send: true; to: string; customerEmail: string; testMode: boolean; subject: string; text: string; html: string }
+  | {
+    send: true;
+    to: string;
+    customerEmail: string;
+    testMode: boolean;
+    subject: string;
+    text: string;
+    html: string;
+    attachments: EmailAttachment[];
+  }
   | { send: false; message: string };
 
 export function prepareConfirmation({ input, request, date, windowStart, delivery }: {
@@ -73,21 +84,25 @@ export function prepareConfirmation({ input, request, date, windowStart, deliver
     return { send: false, message: "Customer emails are turned off on the server, so no confirmation was sent." };
   }
   const property = request.service_properties;
+  const address = mailingAddress({
+    street: property?.address,
+    city: property?.city,
+    state: property?.state,
+    postalCode: property?.postal_code,
+  });
+  const work = serviceWorkTypeLabel(request.work_category);
   const email = confirmationEmail({
     folio: request.folio,
     homeownerName: request.homeowner_name,
     date,
     windowStart,
-    address: mailingAddress({
-      street: property?.address,
-      city: property?.city,
-      state: property?.state,
-      postalCode: property?.postal_code,
-    }),
-    work: request.description,
+    address,
+    work,
     greeting: input.greeting,
     message: input.message,
   });
+  // The visit as a calendar file the customer can add (decided 23 Nov 2026).
+  const calendar = visitCalendarFile({ folio: request.folio, date, windowStart, address, work });
   const testMode = delivery.mode === "TEST";
   return {
     send: true,
@@ -97,6 +112,7 @@ export function prepareConfirmation({ input, request, date, windowStart, deliver
     subject: testMode ? `[TEST for ${customerEmail}] ${email.subject}` : email.subject,
     text: email.text,
     html: email.html,
+    attachments: calendar ? [calendar] : [],
   };
 }
 

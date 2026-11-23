@@ -205,8 +205,10 @@ export function validatePrototypeProposalDraft({ requestId, values, requests, te
   const addError = (field, message) => errors.push({ field, message })
   // Warnings never claim viability, but they do not block a draft: drafts reserve nothing.
   const warnings = []
-  if (!request || effectiveRequestWorkflowStage(request) !== 'READY_TO_PROPOSE') {
-    addError('request', 'Only Ready to propose requests can have a planning draft.')
+  // After a declined proposal the coordinator calls the customer and plans again from
+  // Needs contact; the server accepts both stages (block B, step B6).
+  if (!request || !['READY_TO_PROPOSE', 'NEEDS_CONTACT'].includes(effectiveRequestWorkflowStage(request))) {
+    addError('request', 'Only Ready to propose or Needs contact requests can have a planning draft.')
   } else if (!request.review?.valtrimItemsConfirmed || !buildRequestReviewSummary(request).isComplete) {
     addError('request', 'Complete and approve the request information in Requests before planning.')
   }

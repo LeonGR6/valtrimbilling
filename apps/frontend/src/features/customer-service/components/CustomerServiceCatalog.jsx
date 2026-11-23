@@ -399,7 +399,10 @@ export default function CustomerServiceCatalog() {
             onRefreshAutomation={refreshEmailAutomation} onOpenRequest={openEmailRequest}
             onRecover={openImportRecovery} onChanged={reloadRequests} />
         )}
-        {loading ? (
+        {/* Only the first load replaces the view. A background reload (the Outlook check,
+            or the one after a write) keeps the current screen, so an open dialog or an
+            unsaved plan survives it. */}
+        {loading && !requests.length ? (
           <Stack role="status" direction="row" spacing={1.5} sx={{ alignItems: 'center', py: 4 }}>
             <CircularProgress size={24} />
             <Typography>Loading Customer Service requests…</Typography>

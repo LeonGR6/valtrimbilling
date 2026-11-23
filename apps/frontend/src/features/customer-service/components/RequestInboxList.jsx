@@ -22,7 +22,7 @@ import VisibilityOutlinedIcon from '@mui/icons-material/VisibilityOutlined'
 import { formatPhoneNumber } from '../../../utils/phoneNumbers.js'
 import { prioritiesByValue } from '../data/customerService.js'
 import { formatLongDate, formatTime } from '../utils/dates.js'
-import { sentAgoLabel } from '../utils/proposalAnswers.js'
+import { proposalFollowUp, sentAgoLabel } from '../utils/proposalAnswers.js'
 import {
   effectiveRequestWorkflowStage,
   inboxPageSizeOptions,
@@ -54,14 +54,20 @@ function workSummary(request) {
   return details.join(' · ')
 }
 
-// "Sent 26 hours ago" under a request waiting on a proposal (block B, step B6).
+// "Sent 26 hours ago" under a request waiting on a proposal (block B, step B6), and the
+// Builder call due after 48 hours without an answer (step B7).
 function ProposalWaiting({ request }) {
   const proposal = request.latestProposal
   if (effectiveRequestWorkflowStage(request) !== 'AWAITING_CUSTOMER' || proposal?.status !== 'SENT') return null
   return (
-    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
-      {sentAgoLabel(proposal)}
-    </Typography>
+    <>
+      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+        {sentAgoLabel(proposal)}
+      </Typography>
+      {proposalFollowUp(proposal).builderCallDue && (
+        <Chip size="small" color="warning" variant="outlined" label="Call the Builder" sx={{ mt: 0.5 }} />
+      )}
+    </>
   )
 }
 

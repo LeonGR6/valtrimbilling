@@ -1,7 +1,7 @@
 // Proposals waiting for the customer and the answers a coordinator records (block B,
 // step B6). Until the customer page exists (step B5) the customer answers by replying to
 // the invitation or by phone, and the coordinator records it here.
-import { formatWeekdayDate, getCustomerServiceClock } from './dates.js'
+import { customerServiceTimeZone, formatWeekdayDate, getCustomerServiceClock } from './dates.js'
 
 export const counterDayParts = [
   { value: 'MORNING', label: 'Morning' },
@@ -20,6 +20,58 @@ const minutesOf = (time) => {
 export function hoursSinceSent(proposal, now = new Date()) {
   const sent = Date.parse(proposal?.sentAt ?? '')
   return Number.isFinite(sent) ? Math.max(0, Math.floor((now.getTime() - sent) / 3_600_000)) : null
+}
+
+// Follow-ups (block B, step B7; decided 18-19 Nov 2026, calendar hours with weekends).
+export const reminderAfterHours = 24
+export const builderCallAfterHours = 48
+
+const californiaDateTime = new Intl.DateTimeFormat('en-US', {
+  timeZone: customerServiceTimeZone, weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
+})
+// "Tue, Nov 24, 9:00 AM", in California time.
+export function formatCaliforniaDateTime(value) {
+  const time = Date.parse(value ?? '')
+  return Number.isFinite(time) ? californiaDateTime.format(new Date(time)) : ''
+}
+
+// What the coordinator sees about a waiting proposal's reminder and Builder call.
+// reminder.severity: 'info' (scheduled or sent) or 'warning' (failed or not emailed).
+// options: the held days ({ date, windowStart } in California); the server sends no
+// reminder once every day has started, so none is promised then.
+export function proposalFollowUp(proposal, now = new Date(), options = []) {
+  const hours = hoursSinceSent(proposal, now)
+  const sentAt = Date.parse(proposal?.sentAt ?? '')
+  const attempt = proposal?.reminder
+  let reminder
+  if (attempt?.status === 'SENT') {
+    reminder = { severity: 'info', text: `Reminder emailed ${formatCaliforniaDateTime(attempt.at)}.` }
+  } else if (attempt?.status === 'FAILED') {
+    reminder = { severity: 'warning', text: `The reminder email failed: ${attempt.message || 'Microsoft 365 did not take it.'}` }
+  } else if (proposal?.reminderSentAt) {
+    reminder = { severity: 'warning', text: 'The reminder could not be emailed. Call the customer instead.' }
+  } else if (Number.isFinite(sentAt) && options.length && options.every((option) => {
+    const due = getCustomerServiceClock(new Date(sentAt + reminderAfterHours * 3_600_000))
+    return option.date < due.date || (option.date === due.date && minutesOf(option.windowStart) <= due.minutesSinceMidnight)
+  })) {
+    reminder = { severity: 'info', text: 'No reminder is emailed: every offered day starts before it would go out.' }
+  } else if (Number.isFinite(sentAt) && hours < reminderAfterHours) {
+    reminder = {
+      severity: 'info',
+      text: `If there is no answer, a reminder is emailed ${formatCaliforniaDateTime(new Date(sentAt + reminderAfterHours * 3_600_000).toISOString())}.`,
+    }
+  } else {
+    reminder = { severity: 'info', text: 'The reminder is due and goes out within 15 minutes.' }
+  }
+  return {
+    hours,
+    reminder,
+    builderCallDue: hours !== null && hours >= builderCallAfterHours && !proposal?.builderContactedAt,
+    builderContacted: proposal?.builderContactedAt
+      ? `Builder contacted ${formatCaliforniaDateTime(proposal.builderContactedAt)}.`
+      : '',
+    builderContact: proposal?.builderContact ?? null,
+  }
 }
 
 export function sentAgoLabel(proposal, now = new Date()) {
@@ -123,4 +175,8 @@ export function cancelNotice(requestNumber) {
     severity: 'success',
     message: `${requestNumber} is back in Ready to propose. The proposal was cancelled and its days released.`,
   }
+}
+
+export function builderContactedNotice(requestNumber) {
+  return { severity: 'success', message: `The Builder call about ${requestNumber} was recorded.` }
 }

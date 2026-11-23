@@ -63,34 +63,62 @@ function toProposalHold(row) {
   }
 }
 
+// The 24-hour reminder of a proposal (its last attempt) and the Builder to call at 48
+// hours: the Job's jobsite superintendent (block B, step B7).
+function proposalReminder(row, reminders) {
+  const attempts = reminders.filter((entry) => String(entry.metadata?.proposalId) === String(row.id))
+    .sort((left, right) => String(right.occurred_at).localeCompare(String(left.occurred_at)))
+  const last = attempts[0]
+  return last ? { status: last.status, at: last.occurred_at, message: last.error_message ?? '' } : null
+}
+
+function proposalBuilderContact(row, builderContacts) {
+  const job = builderContacts.find((entry) => String(entry.id) === String(row.request_id))?.service_properties?.jobs
+  const contact = job?.superintendent
+  if (!contact) return null
+  return {
+    builderName: job.builders?.name ?? '', name: contact.name ?? '', phone: contact.phone ?? '',
+    officePhone: contact.office_phone ?? '', email: contact.email ?? '',
+  }
+}
+
 // A request's latest proposal: the one waiting for the customer, or the customer's last
 // answer (block B, step B6). Times stay as stored; screens format them.
-function toProposal(row) {
+function toProposal(row, followUps) {
   return {
     id: row.id, status: row.status, senderMailbox: row.sender_mailbox, sentAt: row.sent_at,
     reminderSentAt: row.reminder_sent_at ?? null, builderContactedAt: row.builder_contacted_at ?? null,
     respondedAt: row.responded_at ?? null, responseVia: row.response_via ?? null,
     counterDates: row.counter_dates ?? [], counterDayPart: row.counter_day_part ?? null,
     customerNote: row.customer_note ?? '', cancelledAt: row.cancelled_at ?? null, cancelReason: row.cancel_reason ?? '',
+    reminder: proposalReminder(row, followUps.reminders ?? []),
+    builderContact: proposalBuilderContact(row, followUps.builderContacts ?? []),
   }
 }
 
-export function applyAppointmentsToRequests(requests, appointments = [], technicians = [], proposalHolds = [], proposals = []) {
+export function applyAppointmentsToRequests(
+  requests, appointments = [], technicians = [], proposalHolds = [], proposals = [], followUps = {},
+) {
   const byRequest = new Map(appointments.map((row) => [String(row.request_id), row]))
   const holdsByRequest = new Map()
   for (const row of proposalHolds) {
     const key = String(row.request_id)
     holdsByRequest.set(key, [...(holdsByRequest.get(key) ?? []), row])
   }
+  // The proposal waiting for the customer (one at most per request) is the current one;
+  // otherwise the newest, whose answer shows while the request is planned again.
   const latestByRequest = new Map()
+  const current = (row, other) => (row.status === 'SENT') !== (other.status === 'SENT')
+    ? row.status === 'SENT'
+    : row.sent_at > other.sent_at
   for (const row of proposals) {
     const key = String(row.request_id)
-    if (!latestByRequest.has(key) || row.sent_at > latestByRequest.get(key).sent_at) latestByRequest.set(key, row)
+    if (!latestByRequest.has(key) || current(row, latestByRequest.get(key))) latestByRequest.set(key, row)
   }
   const names = new Map(technicians.map((person) => [String(person.id), person.name]))
   return requests.map((original) => {
     const latest = latestByRequest.get(String(original.id))
-    const request = latest ? { ...original, latestProposal: toProposal(latest) } : original
+    const request = latest ? { ...original, latestProposal: toProposal(latest, followUps) } : original
     const holds = holdsByRequest.get(String(request.id))
     if (holds) {
       return { ...request, proposalHolds: holds.map(toProposalHold).sort((left, right) => left.optionNumber - right.optionNumber) }

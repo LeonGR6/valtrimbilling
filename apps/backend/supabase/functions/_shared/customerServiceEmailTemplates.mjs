@@ -222,9 +222,12 @@ export function defaultInvitationText({ homeownerName } = {}) {
 // One or two days, each with its arrival window, held until the customer answers. Until
 // the customer page exists (step B5) the customer answers by replying, and the
 // coordinator records the answer; B5 adds a button to the same layout.
-// options: [{ date: 'YYYY-MM-DD', windowStart: '08:00' }], in California time.
+// options: [{ date: 'YYYY-MM-DD', windowStart: '08:00', number? }], in California time;
+// number keeps an option's place in the proposal when an earlier one is left out.
+// reminder: the 24-hour reminder of step B7 (see reminderEmail).
 export function invitationEmail({
   folio, homeownerName, options: offered, address, work, greeting, message, senderName, senderEmail = '',
+  reminder = false,
 }) {
   const fallback = defaultInvitationText({ homeownerName })
   const options = offered ?? []
@@ -234,7 +237,7 @@ export function invitationEmail({
   const days = options.map((option, index) => {
     const window = windowLabel(option.windowStart)
     const label = [longDate(option.date), window && `arrival window ${window}`].filter(Boolean).join(', ')
-    return several ? `Option ${index + 1}: ${label}` : label
+    return several ? `Option ${option.number ?? index + 1}: ${label}` : label
   })
   const details = [
     singleLine(address) && `Address: ${singleLine(address)}`,
@@ -247,9 +250,9 @@ export function invitationEmail({
   const otherDates = `If ${several ? 'none of these days work' : 'this day does not work'}, reply with up to three dates and ` +
     'the part of the day (morning, midday or afternoon) that suit you.'
   return {
-    subject: several
-      ? `Choose a day for your Valtrim service visit (${singleLine(folio)})`
-      : `Can we visit on ${shortDate(options[0]?.date)}? Your Valtrim service visit (${singleLine(folio)})`,
+    subject: `${reminder ? 'Reminder: ' : ''}${several
+      ? `${reminder ? 'choose' : 'Choose'} a day for your Valtrim service visit (${singleLine(folio)})`
+      : `${reminder ? 'can' : 'Can'} we visit on ${shortDate(options[0]?.date)}? Your Valtrim service visit (${singleLine(folio)})`}`,
     text: [
       typedGreeting,
       typedMessage,
@@ -260,15 +263,17 @@ export function invitationEmail({
       signatureText({ senderName, senderEmail }),
     ].join('\n\n'),
     html: emailLayout({
-      title: several ? 'Choose a day for your service visit' : 'Can we visit on this day?',
+      title: `${reminder ? 'Reminder: ' : ''}${several
+        ? `${reminder ? 'choose' : 'Choose'} a day for your service visit`
+        : `${reminder ? 'can' : 'Can'} we visit on this day?`}`,
       preheader: several
-        ? `We are holding ${options.length} times for your Valtrim service visit. Reply to choose one.`
-        : `We are holding ${longDate(options[0]?.date)} for your Valtrim service visit. Reply to confirm.`,
+        ? `We are ${reminder ? 'still ' : ''}holding ${options.length} times for your Valtrim service visit. Reply to choose one.`
+        : `We are ${reminder ? 'still ' : ''}holding ${longDate(options[0]?.date)} for your Valtrim service visit. Reply to confirm.`,
       content: [
         messageHtml(typedGreeting),
         messageHtml(typedMessage),
         `<div style="margin: 8px 0 16px;">\n${options.map((option, index) => optionCard({
-          label: several ? `Option ${index + 1}` : '', date: option.date, windowStart: option.windowStart,
+          label: several ? `Option ${option.number ?? index + 1}` : '', date: option.date, windowStart: option.windowStart,
         })).join('\n')}\n</div>`,
         detailsCard([['Address', address], ['Work', work], ['Reference', folio]]),
         `<p style="margin: 0 0 12px; color: #111827; font-size: 16px; font-weight: 700; line-height: 1.6; text-align: center;">${escapeHtml(answer)}</p>`,
@@ -278,4 +283,18 @@ export function invitationEmail({
       footer: footerHtml(folio),
     }),
   }
+}
+
+// --- Reminder (step B7) ---
+
+// 24 hours after the invitation without an answer, sent automatically from the same
+// mailbox: the same email with a fixed text, listing only the days that have not started.
+export function reminderEmail({ folio, homeownerName, options, address, work, senderName, senderEmail = '' }) {
+  const name = singleLine(homeownerName)
+  const several = (options ?? []).length > 1
+  return invitationEmail({
+    folio, homeownerName, options, address, work, senderName, senderEmail, reminder: true,
+    greeting: name ? `Hi ${name},` : 'Hello,',
+    message: `We have not heard back about your service visit yet, so we are still holding ${several ? 'these times' : 'this time'} for you:`,
+  })
 }

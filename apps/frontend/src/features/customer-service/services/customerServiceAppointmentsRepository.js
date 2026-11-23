@@ -30,6 +30,25 @@ const SETTINGS_COLUMNS = [
   'travel_traffic_mode', 'distance_green_max_miles', 'distance_yellow_max_miles', 'distance_orange_max_miles',
 ].join(', ')
 
+// Follow-ups of the proposals still waiting for the customer (block B, step B7): the
+// 24-hour reminder emails and the Builder to call at 48 hours (the Job's jobsite
+// superintendent). They only add notes on screen, so a failure to read them never
+// blocks the schedule.
+async function loadProposalFollowUps(client, proposals) {
+  const requestIds = [...new Set(proposals.filter((row) => row.status === 'SENT').map((row) => row.request_id))]
+  if (!requestIds.length) return { reminders: [], builderContacts: [] }
+  const [reminders, contacts] = await Promise.all([
+    client.from('service_communications')
+      .select('request_id, status, occurred_at, error_message, metadata')
+      .eq('communication_type', 'REMINDER')
+      .in('request_id', requestIds),
+    client.from('service_requests')
+      .select('id, service_properties(jobs(builders(name), superintendent:builder_contacts!jobs_superintendent_id_builder_id_superintendent_type_fkey(name, phone, office_phone, email)))')
+      .in('id', requestIds),
+  ])
+  return { reminders: reminders.error ? [] : reminders.data, builderContacts: contacts.error ? [] : contacts.data }
+}
+
 // Day-before traffic checks for visit dates from today on (block R6). They only add a
 // note on screen, so a failure to read them never blocks the schedule.
 async function loadTravelChecks(client, now) {
@@ -66,7 +85,7 @@ export async function loadCustomerServiceSchedule(now = new Date()) {
 
   const loaded = {
     appointments: appointments.data, proposalHolds: holds.data, proposals: proposals.data, travelTrafficMode, distanceBands,
-    travelChecks,
+    travelChecks, proposalFollowUps: await loadProposalFollowUps(client, proposals.data),
   }
 
   const requestIds = upcomingAppointmentRequestIds([...appointments.data, ...holds.data], now)
@@ -147,5 +166,13 @@ export async function cancelCustomerServiceProposal({ proposalId, reason }) {
   const client = await requireSupabase()
   const { data, error } = await client.rpc('cancel_customer_service_proposal', { p_proposal_id: proposalId, p_reason: reason })
   if (error) throw new Error(error.message || 'The proposal could not be cancelled.', { cause: error })
+  return data
+}
+
+// The coordinator called the Builder about a proposal still waiting (step B7).
+export async function markProposalBuilderContacted(proposalId) {
+  const client = await requireSupabase()
+  const { data, error } = await client.rpc('mark_customer_service_proposal_builder_contacted', { p_proposal_id: proposalId })
+  if (error) throw new Error(error.message || 'The Builder call could not be recorded.', { cause: error })
   return data
 }

@@ -4,7 +4,7 @@ import { applyAppointmentsToRequests } from '../src/features/customer-service/ut
 import { buildProposalSend, proposalSentNotice } from '../src/features/customer-service/utils/proposalDraft.js'
 import {
   buildProposalAcceptance, buildProposalDecline, cancelNotice, counterProposalLabel, counterProposalProblems, declineNotice,
-  hoursSinceSent, latestProposalAnswer, proposalOptionsStatus, sentAgoLabel,
+  formatCaliforniaDateTime, hoursSinceSent, latestProposalAnswer, proposalFollowUp, proposalOptionsStatus, sentAgoLabel,
 } from '../src/features/customer-service/utils/proposalAnswers.js'
 import { invitationEmail } from '../src/features/customer-service/utils/customerServiceEmailTemplates.js'
 
@@ -145,4 +145,65 @@ test('the planner previews the same invitation the server sends', () => {
   })
   assert.equal(email.subject, 'Can we visit on Tue, Nov 24? Your Valtrim service visit (CS-20)')
   assert.match(email.text, /Tuesday, November 24, 2026, arrival window 8:00 AM–10:00 AM/u)
+})
+
+test('each waiting proposal gets its last reminder attempt and its Builder contact', () => {
+  const [request] = applyAppointmentsToRequests([{ id: 20 }], [], [], [holdRow()], [proposalRow()], {
+    reminders: [
+      { request_id: 20, status: 'FAILED', occurred_at: '2026-11-20T15:00:00Z', error_message: 'Busy', metadata: { proposalId: 30 } },
+      { request_id: 20, status: 'SENT', occurred_at: '2026-11-20T15:15:00Z', error_message: null, metadata: { proposalId: 30 } },
+      { request_id: 20, status: 'SENT', occurred_at: '2026-11-20T16:00:00Z', error_message: null, metadata: { proposalId: 99 } },
+    ],
+    builderContacts: [{
+      id: 20,
+      service_properties: { jobs: { builders: { name: 'Harmony Builder' }, superintendent: {
+        name: 'Sam Super', phone: '9515550100', office_phone: null, email: 'sam@example.com',
+      } } },
+    }],
+  })
+  assert.deepEqual(request.latestProposal.reminder, { status: 'SENT', at: '2026-11-20T15:15:00Z', message: '' })
+  assert.deepEqual(request.latestProposal.builderContact, {
+    builderName: 'Harmony Builder', name: 'Sam Super', phone: '9515550100', officePhone: '', email: 'sam@example.com',
+  })
+  const [bare] = applyAppointmentsToRequests([{ id: 20 }], [], [], [], [proposalRow()])
+  assert.equal(bare.latestProposal.reminder, null)
+  assert.equal(bare.latestProposal.builderContact, null)
+})
+
+test('the screen shows when the reminder goes out, how it went and when to call the Builder', () => {
+  // Sent Thursday 19 at 7:00 AM California time.
+  const proposal = { sentAt: '2026-11-19T15:00:00Z', reminder: null, reminderSentAt: null, builderContactedAt: null }
+  assert.equal(formatCaliforniaDateTime('2026-11-20T15:00:00Z'), 'Fri, Nov 20, 7:00 AM')
+  const early = proposalFollowUp(proposal, new Date('2026-11-19T20:00:00Z'))
+  assert.deepEqual(early.reminder, { severity: 'info', text: 'If there is no answer, a reminder is emailed Fri, Nov 20, 7:00 AM.' })
+  assert.equal(early.builderCallDue, false)
+  assert.equal(proposalFollowUp(proposal, new Date('2026-11-20T15:05:00Z')).reminder.text,
+    'The reminder is due and goes out within 15 minutes.')
+  const sent = proposalFollowUp({ ...proposal, reminderSentAt: '2026-11-20T15:00:00Z',
+    reminder: { status: 'SENT', at: '2026-11-20T15:00:00Z', message: '' } }, new Date('2026-11-20T18:00:00Z'))
+  assert.deepEqual(sent.reminder, { severity: 'info', text: 'Reminder emailed Fri, Nov 20, 7:00 AM.' })
+  const failed = proposalFollowUp({ ...proposal, reminderSentAt: '2026-11-20T15:00:00Z',
+    reminder: { status: 'FAILED', at: '2026-11-20T15:00:00Z', message: 'Busy.' } }, new Date('2026-11-20T18:00:00Z'))
+  assert.deepEqual(failed.reminder, { severity: 'warning', text: 'The reminder email failed: Busy.' })
+  assert.equal(proposalFollowUp({ ...proposal, reminderSentAt: '2026-11-20T15:00:00Z' }, now).reminder.severity, 'warning')
+  // 48 calendar hours: Saturday 21 at 7:00 AM.
+  assert.equal(proposalFollowUp(proposal, new Date('2026-11-21T14:59:00Z')).builderCallDue, false)
+  assert.equal(proposalFollowUp(proposal, new Date('2026-11-21T15:00:00Z')).builderCallDue, true)
+  // Every held day starts before the reminder would go out (Friday 20 at 7:00 AM).
+  assert.equal(proposalFollowUp(proposal, new Date('2026-11-19T20:00:00Z'), [{ date: '2026-11-20', windowStart: '06:00' }]).reminder.text,
+    'No reminder is emailed: every offered day starts before it would go out.')
+  assert.equal(proposalFollowUp(proposal, new Date('2026-11-19T20:00:00Z'), [
+    { date: '2026-11-20', windowStart: '06:00' }, { date: '2026-11-23', windowStart: '08:00' },
+  ]).reminder.text, 'If there is no answer, a reminder is emailed Fri, Nov 20, 7:00 AM.')
+  const called = proposalFollowUp({ ...proposal, builderContactedAt: '2026-11-21T17:30:00Z' }, new Date('2026-11-21T18:00:00Z'))
+  assert.equal(called.builderCallDue, false)
+  assert.equal(called.builderContacted, 'Builder contacted Sat, Nov 21, 9:30 AM.')
+})
+
+test('the proposal waiting for the customer is the current one, whatever its send time', () => {
+  const [request] = applyAppointmentsToRequests([{ id: 20 }], [], [], [holdRow()], [
+    proposalRow({ id: 31, status: 'ACCEPTED', sent_at: '2026-11-20T15:00:00Z' }),
+    proposalRow({ id: 30, status: 'SENT', sent_at: '2026-11-18T15:00:00Z' }),
+  ])
+  assert.equal(request.latestProposal.id, 30)
 })

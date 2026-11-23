@@ -441,6 +441,11 @@ verify_jwt = true
 [functions.customer-service-proposals]
 verify_jwt = true
 
+# 24-hour reminders of proposals still waiting for the customer, called by pg_cron
+# every 15 minutes. No caller credential: each proposal is reminded once, only when due.
+[functions.customer-service-proposal-reminders]
+verify_jwt = false
+
 # Travel minutes between visits from Google Routes API for ADMIN/SCHEDULING
 # staff. The GOOGLE_MAPS_API_KEY secret stays on the server.
 [functions.customer-service-travel-estimates]

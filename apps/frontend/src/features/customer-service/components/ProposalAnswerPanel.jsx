@@ -1,18 +1,20 @@
 import { useState } from 'react'
 import {
   Alert, Box, Button, Checkbox, Chip, Dialog, DialogActions, DialogContent, DialogTitle, FormControl, FormControlLabel,
-  InputLabel, MenuItem, Paper, Radio, RadioGroup, Select, Stack, TextField, Typography,
+  InputLabel, Link, MenuItem, Paper, Radio, RadioGroup, Select, Stack, TextField, Typography,
 } from '@mui/material'
 import { useCustomerServicePrototype } from '../context/customerServicePrototypeContext.js'
 import { useAuth } from '../../auth/context/useAuth.js'
 import { serviceCustomerWindowOptions } from '../data/serviceCalendarEvents.js'
+import { formatPhoneNumber } from '../../../utils/phoneNumbers.js'
 import {
   confirmationEmail, confirmationTextProblems, defaultConfirmationText, mailingAddress,
 } from '../utils/customerServiceEmailTemplates.js'
 import { formatTime, formatWeekdayDate, getCustomerServiceClock } from '../utils/dates.js'
 import {
-  buildProposalAcceptance, buildProposalDecline, cancelNotice, counterDayParts, counterNoteLimit,
-  counterProposalProblems, declineNotice, proposalOptionsStatus, sentAgoLabel,
+  buildProposalAcceptance, buildProposalDecline, builderCallAfterHours, builderContactedNotice, cancelNotice,
+  counterDayParts, counterNoteLimit, counterProposalProblems, declineNotice, proposalFollowUp, proposalOptionsStatus,
+  sentAgoLabel,
 } from '../utils/proposalAnswers.js'
 import { registrationNotice } from '../utils/proposalDraft.js'
 import CustomerEmailEditor from './CustomerEmailEditor.jsx'
@@ -82,6 +84,45 @@ function AcceptDialog({ request, option, summary, senderName, senderEmail, onClo
         </Button>
       </DialogActions>
     </Dialog>
+  )
+}
+
+// The Builder to call when the customer has not answered in 48 hours (step B7): the
+// Job's jobsite superintendent, decided 23 Nov 2026.
+function BuilderCall({ contact, onContacted }) {
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+  const record = async () => {
+    setSaving(true)
+    setError('')
+    try {
+      await onContacted()
+    } catch (recordError) {
+      setError(recordError.message)
+      setSaving(false)
+    }
+  }
+  const phones = [contact?.phone, contact?.officePhone].filter(Boolean)
+  return (
+    <Alert severity="warning" variant="outlined"
+      action={<Button color="inherit" size="small" onClick={record} disabled={saving}>{saving ? 'Saving…' : 'Builder contacted'}</Button>}>
+      <Typography variant="body2" fontWeight={700}>No answer in {builderCallAfterHours} hours: call the Builder</Typography>
+      <Typography variant="body2">Ask them to help reach the customer, then record the call.</Typography>
+      {contact ? (
+        <Typography variant="body2" sx={{ mt: 0.5 }}>
+          {[contact.builderName, contact.name && `${contact.name} (jobsite superintendent)`].filter(Boolean).join(' · ')}
+          {phones.map((phone) => (
+            <span key={phone}>{' · '}<Link href={`tel:${phone}`}>{formatPhoneNumber(phone)}</Link></span>
+          ))}
+          {contact.email && <span>{' · '}<Link href={`mailto:${contact.email}`}>{contact.email}</Link></span>}
+        </Typography>
+      ) : (
+        <Typography variant="body2" sx={{ mt: 0.5 }}>
+          This request&apos;s Job has no jobsite superintendent recorded. Find the Builder contact in Jobs.
+        </Typography>
+      )}
+      {error && <Typography variant="body2" color="error" sx={{ mt: 0.5 }}>{error}</Typography>}
+    </Alert>
   )
 }
 
@@ -205,7 +246,7 @@ function CancelDialog({ onClose, onCancel }) {
 // it was sent and its held days, with the answers a coordinator records from the
 // customer's email reply or call. onAnswered(request, notice) reports the outcome.
 export default function ProposalAnswerPanel({ request, technicians, onAnswered }) {
-  const { answerProposal, cancelProposal } = useCustomerServicePrototype()
+  const { answerProposal, cancelProposal, markBuilderContacted } = useCustomerServicePrototype()
   const { profile } = useAuth()
   const [dialog, setDialog] = useState(null)
   const proposal = request.latestProposal?.status === 'SENT' ? request.latestProposal : null
@@ -237,6 +278,11 @@ export default function ProposalAnswerPanel({ request, technicians, onAnswered }
     setDialog(null)
     onAnswered(request, cancelNotice(request.requestNumber))
   }
+  const followUp = proposalFollowUp(proposal, new Date(), options)
+  const builderContacted = async () => {
+    await markBuilderContacted(proposal.id)
+    onAnswered(request, builderContactedNotice(request.requestNumber))
+  }
 
   return (
     <Paper variant="outlined" sx={{ p: { xs: 2, md: 3 } }}>
@@ -251,6 +297,15 @@ export default function ProposalAnswerPanel({ request, technicians, onAnswered }
           <Alert severity="warning" variant="outlined">
             Every offered day has started without an answer. Cancel this proposal and send a new one.
           </Alert>
+        )}
+        {followUp.reminder.severity === 'warning'
+          ? <Alert severity="warning" variant="outlined">{followUp.reminder.text}</Alert>
+          : <Typography variant="body2" color="text.secondary">{followUp.reminder.text}</Typography>}
+        {followUp.builderCallDue && !allStarted && (
+          <BuilderCall contact={followUp.builderContact} onContacted={builderContacted} />
+        )}
+        {followUp.builderContacted && (
+          <Typography variant="body2" color="text.secondary">{followUp.builderContacted}</Typography>
         )}
         <Stack spacing={1}>
           {options.map((option) => (

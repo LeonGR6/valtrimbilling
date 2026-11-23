@@ -7,7 +7,7 @@ import { requireSupabase } from '../../../services/api.js'
 import { createCustomerServiceEmailAutomationMonitor } from '../services/customerServiceEmailAutomation.js'
 import { listTechnicians } from '../services/techniciansRepository.js'
 import {
-  answerCustomerServiceProposal, cancelCustomerServiceAppointment, cancelCustomerServiceProposal,
+  answerCustomerServiceProposal, cancelCustomerServiceAppointment, cancelCustomerServiceProposal, markProposalBuilderContacted,
   estimateCustomerServiceNearby, estimateCustomerServiceTravel, loadCustomerServiceSchedule,
   registerCustomerServiceAppointment, sendCustomerServiceProposal,
 } from '../services/customerServiceAppointmentsRepository.js'
@@ -16,8 +16,8 @@ import {
 } from '../utils/appointmentRecords.js'
 
 const emptySchedule = {
-  roster: [], appointments: [], proposalHolds: [], proposals: [], travelEstimates: [], travelTrafficMode: 'OFF',
-  distanceBands: null, travelChecks: [],
+  roster: [], appointments: [], proposalHolds: [], proposals: [], proposalFollowUps: { reminders: [], builderContacts: [] },
+  travelEstimates: [], travelTrafficMode: 'OFF', distanceBands: null, travelChecks: [],
 }
 
 // Requests, accepted appointments, travel estimates and technicians come from
@@ -91,6 +91,7 @@ export default function CustomerServicePrototypeProvider({ children }) {
       ...state,
       requests: applyAppointmentsToRequests(
         state.requests, schedule.appointments, schedule.roster, schedule.proposalHolds, schedule.proposals,
+        schedule.proposalFollowUps,
       ),
       emailAutomation, emailAutomationError,
       refreshEmailAutomation: () => automationMonitor.current?.refresh(),
@@ -129,6 +130,7 @@ export default function CustomerServicePrototypeProvider({ children }) {
       },
       answerProposal: async (payload) => afterScheduleChange(await answerCustomerServiceProposal(payload)),
       cancelProposal: async (payload) => afterScheduleChange(await cancelCustomerServiceProposal(payload)),
+      markBuilderContacted: async (proposalId) => afterScheduleChange(await markProposalBuilderContacted(proposalId)),
     }
   }, [state, store, proposalDrafts, emailAutomation, emailAutomationError, schedule, scheduleError, reloadSchedule])
   return (

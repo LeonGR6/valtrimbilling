@@ -54,36 +54,62 @@ export function listSpconnectOptions(payload) {
   }))
 }
 
+// A Change Order wraps each line: { changeCode, originalLineNum,
+// originalItemDetailWithChanges: <the full line, already updated> }.
 export function listSpconnectLines(payload) {
   const descriptions = optionDescriptions(payload?.header)
 
-  return (payload?.items ?? []).map((item, index) => ({
-    key: cleanText(item?.builderLineItemNum) ?? `line-${index}`,
-    lineNumber: cleanText(item?.builderLineItemNum),
-    description: cleanText(item?.itemDescription),
-    sku: cleanText(item?.builderSupplierSKU),
-    quantity: readNumber(item?.builderTotalQuantity?.quantityOrdered),
-    unit: cleanText(item?.builderTotalQuantity?.unitOfMeasurement),
-    total: readNumber(item?.total),
-    options: (item?.itemOptions ?? []).map((option) => {
-      const name = cleanText(option?.optionName)
-      return {
-        name,
-        description: (name && descriptions.get(name)) || null,
-        locations: (option?.locations ?? []).map((location) => ({
-          location: cleanText(location?.location),
-          preferences: (location?.preferences ?? [])
-            .map((preference) => {
-              const label = cleanText(preference?.name)
-              const value = cleanText(preference?.value)
-              if (!value) return null
-              return label ? `${label}: ${value}` : value
-            })
-            .filter(Boolean),
-        })),
-      }
-    }),
-  }))
+  return (payload?.items ?? []).map((item, index) => {
+    const line = item?.originalItemDetailWithChanges ?? item
+    const lineNumber = cleanText(line?.builderLineItemNum) ?? cleanText(item?.originalLineNum)
+
+    return {
+      key: lineNumber ?? `line-${index}`,
+      lineNumber,
+      changeCode: cleanText(item?.changeCode),
+      description: cleanText(line?.itemDescription),
+      sku: cleanText(line?.builderSupplierSKU),
+      quantity: readNumber(line?.builderTotalQuantity?.quantityOrdered),
+      unit: cleanText(line?.builderTotalQuantity?.unitOfMeasurement),
+      total: readNumber(line?.total),
+      options: readLineOptions(line, descriptions),
+    }
+  })
+}
+
+function readLineOptions(line, descriptions) {
+  return (line?.itemOptions ?? []).map((option) => {
+    const name = cleanText(option?.optionName)
+    return {
+      name,
+      description: (name && descriptions.get(name)) || null,
+      locations: (option?.locations ?? []).map((location) => ({
+        location: cleanText(location?.location),
+        preferences: (location?.preferences ?? [])
+          .map((preference) => {
+            const label = cleanText(preference?.name)
+            const value = cleanText(preference?.value)
+            if (!value) return null
+            return label ? `${label}: ${value}` : value
+          })
+          .filter(Boolean),
+      })),
+    }
+  })
+}
+
+// Hyphen sends e.g. "NotesOnly", "Reschedule", "ChangeInDetail" and
+// "ChangeInHeadingSection" (Austin listed them as "Notes Only",
+// "ChangeInDetail (Items)" and "ChangeInHeadingSection (Options)").
+export function formatChangeType(value) {
+  const text = cleanText(value)
+  if (!text) return null
+  const compact = text.toLowerCase().replace(/[^a-z]/g, '')
+  if (compact.startsWith('changeindetail')) return 'Items'
+  if (compact.startsWith('changeinheadingsection')) return 'Options'
+  if (compact === 'notesonly') return 'Notes only'
+  if (compact === 'reschedule') return 'Reschedule'
+  return text
 }
 
 function messageKind(row, header) {
@@ -108,8 +134,11 @@ export function summarizeSpconnectMessage(row) {
     purpose: cleanText(row?.purpose) ?? cleanText(header.purpose),
     orderType: cleanText(header.orderType),
     changeOrderNumber: cleanText(String(row?.change_order_number ?? header.changeOrderNumber ?? '')),
-    changeOrderSequence: row?.change_order_sequence ?? header.changeOrderSequence ?? null,
-    changeType: cleanText(header.changeType),
+    changeOrderSequence: readNumber(row?.change_order_sequence ?? header.changeOrderSequence),
+    changeType: formatChangeType(header.changeType),
+    changeIssuedAt: formatHyphenDate(header.changeOrderIssueDate),
+    changeNote: cleanText(header.changeOrderHeaderNote),
+    orderNote: cleanText(header.orderHeaderNote),
     builderName: cleanText(header.builder?.address?.name),
     builderId: cleanText(header.builder?.id),
     supplierName: cleanText(header.supplier?.address?.name),
@@ -126,7 +155,8 @@ export function summarizeSpconnectMessage(row) {
     taskName: cleanText(header.task?.name),
     workStart: formatHyphenDate(header.startDate),
     workEnd: formatHyphenDate(header.endDate),
-    issuedAt: formatHyphenDate(header.issueDate),
+    // A Change Order renames issueDate to orderIssueDate.
+    issuedAt: formatHyphenDate(header.issueDate ?? header.orderIssueDate),
     orderTotal: readNumber(payload.summary?.orderTotal),
     lineCount: readNumber(payload.summary?.numberOfLines) ?? (payload.items ?? []).length,
   }

@@ -110,12 +110,13 @@ export type CustomerEmail = {
 
 // Sends one email from the coordinator's mailbox and records the attempt in
 // service_communications. It never throws: the caller decides what a failure means.
+// actor.id is who sent it; null for an automatic reminder (step B7).
 export async function deliverCustomerEmail({ admin, actor, requestId, appointmentId = null, type, email, metadata = {} }: {
   admin: AdminClient;
-  actor: Actor;
+  actor: { id: string | null; email: string };
   requestId: number;
   appointmentId?: number | null;
-  type: "CUSTOMER_CONFIRMATION" | "APPOINTMENT_PROPOSAL";
+  type: "CUSTOMER_CONFIRMATION" | "APPOINTMENT_PROPOSAL" | "REMINDER";
   email: CustomerEmail;
   metadata?: Record<string, unknown>;
 }): Promise<{ sent: true } | { sent: false; certain: boolean; message: string }> {

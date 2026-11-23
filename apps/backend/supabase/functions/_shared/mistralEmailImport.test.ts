@@ -221,7 +221,8 @@ Deno.test("contact validation preserves the complete schema limit without trunca
 
 Deno.test("invalid model data reports only known schema paths, never unexpected source keys", async () => {
   const facts = importFacts();
-  facts.document.orderDate = "10/28/2026";
+  // A US-form date is read as that day since 23 Nov 2026; an unknown type still fails.
+  (facts.document as unknown as Record<string, unknown>).documentType = "NOT_A_DOCUMENT_TYPE";
   const extractor = mistralEmailImportExtractor(
     "key",
     () =>
@@ -234,7 +235,7 @@ Deno.test("invalid model data reports only known schema paths, never unexpected 
     MistralOcrError,
   ) as MistralOcrError;
   assertEquals(error.diagnosticCode, "INVALID_SCHEMA");
-  assertEquals(error.validationPath, "document.orderDate");
+  assertEquals(error.validationPath, "document.documentType");
   const unsafe = mistralEmailImportExtractor(
     "key",
     () =>

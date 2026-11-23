@@ -173,6 +173,50 @@ Deno.test("parses a warranty request with multiple vendor-assigned service items
   assertEquals(parsed.document.sourceEmailSentDate, "2026-10-12");
 });
 
+Deno.test("a document date with its time, in US form or with the month name is read as that day", () => {
+  const baseWarnings = parseCustomerServicePdfExtraction(warrantyRequestFixture()).warnings.length;
+  const withDate = (sourceEmailSentDate: unknown) => {
+    const fixture = warrantyRequestFixture();
+    (fixture.document as Record<string, unknown>).sourceEmailSentDate = sourceEmailSentDate;
+    return parseCustomerServicePdfExtraction(fixture);
+  };
+  for (
+    const value of [
+      "2026-10-19",
+      "2026-10-19T17:15:00",
+      "2026-10-19 17:15",
+      "10/19/2026",
+      "10/19/26",
+      "Monday, October 19, 2026 5:15 PM",
+      "Oct. 19, 2026",
+      "October 19th, 2026",
+    ]
+  ) {
+    const parsed = withDate(value);
+    assertEquals(parsed.document.sourceEmailSentDate, "2026-10-19", value);
+    assertEquals(parsed.warnings.length, baseWarnings, value);
+  }
+});
+
+Deno.test("an unreadable document date is left empty with a warning instead of failing the import", () => {
+  const baseWarnings = parseCustomerServicePdfExtraction(warrantyRequestFixture()).warnings.length;
+  for (const value of ["lunes, 19 de octubre de 2026", "2026-02-30", "13/45/2026", "yesterday", 20261019]) {
+    const fixture = warrantyRequestFixture();
+    (fixture.document as Record<string, unknown>).sourceEmailSentDate = value;
+    const parsed = parseCustomerServicePdfExtraction(fixture);
+    assertEquals(parsed.document.sourceEmailSentDate, null, String(value));
+    assertEquals(parsed.warnings.length, baseWarnings + 1, String(value));
+    const added = parsed.warnings[baseWarnings];
+    assertEquals(added.startsWith("The document.sourceEmailSentDate could not be read ("), true);
+    assertEquals(added.endsWith("); it was left empty for review."), true);
+  }
+  // Empty text is simply no date.
+  const fixture = warrantyRequestFixture();
+  (fixture.document as Record<string, unknown>).orderDate = "  ";
+  assertEquals(parseCustomerServicePdfExtraction(fixture).document.orderDate, null);
+  assertEquals(parseCustomerServicePdfExtraction(fixture).warnings.length, baseWarnings);
+});
+
 Deno.test("preserves partial contacts, leading-zero lots and multiple work-order numbers", () => {
   const parsed = parseCustomerServicePdfExtraction(workOrderFixture());
 

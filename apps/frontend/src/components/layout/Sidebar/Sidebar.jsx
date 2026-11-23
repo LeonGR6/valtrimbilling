@@ -53,6 +53,7 @@ import BarChartIcon from '@mui/icons-material/BarChart'
 import SupportAgentIcon from '@mui/icons-material/SupportAgent';
 import LogoutRoundedIcon from '@mui/icons-material/LogoutRounded'
 import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded'
+import MoveToInboxRoundedIcon from '@mui/icons-material/MoveToInboxRounded'
 
 import valtrimLogoDark from '../../../assets/icons/Valtrim-White-Transparent.png'
 import valtrimLogoLight from '../../../assets/icons/Valtrim-Blue-Transparent.png'
@@ -137,6 +138,7 @@ const navigationSections = [
     items: [
       { label: 'Users & Roles', path: '/users', icon: ManageAccountsRoundedIcon, end: true },
       { label: 'Activity History', path: '/history', icon: HistoryRoundedIcon, end: true },
+      { label: 'Hyphen Requests', path: '/hyphen-requests', icon: MoveToInboxRoundedIcon, end: true },
       { label: 'Configuration', icon: SettingsRoundedIcon },
     ],
   },

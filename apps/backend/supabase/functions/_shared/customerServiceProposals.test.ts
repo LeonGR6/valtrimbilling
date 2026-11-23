@@ -125,7 +125,7 @@ const options = [{ date: "2026-11-24", windowStart: "08:00" }, { date: "2026-11-
 Deno.test("the invitation lists each day with its window and asks the customer to reply", () => {
   const email = invitationEmail({
     folio: "CS-2031", homeownerName: "Yesenia Hernandez", options, address: "12720 Azure Way-Unit 33, Hawthorne, CA 90250",
-    work: "Shelving replacement", greeting: "Hi Yesenia,", message: "These times work for us:", senderName: "Anelda Calvillo",
+    work: "Shelving replacement", greeting: "Hi Yesenia,", message: "These times work for us:",
   });
   assertEquals(email.subject, "Choose a day for your Valtrim service visit (CS-2031)");
   assertEquals(email.text, [
@@ -135,13 +135,11 @@ Deno.test("the invitation lists each day with its window and asks the customer t
     "Option 2: Monday, November 23, 2026, arrival window 10:00 AM–12:00 PM",
     "Address: 12720 Azure Way-Unit 33, Hawthorne, CA 90250\nWork: Shelving replacement\nReference: CS-2031",
     "Reply to this email with the option that works for you. We are holding both times for you until you answer.",
-    "If none of these days work, reply with up to three dates and the part of the day (morning, midday or afternoon) that suit you.",
-    "Anelda Calvillo\nValtrim Customer Service",
   ].join("\n\n"));
 
   const single = invitationEmail({
     folio: "CS-2031", homeownerName: "", options: [options[0]], address: "", work: "", greeting: "Hello,",
-    message: "One day:", senderName: "",
+    message: "One day:",
   });
   assertEquals(single.subject, "Can we visit on Tue, Nov 24? Your Valtrim service visit (CS-2031)");
   assert(single.text.includes("Tuesday, November 24, 2026, arrival window 8:00 AM–10:00 AM\n\nReference: CS-2031"));
@@ -150,7 +148,7 @@ Deno.test("the invitation lists each day with its window and asks the customer t
 });
 
 Deno.test("an invitation needs the customer's email and customer emails turned on", () => {
-  const base = { input: typed, request: emailRequest, options, senderName: "Anelda Calvillo" };
+  const base = { input: typed, request: emailRequest, options };
   const test = prepareInvitation({ ...base, delivery: { mode: "TEST", recipient: "tester@example.com" } });
   assert(test.send);
   assertEquals([test.to, test.customerEmail, test.testMode], ["tester@example.com", "customer@example.com", true]);
@@ -204,7 +202,7 @@ Deno.test("recorded answers: an accepted option, a rejection or one to three cou
 Deno.test("the HTML invitation shows each held day as an option card", () => {
   const two = invitationEmail({
     folio: "CS-2031", homeownerName: "Yesenia", options, address: "", work: "Shelving", greeting: "Hi,",
-    message: "These times work:", senderName: "Anelda Calvillo", senderEmail: "acalvillo@valtriminc.com",
+    message: "These times work:",
   });
   assert(two.html.includes(">Choose a day for your service visit</h1>"));
   assert(two.html.includes(">Option 1</div>"));
@@ -216,10 +214,13 @@ Deno.test("the HTML invitation shows each held day as an option card", () => {
   // An empty address is left out of the details card.
   assert(!two.html.includes(">Address</td>"));
   assert(two.html.includes(">Work</td>"));
+  // No line asking for other dates and no signature (removed 23 Nov 2026).
+  assert(!two.html.includes("reply with up to three dates"));
+  assert(!two.html.includes("Valtrim Customer Service"));
 
   const one = invitationEmail({
     folio: "CS-2031", homeownerName: "", options: [options[0]], address: "", work: "", greeting: "Hello,",
-    message: "One day:", senderName: "",
+    message: "One day:",
   });
   assert(one.html.includes(">Can we visit on this day?</h1>"));
   assert(!one.html.includes("Option 1"));

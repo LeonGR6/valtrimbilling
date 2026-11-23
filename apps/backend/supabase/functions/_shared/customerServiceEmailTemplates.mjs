@@ -5,10 +5,11 @@
 // header, white card, centered title, light footer; decided 23 Nov 2026), and a plain
 // text version kept in service_communications. Everything typed or read from the request
 // is escaped, so nothing typed becomes HTML in the customer's inbox. The coordinator
-// edits the greeting and the message; the visit details, the reply line and the
-// signature are fixed (block B, decision 4 of 19 Nov 2026). The customer sees Valtrim,
-// the address, the work and the day with its window: nothing internal (decision 7).
-// English only, signed by the coordinator with no company phone (decided 23 Nov 2026).
+// edits the greeting and the message; the visit details and the reply line are fixed
+// (block B, decision 4 of 19 Nov 2026). The customer sees Valtrim, the address, the work
+// and the day with its window: nothing internal (decision 7). English only (decided
+// 23 Nov 2026). The closing note and the coordinator's signature were removed at the
+// user's request (23 Nov 2026); the email leaves from the coordinator's own mailbox.
 import { customerServiceWindows } from './customerServiceScheduling.mjs'
 
 export const confirmationTextLimits = { greeting: 200, message: 2000 }
@@ -64,10 +65,6 @@ const messageHtml = (text) => paragraph(text).split(/\n{2,}/u).map((block) => (
   `<p style="margin: 0 0 16px; font-size: 16px; line-height: 1.6;">${block.split('\n').map(escapeHtml).join('<br>')}</p>`
 )).join('\n')
 
-const centeredNote = (text) => (
-  `<p style="margin: 0 0 12px; color: #6b7280; font-size: 14px; line-height: 1.6; text-align: center;">${escapeHtml(text)}</p>`
-)
-
 // One compact block, a label and its value per line (decided 23 Nov 2026, so the email
 // stays short). rows: [label, value]; rows without a value are left out.
 function detailsCard(rows) {
@@ -97,15 +94,6 @@ function optionCard({ label, date, windowStart }) {
   </td>
 </tr>
 </table>`
-}
-
-function signatureHtml({ senderName, senderEmail }) {
-  const lines = [
-    singleLine(senderName) && `<span style="color: #111827; font-weight: 700;">${escapeHtml(singleLine(senderName))}</span>`,
-    'Valtrim Customer Service',
-    singleLine(senderEmail) && `<a href="mailto:${escapeHtml(singleLine(senderEmail))}" style="color: #2563eb; text-decoration: underline;">${escapeHtml(singleLine(senderEmail))}</a>`,
-  ].filter(Boolean)
-  return `<p style="margin: 28px 0 0; font-size: 15px; line-height: 1.6;">${lines.join('<br>')}</p>`
 }
 
 // The team's email frame: light page, 600 px white card, dark header, light footer.
@@ -152,9 +140,6 @@ ${content}
 const footerHtml = (folio) => (
   `You are receiving this email about your Valtrim service request ${escapeHtml(singleLine(folio))}. Reply to this email to reach your coordinator.`
 )
-const signatureText = ({ senderName, senderEmail }) => [
-  singleLine(senderName), 'Valtrim Customer Service', singleLine(senderEmail),
-].filter(Boolean).join('\n')
 
 // --- Confirmation (path a, or an accepted proposal) ---
 
@@ -168,7 +153,7 @@ export function defaultConfirmationText({ homeownerName } = {}) {
 
 // date is YYYY-MM-DD and windowStart one of the customer windows, in California time.
 export function confirmationEmail({
-  folio, homeownerName, date, windowStart, address, work, greeting, message, senderName, senderEmail = '',
+  folio, homeownerName, date, windowStart, address, work, greeting, message,
 }) {
   const window = windowLabel(windowStart)
   const fallback = defaultConfirmationText({ homeownerName })
@@ -181,16 +166,9 @@ export function confirmationEmail({
     singleLine(work) && `Work: ${singleLine(work)}`,
     `Reference: ${singleLine(folio)}`,
   ].filter(Boolean)
-  const reschedule = 'If this day no longer works for you, reply to this email.'
   return {
     subject: `Your Valtrim service visit is confirmed for ${shortDate(date)} (${singleLine(folio)})`,
-    text: [
-      typedGreeting,
-      typedMessage,
-      details.join('\n'),
-      reschedule,
-      signatureText({ senderName, senderEmail }),
-    ].join('\n\n'),
+    text: [typedGreeting, typedMessage, details.join('\n')].join('\n\n'),
     html: emailLayout({
       title: 'Your service visit is confirmed',
       preheader: `Your Valtrim service visit is confirmed for ${longDate(date)}${window ? `, ${window}` : ''}.`,
@@ -201,8 +179,6 @@ export function confirmationEmail({
 ${optionCard({ label: '', date, windowStart })}
 </div>`,
         detailsCard([['Address', address], ['Work', work], ['Reference', folio]]),
-        centeredNote(reschedule),
-        signatureHtml({ senderName, senderEmail }),
       ].join('\n'),
       footer: footerHtml(folio),
     }),
@@ -226,8 +202,7 @@ export function defaultInvitationText({ homeownerName } = {}) {
 // number keeps an option's place in the proposal when an earlier one is left out.
 // reminder: the 24-hour reminder of step B7 (see reminderEmail).
 export function invitationEmail({
-  folio, homeownerName, options: offered, address, work, greeting, message, senderName, senderEmail = '',
-  reminder = false,
+  folio, homeownerName, options: offered, address, work, greeting, message, reminder = false,
 }) {
   const fallback = defaultInvitationText({ homeownerName })
   const options = offered ?? []
@@ -247,21 +222,11 @@ export function invitationEmail({
   const answer = several
     ? 'Reply to this email with the option that works for you. We are holding both times for you until you answer.'
     : 'Reply to this email to confirm this time. We are holding it for you until you answer.'
-  const otherDates = `If ${several ? 'none of these days work' : 'this day does not work'}, reply with up to three dates and ` +
-    'the part of the day (morning, midday or afternoon) that suit you.'
   return {
     subject: `${reminder ? 'Reminder: ' : ''}${several
       ? `${reminder ? 'choose' : 'Choose'} a day for your Valtrim service visit (${singleLine(folio)})`
       : `${reminder ? 'can' : 'Can'} we visit on ${shortDate(options[0]?.date)}? Your Valtrim service visit (${singleLine(folio)})`}`,
-    text: [
-      typedGreeting,
-      typedMessage,
-      days.join('\n'),
-      details.join('\n'),
-      answer,
-      otherDates,
-      signatureText({ senderName, senderEmail }),
-    ].join('\n\n'),
+    text: [typedGreeting, typedMessage, days.join('\n'), details.join('\n'), answer].join('\n\n'),
     html: emailLayout({
       title: `${reminder ? 'Reminder: ' : ''}${several
         ? `${reminder ? 'choose' : 'Choose'} a day for your service visit`
@@ -276,9 +241,7 @@ export function invitationEmail({
           label: several ? `Option ${option.number ?? index + 1}` : '', date: option.date, windowStart: option.windowStart,
         })).join('\n')}\n</div>`,
         detailsCard([['Address', address], ['Work', work], ['Reference', folio]]),
-        `<p style="margin: 0 0 12px; color: #111827; font-size: 16px; font-weight: 700; line-height: 1.6; text-align: center;">${escapeHtml(answer)}</p>`,
-        centeredNote(otherDates),
-        signatureHtml({ senderName, senderEmail }),
+        `<p style="margin: 0; color: #111827; font-size: 16px; font-weight: 700; line-height: 1.6; text-align: center;">${escapeHtml(answer)}</p>`,
       ].join('\n'),
       footer: footerHtml(folio),
     }),
@@ -289,11 +252,11 @@ export function invitationEmail({
 
 // 24 hours after the invitation without an answer, sent automatically from the same
 // mailbox: the same email with a fixed text, listing only the days that have not started.
-export function reminderEmail({ folio, homeownerName, options, address, work, senderName, senderEmail = '' }) {
+export function reminderEmail({ folio, homeownerName, options, address, work }) {
   const name = singleLine(homeownerName)
   const several = (options ?? []).length > 1
   return invitationEmail({
-    folio, homeownerName, options, address, work, senderName, senderEmail, reminder: true,
+    folio, homeownerName, options, address, work, reminder: true,
     greeting: name ? `Hi ${name},` : 'Hello,',
     message: `We have not heard back about your service visit yet, so we are still holding ${several ? 'these times' : 'this time'} for you:`,
   })

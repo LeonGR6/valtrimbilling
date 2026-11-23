@@ -171,8 +171,6 @@ export async function sendConfirmation({ admin, actor, input, request, appointme
     request,
     date,
     windowStart,
-    senderName: actor.name,
-    senderEmail: actor.email,
     delivery: customerEmailDeliveryFromEnv(),
   });
   if (!prepared.send) return { status: "NOT_SENT", message: prepared.message };

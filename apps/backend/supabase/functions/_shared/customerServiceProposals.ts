@@ -163,12 +163,10 @@ export type PreparedInvitation =
 
 // An invitation always needs the customer's email (decision of 20 Nov 2026): without one
 // the coordinator uses "Customer accepted by phone" and nothing is held.
-export function prepareInvitation({ input, request, options, senderName, senderEmail = "", delivery }: {
+export function prepareInvitation({ input, request, options, delivery }: {
   input: ConfirmationInput;
   request: ConfirmationRequest;
   options: { date: string; windowStart: string }[];
-  senderName: string;
-  senderEmail?: string;
   delivery: CustomerEmailDelivery;
 }): PreparedInvitation {
   const customerEmail = request.homeowner_email?.trim() ?? "";
@@ -200,8 +198,6 @@ export function prepareInvitation({ input, request, options, senderName, senderE
     work: request.description,
     greeting: input.greeting,
     message: input.message,
-    senderName,
-    senderEmail,
   });
   const testMode = delivery.mode === "TEST";
   return {

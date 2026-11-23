@@ -141,7 +141,7 @@ test('after sending, the coordinator reads where the invitation went', () => {
 test('the planner previews the same invitation the server sends', () => {
   const email = invitationEmail({
     folio: 'CS-20', homeownerName: 'Ana', options: [{ date: '2026-11-24', windowStart: '08:00' }],
-    address: '', work: 'Door', greeting: 'Hi Ana,', message: 'We can come:', senderName: 'Victor',
+    address: '', work: 'Door', greeting: 'Hi Ana,', message: 'We can come:',
   })
   assert.equal(email.subject, 'Can we visit on Tue, Nov 24? Your Valtrim service visit (CS-20)')
   assert.match(email.text, /Tuesday, November 24, 2026, arrival window 8:00 AM–10:00 AM/u)

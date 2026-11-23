@@ -59,11 +59,9 @@ export type PreparedReminder =
   | { send: true; to: string; customerEmail: string; testMode: boolean; subject: string; text: string; html: string }
   | { send: false; message: string };
 
-export function prepareReminder({ request, options, senderName, senderEmail, delivery }: {
+export function prepareReminder({ request, options, delivery }: {
   request: ConfirmationRequest;
   options: DueReminder["options"];
-  senderName: string;
-  senderEmail: string;
   delivery: CustomerEmailDelivery;
 }): PreparedReminder {
   const customerEmail = request.homeowner_email?.trim() ?? "";
@@ -81,8 +79,6 @@ export function prepareReminder({ request, options, senderName, senderEmail, del
       postalCode: property?.postal_code,
     }),
     work: request.description,
-    senderName,
-    senderEmail,
   });
   const testMode = delivery.mode === "TEST";
   return {

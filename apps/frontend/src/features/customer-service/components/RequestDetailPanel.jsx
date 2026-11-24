@@ -18,7 +18,6 @@ import PhoneRoundedIcon from '@mui/icons-material/PhoneRounded'
 import PushPinRoundedIcon from '@mui/icons-material/PushPinRounded'
 import SmsOutlinedIcon from '@mui/icons-material/SmsOutlined'
 import { formatPhoneNumber } from '../../../utils/phoneNumbers.js'
-import { prioritiesByValue } from '../data/customerService.js'
 import {
   customerServiceTimeZone,
   formatLongDate,
@@ -32,6 +31,7 @@ import {
   requestWorkflowStages,
 } from '../utils/requestInbox.js'
 import Pill from './Pill.jsx'
+import PriorityIndicator from './PriorityIndicator.jsx'
 
 function Field({ label, children }) {
   return (
@@ -139,7 +139,6 @@ export default function RequestDetailPanel({
   fullView = false,
 }) {
   const stage = requestWorkflowStages[request.workflowStage]
-  const priority = prioritiesByValue[request.priority]
   const hasCoordinates = Number.isFinite(request.latitude) && Number.isFinite(request.longitude)
   const coordinates = hasCoordinates
     ? `${request.latitude.toFixed(6)}, ${request.longitude.toFixed(6)}`
@@ -281,9 +280,7 @@ export default function RequestDetailPanel({
           />
           <TextValue label="Due" value={formatShortDate(request.dueOn)} />
           <Field label="Priority">
-            <Typography variant="body2" fontWeight={800} sx={{ color: priority.color }}>
-              {priority.label}
-            </Typography>
+            <PriorityIndicator priority={request.priority} variant="detail" />
           </Field>
           <TextValue label="Coordinator" value={request.coordinatorName} empty="Not assigned" />
         </Stack>

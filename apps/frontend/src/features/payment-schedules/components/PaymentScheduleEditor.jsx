@@ -3,17 +3,21 @@ import {
   Alert,
   Box,
   Button,
+  Checkbox,
   DialogActions,
   DialogContent,
+  FormControlLabel,
   Stack,
   Typography,
 } from '@mui/material'
+import AutoAwesomeRoundedIcon from '@mui/icons-material/AutoAwesomeRounded'
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded'
 import TaskAltRoundedIcon from '@mui/icons-material/TaskAltRounded'
 import { validatePaymentScheduleMapping } from '../schemas/paymentScheduleMappingSchema.js'
 import {
   applyPhaseMap,
   buildMapping,
+  describeAiReading,
   initialCells,
   initialPhaseMap,
   initialSummaryRows,
@@ -37,6 +41,8 @@ export default function PaymentScheduleEditor({
   canManage,
   onConfirm,
   onReanalyze,
+  onReadWithAi,
+  onForgetLayout,
   onClose,
 }) {
   const [cells] = useState(() => initialCells(template))
@@ -56,11 +62,16 @@ export default function PaymentScheduleEditor({
   // Utility amounts printed per Lot, and whether the schedule keeps them.
   const [utilityCells] = useState(() => initialUtilityCells(template))
   const [keepUtility, setKeepUtility] = useState(true)
+  // A layout read with AI can be remembered for the builder when it is confirmed.
+  const aiReading = describeAiReading(template)
+  const [rememberLayout, setRememberLayout] = useState(true)
+  const [forgetState, setForgetState] = useState({ status: 'idle', message: null })
   const [saving, setSaving] = useState(false)
   const [reanalyzing, setReanalyzing] = useState(false)
   const [error, setError] = useState(null)
 
   const readOnly = !canManage || !EDITABLE_STATUSES.includes(template.status)
+  const canRemember = !readOnly && aiReading?.source === 'ai'
   const busy = saving || reanalyzing
   const activeCells = useMemo(
     () => applyPhaseMap(cells.filter((cell) => !removedKeys.has(cell.key)), phaseMap, lotPhases),
@@ -119,10 +130,38 @@ export default function PaymentScheduleEditor({
     setSaving(true)
     setError(null)
     try {
-      await onConfirm({ templateId: template.id, mapping })
+      await onConfirm({
+        templateId: template.id,
+        mapping,
+        rememberLayout: canRemember && rememberLayout,
+      })
     } catch (confirmError) {
       setError(confirmError.message)
       setSaving(false)
+    }
+  }
+
+  const handleReadWithAi = async () => {
+    setReanalyzing(true)
+    setError(null)
+    try {
+      await onReadWithAi()
+    } catch (analysisError) {
+      setError(analysisError.message)
+      setReanalyzing(false)
+    }
+  }
+
+  const handleForgetLayout = async () => {
+    setForgetState({ status: 'working', message: null })
+    try {
+      await onForgetLayout(aiReading.recipeId)
+      setForgetState({
+        status: 'done',
+        message: 'Forgotten. The next schedules with this layout need the AI again.',
+      })
+    } catch (forgetError) {
+      setForgetState({ status: 'idle', message: forgetError.message })
     }
   }
 
@@ -220,6 +259,36 @@ export default function PaymentScheduleEditor({
                 }))}
                 onAcknowledgeChange={setAcknowledged}
               />
+              {canRemember && (
+                <FormControlLabel
+                  control={(
+                    <Checkbox
+                      checked={rememberLayout}
+                      onChange={(event) => setRememberLayout(event.target.checked)}
+                    />
+                  )}
+                  label="Remember this layout for the builder: its next schedules are read without AI"
+                />
+              )}
+              {aiReading?.source === 'recipe' && aiReading.recipeId && canManage && (
+                <Box>
+                  {forgetState.status === 'done' ? (
+                    <Alert severity="success">{forgetState.message}</Alert>
+                  ) : (
+                    <Button
+                      size="small"
+                      color="inherit"
+                      disabled={busy || forgetState.status === 'working'}
+                      onClick={handleForgetLayout}
+                    >
+                      {forgetState.status === 'working' ? 'Forgetting…' : 'Forget this layout'}
+                    </Button>
+                  )}
+                  {forgetState.status === 'idle' && forgetState.message && (
+                    <Alert severity="error" sx={{ mt: 1 }}>{forgetState.message}</Alert>
+                  )}
+                </Box>
+              )}
               {error && <Alert severity="error">{error}</Alert>}
             </Stack>
           </Box>
@@ -234,6 +303,15 @@ export default function PaymentScheduleEditor({
               onClick={handleReanalyze}
             >
               {reanalyzing ? 'Analyzing…' : 'Analyze again'}
+            </Button>
+          )}
+          {canManage && EDITABLE_STATUSES.includes(template.status) && aiReading?.source === 'recipe' && (
+            <Button
+              startIcon={<AutoAwesomeRoundedIcon />}
+              disabled={busy}
+              onClick={handleReadWithAi}
+            >
+              Read with AI instead
             </Button>
           )}
         </Box>

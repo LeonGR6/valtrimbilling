@@ -401,7 +401,24 @@ export function describeAiReading(template) {
     checks.push('A Package that bills the Utility of a Phase highlights these amounts.')
   }
 
+  if (ai.source === 'recipe') {
+    const from = ai.recipe?.learnedFromJob ? ` (learned from Job #${ai.recipe.learnedFromJob})` : ''
+    return {
+      source: 'recipe',
+      recipeId: ai.recipe?.id ?? null,
+      title: 'Read with a remembered layout',
+      text: `This builder's layout was remembered from a schedule confirmed before${from}, so no AI `
+        + 'was needed. Every amount was checked against the PDF and this Job; check each '
+        + 'highlight before confirming.',
+      model: null,
+      checks,
+      notes: [],
+    }
+  }
+
   return {
+    source: 'ai',
+    recipeId: null,
     title: 'Read with AI',
     text: 'No parser knows this layout, so the AI pointed at the amounts. Every amount is printed '
       + 'in the PDF and was checked against this Job; check each highlight before confirming.',

@@ -28,6 +28,8 @@ export function templateAnalysisColumns(analysis: PaymentScheduleAnalysis) {
       ...(analysis.ai
         ? {
           ai: {
+            source: analysis.ai.source,
+            ...(analysis.ai.recipe ? { recipe: analysis.ai.recipe } : {}),
             model: analysis.ai.model,
             notes: analysis.ai.notes,
             lotsChecked: analysis.ai.lotsChecked,

@@ -411,3 +411,27 @@ test('Utility amounts start from the confirmed ones, else what was found, and ar
   assert.deepEqual(withUtility.utilityCells, [{ phase: '1', lot: '001', amount: 630, page: 1, rect }])
   assert.equal('utilityCells' in buildMapping('line_items', [], null, []), false)
 })
+
+test('a schedule read with a remembered layout says so, with the Job it was learned from', () => {
+  const reading = describeAiReading({
+    ai: {
+      source: 'recipe',
+      recipe: { id: 'r1', learnedFromJob: '1323' },
+      model: 'recipe',
+      notes: [],
+      lotsChecked: 28,
+      lotsMatchingPrice: 28,
+      utility: null,
+    },
+  })
+  assert.equal(reading.source, 'recipe')
+  assert.equal(reading.recipeId, 'r1')
+  assert.equal(reading.title, 'Read with a remembered layout')
+  assert.equal(reading.model, null)
+  assert.ok(reading.text.includes('(learned from Job #1323)'))
+  assert.deepEqual(reading.checks, ['All 28 Lots add up to the price of their Plan in the Job.'])
+
+  const ai = describeAiReading({ ai: { source: 'ai', model: 'm', notes: [], lotsChecked: 0, lotsMatchingPrice: 0 } })
+  assert.equal(ai.source, 'ai')
+  assert.equal(ai.recipeId, null)
+})

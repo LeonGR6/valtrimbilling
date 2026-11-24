@@ -92,6 +92,39 @@ export async function analyzePaymentSchedule(documentId, { force = false, useAi 
   return toPaymentScheduleTemplate(data.template)
 }
 
+/**
+ * Remembers the layout of a confirmed schedule read with AI, for the Job's builder, so its
+ * next schedules are read without AI. Returns { id, builder }.
+ */
+export async function rememberPaymentScheduleLayout(documentId) {
+  const client = await requireSupabase()
+  const { data, error } = await client.functions.invoke(ANALYZE_FUNCTION, {
+    body: { job_document_id: documentId, learn_recipe: true },
+  })
+  if (error || data?.error) {
+    throw new Error(
+      await functionErrorMessage(error, data, 'This layout could not be remembered.'),
+      { cause: error },
+    )
+  }
+  return data.recipe
+}
+
+/** Forgets a remembered layout: the builder's next schedules of that layout need the AI again. */
+export async function forgetPaymentScheduleLayout(recipeId) {
+  const client = await requireSupabase()
+  const { error } = await client.rpc('forget_payment_schedule_recipe', { p_recipe_id: recipeId })
+  if (error) {
+    if (error.code === 'P0002') return
+    throw new Error(
+      error.code === '42501'
+        ? 'You do not have permission to forget remembered layouts.'
+        : error.message || 'The remembered layout could not be forgotten.',
+      { cause: error },
+    )
+  }
+}
+
 export async function confirmPaymentSchedule({ templateId, mapping }) {
   const client = await requireSupabase()
   const { error } = await client.rpc('confirm_payment_schedule_template', {

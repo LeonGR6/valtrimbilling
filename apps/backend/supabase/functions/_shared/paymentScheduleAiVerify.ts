@@ -28,6 +28,10 @@ import type { AiAnswer, AiDocument, AiJobContext, AiJobLot } from "./paymentSche
 const ROUNDING_CENTS = 1;
 
 export interface AiSummary {
+  // Who pointed at the amounts: the AI, or a layout remembered from an earlier schedule.
+  source: "ai" | "recipe";
+  // The remembered layout, when one was used.
+  recipe?: { id: string; learnedFromJob: string | null };
   model: string;
   notes: string[];
   // Lots whose draws add up to the price of their Plan in the Job.
@@ -317,6 +321,7 @@ export function verifyAiAnswer(
     totalToleranceCents: 0,
     ...(utilityCells.length > 0 ? { utilityCells } : {}),
     ai: {
+      source: "ai",
       model,
       notes: answer.notes,
       lotsMatchingPrice,

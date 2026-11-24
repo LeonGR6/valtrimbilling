@@ -41,9 +41,21 @@ export interface AmountRef {
   row: ScheduleRow;
 }
 
+/** One line of the PDF as the model reads it: its pieces of text and its amounts. */
+export interface AiLine {
+  page: PageContent;
+  // The pieces of text, letter spacing collapsed, left to right.
+  pieces: string[];
+  // The references of the amounts on the line, left to right.
+  refs: string[];
+  row: ScheduleRow;
+}
+
 export interface AiDocument {
   text: string;
   refs: Map<string, AmountRef>;
+  // Every line in reading order, for reading a remembered layout.
+  lines: AiLine[];
   // Every word of the document, for checking that a printed Phase or code exists.
   words: Set<string>;
 }
@@ -66,23 +78,29 @@ export function buildAiDocument(pages: PageContent[]): AiDocument {
   const refs = new Map<string, AmountRef>();
   const words = new Set<string>();
   const lines: string[] = [];
+  const docLines: AiLine[] = [];
 
   for (const page of pages) {
     lines.push(`=== Page ${page.page} ===`);
     for (const row of groupRows(page.runs)) {
+      const pieces: string[] = [];
+      const lineRefs: string[] = [];
       const parts = row.runs.map((run) => {
         const text = collapseLetterSpacing(run.text);
         for (const word of text.split(/\s+/u)) {
           const key = wordKey(word);
           if (key !== "") words.add(key);
         }
+        pieces.push(text);
         const cents = parseMoneyCents(text);
         if (cents === null) return text;
         const ref = `#${refs.size + 1}`;
         refs.set(ref, { ref, cents, page, run, row });
+        lineRefs.push(ref);
         return `${text} [${ref}]`;
       });
       lines.push(parts.join(" | "));
+      docLines.push({ page, pieces, refs: lineRefs, row });
     }
   }
 
@@ -92,7 +110,7 @@ export function buildAiDocument(pages: PageContent[]): AiDocument {
       "This PDF is too long to be read with AI. Split it into smaller PDFs, one per Phase.",
     );
   }
-  return { text, refs, words };
+  return { text, refs, lines: docLines, words };
 }
 
 // --- What the model knows about the Job ----------------------------------------

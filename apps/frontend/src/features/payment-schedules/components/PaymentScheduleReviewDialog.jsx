@@ -17,7 +17,12 @@ import CloseRoundedIcon from '@mui/icons-material/CloseRounded'
 import AutoAwesomeRoundedIcon from '@mui/icons-material/AutoAwesomeRounded'
 import { loadTemplateAndPdf } from '../../release-templates/services/releaseTemplateLoader.js'
 import { downloadReleasePdf } from '../../release-templates/services/releaseTemplateRepository.js'
-import { listJobLots, listJobPhases } from '../services/paymentScheduleRepository.js'
+import {
+  forgetPaymentScheduleLayout,
+  listJobLots,
+  listJobPhases,
+  rememberPaymentScheduleLayout,
+} from '../services/paymentScheduleRepository.js'
 import { describeTemplateStatus } from '../services/paymentScheduleRecord.js'
 import PaymentScheduleEditor from './PaymentScheduleEditor.jsx'
 
@@ -122,15 +127,41 @@ export default function PaymentScheduleReviewDialog({
     && loadError?.reason === 'unrecognized_layout'
     && loadError.aiAvailable
 
-  const handleConfirm = async (input) => {
+  // What happened after saving, when there is something to say: { severity, text }.
+  const [done, setDone] = useState(null)
+
+  const handleConfirm = async ({ rememberLayout = false, ...input }) => {
     await templateState.confirm(input)
-    onClose()
+    if (!rememberLayout) {
+      onClose()
+      return
+    }
+    // Saved either way: remembering the layout only spares the AI next time.
+    try {
+      const recipe = await rememberPaymentScheduleLayout(document.id)
+      setDone({
+        severity: 'success',
+        text: `Payment Schedule confirmed. The layout was remembered for ${recipe?.builder ?? 'this builder'}: `
+          + 'its next Payment Schedules with this layout are read without AI.',
+      })
+    } catch (rememberError) {
+      setDone({
+        severity: 'warning',
+        text: `Payment Schedule confirmed. ${rememberError.message} Its next schedules will need the AI.`,
+      })
+    }
   }
 
   const handleReanalyze = async () => {
-    // A schedule the AI read is read with AI again: no parser knows its layout.
-    const useAi = Boolean(loaded?.template?.ai)
+    // A schedule the AI read is read with AI again: no parser knows its layout. One read
+    // with a remembered layout is read with it again.
+    const useAi = loaded?.template?.ai?.source === 'ai'
     const template = await analyze(document, { force: true, useAi })
+    setLoaded((current) => ({ ...current, template }))
+  }
+
+  const handleReadWithAi = async () => {
+    const template = await analyze(document, { force: true, useAi: true })
     setLoaded((current) => ({ ...current, template }))
   }
 
@@ -226,7 +257,20 @@ export default function PaymentScheduleReviewDialog({
         </>
       )}
 
-      {loaded && (
+      {done && (
+        <>
+          <DialogContent dividers>
+            <Alert severity={done.severity} sx={{ maxWidth: 640, mx: 'auto', mt: 2 }}>
+              {done.text}
+            </Alert>
+          </DialogContent>
+          <DialogActions sx={{ px: 3, py: 1.5 }}>
+            <Button variant="contained" onClick={onClose}>Close</Button>
+          </DialogActions>
+        </>
+      )}
+
+      {loaded && !done && (
         <Suspense fallback={<Waiting title="Opening the PDF…" />}>
           <PaymentScheduleEditor
             key={loaded.template.updatedAt}
@@ -237,6 +281,8 @@ export default function PaymentScheduleReviewDialog({
             canManage={canManage}
             onConfirm={handleConfirm}
             onReanalyze={handleReanalyze}
+            onReadWithAi={handleReadWithAi}
+            onForgetLayout={forgetPaymentScheduleLayout}
             onClose={onClose}
           />
         </Suspense>

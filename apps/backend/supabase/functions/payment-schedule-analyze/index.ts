@@ -3,7 +3,13 @@
 // stores the result as a `needs_review` template; a person confirms the cells
 // later through the confirm_payment_schedule_template RPC.
 //
-// POST body: { job_document_id: uuid, force?: boolean, use_ai?: boolean }
+// POST body: { job_document_id: uuid, force?: boolean, use_ai?: boolean, learn_recipe?: boolean }
+//
+// A layout no parser knows is first looked up among the layouts remembered for the
+// Job's builder (payment_schedule_recipes): read with one, nothing leaves the project.
+// `learn_recipe` on a confirmed schedule that was read with AI remembers its layout
+// for the builder, learned from the PDF and the confirmed cells
+// (paymentScheduleRecipe.ts); only rules are stored, never document content.
 //
 // `use_ai` is the person's explicit request to read a layout no parser knows with
 // AI (implies `force`). The parsers still run first; only when they fail are the
@@ -30,9 +36,18 @@ import {
 } from '../_shared/paymentScheduleAnalysis.ts'
 import {
   type AiJobContext,
+  buildAiDocument,
   mistralScheduleReader,
   PaymentScheduleAiError,
 } from '../_shared/paymentScheduleAi.ts'
+import { verifyAiAnswer } from '../_shared/paymentScheduleAiVerify.ts'
+import {
+  learnRecipe,
+  parseRecipeRules,
+  readWithRecipe,
+  RecipeError,
+} from '../_shared/paymentScheduleRecipe.ts'
+import type { ReleasePdfContent } from '../_shared/releasePdf.ts'
 import { templateAnalysisColumns } from '../_shared/paymentScheduleRecord.ts'
 import { type DrawName, PaymentScheduleError } from '../_shared/paymentScheduleTypes.ts'
 import { decideAnalysis, type AnalysisStatus } from '../_shared/releaseAnalysisState.ts'
@@ -109,6 +124,13 @@ function describeFailure(error: unknown) {
   }
   if (error instanceof PaymentScheduleAiError) {
     return { status: 502, message: error.message, log: error.name }
+  }
+  if (error instanceof RecipeError) {
+    return {
+      status: 422,
+      message: `This layout could not be remembered: ${error.message}`,
+      log: error.name,
+    }
   }
 
   // Class name and database code only: an error object can carry row data.
@@ -241,9 +263,115 @@ async function loadAiJobContext(db: AdminClient, jobId: number): Promise<AiJobCo
   }
 }
 
+/** The builder of a Job, or null. */
+async function jobBuilderId(db: AdminClient, jobId: number): Promise<number | null> {
+  const { data, error } = await db.from('jobs').select('builder_id').eq('id', jobId).maybeSingle()
+  if (error) throw error
+  return data?.builder_id ?? null
+}
+
 /**
- * Downloads the PDF of a Job document and reads its Lots and draws. With `useAi`,
- * a layout no parser knows is read with AI instead of failing.
+ * Reads the schedule with a layout remembered for the Job's builder, newest first.
+ * Null when none fits. Nothing leaves the project.
+ */
+async function analyzeWithRecipes(
+  db: AdminClient,
+  jobId: number,
+  content: ReleasePdfContent,
+) {
+  const builderId = await jobBuilderId(db, jobId)
+  if (builderId === null) return null
+
+  const { data: recipes, error } = await db
+    .from('payment_schedule_recipes')
+    .select('id, rules, learned_from_job_id')
+    .eq('builder_id', builderId)
+    .order('updated_at', { ascending: false })
+  if (error) throw error
+  if (!recipes?.length) return null
+
+  const document = buildAiDocument(content.pages)
+  for (const recipe of recipes) {
+    const rules = parseRecipeRules(recipe.rules)
+    const answer = rules ? readWithRecipe(document, rules) : null
+    if (!answer) continue
+
+    let learnedFromJob: string | null = null
+    if (recipe.learned_from_job_id) {
+      const { data: job } = await db.from('jobs').select('code').eq('id', recipe.learned_from_job_id)
+        .maybeSingle()
+      learnedFromJob = job?.code ?? null
+    }
+    try {
+      const verified = verifyAiAnswer(answer, document, await loadAiJobContext(db, jobId), 'recipe')
+      return {
+        ...verified,
+        ai: { ...verified.ai, source: 'recipe' as const, recipe: { id: recipe.id, learnedFromJob } },
+        detectionMethod: 'text_layer' as const,
+        pageCount: content.pageCount,
+        pageSizes: content.pageSizes,
+      }
+    } catch (error) {
+      // A remembered layout that finds nothing here is not this schedule's.
+      if (error instanceof PaymentScheduleError) continue
+      throw error
+    }
+  }
+  return null
+}
+
+/**
+ * Remembers how a confirmed schedule read with AI is laid out, for the Job's builder.
+ * Learned from the PDF and the confirmed cells; replaces an earlier recipe of the same
+ * layout. Returns the recipe id and the builder's name.
+ */
+async function rememberLayout(
+  db: AdminClient,
+  document: { id: string; job_id: number; storage_bucket: string; storage_path: string },
+  userId: string,
+) {
+  const { data: template, error: templateError } = await db
+    .from('payment_schedule_templates')
+    .select('id, status, mapping, analysis')
+    .eq('job_document_id', document.id)
+    .maybeSingle()
+  if (templateError) throw templateError
+  if (!template || template.status !== 'confirmed' || !template.mapping) {
+    throw new RecipeError('confirm the Payment Schedule first.')
+  }
+  if (!template.analysis?.ai) {
+    throw new RecipeError('only a layout read with AI is remembered; this one is read without it.')
+  }
+
+  const builderId = await jobBuilderId(db, document.job_id)
+  if (builderId === null) throw new RecipeError('the Job has no builder.')
+
+  const content = await readPaymentSchedulePdf(await downloadPdf(db, document))
+  const learned = learnRecipe(buildAiDocument(content.pages), template.mapping)
+
+  const { data: saved, error: saveError } = await db
+    .from('payment_schedule_recipes')
+    .upsert({
+      builder_id: builderId,
+      signature_key: learned.signatureKey,
+      rules: learned.rules,
+      learned_from_template_id: template.id,
+      learned_from_job_id: document.job_id,
+      created_by: userId,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'builder_id,signature_key' })
+    .select('id')
+    .single()
+  if (saveError) throw saveError
+
+  const { data: builder } = await db.from('builders').select('name').eq('id', builderId).maybeSingle()
+  return { id: saved.id, builder: builder?.name ?? null }
+}
+
+/**
+ * Downloads the PDF of a Job document and reads its Lots and draws. A layout no parser
+ * knows is read with a layout remembered for the builder, else, with `useAi`, with AI
+ * (`useAi` skips the remembered layouts: the person asked for the AI).
  */
 async function analyzeDocument(
   db: AdminClient,
@@ -257,7 +385,12 @@ async function analyzeDocument(
       drawNames: await loadDrawNames(db, document.job_id),
     })
   } catch (error) {
-    if (!useAi || !(error instanceof PaymentScheduleError) || error.reason !== 'unrecognized_layout') {
+    if (!(error instanceof PaymentScheduleError) || error.reason !== 'unrecognized_layout') {
+      throw error
+    }
+    if (!useAi) {
+      const remembered = await analyzeWithRecipes(db, document.job_id, content)
+      if (remembered) return remembered
       throw error
     }
     const apiKey = aiApiKey()
@@ -303,6 +436,7 @@ Deno.serve(async (req) => {
     }
 
     const body = await req.json().catch(() => null)
+    const learn = body?.learn_recipe === true
     const useAi = body?.use_ai === true
     const force = body?.force === true || useAi
     const documentId = body?.job_document_id
@@ -325,6 +459,10 @@ Deno.serve(async (req) => {
     }
 
     db = serviceClient()
+    if (learn) {
+      return json({ recipe: await rememberLayout(db, document, auth.userId) })
+    }
+
     const { data: existingRow, error: existingError } = await db
       .from('payment_schedule_templates')
       .select(TEMPLATE_COLUMNS)

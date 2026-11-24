@@ -39,6 +39,7 @@ export function filterServiceCalendarEvents(events, {
 export const serviceAppointmentStatusOptions = [
   { value: 'SCHEDULED', label: 'Scheduled' },
   { value: 'CONFIRMED', label: 'Confirmed' },
+  { value: 'AWAITING_CUSTOMER', label: 'Awaiting customer' },
   { value: 'WORKING', label: 'In progress' },
   { value: 'OVERDUE', label: 'Overdue' },
   { value: 'COMPLETED', label: 'Completed' },
@@ -134,6 +135,8 @@ export function getServiceEventTone(status) {
   if (status === 'COMPLETED') return 'completed'
   if (status === 'OVERDUE') return 'overdue'
   if (status === 'CANCELLED') return 'cancelled'
+  // A day held by a sent proposal: tentative until the customer answers.
+  if (status === 'AWAITING_CUSTOMER') return 'awaiting'
   // An in-progress visit is still a confirmed appointment; it shares that tone.
   if (status === 'CONFIRMED' || status === 'WORKING') return 'confirmed'
   return 'scheduled'
@@ -265,13 +268,15 @@ export function serviceCalendarEventForRequest(requests, requestId) {
 // The visit being planned, as the same detail Calendar shows, for the slot shown in the
 // Proposal Workspace day agenda. It is not saved and reserves nothing (status PROPOSED).
 // A day offered in a sent proposal uses status AWAITING_CUSTOMER: it is held until the
-// customer answers. visit: { date, windowStart, start, end, technicianNames }
+// customer answers. visit: { date, windowStart, start, end, technicianNames, and for a
+// held day technicianIds, optionNumber and optionCount }
 export function proposedServiceCalendarEvent(request, visit, status = 'PROPOSED') {
   const customerWindow = serviceCustomerWindowOptions.find((window) => window.start === visit?.windowStart)
   if (!request || !customerWindow || !visit.date) return null
   const workTypes = normalizeServiceWorkTypes(request.workType)
+  const technicianIds = (visit.technicianIds ?? []).map(String)
   return {
-    id: `${status === 'PROPOSED' ? 'proposed' : 'held'}-${request.id}-${visit.date}`,
+    id: `${status === 'PROPOSED' ? 'proposed' : 'held'}-${request.id}-${visit.optionNumber ?? visit.date}`,
     title: `CS · ${formatWorkTypes(workTypes)}`,
     start: `${visit.date}T${customerWindow.start}:00`,
     end: `${visit.date}T${customerWindow.end}:00`,
@@ -285,6 +290,10 @@ export function proposedServiceCalendarEvent(request, visit, status = 'PROPOSED'
       status,
       workTypes,
       technician: (visit.technicianNames ?? []).join(', '),
+      technicianIds,
+      assignedTechnicians: technicianIds.map((id, index) => ({ id, name: visit.technicianNames?.[index] ?? '' })),
+      proposalOption: visit.optionNumber ?? null,
+      proposalOptions: visit.optionCount ?? null,
       homeowner: request.contactName,
       community: request.community,
       lotNumber: request.lotNumber,
@@ -298,6 +307,22 @@ export function proposedServiceCalendarEvent(request, visit, status = 'PROPOSED'
       appointment: null,
     },
   }
+}
+
+// The days a sent proposal holds, shown in Calendar as tentative so the coordinator sees
+// that the day may be taken if the customer accepts (decided 24 Nov 2026). They come from
+// service_proposal_holds, which lists only proposals still waiting: when the customer
+// answers or the proposal closes, they leave Calendar. technicians: [{ id, name }]
+export function createHeldServiceCalendarEvents(requests, technicians = []) {
+  const nameOf = (id) => technicians.find((person) => String(person.id) === String(id))?.name ?? 'Unknown technician'
+  return requests.flatMap((request) => {
+    const holds = request.proposalHolds ?? []
+    return holds.map((hold) => proposedServiceCalendarEvent(request, {
+      date: hold.date, windowStart: hold.windowStart, start: hold.start, end: hold.end,
+      technicianIds: hold.technicianIds, technicianNames: (hold.technicianIds ?? []).map(nameOf),
+      optionNumber: hold.optionNumber, optionCount: holds.length,
+    }, 'AWAITING_CUSTOMER')).filter(Boolean)
+  })
 }
 
 function startOfWeek(referenceDate) {

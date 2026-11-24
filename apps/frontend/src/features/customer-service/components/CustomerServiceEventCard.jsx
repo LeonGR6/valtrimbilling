@@ -1,4 +1,5 @@
 import { Box } from '@mui/material'
+import { useTheme } from '@mui/material/styles'
 import {
   formatWorkTypes,
   getServiceEventTone,
@@ -43,6 +44,16 @@ function formatDelayMargin(margin) {
   return margin < 0 ? `Misses window by ${-margin} min` : `Margin ${margin} min`
 }
 
+// The short status on each card. A held day says which option it is when there are two.
+function statusText(props) {
+  if (props.status === 'CONFIRMED') return 'Confirmed'
+  if (props.status === 'WORKING') return 'In progress'
+  if (props.status === 'AWAITING_CUSTOMER') {
+    return props.proposalOptions > 1 ? `Awaiting customer · Option ${props.proposalOption} of ${props.proposalOptions}` : 'Awaiting customer'
+  }
+  return props.status?.toLowerCase()
+}
+
 function formatPreviousVisit(lastVisit) {
   if (!lastVisit?.date) return 'No previous visits'
   const date = new Date(`${lastVisit.date}T12:00:00`)
@@ -50,11 +61,15 @@ function formatPreviousVisit(lastVisit) {
 }
 
 export default function CustomerServiceEventCard({ event, displayMode = 'timed' }) {
+  const theme = useTheme()
   const props = event.extendedProps
   const tone = getServiceEventTone(props.status)
+  // A held day uses the Awaiting customer stage color of the Proposal Workspace.
+  const toneStyle = tone === 'awaiting' ? { '--service-accent': theme.palette.secondary.main } : undefined
   const workTypes = formatWorkTypes(props.workTypes)
   const accessibleTitle = [
     props.requestNumber,
+    props.status === 'AWAITING_CUSTOMER' ? statusText(props) : null,
     workTypes,
     formatTimeRange(event),
     props.community && props.lotNumber ? `${props.community} · Lot ${props.lotNumber}` : null,
@@ -62,13 +77,16 @@ export default function CustomerServiceEventCard({ event, displayMode = 'timed' 
 
   if (displayMode === 'list') {
     return (
-      <Box className={`service-list-event service-tone--${tone}`}>
+      <Box className={`service-list-event service-tone--${tone}`} style={toneStyle}>
         <Box className="service-list-event__identity">
           <span className="service-list-event__badge">CS</span>
           <Box className="service-list-event__copy">
             <strong>{workTypes} · {props.requestNumber}</strong>
             <span>{props.community} · Lot {props.lotNumber}</span>
-            <span>{[formatTimeRange(event), props.technician, formatDelayMargin(props.delayMargin)].filter(Boolean).join(' · ')}</span>
+            <span>{[
+              formatTimeRange(event), props.technician, formatDelayMargin(props.delayMargin),
+              props.status === 'AWAITING_CUSTOMER' ? statusText(props) : null,
+            ].filter(Boolean).join(' · ')}</span>
           </Box>
         </Box>
         <span className="service-list-event__history">
@@ -84,6 +102,7 @@ export default function CustomerServiceEventCard({ event, displayMode = 'timed' 
     return (
       <Box
         className={`service-compact-event service-compact-event--${displayMode} service-tone--${tone}`}
+        style={toneStyle}
         title={accessibleTitle}
         aria-label={accessibleTitle}
       >
@@ -95,10 +114,10 @@ export default function CustomerServiceEventCard({ event, displayMode = 'timed' 
   }
 
   return (
-    <Box className={`service-work-event service-tone--${tone}`}>
+    <Box className={`service-work-event service-tone--${tone}`} style={toneStyle}>
       <Box className="service-work-event__topline">
         <strong>CS · {workTypes}</strong>
-        <span>{props.status === 'CONFIRMED' ? 'Confirmed' : props.status === 'WORKING' ? 'In progress' : props.status?.toLowerCase()}</span>
+        <span>{statusText(props)}</span>
       </Box>
       <span className="service-work-event__property">
         {props.community} · Lot {props.lotNumber}

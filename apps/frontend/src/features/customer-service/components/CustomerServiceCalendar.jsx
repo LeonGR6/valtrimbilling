@@ -29,6 +29,7 @@ import { getActivityTone } from '../../calendar/data/calendarEvents.js'
 import CalendarEventCard from '../../calendar/components/CalendarEventCard.jsx'
 import { useProductionActivities } from '../../calendar/context/useProductionActivities.js'
 import {
+  createHeldServiceCalendarEvents,
   createServiceCalendarEventsFromRequests,
   filterServiceCalendarEvents,
   getServiceCalendarEventDisplayMode,
@@ -79,10 +80,11 @@ export default function CustomerServiceCalendar({ requests, settings, onViewRequ
   const calendarRef = useRef(null)
   const { technicians, storedTravelMinutes } = useCustomerServicePrototype()
   // Each visit carries its delay margin from the saved travel legs, which the day-before
-  // traffic check refreshes (block R6). One computation per day shown.
+  // traffic check refreshes (block R6). One computation per day shown. Days held by a
+  // proposal waiting for the customer are added as tentative (Awaiting customer).
   const serviceEvents = useMemo(() => {
     const marginsByDate = new Map()
-    return createServiceCalendarEventsFromRequests(requests).map((event) => {
+    const visits = createServiceCalendarEventsFromRequests(requests).map((event) => {
       const date = String(event.start).slice(0, 10)
       if (!marginsByDate.has(date)) {
         marginsByDate.set(date, scheduledDelayMargins({ requests, technicians, date, travelMinutes: storedTravelMinutes }))
@@ -90,6 +92,7 @@ export default function CustomerServiceCalendar({ requests, settings, onViewRequ
       const delayMargin = marginsByDate.get(date)[String(event.extendedProps.requestId)]
       return delayMargin === undefined ? event : { ...event, extendedProps: { ...event.extendedProps, delayMargin } }
     })
+    return [...visits, ...createHeldServiceCalendarEvents(requests, technicians)]
   }, [requests, technicians, storedTravelMinutes])
   const { events: productionOverlayEvents } = useProductionActivities()
   const { mode, systemMode } = useColorScheme()

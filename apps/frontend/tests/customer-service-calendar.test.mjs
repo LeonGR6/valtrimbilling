@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  createHeldServiceCalendarEvents,
   createInitialServiceCalendarEvents,
   createServiceCalendarEventsFromRequests,
   createServiceCalendarEvent,
@@ -292,6 +293,7 @@ test('service appointment statuses map to distinct visual tones', () => {
   assert.equal(getServiceEventTone('OVERDUE'), 'overdue')
   assert.equal(getServiceEventTone('COMPLETED'), 'completed')
   assert.equal(getServiceEventTone('CANCELLED'), 'cancelled')
+  assert.equal(getServiceEventTone('AWAITING_CUSTOMER'), 'awaiting')
 })
 
 test('service calendar exposes month, week, day, list and year views', () => {
@@ -332,3 +334,30 @@ test('customer service uses the approved two-hour proposal windows', () => {
   })
 })
 
+
+test('days held by a proposal waiting for the customer appear as tentative events', () => {
+  const request = {
+    id: 31, requestNumber: 'CS-3049', workType: 'Shelving', contactName: 'Fit Test Customer',
+    community: 'Harvest', lotNumber: 'TEST-8', address: '200 Test Court', workflowStage: 'AWAITING_CUSTOMER',
+    proposalHolds: [
+      { optionNumber: 1, date: '2026-11-25', windowStart: '08:00', windowEnd: '10:00', start: '08:00', end: '08:30', technicianIds: ['82'] },
+      { optionNumber: 2, date: '2026-11-30', windowStart: '10:00', windowEnd: '12:00', start: '10:15', end: '10:45', technicianIds: ['83'] },
+    ],
+  }
+  const technicians = [{ id: '82', name: 'Jorge Murillo' }, { id: '83', name: 'Hilario Najera' }]
+  const events = createHeldServiceCalendarEvents([request, { id: 32, proposalHolds: [] }, { id: 33 }], technicians)
+  assert.deepEqual(events.map((event) => [event.id, event.start, event.end]), [
+    ['held-31-1', '2026-11-25T08:00:00', '2026-11-25T10:00:00'],
+    ['held-31-2', '2026-11-30T10:00:00', '2026-11-30T12:00:00'],
+  ])
+  const [first] = events
+  assert.equal(first.extendedProps.status, 'AWAITING_CUSTOMER')
+  assert.equal(first.extendedProps.technician, 'Jorge Murillo')
+  assert.deepEqual([first.extendedProps.proposalOption, first.extendedProps.proposalOptions], [1, 2])
+  assert.deepEqual(first.extendedProps.internalSlot, { start: '08:00', end: '08:30' })
+  assert.equal(first.extendedProps.appointment, null)
+  // They filter like visits: by status and by either technician.
+  assert.deepEqual(filterServiceCalendarEvents(events, { status: 'AWAITING_CUSTOMER' }).length, 2)
+  assert.deepEqual(filterServiceCalendarEvents(events, { status: 'CONFIRMED' }).length, 0)
+  assert.deepEqual(filterServiceCalendarEvents(events, { technician: '83' }).map((event) => event.id), ['held-31-2'])
+})

@@ -1,13 +1,14 @@
 import { useState } from 'react'
 import {
   Alert, Box, Button, Checkbox, Dialog, DialogActions, DialogContent, DialogTitle, Divider, FormControl,
-  FormControlLabel, Radio, RadioGroup, Stack, Typography,
+  FormControlLabel, Radio, RadioGroup, Stack, TextField, Typography,
 } from '@mui/material'
 import {
   confirmationEmail, confirmationTextProblems, defaultConfirmationText, defaultInvitationText, invitationEmail,
   mailingAddress,
 } from '../utils/customerServiceEmailTemplates.js'
 import { serviceWorkTypeLabel } from '../utils/customerServicePlanning.js'
+import { normalizeCustomerEmail } from '../utils/proposalDraft.js'
 import CustomerEmailEditor from './CustomerEmailEditor.jsx'
 
 // A radio whose label has a title and a caption lines up with the title.
@@ -26,13 +27,20 @@ const acceptanceOptions = [
 // - "Customer accepted by phone" (path a): registers the visit, optionally with a
 //   confirmation email. Without a customer email it is registered without one.
 // The greeting and the message can be edited; the visit details come from the request.
+// The customer's email is shown to be checked with them and can be corrected here: the
+// correction is saved to the request when sending, without a new review (24 Nov 2026).
 // secondOffer: { available, values, summary } or { available: false, reason }.
-// onSend({ acceptance, confirmationEmail }) registers; onSendProposal({ includeSecond,
-// invitation }) sends. Both reject with the error to show.
+// onSend({ acceptance, confirmationEmail, customerEmail }) registers; onSendProposal({
+// includeSecond, invitation, customerEmail }) sends; customerEmail is set only when it was
+// corrected. Both reject with the error to show.
 export default function SendToCustomerDialog({
   request, values, summary, secondOffer, senderEmail, onClose, onSend, onSendProposal, customerChoice = false,
 }) {
-  const customerEmail = String(request.contactEmail ?? '').trim()
+  const savedEmail = String(request.contactEmail ?? '').trim().toLowerCase()
+  const [emailInput, setEmailInput] = useState(String(request.contactEmail ?? '').trim())
+  const customerEmail = normalizeCustomerEmail(emailInput)
+  const emailInvalid = emailInput.trim() !== '' && !customerEmail
+  const emailChanged = Boolean(customerEmail) && customerEmail !== savedEmail
   // The day the customer picked on the proposal page: approving it registers the visit.
   const [path, setPath] = useState(customerEmail && !customerChoice ? 'PROPOSAL' : 'ACCEPTED')
   const [acceptance, setAcceptance] = useState(customerChoice ? 'COUNTER_PROPOSAL_ACCEPTED' : acceptanceOptions[0].value)
@@ -47,6 +55,8 @@ export default function SendToCustomerDialog({
   const writesEmail = proposing || emailOn
   const text = proposing ? invitationText : confirmationText
   const problems = writesEmail ? confirmationTextProblems(text) : []
+  // An email that is not valid, or none when one is about to be sent, blocks sending.
+  const emailBlocked = emailInvalid || (writesEmail && !customerEmail)
   // The customer reads the days by date, as the server numbers them (decided 23 Nov 2026).
   const days = [
     { date: values.date, windowStart: values.windowStart },
@@ -77,8 +87,12 @@ export default function SendToCustomerDialog({
     setSaving(true)
     setError('')
     try {
-      if (proposing) await onSendProposal({ includeSecond: includeSecond && Boolean(secondOffer?.available), invitation: invitationText })
-      else await onSend({ acceptance, confirmationEmail: emailOn ? confirmationText : null })
+      const correctedEmail = emailChanged ? customerEmail : undefined
+      if (proposing) {
+        await onSendProposal({
+          includeSecond: includeSecond && Boolean(secondOffer?.available), invitation: invitationText, customerEmail: correctedEmail,
+        })
+      } else await onSend({ acceptance, confirmationEmail: emailOn ? confirmationText : null, customerEmail: correctedEmail })
     } catch (sendError) {
       setError(sendError.message)
       setSaving(false)
@@ -113,10 +127,19 @@ export default function SendToCustomerDialog({
               )} />
             </RadioGroup>
           </FormControl>
-          {!customerEmail && (
+          <TextField
+            label="Customer email" type="email" size="small" value={emailInput} disabled={saving}
+            onChange={(event) => { setEmailInput(event.target.value); setError('') }}
+            error={emailBlocked}
+            helperText={emailInvalid ? 'Enter a valid email, like name@example.com.'
+              : writesEmail && !customerEmail ? 'Add the customer email to send it.'
+                : emailChanged ? 'Corrected email: it is saved to the request when you send.'
+                  : 'Check it with the customer before sending.'}
+            slotProps={{ htmlInput: { maxLength: 254 } }} />
+          {!savedEmail && !customerEmail && (
             <Alert severity="info" variant="outlined">
-              This request has no customer email, so a proposal cannot be emailed. Once the customer agrees to a day by
-              phone, register it here, or add the email in Requests first.
+              This request has no customer email. Add it above to email a proposal or a confirmation, or register the
+              visit without one.
             </Alert>
           )}
           <Divider />
@@ -165,7 +188,7 @@ export default function SendToCustomerDialog({
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose} disabled={saving}>Cancel</Button>
-        <Button variant="contained" onClick={submit} disabled={saving || problems.length > 0}>{buttonLabel}</Button>
+        <Button variant="contained" onClick={submit} disabled={saving || problems.length > 0 || emailBlocked}>{buttonLabel}</Button>
       </DialogActions>
     </Dialog>
   )

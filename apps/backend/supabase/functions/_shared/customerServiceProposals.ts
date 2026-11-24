@@ -8,6 +8,7 @@ import {
   AppointmentInputError,
   type AppointmentRow,
   type HoldRow,
+  parseCustomerEmail,
   type RegisterAppointmentInput,
   type RequestRow,
   type TechnicianRow,
@@ -47,6 +48,7 @@ export interface SendProposalInput {
   options: ProposalOptionInput[];
   invitation: ConfirmationInput;
   alternatives: ProposalAlternative[];
+  customerEmail?: string;
 }
 
 const clockTime = (value: unknown) => typeof value === "string" && /^([01]\d|2[0-3]):[0-5]\d$/u.test(value);
@@ -134,7 +136,11 @@ export function parseSendProposalInput(body: unknown): SendProposalInput {
   const alternatives = parseAlternatives(value.alternatives, options.map((option) => option.date));
   // The customer reads the days by date: option 1 is the earliest (decided 23 Nov 2026).
   options.sort((left, right) => left.date.localeCompare(right.date));
-  return { requestId, expectedRequestUpdatedAt: value.expectedRequestUpdatedAt, options, invitation, alternatives };
+  const customerEmail = parseCustomerEmail(value.customerEmail);
+  return {
+    requestId, expectedRequestUpdatedAt: value.expectedRequestUpdatedAt, options, invitation, alternatives,
+    ...(customerEmail ? { customerEmail } : {}),
+  };
 }
 
 // The agenda the server read for one option's day and technicians.

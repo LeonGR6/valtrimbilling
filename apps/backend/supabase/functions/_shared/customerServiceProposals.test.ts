@@ -51,6 +51,10 @@ Deno.test("a proposal offers one or two days, on different days, with an invitat
   assertEquals(parsed.options.length, 2);
   assertEquals(parsed.invitation, typed);
   assertEquals(parseSendProposalInput(body({ options: [body().options[0]] })).options.length, 1);
+  // A corrected customer email travels with the proposal; none means keep the saved one.
+  assertEquals(parseSendProposalInput(body({ customerEmail: " New@Example.com" } as Partial<SendProposalInput>)).customerEmail,
+    "new@example.com");
+  assertEquals("customerEmail" in parseSendProposalInput(body()), false);
   // The customer reads the days by date: option 1 is the earliest, whatever the order sent.
   assertEquals(parseSendProposalInput(body({ options: [body().options[1], body().options[0]] })).options
     .map((option) => option.date), ["2026-11-09", "2026-11-10"]);

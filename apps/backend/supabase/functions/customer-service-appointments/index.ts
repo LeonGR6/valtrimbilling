@@ -19,6 +19,7 @@ import {
 import { type ConfirmationInput, parseConfirmationInput } from "../_shared/customerServiceConfirmationEmail.ts";
 import {
   type Actor,
+  applyCustomerEmail,
   authorizeCoordinator,
   closePassedProposal,
   loadTechnicianDay,
@@ -51,11 +52,15 @@ async function register(req: Request, actor: Actor) {
   for (const result of [requestResult, techniciansResult]) {
     if (result.error) throw result.error;
   }
+  // A customer email corrected in Send to customer is saved first (24 Nov 2026).
+  // deno-lint-ignore no-explicit-any
+  const corrected = await applyCustomerEmail(admin, actor, requestResult.data as any, input);
+  input = { ...input, expectedRequestUpdatedAt: corrected.expectedRequestUpdatedAt };
+  const request = corrected.request;
 
   const validation = validateRegistration({
     input,
-    // deno-lint-ignore no-explicit-any
-    request: requestResult.data as any,
+    request,
     technicians: techniciansResult.data ?? [],
     dayAppointments: day.appointments,
     dayHolds: day.holds,
@@ -64,8 +69,7 @@ async function register(req: Request, actor: Actor) {
     throw new RequestError("The appointment cannot be registered.", 422, validation.errors);
   }
   const travel = await onlyChangedTravel(admin, validation.rpcArgs.p_travel);
-  // deno-lint-ignore no-explicit-any
-  const replacedAt = await closePassedProposal(admin, requestResult.data as any, input.expectedRequestUpdatedAt);
+  const replacedAt = await closePassedProposal(admin, request, input.expectedRequestUpdatedAt);
 
   const { data, error } = await admin.rpc("register_customer_service_appointment", {
     p_actor_id: actor.id,
@@ -83,8 +87,7 @@ async function register(req: Request, actor: Actor) {
       admin,
       actor,
       input: confirmation,
-      // deno-lint-ignore no-explicit-any
-      request: requestResult.data as any,
+      request,
       appointmentId: data.appointmentId,
       date: input.date,
       windowStart: input.windowStart,

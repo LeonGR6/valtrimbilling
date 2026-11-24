@@ -170,7 +170,7 @@ export default function ProposalDraftPlanner({
     }
   })()
   // Holds the days and emails the invitation; a failure stays in the dialog.
-  const sendInvitation = async ({ includeSecond, invitation }) => {
+  const sendInvitation = async ({ includeSecond, invitation, customerEmail }) => {
     // Option 1 is the earliest day, as the customer reads them.
     const options = [{ values, validation }, ...(includeSecond && secondOffer?.available ? [secondOffer] : [])]
       .sort((left, right) => left.values.date.localeCompare(right.values.date))
@@ -183,15 +183,16 @@ export default function ProposalDraftPlanner({
         request, requests, technicians, technicianIds: values.technicianIds, travelMinutes: values.travelMinutes,
         skipDates: options.map((option) => option.values.date),
       }),
+      customerEmail,
     }))
     setSending(false)
     onDirtyChange(false)
     onProposalSent?.(request, result)
   }
   // Registers the visit and, when asked, emails the customer; a failure stays in the dialog.
-  const send = async ({ acceptance, confirmationEmail }) => {
+  const send = async ({ acceptance, confirmationEmail, customerEmail }) => {
     const result = await registerAppointment(buildAppointmentRegistration({
-      request, values, validation, acceptance, confirmationEmail,
+      request, values, validation, acceptance, confirmationEmail, customerEmail,
     }))
     setSending(false)
     onDirtyChange(false)

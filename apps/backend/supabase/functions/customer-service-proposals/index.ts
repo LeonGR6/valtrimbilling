@@ -17,6 +17,7 @@ import { AppointmentInputError, statusForDatabaseError } from "../_shared/custom
 import {
   type Actor,
   type AdminClient,
+  applyCustomerEmail,
   authorizeCoordinator,
   closePassedProposal,
   customerEmailDeliveryFromEnv,
@@ -53,7 +54,7 @@ function databaseFailure(error: { code?: string; message: string }): never {
 }
 
 async function send(actor: Actor, body: unknown) {
-  const input = parse(() => parseSendProposalInput(body));
+  let input = parse(() => parseSendProposalInput(body));
   if (!actor.email.trim()) {
     throw new RequestError("Your user has no email, so a proposal cannot be sent from your mailbox.", 422);
   }
@@ -66,8 +67,12 @@ async function send(actor: Actor, body: unknown) {
   ]);
   if (requestResult.error) throw requestResult.error;
   if (techniciansResult.error) throw techniciansResult.error;
+  // A customer email corrected in the dialog is saved first; what follows checks the
+  // request as it is after that.
   // deno-lint-ignore no-explicit-any
-  const request = requestResult.data as any;
+  const corrected = await applyCustomerEmail(admin, actor, requestResult.data as any, input);
+  input = { ...input, expectedRequestUpdatedAt: corrected.expectedRequestUpdatedAt };
+  const request = corrected.request;
 
   // Checked before holding anything: an invitation needs somewhere to go.
   const invitation = request && prepareInvitation({

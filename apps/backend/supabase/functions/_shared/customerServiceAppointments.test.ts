@@ -5,6 +5,7 @@ import {
   californiaDayRange,
   changedTravelLegs,
   type HoldRow,
+  parseCustomerEmail,
   parseRegisterInput,
   type RegisterAppointmentInput,
   type RequestRow,
@@ -59,6 +60,19 @@ Deno.test("input parsing rejects missing versions, bad technicians and invalid t
   ]) {
     assertThrows(() => parseRegisterInput(bad), AppointmentInputError);
   }
+});
+
+Deno.test("a customer email corrected in Send to customer is trimmed, lowercased and checked", () => {
+  assertEquals(parseCustomerEmail("  Right@Example.COM "), "right@example.com");
+  assertEquals(parseCustomerEmail(undefined), undefined);
+  assertEquals(parseCustomerEmail(""), undefined);
+  for (const bad of ["not-an-email", "a@b", "two@@example.com", "with space@example.com", 42, `${"a".repeat(250)}@x.co`]) {
+    assertThrows(() => parseCustomerEmail(bad), AppointmentInputError, "Enter a valid customer email.");
+  }
+  // Register carries it only when it was given.
+  assertEquals(parseRegisterInput({ ...input(), customerEmail: "Right@Example.com" }).customerEmail, "right@example.com");
+  assertEquals("customerEmail" in parseRegisterInput(input()), false);
+  assertThrows(() => parseRegisterInput({ ...input(), customerEmail: "wrong" }), AppointmentInputError);
 });
 
 Deno.test("a valid visit becomes RPC arguments with UTC instants and the expected day", () => {

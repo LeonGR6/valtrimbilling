@@ -53,7 +53,6 @@ import BarChartIcon from '@mui/icons-material/BarChart'
 import SupportAgentIcon from '@mui/icons-material/SupportAgent';
 import LogoutRoundedIcon from '@mui/icons-material/LogoutRounded'
 import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded'
-import MapRoundedIcon from '@mui/icons-material/MapRounded'
 import MoveToInboxRoundedIcon from '@mui/icons-material/MoveToInboxRounded'
 
 import valtrimLogoDark from '../../../assets/icons/Valtrim-White-Transparent.png'
@@ -73,7 +72,6 @@ const routeAccessByPath = new Map(
 )
 
 const homeItem = { label: 'Home', path: '/', icon: HomeRoundedIcon }
-const roadmapItem = { label: 'Roadmap', path: '/roadmap', icon: MapRoundedIcon }
 
 const navigationSections = [
   {
@@ -430,7 +428,6 @@ function SidebarContent({ onNavigate, collapsed = false, onToggleCollapsed }) {
       >
         <List disablePadding>
         <NavigationItem {...homeItem} onNavigate={onNavigate} collapsed={collapsed} />
-        <NavigationItem {...roadmapItem} onNavigate={onNavigate} collapsed={collapsed} />
 
         {navigationSections
           .filter((section) => !collapsed || hasAvailableItem(section))

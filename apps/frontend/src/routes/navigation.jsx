@@ -13,7 +13,6 @@ import {
   CustomerServicePage,
   UsersPage,
   ActivityHistoryPage,
-  RoadmapPage,
   HyphenRequestsPage,
 } from './lazyPages.jsx'
 
@@ -21,7 +20,6 @@ import {
 // Both AppRoutes and the Sidebar read from here.
 export const navigationRoutes = [
   { path: '/', label: 'Home', icon: 'home', element: <HomePage /> },
-  { path: '/roadmap', label: 'Roadmap', icon: 'roadmap', element: <RoadmapPage /> },
   { path: '/calendar', label: 'Calendar', icon: 'calendar', element: <CalendarPage /> },
   { path: '/jobs', label: 'Jobs', icon: 'jobs', element: <JobsPage /> },
   { path: '/sequence-sheets', label: 'Sequence Sheets', icon: 'sequence-sheets', element: <SequenceSheetsPage /> },

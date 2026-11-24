@@ -9,6 +9,7 @@ import {
 import {
   buildRequestReviewSummary,
   canEditRequestInView,
+  isNewRequest,
   defaultProposalStage,
   filterAndSortRequestInbox,
   findRequestForView,
@@ -357,4 +358,15 @@ test('review and edit transitions update both queues without duplicating or losi
   assert.equal(requestsForView(collection)[0].estimatedDurationMinutes, 75)
   assert.equal(changed.internalNotes, 'Coordinator note')
   assert.equal(changed.requestedWorkItems.length, original.requestedWorkItems.length)
+})
+
+test('a request created in the last 24 hours is labeled New', () => {
+  const now = new Date('2026-11-24T17:00:00Z') // Tue 9:00 AM in California
+  assert.equal(isNewRequest({ createdAt: '2026-11-24T16:53:00Z' }, now), true) // CS-3450 this morning
+  assert.equal(isNewRequest({ createdAt: '2026-11-23T22:28:00Z' }, now), true) // yesterday 2:28 PM
+  assert.equal(isNewRequest({ createdAt: '2026-11-23T17:00:00Z' }, now), false) // exactly 24 hours
+  assert.equal(isNewRequest({ createdAt: '2026-11-12T17:38:00Z' }, now), false)
+  assert.equal(isNewRequest({ createdAt: '2026-11-24T18:00:00Z' }, now), false) // a clock in the future
+  assert.equal(isNewRequest({}, now), false)
+  assert.equal(isNewRequest(null, now), false)
 })

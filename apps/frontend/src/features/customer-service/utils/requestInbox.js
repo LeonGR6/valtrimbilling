@@ -115,6 +115,15 @@ export function canEditRequestInView(request, view = 'REQUESTS') {
   return Boolean(request) && (editableStagesByView[view] ?? []).includes(effectiveRequestWorkflowStage(request))
 }
 
+// A request created in the last 24 hours is labeled New in the lists, so a request that
+// just arrived from an email stands out (decided 24 Nov 2026).
+export const newRequestHours = 24
+
+export function isNewRequest(request, now = new Date()) {
+  const age = now.getTime() - Date.parse(request?.createdAt ?? '')
+  return Number.isFinite(age) && age >= 0 && age < newRequestHours * 3_600_000
+}
+
 export function isRequestOverdue(request, today = getCustomerServiceClock().date) {
   const stage = effectiveRequestWorkflowStage(request)
   if (['COMPLETED', 'CLOSED'].includes(stage)) return false

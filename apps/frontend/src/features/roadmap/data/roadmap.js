@@ -2,7 +2,7 @@
 // the Roadmap page: every item needs a title, a description and one of the
 // statuses below.
 
-export const roadmapUpdatedOn = 'November 17, 2026'
+export const roadmapUpdatedOn = 'November 23, 2026'
 
 export const roadmapStatuses = {
   DONE: { label: 'Done', color: 'success' },
@@ -131,28 +131,58 @@ export const roadmapAreas = [
           'Suggestions start two business days ahead so the homeowner can answer, or on the due date when it is sooner, marked as short notice. The heavy-traffic drive and 10 minutes of pickup are the only buffer. On days without nearby visits, Jorge is suggested first.',
       },
       {
-        title: 'Sent proposals hold their time',
-        status: 'NEXT',
+        title: 'Send to the homeowner',
+        status: 'DONE',
         description:
-          'A proposal sent to a homeowner reserves its time, so the same time is not offered twice and nearby requests can be grouped with it. Each proposal offers two days: the due date and the business day before.',
+          'From the planner the coordinator either books a visit the homeowner already accepted by phone, or emails a proposal with one or two days from their own mailbox. Every email follows the team’s design.',
+      },
+      {
+        title: 'Sent proposals hold their time',
+        status: 'DONE',
+        description:
+          'A proposal sent to a homeowner reserves its days for the technicians, so the same time is not offered twice. The days are listed by date, the earliest first.',
       },
       {
         title: 'Homeowner response',
+        status: 'DONE',
+        description:
+          'Buttons in the email open a page where the homeowner confirms a day, and the visit is booked at once; picks one of up to three other open days for the coordinator to approve; or asks for a call, with the best time and phone. Answers by email or phone are recorded on screen.',
+      },
+      {
+        title: 'Homeowner does not answer',
+        status: 'DONE',
+        description:
+          'After 24 hours the homeowner gets one reminder, sent from 8 AM to 6 PM. After 48 hours the coordinator is emailed to call the Builder’s superintendent. If every offered day passes, the coordinator is told to plan a new day.',
+      },
+      {
+        title: 'Confirmation and visit reminder',
+        status: 'DONE',
+        description:
+          'The confirmation includes a calendar file the homeowner can add with one click, and the business day before the visit, from 3 PM, the homeowner gets a reminder.',
+      },
+      {
+        title: 'Coordinator alerts',
+        status: 'DONE',
+        description:
+          'The coordinator is emailed only when they need to act: the homeowner picked another day or asked for a call, 48 hours passed, or the offered days passed. The request list shows the same labels.',
+      },
+      {
+        title: 'Reschedule a confirmed visit',
         status: 'PLANNED',
         description:
-          'The homeowner accepts a proposal or asks for another time. The coordinator accepts or rejects that counter-proposal.',
+          'Confirmed visits and sent proposals are not cancelled. Moving a confirmed visit, with a notice to the homeowner, will be its own step; until then the coordinator calls the homeowner.',
+      },
+      {
+        title: 'Live emails to homeowners',
+        status: 'NEXT',
+        description:
+          'Today every homeowner email goes to a test inbox. Sending them to real homeowners needs the app’s public address for the email buttons and your approval.',
       },
       {
         title: 'Several requests from one Job in one email',
         status: 'INPUT',
         description:
           'Our proposal: group them into one visit after the coordinator confirms it. Is that right?',
-      },
-      {
-        title: 'Homeowner does not answer',
-        status: 'INPUT',
-        description:
-          'Our proposal: send a reminder 24 hours before, then escalate to the Builder before the due date. Is that right?',
       },
       {
         title: 'Homeowner notes in suggestions',

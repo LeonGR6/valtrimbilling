@@ -171,3 +171,37 @@ test('every client message exists in the migration, word for word', () => {
     assert.ok(sql.includes(message), message)
   }
 })
+
+test('Utility amounts are optional, one per Phase and Lot, with the database wording', () => {
+  const utility = (overrides = {}) => ({
+    phase: '1', lot: '001', amount: 630, page: 1, rect: { x: 0.1, y: 0.3, w: 0.5, h: 0.02 }, ...overrides,
+  })
+  const base = { ...mapping(cell()), layout: 'line_items' }
+  assert.equal(validatePaymentScheduleMapping({ ...base, utilityCells: [utility(), utility({ lot: '002' })] }, 1).success, true)
+  assert.equal(validatePaymentScheduleMapping({ ...base, utilityCells: [utility({ phase: null })] }, 1).success, true)
+  assert.deepEqual(validatePaymentScheduleMapping({ ...base, utilityCells: [] }, 1).errors, [
+    'Map between 1 and 5000 Utility amounts, or leave them out',
+  ])
+  assert.deepEqual(validatePaymentScheduleMapping({ ...base, utilityCells: [utility(), utility()] }, 1).errors, [
+    'Each Phase and Lot can have only one Utility amount',
+  ])
+  assert.equal(validatePaymentScheduleMapping({ ...base, utilityCells: [{ ...utility(), draw: 1 }] }, 1).success, false)
+  assert.deepEqual(validatePaymentScheduleMapping({ ...base, utilityCells: [utility({ page: 2 })] }, 1).errors, [
+    'The Utility amount page is outside the document',
+  ])
+
+  const sql = readFileSync(
+    new URL('../../backend/supabase/migrations/20261230120000_payment_schedule_utility_cells.sql', import.meta.url),
+    'utf8',
+  )
+  for (const message of [
+    'Map between 1 and 5000 Utility amounts, or leave them out',
+    'Each Phase and Lot can have only one Utility amount',
+    'The Utility amount page is outside the document',
+    'Each Utility amount needs an amount with at most two decimals',
+    'Each Utility amount needs a Lot of 1 to 40 characters',
+    'The Utility amount rectangle must stay inside the page',
+  ]) {
+    assert.ok(sql.includes(message), `the database says "${message}" too`)
+  }
+})

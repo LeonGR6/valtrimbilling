@@ -14,6 +14,7 @@ import {
   Typography,
 } from '@mui/material'
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded'
+import AutoAwesomeRoundedIcon from '@mui/icons-material/AutoAwesomeRounded'
 import { loadTemplateAndPdf } from '../../release-templates/services/releaseTemplateLoader.js'
 import { downloadReleasePdf } from '../../release-templates/services/releaseTemplateRepository.js'
 import { listJobLots, listJobPhases } from '../services/paymentScheduleRepository.js'
@@ -50,8 +51,11 @@ export default function PaymentScheduleReviewDialog({
   onClose,
 }) {
   const [loaded, setLoaded] = useState(null)
+  // { message, reason, aiAvailable }: reason 'unrecognized_layout' means no parser knows it.
   const [loadError, setLoadError] = useState(null)
   const [attempt, setAttempt] = useState(0)
+  // The attempt the person asked to read with AI, if any.
+  const [aiAttempt, setAiAttempt] = useState(null)
   const [step, setStep] = useState('analyzing')
   // The template as it was when the dialog opened; later updates arrive through
   // `loaded`, so the opening effect does not depend on changing state.
@@ -64,15 +68,19 @@ export default function PaymentScheduleReviewDialog({
   useEffect(() => {
     let active = true
     if (request.current.attempt !== attempt) {
+      const withAi = aiAttempt === attempt
       request.current = {
         attempt,
-        promise: loadTemplateAndPdf({
+        promise: (withAi
+          ? analyze(document, { force: true, useAi: true })
+          : Promise.resolve(initialTemplate.current)
+        ).then((template) => loadTemplateAndPdf({
           document,
-          template: initialTemplate.current,
+          template,
           analyze,
           download: downloadReleasePdf,
           onStep: setStep,
-        }).then(async (result) => ({
+        })).then(async (result) => ({
           ...result,
           // Without the Job's Phases the review still works; it only cannot
           // offer them.
@@ -85,20 +93,34 @@ export default function PaymentScheduleReviewDialog({
 
     request.current.promise.then(
       (result) => { if (active) setLoaded((current) => current ?? result) },
-      (error) => { if (active) setLoadError(error.message) },
+      (error) => {
+        if (active) {
+          setLoadError({
+            message: error.message,
+            reason: error.reason ?? null,
+            aiAvailable: error.aiAvailable === true,
+          })
+        }
+      },
     )
     return () => {
       active = false
     }
-  }, [analyze, attempt, document, job.id])
+  }, [aiAttempt, analyze, attempt, document, job.id])
 
-  const retry = () => {
+  const retry = ({ withAi = false } = {}) => {
     initialTemplate.current = null
     setLoadError(null)
     setLoaded(null)
-    setStep('analyzing')
+    setStep(withAi ? 'reading-with-ai' : 'analyzing')
+    setAiAttempt(withAi ? attempt + 1 : null)
     setAttempt((current) => current + 1)
   }
+  // Only when no parser knows the layout, the server can call the AI, and the person can
+  // change the schedule.
+  const canReadWithAi = canManage
+    && loadError?.reason === 'unrecognized_layout'
+    && loadError.aiAvailable
 
   const handleConfirm = async (input) => {
     await templateState.confirm(input)
@@ -106,7 +128,9 @@ export default function PaymentScheduleReviewDialog({
   }
 
   const handleReanalyze = async () => {
-    const template = await analyze(document, { force: true })
+    // A schedule the AI read is read with AI again: no parser knows its layout.
+    const useAi = Boolean(loaded?.template?.ai)
+    const template = await analyze(document, { force: true, useAi })
     setLoaded((current) => ({ ...current, template }))
   }
 
@@ -146,23 +170,58 @@ export default function PaymentScheduleReviewDialog({
       </DialogTitle>
 
       {!loaded && !loadError && (
-        <Waiting title={step === 'analyzing' ? 'Analyzing the PDF…' : 'Opening the PDF…'}>
-          {step === 'analyzing'
-            ? 'Finding the Lots and draws of the schedule. This takes a few seconds.'
-            : 'Loading the pages so you can check the amounts.'}
+        <Waiting
+          title={{
+            analyzing: 'Analyzing the PDF…',
+            'reading-with-ai': 'Reading the PDF with AI…',
+          }[step] ?? 'Opening the PDF…'}
+        >
+          {{
+            analyzing: 'Finding the Lots and draws of the schedule. This takes a few seconds.',
+            'reading-with-ai': 'The AI is finding the Lots and draws, then every amount is checked '
+              + 'against the PDF and this Job. This can take a minute or two.',
+          }[step] ?? 'Loading the pages so you can check the amounts.'}
         </Waiting>
       )}
 
       {loadError && (
         <>
           <DialogContent dividers>
-            <Alert severity="error" sx={{ maxWidth: 640, mx: 'auto', mt: 2 }}>
-              {loadError}
-            </Alert>
+            <Stack spacing={2} sx={{ maxWidth: 640, mx: 'auto', mt: 2 }}>
+              <Alert severity="error">{loadError.message}</Alert>
+              {canReadWithAi && (
+                <Alert severity="info" icon={<AutoAwesomeRoundedIcon />}>
+                  <Typography variant="body2" fontWeight={750} gutterBottom>
+                    Read this layout with AI
+                  </Typography>
+                  <Typography variant="body2">
+                    The AI gets the text of this PDF and this Job&apos;s draws, Lots, Plans and
+                    prices (sent to Mistral), and points at the amount of each Lot and draw. Every
+                    amount is then checked against the PDF and the Job: the price of each Plan, the
+                    Billing Setup percentages and the Utility split by Phase. Nothing is used until
+                    you check the highlights and confirm.
+                  </Typography>
+                </Alert>
+              )}
+            </Stack>
           </DialogContent>
           <DialogActions sx={{ px: 3, py: 1.5 }}>
             <Button onClick={onClose}>Close</Button>
-            <Button variant="contained" onClick={retry}>Try again</Button>
+            <Button
+              variant={canReadWithAi ? 'text' : 'contained'}
+              onClick={() => retry()}
+            >
+              Try again
+            </Button>
+            {canReadWithAi && (
+              <Button
+                variant="contained"
+                startIcon={<AutoAwesomeRoundedIcon />}
+                onClick={() => retry({ withAi: true })}
+              >
+                Read it with AI
+              </Button>
+            )}
           </DialogActions>
         </>
       )}

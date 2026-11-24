@@ -34,6 +34,18 @@ export interface ScheduleCell {
   rect: ScheduleRect;
 }
 
+// A Utility amount the schedule prints on a Lot: the Lot's share of its Phase's
+// utility building. Not a draw: a Package bills the Utility by Phase and event and
+// highlights every Utility amount of the Phase. Must match the utilityCells of
+// private.validate_payment_schedule_mapping().
+export interface ScheduleUtilityCell {
+  phase: string | null;
+  lot: string;
+  amount: number;
+  page: number;
+  rect: ScheduleRect;
+}
+
 export interface ScheduleDraw {
   draw: number;
   name: string | null;
@@ -62,7 +74,14 @@ export type ScheduleIssueCode =
   | "grand_total_mismatch"
   | "duplicate_cell"
   | "unrecognized_row"
-  | "missing_total";
+  | "missing_total"
+  // Checks of a schedule read with AI against the Job itself.
+  | "unknown_lot"
+  | "missing_draw"
+  | "price_mismatch"
+  | "percentage_mismatch"
+  | "utility_mismatch"
+  | "missing_lots";
 
 export interface ScheduleIssue {
   code: ScheduleIssueCode;
@@ -95,6 +114,8 @@ export interface ParsedSchedule {
   // in cents. A schedule that splits each Lot's price into draws by percentage rounds
   // every draw, so the draws can add up a cent away from the price. Zero when absent.
   totalToleranceCents?: number;
+  // Utility amounts printed per Lot, when the layout has them.
+  utilityCells?: ScheduleUtilityCell[];
 }
 
 export interface ScheduleRow {

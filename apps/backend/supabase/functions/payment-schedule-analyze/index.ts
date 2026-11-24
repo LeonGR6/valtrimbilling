@@ -3,7 +3,13 @@
 // stores the result as a `needs_review` template; a person confirms the cells
 // later through the confirm_payment_schedule_template RPC.
 //
-// POST body: { job_document_id: uuid, force?: boolean }
+// POST body: { job_document_id: uuid, force?: boolean, use_ai?: boolean }
+//
+// `use_ai` is the person's explicit request to read a layout no parser knows with
+// AI (implies `force`). The parsers still run first; only when they fail are the
+// text of the PDF and the Job's draws, Lots, Plans and prices sent to the model
+// (Mistral, MISTRAL_API_KEY). The model only points at printed amounts and every
+// answer is checked against the PDF and the Job (paymentScheduleAiVerify.ts).
 //
 // `force` on a template that is already confirmed refreshes what was detected
 // (cells, draws, summary rows) and leaves its status and confirmed cells alone, so
@@ -17,7 +23,16 @@
 // Nothing from the document is logged. Errors are logged by class and code only.
 
 import { handlePreflight, json } from '../_shared/cors.ts'
-import { analyzePaymentSchedulePdf } from '../_shared/paymentScheduleAnalysis.ts'
+import {
+  analyzePaymentScheduleContent,
+  analyzePaymentScheduleWithAi,
+  readPaymentSchedulePdf,
+} from '../_shared/paymentScheduleAnalysis.ts'
+import {
+  type AiJobContext,
+  mistralScheduleReader,
+  PaymentScheduleAiError,
+} from '../_shared/paymentScheduleAi.ts'
 import { templateAnalysisColumns } from '../_shared/paymentScheduleRecord.ts'
 import { type DrawName, PaymentScheduleError } from '../_shared/paymentScheduleTypes.ts'
 import { decideAnalysis, type AnalysisStatus } from '../_shared/releaseAnalysisState.ts'
@@ -81,9 +96,19 @@ async function authorizeUser(req: Request) {
   return { kind: 'allowed' as const, caller, userId: user.id }
 }
 
+function aiApiKey() {
+  return Deno.env.get('MISTRAL_API_KEY')?.trim() || null
+}
+
 function describeFailure(error: unknown) {
-  if (error instanceof ReleasePdfError || error instanceof PaymentScheduleError) {
+  if (error instanceof PaymentScheduleError) {
+    return { status: 422, message: error.message, log: error.name, reason: error.reason }
+  }
+  if (error instanceof ReleasePdfError) {
     return { status: 422, message: error.message, log: error.name }
+  }
+  if (error instanceof PaymentScheduleAiError) {
+    return { status: 502, message: error.message, log: error.name }
   }
 
   // Class name and database code only: an error object can carry row data.
@@ -148,15 +173,106 @@ async function loadDrawNames(db: AdminClient, jobId: number): Promise<DrawName[]
   }
 }
 
-/** Downloads the PDF of a Job document and reads its Lots and draws. */
+/**
+ * What the AI is told about the Job, and what its answer is checked against: the
+ * draws of the Billing Setup with their percentages, and every Lot with its Phase,
+ * Plan and price. A utility building is a Lot whose price the Phase's Lots share.
+ */
+async function loadAiJobContext(db: AdminClient, jobId: number): Promise<AiJobContext> {
+  const { data: job, error: jobError } = await db
+    .from('jobs')
+    .select('billing_setup_version_id')
+    .eq('id', jobId)
+    .maybeSingle()
+  if (jobError) throw jobError
+
+  const [draws, lots, phases, plans] = await Promise.all([
+    job?.billing_setup_version_id
+      ? db.from('billing_draws')
+        .select('draw_number, name, percentage')
+        .eq('setup_version_id', job.billing_setup_version_id)
+      : Promise.resolve({ data: [], error: null }),
+    db.from('lots')
+      .select('lot_number, phase_id, plan_id, plan_price_id, is_utility_building, utility_name')
+      .eq('job_id', jobId),
+    db.from('phases').select('id, code, is_active').eq('job_id', jobId),
+    db.from('plans').select('id, code').eq('job_id', jobId),
+  ])
+  const failure = draws.error ?? lots.error ?? phases.error ?? plans.error
+  if (failure) throw failure
+
+  const planIds = (plans.data ?? []).map((plan) => plan.id)
+  const { data: prices, error: pricesError } = planIds.length === 0
+    ? { data: [], error: null }
+    : await db.from('plan_prices')
+      .select('id, plan_id, base_price, effective_to')
+      .in('plan_id', planIds)
+  if (pricesError) throw pricesError
+
+  const toCents = (value: unknown) =>
+    value === null || value === undefined || value === '' ? null : Math.round(Number(value) * 100)
+  const priceById = new Map((prices ?? []).map((price) => [price.id, toCents(price.base_price)]))
+  // A Lot without a price of its own takes the current price of its Plan.
+  const currentByPlan = new Map(
+    (prices ?? []).filter((price) => price.effective_to === null)
+      .map((price) => [price.plan_id, toCents(price.base_price)]),
+  )
+  const planCode = new Map((plans.data ?? []).map((plan) => [plan.id, plan.code]))
+  const activePhases = new Map(
+    (phases.data ?? []).filter((phase) => phase.is_active).map((phase) => [phase.id, phase.code]),
+  )
+
+  return {
+    draws: (draws.data ?? []).map((draw) => ({
+      draw: draw.draw_number,
+      name: draw.name,
+      percentage: draw.percentage === null ? null : Number(draw.percentage),
+    })),
+    lots: (lots.data ?? [])
+      .filter((lot) => activePhases.has(lot.phase_id) && lot.lot_number)
+      .map((lot) => ({
+        phase: activePhases.get(lot.phase_id)!,
+        lot: lot.lot_number,
+        plan: planCode.get(lot.plan_id) ?? null,
+        priceCents: (lot.plan_price_id ? priceById.get(lot.plan_price_id) : undefined) ??
+          currentByPlan.get(lot.plan_id) ?? null,
+        utility: lot.is_utility_building === true,
+      })),
+  }
+}
+
+/**
+ * Downloads the PDF of a Job document and reads its Lots and draws. With `useAi`,
+ * a layout no parser knows is read with AI instead of failing.
+ */
 async function analyzeDocument(
   db: AdminClient,
   document: { job_id: number; storage_bucket: string; storage_path: string },
+  { useAi = false }: { useAi?: boolean } = {},
 ) {
   const bytes = await downloadPdf(db, document)
-  return await analyzePaymentSchedulePdf(bytes, {
-    drawNames: await loadDrawNames(db, document.job_id),
-  })
+  const content = await readPaymentSchedulePdf(bytes)
+  try {
+    return analyzePaymentScheduleContent(content, {
+      drawNames: await loadDrawNames(db, document.job_id),
+    })
+  } catch (error) {
+    if (!useAi || !(error instanceof PaymentScheduleError) || error.reason !== 'unrecognized_layout') {
+      throw error
+    }
+    const apiKey = aiApiKey()
+    if (!apiKey) {
+      throw new PaymentScheduleAiError('Reading with AI is not set up on the server.')
+    }
+    return await analyzePaymentScheduleWithAi(
+      content,
+      await loadAiJobContext(db, document.job_id),
+      mistralScheduleReader({
+        apiKey,
+        model: Deno.env.get('PAYMENT_SCHEDULE_AI_MODEL') ?? undefined,
+      }),
+    )
+  }
 }
 
 async function markFailed(db: AdminClient, templateId: string, message: string) {
@@ -187,6 +303,8 @@ Deno.serve(async (req) => {
     }
 
     const body = await req.json().catch(() => null)
+    const useAi = body?.use_ai === true
+    const force = body?.force === true || useAi
     const documentId = body?.job_document_id
     if (typeof documentId !== 'string' || !UUID_PATTERN.test(documentId)) {
       return json({ error: 'Select a valid Job document.' }, 400)
@@ -217,8 +335,8 @@ Deno.serve(async (req) => {
 
     // A confirmed schedule is refreshed in place: nothing is claimed, so a failure
     // cannot take it out of service.
-    if (existing?.status === 'confirmed' && body?.force === true) {
-      const refreshed = await analyzeDocument(db, document)
+    if (existing?.status === 'confirmed' && force) {
+      const refreshed = await analyzeDocument(db, document, { useAi })
       // Status, error and the confirmed cells are not part of a refresh.
       const { status: _status, error: _error, ...detected } = templateAnalysisColumns(refreshed)
       const { data: saved, error: saveError } = await db
@@ -234,7 +352,7 @@ Deno.serve(async (req) => {
 
     const decision = decideAnalysis(
       existing ? { status: existing.status, updatedAt: existing.updated_at } : null,
-      { force: body?.force === true, now: Date.now() },
+      { force, now: Date.now() },
     )
     if (decision === 'return_existing') return json({ template: existingRow, reused: true })
     if (decision === 'in_progress') {
@@ -275,7 +393,7 @@ Deno.serve(async (req) => {
     }
     claimedId = asTemplateRow(claim.data)!.id
 
-    const analysis = await analyzeDocument(db, document)
+    const analysis = await analyzeDocument(db, document, { useAi })
 
     const { data: saved, error: saveError } = await db
       .from('payment_schedule_templates')
@@ -292,6 +410,13 @@ Deno.serve(async (req) => {
     const template = db && claimedId
       ? await markFailed(db, claimedId, failure.message).catch(() => null)
       : null
-    return json({ error: failure.message, template }, failure.status)
+    return json({
+      error: failure.message,
+      template,
+      // The parsers do not know this layout: the screen can offer to read it with AI.
+      ...(failure.reason === 'unrecognized_layout'
+        ? { reason: failure.reason, ai_available: aiApiKey() !== null }
+        : {}),
+    }, failure.status)
   }
 })

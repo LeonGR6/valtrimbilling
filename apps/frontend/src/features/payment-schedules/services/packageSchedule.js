@@ -52,6 +52,33 @@ export function packageScheduleLines(record) {
   })
 }
 
+/**
+ * The Utility a Package bills, one entry per Phase: a Package bills the Utility building
+ * of a Phase by Calendar event (EXT, DM, HW), so one Phase may have several lines.
+ * `billed` is what the Package bills of it, `price` the building's whole price.
+ */
+export function packageUtilityLines(record) {
+  const phases = new Map()
+  for (const line of record?.persistedUtilityLines ?? []) {
+    const phase = line.phaseCode ?? ''
+    const entry = phases.get(phase) ?? {
+      phase,
+      label: line.utilityLabel ?? 'Utility',
+      events: [],
+      billedCents: 0,
+      priceCents: toCents(line.basePrice ?? 0),
+    }
+    entry.billedCents += toCents(line.utilityAmount ?? 0)
+    if (line.eventType && !entry.events.includes(line.eventType)) entry.events.push(line.eventType)
+    phases.set(phase, entry)
+  }
+  return [...phases.values()].map(({ billedCents, priceCents, ...entry }) => ({
+    ...entry,
+    billed: billedCents / 100,
+    price: priceCents / 100,
+  }))
+}
+
 function byNewestConfirmation(left, right) {
   return Date.parse(right.confirmedAt ?? 0) - Date.parse(left.confirmedAt ?? 0)
 }
@@ -87,7 +114,7 @@ export function cellBasis(line, cell) {
   return gross ? 'gross' : net ? 'net' : null
 }
 
-export function matchPackageToSchedules(lines, templates) {
+export function matchPackageToSchedules(lines, templates, utilityLines = []) {
   const indexed = [...templates].sort(byNewestConfirmation).map((template) => {
     const exact = new Map()
     const anyPhase = new Map()
@@ -132,12 +159,47 @@ export function matchPackageToSchedules(lines, templates) {
     }
   }
 
+  // The Utility of a Phase: every Utility amount the schedule prints for that Phase is
+  // highlighted, whatever part of it the Package bills (one Calendar event, or all).
+  const utility = []
+  const utilityUnmatched = []
+  for (const line of utilityLines) {
+    const phase = normalizeCodeKey(line.phase)
+    let found = null
+    for (const { template } of indexed) {
+      const cells = (template.mapping?.utilityCells ?? [])
+        .filter((cell) => phase !== '' && normalizeCodeKey(cell.phase ?? '') === phase)
+      if (cells.length > 0) {
+        found = { template, cells }
+        break
+      }
+    }
+    if (!found) {
+      utilityUnmatched.push(line)
+      continue
+    }
+    const printedCents = found.cells.reduce((total, cell) => total + toCents(cell.amount), 0)
+    utility.push({
+      line,
+      template: found.template,
+      cells: found.cells,
+      printed: printedCents / 100,
+      // Billing the whole building, or the part one or more events stand for.
+      whole: toCents(line.billed) === printedCents,
+    })
+  }
+
   const sources = indexed
     .map(({ template }) => {
       const own = matches.filter((match) => match.template === template)
+      const ownUtility = utility.filter((match) => match.template === template)
       return {
         template,
-        cells: own.map((match) => match.cell),
+        cells: [
+          ...own.map((match) => match.cell),
+          ...ownUtility.flatMap((match) => match.cells),
+        ],
+        utilityCount: ownUtility.reduce((count, match) => count + match.cells.length, 0),
         // Whether the schedule prints gross prices or net amounts, from its own cells.
         ...(({ basis, mixed }) => ({ basis, mixed }))(scheduleBasis(own)),
       }
@@ -149,6 +211,8 @@ export function matchPackageToSchedules(lines, templates) {
     unmatched,
     sources,
     differing: matches.filter((match) => !match.amountsAgree),
+    utility,
+    utilityUnmatched,
   }
 }
 
@@ -384,15 +448,34 @@ export function describeOver(row) {
 
 /** What the dialog says about a plan: how much will be highlighted and what needs a look. */
 export function describeSchedulePlan(plan, lineCount) {
-  const warnings = plan.differing.length + plan.unmatched.length
+  const utility = plan.utility ?? []
+  const warnings = plan.differing.length + plan.unmatched.length + (plan.utilityUnmatched?.length ?? 0)
   return {
     highlighted: plan.matches.length,
     lineCount,
+    // Utility amounts highlighted, all Phases together.
+    utilityHighlighted: utility.reduce((count, match) => count + match.cells.length, 0),
     sourceCount: plan.sources.length,
     warnings,
     // Nothing to highlight: the Package is not in any of the schedules.
-    canGenerate: plan.matches.length > 0,
+    canGenerate: plan.matches.length > 0 || utility.length > 0,
   }
+}
+
+/** What the review says about the Utility of one Phase the Package bills. */
+export function describeUtilityMatch(match) {
+  const count = match.cells.length
+  const lots = `${count} Utility ${count === 1 ? 'amount' : 'amounts'}`
+  const phase = match.line.phase ? `Phase ${match.line.phase}` : match.line.label
+  return match.whole
+    ? `${phase}: this Package bills the whole Utility, ${formatMoney(match.line.billed)}; its ${lots} are highlighted.`
+    : `${phase}: this Package bills ${formatMoney(match.line.billed)}${
+      match.line.events.length > 0 ? ` (${match.line.events.join(', ')})` : ''
+    } of the ${formatMoney(match.printed)} the schedule prints; its ${lots} are highlighted.`
+}
+
+export function describeUnmatchedUtility(line) {
+  return `${line.phase ? `Phase ${line.phase} · ` : ''}${line.label} · Utility ${formatMoney(line.billed)}`
 }
 
 export function describeDifference(match) {

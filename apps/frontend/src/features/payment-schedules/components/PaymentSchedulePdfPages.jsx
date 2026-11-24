@@ -101,6 +101,35 @@ function SummaryBoxes({ summaryRows, page, pixelSize }) {
   ))
 }
 
+// The Utility amounts the schedule keeps: shown in their own color, not editable one by one.
+function UtilityBoxes({ utilityCells, page, pixelSize }) {
+  const theme = useTheme()
+  return (utilityCells ?? [])
+    .filter((cell) => cell.page === page)
+    .map((cell) => {
+      const box = rectToPixels(cell.rect, pixelSize)
+      return (
+        <Box
+          key={`utility-${cell.phase ?? ''}-${cell.lot}`}
+          title={`Utility · Lot ${cell.lot} · ${formatMoney(cell.amount)}`}
+          sx={{
+            position: 'absolute',
+            left: box.x,
+            top: box.y,
+            width: box.width,
+            height: box.height,
+            boxSizing: 'border-box',
+            border: `1px solid ${theme.palette.success.main}`,
+            bgcolor: alpha(theme.palette.success.main, 0.22),
+            mixBlendMode: 'multiply',
+            borderRadius: '2px',
+            pointerEvents: 'none',
+          }}
+        />
+      )
+    })
+}
+
 export default function PaymentSchedulePdfPages({
   file,
   template,
@@ -109,6 +138,7 @@ export default function PaymentSchedulePdfPages({
   selectedKey,
   selectedLotId,
   summaryRows = null,
+  utilityCells = null,
   onSelectCell,
 }) {
   const containerRef = useRef(null)
@@ -186,6 +216,11 @@ export default function PaymentSchedulePdfPages({
                   loading={<Box sx={{ width: pageWidth, height: pageHeight }} />}
                 />
                 <Box sx={{ position: 'absolute', inset: 0 }}>
+                  <UtilityBoxes
+                    utilityCells={utilityCells}
+                    page={pageSize.page}
+                    pixelSize={pixelSize}
+                  />
                   <SummaryBoxes
                     summaryRows={summaryRows}
                     page={pageSize.page}

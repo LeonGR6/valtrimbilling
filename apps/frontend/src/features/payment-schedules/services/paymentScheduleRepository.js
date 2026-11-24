@@ -1,6 +1,6 @@
 import { requireSupabase } from '../../../services/api.js'
 import { toPaymentScheduleTemplate } from './paymentScheduleRecord.js'
-import { functionErrorMessage } from '../../../services/functionErrors.js'
+import { functionErrorMessage, functionErrorPayload } from '../../../services/functionErrors.js'
 
 const ANALYZE_FUNCTION = 'payment-schedule-analyze'
 
@@ -68,14 +68,26 @@ export async function listPaymentScheduleTemplates(documentIds) {
   )
 }
 
-export async function analyzePaymentSchedule(documentId, { force = false } = {}) {
+/**
+ * Analyzes a Payment Schedule document. `useAi` is the person's request to read a layout no
+ * parser knows with AI. A failure carries `reason` ('unrecognized_layout' when no parser knows
+ * the layout) and `aiAvailable`, so the screen can offer to read it with AI.
+ */
+export async function analyzePaymentSchedule(documentId, { force = false, useAi = false } = {}) {
   const client = await requireSupabase()
   const { data, error } = await client.functions.invoke(ANALYZE_FUNCTION, {
-    body: { job_document_id: documentId, force },
+    body: { job_document_id: documentId, force, ...(useAi ? { use_ai: true } : {}) },
   })
 
   if (error || data?.error) {
-    throw new Error(await functionErrorMessage(error, data, 'The Payment Schedule analysis failed.'), { cause: error })
+    const failure = new Error(
+      await functionErrorMessage(error, data, 'The Payment Schedule analysis failed.'),
+      { cause: error },
+    )
+    const payload = await functionErrorPayload(error, data)
+    failure.reason = payload?.reason ?? null
+    failure.aiAvailable = payload?.ai_available === true
+    throw failure
   }
   return toPaymentScheduleTemplate(data.template)
 }

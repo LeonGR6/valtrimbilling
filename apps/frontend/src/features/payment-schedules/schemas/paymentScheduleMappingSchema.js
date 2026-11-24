@@ -1,6 +1,7 @@
 import { z } from 'zod'
 
-// Client-side twin of private.validate_payment_schedule_mapping(). The database
+// Client-side twin of private.validate_payment_schedule_mapping() (with its draw part,
+// private.validate_payment_schedule_draw_mapping()). The database
 // is the authority; this gives the reviewer the same answers before saving.
 // Messages match the database wording.
 
@@ -92,6 +93,23 @@ export function createPaymentScheduleMappingSchema(pageCount) {
     })
     .strict()
 
+  // A Utility amount is a cell without a draw: one per Phase and Lot.
+  const utilityCell = z
+    .object({
+      phase: text('A Utility amount Phase must be empty or 1 to 40 characters').nullable(),
+      lot: text('Each Utility amount needs a Lot of 1 to 40 characters'),
+      amount: finite.refine(
+        (amount) => amount >= 0 && amount <= MAX_AMOUNT && hasTwoDecimalsAtMost(amount),
+        { message: 'Each Utility amount needs an amount with at most two decimals' },
+      ),
+      page: finite.refine(
+        (page) => Number.isInteger(page) && page >= 1 && page <= pageCount,
+        { message: 'The Utility amount page is outside the document' },
+      ),
+      rect: createRectSchema('Utility amount'),
+    })
+    .strict()
+
   return z
     .object({
       version: z.literal(1),
@@ -111,9 +129,24 @@ export function createPaymentScheduleMappingSchema(pageCount) {
           'The summary rows need a previouslyInvoiced or a thisRequest list',
         )
         .optional(),
+      utilityCells: z
+        .array(utilityCell)
+        .min(1, `Map between 1 and ${MAX_CELLS} Utility amounts, or leave them out`)
+        .max(MAX_CELLS, `Map between 1 and ${MAX_CELLS} Utility amounts, or leave them out`)
+        .optional(),
     })
     .strict()
     .superRefine((mapping, context) => {
+      if (mapping.utilityCells) {
+        const utilityKeys = new Set(mapping.utilityCells.map((cell) => `${cell.phase ?? ''}|${cell.lot}`))
+        if (utilityKeys.size !== mapping.utilityCells.length) {
+          context.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: 'Each Phase and Lot can have only one Utility amount',
+          })
+        }
+      }
+
       if (mapping.summaryRows && mapping.layout !== 'matrix') {
         context.addIssue({
           code: z.ZodIssueCode.custom,

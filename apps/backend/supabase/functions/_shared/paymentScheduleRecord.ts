@@ -22,6 +22,24 @@ export function templateAnalysisColumns(analysis: PaymentScheduleAnalysis) {
       foundTotal: centsToDollars(analysis.foundTotalCents),
       // Rounding the schedule's own draws carry, so a cent apart is not a mismatch.
       totalTolerance: centsToDollars(analysis.totalToleranceCents ?? 0),
+      // Utility amounts printed per Lot, offered to the reviewer like the draw cells.
+      ...(analysis.utilityCells?.length ? { utilityCells: analysis.utilityCells } : {}),
+      // Only for a schedule the AI read: the reviewer is told so, with what was checked.
+      ...(analysis.ai
+        ? {
+          ai: {
+            model: analysis.ai.model,
+            notes: analysis.ai.notes,
+            lotsChecked: analysis.ai.lotsChecked,
+            lotsMatchingPrice: analysis.ai.lotsMatchingPrice,
+            utility: analysis.ai.utility && {
+              count: analysis.ai.utility.count,
+              matching: analysis.ai.utility.matching,
+              total: centsToDollars(analysis.ai.utility.totalCents),
+            },
+          },
+        }
+        : {}),
     },
     status: "needs_review" as const,
     error: null,

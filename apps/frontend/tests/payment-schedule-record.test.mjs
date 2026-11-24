@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
+  describeAiReading,
+  initialUtilityCells,
+  summarizeUtilityCells,
   applyPhaseMap,
   describeLotPhases,
   buildMapping,
@@ -350,4 +353,61 @@ test('what the Lots say lists each Phase, the Lots in several and the ones the J
   ])
   assert.deepEqual(found.several, ['02'])
   assert.deepEqual(found.unknown, ['55'])
+})
+
+test('a schedule read with AI says so, with what the checks against the Job found', () => {
+  assert.equal(describeAiReading({ ai: null }), null)
+  assert.equal(describeAiReading(toPaymentScheduleTemplate({ id: 't', job_document_id: 'd', analysis: {} })), null)
+
+  const template = toPaymentScheduleTemplate({
+    id: 't',
+    job_document_id: 'd',
+    status: 'needs_review',
+    analysis: {
+      ai: {
+        model: 'mistral-large-latest',
+        notes: ['One purchase order per Lot and activity.'],
+        lotsChecked: 28,
+        lotsMatchingPrice: 19,
+        utility: { count: 28, matching: 28, total: 15750 },
+      },
+    },
+  })
+  const reading = describeAiReading(template)
+  assert.equal(reading.model, 'mistral-large-latest')
+  assert.deepEqual(reading.checks, [
+    '19 of 28 Lots add up to the price of their Plan in the Job.',
+    '28 Utility amounts ($15,750.00) match the utility building of their Phase split among its Lots.',
+    'A Package that bills the Utility of a Phase highlights these amounts.',
+  ])
+  assert.deepEqual(reading.notes, ['One purchase order per Lot and activity.'])
+
+  const allGood = describeAiReading({ ai: { lotsChecked: 4, lotsMatchingPrice: 4, utility: null } })
+  assert.deepEqual(allGood.checks, ['All 4 Lots add up to the price of their Plan in the Job.'])
+})
+
+test('all issues can be shown at once', () => {
+  const many = Array.from({ length: 12 }, (_, index) => ({ code: 'price_mismatch', message: String(index) }))
+  assert.deepEqual(
+    [visibleIssues(many, { all: true }).shown.length, visibleIssues(many, { all: true }).hidden],
+    [12, 0],
+  )
+})
+
+test('Utility amounts start from the confirmed ones, else what was found, and are summed by Phase', () => {
+  const rect = { x: 0.1, y: 0.2, w: 0.5, h: 0.02 }
+  const found = [{ phase: null, lot: '001', amount: 630, page: 1, rect }, { lot: '006', amount: 525, page: 2, rect }]
+  const template = toPaymentScheduleTemplate({ id: 't', job_document_id: 'd', analysis: { utilityCells: found } })
+  assert.equal(template.utilityCells.length, 2)
+  assert.deepEqual(initialUtilityCells(template).map((cell) => cell.phase), [null, null])
+  assert.deepEqual(initialUtilityCells({ ...template, mapping: { utilityCells: [found[0]] } }).length, 1)
+  assert.deepEqual(initialUtilityCells({ utilityCells: [] }), [])
+
+  assert.deepEqual(summarizeUtilityCells([
+    { phase: '1', amount: 630 }, { phase: '1', amount: 630 }, { phase: '2', amount: 525 },
+  ]), [{ phase: '1', count: 2, total: 1260 }, { phase: '2', count: 1, total: 525 }])
+
+  const withUtility = buildMapping('line_items', [], null, [{ ...found[0], phase: '1', key: 'x' }])
+  assert.deepEqual(withUtility.utilityCells, [{ phase: '1', lot: '001', amount: 630, page: 1, rect }])
+  assert.equal('utilityCells' in buildMapping('line_items', [], null, []), false)
 })

@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import {
   Alert,
   Box,
@@ -17,9 +18,11 @@ import {
   Typography,
 } from '@mui/material'
 import RestoreRoundedIcon from '@mui/icons-material/RestoreRounded'
+import AutoAwesomeRoundedIcon from '@mui/icons-material/AutoAwesomeRounded'
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
 import { formatLotRange } from '../../draw-invoice/utils/drawPackages.js'
 import {
+  describeAiReading,
   describeIssue,
   describeLotPhases,
   describeTotals,
@@ -30,6 +33,7 @@ import {
   normalizeCodeKey,
   PHASE_BY_LOT,
   printedPhases,
+  summarizeUtilityCells,
   summarizeCells,
   visibleIssues,
 } from '../services/paymentScheduleRecord.js'
@@ -125,6 +129,10 @@ export default function PaymentScheduleSummaryPanel({
   onRestoreAll,
   onPhaseChange,
   onAcknowledgeChange,
+  utilityCells = [],
+  foundUtilityCount = 0,
+  keepUtility = true,
+  onKeepUtilityChange,
 }) {
   const layout = LAYOUTS[template.layout]
   const summary = summarizeCells(activeCells)
@@ -134,7 +142,9 @@ export default function PaymentScheduleSummaryPanel({
     foundTotal: summary.total,
     tolerance: template.totalTolerance,
   })
-  const { shown, hidden } = visibleIssues(template.issues)
+  const [showAllIssues, setShowAllIssues] = useState(false)
+  const { shown, hidden } = visibleIssues(template.issues, { all: showAllIssues })
+  const aiReading = describeAiReading(template)
   const rows = lotRows(cells)
   const drawNumbers = [...new Set(cells.map((cell) => cell.draw))].sort((a, b) => a - b)
   const selectedCell = cells.find((cell) => cell.key === selectedKey) ?? null
@@ -146,6 +156,29 @@ export default function PaymentScheduleSummaryPanel({
 
   return (
     <Stack spacing={2.5}>
+      {aiReading && (
+        <Alert severity="info" icon={<AutoAwesomeRoundedIcon />}>
+          <Typography variant="body2" fontWeight={750}>
+            {aiReading.title}{aiReading.model ? ` · ${aiReading.model}` : ''}
+          </Typography>
+          <Typography variant="body2" sx={{ mb: aiReading.checks.length > 0 ? 0.75 : 0 }}>
+            {aiReading.text}
+          </Typography>
+          {[...aiReading.checks, ...aiReading.notes].length > 0 && (
+            <Stack component="ul" spacing={0.25} sx={{ m: 0, pl: 2 }}>
+              {aiReading.checks.map((line) => (
+                <Typography component="li" variant="body2" key={`check-${line}`}>{line}</Typography>
+              ))}
+              {aiReading.notes.map((line) => (
+                <Typography component="li" variant="body2" color="text.secondary" key={`note-${line}`}>
+                  AI: {line}
+                </Typography>
+              ))}
+            </Stack>
+          )}
+        </Alert>
+      )}
+
       <Section title="What was found">
         <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: 'wrap' }}>
           <Chip size="small" color="primary" label={`${layout?.label ?? 'Unknown'} layout`} />
@@ -169,11 +202,51 @@ export default function PaymentScheduleSummaryPanel({
               </Alert>
             ))}
             {hidden > 0 && (
-              <Typography variant="caption" color="text.secondary">
-                and {hidden} more.
-              </Typography>
+              <Button size="small" sx={{ alignSelf: 'flex-start' }} onClick={() => setShowAllIssues(true)}>
+                Show {hidden} more
+              </Button>
             )}
           </Stack>
+        </Section>
+      )}
+
+      {foundUtilityCount > 0 && (
+        <Section title="Utility">
+          <Typography variant="body2" color="text.secondary">
+            The schedule prints {foundUtilityCount} Utility{' '}
+            {foundUtilityCount === 1 ? 'amount' : 'amounts'} (green). A Package that bills the
+            Utility of a Phase highlights all of that Phase&apos;s Utility amounts.
+          </Typography>
+          {keepUtility && utilityCells.length > 0 && (
+            <Table size="small" aria-label="Utility amounts per Phase">
+              <TableHead>
+                <TableRow>
+                  <TableCell>Phase</TableCell>
+                  <TableCell align="right">Lots</TableCell>
+                  <TableCell align="right">Total</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {summarizeUtilityCells(utilityCells).map((entry) => (
+                  <TableRow key={entry.phase || 'none'}>
+                    <TableCell>{entry.phase || 'No Phase'}</TableCell>
+                    <TableCell align="right">{entry.count}</TableCell>
+                    <TableCell align="right">{formatMoney(entry.total)}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+          <FormControlLabel
+            disabled={readOnly}
+            control={(
+              <Checkbox
+                checked={keepUtility}
+                onChange={(event) => onKeepUtilityChange?.(event.target.checked)}
+              />
+            )}
+            label="Keep the Utility amounts"
+          />
         </Section>
       )}
 
@@ -368,7 +441,7 @@ export default function PaymentScheduleSummaryPanel({
         </Alert>
       )}
 
-      {template.issues.length > 0 && !readOnly && (
+      {(template.issues.length > 0 || aiReading) && !readOnly && (
         <>
           <Divider />
           <FormControlLabel

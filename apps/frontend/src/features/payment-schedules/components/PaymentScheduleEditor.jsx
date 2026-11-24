@@ -17,6 +17,7 @@ import {
   initialCells,
   initialPhaseMap,
   initialSummaryRows,
+  initialUtilityCells,
   lotPhaseIndex,
   unmatchedPhases,
 } from '../services/paymentScheduleRecord.js'
@@ -52,6 +53,9 @@ export default function PaymentScheduleEditor({
   // Package fills them.
   const summaryRows = useMemo(() => initialSummaryRows(template), [template])
   const [fillSummary, setFillSummary] = useState(true)
+  // Utility amounts printed per Lot, and whether the schedule keeps them.
+  const [utilityCells] = useState(() => initialUtilityCells(template))
+  const [keepUtility, setKeepUtility] = useState(true)
   const [saving, setSaving] = useState(false)
   const [reanalyzing, setReanalyzing] = useState(false)
   const [error, setError] = useState(null)
@@ -67,16 +71,28 @@ export default function PaymentScheduleEditor({
     () => (jobPhaseCodes.length > 0 ? unmatchedPhases(cells, phaseMap, jobPhaseCodes) : []),
     [cells, jobPhaseCodes, phaseMap],
   )
+  // Stored under the Job Phase of their Lot, like the draw cells.
+  const activeUtilityCells = useMemo(
+    () => (keepUtility ? applyPhaseMap(utilityCells, phaseMap, lotPhases) : []),
+    [keepUtility, lotPhases, phaseMap, utilityCells],
+  )
   const mapping = useMemo(
-    () => buildMapping(template.layout, activeCells, fillSummary ? summaryRows : null),
-    [activeCells, fillSummary, summaryRows, template.layout],
+    () => buildMapping(
+      template.layout,
+      activeCells,
+      fillSummary ? summaryRows : null,
+      activeUtilityCells,
+    ),
+    [activeCells, activeUtilityCells, fillSummary, summaryRows, template.layout],
   )
   const validation = useMemo(
     () => validatePaymentScheduleMapping(mapping, template.pageCount),
     [mapping, template.pageCount],
   )
-  // A confirmed template was already checked; its warnings need no new tick.
-  const needsAcknowledgement = template.issues.length > 0 && template.status !== 'confirmed'
+  // A confirmed template was already checked; its warnings need no new tick. What the AI
+  // read is always ticked, issues or not.
+  const needsAcknowledgement = (template.issues.length > 0 || Boolean(template.ai))
+    && template.status !== 'confirmed'
   const canConfirm = !readOnly
     && !busy
     && validation.success
@@ -140,6 +156,7 @@ export default function PaymentScheduleEditor({
               selectedKey={selectedKey}
               selectedLotId={selectedLotId}
               summaryRows={fillSummary ? summaryRows : null}
+              utilityCells={keepUtility ? utilityCells : null}
               onSelectCell={selectCell}
             />
           </Box>
@@ -186,6 +203,10 @@ export default function PaymentScheduleEditor({
                 fillSummary={fillSummary}
                 onFillSummaryChange={setFillSummary}
                 onSearchSummary={handleReanalyze}
+                utilityCells={activeUtilityCells}
+                foundUtilityCount={utilityCells.length}
+                keepUtility={keepUtility}
+                onKeepUtilityChange={setKeepUtility}
                 acknowledged={acknowledged}
                 validation={validation}
                 readOnly={readOnly || busy}

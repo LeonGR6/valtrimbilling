@@ -10,9 +10,12 @@ import {
   describeScheduleBasis,
   describeSchedulePlan,
   describeUnmatchedLine,
+  describeUnmatchedUtility,
+  describeUtilityMatch,
   listEarlierPackages,
   matchPackageToSchedules,
   packageScheduleLines,
+  packageUtilityLines,
   summarizeSources,
 } from '../src/features/payment-schedules/services/packageSchedule.js'
 
@@ -120,7 +123,7 @@ test('a schedule with no match is not a source, and the plan says whether anythi
 
   assert.deepEqual(plan.sources.map((s) => s.template.id), ['used'])
   assert.deepEqual(describeSchedulePlan(plan, lines.length), {
-    highlighted: 1, lineCount: 2, sourceCount: 1, warnings: 1, canGenerate: true,
+    highlighted: 1, lineCount: 2, utilityHighlighted: 0, sourceCount: 1, warnings: 1, canGenerate: true,
   })
 
   const none = matchPackageToSchedules(lines, [unused])
@@ -556,4 +559,85 @@ test('a cell that is neither gross nor net still differs, as before', () => {
   assert.equal(plan.differing.length, 1)
   assert.equal(plan.matches[0].basis, null)
   assert.equal(plan.matches[0].amountsAgree, false)
+})
+
+// --- Utility -------------------------------------------------------------------------
+// Monte Vista (Job 1323): the schedule prints the $3,150 Utility building of Phase 1 as
+// $630 on each of its 5 Lots; a Package bills it by Calendar event.
+
+const utilityCell = (phase, lot, amount, page = 1) => ({ phase, lot, amount, page, rect })
+const utilityLine = (phaseCode, eventType, utilityAmount, extra = {}) => ({
+  phaseCode, eventType, utilityAmount, basePrice: 3150, utilityLabel: 'B1', ...extra,
+})
+const withUtility = (id, utilityCells, cells = [cell('1', '1', 1, 908.6)]) => ({
+  ...template(id, cells),
+  mapping: { version: 1, layout: 'line_items', cells, utilityCells },
+})
+const phaseOne = ['001', '002', '003', '004', '005'].map((lot, index) => utilityCell('1', lot, 630, index + 1))
+
+test('the Utility of a Package is one entry per Phase, adding its events', () => {
+  assert.deepEqual(packageUtilityLines({
+    persistedUtilityLines: [
+      utilityLine('1', 'EXT', 630),
+      utilityLine('1', 'DM', 1890),
+      utilityLine('2', 'EXT', 630, { utilityLabel: 'B2' }),
+    ],
+  }), [
+    { phase: '1', label: 'B1', events: ['EXT', 'DM'], billed: 2520, price: 3150 },
+    { phase: '2', label: 'B2', events: ['EXT'], billed: 630, price: 3150 },
+  ])
+  assert.deepEqual(packageUtilityLines({}), [])
+})
+
+test('billing part of a Phase Utility highlights all of its Utility amounts, with a note', () => {
+  const schedule = withUtility('s1', [...phaseOne, utilityCell('2', '006', 525)])
+  const [ext] = packageUtilityLines({ persistedUtilityLines: [utilityLine('1', 'EXT', 630)] })
+  const plan = matchPackageToSchedules([], [schedule], [ext])
+
+  assert.equal(plan.utility.length, 1)
+  assert.equal(plan.utility[0].cells.length, 5)
+  assert.equal(plan.utility[0].printed, 3150)
+  assert.equal(plan.utility[0].whole, false)
+  assert.equal(plan.sources.length, 1)
+  assert.equal(plan.sources[0].cells.length, 5)
+  assert.equal(plan.sources[0].utilityCount, 5)
+  assert.equal(
+    describeUtilityMatch(plan.utility[0]),
+    'Phase 1: this Package bills $630.00 (EXT) of the $3,150.00 the schedule prints; its 5 Utility amounts are highlighted.',
+  )
+  const summary = describeSchedulePlan(plan, 0)
+  assert.equal(summary.canGenerate, true)
+  assert.equal(summary.utilityHighlighted, 5)
+  assert.equal(summary.warnings, 0)
+})
+
+test('billing the whole Utility says so; draws and Utility share the schedule', () => {
+  const schedule = withUtility('s1', phaseOne)
+  const utility = packageUtilityLines({
+    persistedUtilityLines: [utilityLine('1', 'EXT', 630), utilityLine('1', 'DM', 1890), utilityLine('1', 'HW', 630)],
+  })
+  const plan = matchPackageToSchedules(packageScheduleLines(record(line('1', '1', 0, 908.6))), [schedule], utility)
+  assert.equal(plan.matches.length, 1)
+  assert.equal(plan.utility[0].whole, true)
+  assert.equal(plan.sources[0].cells.length, 6)
+  assert.ok(describeUtilityMatch(plan.utility[0]).startsWith('Phase 1: this Package bills the whole Utility, $3,150.00'))
+})
+
+test('a Phase whose Utility the schedules do not print is reported, and Utility without a Phase never matches', () => {
+  const schedule = withUtility('s1', [utilityCell(null, '001', 630)])
+  const utility = packageUtilityLines({ persistedUtilityLines: [utilityLine('1', 'EXT', 630)] })
+  const plan = matchPackageToSchedules([], [schedule], utility)
+  assert.equal(plan.utility.length, 0)
+  assert.equal(plan.utilityUnmatched.length, 1)
+  assert.equal(describeUnmatchedUtility(plan.utilityUnmatched[0]), 'Phase 1 · B1 · Utility $630.00')
+  const summary = describeSchedulePlan(plan, 0)
+  assert.equal(summary.canGenerate, false)
+  assert.equal(summary.warnings, 1)
+})
+
+test('schedules without Utility amounts work as before', () => {
+  const plan = matchPackageToSchedules(packageScheduleLines(record(line('1', '1', 0, 908.6))), [template('s1', [cell('1', '1', 1, 908.6)])])
+  assert.deepEqual(plan.utility, [])
+  assert.deepEqual(plan.utilityUnmatched, [])
+  assert.equal(plan.sources[0].utilityCount, 0)
 })

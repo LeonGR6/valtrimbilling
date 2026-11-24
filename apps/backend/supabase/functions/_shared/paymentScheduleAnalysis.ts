@@ -4,6 +4,10 @@ import { parseNamedColumnSchedule } from "./paymentScheduleNamedColumns.ts";
 import { PaymentScheduleError } from "./paymentScheduleTypes.ts";
 import type { DrawName, ParsedSchedule } from "./paymentScheduleTypes.ts";
 import { hasSummaryLabel } from "./paymentScheduleSummary.ts";
+import { buildAiDocument } from "./paymentScheduleAi.ts";
+import type { AiJobContext, AiReader } from "./paymentScheduleAi.ts";
+import { verifyAiAnswer } from "./paymentScheduleAiVerify.ts";
+import type { AiSummary } from "./paymentScheduleAiVerify.ts";
 import { MAX_ANALYZED_PAGES, readReleasePdf } from "./releasePdf.ts";
 import type { PageSize, ReleasePdfContent } from "./releasePdf.ts";
 
@@ -17,6 +21,9 @@ export interface PaymentScheduleAnalysis extends ParsedSchedule {
   detectionMethod: "text_layer";
   pageCount: number;
   pageSizes: PageSize[];
+  // Present when the AI found the cells: which model, what it noticed and how the
+  // cells compare with the Job.
+  ai?: AiSummary;
 }
 
 /** What the analysis may know besides the PDF. */
@@ -67,15 +74,44 @@ export function analyzePaymentScheduleContent(
   };
 }
 
-export async function analyzePaymentSchedulePdf(
-  bytes: Uint8Array,
-  hints: PaymentScheduleHints = {},
-) {
-  const content = await readReleasePdf(bytes, {
+export async function readPaymentSchedulePdf(bytes: Uint8Array) {
+  return await readReleasePdf(bytes, {
     maxContentPages: MAX_ANALYZED_PAGES,
     // The cells of the Previously Invoiced and This Request rows are found by the
     // borders of the table, so the pages that print those rows read their lines.
     readRulesWhen: hasSummaryLabel,
   });
-  return analyzePaymentScheduleContent(content, hints);
+}
+
+export async function analyzePaymentSchedulePdf(
+  bytes: Uint8Array,
+  hints: PaymentScheduleHints = {},
+) {
+  return analyzePaymentScheduleContent(await readPaymentSchedulePdf(bytes), hints);
+}
+
+/**
+ * Reads the schedule with AI, for a layout no parser knows: the model points at the
+ * printed amounts and every answer is checked against the PDF and the Job.
+ */
+export async function analyzePaymentScheduleWithAi(
+  content: ReleasePdfContent,
+  context: AiJobContext,
+  reader: AiReader,
+): Promise<PaymentScheduleAnalysis> {
+  if (content.textLength < MIN_TEXT_LENGTH) {
+    throw new PaymentScheduleError(
+      "no_text",
+      "This PDF has no readable text. Scanned Payment Schedules are not supported yet.",
+    );
+  }
+
+  const document = buildAiDocument(content.pages);
+  const answer = await reader.read(document, context);
+  return {
+    ...verifyAiAnswer(answer, document, context, reader.model),
+    detectionMethod: "text_layer",
+    pageCount: content.pageCount,
+    pageSizes: content.pageSizes,
+  };
 }

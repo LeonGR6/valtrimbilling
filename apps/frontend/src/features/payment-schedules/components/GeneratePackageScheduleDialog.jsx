@@ -35,10 +35,13 @@ import {
   describeRepeated,
   describeScheduleBasis,
   describeSchedulePlan,
+  describeUnmatchedUtility,
+  describeUtilityMatch,
   describeUnmatchedLine,
   listEarlierPackages,
   matchPackageToSchedules,
   packageScheduleLines,
+  packageUtilityLines,
   summarizeSources,
 } from '../services/packageSchedule.js'
 import { formatMoney } from '../services/paymentScheduleRecord.js'
@@ -149,7 +152,9 @@ export default function GeneratePackageScheduleDialog({
     CHANGE_ORDER: 'This Package invoices an Extra / Change Order',
   }[packageRecord.packageType] ?? 'This Package is a Retention Release'
   const lines = packageScheduleLines(packageRecord)
-  const plan = data ? matchPackageToSchedules(lines, data.templates) : null
+  // The Utility the Package bills, by Phase: its Utility amounts on the schedule are highlighted.
+  const utilityLines = packageUtilityLines(packageRecord)
+  const plan = data ? matchPackageToSchedules(lines, data.templates, utilityLines) : null
   const summary = plan ? describeSchedulePlan(plan, lines.length) : null
   const existing = data?.existing[0] ?? null
   // True while anything is being built, so the controls stay still.
@@ -345,7 +350,16 @@ export default function GeneratePackageScheduleDialog({
             <Box>
               <Typography variant="caption" color="text.secondary">Will be highlighted</Typography>
               <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: 'wrap', mt: 0.25 }}>
-                <Chip color="success" label={`${summary.highlighted} of ${summary.lineCount} amounts`} />
+                {summary.lineCount > 0 && (
+                  <Chip color="success" label={`${summary.highlighted} of ${summary.lineCount} amounts`} />
+                )}
+                {summary.utilityHighlighted > 0 && (
+                  <Chip
+                    color="success"
+                    variant="outlined"
+                    label={`${summary.utilityHighlighted} Utility ${summary.utilityHighlighted === 1 ? 'amount' : 'amounts'}`}
+                  />
+                )}
                 {plan.sources.map((source) => (
                   <Chip
                     key={source.template.id}
@@ -388,6 +402,21 @@ export default function GeneratePackageScheduleDialog({
                 </Typography>
               )}
             </Box>
+
+            {plan.utility.length > 0 && (
+              <Alert severity="info">
+                <ShortList title="Utility" items={plan.utility.map(describeUtilityMatch)} />
+              </Alert>
+            )}
+
+            {plan.utilityUnmatched.length > 0 && (
+              <Alert severity="warning">
+                <ShortList
+                  title="Utility not found in the schedules, so not highlighted"
+                  items={plan.utilityUnmatched.map(describeUnmatchedUtility)}
+                />
+              </Alert>
+            )}
 
             {plan.differing.length > 0 && (
               <Alert severity="warning">

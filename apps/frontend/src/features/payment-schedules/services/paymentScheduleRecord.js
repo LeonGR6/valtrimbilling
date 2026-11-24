@@ -49,6 +49,10 @@ export function toPaymentScheduleTemplate(row) {
     // Dollars the cells may be from the printed total: a schedule that splits prices
     // into draws by percentage rounds each draw.
     totalTolerance: analysis.totalTolerance ?? 0,
+    // Utility amounts printed per Lot: { phase, lot, amount, page, rect }.
+    utilityCells: Array.isArray(analysis.utilityCells) ? analysis.utilityCells : [],
+    // Set when the AI found the cells: { model, notes, lotsChecked, lotsMatchingPrice, utility }.
+    ai: analysis.ai ?? null,
     mapping: row.mapping ?? null,
     status: row.status,
     error: row.error ?? null,
@@ -263,7 +267,30 @@ export function initialSummaryRows(template) {
   return Object.keys(rows).length > 0 ? rows : null
 }
 
-export function buildMapping(layout, cells, summaryRows = null) {
+/**
+ * The Utility amounts the reviewer starts from: the confirmed ones, else what was found.
+ * A schedule confirmed before Utility amounts were kept starts from what a new analysis
+ * found, so saving it again keeps them.
+ */
+export function initialUtilityCells(template) {
+  const source = template.mapping?.utilityCells ?? template.utilityCells ?? []
+  return source.map((cell) => ({ ...cell, phase: cell.phase ?? null }))
+}
+
+/** The Utility amounts by Phase, in order of appearance: { phase, count, total }. */
+export function summarizeUtilityCells(cells) {
+  const phases = new Map()
+  for (const cell of cells ?? []) {
+    const phase = cell.phase ?? ''
+    const entry = phases.get(phase) ?? { phase, count: 0, total: 0 }
+    entry.count += 1
+    entry.total = Math.round((entry.total + cell.amount) * 100) / 100
+    phases.set(phase, entry)
+  }
+  return [...phases.values()]
+}
+
+export function buildMapping(layout, cells, summaryRows = null, utilityCells = []) {
   const mapping = {
     version: 1,
     layout,
@@ -275,6 +302,16 @@ export function buildMapping(layout, cells, summaryRows = null) {
       page,
       rect: { x: rect.x, y: rect.y, w: rect.w, h: rect.h },
     })),
+  }
+
+  if (utilityCells?.length > 0) {
+    mapping.utilityCells = utilityCells.map(({ phase, lot, amount, page, rect }) => ({
+      phase,
+      lot,
+      amount,
+      page,
+      rect: { x: rect.x, y: rect.y, w: rect.w, h: rect.h },
+    }))
   }
 
   if (layout === 'matrix' && summaryRows) {
@@ -335,10 +372,42 @@ export function describeIssue(issue) {
   return where ? `${where}: ${issue.message}` : issue.message
 }
 
-export function visibleIssues(issues) {
+export function visibleIssues(issues, { all = false } = {}) {
+  const limit = all ? issues.length : ISSUE_LIMIT
   return {
-    shown: issues.slice(0, ISSUE_LIMIT),
-    hidden: Math.max(0, issues.length - ISSUE_LIMIT),
+    shown: issues.slice(0, limit),
+    hidden: Math.max(0, issues.length - limit),
+  }
+}
+
+/**
+ * What the reviewer is told about a schedule the AI read: the AI only pointed at amounts
+ * printed in the PDF, and what the checks against the Job found. Null for a parsed one.
+ */
+export function describeAiReading(template) {
+  const ai = template?.ai
+  if (!ai) return null
+
+  const checks = []
+  if (ai.lotsChecked > 0) {
+    checks.push(ai.lotsMatchingPrice === ai.lotsChecked
+      ? `All ${ai.lotsChecked} Lots add up to the price of their Plan in the Job.`
+      : `${ai.lotsMatchingPrice} of ${ai.lotsChecked} Lots add up to the price of their Plan in the Job.`)
+  }
+  if (ai.utility?.count > 0) {
+    checks.push(ai.utility.matching === ai.utility.count
+      ? `${ai.utility.count} Utility amounts (${formatMoney(ai.utility.total)}) match the utility building of their Phase split among its Lots.`
+      : `${ai.utility.matching} of ${ai.utility.count} Utility amounts match the utility building of their Phase split among its Lots.`)
+    checks.push('A Package that bills the Utility of a Phase highlights these amounts.')
+  }
+
+  return {
+    title: 'Read with AI',
+    text: 'No parser knows this layout, so the AI pointed at the amounts. Every amount is printed '
+      + 'in the PDF and was checked against this Job; check each highlight before confirming.',
+    model: ai.model ?? null,
+    checks,
+    notes: Array.isArray(ai.notes) ? ai.notes : [],
   }
 }
 

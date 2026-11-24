@@ -129,6 +129,36 @@ export async function closePassedProposal(admin: AdminClient, request: { id: num
   return reread.data.updated_at;
 }
 
+// A customer email corrected in Send to customer (24 Nov 2026) is saved to the request and
+// its primary contact, as the coordinator and without a new review, before anything is
+// validated or sent. Returns the request as it is afterwards and the version to check;
+// unchanged when there is no correction.
+export async function applyCustomerEmail<T extends { homeowner_email?: string | null; updated_at?: string } | null>(
+  admin: AdminClient,
+  actor: Actor,
+  request: T,
+  input: { requestId: number; expectedRequestUpdatedAt: string; customerEmail?: string },
+): Promise<{ request: T; expectedRequestUpdatedAt: string }> {
+  const unchanged = { request, expectedRequestUpdatedAt: input.expectedRequestUpdatedAt };
+  if (!input.customerEmail || !request) return unchanged;
+  if ((request.homeowner_email ?? "").trim().toLowerCase() === input.customerEmail) return unchanged;
+  const { error } = await admin.rpc("update_customer_service_customer_email", {
+    p_actor_id: actor.id,
+    p_request_id: input.requestId,
+    p_expected_updated_at: input.expectedRequestUpdatedAt,
+    p_email: input.customerEmail,
+  });
+  if (error) {
+    const status = statusForDatabaseError(error.code);
+    if (status === 500) throw error;
+    throw new RequestError(error.message, status);
+  }
+  const reread = await admin.from("service_requests").select(REQUEST_COLUMNS).eq("id", input.requestId).single();
+  if (reread.error) throw reread.error;
+  const saved = reread.data as unknown as T & { updated_at: string };
+  return { request: saved, expectedRequestUpdatedAt: saved.updated_at };
+}
+
 export function customerEmailDeliveryFromEnv() {
   return customerEmailDelivery({
     testRecipient: Deno.env.get("CUSTOMER_SERVICE_TEST_RECIPIENT"),

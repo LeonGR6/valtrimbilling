@@ -29,12 +29,15 @@ import {
 
 const requests = customerServiceMockDatabase.requests
 
-test('Proposal Workspace never permits editing, including its full request dialog', () => {
+test('Proposal Workspace edits only requests still being planned; the other views edit what they show', () => {
   for (const request of requests) {
-    assert.equal(canEditRequestInView(request, 'PROPOSALS'), false)
+    assert.equal(canEditRequestInView(request, 'PROPOSALS'), ['READY_TO_PROPOSE', 'NEEDS_CONTACT'].includes(request.workflowStage))
     assert.equal(canEditRequestInView(request, 'REQUESTS'), ['NEEDS_REVIEW', 'READY_TO_PROPOSE'].includes(request.workflowStage))
     assert.equal(canEditRequestInView(request, 'CALENDAR'), ['CONFIRMED', 'WORKING', 'COMPLETED'].includes(request.workflowStage))
   }
+  // A request waiting for the customer is not edited in the Proposal Workspace.
+  assert.equal(canEditRequestInView({ workflowStage: 'NEEDS_CONTACT' }, 'PROPOSALS'), true)
+  assert.equal(canEditRequestInView({ workflowStage: 'AWAITING_CUSTOMER' }, 'PROPOSALS'), false)
   assert.equal(canEditRequestInView(null, 'REQUESTS'), false)
 })
 

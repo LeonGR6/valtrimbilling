@@ -25,6 +25,8 @@ export interface RegisterAppointmentInput {
   workStart: string;
   travelMinutes: Record<string, number>;
   acceptance: AppointmentAcceptance;
+  // A customer email corrected in Send to customer (24 Nov 2026), saved before sending.
+  customerEmail?: string;
 }
 
 export interface RequestRow {
@@ -85,6 +87,17 @@ export class AppointmentInputError extends Error {
 const positiveId = (value: unknown) =>
   Number.isSafeInteger(Number(value)) && Number(value) > 0 ? Number(value) : null;
 
+// The same rule as the email_address domain: trimmed, lowercase, one @ and a dot after it.
+// Absent or empty means "keep the saved email".
+export function parseCustomerEmail(value: unknown): string | undefined {
+  if (value === undefined || value === null || value === "") return undefined;
+  const email = typeof value === "string" ? value.trim().toLowerCase() : "";
+  if (!email || email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/u.test(email)) {
+    throw new AppointmentInputError("Enter a valid customer email.");
+  }
+  return email;
+}
+
 // Shape checks only; the business rules run in validateRegistration.
 export function parseRegisterInput(body: unknown): RegisterAppointmentInput {
   const value = (body ?? {}) as Record<string, unknown>;
@@ -117,6 +130,7 @@ export function parseRegisterInput(body: unknown): RegisterAppointmentInput {
   if (!appointmentAcceptances.includes(value.acceptance as AppointmentAcceptance)) {
     throw new AppointmentInputError("Choose how the appointment was accepted.");
   }
+  const customerEmail = parseCustomerEmail(value.customerEmail);
   return {
     requestId,
     expectedRequestUpdatedAt: value.expectedRequestUpdatedAt,
@@ -126,6 +140,7 @@ export function parseRegisterInput(body: unknown): RegisterAppointmentInput {
     workStart: value.workStart as string,
     travelMinutes,
     acceptance: value.acceptance as AppointmentAcceptance,
+    ...(customerEmail ? { customerEmail } : {}),
   };
 }
 

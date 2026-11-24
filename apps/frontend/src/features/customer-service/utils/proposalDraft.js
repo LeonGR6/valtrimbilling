@@ -278,7 +278,10 @@ export function validatePrototypeProposalDraft({ requestId, values, requests, te
 // Only the travel legs of this sequence are sent, and all of them are known.
 // confirmationEmail ({ greeting, message }) asks the server to email the customer a
 // confirmation after registering (block B, step B4, path a); without it, none is sent.
-export function buildAppointmentRegistration({ request, values, validation, acceptance, confirmationEmail = null }) {
+// customerEmail: the email corrected in Send to customer, saved before sending (24 Nov 2026).
+export function buildAppointmentRegistration({
+  request, values, validation, acceptance, confirmationEmail = null, customerEmail = '',
+}) {
   return {
     requestId: Number(request.id),
     expectedRequestUpdatedAt: request.updatedAt,
@@ -290,6 +293,7 @@ export function buildAppointmentRegistration({ request, values, validation, acce
       .filter((leg) => leg.minutes !== null).map((leg) => [leg.key, leg.minutes])),
     acceptance,
     ...(confirmationEmail ? { confirmationEmail } : {}),
+    ...(customerEmail ? { customerEmail } : {}),
   }
 }
 
@@ -297,7 +301,7 @@ export function buildAppointmentRegistration({ request, values, validation, acce
 // travel of its own sequence. The Edge Function validates both, holds them and emails the
 // invitation. options: [{ values, validation }] in the order the customer reads them.
 // alternatives (step B5): other days the customer may pick when none works, not held.
-export function buildProposalSend({ request, options, invitation, alternatives = [] }) {
+export function buildProposalSend({ request, options, invitation, alternatives = [], customerEmail = '' }) {
   return {
     requestId: Number(request.id),
     expectedRequestUpdatedAt: request.updatedAt,
@@ -311,7 +315,15 @@ export function buildProposalSend({ request, options, invitation, alternatives =
     })),
     invitation,
     alternatives,
+    ...(customerEmail ? { customerEmail } : {}),
   }
+}
+
+// The customer email as the server stores it: trimmed and lowercase, one @ and a dot
+// after it (the email_address domain). Empty when it is not valid.
+export function normalizeCustomerEmail(value) {
+  const email = String(value ?? '').trim().toLowerCase()
+  return email.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/u.test(email) ? email : ''
 }
 
 // What the coordinator reads after sending: the days are held, and the invitation went

@@ -122,7 +122,8 @@ function RequestActions({ request, onView, onEdit, onViewPdf, onOpenProposal, co
   )
 }
 
-function DesktopRequestTable({ requests, onView, onEdit, onViewPdf, onOpenProposal }) {
+// canEdit(request): whether a row offers Edit; every row does when it is not given.
+function DesktopRequestTable({ requests, onView, onEdit, canEdit, onViewPdf, onOpenProposal }) {
   return (
     <TableContainer sx={{ display: { xs: 'none', md: 'block' } }}>
       <Table aria-label="Customer Service requests">
@@ -205,7 +206,7 @@ function DesktopRequestTable({ requests, onView, onEdit, onViewPdf, onOpenPropos
                   <RequestActions
                     request={request}
                     onView={onView}
-                    onEdit={onEdit}
+                    onEdit={!canEdit || canEdit(request) ? onEdit : undefined}
                     onViewPdf={onViewPdf}
                     onOpenProposal={onOpenProposal}
                   />
@@ -219,7 +220,7 @@ function DesktopRequestTable({ requests, onView, onEdit, onViewPdf, onOpenPropos
   )
 }
 
-function MobileRequestCards({ requests, onView, onEdit, onViewPdf, onOpenProposal }) {
+function MobileRequestCards({ requests, onView, onEdit, canEdit, onViewPdf, onOpenProposal }) {
   return (
     <Stack spacing={1.5} sx={{ display: { xs: 'flex', md: 'none' }, p: 1.5 }}>
       {requests.map((request) => {
@@ -261,7 +262,7 @@ function MobileRequestCards({ requests, onView, onEdit, onViewPdf, onOpenProposa
               <RequestActions
                 request={request}
                 onView={onView}
-                onEdit={onEdit}
+                onEdit={!canEdit || canEdit(request) ? onEdit : undefined}
                 onViewPdf={onViewPdf}
                 onOpenProposal={onOpenProposal}
                 compact
@@ -283,6 +284,7 @@ export default function RequestInboxList({
   onRowsPerPageChange,
   onView,
   onEdit,
+  canEdit,
   onViewPdf,
   onOpenProposal,
 }) {
@@ -306,6 +308,7 @@ export default function RequestInboxList({
         requests={requests}
         onView={onView}
         onEdit={onEdit}
+        canEdit={canEdit}
         onViewPdf={onViewPdf}
         onOpenProposal={onOpenProposal}
       />
@@ -313,6 +316,7 @@ export default function RequestInboxList({
         requests={requests}
         onView={onView}
         onEdit={onEdit}
+        canEdit={canEdit}
         onViewPdf={onViewPdf}
         onOpenProposal={onOpenProposal}
       />

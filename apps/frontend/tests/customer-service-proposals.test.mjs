@@ -1,7 +1,9 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { applyAppointmentsToRequests } from '../src/features/customer-service/utils/appointmentRecords.js'
-import { buildProposalSend, proposalSentNotice } from '../src/features/customer-service/utils/proposalDraft.js'
+import {
+  buildAppointmentRegistration, buildProposalSend, normalizeCustomerEmail, proposalSentNotice,
+} from '../src/features/customer-service/utils/proposalDraft.js'
 import {
   bestTimeToCall, buildProposalAcceptance, buildProposalDecline, cancelNotice, counterProposalLabel, counterProposalProblems,
   customerChosenSlot, declineNotice,
@@ -272,4 +274,24 @@ test('the list labels a proposal only when the coordinator must act', () => {
     { label: 'Call the customer', color: 'warning' })
   assert.equal(proposalListFlag({ latestProposal: { status: 'ACCEPTED' } }, 'CONFIRMED', now), null)
   assert.equal(proposalListFlag({}, 'READY_TO_PROPOSE', now), null)
+})
+
+test('a customer email corrected in Send to customer is normalized and sent only when it changed', () => {
+  assert.equal(normalizeCustomerEmail('  Right@Example.COM '), 'right@example.com')
+  for (const bad of ['', 'not-an-email', 'a@b', 'two@@example.com', 'with space@example.com', null]) {
+    assert.equal(normalizeCustomerEmail(bad), '', String(bad))
+  }
+  const request = { id: '20', updatedAt: '2026-11-24T10:00:00Z' }
+  const values = { technicianIds: ['4'], date: '2026-11-25', windowStart: '08:00', internalStart: '08:00' }
+  const validation = { travelLegs: [] }
+  const registration = buildAppointmentRegistration({
+    request, values, validation, acceptance: 'CUSTOMER_ACCEPTED_PROPOSAL', customerEmail: 'right@example.com',
+  })
+  assert.equal(registration.customerEmail, 'right@example.com')
+  assert.equal('customerEmail' in buildAppointmentRegistration({ request, values, validation, acceptance: 'CUSTOMER_ACCEPTED_PROPOSAL' }), false)
+  const proposal = buildProposalSend({
+    request, options: [{ values, validation }], invitation: { greeting: 'Hi,', message: 'Days:' }, customerEmail: 'right@example.com',
+  })
+  assert.equal(proposal.customerEmail, 'right@example.com')
+  assert.equal('customerEmail' in buildProposalSend({ request, options: [{ values, validation }], invitation: {} }), false)
 })

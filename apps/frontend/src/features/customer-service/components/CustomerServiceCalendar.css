@@ -335,11 +335,25 @@
   --service-accent: #64748b;
 }
 
+/* A day held by a proposal waiting for the customer: tentative, so dashed. The card sets
+   the theme's secondary color inline (the Awaiting customer stage color in the Proposal
+   Workspace); this is only the fallback. */
+.service-tone--awaiting {
+  --service-accent: #9c27b0;
+}
+
+.service-work-event.service-tone--awaiting,
+.service-compact-event.service-tone--awaiting {
+  border-style: dashed;
+  border-left-style: solid;
+}
+
 .fc-service--scheduled,
 .fc-service--confirmed,
 .fc-service--overdue,
 .fc-service--completed,
-.fc-service--cancelled {
+.fc-service--cancelled,
+.fc-service--awaiting {
   border: 0 !important;
   background: transparent !important;
 }

@@ -237,7 +237,7 @@ export default function CustomerServiceCalendarDetail({ event, onClose, onEdit, 
             : props.status === 'AWAITING_CUSTOMER' ? 'Sent · held until the customer answers'
               : serviceAppointmentStatusLabels[props.status] ?? props.status}
           color={props.status === 'OVERDUE' ? 'error' : props.status === 'COMPLETED' ? 'success'
-            : props.status === 'PROPOSED' ? 'secondary' : props.status === 'AWAITING_CUSTOMER' ? 'warning' : 'primary'}
+            : ['PROPOSED', 'AWAITING_CUSTOMER'].includes(props.status) ? 'secondary' : 'primary'}
           size="small"
           sx={{ alignSelf: 'flex-start' }}
         />

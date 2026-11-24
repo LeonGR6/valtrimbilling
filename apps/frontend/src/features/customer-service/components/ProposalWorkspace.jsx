@@ -5,7 +5,7 @@ import {
 } from '@mui/material'
 import { formatPhoneNumber } from '../../../utils/phoneNumbers.js'
 import {
-  defaultProposalStage, effectiveRequestWorkflowStage, filterAndSortRequestInbox,
+  canEditRequestInView, defaultProposalStage, effectiveRequestWorkflowStage, filterAndSortRequestInbox,
   findRequestForView, isRequestOverdue,
   paginateRequestInbox, proposalFilterOptions, requestLocationLabel,
   requestsForView, requestWorkflowStages,
@@ -16,7 +16,7 @@ import ProposalAnswerPanel from './ProposalAnswerPanel.jsx'
 import ProposalDraftPlanner from './ProposalDraftPlanner.jsx'
 
 export default function ProposalWorkspace({
-  requests, selectedRequestId, onSelectRequest, onView, onViewSource, onBackToRequests,
+  requests, selectedRequestId, onSelectRequest, onView, onEdit, onViewSource, onBackToRequests,
   proposalDrafts, onSaveDraft, technicians, onDraftDirtyChange, onBeforeLeave, onRegistered, onProposalSent, onProposalAnswered,
 }) {
   const [search, setSearch] = useState('')
@@ -70,7 +70,8 @@ export default function ProposalWorkspace({
       <Alert severity="info" variant="outlined">
         Pick a Ready to propose request, use its recommended slot or plan it by hand, and use Send to customer: email a
         proposal that holds its days until the customer answers, or register the visit they accepted by phone. Record
-        their answer in Awaiting customer. Request information is read-only here; edit it in Requests.
+        their answer in Awaiting customer. Ready to propose and Needs contact requests can be edited here; changing the
+        property or the work sends them back to Needs review.
       </Alert>
 
       <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: 'wrap' }} aria-label="Proposal workflow stages">
@@ -223,6 +224,7 @@ export default function ProposalWorkspace({
           requests={pagination.items} totalCount={matches.length} page={pagination.page} rowsPerPage={pagination.rowsPerPage}
           onPageChange={setPage} onRowsPerPageChange={(value) => { setRowsPerPage(value); setPage(0) }}
           onView={onView} onViewPdf={onViewSource} onOpenProposal={selectRequest}
+          onEdit={onEdit} canEdit={(request) => canEditRequestInView(request, 'PROPOSALS')}
         />
       </Paper>
 

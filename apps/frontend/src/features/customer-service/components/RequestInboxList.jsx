@@ -20,7 +20,6 @@ import PictureAsPdfRoundedIcon from '@mui/icons-material/PictureAsPdfRounded'
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
 import VisibilityOutlinedIcon from '@mui/icons-material/VisibilityOutlined'
 import { formatPhoneNumber } from '../../../utils/phoneNumbers.js'
-import { prioritiesByValue } from '../data/customerService.js'
 import { formatLongDate, formatTime } from '../utils/dates.js'
 import { formatCaliforniaDateTime, proposalListFlag, sentAgoLabel } from '../utils/proposalAnswers.js'
 import {
@@ -32,6 +31,7 @@ import {
   requestWorkflowStages,
 } from '../utils/requestInbox.js'
 import Pill from './Pill.jsx'
+import PriorityIndicator from './PriorityIndicator.jsx'
 
 // "New" for a request created in the last 24 hours, in the same style as the stage label.
 function NewRequestChip({ request }) {
@@ -151,7 +151,6 @@ function DesktopRequestTable({ requests, onView, onEdit, canEdit, onViewPdf, onO
         <TableBody>
           {requests.map((request) => {
             const stage = requestWorkflowStages[effectiveRequestWorkflowStage(request)]
-            const priority = prioritiesByValue[request.priority]
 
             return (
               <TableRow key={request.id} hover>
@@ -165,13 +164,9 @@ function DesktopRequestTable({ requests, onView, onEdit, canEdit, onViewPdf, onO
                     {isRequestOverdue(request) && <Chip size="small" color="error" variant="outlined" label="Overdue" />}
                   </Stack>
                   <ProposalWaiting request={request} />
-                  <Typography
-                    variant="caption"
-                    fontWeight={700}
-                    sx={{ display: 'block', mt: 0.75, color: priority.color }}
-                  >
-                    {priority.label} priority
-                  </Typography>
+                  <Box sx={{ mt: 0.75 }}>
+                    <PriorityIndicator priority={request.priority} />
+                  </Box>
                 </TableCell>
                 <TableCell sx={{ minWidth: 190, maxWidth: 260, verticalAlign: 'top' }}>
                   <Typography variant="body2" fontWeight={700}>
@@ -237,7 +232,6 @@ function MobileRequestCards({ requests, onView, onEdit, canEdit, onViewPdf, onOp
     <Stack spacing={1.5} sx={{ display: { xs: 'flex', md: 'none' }, p: 1.5 }}>
       {requests.map((request) => {
         const stage = requestWorkflowStages[effectiveRequestWorkflowStage(request)]
-        const priority = prioritiesByValue[request.priority]
 
         return (
           <Card key={request.id} variant="outlined">
@@ -267,9 +261,7 @@ function MobileRequestCards({ requests, onView, onEdit, canEdit, onViewPdf, onOp
                 <Typography variant="caption" color="text.secondary">
                   {request.dueOn ? `Due ${formatLongDate(request.dueOn)}` : 'Due date pending'}
                 </Typography>
-                <Typography variant="caption" fontWeight={700} sx={{ color: priority.color }}>
-                  {priority.label} priority
-                </Typography>
+                <PriorityIndicator priority={request.priority} />
               </Stack>
               <Divider sx={{ my: 1.5 }} />
               <RequestActions

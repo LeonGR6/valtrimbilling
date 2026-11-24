@@ -22,15 +22,26 @@ import VisibilityOutlinedIcon from '@mui/icons-material/VisibilityOutlined'
 import { formatPhoneNumber } from '../../../utils/phoneNumbers.js'
 import { prioritiesByValue } from '../data/customerService.js'
 import { formatLongDate, formatTime } from '../utils/dates.js'
-import { proposalListFlag, sentAgoLabel } from '../utils/proposalAnswers.js'
+import { formatCaliforniaDateTime, proposalListFlag, sentAgoLabel } from '../utils/proposalAnswers.js'
 import {
   effectiveRequestWorkflowStage,
   inboxPageSizeOptions,
+  isNewRequest,
   isRequestOverdue,
   requestLocationLabel,
   requestWorkflowStages,
 } from '../utils/requestInbox.js'
 import Pill from './Pill.jsx'
+
+// "New" for a request created in the last 24 hours, in the same style as the stage label.
+function NewRequestChip({ request }) {
+  if (!isNewRequest(request)) return null
+  return (
+    <Box component="span" sx={{ display: 'inline-flex' }} title={`Created ${formatCaliforniaDateTime(request.createdAt)}`}>
+      <Pill dense label="New" color="success" />
+    </Box>
+  )
+}
 
 function customerWindowLabel(window) {
   if (!window) return ''
@@ -148,7 +159,8 @@ function DesktopRequestTable({ requests, onView, onEdit, canEdit, onViewPdf, onO
                   <Typography variant="body2" fontWeight={800}>
                     {request.requestNumber}
                   </Typography>
-                  <Stack direction="row" spacing={0.5} useFlexGap sx={{ mt: 0.75, flexWrap: 'wrap' }}>
+                  <Stack direction="row" spacing={0.5} useFlexGap sx={{ mt: 0.75, flexWrap: 'wrap', alignItems: 'center' }}>
+                    <NewRequestChip request={request} />
                     <Pill dense label={stage.label} color={stage.color} />
                     {isRequestOverdue(request) && <Chip size="small" color="error" variant="outlined" label="Overdue" />}
                   </Stack>
@@ -237,6 +249,7 @@ function MobileRequestCards({ requests, onView, onEdit, canEdit, onViewPdf, onOp
                 sx={{ alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap' }}
               >
                 <Typography fontWeight={800}>{request.requestNumber}</Typography>
+                <NewRequestChip request={request} />
                 <Pill dense label={stage.label} color={stage.color} />
                 {isRequestOverdue(request) && <Chip size="small" color="error" variant="outlined" label="Overdue" />}
               </Stack>

@@ -102,9 +102,17 @@ export function findRequestForView(requests, requestId, view = 'REQUESTS') {
     .find((request) => String(request.id) === String(requestId)) ?? null
 }
 
+// Each view edits the requests it shows, except the Proposal Workspace, which edits only
+// the requests still being planned: Ready to propose and Needs contact (decided 24 Nov
+// 2026). Awaiting customer is not edited there; scheduled visits keep priority and notes.
+const editableStagesByView = {
+  REQUESTS: requestViewStages.REQUESTS,
+  PROPOSALS: ['READY_TO_PROPOSE', 'NEEDS_CONTACT'],
+  CALENDAR: requestViewStages.CALENDAR,
+}
+
 export function canEditRequestInView(request, view = 'REQUESTS') {
-  return Boolean(request) && view !== 'PROPOSALS'
-    && requestsForView([request], view).length > 0
+  return Boolean(request) && (editableStagesByView[view] ?? []).includes(effectiveRequestWorkflowStage(request))
 }
 
 export function isRequestOverdue(request, today = getCustomerServiceClock().date) {

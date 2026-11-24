@@ -261,7 +261,7 @@ export default function CustomerServiceCatalog() {
     setViewRequest(updatedRequest)
     setNotice({
       severity: 'success',
-      message: originalRequest.workflowStage === 'READY_TO_PROPOSE'
+      message: ['READY_TO_PROPOSE', 'NEEDS_CONTACT'].includes(originalRequest.workflowStage)
         && updatedRequest.workflowStage === 'NEEDS_REVIEW'
         ? `${updatedRequest.requestNumber} saved. Important changes require a new review.`
         : `${updatedRequest.requestNumber} changes saved.`,
@@ -423,6 +423,7 @@ export default function CustomerServiceCatalog() {
             selectedRequestId={selectedWorkspaceId}
             onSelectRequest={openProposalWorkspace}
             onView={setViewRequest}
+            onEdit={(request) => setRequestDialog({ mode: 'edit', request })}
             onViewSource={setPdfPreviewRequest}
             onBackToRequests={() => changeView('REQUESTS')}
             proposalDrafts={proposalDrafts}

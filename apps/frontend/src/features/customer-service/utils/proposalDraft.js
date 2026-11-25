@@ -6,8 +6,8 @@ import { proposalOptionsStatus } from './proposalAnswers.js'
 import { assignedPrototypeTechnicianIds, prototypeTechnicians } from '../data/prototypeTechnicians.js'
 import {
   checkVisitCapacity, checkVisitDate, customerServicePickupMinutes,
-  customerServiceWorkday, minutesToTime as timeFromMinutes, parseServiceDate as validDate, timeToMinutes as minutes,
-  travelLegKey, visitDelayMargins,
+  customerServiceWorkday, isCustomerServiceBusinessDay, minutesToTime as timeFromMinutes, parseServiceDate as validDate,
+  timeToMinutes as minutes, travelLegKey, visitDelayMargins,
 } from './customerServiceScheduling.js'
 
 export const prototypePlanningHours = {
@@ -389,7 +389,7 @@ export function suggestionStartDate({ today, dueOn = null, leadBusinessDays = pr
   const cursor = new Date(`${today}T12:00:00Z`)
   for (let added = 0; added < leadBusinessDays;) {
     cursor.setUTCDate(cursor.getUTCDate() + 1)
-    if (![0, 6].includes(cursor.getUTCDay())) added += 1
+    if (isCustomerServiceBusinessDay(cursor.toISOString().slice(0, 10))) added += 1
   }
   const leadDate = cursor.toISOString().slice(0, 10)
   return { date: validDate(dueOn) && dueOn >= today && dueOn < leadDate ? dueOn : leadDate, leadDate }
@@ -425,7 +425,7 @@ export function suggestProposalTimes({
   for (const cursor = new Date(`${first}T12:00:00Z`); suggestions.length < limit; cursor.setUTCDate(cursor.getUTCDate() + 1)) {
     const date = cursor.toISOString().slice(0, 10)
     if (onTimeUntil && date > onTimeUntil) break
-    if ([0, 6].includes(cursor.getUTCDay())) continue
+    if (!isCustomerServiceBusinessDay(date)) continue
     businessDays += 1
     if (!onTimeUntil && businessDays > proposalSuggestionSearchBusinessDays) break
     searchedThrough = date
@@ -451,3 +451,26 @@ export function suggestProposalTimes({
   return { suggestions, searchedThrough }
 }
 
+
+// "Find a time this day" (decided 25 Nov 2026): when the form's time collides on its day,
+// the first time that fits that day for the same technicians, in the chosen window first
+// and then the earliest other window with room. It never changes the day or the
+// technicians: null when they have no room, and the coordinator decides. Travel still
+// unknown is left pending; the planner asks Google for it and searches again.
+export function timeOnSameDay({ requestId, values, requests, technicians = prototypeTechnicians, now = new Date() }) {
+  if (!validDate(values.date) || !values.technicianIds?.length) return null
+  const chosen = serviceCustomerWindowOptions.find((window) => window.start === values.windowStart)
+  const windows = chosen
+    ? [chosen, ...serviceCustomerWindowOptions.filter((window) => window !== chosen)]
+    : serviceCustomerWindowOptions
+  for (const window of windows) {
+    for (let start = minutes(window.start); start < minutes(window.end); start += proposalSuggestionStepMinutes) {
+      const internalStart = timeFromMinutes(start)
+      const result = validatePrototypeProposalDraft({
+        requestId, values: { ...values, windowStart: window.start, internalStart }, requests, technicians, now,
+      })
+      if (result.isValid) return { windowStart: window.start, internalStart, travelLegs: result.travelLegs }
+    }
+  }
+  return null
+}

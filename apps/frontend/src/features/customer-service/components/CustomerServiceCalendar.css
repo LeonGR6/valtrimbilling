@@ -335,6 +335,40 @@
   --service-accent: #64748b;
 }
 
+/* A holiday (Valtrim is closed): the whole day is hatched and named, behind any visit
+   booked before it became a holiday. */
+.customer-service-calendar .fc .fc-bg-event.service-holiday {
+  background: repeating-linear-gradient(
+    -45deg,
+    color-mix(in srgb, var(--calendar-muted-text, #64748b) 14%, transparent) 0 6px,
+    transparent 6px 12px
+  );
+  opacity: 1;
+}
+
+.service-holiday__label {
+  display: block;
+  margin: 4px 6px;
+  overflow: hidden;
+  color: var(--calendar-muted-text, #64748b);
+  font-size: 0.72rem;
+  font-weight: 650;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* In the month grid the name sits at the bottom, so the day number stays readable. */
+.service-calendar-canvas .fc .fc-daygrid-day .service-holiday__label {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+}
+
+.service-calendar-canvas .fc .fc-multimonth .service-holiday__label {
+  display: none;
+}
+
 /* A day held by a proposal waiting for the customer: tentative, so dashed. The card sets
    the theme's secondary color inline (the Awaiting customer stage color in the Proposal
    Workspace); this is only the fallback. */

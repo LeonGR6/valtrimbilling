@@ -2,7 +2,7 @@
 // day with and the open requests near it, nearest first in straight-line miles. It
 // only reads the loaded requests; nothing calls Google and nothing is saved.
 import { hasCoordinates, maxNearbyDrivingCandidates, nearbyCandidates } from './customerServiceProximity.js'
-import { parseServiceDate } from './customerServiceScheduling.js'
+import { isCustomerServiceBusinessDay, parseServiceDate } from './customerServiceScheduling.js'
 import { effectiveRequestWorkflowStage } from './requestInbox.js'
 import { getCustomerServiceClock } from './dates.js'
 import { proposalSuggestionSearchBusinessDays } from './proposalDraft.js'
@@ -48,7 +48,7 @@ export function nearbyVisitsThrough(dueOn, today) {
   let businessDays = 0
   for (const cursor = new Date(`${today}T12:00:00Z`); businessDays < proposalSuggestionSearchBusinessDays;
     cursor.setUTCDate(cursor.getUTCDate() + 1)) {
-    if ([0, 6].includes(cursor.getUTCDay())) continue
+    if (!isCustomerServiceBusinessDay(cursor.toISOString().slice(0, 10))) continue
     businessDays += 1
     date = cursor.toISOString().slice(0, 10)
   }

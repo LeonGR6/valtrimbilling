@@ -1,18 +1,21 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
-  Alert, Box, Button, Chip, FormControl, FormHelperText, InputLabel, MenuItem, Paper, Select, Stack, TextField, Typography,
+  Alert, Box, Button, Chip, CircularProgress, FormControl, FormHelperText, InputLabel, MenuItem, Paper, Select, Stack, TextField,
+  Typography,
 } from '@mui/material'
+import DirectionsOutlinedIcon from '@mui/icons-material/DirectionsOutlined'
 import { serviceCustomerWindowOptions } from '../data/serviceCalendarEvents.js'
 import {
   buildAppointmentRegistration, buildProposalSend, changePrototypeProposalWindow, changePrototypeTravelMinutes, fitStatus, fitStatusLabels,
   getPrototypePlanningTechnicians, getPrototypeTechnicianAgenda, proposalDraftFormValues, proposalDraftHasChanges,
-  proposalPlanningSignature, validatePrototypeProposalDraft,
+  proposalPlanningSignature, timeOnSameDay, validatePrototypeProposalDraft,
 } from '../utils/proposalDraft.js'
+import { travelLegKey } from '../utils/customerServiceScheduling.js'
 import { proposalAlternatives } from '../utils/nearbySlotSuggestions.js'
 import { customerChosenSlot } from '../utils/proposalAnswers.js'
 import {
-  applyTravelEstimates, mergeTravelEstimateResults, outdatedTravelLegs, travelEstimateMessages, travelLegHelperText,
-  travelLegSource, travelLegsToEstimate,
+  applyTravelEstimates, mergeTravelEstimateResults, outdatedTravelLegs, travelEstimateMessages, travelLegDirectionsUrl,
+  travelLegHelperText, travelLegSource, travelLegsToEstimate,
 } from '../utils/travelEstimates.js'
 import { formatTime, formatWeekdayDate, getCustomerServiceClock } from '../utils/dates.js'
 import { useCustomerServicePrototype } from '../context/customerServicePrototypeContext.js'
@@ -87,6 +90,49 @@ export default function ProposalDraftPlanner({
     )
     if (missing.length) void calculateTravel(missing)
   }
+  // "Find a time this day" (decided 25 Nov 2026): the form keeps its day and technicians and
+  // moves to the first time that fits, the chosen window first. Travel it still lacks is
+  // asked to Google and the search runs again with those minutes, so the time it fills
+  // already counts the drive. A message (tied to that day and crew) says when there is no room.
+  const [dayAdjust, setDayAdjust] = useState({ loading: false, message: '', key: '' })
+  const dayKey = `${values.date}|${values.technicianIds.join()}`
+  const findTimeThisDay = async () => {
+    const key = dayKey
+    setSaveError('')
+    setDayAdjust({ loading: true, message: '', key })
+    let travelMinutes = values.travelMinutes
+    let known = { routes: routesMinutes, details: travelDetails }
+    let results = []
+    const asked = new Set()
+    try {
+      for (let attempt = 0; ; attempt += 1) {
+        const slot = timeOnSameDay({ requestId: request.id, values: { ...values, travelMinutes }, requests, technicians })
+        if (!slot) {
+          const names = technicianNames(values.technicianIds)
+          setDayAdjust({
+            loading: false, key,
+            message: `${new Intl.ListFormat('en', { type: 'conjunction' }).format(names)} ${names.length === 1 ? 'has' : 'have'} no room on ${
+              formatWeekdayDate(values.date)}. Choose another technician or day.`,
+          })
+          return
+        }
+        const missing = travelLegsToEstimate(slot.travelLegs, known.routes, known.details, travelTrafficMode)
+          .filter((leg) => !asked.has(travelLegKey(leg.fromRequestId, leg.toRequestId)))
+        if (!missing.length || attempt >= 3) {
+          applyNearbySlot({ windowStart: slot.windowStart, internalStart: slot.internalStart }, results)
+          setDayAdjust({ loading: false, message: '', key })
+          return
+        }
+        missing.forEach((leg) => asked.add(travelLegKey(leg.fromRequestId, leg.toRequestId)))
+        const fresh = await estimateTravel(missing)
+        results = [...results, ...fresh]
+        travelMinutes = applyTravelEstimates({ travelMinutes }, fresh, known.routes).travelMinutes
+        known = mergeTravelEstimateResults(known, fresh)
+      }
+    } catch (error) {
+      setDayAdjust({ loading: false, message: `Travel could not be checked: ${error.message}`, key })
+    }
+  }
   // A Google leg marked "calculate again" cannot be registered; one Google could not
   // refresh keeps its saved value, as the server does.
   const outdatedLegs = outdatedTravelLegs({
@@ -140,6 +186,10 @@ export default function ProposalDraftPlanner({
   const draftStatus = fitStatus({
     fits: validation.isValid, travelPending: validation.travelPending || outdatedLegs.length > 0,
   })
+  // The collision can be solved by another time that day: not a problem with the day itself
+  // (weekend, holiday, past, customer unavailable) or with the technicians.
+  const canFindTimeThisDay = !formIncomplete && draftStatus === 'DOESNT_FIT'
+    && !validation.errors.some((error) => ['date', 'technicianIds', 'request'].includes(error.field))
   // The other day the customer picked on the proposal page (step B5): the coordinator
   // approves it by using it and registering the visit.
   const customerChoice = customerChosenSlot(request)
@@ -329,30 +379,43 @@ export default function ProposalDraftPlanner({
                     <Box component="ul" sx={{ m: 0, pl: 2 }}>{travelMessages.map((message) => <li key={message}>{message}</li>)}</Box>
                   </Alert>
                 )}
-                {validation.travelLegs.map((leg) => (
-                  <TextField
-                    key={leg.key}
-                    label={`${leg.fromLabel} → ${leg.toLabel} (minutes)`}
-                    type="number"
-                    value={values.travelMinutes?.[leg.key] ?? ''}
-                    onChange={(event) => {
-                      setSaveError('')
-                      setValues((current) => changePrototypeTravelMinutes(current, leg.key, event.target.value))
-                    }}
-                    slotProps={{ htmlInput: { min: 0, max: 999, step: 1, inputMode: 'numeric' } }}
-                    helperText={[
-                      travelLegHelperText({
-                        leg,
-                        source: leg.minutes === null ? null : travelLegSource(leg.key, values.travelMinutes, routesMinutes),
-                        details: travelDetails[leg.key],
-                        trafficMode: travelTrafficMode,
-                      }),
-                      Number.isInteger(validation.delay?.legAbsorbs[leg.key])
-                        && `Absorbs up to ${Math.max(0, validation.delay.legAbsorbs[leg.key])} min of extra driving`,
-                    ].filter(Boolean).join(' · ')}
-                    fullWidth
-                  />
-                ))}
+                {validation.travelLegs.map((leg) => {
+                  // Opens the route from the earlier visit to the later one, to check the minutes.
+                  const routeUrl = travelLegDirectionsUrl(leg, requests)
+                  return (
+                    <Stack key={leg.key} direction="row" spacing={1} useFlexGap sx={{ alignItems: 'flex-start', flexWrap: 'wrap' }}>
+                      <TextField
+                        label={`${leg.fromLabel} → ${leg.toLabel} (minutes)`}
+                        type="number"
+                        value={values.travelMinutes?.[leg.key] ?? ''}
+                        onChange={(event) => {
+                          setSaveError('')
+                          setValues((current) => changePrototypeTravelMinutes(current, leg.key, event.target.value))
+                        }}
+                        slotProps={{ htmlInput: { min: 0, max: 999, step: 1, inputMode: 'numeric' } }}
+                        helperText={[
+                          travelLegHelperText({
+                            leg,
+                            source: leg.minutes === null ? null : travelLegSource(leg.key, values.travelMinutes, routesMinutes),
+                            details: travelDetails[leg.key],
+                            trafficMode: travelTrafficMode,
+                          }),
+                          Number.isInteger(validation.delay?.legAbsorbs[leg.key])
+                            && `Absorbs up to ${Math.max(0, validation.delay.legAbsorbs[leg.key])} min of extra driving`,
+                        ].filter(Boolean).join(' · ')}
+                        fullWidth
+                        sx={{ flex: '1 1 240px' }}
+                      />
+                      {routeUrl && (
+                        <Button variant="outlined" component="a" href={routeUrl} target="_blank" rel="noreferrer"
+                          startIcon={<DirectionsOutlinedIcon />} aria-label={`View the route from ${leg.fromLabel} to ${leg.toLabel} in Google Maps`}
+                          sx={{ flexShrink: 0, minHeight: 56 }}>
+                          Route
+                        </Button>
+                      )}
+                    </Stack>
+                  )
+                })}
               </Stack>
             )}
             {formIncomplete ? (
@@ -371,6 +434,17 @@ export default function ProposalDraftPlanner({
                 {draftStatus === 'DOESNT_FIT' && (
                   <Box component="ul" sx={{ m: 0, pl: 2 }}>{validation.errors.map((error, index) => <li key={`${error.field}-${index}`}>{error.message}</li>)}</Box>
                 )}
+                {canFindTimeThisDay && (
+                  <Button size="small" variant="outlined" color="warning" onClick={findTimeThisDay} disabled={dayAdjust.loading}
+                    startIcon={dayAdjust.loading ? <CircularProgress size={14} color="inherit" /> : null} sx={{ mt: 1 }}>
+                    {dayAdjust.loading ? 'Finding a time…' : 'Find a time this day'}
+                  </Button>
+                )}
+              </Alert>
+            )}
+            {dayAdjust.message && dayAdjust.key === dayKey && (
+              <Alert severity="info" variant="outlined" onClose={() => setDayAdjust({ loading: false, message: '', key: '' })}>
+                {dayAdjust.message}
               </Alert>
             )}
             {validation.warnings.length > 0 && (

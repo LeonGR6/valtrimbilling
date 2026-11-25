@@ -19,6 +19,7 @@ import {
   prepareVisitReminder,
   type VisitReminderRow,
 } from "../_shared/customerServiceVisitReminders.ts";
+import { loadCustomerServiceHolidays } from "../_shared/customerServiceHolidays.ts";
 import { serviceClient } from "../_shared/supabase.ts";
 
 // A visit on Monday is reminded on Friday: look four days ahead.
@@ -32,6 +33,8 @@ Deno.serve(async (req) => {
     if (delivery.mode === "OFF") return json({ status: "EMAILS_OFF" });
 
     const admin = serviceClient();
+    // The business day before a visit skips holidays.
+    await loadCustomerServiceHolidays(admin);
     const now = new Date();
     const upcoming = await admin.from("service_appointments")
       .select("id, request_id, state, is_current, window_starts_at, created_at, created_by, proposal_id, visit_reminder_sent_at")

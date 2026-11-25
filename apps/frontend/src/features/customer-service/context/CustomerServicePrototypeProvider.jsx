@@ -6,6 +6,7 @@ import { CustomerServicePrototypeContext } from './customerServicePrototypeConte
 import { requireSupabase } from '../../../services/api.js'
 import { createCustomerServiceEmailAutomationMonitor } from '../services/customerServiceEmailAutomation.js'
 import { listTechnicians } from '../services/techniciansRepository.js'
+import { setCustomerServiceHolidays } from '../utils/customerServiceScheduling.js'
 import {
   answerCustomerServiceProposal, cancelCustomerServiceAppointment, cancelCustomerServiceProposal, markProposalBuilderContacted,
   estimateCustomerServiceNearby, estimateCustomerServiceTravel, loadCustomerServiceSchedule,
@@ -17,7 +18,7 @@ import {
 
 const emptySchedule = {
   roster: [], appointments: [], proposalHolds: [], proposals: [], proposalFollowUps: { reminders: [], builderContacts: [] },
-  travelEstimates: [], travelTrafficMode: 'OFF', distanceBands: null, travelChecks: [], testMode: false,
+  travelEstimates: [], travelTrafficMode: 'OFF', distanceBands: null, travelChecks: [], testMode: false, holidays: [],
 }
 
 // Requests, accepted appointments, travel estimates and technicians come from
@@ -41,6 +42,8 @@ export default function CustomerServicePrototypeProvider({ children }) {
     if (!canSchedule) return
     try {
       const [roster, loaded] = await Promise.all([listTechnicians(), loadCustomerServiceSchedule()])
+      // The business day rules read the holidays; they are set before the schedule renders.
+      setCustomerServiceHolidays(loaded.holidays ?? [])
       setSchedule({ roster, ...loaded })
       setScheduleError(null)
     } catch (error) {
@@ -115,6 +118,8 @@ export default function CustomerServicePrototypeProvider({ children }) {
       travelChecks: schedule.travelChecks ?? [],
       // Cancel appointment and Cancel proposal show only in test mode.
       testMode: schedule.testMode === true,
+      // US holidays Valtrim closes: shown in Calendar, not business days.
+      holidays: schedule.holidays ?? [],
       estimateTravel: estimateCustomerServiceTravel,
       estimateNearby: estimateCustomerServiceNearby,
       scheduleError,

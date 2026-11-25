@@ -1,4 +1,5 @@
 import { assertEquals } from "@std/assert";
+import { setCustomerServiceHolidays } from "./customerServiceScheduling.mjs";
 import { manualLegChecks, nextBusinessDay, recentlyChecked, travelCheckLegs } from "./customerServiceTravelCheck.ts";
 
 Deno.test("a manual leg is asked from Google with traffic but keeps its value (P5)", async () => {
@@ -40,6 +41,16 @@ Deno.test("the check looks at the next business day in California", () => {
   assertEquals(nextBusinessDay(new Date("2026-11-14T00:00:00Z")), "2026-11-16");
   // Saturday morning: Monday too.
   assertEquals(nextBusinessDay(new Date("2026-11-14T17:00:00Z")), "2026-11-16");
+});
+
+Deno.test("the check skips holidays", () => {
+  setCustomerServiceHolidays([{ date: "2026-11-26", name: "Thanksgiving Day" }]);
+  try {
+    // Wednesday 25 Nov at 10:00 AM in California: the next business day is Friday 27.
+    assertEquals(nextBusinessDay(new Date("2026-11-25T18:00:00Z")), "2026-11-27");
+  } finally {
+    setCustomerServiceHolidays([]);
+  }
 });
 
 Deno.test("legs between consecutive visits leave after the earlier visit and its pickup", () => {

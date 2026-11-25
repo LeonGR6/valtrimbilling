@@ -16,6 +16,7 @@ import {
   recentlyChecked,
   travelCheckLegs,
 } from "../_shared/customerServiceTravelCheck.ts";
+import { loadCustomerServiceHolidays } from "../_shared/customerServiceHolidays.ts";
 import { serviceClient } from "../_shared/supabase.ts";
 
 const ESTIMATE_COLUMNS =
@@ -25,6 +26,8 @@ Deno.serve(async (req) => {
   if (req.method !== "POST") return json({ error: "Use POST." }, 405);
   try {
     const admin = serviceClient();
+    // The next business day skips holidays.
+    await loadCustomerServiceHolidays(admin);
     const now = new Date();
     const targetDate = nextBusinessDay(now);
     const last = await admin.from("service_travel_check_runs")

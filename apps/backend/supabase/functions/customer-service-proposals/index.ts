@@ -36,6 +36,7 @@ import {
 } from "../_shared/customerServiceProposals.ts";
 import { proposalLinksFromEnv } from "../_shared/customerServiceProposalLink.ts";
 import { californiaClockAt } from "../_shared/customerServiceScheduling.mjs";
+import { loadCustomerServiceHolidays } from "../_shared/customerServiceHolidays.ts";
 import { serviceClient } from "../_shared/supabase.ts";
 
 const parse = <T>(read: () => T): T => {
@@ -59,6 +60,8 @@ async function send(actor: Actor, body: unknown) {
     throw new RequestError("Your user has no email, so a proposal cannot be sent from your mailbox.", 422);
   }
   const admin = serviceClient();
+  // Holidays are not business days: no day of a proposal can fall on one.
+  await loadCustomerServiceHolidays(admin);
   const technicianIds = [...new Set(input.options.flatMap((option) => option.technicianIds))];
   const [requestResult, techniciansResult, ...days] = await Promise.all([
     admin.from("service_requests").select(REQUEST_COLUMNS).eq("id", input.requestId).maybeSingle(),

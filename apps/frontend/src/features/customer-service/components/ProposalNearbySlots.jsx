@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Alert, Box, Button, Chip, Paper, Stack, Typography } from '@mui/material'
+import { Alert, Box, Button, Chip, CircularProgress, Fade, Paper, Stack, Typography } from '@mui/material'
 import {
   deadlineLabel, nearbySlotSuggestions, recommendSlot, secondOptionSlot, suggestionLegsToCheck,
 } from '../utils/nearbySlotSuggestions.js'
@@ -16,6 +16,10 @@ import { useCustomerServicePrototype } from '../context/customerServicePrototype
 const maxLegsPerCall = 8
 const attemptKey = (leg) => `${leg.fromRequestId}>${leg.toRequestId}@${leg.departureAt ?? ''}`
 const emptyTraffic = { minutes: {}, routes: {}, details: {}, results: {}, attempted: [], error: '' }
+// Opening a request shows "Finding the best slot" this long before the recommended slot
+// (decided 25 Nov 2026): the slot is worked out at once, the pause lets the coordinator
+// see it was checked.
+const slotCheckDelayMs = 1200
 
 function slotDetail(slot) {
   return [
@@ -95,6 +99,12 @@ export default function ProposalNearbySlots({
   // moves the moment forward and the suggestions are worked out again.
   const [now, setNow] = useState(() => new Date())
   const [expired, setExpired] = useState(false)
+  const [checkedRequestId, setCheckedRequestId] = useState(null)
+  useEffect(() => {
+    const timer = setTimeout(() => setCheckedRequestId(request.id), slotCheckDelayMs)
+    return () => clearTimeout(timer)
+  }, [request.id])
+  const findingSlot = drivingLoading || checkedRequestId !== request.id
   const travelMinutes = useMemo(() => ({ ...storedTravelMinutes, ...traffic.minutes }), [storedTravelMinutes, traffic.minutes])
   const plan = useMemo(
     () => nearbySlotSuggestions({ request, requests, technicians, candidates, drivingById, travelMinutes, now }),
@@ -106,7 +116,7 @@ export default function ProposalNearbySlots({
   const firstOption = formDate
     ? (formFits ? { date: formDate, label: 'the slot in the form' } : null)
     : recommended && { date: recommended.slot.date, label: 'the recommended slot' }
-  const firstDate = drivingLoading ? null : firstOption?.date ?? null
+  const firstDate = findingSlot ? null : firstOption?.date ?? null
   const second = useMemo(
     () => (firstDate ? secondOptionSlot({ request, requests, technicians, firstDate, drivingById, travelMinutes, now }) : null),
     [request, requests, technicians, firstDate, drivingById, travelMinutes, now],
@@ -156,7 +166,7 @@ export default function ProposalNearbySlots({
 
   // The planner previews the recommended slot in its day agenda until a slot is chosen. Only
   // plain values travel up; the key keeps the parent from updating on every render.
-  const previewKey = !drivingLoading && recommended
+  const previewKey = !findingSlot && recommended
     ? JSON.stringify({
       date: recommended.slot.date, windowStart: recommended.slot.windowStart,
       internalStart: recommended.slot.internalStart, internalEnd: recommended.slot.internalEnd,
@@ -241,38 +251,47 @@ export default function ProposalNearbySlots({
           That slot is no longer available because its time has passed or the schedule changed. The suggestions were updated.
         </Alert>
       )}
-      {drivingLoading ? (
+      {findingSlot ? (
         <RecommendedSlot>
-          <Typography variant="body2" color="text.secondary">Finding the best slot: checking driving miles with Google Maps…</Typography>
+          <Stack direction="row" spacing={1.5} role="status" sx={{ alignItems: 'center', py: 1 }}>
+            <CircularProgress size={22} aria-hidden />
+            <Typography variant="body2" color="text.secondary">
+              {drivingLoading
+                ? 'Finding the best slot: checking driving miles with Google Maps…'
+                : 'Finding the best slot: comparing nearby visits, the final days and the earliest time…'}
+            </Typography>
+          </Stack>
         </RecommendedSlot>
       ) : recommended ? (
         <RecommendedSlot>
-          <Stack spacing={1}>
-            <Box>
-              <Typography variant="subtitle1" fontWeight={800}>
-                {formatWeekdayDate(recommended.slot.date)} · {recommended.slot.windowLabel} window
-              </Typography>
-              <Typography variant="body2">
-                Work {formatTime(recommended.slot.internalStart)}–{formatTime(recommended.slot.internalEnd)}
-                {' · '}{recommended.slot.technicianNames.join(', ')}
-              </Typography>
-              {deadline(recommended.slot.date) && (
-                <Typography variant="caption" color="text.secondary" component="div">{deadline(recommended.slot.date)}</Typography>
+          <Fade in timeout={300}>
+            <Stack spacing={1}>
+              <Box>
+                <Typography variant="subtitle1" fontWeight={800}>
+                  {formatWeekdayDate(recommended.slot.date)} · {recommended.slot.windowLabel} window
+                </Typography>
+                <Typography variant="body2">
+                  Work {formatTime(recommended.slot.internalStart)}–{formatTime(recommended.slot.internalEnd)}
+                  {' · '}{recommended.slot.technicianNames.join(', ')}
+                </Typography>
+                {deadline(recommended.slot.date) && (
+                  <Typography variant="caption" color="text.secondary" component="div">{deadline(recommended.slot.date)}</Typography>
+                )}
+              </Box>
+              <Typography variant="body2" color="text.secondary">{recommended.reason}</Typography>
+              {slotWarning(recommended.slot) && <Typography variant="caption" color="warning.main">{slotWarning(recommended.slot)}</Typography>}
+              <Stack direction="row" spacing={1} useFlexGap sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
+                {fitChips(recommended.slot, recommended.sharesDay)}
+              </Stack>
+              {Number.isInteger(recommended.slot.margin) && (
+                <Typography variant="caption" color="text.secondary">
+                  Margin {Math.max(0, recommended.slot.margin)} min: the visit can start that late and still finish, with
+                  pickup, inside its customer window.
+                </Typography>
               )}
-            </Box>
-            <Typography variant="body2" color="text.secondary">{recommended.reason}</Typography>
-            {slotWarning(recommended.slot) && <Typography variant="caption" color="warning.main">{slotWarning(recommended.slot)}</Typography>}
-            <Stack direction="row" spacing={1} useFlexGap sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
-              {fitChips(recommended.slot, recommended.sharesDay)}
+              <Button variant="contained" onClick={use(recommended.slot)} sx={{ alignSelf: 'flex-start' }}>Use this slot</Button>
             </Stack>
-            {Number.isInteger(recommended.slot.margin) && (
-              <Typography variant="caption" color="text.secondary">
-                Margin {Math.max(0, recommended.slot.margin)} min: the visit can start that late and still finish, with
-                pickup, inside its customer window.
-              </Typography>
-            )}
-            <Button variant="contained" onClick={use(recommended.slot)} sx={{ alignSelf: 'flex-start' }}>Use this slot</Button>
-          </Stack>
+          </Fade>
         </RecommendedSlot>
       ) : (
         <Alert severity="warning" variant="outlined">
@@ -300,11 +319,11 @@ export default function ProposalNearbySlots({
           )}
         </Stack>
       )}
-      {fetchKey && <Typography variant="caption" color="text.secondary">Checking traffic for the suggested slots…</Typography>}
+      {fetchKey && !findingSlot && <Typography variant="caption" color="text.secondary">Checking traffic for the suggested slots…</Typography>}
       {traffic.error && (
         <Typography variant="caption" color="warning.main">Traffic could not be checked: {traffic.error}</Typography>
       )}
-      {!drivingLoading && hasOthers && (
+      {!findingSlot && hasOthers && (
         <Stack spacing={1}>
           <Typography variant="caption" color="text.secondary" fontWeight={700}>Other options</Typography>
           {otherNextTo.map((slot) => (slot.fits ? (

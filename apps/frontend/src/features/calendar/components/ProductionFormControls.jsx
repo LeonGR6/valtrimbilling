@@ -36,6 +36,33 @@ export function OptionCheckbox({ checked, disabled = false, label, description, 
   )
 }
 
+/** Marks one Calendar event as confirmed: the Calendar shows "*" before its name. */
+export function ConfirmedCheckbox({ checked, onChange, label }) {
+  return (
+    <FormControlLabel
+      className={`event-confirmed${checked ? ' is-selected' : ''}`}
+      // MUI pulls a label 11px left; here it sits inside a card, so it lines up with the fields.
+      sx={{ ml: 0, alignSelf: 'flex-start' }}
+      control={(
+        <Checkbox
+          checked={Boolean(checked)}
+          onChange={(event) => onChange(event.target.checked)}
+          size="small"
+          slotProps={{ input: { 'aria-label': label } }}
+        />
+      )}
+      label={(
+        <Box>
+          <Typography variant="body2" fontWeight={700} component="span">Confirmed</Typography>
+          <Typography variant="caption" color="text.secondary" component="span" sx={{ ml: 0.75 }}>
+            Shows * before the name in the Calendar.
+          </Typography>
+        </Box>
+      )}
+    />
+  )
+}
+
 export function DateOwnerSelector({ value, onChange, label = 'Date ownership', compact = false }) {
   return (
     <Box
@@ -227,6 +254,13 @@ export function SplitScheduleEditor({
                 label={`${type.shortLabel} division ${index + 1} date ownership`}
                 compact
               />
+              <ConfirmedCheckbox
+                checked={part.confirmed}
+                onChange={(confirmed) => onChange(parts.map((item) => item.id === part.id
+                  ? { ...item, confirmed }
+                  : item))}
+                label={`${type.shortLabel} division ${index + 1} confirmed`}
+              />
               <TextField
                 label="Date note (optional)"
                 value={part.note ?? ''}
@@ -257,6 +291,8 @@ export function StageCard({
   onDateChange,
   onDateOwnerChange,
   onNoteChange,
+  confirmed = false,
+  onConfirmedChange = null,
   tone,
   dateError,
   hasError = false,
@@ -292,6 +328,13 @@ export function StageCard({
         onChange={onDateOwnerChange}
         label={`${activityType} date ownership`}
       />
+      {onConfirmedChange && (
+        <ConfirmedCheckbox
+          checked={confirmed}
+          onChange={onConfirmedChange}
+          label={`${activityType} confirmed`}
+        />
+      )}
       <Box className="production-stage-card__note">
         <TextField
           label={`${activityType} date note (optional)`}

@@ -22,10 +22,16 @@ import {
   formatEventDay,
   maxEventNoteLength,
   todayKey,
+  confirmedChanged,
   toCreateEventRpc,
   toUpdateEventRpc,
 } from '../services/changeOrderEventRecord.js'
-import { createChangeOrderEvent, updateChangeOrderEvent } from '../services/changeOrderRepository.js'
+import {
+  createChangeOrderEvent,
+  setChangeOrderEventConfirmed,
+  updateChangeOrderEvent,
+} from '../services/changeOrderRepository.js'
+import { ConfirmedCheckbox } from '../../calendar/components/ProductionFormControls.jsx'
 
 const placeLabel = (line) => [
   line.phase && `Phase ${line.phase}`,
@@ -194,6 +200,7 @@ export default function ChangeOrderEventDialog({ order, lines = [], event = null
   const [values, setValues] = useState(() => ({
     date: event?.date ?? '',
     note: event?.note ?? '',
+    confirmed: Boolean(event?.confirmed),
   }))
   const [chosen, setChosen] = useState(() => new Set(lines.map((line) => String(line.id))))
   const [attempted, setAttempted] = useState(false)
@@ -233,6 +240,9 @@ export default function ChangeOrderEventDialog({ order, lines = [], event = null
       } else {
         await updateChangeOrderEvent(toUpdateEventRpc(event.id, values))
       }
+      if (confirmedChanged(event, values.confirmed)) {
+        await setChangeOrderEventConfirmed(eventId, values.confirmed)
+      }
       setSaving(false)
       await onSaved(eventId)
     } catch (failure) {
@@ -260,7 +270,7 @@ export default function ChangeOrderEventDialog({ order, lines = [], event = null
           <Typography variant="body2" color="text.secondary" sx={{ mb: 2.5 }}>
             {creating
               ? 'It goes on the Production Calendar for the Lots below, which are not charged with an EXT, DM or HW event.'
-              : 'Only the date and the note change. Its Lots stay as they are.'}
+              : 'Only the date, the note and Confirmed change. Its Lots stay as they are.'}
           </Typography>
           {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
 
@@ -303,6 +313,12 @@ export default function ChangeOrderEventDialog({ order, lines = [], event = null
               onChange={(change) => setValues((current) => ({ ...current, note: change.target.value }))}
               error={Boolean(problemOf('note'))}
               helperText={problemOf('note') || `${values.note.trim().length} / ${maxEventNoteLength}`}
+            />
+
+            <ConfirmedCheckbox
+              checked={values.confirmed}
+              onChange={(confirmed) => setValues((current) => ({ ...current, confirmed }))}
+              label="Extra / CO event confirmed"
             />
           </Stack>
         </DialogContent>

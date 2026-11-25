@@ -53,7 +53,7 @@ function EventItem({ event, canWrite, canOpenCalendar, onEdit, onRemove }) {
       }}
     >
       <Box sx={{ minWidth: 0, flex: '1 1 260px' }}>
-        <Typography variant="body2" fontWeight={700}>{formatEventDay(event.date)}</Typography>
+        <Typography variant="body2" fontWeight={700}>{event.confirmed ? '* ' : ''}{formatEventDay(event.date)}{event.confirmed ? ' · Confirmed' : ''}</Typography>
         <Typography variant="body2" color="text.secondary">{describeEventLots(event.lots)}</Typography>
         {event.note && (
           <Typography variant="body2" sx={{ mt: 0.5, whiteSpace: 'pre-wrap' }}>{event.note}</Typography>

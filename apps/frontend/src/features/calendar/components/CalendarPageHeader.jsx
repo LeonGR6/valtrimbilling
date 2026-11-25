@@ -10,6 +10,7 @@ import {
 } from '@mui/material'
 import CalendarMonthRoundedIcon from '@mui/icons-material/CalendarMonthRounded'
 import EventBusyRoundedIcon from '@mui/icons-material/EventBusyRounded'
+import Inventory2RoundedIcon from '@mui/icons-material/Inventory2Rounded'
 import ForwardToInboxRoundedIcon from '@mui/icons-material/ForwardToInboxRounded'
 import MarkEmailReadRoundedIcon from '@mui/icons-material/MarkEmailReadRounded'
 import SyncRoundedIcon from '@mui/icons-material/SyncRounded'
@@ -37,6 +38,7 @@ export default function CalendarPageHeader({
   onSyncGoogleCalendar,
   onCreate,
   unscheduledCount = 0,
+  orderMaterialCount = 0,
   canConnectGoogleCalendar = false,
   canCreate = true,
   googleCalendarConnected = false,
@@ -62,6 +64,8 @@ export default function CalendarPageHeader({
         ? 'Tell each Job\'s Supervisor and Project Manager, the day before, about its DM.'
         : activeTab === 'UNSCHEDULED'
           ? 'Phases created in Sequence Sheets that have no EXT, DM or HW events yet.'
+          : activeTab === 'ORDER_MATERIALS'
+            ? 'EXT events with Order material checked, the yellow ones in the Calendar.'
           : calendarMode === 'PRODUCTION'
             ? 'Schedule EXT, DM and HW as one production activity.'
             : 'Track extra work and change orders separately.'
@@ -177,6 +181,14 @@ export default function CalendarPageHeader({
             label={unscheduledCount > 0
               ? `Unscheduled phases (${unscheduledCount})`
               : 'Unscheduled phases'}
+          />
+          <Tab
+            value="ORDER_MATERIALS"
+            icon={<Inventory2RoundedIcon />}
+            iconPosition="start"
+            label={orderMaterialCount > 0
+              ? `Order materials (${orderMaterialCount})`
+              : 'Order materials'}
           />
         </Tabs>
       </Box>

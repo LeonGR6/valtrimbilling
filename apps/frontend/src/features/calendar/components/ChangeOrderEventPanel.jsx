@@ -138,6 +138,10 @@ export default function ChangeOrderEventPanel({ event, onClose, onChanged }) {
             </Box>
           )}
 
+          {event.confirmed && (
+            <Chip size="small" color="success" variant="outlined" label="Confirmed" sx={{ alignSelf: 'flex-start' }} />
+          )}
+
           {event.note && (
             <Box sx={{ pl: 1.5, borderLeft: 3, borderColor: 'divider' }}>
               <Typography variant="subtitle2" sx={{ mb: 0.25 }}>Note</Typography>
@@ -150,7 +154,7 @@ export default function ChangeOrderEventPanel({ event, onClose, onChanged }) {
           <Stack spacing={1}>
             {canWrite && (
               <Button variant="contained" disableElevation fullWidth onClick={() => setEditing(true)}>
-                Change date or note
+                Change date, note or confirmed
               </Button>
             )}
             <Stack direction="row" spacing={1} useFlexGap sx={{ justifyContent: 'space-between' }}>

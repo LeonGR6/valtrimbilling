@@ -48,6 +48,7 @@ const splitPartSchema = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Enter the date of every division.'),
   dateOwner: dateOwnerField,
   note: dateNoteField,
+  confirmed: z.boolean().default(false),
   history: dateHistoryField,
 })
 
@@ -107,6 +108,7 @@ export const productionActivitySchema = z.object({
   extDateNote: dateNoteField,
   extDateHistory: dateHistoryField,
   extScheduleId: persistedIdField.optional().default(null),
+  extConfirmed: z.boolean().default(false),
   extOrderMaterial: z.boolean().default(false),
   extInstallOnly: z.boolean().default(false),
   extInstallDate: z.string().default(''),
@@ -114,29 +116,34 @@ export const productionActivitySchema = z.object({
   extInstallDateNote: dateNoteField,
   extInstallDateHistory: dateHistoryField,
   extInstallScheduleId: persistedIdField.optional().default(null),
+  extInstallConfirmed: z.boolean().default(false),
   dmShutters: z.boolean().default(false),
   shutterDate: z.string().default(''),
   shutterDateOwner: dateOwnerField,
   shutterDateNote: dateNoteField,
   shutterDateHistory: dateHistoryField,
   shutterScheduleId: persistedIdField.optional().default(null),
+  shutterConfirmed: z.boolean().default(false),
   dmDate: dateField,
   dmDateOwner: dateOwnerField,
   dmDateNote: dateNoteField,
   dmDateHistory: dateHistoryField,
   dmScheduleId: persistedIdField.optional().default(null),
+  dmConfirmed: z.boolean().default(false),
   dmInstallOnly: z.boolean().default(false),
   dmInstallDate: z.string().default(''),
   dmInstallDateOwner: dateOwnerField,
   dmInstallDateNote: dateNoteField,
   dmInstallDateHistory: dateHistoryField,
   dmInstallScheduleId: persistedIdField.optional().default(null),
+  dmInstallConfirmed: z.boolean().default(false),
   dmBaseboardInstall: z.boolean().default(false),
   dmBaseboardInstallDate: z.string().default(''),
   dmBaseboardInstallDateOwner: dateOwnerField,
   dmBaseboardInstallDateNote: dateNoteField,
   dmBaseboardInstallDateHistory: dateHistoryField,
   dmBaseboardInstallScheduleId: persistedIdField.optional().default(null),
+  dmBaseboardInstallConfirmed: z.boolean().default(false),
   dmSplitPhase: z.boolean().default(false),
   dmSplitParts: z.array(splitPartSchema).default([]),
   hwDate: dateField,
@@ -144,6 +151,7 @@ export const productionActivitySchema = z.object({
   hwDateNote: dateNoteField,
   hwDateHistory: dateHistoryField,
   hwScheduleId: persistedIdField.optional().default(null),
+  hwConfirmed: z.boolean().default(false),
   hwSplitPhase: z.boolean().default(false),
   hwSplitParts: z.array(splitPartSchema).default([]),
   hwLockUp: z.boolean().default(false),
@@ -152,6 +160,14 @@ export const productionActivitySchema = z.object({
   hwLockUpDateNote: dateNoteField,
   hwLockUpDateHistory: dateHistoryField,
   hwLockUpScheduleId: persistedIdField.optional().default(null),
+  hwLockUpConfirmed: z.boolean().default(false),
+  hwWeatherstripping: z.boolean().default(false),
+  hwWeatherstrippingDate: z.string().default(''),
+  hwWeatherstrippingDateOwner: dateOwnerField,
+  hwWeatherstrippingDateNote: dateNoteField,
+  hwWeatherstrippingDateHistory: dateHistoryField,
+  hwWeatherstrippingScheduleId: persistedIdField.optional().default(null),
+  hwWeatherstrippingConfirmed: z.boolean().default(false),
 }).superRefine((value, context) => {
   if (value.lotEnd < value.lotStart) {
     context.addIssue({
@@ -239,6 +255,22 @@ export const productionActivitySchema = z.object({
       code: z.ZodIssueCode.custom,
       path: ['hwLockUpDateOwner'],
       message: 'Select who owns the Hardware lock-up date.',
+    })
+  }
+
+  if (value.hwWeatherstripping && !/^\d{4}-\d{2}-\d{2}$/.test(value.hwWeatherstrippingDate)) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['hwWeatherstrippingDate'],
+      message: 'Select the Hardware weatherstripping date.',
+    })
+  }
+
+  if (value.hwWeatherstripping && !isDateOwner(value.hwWeatherstrippingDateOwner)) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['hwWeatherstrippingDateOwner'],
+      message: 'Select who owns the Hardware weatherstripping date.',
     })
   }
 

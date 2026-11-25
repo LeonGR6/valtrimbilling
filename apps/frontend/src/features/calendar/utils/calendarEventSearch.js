@@ -49,7 +49,9 @@ function searchableText(event) {
     ? 'install only'
     : props.variant === 'baseboard-install'
       ? 'baseboard install'
-      : props.variant === 'lock-up' ? 'lock up' : ''
+      : props.variant === 'lock-up'
+        ? 'lock up'
+        : props.variant === 'weatherstripping' ? 'weatherstripping' : ''
 
   return [
     type?.label,

@@ -19,9 +19,11 @@ import {
 import ApartmentRoundedIcon from '@mui/icons-material/ApartmentRounded'
 import BusinessRoundedIcon from '@mui/icons-material/BusinessRounded'
 import CalendarMonthRoundedIcon from '@mui/icons-material/CalendarMonthRounded'
-import { extraEventLabel } from '../utils/calendarExtraEvents.js'
+import { extraEventKey, extraEventLabel } from '../utils/calendarExtraEvents.js'
 import BuildRoundedIcon from '@mui/icons-material/BuildRounded'
 import LockRoundedIcon from '@mui/icons-material/LockRounded'
+import AirRoundedIcon from '@mui/icons-material/AirRounded'
+import BlindsRoundedIcon from '@mui/icons-material/BlindsRounded'
 import StraightenRoundedIcon from '@mui/icons-material/StraightenRounded'
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined'
@@ -171,12 +173,14 @@ function formatChangeDate(value) {
 // What each extra event looks like in the hero, so it is not read as the
 // stage (DM, EXT, HW) it hangs from.
 const EXTRA_EVENT_ICONS = {
+  shutter: <BlindsRoundedIcon />,
   'install-only': <BuildRoundedIcon />,
   'baseboard-install': <StraightenRoundedIcon />,
   'lock-up': <LockRoundedIcon />,
+  weatherstripping: <AirRoundedIcon />,
 }
 
-function ScheduleRow({ label, lotStart, lotEnd, lotNumbers, date, dateOwner, note, tone, focused = false }) {
+function ScheduleRow({ label, lotStart, lotEnd, lotNumbers, date, dateOwner, note, tone, confirmed = false, focused = false }) {
   return (
     <Box className={`schedule-row activity-tone--${tone}${focused ? ' is-focused' : ''}`}>
       <Box className="schedule-row__date">
@@ -187,7 +191,8 @@ function ScheduleRow({ label, lotStart, lotEnd, lotNumbers, date, dateOwner, not
         <span className="schedule-row__owner">{getDateOwnerLabel(dateOwner)}</span>
       </Box>
       <Box className="schedule-row__label">
-        <Typography variant="body2" fontWeight={750}>{label}</Typography>
+        <Typography variant="body2" fontWeight={750}>{confirmed ? `* ${label}` : label}</Typography>
+        {confirmed && <Chip size="small" color="success" variant="outlined" label="Confirmed" />}
         {focused && <span className="schedule-row__focus">This event</span>}
       </Box>
       <Typography variant="caption" color="text.secondary">
@@ -263,6 +268,7 @@ function StageScheduleDetail({ activityType, schedule, lotStart, lotEnd, lotNumb
       date: schedule.date,
       dateOwner: schedule.dateOwner,
       note: schedule.note,
+      confirmed: schedule.confirmed,
     }]
   const optionLabels = [
     schedule.orderMaterial && 'Order material',
@@ -271,6 +277,7 @@ function StageScheduleDetail({ activityType, schedule, lotStart, lotEnd, lotNumb
     schedule.splitPhase && 'Split phase',
     schedule.shutters && 'Shutter',
     schedule.lockUp && 'Lock up',
+    schedule.weatherstripping && 'Weatherstripping',
   ].filter(Boolean)
 
   return (
@@ -296,6 +303,7 @@ function StageScheduleDetail({ activityType, schedule, lotStart, lotEnd, lotNumb
             dateOwner={part.dateOwner ?? schedule.dateOwner}
             note={part.note ?? schedule.note}
             tone={tone}
+            confirmed={Boolean(part.confirmed)}
           />
         ))}
         {schedule.installOnly && (
@@ -308,6 +316,7 @@ function StageScheduleDetail({ activityType, schedule, lotStart, lotEnd, lotNumb
             dateOwner={schedule.installDateOwner}
             note={schedule.installDateNote}
             tone={tone}
+            confirmed={Boolean(schedule.installConfirmed)}
             focused={focusVariant === 'install-only'}
           />
         )}
@@ -320,6 +329,7 @@ function StageScheduleDetail({ activityType, schedule, lotStart, lotEnd, lotNumb
             date={schedule.baseboardInstallDate}
             dateOwner={schedule.baseboardInstallDateOwner}
             note={schedule.baseboardInstallDateNote}
+            confirmed={Boolean(schedule.baseboardInstallConfirmed)}
             tone={getActivityTone(activityType, false, 'baseboard-install')}
             focused={focusVariant === 'baseboard-install'}
           />
@@ -333,8 +343,23 @@ function StageScheduleDetail({ activityType, schedule, lotStart, lotEnd, lotNumb
             date={schedule.lockUpDate}
             dateOwner={schedule.lockUpDateOwner}
             note={schedule.lockUpDateNote}
+            confirmed={Boolean(schedule.lockUpConfirmed)}
             tone={tone}
             focused={focusVariant === 'lock-up'}
+          />
+        )}
+        {schedule.weatherstripping && (
+          <ScheduleRow
+            label="Weatherstripping"
+            lotStart={lotStart}
+            lotEnd={lotEnd}
+            lotNumbers={lotNumbers}
+            date={schedule.weatherstrippingDate}
+            dateOwner={schedule.weatherstrippingDateOwner}
+            note={schedule.weatherstrippingDateNote}
+            confirmed={Boolean(schedule.weatherstrippingConfirmed)}
+            tone={tone}
+            focused={focusVariant === 'weatherstripping'}
           />
         )}
       </Stack>
@@ -364,9 +389,10 @@ export default function ActivityDetail({
   if (!event) return null
 
   const props = event.extendedProps
-  // An extra event (install only, baseboard install, lock up) is taken off on
-  // its own; any other event belongs to an activity that is deleted as a whole.
-  const extraLabel = extraEventLabel(props.variant)
+  // An extra event (Shutter, install only, baseboard install, lock up, weatherstripping) is taken
+  // off on its own; EXT, DM and HW belong to an activity that is deleted as a whole.
+  const extraKey = extraEventKey(props)
+  const extraLabel = extraEventLabel(extraKey)
   const type = activityTypeMap[props.activityType]
   const tone = getActivityTone(props.activityType, props.orderMaterial, props.variant, props.dateOwner)
   const phaseLotNumbers = props.phaseLotNumbers ?? props.lotNumbers ?? []
@@ -421,7 +447,7 @@ export default function ActivityDetail({
         {extraLabel ? (
           <Box className={`activity-detail__hero activity-detail__hero--extra activity-tone--${tone}`}>
             <Box className="activity-detail__type-mark" aria-hidden="true">
-              {EXTRA_EVENT_ICONS[props.variant]}
+              {EXTRA_EVENT_ICONS[extraKey]}
             </Box>
             <Box className="activity-detail__hero-text">
               <span className="activity-detail__hero-title">{extraLabel}</span>
@@ -542,7 +568,7 @@ export default function ActivityDetail({
             <Typography variant="body2" color="text.secondary">
               {extraLabel
                 ? `Only this ${extraLabel.toLowerCase()} event is removed. The EXT, DM and HW events and the rest of the activity stay as they are, and the date history is kept.`
-                : 'This deletes the whole activity: every calendar event in it, including EXT, Shutter, DM, HW and any extra events (install only, baseboard install, lock up). The persisted activity and its audit history will be retained.'}
+                : 'This deletes the whole activity: every calendar event in it, including EXT, Shutter, DM, HW and any extra events (install only, baseboard install, lock up, weatherstripping). The persisted activity and its audit history will be retained.'}
             </Typography>
             {deleteError && <Alert severity="error">{deleteError}</Alert>}
           </Stack>

@@ -16,9 +16,11 @@ export interface GoogleCalendarSchedule {
   scheduleId: string
   activityId: string
   stageType: 'EXT' | 'SHUTTER' | 'DM' | 'HW'
-  variant: 'BASE' | 'DIVISION' | 'INSTALL_ONLY' | 'BASEBOARD_INSTALL' | 'LOCK_UP'
+  variant: 'BASE' | 'DIVISION' | 'INSTALL_ONLY' | 'BASEBOARD_INSTALL' | 'LOCK_UP' | 'WEATHERSTRIPPING'
   scheduledDate: string
   dateOwner: 'SUPERVISOR' | 'JOBSITE_SUPERINTENDENT' | 'TENTATIVE'
+  // A confirmed event has "* " before its name, like in the app. Older payloads may not carry it.
+  confirmed?: boolean
   scheduleNote: string
   activityNotes: string
   orderMaterial: boolean
@@ -292,6 +294,7 @@ function variantSuffix(variant: GoogleCalendarSchedule['variant']) {
     INSTALL_ONLY: ' INSTALL ONLY',
     BASEBOARD_INSTALL: ' BASEBOARD INSTALL',
     LOCK_UP: ' LOCK UP',
+    WEATHERSTRIPPING: ' WEATHERSTRIPPING',
   }[variant]
 }
 
@@ -349,7 +352,7 @@ export function buildGoogleCalendarEvent(
   const colorId = googleEventColorId(schedule)
 
   return {
-    summary: `${stageLabel(schedule.stageType)}${variantSuffix(schedule.variant)} • ${lots}`,
+    summary: `${schedule.confirmed ? '* ' : ''}${stageLabel(schedule.stageType)}${variantSuffix(schedule.variant)} • ${lots}`,
     description,
     location: `${schedule.builderName} — ${schedule.community}`,
     ...(colorId ? { colorId } : {}),

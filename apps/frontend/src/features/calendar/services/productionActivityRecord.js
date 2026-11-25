@@ -16,7 +16,7 @@ function optionalNote(value) {
   return note || null
 }
 
-function toSchedule(id, variant, date, dateOwner, note, lotIds) {
+function toSchedule(id, variant, date, dateOwner, note, lotIds, confirmed = false) {
   return {
     id: optionalId(id),
     variant,
@@ -24,6 +24,7 @@ function toSchedule(id, variant, date, dateOwner, note, lotIds) {
     dateOwner: dateOwner || 'TENTATIVE',
     note: optionalNote(note),
     lotIds: requiredIds(lotIds),
+    confirmed: Boolean(confirmed),
   }
 }
 
@@ -52,6 +53,7 @@ function toPrimarySchedules(values, prefix, variant) {
       values[`${prefix}DateOwner`],
       values[`${prefix}DateNote`],
       allLotIds,
+      values[`${prefix}Confirmed`],
     )]
   }
 
@@ -62,6 +64,7 @@ function toPrimarySchedules(values, prefix, variant) {
     part.dateOwner,
     part.note,
     getSplitLotIds(values, part),
+    part.confirmed,
   ))
 }
 
@@ -74,6 +77,7 @@ export function toProductionActivityRpc(values) {
     values.extDateOwner,
     values.extDateNote,
     allLotIds,
+    values.extConfirmed,
   )]
   if (values.extInstallOnly) {
     extSchedules.push(toSchedule(
@@ -83,6 +87,7 @@ export function toProductionActivityRpc(values) {
       values.extInstallDateOwner,
       values.extInstallDateNote,
       allLotIds,
+      values.extInstallConfirmed,
     ))
   }
 
@@ -103,6 +108,7 @@ export function toProductionActivityRpc(values) {
         values.shutterDateOwner,
         values.shutterDateNote,
         allLotIds,
+        values.shutterConfirmed,
       )],
     })
   }
@@ -116,6 +122,7 @@ export function toProductionActivityRpc(values) {
       values.dmInstallDateOwner,
       values.dmInstallDateNote,
       allLotIds,
+      values.dmInstallConfirmed,
     ))
   }
   if (values.dmBaseboardInstall) {
@@ -126,6 +133,7 @@ export function toProductionActivityRpc(values) {
       values.dmBaseboardInstallDateOwner,
       values.dmBaseboardInstallDateNote,
       allLotIds,
+      values.dmBaseboardInstallConfirmed,
     ))
   }
   stages.push({ type: 'DM', orderMaterial: false, schedules: dmSchedules })
@@ -139,6 +147,18 @@ export function toProductionActivityRpc(values) {
       values.hwLockUpDateOwner,
       values.hwLockUpDateNote,
       allLotIds,
+      values.hwLockUpConfirmed,
+    ))
+  }
+  if (values.hwWeatherstripping) {
+    hwSchedules.push(toSchedule(
+      values.hwWeatherstrippingScheduleId,
+      'WEATHERSTRIPPING',
+      values.hwWeatherstrippingDate,
+      values.hwWeatherstrippingDateOwner,
+      values.hwWeatherstrippingDateNote,
+      allLotIds,
+      values.hwWeatherstrippingConfirmed,
     ))
   }
   stages.push({ type: 'HW', orderMaterial: false, schedules: hwSchedules })
@@ -214,6 +234,7 @@ function toSplitParts(schedules, lotsById) {
     date: schedule.date,
     dateOwner: schedule.dateOwner,
     note: schedule.note,
+    confirmed: Boolean(schedule.confirmed),
     history: scheduleHistory(schedule),
   }))
 }
@@ -249,6 +270,7 @@ export function toProductionActivityDraft(activity, jobs) {
   const dmBaseboardInstall = findSchedule(dmStage, 'BASEBOARD_INSTALL')
   const shutter = findSchedule(shutterStage, 'BASE')
   const lockUp = findSchedule(hwStage, 'LOCK_UP')
+  const weatherstripping = findSchedule(hwStage, 'WEATHERSTRIPPING')
   const lotNumbers = selectedLots.map((lot) => String(lot.lotNumber))
   const followUpStates = Object.fromEntries(
     activity.stages.flatMap((stage) => stage.schedules)
@@ -279,6 +301,7 @@ export function toProductionActivityDraft(activity, jobs) {
     extDateNote: ext.note,
     extDateHistory: scheduleHistory(ext),
     extScheduleId: ext.id,
+    extConfirmed: Boolean(ext.confirmed),
     extOrderMaterial: Boolean(extStage.orderMaterial),
     extInstallOnly: Boolean(extInstall),
     extInstallDate: extInstall?.date ?? '',
@@ -286,29 +309,34 @@ export function toProductionActivityDraft(activity, jobs) {
     extInstallDateNote: extInstall?.note ?? '',
     extInstallDateHistory: scheduleHistory(extInstall),
     extInstallScheduleId: extInstall?.id ?? null,
+    extInstallConfirmed: Boolean(extInstall?.confirmed),
     dmShutters: Boolean(shutter),
     shutterDate: shutter?.date ?? '',
     shutterDateOwner: shutter?.dateOwner ?? '',
     shutterDateNote: shutter?.note ?? '',
     shutterDateHistory: scheduleHistory(shutter),
     shutterScheduleId: shutter?.id ?? null,
+    shutterConfirmed: Boolean(shutter?.confirmed),
     dmDate: dm.date,
     dmDateOwner: dm.dateOwner,
     dmDateNote: dm.note,
     dmDateHistory: scheduleHistory(dm),
     dmScheduleId: dm.variant === 'BASE' ? dm.id : null,
+    dmConfirmed: dm.variant === 'BASE' && Boolean(dm.confirmed),
     dmInstallOnly: Boolean(dmInstall),
     dmInstallDate: dmInstall?.date ?? '',
     dmInstallDateOwner: dmInstall?.dateOwner ?? '',
     dmInstallDateNote: dmInstall?.note ?? '',
     dmInstallDateHistory: scheduleHistory(dmInstall),
     dmInstallScheduleId: dmInstall?.id ?? null,
+    dmInstallConfirmed: Boolean(dmInstall?.confirmed),
     dmBaseboardInstall: Boolean(dmBaseboardInstall),
     dmBaseboardInstallDate: dmBaseboardInstall?.date ?? '',
     dmBaseboardInstallDateOwner: dmBaseboardInstall?.dateOwner ?? '',
     dmBaseboardInstallDateNote: dmBaseboardInstall?.note ?? '',
     dmBaseboardInstallDateHistory: scheduleHistory(dmBaseboardInstall),
     dmBaseboardInstallScheduleId: dmBaseboardInstall?.id ?? null,
+    dmBaseboardInstallConfirmed: Boolean(dmBaseboardInstall?.confirmed),
     dmSplitPhase: dmPrimary.some((schedule) => schedule.variant === 'DIVISION'),
     dmSplitParts: toSplitParts(
       dmPrimary.filter((schedule) => schedule.variant === 'DIVISION'),
@@ -319,6 +347,7 @@ export function toProductionActivityDraft(activity, jobs) {
     hwDateNote: hw.note,
     hwDateHistory: scheduleHistory(hw),
     hwScheduleId: hw.variant === 'BASE' ? hw.id : null,
+    hwConfirmed: hw.variant === 'BASE' && Boolean(hw.confirmed),
     hwSplitPhase: hwPrimary.some((schedule) => schedule.variant === 'DIVISION'),
     hwSplitParts: toSplitParts(
       hwPrimary.filter((schedule) => schedule.variant === 'DIVISION'),
@@ -330,5 +359,13 @@ export function toProductionActivityDraft(activity, jobs) {
     hwLockUpDateNote: lockUp?.note ?? '',
     hwLockUpDateHistory: scheduleHistory(lockUp),
     hwLockUpScheduleId: lockUp?.id ?? null,
+    hwLockUpConfirmed: Boolean(lockUp?.confirmed),
+    hwWeatherstripping: Boolean(weatherstripping),
+    hwWeatherstrippingDate: weatherstripping?.date ?? '',
+    hwWeatherstrippingDateOwner: weatherstripping?.dateOwner ?? '',
+    hwWeatherstrippingDateNote: weatherstripping?.note ?? '',
+    hwWeatherstrippingDateHistory: scheduleHistory(weatherstripping),
+    hwWeatherstrippingScheduleId: weatherstripping?.id ?? null,
+    hwWeatherstrippingConfirmed: Boolean(weatherstripping?.confirmed),
   }
 }

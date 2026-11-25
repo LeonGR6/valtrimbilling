@@ -3069,3 +3069,8 @@
     animation: none;
   }
 }
+
+/* Confirmed: in a stage card it lines up with the date note under it. */
+.production-stage-card > .event-confirmed {
+  margin: 6px 0 0 5px !important;
+}

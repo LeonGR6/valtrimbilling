@@ -369,6 +369,7 @@ export async function listJobPlaceLines(jobId) {
 const EVENT_COLUMNS = [
   'id', 'change_order_id', 'change_order_number', 'po_co_number', 'change_order_status', 'job_id', 'job_code',
   'community', 'builder_id', 'builder_name', 'scheduled_date', 'note', 'created_at', 'updated_at', 'lots',
+  'is_confirmed',
 ].join(', ')
 
 function failEvents(error) {
@@ -424,6 +425,16 @@ export async function updateChangeOrderEvent(payload) {
   const client = await requireSupabase()
   const { error } = await client.rpc('update_change_order_event', payload)
   if (error) failEventWrite(error, 'The event could not be changed.')
+}
+
+/** Marks an event as confirmed or not: the Calendar shows "*" before the name of a confirmed one. */
+export async function setChangeOrderEventConfirmed(eventId, confirmed) {
+  const client = await requireSupabase()
+  const { error } = await client.rpc('set_change_order_event_confirmed', {
+    p_event_id: Number(eventId),
+    p_confirmed: Boolean(confirmed),
+  })
+  if (error) failEventWrite(error, 'Whether the event is confirmed could not be saved.')
 }
 
 /** Removes an event: its Lots need one again. */

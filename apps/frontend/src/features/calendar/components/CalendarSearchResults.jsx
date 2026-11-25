@@ -14,7 +14,7 @@ function todayIso() {
   return `${now.getFullYear()}-${month}-${day}`
 }
 
-function ResultRow({ event, selected, onOpen }) {
+export function ResultRow({ event, selected, onOpen }) {
   const props = event.extendedProps
   const type = activityTypeMap[props.activityType]
   const tone = getActivityTone(props.activityType, props.orderMaterial, props.variant, props.dateOwner)
@@ -22,7 +22,9 @@ function ResultRow({ event, selected, onOpen }) {
     ? 'Install only'
     : props.variant === 'baseboard-install'
       ? 'Baseboard install'
-      : props.variant === 'lock-up' ? 'Lock up' : ''
+      : props.variant === 'lock-up'
+        ? 'Lock up'
+        : props.variant === 'weatherstripping' ? 'Weatherstripping' : ''
 
   return (
     <ButtonBase

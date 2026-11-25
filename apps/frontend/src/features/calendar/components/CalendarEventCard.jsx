@@ -1,6 +1,7 @@
 import { Box } from '@mui/material'
 import {
   activityTypeMap,
+  confirmedMark,
   getActivityTone,
   getDateOwnerLabel,
   getFollowUpStatusMeta,
@@ -26,7 +27,7 @@ export default function CalendarEventCard({ event, isList = false, isMonth = fal
           <Box className="list-event__identity">
             <span className="list-event__stage">{type.shortLabel}</span>
             <Box className="list-event__copy">
-              <strong>{props.changeOrderNumber}{props.poCoNumber ? ` · PO / CO # ${props.poCoNumber}` : ''}</strong>
+              <strong>{confirmedMark(props)}{props.changeOrderNumber}{props.poCoNumber ? ` · PO / CO # ${props.poCoNumber}` : ''}</strong>
               <span>Job #{props.jobCode} · {props.community}</span>
               <span>{props.lotsText}</span>
             </Box>
@@ -40,7 +41,7 @@ export default function CalendarEventCard({ event, isList = false, isMonth = fal
     return (
       <Box className={`work-event activity-tone--${tone}`}>
         <Box className="work-event__topline">
-          <strong>{props.changeOrderNumber}</strong>
+          <strong>{confirmedMark(props)}{props.changeOrderNumber}</strong>
           <span className="work-event__tag">Extra / CO</span>
         </Box>
         <span className="work-event__community">Job #{props.jobCode} · {props.community}</span>
@@ -66,7 +67,7 @@ export default function CalendarEventCard({ event, isList = false, isMonth = fal
         <Box className="list-event__identity">
           <span className="list-event__stage">{type.shortLabel}</span>
           <Box className="list-event__copy">
-            <strong>{type.label}</strong>
+            <strong>{confirmedMark(props)}{type.label}</strong>
             <span>Job #{props.jobCode} · {props.community}</span>
             <span>{[props.phase, props.building].filter(Boolean).join(' · ')}</span>
             <span>{getLotsLabel(props.lotStart, props.lotEnd, props.lotNumbers)}</span>
@@ -74,10 +75,12 @@ export default function CalendarEventCard({ event, isList = false, isMonth = fal
         </Box>
         <Box className="list-event__tags">
           <span>{getDateOwnerLabel(props.dateOwner, true)}</span>
+          {props.confirmed && <span>Confirmed</span>}
           {props.orderMaterial && <span>Order material</span>}
           {props.variant === 'install-only' && <span>Install only</span>}
           {props.variant === 'baseboard-install' && <span>Baseboard install</span>}
           {props.variant === 'lock-up' && <span>Lock up</span>}
+          {props.variant === 'weatherstripping' && <span>Weatherstripping</span>}
           {followUp && (
             <span className={`follow-up-status follow-up-status--${followUp.tone}`}>
               {followUp.label}
@@ -91,11 +94,12 @@ export default function CalendarEventCard({ event, isList = false, isMonth = fal
   return (
     <Box className={`work-event activity-tone--${tone}`}>
       <Box className="work-event__topline">
-        <strong>{type.label}</strong>
+        <strong>{confirmedMark(props)}{type.label}</strong>
         {props.orderMaterial && <span className="work-event__tag">Order material</span>}
         {props.variant === 'install-only' && <span className="work-event__tag">Install only</span>}
         {props.variant === 'baseboard-install' && <span className="work-event__tag">Baseboard install</span>}
         {props.variant === 'lock-up' && <span className="work-event__tag">Lock up</span>}
+        {props.variant === 'weatherstripping' && <span className="work-event__tag">Weatherstripping</span>}
         {followUp && (
           <span className={`work-event__tag follow-up-status follow-up-status--${followUp.tone}`}>
             {followUp.label}

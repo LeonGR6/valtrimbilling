@@ -62,6 +62,7 @@ import DmReminders from './DmReminders.jsx'
 import CalendarPageHeader from './CalendarPageHeader.jsx'
 import CalendarWorkspace from './CalendarWorkspace.jsx'
 import UnscheduledPhases from './UnscheduledPhases.jsx'
+import OrderMaterials from './OrderMaterials.jsx'
 import ChangeOrdersPlaceholder from './ChangeOrdersPlaceholder.jsx'
 import {
   calculateProductionDates,
@@ -74,11 +75,13 @@ import { parseCalendarSchedule } from '../utils/calendarRoutes.js'
 import { describeDateChanges, moveEventInDraft } from '../utils/calendarEventMove.js'
 import { searchCalendarEvents } from '../utils/calendarEventSearch.js'
 import {
+  extraEventKey,
   extraEventLabel,
-  isExtraEventVariant,
+  extraEventParentStage,
   removeExtraEventFromDraft,
 } from '../utils/calendarExtraEvents.js'
 import { existingPhaseEvents } from '../utils/phaseCalendarCoverage.js'
+import { localTodayIso, splitOrderMaterialEvents } from '../utils/orderMaterialEvents.js'
 import {
   findJobBuilder,
   getPhasePatch,
@@ -88,7 +91,7 @@ import './CalendarScheduler.css'
 
 // Production is the only mode shown; a CHANGE_ORDERS value saved earlier is ignored.
 const CALENDAR_MODES = ['PRODUCTION']
-const CALENDAR_TABS = ['SCHEDULE', 'BUILDER_SETTINGS', 'FOLLOW_UPS', 'DM_REMINDERS', 'UNSCHEDULED']
+const CALENDAR_TABS = ['SCHEDULE', 'BUILDER_SETTINGS', 'FOLLOW_UPS', 'DM_REMINDERS', 'UNSCHEDULED', 'ORDER_MATERIALS']
 const CALENDAR_VIEWS = ['dayGridMonth', 'dayGridWeek', 'listWeek', 'multiMonthYear']
 // The events of their own of an approved Extra / CO show with the Production ones (in green).
 const ACTIVITY_TYPES = CHANGE_ORDERS_ENABLED
@@ -291,6 +294,13 @@ export default function CalendarScheduler() {
     setStoredCommunity('ALL')
     setStoredJobId('ALL')
   }
+
+  // The EXT events with Order material checked, for the Order materials tab.
+  const today = localTodayIso()
+  const orderMaterialEvents = useMemo(
+    () => splitOrderMaterialEvents(events, today),
+    [events, today],
+  )
 
   const selectedEvent = events.find((event) => event.id === selectedId) ?? null
 
@@ -541,7 +551,7 @@ export default function CalendarScheduler() {
         && Number(item.extendedProps.lotEnd) === Number(previousProps?.lotEnd)
       )) ?? savedEvents.find((item) => (
         item.extendedProps.activityType === savedActivityType
-        && !isExtraEventVariant(item.extendedProps.variant)
+        && !extraEventKey(item.extendedProps)
       )) ?? savedEvents[0]
 
       const savedMessage = isEditing
@@ -575,20 +585,23 @@ export default function CalendarScheduler() {
     }
   }
 
-  // Takes one extra event (install only, baseboard install, lock up) off the
-  // activity, like unchecking it in the form, and leaves everything else.
+  // Takes one extra event (Shutter, install only, baseboard install, lock up, weatherstripping) off
+  // the activity, like unchecking it in the form, and leaves everything else. EXT, DM and HW are
+  // never taken off alone: only Delete activity removes them, all three together.
   const removeExtraEvent = async () => {
     const props = selectedEvent?.extendedProps
     if (!props?.activityId || !canManageProductionActivities) {
       throw new Error('Select a persisted Production event to remove.')
     }
 
-    const label = extraEventLabel(props.variant)
+    const key = extraEventKey(props)
+    const label = extraEventLabel(key)
     if (!label) throw new Error('Only an extra event can be removed on its own.')
+    const parentStage = extraEventParentStage(props)
 
     const result = calendarEventSchema.safeParse(removeExtraEventFromDraft(
       createDraftFromProductionEvent(selectedEvent),
-      props.variant,
+      key,
       props.activityType,
     ))
     if (!result.success) {
@@ -599,8 +612,8 @@ export default function CalendarScheduler() {
     try {
       const { events: savedEvents } = await saveProductionActivity(result.data)
       const mainEvent = savedEvents.find((item) => (
-        item.extendedProps.activityType === props.activityType
-        && !isExtraEventVariant(item.extendedProps.variant)
+        item.extendedProps.activityType === parentStage
+        && !extraEventKey(item.extendedProps)
       )) ?? savedEvents[0]
 
       setSelectedId(mainEvent?.id ?? null)
@@ -710,6 +723,7 @@ export default function CalendarScheduler() {
         onSyncGoogleCalendar={syncGoogleCalendar}
         onCreate={openCreateDrawer}
         unscheduledCount={phaseCoverage.ready ? phaseCoverage.unscheduled.length : 0}
+        orderMaterialCount={orderMaterialEvents.upcoming.length}
         canConnectGoogleCalendar={profile?.role === 'ADMIN'}
         canCreate={canManageProductionActivities}
         googleCalendarConnected={googleCalendarConnection?.status === 'CONNECTED'}
@@ -734,6 +748,19 @@ export default function CalendarScheduler() {
           error={phaseCoverage.error}
           canSchedule={canManageProductionActivities}
           onSchedule={openScheduleDrawer}
+          onRetry={() => {
+            Promise.allSettled([refreshJobs(), refreshProductionActivities()])
+          }}
+        />
+      ) : activeTab === 'ORDER_MATERIALS' ? (
+        <OrderMaterials
+          upcoming={orderMaterialEvents.upcoming}
+          past={orderMaterialEvents.past}
+          today={today}
+          ready={!firstLoad}
+          error={productionError || jobsError || null}
+          selectedId={selectedId}
+          onOpen={openEventOptions}
           onRetry={() => {
             Promise.allSettled([refreshJobs(), refreshProductionActivities()])
           }}

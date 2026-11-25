@@ -132,6 +132,63 @@ function shiftDateByBaseDifference(value, previousBaseDate, nextBaseDate) {
   return formatDateOnly(addDays(date, difference))
 }
 
+/** The Weatherstripping date a newly checked box suggests: 2 business days after HW. */
+export const WEATHERSTRIPPING_DAYS_AFTER_HW = 2
+
+function isWeekend(date) {
+  return date.getUTCDay() === 0 || date.getUTCDay() === 6
+}
+
+/** `value` moved `days` business days (Monday to Friday) forward, or back when negative. */
+export function addBusinessDays(value, days) {
+  let date = parseDateOnly(value)
+  if (!date || !Number.isInteger(days)) return ''
+
+  const step = days < 0 ? -1 : 1
+  let left = Math.abs(days)
+  while (left > 0) {
+    date = addDays(date, step)
+    if (!isWeekend(date)) left -= 1
+  }
+  return formatDateOnly(date)
+}
+
+/** How many business days `to` is after `from` (negative when before); null for a bad date. */
+export function businessDaysBetween(from, to) {
+  const start = parseDateOnly(from)
+  const end = parseDateOnly(to)
+  if (!start || !end) return null
+
+  const step = end >= start ? 1 : -1
+  let count = 0
+  for (let date = start; date.getTime() !== end.getTime();) {
+    date = addDays(date, step)
+    if (!isWeekend(date)) count += step
+  }
+  return count
+}
+
+// An event keeps its business days after its stage: Friday HW with Weatherstripping on Tuesday,
+// moved to Monday, puts Weatherstripping on Wednesday, never on a weekend.
+function shiftByBusinessDays(value, previousBaseDate, nextBaseDate) {
+  const gap = businessDaysBetween(previousBaseDate, value)
+  if (gap === null || !parseDateOnly(nextBaseDate)) return value
+  return addBusinessDays(nextBaseDate, gap)
+}
+
+// The Baseboard install follows DM and the Weatherstripping follows HW: when the stage moves, its
+// event keeps the same number of business days after it. An event that is not checked is left alone.
+function followingEvents(draft, nextDmDate, nextHwDate) {
+  return {
+    ...(nextDmDate && draft.dmBaseboardInstall && {
+      dmBaseboardInstallDate: shiftByBusinessDays(draft.dmBaseboardInstallDate, draft.dmDate, nextDmDate),
+    }),
+    ...(nextHwDate && draft.hwWeatherstripping && {
+      hwWeatherstrippingDate: shiftByBusinessDays(draft.hwWeatherstrippingDate, draft.hwDate, nextHwDate),
+    }),
+  }
+}
+
 function shiftSplitParts(parts, previousBaseDate, nextBaseDate) {
   return (parts ?? []).map((part) => ({
     ...part,
@@ -157,6 +214,7 @@ export function getProductionDateCascade(draft, activityType, nextDate, configur
       }),
       hwDate: dates.hwDate,
       hwSplitParts: shiftSplitParts(draft.hwSplitParts, draft.hwDate, dates.hwDate),
+      ...followingEvents(draft, dates.dmDate, dates.hwDate),
     }
   }
 
@@ -170,6 +228,7 @@ export function getProductionDateCascade(draft, activityType, nextDate, configur
       }),
       hwDate,
       hwSplitParts: shiftSplitParts(draft.hwSplitParts, draft.hwDate, hwDate),
+      ...followingEvents(draft, nextDate, hwDate),
     }
   }
 
@@ -180,5 +239,6 @@ export function getProductionDateCascade(draft, activityType, nextDate, configur
   return {
     hwDate: nextDate,
     hwSplitParts: shiftSplitParts(draft.hwSplitParts, draft.hwDate, nextDate),
+    ...followingEvents(draft, null, nextDate),
   }
 }

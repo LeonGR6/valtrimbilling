@@ -1,8 +1,21 @@
-// The extra events of a Production activity (install only, baseboard install,
-// lock up): events of their own that hang from a stage and can be taken away
-// without touching the rest of the activity.
+// The extra events of a Production activity (Shutter, install only, baseboard install,
+// lock up, weatherstripping): events of their own that hang from a stage and can be taken away
+// without touching the rest of the activity. EXT, DM and HW are not: they go together, and only
+// deleting the whole activity takes them away.
 
 const EXTRA_EVENTS = {
+  // The Shutter hangs from DM (its "Shutter" option); it is a stage of its own, not a variant.
+  shutter: {
+    label: 'Shutter',
+    parentStage: 'DM',
+    fields: () => ({
+      flag: 'dmShutters',
+      date: 'shutterDate',
+      owner: 'shutterDateOwner',
+      note: 'shutterDateNote',
+      confirmed: 'shutterConfirmed',
+    }),
+  },
   'install-only': {
     label: 'Install only',
     // EXT and DM each have their own: ext… / dm… fields in the form.
@@ -13,6 +26,7 @@ const EXTRA_EVENTS = {
         date: `${key}InstallDate`,
         owner: `${key}InstallDateOwner`,
         note: `${key}InstallDateNote`,
+        confirmed: `${key}InstallConfirmed`,
       }
     },
   },
@@ -23,6 +37,7 @@ const EXTRA_EVENTS = {
       date: 'dmBaseboardInstallDate',
       owner: 'dmBaseboardInstallDateOwner',
       note: 'dmBaseboardInstallDateNote',
+      confirmed: 'dmBaseboardInstallConfirmed',
     }),
   },
   'lock-up': {
@@ -32,6 +47,17 @@ const EXTRA_EVENTS = {
       date: 'hwLockUpDate',
       owner: 'hwLockUpDateOwner',
       note: 'hwLockUpDateNote',
+      confirmed: 'hwLockUpConfirmed',
+    }),
+  },
+  weatherstripping: {
+    label: 'Weatherstripping',
+    fields: () => ({
+      flag: 'hwWeatherstripping',
+      date: 'hwWeatherstrippingDate',
+      owner: 'hwWeatherstrippingDateOwner',
+      note: 'hwWeatherstrippingDateNote',
+      confirmed: 'hwWeatherstrippingConfirmed',
     }),
   },
 }
@@ -42,7 +68,22 @@ export function isExtraEventVariant(variant) {
   return Object.hasOwn(EXTRA_EVENTS, variant)
 }
 
-/** "Install only", "Baseboard install" or "Lock up"; null for any other event. */
+/**
+ * Which extra event a Calendar event is ('shutter', 'install-only', …), from its `extendedProps`;
+ * null for EXT, DM and HW themselves.
+ */
+export function extraEventKey(props) {
+  if (props?.activityType === 'SHUTTER') return 'shutter'
+  return props?.variant !== 'shutter' && isExtraEventVariant(props?.variant) ? props.variant : null
+}
+
+/** The stage whose event is shown once an extra event is taken away: DM for the Shutter, else its own. */
+export function extraEventParentStage(props) {
+  const key = extraEventKey(props)
+  return (key && EXTRA_EVENTS[key].parentStage) || props?.activityType
+}
+
+/** "Shutter", "Install only", "Baseboard install", "Lock up" or "Weatherstripping"; null for any other. */
 export function extraEventLabel(variant) {
   return isExtraEventVariant(variant) ? EXTRA_EVENTS[variant].label : null
 }
@@ -62,5 +103,6 @@ export function removeExtraEventFromDraft(draft, variant, stage) {
     [fields.date]: '',
     [fields.owner]: '',
     [fields.note]: '',
+    [fields.confirmed]: false,
   }
 }

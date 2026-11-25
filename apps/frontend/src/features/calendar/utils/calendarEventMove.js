@@ -13,6 +13,7 @@ const DATE_FIELDS = [
   ['dmInstallDate', 'DM install only'],
   ['dmBaseboardInstallDate', 'DM baseboard install'],
   ['hwLockUpDate', 'HW lock up'],
+  ['hwWeatherstrippingDate', 'HW weatherstripping'],
 ]
 
 const SPLIT_FIELDS = [
@@ -23,7 +24,8 @@ const SPLIT_FIELDS = [
 
 /**
  * The draft with the dragged event on its new date. The date rules apply as in
- * the form: moving EXT or DM carries the dates that follow it.
+ * the form: moving EXT or DM carries the dates that follow it, and moving DM
+ * or HW carries its Baseboard install or Weatherstripping.
  *
  * @param props the dragged event's `extendedProps`
  * @param newDate ISO date the event was dropped on
@@ -42,6 +44,10 @@ export function moveEventInDraft({ draft, props, newDate, configuration }) {
 
   if (props.variant === 'lock-up') {
     return { ...draft, hwLockUpDate: newDate }
+  }
+
+  if (props.variant === 'weatherstripping') {
+    return { ...draft, hwWeatherstrippingDate: newDate }
   }
 
   if (props.variant === 'division') {

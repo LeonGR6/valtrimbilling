@@ -420,6 +420,24 @@ Deno.test('a baseboard install is named in its Google Calendar event', () => {
   assertMatch(event.summary, /^DM BASEBOARD INSTALL • /u)
 })
 
+Deno.test('a weatherstripping is named in its Google Calendar event, in the HW color', () => {
+  const weatherstripping = {
+    ...schedule,
+    stageType: 'HW' as const,
+    variant: 'WEATHERSTRIPPING' as const,
+    orderMaterial: false,
+  }
+  const event = buildGoogleCalendarEvent(weatherstripping)
+
+  assertMatch(event.summary, /^Hardware WEATHERSTRIPPING • /u)
+  assertEquals(googleEventColorId(weatherstripping), googleEventColorId({ ...weatherstripping, variant: 'BASE' }))
+})
+
+Deno.test('a confirmed event has "* " before its name in Google', () => {
+  assertMatch(buildGoogleCalendarEvent({ ...schedule, confirmed: true }).summary, /^\* EXT FRAMES • /u)
+  assertMatch(buildGoogleCalendarEvent({ ...schedule, confirmed: false }).summary, /^EXT FRAMES • /u)
+})
+
 Deno.test('Lots with a decimal are listed on their own, not joined into a range', () => {
   const event = buildGoogleCalendarEvent({ ...schedule, lotNumbers: ['12', '12.1', '13', '14'] })
 

@@ -101,10 +101,11 @@ function estimateInvoiceAmount(
   return Number(summary.invoiceAmount) || 0
 }
 
-// Baseboard install is a calendar event of its own after DM: it never makes
-// anything billable (and, dated earlier by mistake, it cannot bring billing forward).
+// Baseboard install (after DM) and Weatherstripping (after HW) are calendar events of their own:
+// they never make anything billable (and, dated earlier by mistake, it cannot bring billing forward).
 function countsForBilling(productionSchedule) {
   return productionSchedule.variant !== 'BASEBOARD_INSTALL'
+    && productionSchedule.variant !== 'WEATHERSTRIPPING'
 }
 
 function emptySuggestion(mode, cutoffDate = null, isMissedCutoff = false) {

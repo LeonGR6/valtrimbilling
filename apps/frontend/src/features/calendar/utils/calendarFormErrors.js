@@ -25,6 +25,7 @@ const FIELD_ORDER = [
   'dmSplitParts',
   'hwDate',
   'hwLockUpDate',
+  'hwWeatherstrippingDate',
   'hwSplitParts',
   'notes',
 ]
@@ -41,6 +42,7 @@ const FIELD_LABELS = {
   dmSplitParts: 'DM split schedule',
   hwDate: 'HW date',
   hwLockUpDate: 'Hardware lock-up date',
+  hwWeatherstrippingDate: 'Hardware weatherstripping date',
   hwSplitParts: 'HW split schedule',
   notes: 'General production notes',
 }

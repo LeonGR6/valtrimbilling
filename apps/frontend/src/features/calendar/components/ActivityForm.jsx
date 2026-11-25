@@ -25,6 +25,7 @@ import {
 import DrawerHeader from './DrawerHeader.jsx'
 import FormSaveStatus from './FormSaveStatus.jsx'
 import {
+  ConfirmedCheckbox,
   DateOwnerSelector,
   OptionCheckbox,
   SplitScheduleEditor,
@@ -47,6 +48,8 @@ import {
   calculateProductionDates,
   calculateShutterDate,
   getProductionDateCascade,
+  addBusinessDays,
+  WEATHERSTRIPPING_DAYS_AFTER_HW,
 } from '../utils/calendarDateRules.js'
 import { errorsByKey, fieldErrorProps } from '../utils/calendarFormErrors.js'
 import { focusFormError } from '../utils/formErrorFocus.js'
@@ -411,6 +414,8 @@ export default function ActivityForm({
                 date={draft.extDate}
                 dateOwner={draft.extDateOwner}
                 note={draft.extDateNote}
+                confirmed={draft.extConfirmed}
+                onConfirmedChange={(checked) => onChange({ extConfirmed: checked })}
                 onDateChange={(value) => onChange(getProductionDateCascade(
                   draft,
                   'EXT',
@@ -439,6 +444,7 @@ export default function ActivityForm({
                           ? (draft.extInstallDateOwner || draft.extDateOwner)
                           : '',
                         extInstallDateNote: checked ? draft.extInstallDateNote : '',
+                        extInstallConfirmed: checked ? draft.extInstallConfirmed : false,
                       })}
                     />
                     {draft.extInstallOnly && (
@@ -458,6 +464,11 @@ export default function ActivityForm({
                           onChange={(value) => onChange({ extInstallDateOwner: value })}
                           label="EXT install-only date ownership"
                           compact
+                        />
+                        <ConfirmedCheckbox
+                          checked={draft.extInstallConfirmed}
+                          onChange={(checked) => onChange({ extInstallConfirmed: checked })}
+                          label="EXT install-only confirmed"
                         />
                         <TextField
                           label="EXT install-only date note (optional)"
@@ -487,6 +498,8 @@ export default function ActivityForm({
                 date={draft.shutterDate}
                 dateOwner={draft.shutterDateOwner}
                 note={draft.shutterDateNote}
+                confirmed={draft.shutterConfirmed}
+                onConfirmedChange={(checked) => onChange({ shutterConfirmed: checked })}
                 onDateChange={(value) => onChange(getProductionDateCascade(
                   draft,
                   'SHUTTER',
@@ -507,6 +520,8 @@ export default function ActivityForm({
                 date={draft.dmDate}
                 dateOwner={draft.dmDateOwner}
                 note={draft.dmDateNote}
+                confirmed={draft.dmConfirmed}
+                onConfirmedChange={!draft.dmSplitPhase ? (checked) => onChange({ dmConfirmed: checked }) : null}
                 onDateChange={(value) => onChange(getProductionDateCascade(
                   draft,
                   'DM',
@@ -530,6 +545,7 @@ export default function ActivityForm({
                             ? (draft.dmInstallDateOwner || draft.dmDateOwner)
                             : '',
                           dmInstallDateNote: checked ? draft.dmInstallDateNote : '',
+                          dmInstallConfirmed: checked ? draft.dmInstallConfirmed : false,
                         })}
                       />
                       {draft.dmInstallOnly && (
@@ -550,6 +566,11 @@ export default function ActivityForm({
                             label="DM install-only date ownership"
                             compact
                           />
+                          <ConfirmedCheckbox
+                            checked={draft.dmInstallConfirmed}
+                            onChange={(checked) => onChange({ dmInstallConfirmed: checked })}
+                            label="DM install-only confirmed"
+                          />
                           <TextField
                             label="DM install-only date note (optional)"
                             value={draft.dmInstallDateNote}
@@ -567,7 +588,7 @@ export default function ActivityForm({
                       <OptionCheckbox
                         checked={draft.dmBaseboardInstall}
                         label="Baseboard install"
-                        description="Add a separate DM baseboard install event."
+                        description="Add a separate DM baseboard install event. It moves with DM."
                         onChange={(checked) => onChange({
                           dmBaseboardInstall: checked,
                           dmBaseboardInstallDate: checked ? draft.dmBaseboardInstallDate : '',
@@ -575,6 +596,7 @@ export default function ActivityForm({
                             ? (draft.dmBaseboardInstallDateOwner || draft.dmDateOwner)
                             : '',
                           dmBaseboardInstallDateNote: checked ? draft.dmBaseboardInstallDateNote : '',
+                          dmBaseboardInstallConfirmed: checked ? draft.dmBaseboardInstallConfirmed : false,
                         })}
                       />
                       {draft.dmBaseboardInstall && (
@@ -594,6 +616,11 @@ export default function ActivityForm({
                             onChange={(value) => onChange({ dmBaseboardInstallDateOwner: value })}
                             label="DM baseboard install date ownership"
                             compact
+                          />
+                          <ConfirmedCheckbox
+                            checked={draft.dmBaseboardInstallConfirmed}
+                            onChange={(checked) => onChange({ dmBaseboardInstallConfirmed: checked })}
+                            label="DM baseboard install confirmed"
                           />
                           <TextField
                             label="DM baseboard install date note (optional)"
@@ -659,6 +686,8 @@ export default function ActivityForm({
                 date={draft.hwDate}
                 dateOwner={draft.hwDateOwner}
                 note={draft.hwDateNote}
+                confirmed={draft.hwConfirmed}
+                onConfirmedChange={!draft.hwSplitPhase ? (checked) => onChange({ hwConfirmed: checked }) : null}
                 onDateChange={(value) => onChange(getProductionDateCascade(
                   draft,
                   'HW',
@@ -689,6 +718,7 @@ export default function ActivityForm({
                             ? (draft.hwLockUpDateOwner || draft.hwDateOwner)
                             : '',
                           hwLockUpDateNote: checked ? draft.hwLockUpDateNote : '',
+                          hwLockUpConfirmed: checked ? draft.hwLockUpConfirmed : false,
                         })}
                       />
                       {draft.hwLockUp && (
@@ -709,12 +739,71 @@ export default function ActivityForm({
                             label="Hardware lock-up date ownership"
                             compact
                           />
+                          <ConfirmedCheckbox
+                            checked={draft.hwLockUpConfirmed}
+                            onChange={(checked) => onChange({ hwLockUpConfirmed: checked })}
+                            label="Hardware lock-up confirmed"
+                          />
                           <TextField
                             label="Hardware lock-up date note (optional)"
                             value={draft.hwLockUpDateNote}
                             onChange={(event) => onChange({ hwLockUpDateNote: event.target.value })}
                             slotProps={{ htmlInput: { maxLength: 100 } }}
                             helperText={`${draft.hwLockUpDateNote.length}/100`}
+                            multiline
+                            minRows={2}
+                            fullWidth
+                            size="small"
+                            className="date-note-field"
+                          />
+                        </Box>
+                      )}
+                      <OptionCheckbox
+                        checked={draft.hwWeatherstripping}
+                        label="Weatherstripping"
+                        description="Add a separate Hardware weatherstripping event, 2 business days after HW. It moves with HW."
+                        onChange={(checked) => onChange({
+                          hwWeatherstripping: checked,
+                          hwWeatherstrippingDate: checked
+                            ? (draft.hwWeatherstrippingDate
+                              || addBusinessDays(draft.hwDate, WEATHERSTRIPPING_DAYS_AFTER_HW))
+                            : '',
+                          hwWeatherstrippingDateOwner: checked
+                            ? (draft.hwWeatherstrippingDateOwner || draft.hwDateOwner)
+                            : '',
+                          hwWeatherstrippingDateNote: checked ? draft.hwWeatherstrippingDateNote : '',
+                          hwWeatherstrippingConfirmed: checked ? draft.hwWeatherstrippingConfirmed : false,
+                        })}
+                      />
+                      {draft.hwWeatherstripping && (
+                        <Box className="activity-option-date-group">
+                          <DateField
+                            label="Hardware weatherstripping date"
+                            value={draft.hwWeatherstrippingDate}
+                            onChange={(date) => onChange({ hwWeatherstrippingDate: date })}
+                            fullWidth
+                            required
+                            size="small"
+                            className="activity-option-date"
+                            {...fieldErrorProps('hwWeatherstrippingDate', errorByKey.hwWeatherstrippingDate)}
+                          />
+                          <DateOwnerSelector
+                            value={draft.hwWeatherstrippingDateOwner}
+                            onChange={(value) => onChange({ hwWeatherstrippingDateOwner: value })}
+                            label="Hardware weatherstripping date ownership"
+                            compact
+                          />
+                          <ConfirmedCheckbox
+                            checked={draft.hwWeatherstrippingConfirmed}
+                            onChange={(checked) => onChange({ hwWeatherstrippingConfirmed: checked })}
+                            label="Hardware weatherstripping confirmed"
+                          />
+                          <TextField
+                            label="Hardware weatherstripping date note (optional)"
+                            value={draft.hwWeatherstrippingDateNote}
+                            onChange={(event) => onChange({ hwWeatherstrippingDateNote: event.target.value })}
+                            slotProps={{ htmlInput: { maxLength: 100 } }}
+                            helperText={`${draft.hwWeatherstrippingDateNote.length}/100`}
                             multiline
                             minRows={2}
                             fullWidth

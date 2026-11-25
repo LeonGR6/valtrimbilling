@@ -45,6 +45,7 @@ export function toChangeOrderEvent(row) {
     builderName: row.builder_name ?? '',
     date: row.scheduled_date,
     note: row.note ?? '',
+    confirmed: Boolean(row.is_confirmed),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     lots: (row.lots ?? []).map(toEventLot),
@@ -133,6 +134,11 @@ export function toCreateEventRpc(changeOrderId, values) {
   }
 }
 
+/** Whether saving the dialog has to change the event's Confirmed too (a new event starts unconfirmed). */
+export function confirmedChanged(event, confirmed) {
+  return Boolean(confirmed) !== Boolean(event?.confirmed)
+}
+
 /** The arguments of `update_change_order_event`. */
 export function toUpdateEventRpc(eventId, values) {
   return {
@@ -195,6 +201,7 @@ export function toCalendarEvent(event) {
       lotNumbers: event.lots.map((lot) => lot.lot),
       lotsText: describeEventLots(event.lots),
       note: event.note,
+      confirmed: Boolean(event.confirmed),
     },
   }
 }

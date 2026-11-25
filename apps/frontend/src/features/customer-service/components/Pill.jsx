@@ -12,13 +12,15 @@ function tone(theme, color) {
 // Tinted label used for the flag under a request number and for the workflow
 // status, in the table and in the detail panel. `color` is a palette key so
 // the tint follows the theme instead of hardcoding a value.
-export default function Pill({ label, color, dense = false }) {
+// `icon`, optional, goes before the label in the same colour.
+export default function Pill({ label, color, dense = false, icon = null }) {
   return (
     <Box
       component="span"
       sx={(theme) => ({
         display: 'inline-flex',
         alignItems: 'center',
+        gap: 0.5,
         px: dense ? 0.625 : 0.875,
         py: dense ? '1px' : '3px',
         // Literal pixels have to be a string: MUI multiplies plain numbers by
@@ -32,8 +34,10 @@ export default function Pill({ label, color, dense = false }) {
         whiteSpace: 'nowrap',
         color: tone(theme, color),
         bgcolor: alpha(tone(theme, color), 0.16),
+        '& svg': { fontSize: dense ? 12 : 14 },
       })}
     >
+      {icon}
       {label}
     </Box>
   )

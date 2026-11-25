@@ -136,7 +136,8 @@ export function travelLegHelperText({ leg, source, details, trafficMode = 'OFF',
 }
 
 // The driving route a travel leg measures, in Google Maps (25 Nov 2026): from the earlier
-// visit to the later one, by their saved coordinates. Null when either has none.
+// visit to the later one, by their saved coordinates. Null when either has none, or when
+// both share one point (visits of the same Job): Google Maps has no route to show there.
 export function travelLegDirectionsUrl(leg, requests = []) {
   const point = (id) => {
     const entry = requests.find((request) => String(request.id) === String(id))
@@ -144,6 +145,6 @@ export function travelLegDirectionsUrl(leg, requests = []) {
   }
   const origin = point(leg.fromRequestId)
   const destination = point(leg.toRequestId)
-  if (!origin || !destination) return null
+  if (!origin || !destination || origin === destination) return null
   return `https://www.google.com/maps/dir/?${new URLSearchParams({ api: '1', origin, destination, travelmode: 'driving' })}`
 }

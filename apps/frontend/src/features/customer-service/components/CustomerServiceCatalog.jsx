@@ -28,6 +28,7 @@ import {
 import CalendarMonthRoundedIcon from '@mui/icons-material/CalendarMonthRounded'
 import EventNoteRoundedIcon from '@mui/icons-material/EventNoteRounded'
 import FilterListRoundedIcon from '@mui/icons-material/FilterListRounded'
+import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded'
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
 import ViewListRoundedIcon from '@mui/icons-material/ViewListRounded'
 import ResponsiveCreateButton from '../../../components/common/ResponsiveCreateButton'
@@ -53,6 +54,7 @@ import CustomerServiceCalendar from './CustomerServiceCalendar.jsx'
 import EmailInboxPanel from './EmailInboxPanel.jsx'
 import NewRequestPrototypeDialog from './NewRequestPrototypeDialog.jsx'
 import ProposalWorkspace from './ProposalWorkspace.jsx'
+import RequestHistory from './RequestHistory.jsx'
 import RequestInboxList from './RequestInboxList.jsx'
 import RequestViewDialog from './RequestViewDialog.jsx'
 import ServiceSummaryCards from './ServiceSummaryCards.jsx'
@@ -71,6 +73,10 @@ const viewCopy = {
   CALENDAR: {
     title: 'Customer Service Calendar',
     description: 'Confirmed service visits, technician schedules and completed work.',
+  },
+  HISTORY: {
+    title: 'Customer Service History',
+    description: 'Completed requests. Search by folio, customer, address or builder and open one to review it.',
   },
 }
 
@@ -374,6 +380,12 @@ export default function CustomerServiceCatalog() {
             iconPosition="start"
             label="Calendar"
           />
+          <Tab
+            value="HISTORY"
+            icon={<HistoryRoundedIcon />}
+            iconPosition="start"
+            label="History"
+          />
         </Tabs>
       </Box>
 
@@ -411,6 +423,8 @@ export default function CustomerServiceCatalog() {
           <Alert severity="error" action={<Button color="inherit" onClick={reloadRequests}>Retry</Button>}>
             Requests could not be loaded. {error}
           </Alert>
+        ) : activeView === 'HISTORY' ? (
+          <RequestHistory requests={requests} onViewRequest={setViewRequest} />
         ) : activeView === 'CALENDAR' ? (
           <CustomerServiceCalendar
             requests={requests}

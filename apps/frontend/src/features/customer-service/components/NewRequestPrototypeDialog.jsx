@@ -46,6 +46,7 @@ import AttachFileRoundedIcon from '@mui/icons-material/AttachFileRounded'
 import AddRoundedIcon from '@mui/icons-material/AddRounded'
 import CalendarMonthRoundedIcon from '@mui/icons-material/CalendarMonthRounded'
 import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded'
+import ScienceOutlinedIcon from '@mui/icons-material/ScienceOutlined'
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded'
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
 import ErrorOutlineRoundedIcon from '@mui/icons-material/ErrorOutlineRounded'
@@ -55,7 +56,6 @@ import FactCheckRoundedIcon from '@mui/icons-material/FactCheckRounded'
 import MapOutlinedIcon from '@mui/icons-material/MapOutlined'
 import PictureAsPdfRoundedIcon from '@mui/icons-material/PictureAsPdfRounded'
 import RestartAltRoundedIcon from '@mui/icons-material/RestartAltRounded'
-import ScienceOutlinedIcon from '@mui/icons-material/ScienceOutlined'
 import UndoRoundedIcon from '@mui/icons-material/UndoRounded'
 import { FormPhoneInput } from '../../../components/common/InternationalPhoneInput.jsx'
 import { useBuilders } from '../../builders/context/useBuilders.js'
@@ -122,6 +122,8 @@ import {
   isRequestOverdue,
   requestWorkflowStages,
 } from '../utils/requestInbox.js'
+import Pill from './Pill.jsx'
+import RequestPhotos from './RequestPhotos.jsx'
 
 function SectionHeading({ title, description }) {
   return (
@@ -1152,20 +1154,13 @@ export default function NewRequestPrototypeDialog({
                   : isEditMode ? `${isCompleted ? 'Edit internal notes' : planningLocked ? 'Edit priority & notes' : 'Edit request'} · ${request.requestNumber}`
                   : emailImport ? isRecoveryUpload ? `Complete recovery PDF · ${recoveryRequest?.requestNumber ?? ''}` : 'Recover email import' : 'New request'}
               </Typography>
-              <Chip
-                size="small"
-                icon={<ScienceOutlinedIcon />}
-                label={!isEditMode || !isReadOnlyMode || request?.prototypeOnly === false
-                  ? 'Supabase-backed'
-                  : 'Frontend simulation'}
-                color="info"
-                variant="outlined"
-              />
+              {/* The stage, in the same tinted label as the lists; a completed request in green
+                  with a check (decided 25 Nov 2026). */}
               {(isReadOnlyMode || planningLocked) && (
-                <Chip
-                  size="small"
+                <Pill
                   label={workflow.label}
-                  color={workflow.color === 'neutral' ? 'default' : workflow.color}
+                  color={isCompleted ? 'success' : workflow.color}
+                  icon={isCompleted ? <CheckCircleRoundedIcon /> : null}
                 />
               )}
             </Stack>
@@ -1296,6 +1291,7 @@ export default function NewRequestPrototypeDialog({
               View source & extraction
             </Button>
           )}
+          {isEditMode && request?.id != null && <RequestPhotos requestId={request.id} />}
           {!isReadOnlyMode && showValidationSummary && validationErrorSummary.length > 0 && (
             <Alert severity="error" variant="outlined">
               <Typography variant="body2" fontWeight={800}>

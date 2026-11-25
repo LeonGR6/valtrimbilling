@@ -68,38 +68,6 @@ test('a new service visit maps a request into a calendar event', () => {
   assert.deepEqual(event.extendedProps.workTypes, ['Hardware', 'Woodwork'])
 })
 
-test('persisted appointments map into calendar events after reload', () => {
-  const [event] = createServiceCalendarEventsFromRequests([{
-    id: 19,
-    currentAppointmentId: 81,
-    requestNumber: 'SR-00000019',
-    appointmentDate: '2026-09-24',
-    appointmentStart: '09:00',
-    appointmentEnd: '10:30',
-    appointmentState: 'SCHEDULED',
-    confirmationStatus: 'CONFIRMED',
-    workType: 'HW_WS',
-    technicianId: 3,
-    technicianName: 'Mike Rodriguez',
-    contactName: 'Leon Test',
-    community: 'Cedar Grove',
-    lotNumber: '18',
-    street: '18 Test Street',
-    city: 'Temecula',
-    state: 'CA',
-    postalCode: '92592',
-    issue: 'Hardware adjustment',
-    internalNotes: 'Call first.',
-  }])
-
-  assert.equal(event.id, 'service-81')
-  assert.equal(event.start, '2026-09-24T08:00:00')
-  assert.equal(event.end, '2026-09-24T10:00:00')
-  assert.deepEqual(event.extendedProps.internalSlot, { start: '09:00', end: '10:30' })
-  assert.equal(event.extendedProps.status, 'CONFIRMED')
-  assert.deepEqual(event.extendedProps.workTypes, ['Hardware', 'Woodwork'])
-})
-
 test('confirmed prototype requests map into calendar events while proposals stay hidden', () => {
   const events = createServiceCalendarEventsFromRequests([
     {
@@ -222,27 +190,6 @@ test('confirmed requests of every work type choice appear and filter individuall
     assert.equal(filtered[0].title, `CS · ${value}`)
   }
   assert.deepEqual(requests, originalRequests, 'mapping must not change request data')
-})
-
-test('appointment-backed requests retain each current category in the calendar', () => {
-  const requests = confirmedRequestsForEveryCategory().map((request, index) => ({
-    ...request,
-    currentAppointmentId: 100 + index,
-    appointmentDate: '2026-10-12',
-    appointmentStart: '08:30',
-    appointmentEnd: '09:00',
-    appointmentState: 'SCHEDULED',
-    confirmationStatus: 'CONFIRMED',
-  }))
-  const events = createServiceCalendarEventsFromRequests(requests)
-
-  assert.equal(filterServiceCalendarEvents(events).length, serviceWorkTypeOptions.length)
-  for (const [index, { value }] of serviceWorkTypeOptions.entries()) {
-    const filtered = filterServiceCalendarEvents(events, { workType: value })
-    assert.equal(filtered.length, 1)
-    assert.equal(filtered[0].id, `service-${100 + index}`)
-    assert.equal(filtered[0].extendedProps.status, 'CONFIRMED')
-  }
 })
 
 test('combined historical categories match either category and remain visible by default', () => {

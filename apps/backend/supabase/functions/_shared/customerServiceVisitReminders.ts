@@ -9,17 +9,18 @@ import { serviceWorkTypeLabel } from "./customerServicePlanning.mjs";
 import {
   californiaClockAt,
   californiaInstant,
+  isCustomerServiceBusinessDay,
   parseServiceDate,
   withinCustomerServiceEmailHours,
 } from "./customerServiceScheduling.mjs";
 
 export const VISIT_REMINDER_AT = "15:00";
 
-// The weekday before a date: Friday for a Monday visit.
+// The business day before a date: Friday for a Monday visit, skipping holidays too.
 export function previousBusinessDay(date: string) {
   const day = parseServiceDate(date);
   if (!day) return "";
-  do day.setUTCDate(day.getUTCDate() - 1); while ([0, 6].includes(day.getUTCDay()));
+  do day.setUTCDate(day.getUTCDate() - 1); while (!isCustomerServiceBusinessDay(day.toISOString().slice(0, 10)));
   return day.toISOString().slice(0, 10);
 }
 

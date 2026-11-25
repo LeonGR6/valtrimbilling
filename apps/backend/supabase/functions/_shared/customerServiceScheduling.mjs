@@ -121,8 +121,32 @@ export function travelMinutesFor(travel, fromRequestId, toRequestId) {
   return Number.isInteger(value) && value >= 0 ? value : null
 }
 
-// Date rules for a visit: real business day, not in the past, not blocked by the
-// customer. A date after dueOn is only a warning (late-work policy is still open).
+// Days Valtrim is closed: the US holidays it closes (decided 24-25 Nov 2026), kept in the
+// service_holidays table. The browser and each Edge Function load them before planning
+// with setCustomerServiceHolidays; until then there are none. A holiday is not a business
+// day: no visit is offered or registered on it and it does not count as a business day.
+let holidayNames = new Map()
+
+/** @param {{ date: string, name: string }[]} holidays */
+export function setCustomerServiceHolidays(holidays = []) {
+  holidayNames = new Map(holidays.filter((holiday) => parseServiceDate(holiday?.date))
+    .map((holiday) => [holiday.date, String(holiday.name ?? 'Holiday')]))
+}
+
+/** @param {string} date */
+export function customerServiceHolidayName(date) {
+  return holidayNames.get(date) ?? ''
+}
+
+// Monday to Friday and not a holiday. date: YYYY-MM-DD.
+/** @param {string} date */
+export function isCustomerServiceBusinessDay(date) {
+  const day = parseServiceDate(date)
+  return Boolean(day) && ![0, 6].includes(day.getUTCDay()) && !holidayNames.has(date)
+}
+
+// Date rules for a visit: real business day, not a holiday, not in the past, not blocked
+// by the customer. A date after dueOn is only a warning (late-work policy is still open).
 /**
  * @param {{ date: string, workStart: string, today: string, nowMinutes: number,
  *   unavailableDates?: string[], dueOn?: string | null }} input
@@ -134,6 +158,9 @@ export function checkVisitDate({ date, workStart, today, nowMinutes, unavailable
   if (!day) errors.push({ field: 'date', message: 'Select a valid service date.' })
   else if (date < today) errors.push({ field: 'date', message: 'The service date cannot be in the past (California time).' })
   else if ([0, 6].includes(day.getUTCDay())) errors.push({ field: 'date', message: 'Service appointments are Monday through Friday.' })
+  else if (holidayNames.has(date)) {
+    errors.push({ field: 'date', message: `${holidayNames.get(date)} is a holiday and Valtrim is closed.` })
+  }
   else if (unavailableDates.includes(date)) {
     errors.push({ field: 'date', message: 'The customer has recorded this date as unavailable.' })
   }

@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
   applyTravelEstimates, mergeTravelEstimateResults, outdatedTravelLegs, routesMinutesByLeg, travelEstimateMessages,
-  travelLegHelperText, travelLegSource, travelLegsToEstimate,
+  travelLegDirectionsUrl, travelLegHelperText, travelLegSource, travelLegsToEstimate,
 } from '../src/features/customer-service/utils/travelEstimates.js'
 
 const leg = (fromRequestId, toRequestId, minutes) => ({
@@ -206,4 +206,19 @@ test('the leg label shows the traffic time and the minutes without traffic', () 
   )
   assert.equal(travelLegHelperText({ leg: { ...base, minutes: null }, source: null }), 'Missing: calculate it with Google Maps or type it · Jorge Murillo')
   assert.equal(travelLegHelperText({ leg: base, source: 'MANUAL', details }), 'Manual estimate · Jorge Murillo')
+})
+
+test('the route button opens Google Maps directions from the earlier visit to the later one', () => {
+  const requests = [
+    { id: 3049, latitude: 34.5789, longitude: -118.1165 },
+    { id: 2497, latitude: 34.6012, longitude: -118.0921 },
+    { id: 2022, latitude: null, longitude: null },
+  ]
+  const url = new URL(travelLegDirectionsUrl({ fromRequestId: '3049', toRequestId: 2497 }, requests))
+  assert.equal(`${url.origin}${url.pathname}`, 'https://www.google.com/maps/dir/')
+  assert.deepEqual(Object.fromEntries(url.searchParams), {
+    api: '1', origin: '34.5789,-118.1165', destination: '34.6012,-118.0921', travelmode: 'driving',
+  })
+  assert.equal(travelLegDirectionsUrl({ fromRequestId: 3049, toRequestId: 2022 }, requests), null, 'no coordinates, no route')
+  assert.equal(travelLegDirectionsUrl({ fromRequestId: 3049, toRequestId: 9999 }, requests), null, 'unknown visit, no route')
 })

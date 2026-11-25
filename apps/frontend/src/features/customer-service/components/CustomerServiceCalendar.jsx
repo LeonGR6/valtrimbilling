@@ -78,7 +78,7 @@ const serviceCalendarViews = {
 
 export default function CustomerServiceCalendar({ requests, settings, onViewRequest }) {
   const calendarRef = useRef(null)
-  const { technicians, storedTravelMinutes } = useCustomerServicePrototype()
+  const { technicians, storedTravelMinutes, holidays } = useCustomerServicePrototype()
   // Each visit carries its delay margin from the saved travel legs, which the day-before
   // traffic check refreshes (block R6). One computation per day shown. Days held by a
   // proposal waiting for the customer are added as tentative (Awaiting customer).
@@ -126,11 +126,21 @@ export default function CustomerServiceCalendar({ requests, settings, onViewRequ
     workType: workTypeFilter,
   }), [serviceEvents, statusFilter, technicianFilter, workTypeFilter])
 
-  const visibleEvents = useMemo(() => (
-    showProduction
-      ? [...filteredServiceEvents, ...productionOverlayEvents]
-      : filteredServiceEvents
-  ), [filteredServiceEvents, productionOverlayEvents, showProduction])
+  // Days Valtrim is closed: a shaded background with the holiday name, whatever the filters.
+  const holidayEvents = useMemo(() => holidays.map((holiday) => ({
+    id: `holiday-${holiday.date}`,
+    start: holiday.date,
+    allDay: true,
+    display: 'background',
+    title: holiday.name,
+    extendedProps: { calendarType: 'HOLIDAY' },
+  })), [holidays])
+
+  const visibleEvents = useMemo(() => [
+    ...holidayEvents,
+    ...filteredServiceEvents,
+    ...(showProduction ? productionOverlayEvents : []),
+  ], [filteredServiceEvents, holidayEvents, productionOverlayEvents, showProduction])
 
   const selectedEvent = visibleEvents.find((event) => event.id === selectedId) ?? null
 
@@ -296,14 +306,20 @@ export default function CustomerServiceCalendar({ requests, settings, onViewRequ
               editable={false}
               selectable={false}
               events={visibleEvents}
-              eventClick={({ event }) => setSelectedId(event.id)}
+              eventClick={({ event }) => {
+                if (event.extendedProps.calendarType !== 'HOLIDAY') setSelectedId(event.id)
+              }}
               eventContent={(info) => {
+                if (info.event.extendedProps.calendarType === 'HOLIDAY') {
+                  return <span className="service-holiday__label">{info.event.title} · Closed</span>
+                }
                 const displayMode = getServiceCalendarEventDisplayMode(info.view.type)
                 return info.event.extendedProps.calendarType === 'CUSTOMER_SERVICE'
                   ? <CustomerServiceEventCard event={info.event} displayMode={displayMode} />
                   : <CalendarEventCard event={info.event} displayMode={displayMode} />
               }}
               eventClassNames={({ event }) => {
+                if (event.extendedProps.calendarType === 'HOLIDAY') return ['service-holiday']
                 if (event.extendedProps.calendarType === 'CUSTOMER_SERVICE') {
                   const tone = getServiceEventTone(event.extendedProps.status)
                   return [`fc-service--${tone}`, `service-tone--${tone}`, event.id === selectedId ? 'is-selected' : '']

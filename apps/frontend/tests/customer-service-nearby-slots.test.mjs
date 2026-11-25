@@ -8,7 +8,7 @@ import {
   proposalAlternatives, recommendSlot, secondOptionSlot, suggestionLegsToCheck, technicianSets, techniciansByPreference,
 } from '../src/features/customer-service/utils/nearbySlotSuggestions.js'
 import {
-  fitStatus, fitStatusLabels, getPrototypePlanningTechnicians, suggestionStartDate, validatePrototypeProposalDraft,
+  fitStatus, fitStatusLabels, getPrototypePlanningTechnicians, suggestionStartDate, timeOnSameDay, validatePrototypeProposalDraft,
 } from '../src/features/customer-service/utils/proposalDraft.js'
 
 const roster = [
@@ -576,4 +576,49 @@ test('a proposal keeps up to three other days for the same technicians, skipping
     request: ready, requests: [ready], technicians, technicianIds: ['4'],
     skipDates: ['2026-11-10', '2026-11-11', '2026-11-12', '2026-11-13'], now,
   }), [])
+})
+
+// "Find a time this day" (25 Nov 2026): same day and technicians, the chosen window first.
+const jorgeId = () => technicians.find((person) => person.name === 'Jorge Murillo').id
+const sameDay = ({ appointments, extraRequests, values }) => {
+  const requests = applyAppointmentsToRequests([...extraRequests, quick], appointments, roster)
+  const slot = timeOnSameDay({ requestId: quick.id, values, requests, technicians, now })
+  return slot && { windowStart: slot.windowStart, internalStart: slot.internalStart }
+}
+const mondayValues = (extra = {}) => ({
+  technicianIds: [jorgeId()], date: '2026-11-09', windowStart: '08:00', internalStart: '08:00', travelMinutes: {}, ...extra,
+})
+
+test('a collision moves to the first time that fits that day, counting the drive once it is known', () => {
+  const base = { appointments: monday, extraRequests: [confirmed(10), confirmed(11)] }
+  // SR-10 takes 8:00–8:40 with pickup. Travel still unknown: right after it, pending.
+  assert.deepEqual(sameDay({ ...base, values: mondayValues() }), { windowStart: '08:00', internalStart: '08:40' })
+  // With 15 minutes from SR-10 the drive is counted.
+  assert.deepEqual(
+    sameDay({ ...base, values: mondayValues({ travelMinutes: { '10>20': 15, '20>11': 20 } }) }),
+    { windowStart: '08:00', internalStart: '08:55' },
+  )
+})
+
+test('the chosen window is tried first, then the earliest other window', () => {
+  // Jorge has SR-12 at noon; the morning is free, but the chosen 12–2 window still has room.
+  const noon = { appointments: [appointment(12, [4], '2026-11-09', '12:00', '14:00', '12:00', '12:30')], extraRequests: [confirmed(12)] }
+  assert.deepEqual(
+    sameDay({ ...noon, values: mondayValues({ windowStart: '12:00', internalStart: '12:00', travelMinutes: { '12>20': 10 } }) }),
+    { windowStart: '12:00', internalStart: '12:50' },
+  )
+  // The 10–12 window has no room around SR-11, so it goes to the earliest other window.
+  assert.deepEqual(
+    sameDay({
+      appointments: monday, extraRequests: [confirmed(10), confirmed(11)],
+      values: mondayValues({ windowStart: '10:00', internalStart: '10:30', travelMinutes: { '10>20': 15, '20>11': 20, '11>20': 10 } }),
+    }),
+    { windowStart: '08:00', internalStart: '08:55' },
+  )
+})
+
+test('no room that day for the technician gives nothing: the day and technician are not changed', () => {
+  const full = { appointments: [appointment(13, [4], '2026-11-09', '08:00', '14:00', '08:00', '15:00')], extraRequests: [confirmed(13)] }
+  assert.equal(sameDay({ ...full, values: mondayValues() }), null)
+  assert.equal(sameDay({ ...full, values: mondayValues({ date: '' }) }), null)
 })

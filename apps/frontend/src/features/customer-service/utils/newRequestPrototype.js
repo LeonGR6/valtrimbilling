@@ -6,6 +6,7 @@ import {
   normalizePhoneNumber,
 } from '../../../utils/phoneNumbers.js'
 import { findCustomerServiceJob } from '../data/customerServiceJobCatalog.js'
+import { isCustomerServiceBusinessDay } from './customerServiceScheduling.js'
 import {
   calculateGeneralFixDuration,
   getServiceTask as getPrototypeServiceTask,
@@ -117,10 +118,10 @@ export function calculatePrototypeDueDate(startDate, businessDays = 5) {
   const date = parseIsoDate(startDate)
   let counted = 0
 
+  // Weekends and holidays do not count (24 Nov 2026), as in the database.
   while (counted < businessDays) {
     date.setDate(date.getDate() + 1)
-    const day = date.getDay()
-    if (day >= 1 && day <= 5) counted += 1
+    if (isCustomerServiceBusinessDay(toIsoDate(date))) counted += 1
   }
 
   return toIsoDate(date)

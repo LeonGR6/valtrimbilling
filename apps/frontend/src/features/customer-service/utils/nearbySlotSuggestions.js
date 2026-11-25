@@ -29,7 +29,7 @@
 // - An overdue request's second day is the earliest other day with room.
 import { serviceCustomerWindowOptions } from '../data/serviceCalendarEvents.js'
 import {
-  minutesToTime, parseServiceDate, timeToMinutes, travelLegKey, travelMinutesFor,
+  isCustomerServiceBusinessDay, minutesToTime, parseServiceDate, timeToMinutes, travelLegKey, travelMinutesFor,
 } from './customerServiceScheduling.js'
 import {
   proposalSuggestionLeadBusinessDays, proposalSuggestionSearchBusinessDays, proposalSuggestionStepMinutes,
@@ -187,7 +187,8 @@ export function earliestAvailableSlot({
 }
 
 const dayOf = (cursor) => cursor.toISOString().slice(0, 10)
-const isBusinessDay = (cursor) => ![0, 6].includes(cursor.getUTCDay())
+// Monday to Friday and not a holiday (24 Nov 2026).
+const isBusinessDay = (cursor) => isCustomerServiceBusinessDay(dayOf(cursor))
 
 // On-time business days the customer can still use after `date`, up to the due date.
 export function businessDaysLeft({ date, dueOn, unavailableDates = [] }) {

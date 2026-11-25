@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { normalizePhoneNumber } from '../../../utils/phoneNumbers.js'
+import { isCustomerServiceBusinessDay } from '../utils/customerServiceScheduling.js'
 
 const namePattern = /^[\p{L}\p{M}\s.'-]+$/u
 
@@ -11,20 +12,20 @@ function parseIsoDate(value) {
 // Mirrors valtrim.calculate_business_due_date: the reported day does not count;
 // counting starts the next calendar day and skips Saturdays and Sundays.
 // A request reported on Monday is due the following Monday.
+const localIsoDate = (date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${
+  String(date.getDate()).padStart(2, '0')}`
+
+// Weekends and holidays do not count (24 Nov 2026), as in the database.
 export function calculateBusinessDueDate(startDate, businessDays = 5) {
   const date = parseIsoDate(startDate)
   let counted = 0
 
   while (counted < businessDays) {
     date.setDate(date.getDate() + 1)
-    const day = date.getDay()
-    if (day >= 1 && day <= 5) counted += 1
+    if (isCustomerServiceBusinessDay(localIsoDate(date))) counted += 1
   }
 
-  const year = date.getFullYear()
-  const month = String(date.getMonth() + 1).padStart(2, '0')
-  const day = String(date.getDate()).padStart(2, '0')
-  return `${year}-${month}-${day}`
+  return localIsoDate(date)
 }
 
 export const coordinatesSchema = z
@@ -158,8 +159,7 @@ export function createPersistedCustomerServiceSchema(
         }
         unavailableDates.add(date)
 
-        const day = parseIsoDate(date).getDay()
-        if (date && (date < windowStart || date > dueOn || day === 0 || day === 6)) {
+        if (date && (date < windowStart || date > dueOn || !isCustomerServiceBusinessDay(date))) {
           context.addIssue({
             code: z.ZodIssueCode.custom,
             path: ['customerUnavailableDates', index, 'date'],

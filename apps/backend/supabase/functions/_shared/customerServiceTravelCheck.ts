@@ -4,7 +4,7 @@
 // again from Google with traffic, leaving at the end of the earlier visit plus its
 // pickup. The planner and the calendar then show each visit's delay margin from those
 // saved minutes. Pure helpers: no Deno, database or Google dependency.
-import { californiaClockAt, parseServiceDate } from "./customerServiceScheduling.mjs";
+import { californiaClockAt, isCustomerServiceBusinessDay, parseServiceDate } from "./customerServiceScheduling.mjs";
 import {
   coordinatesOf,
   fetchRoute,
@@ -21,12 +21,12 @@ import {
 // morning one.
 export const TRAVEL_CHECK_MIN_HOURS_BETWEEN_RUNS = 6;
 
-// The next Monday–Friday after today's date in California.
+// The next business day (Monday–Friday, not a holiday) after today's date in California.
 export function nextBusinessDay(now: Date): string {
   const cursor = parseServiceDate(californiaClockAt(now).date) as Date;
   do {
     cursor.setUTCDate(cursor.getUTCDate() + 1);
-  } while ([0, 6].includes(cursor.getUTCDay()));
+  } while (!isCustomerServiceBusinessDay(cursor.toISOString().slice(0, 10)));
   return cursor.toISOString().slice(0, 10);
 }
 

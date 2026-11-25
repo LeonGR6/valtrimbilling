@@ -1,5 +1,5 @@
 import { calculateBusinessDueDate } from '../schemas/persistedCustomerServiceSchema.js'
-import { customerServiceWorkday } from './customerServiceScheduling.js'
+import { customerServiceWorkday, isCustomerServiceBusinessDay } from './customerServiceScheduling.js'
 
 function zonedParts(instant, timeZone) {
   const parts = Object.fromEntries(
@@ -42,8 +42,8 @@ export function suggestServiceWorkdays(
     deadlineStart.setUTCDate(deadlineStart.getUTCDate() + 1)
   }
   // First business day the request can be worked (the next one if it arrived
-  // after hours or on a weekend).
-  while (deadlineStart.getUTCDay() === 0 || deadlineStart.getUTCDay() === 6) {
+  // after hours, on a weekend or on a holiday).
+  while (!isCustomerServiceBusinessDay(deadlineStart.toISOString().slice(0, 10))) {
     deadlineStart.setUTCDate(deadlineStart.getUTCDate() + 1)
   }
   const startOn = deadlineStart.toISOString().slice(0, 10)
@@ -60,9 +60,9 @@ export function suggestServiceWorkdays(
     cursor.toISOString().slice(0, 10) <= dueOn;
     cursor.setUTCDate(cursor.getUTCDate() + 1)
   ) {
-    if (cursor.getUTCDay() === 0 || cursor.getUTCDay() === 6) continue
-
     const date = cursor.toISOString().slice(0, 10)
+    if (!isCustomerServiceBusinessDay(date)) continue
+
     if (date < current.date) continue
 
     const start = date === current.date

@@ -50,6 +50,15 @@ async function loadProposalFollowUps(client, proposals) {
   return { reminders: reminders.error ? [] : reminders.data, builderContacts: contacts.error ? [] : contacts.data }
 }
 
+// The days Valtrim is closed (service_holidays, 24 Nov 2026), for Calendar and the business
+// day rules. The server checks them again, so a failure to read them never blocks the
+// schedule.
+async function loadHolidays(client) {
+  const { data, error } = await client.from('service_holidays').select('holiday_date, name').order('holiday_date')
+  if (error) return []
+  return data.map((row) => ({ date: row.holiday_date, name: row.name }))
+}
+
 // Day-before traffic checks for visit dates from today on (block R6). They only add a
 // note on screen, so a failure to read them never blocks the schedule.
 async function loadTravelChecks(client, now) {
@@ -69,12 +78,13 @@ async function loadTravelChecks(client, now) {
 // the distance bands used for nearby visits and the day-before traffic checks.
 export async function loadCustomerServiceSchedule(now = new Date()) {
   const client = await requireSupabase()
-  const [appointments, holds, proposals, settings, travelChecks] = await Promise.all([
+  const [appointments, holds, proposals, settings, travelChecks, holidays] = await Promise.all([
     client.from('service_appointments').select(APPOINTMENT_COLUMNS).eq('is_current', true),
     client.from('service_proposal_holds').select(HOLD_COLUMNS),
     client.from('service_proposals').select(PROPOSAL_COLUMNS).order('sent_at', { ascending: false }),
     client.from('service_scheduling_settings').select(SETTINGS_COLUMNS).eq('id', 1).maybeSingle(),
     loadTravelChecks(client, now),
+    loadHolidays(client),
   ])
   for (const result of [appointments, holds, proposals, settings]) {
     if (result.error) {
@@ -88,6 +98,7 @@ export async function loadCustomerServiceSchedule(now = new Date()) {
 
   const loaded = {
     appointments: appointments.data, proposalHolds: holds.data, proposals: proposals.data, travelTrafficMode, distanceBands, testMode,
+    holidays,
     travelChecks, proposalFollowUps: await loadProposalFollowUps(client, proposals.data),
   }
 

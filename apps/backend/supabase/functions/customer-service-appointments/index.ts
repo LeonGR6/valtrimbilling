@@ -28,6 +28,7 @@ import {
   RequestError,
   sendConfirmation,
 } from "../_shared/customerServiceCoordinator.ts";
+import { loadCustomerServiceHolidays } from "../_shared/customerServiceHolidays.ts";
 import { serviceClient } from "../_shared/supabase.ts";
 
 async function register(req: Request, actor: Actor) {
@@ -42,6 +43,8 @@ async function register(req: Request, actor: Actor) {
     throw error;
   }
   const admin = serviceClient();
+  // Holidays are not business days: a visit cannot be registered on one.
+  await loadCustomerServiceHolidays(admin);
   const [requestResult, techniciansResult, day] = await Promise.all([
     admin.from("service_requests").select(REQUEST_COLUMNS).eq("id", input.requestId).maybeSingle(),
     admin.from("service_technician_roster")

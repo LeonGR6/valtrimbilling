@@ -1,4 +1,5 @@
 import { assert, assertEquals } from "@std/assert";
+import { setCustomerServiceHolidays } from "./customerServiceScheduling.mjs";
 import { visitCalendarFile } from "./customerServiceVisitCalendar.ts";
 import {
   dueVisitReminders,
@@ -25,6 +26,16 @@ Deno.test("the business day before a visit skips the weekend", () => {
   assertEquals(previousBusinessDay("2026-11-30"), "2026-11-27"); // Monday → Friday
   assertEquals(previousBusinessDay("2026-12-01"), "2026-11-30"); // Tuesday → Monday
   assertEquals(previousBusinessDay("bad"), "");
+});
+
+Deno.test("the business day before a visit skips holidays", () => {
+  setCustomerServiceHolidays([{ date: "2026-11-26", name: "Thanksgiving Day" }]);
+  try {
+    // A visit the Friday after Thanksgiving is reminded on Wednesday.
+    assertEquals(previousBusinessDay("2026-11-27"), "2026-11-25");
+  } finally {
+    setCustomerServiceHolidays([]);
+  }
 });
 
 Deno.test("a visit is reminded the business day before, from 3:00 PM to 6:00 PM, once", () => {

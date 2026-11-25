@@ -21,7 +21,7 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material'
-import { useColorScheme } from '@mui/material/styles'
+import { useColorScheme, useTheme } from '@mui/material/styles'
 import ArrowBackIosNewRoundedIcon from '@mui/icons-material/ArrowBackIosNewRounded'
 import ArrowForwardIosRoundedIcon from '@mui/icons-material/ArrowForwardIosRounded'
 import EventAvailableRoundedIcon from '@mui/icons-material/EventAvailableRounded'
@@ -66,7 +66,7 @@ const serviceCalendarViews = {
   },
   listWeek: {
     listDayFormat: { weekday: 'long', month: 'short', day: 'numeric' },
-    listDaySideFormat: { year: 'numeric' },
+    listDaySideFormat: false,
   },
   multiMonthYear: {
     dayHeaderFormat: { weekday: 'narrow' },
@@ -75,6 +75,14 @@ const serviceCalendarViews = {
     multiMonthMinWidth: 270,
   },
 }
+
+// What each color means (25 Nov 2026). An in-progress visit keeps the confirmed color.
+const legendItems = [
+  { tone: 'confirmed', label: 'Confirmed · In progress' },
+  { tone: 'awaiting', label: 'Awaiting customer' },
+  { tone: 'completed', label: 'Completed' },
+  { tone: 'overdue', label: 'Overdue' },
+]
 
 export default function CustomerServiceCalendar({ requests, settings, onViewRequest }) {
   const calendarRef = useRef(null)
@@ -95,6 +103,7 @@ export default function CustomerServiceCalendar({ requests, settings, onViewRequ
     return [...visits, ...createHeldServiceCalendarEvents(requests, technicians)]
   }, [requests, technicians, storedTravelMinutes])
   const { events: productionOverlayEvents } = useProductionActivities()
+  const theme = useTheme()
   const { mode, systemMode } = useColorScheme()
   const resolvedColorMode = mode === 'system' ? systemMode : mode
   const colorMode = resolvedColorMode === 'dark' ? 'dark' : 'light'
@@ -104,6 +113,8 @@ export default function CustomerServiceCalendar({ requests, settings, onViewRequ
   const [statusFilter, setStatusFilter] = useState('all')
   const [workTypeFilter, setWorkTypeFilter] = useState('all')
   const [showProduction, setShowProduction] = useState(false)
+  // Visits are Monday to Friday, so weekends are hidden unless asked for (25 Nov 2026).
+  const [showWeekends, setShowWeekends] = useState(false)
   const [selectedId, setSelectedId] = useState(null)
   const technicianOptions = useMemo(() => {
     const technicians = new Map()
@@ -127,14 +138,15 @@ export default function CustomerServiceCalendar({ requests, settings, onViewRequ
   }), [serviceEvents, statusFilter, technicianFilter, workTypeFilter])
 
   // Days Valtrim is closed: a shaded background with the holiday name, whatever the filters.
+  // The list has no background, so there a holiday is its own row.
   const holidayEvents = useMemo(() => holidays.map((holiday) => ({
     id: `holiday-${holiday.date}`,
     start: holiday.date,
     allDay: true,
-    display: 'background',
+    display: viewType === 'listWeek' ? 'auto' : 'background',
     title: holiday.name,
     extendedProps: { calendarType: 'HOLIDAY' },
-  })), [holidays])
+  })), [holidays, viewType])
 
   const visibleEvents = useMemo(() => [
     ...holidayEvents,
@@ -215,6 +227,17 @@ export default function CustomerServiceCalendar({ requests, settings, onViewRequ
         </FormControl>
 
         <FormControlLabel
+          className="service-calendar-weekends-toggle"
+          control={(
+            <Switch
+              checked={showWeekends}
+              onChange={(event) => setShowWeekends(event.target.checked)}
+            />
+          )}
+          label="Show weekends"
+        />
+
+        <FormControlLabel
           className="service-calendar-production-toggle"
           control={(
             <Switch
@@ -268,6 +291,22 @@ export default function CustomerServiceCalendar({ requests, settings, onViewRequ
               {getServiceCalendarViewDescription(viewType)}
               {filteredServiceEvents.length === 0 && ' · No approved service visits match the current filters'}
             </span>
+            <Box component="ul" className="service-calendar-legend" aria-label="Calendar colors">
+              {legendItems.map((item) => (
+                <li key={item.tone}>
+                  <span
+                    className={`service-legend__swatch service-tone--${item.tone}`}
+                    style={item.tone === 'awaiting' ? { '--service-accent': theme.palette.secondary.main } : undefined}
+                    aria-hidden="true"
+                  />
+                  {item.label}
+                </li>
+              ))}
+              <li>
+                <span className="service-legend__swatch service-legend__swatch--holiday" aria-hidden="true" />
+                Holiday
+              </li>
+            </Box>
           </Box>
 
           <Box className={`calendar-canvas service-calendar-canvas service-calendar-canvas--${viewType}`}>
@@ -283,7 +322,7 @@ export default function CustomerServiceCalendar({ requests, settings, onViewRequ
                 return `${clock.date}T${hour}:${minute}:00`
               }}
               firstDay={1}
-              weekends
+              weekends={showWeekends}
               headerToolbar={false}
               views={serviceCalendarViews}
               allDaySlot={showProduction}
@@ -311,7 +350,9 @@ export default function CustomerServiceCalendar({ requests, settings, onViewRequ
               }}
               eventContent={(info) => {
                 if (info.event.extendedProps.calendarType === 'HOLIDAY') {
-                  return <span className="service-holiday__label">{info.event.title} · Closed</span>
+                  return info.view.type === 'listWeek'
+                    ? <span className="service-holiday__list">{info.event.title} · Closed, no visits</span>
+                    : <span className="service-holiday__label">{info.event.title} · Closed</span>
                 }
                 const displayMode = getServiceCalendarEventDisplayMode(info.view.type)
                 return info.event.extendedProps.calendarType === 'CUSTOMER_SERVICE'

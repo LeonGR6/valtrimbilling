@@ -77,6 +77,13 @@ export const navigationRoutes = [
     element: <CustomerServicePage />,
     allowedRoles: ['ADMIN', 'SCHEDULING'],
   },
+  {
+    path: '/customer-service/history',
+    label: 'Customer Service History',
+    icon: 'customer-service',
+    element: <CustomerServicePage />,
+    allowedRoles: ['ADMIN', 'SCHEDULING'],
+  },
 
 ]
 

@@ -8,6 +8,8 @@ export const requestViewStages = {
   REQUESTS: ['NEEDS_REVIEW', 'READY_TO_PROPOSE'],
   PROPOSALS: ['READY_TO_PROPOSE', 'AWAITING_CUSTOMER', 'NEEDS_CONTACT'],
   CALENDAR: ['CONFIRMED', 'WORKING', 'COMPLETED'],
+  // Completed requests to look up after the visit (decided 25 Nov 2026).
+  HISTORY: ['COMPLETED'],
 }
 
 export const defaultProposalStage = 'READY_TO_PROPOSE'
@@ -16,6 +18,7 @@ export const customerServiceViewPaths = {
   REQUESTS: '/customer-service',
   PROPOSALS: '/customer-service/proposals',
   CALENDAR: '/customer-service/calendar',
+  HISTORY: '/customer-service/history',
 }
 
 export function customerServiceViewFromPath(pathname) {
@@ -109,6 +112,8 @@ const editableStagesByView = {
   REQUESTS: requestViewStages.REQUESTS,
   PROPOSALS: ['READY_TO_PROPOSE', 'NEEDS_CONTACT'],
   CALENDAR: requestViewStages.CALENDAR,
+  // Only the internal notes of a completed request, as from the Calendar.
+  HISTORY: requestViewStages.HISTORY,
 }
 
 export function canEditRequestInView(request, view = 'REQUESTS') {

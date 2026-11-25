@@ -213,6 +213,7 @@ test('the route button opens Google Maps directions from the earlier visit to th
     { id: 3049, latitude: 34.5789, longitude: -118.1165 },
     { id: 2497, latitude: 34.6012, longitude: -118.0921 },
     { id: 2022, latitude: null, longitude: null },
+    { id: 2498, latitude: 34.6012, longitude: -118.0921 },
   ]
   const url = new URL(travelLegDirectionsUrl({ fromRequestId: '3049', toRequestId: 2497 }, requests))
   assert.equal(`${url.origin}${url.pathname}`, 'https://www.google.com/maps/dir/')
@@ -221,4 +222,5 @@ test('the route button opens Google Maps directions from the earlier visit to th
   })
   assert.equal(travelLegDirectionsUrl({ fromRequestId: 3049, toRequestId: 2022 }, requests), null, 'no coordinates, no route')
   assert.equal(travelLegDirectionsUrl({ fromRequestId: 3049, toRequestId: 9999 }, requests), null, 'unknown visit, no route')
+  assert.equal(travelLegDirectionsUrl({ fromRequestId: 2497, toRequestId: 2498 }, requests), null, 'same point (same Job), no route')
 })

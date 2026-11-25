@@ -9,9 +9,11 @@ select ok(
   'Customer Service has the current work category catalog'
 );
 
+-- The old confirmation columns of appointments were retired in block B6 (25 Nov 2026);
+-- the customer's answer lives in service_proposals.
 select ok(
-  to_regtype('valtrim.service_confirmation_status') is not null,
-  'Customer confirmation states exist'
+  to_regtype('valtrim.service_confirmation_status') is null,
+  'The old customer confirmation states are retired'
 );
 
 select ok(
@@ -93,11 +95,18 @@ select has_column(
   'Service requests store the single-visit outcome'
 );
 
-select has_column(
+select hasnt_column(
   'valtrim',
   'service_appointments',
   'confirmation_status',
-  'Appointments store the customer confirmation state'
+  'Appointments no longer keep the old confirmation state'
+);
+
+select has_column(
+  'valtrim',
+  'service_appointments',
+  'confirmed_at',
+  'Appointments keep the time the visit was accepted'
 );
 
 select has_function(

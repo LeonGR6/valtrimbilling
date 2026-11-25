@@ -202,60 +202,10 @@ function createPrototypeCalendarEvent(request) {
   }
 }
 
+// The visits of the requests (from their saved appointments) and the days held by sent
+// proposals are added separately. Requests without a dated visit give no event.
 export function createServiceCalendarEventsFromRequests(requests) {
-  return requests
-    .map((request) => {
-      if (!request.currentAppointmentId) return createPrototypeCalendarEvent(request)
-      if (!request.appointmentDate || !request.appointmentStart || !request.appointmentEnd) {
-        return null
-      }
-
-      const customerWindow = resolveServiceCustomerWindow(
-        request.customerWindow?.start ?? request.appointmentStart,
-        request.customerWindow?.end ?? request.appointmentEnd,
-      )
-      const appointmentDate = request.customerWindow?.date ?? request.appointmentDate
-      if (!customerWindow) return null
-
-      const workTypes = normalizeServiceWorkTypes(request.workType)
-      const status = request.confirmationStatus === 'CONFIRMED'
-        ? 'CONFIRMED'
-        : request.appointmentState
-
-      return {
-        id: `service-${request.currentAppointmentId}`,
-        title: `CS · ${formatWorkTypes(workTypes)}`,
-        start: `${appointmentDate}T${customerWindow.start}:00`,
-        end: `${appointmentDate}T${customerWindow.end}:00`,
-        allDay: false,
-        extendedProps: {
-          calendarType: 'CUSTOMER_SERVICE',
-          requestId: request.id,
-          requestNumber: request.requestNumber,
-          reportedOn: request.reportedAt ?? null,
-          dueOn: request.dueOn ?? null,
-          status,
-          workTypes,
-          technicianId: request.technicianId,
-          technician: request.technicianName,
-          homeowner: request.contactName,
-          community: request.community,
-          lotNumber: request.lotNumber,
-          address: [request.street, request.city, request.state, request.postalCode]
-            .filter(Boolean).join(', '),
-          coordinates: requestCoordinates(request),
-          issue: request.issue,
-          notes: request.internalNotes,
-          lastVisit: null,
-          customerWindow,
-          internalSlot: {
-            start: request.appointmentStart,
-            end: request.appointmentEnd,
-          },
-        },
-      }
-    })
-    .filter(Boolean)
+  return requests.map(createPrototypeCalendarEvent).filter(Boolean)
 }
 
 // The Calendar event of one request's visit, so a visit picked in the Proposal Workspace day

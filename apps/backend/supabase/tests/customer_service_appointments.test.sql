@@ -118,7 +118,7 @@ update appointment_fixture set first_appointment = (pg_temp.register(admin_id, f
 select ok(first_appointment is not null, 'An accepted appointment is registered') from appointment_fixture;
 select ok(exists (select 1 from valtrim.service_appointments a, appointment_fixture f
   where a.id = f.first_appointment and a.technician_ids = array[f.tech_a] and a.is_current and a.state = 'SCHEDULED'
-    and a.confirmation_status = 'CONFIRMED' and a.confirmed_at is not null
+    and a.confirmed_at is not null
     and a.acceptance = 'CUSTOMER_ACCEPTED_PROPOSAL' and a.pickup_minutes = 10 and a.created_by = f.admin_id
     and a.window_starts_at = timestamptz '2027-01-11 08:00:00-08' and a.ends_at = timestamptz '2027-01-11 08:30:00-08'),
   'The appointment keeps window, work, pickup, crew, acceptance and actor');

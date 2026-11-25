@@ -467,6 +467,11 @@ verify_jwt = true
 [functions.customer-service-appointment-transitions]
 verify_jwt = false
 
+# Reduced WebP copies of email photos (25 Nov 2026), called by pg_cron every minute. No
+# caller credential: it only converts the photos already queued, one per call, once each.
+[functions.customer-service-email-photos]
+verify_jwt = false
+
 # Called by pg_cron every afternoon (block R6). No caller credential: the date comes
 # from the server clock and a second run for that date within six hours spends nothing.
 [functions.customer-service-travel-check]

@@ -28,8 +28,13 @@
   font-weight: 650;
 }
 
-.service-calendar-production-toggle {
+.service-calendar-weekends-toggle {
   margin-left: auto;
+}
+
+.service-calendar-weekends-toggle .MuiFormControlLabel-label {
+  font-size: 0.82rem;
+  font-weight: 650;
 }
 
 .service-calendar-workspace.calendar-workspace {
@@ -38,7 +43,14 @@
 }
 
 .service-calendar-note {
+  flex-wrap: wrap;
+  row-gap: 4px;
   color: var(--calendar-muted);
+}
+
+/* The view description keeps one line; the legend moves below it when both do not fit. */
+.service-calendar-note > span {
+  flex: 0 1 auto;
 }
 
 .service-calendar-canvas.calendar-canvas {
@@ -199,6 +211,77 @@
   font-weight: 650;
 }
 
+.service-work-event__margin {
+  color: var(--calendar-muted-text, #64748b);
+}
+
+/* The status on a card, in the card color (25 Nov 2026). */
+.service-status-tag,
+.service-work-event__topline .service-status-tag {
+  flex: 0 0 auto;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--service-accent) 26%, transparent);
+  color: var(--calendar-text);
+  font-size: 0.6rem;
+  font-weight: 750;
+  letter-spacing: 0.02em;
+  text-transform: none;
+  white-space: nowrap;
+}
+
+.service-list-event__heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.service-calendar-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 14px;
+  margin: 0 0 0 auto;
+  padding: 0;
+  list-style: none;
+}
+
+.service-calendar-legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.service-legend__swatch {
+  width: 16px;
+  height: 11px;
+  border: 1px solid color-mix(in srgb, var(--service-accent) 58%, transparent);
+  border-left: 3px solid var(--service-accent);
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--service-accent) 24%, transparent);
+}
+
+.service-legend__swatch.service-tone--awaiting {
+  border-style: dashed;
+  border-left-style: solid;
+}
+
+.service-legend__swatch--holiday {
+  --service-accent: var(--calendar-muted-text, #64748b);
+  background: repeating-linear-gradient(
+    -45deg,
+    color-mix(in srgb, var(--calendar-muted-text, #64748b) 40%, transparent) 0 2px,
+    transparent 2px 4px
+  );
+}
+
+.service-holiday__list {
+  color: var(--calendar-muted-text, #64748b);
+  font-weight: 650;
+}
+
 .service-work-event__history {
   margin-top: auto;
   color: var(--calendar-muted);
@@ -319,8 +402,9 @@
   flex: 0 0 auto;
 }
 
+/* Confirmed is blue and Completed green, so the two read apart (25 Nov 2026). */
 .service-tone--confirmed {
-  --service-accent: #22c55e;
+  --service-accent: #3b82f6;
 }
 
 .service-tone--overdue {

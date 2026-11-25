@@ -69,7 +69,7 @@ Deno.test('refreshes a Google access token without exposing the refresh token', 
 Deno.test('builds a complete all-day Google event from persisted Production data', async () => {
   const event = buildGoogleCalendarEvent(schedule)
 
-  assertEquals(event.summary, 'EXT FRAMES • Lots 1–3, 5')
+  assertEquals(event.summary, 'River Walk · P3 B · (1–3, 5) · EXT')
   assertEquals(event.start.date, '2026-09-14')
   assertEquals(event.end.date, '2026-09-15')
   assertEquals(event.status, 'tentative')
@@ -417,7 +417,7 @@ Deno.test('a baseboard install is named in its Google Calendar event', () => {
     orderMaterial: false,
   })
 
-  assertMatch(event.summary, /^DM BASEBOARD INSTALL • /u)
+  assertMatch(event.summary, / · DM BASEBOARD INSTALL$/u)
 })
 
 Deno.test('a weatherstripping is named in its Google Calendar event, in the HW color', () => {
@@ -429,17 +429,35 @@ Deno.test('a weatherstripping is named in its Google Calendar event, in the HW c
   }
   const event = buildGoogleCalendarEvent(weatherstripping)
 
-  assertMatch(event.summary, /^Hardware WEATHERSTRIPPING • /u)
+  assertMatch(event.summary, / · HW WEATHERSTRIPPING$/u)
   assertEquals(googleEventColorId(weatherstripping), googleEventColorId({ ...weatherstripping, variant: 'BASE' }))
 })
 
 Deno.test('a confirmed event has "* " before its name in Google', () => {
-  assertMatch(buildGoogleCalendarEvent({ ...schedule, confirmed: true }).summary, /^\* EXT FRAMES • /u)
-  assertMatch(buildGoogleCalendarEvent({ ...schedule, confirmed: false }).summary, /^EXT FRAMES • /u)
+  assertMatch(buildGoogleCalendarEvent({ ...schedule, confirmed: true }).summary, /^\* River Walk · /u)
+  assertMatch(buildGoogleCalendarEvent({ ...schedule, confirmed: false }).summary, /^River Walk · /u)
 })
 
 Deno.test('Lots with a decimal are listed on their own, not joined into a range', () => {
   const event = buildGoogleCalendarEvent({ ...schedule, lotNumbers: ['12', '12.1', '13', '14'] })
 
-  assertEquals(event.summary, 'EXT FRAMES • Lots 12, 12.1, 13–14')
+  assertEquals(event.summary, 'River Walk · P3 B · (12, 12.1, 13–14) · EXT')
+})
+
+Deno.test('the Google name is the line of the Month view: Community · Phase Building · (Lots) · Event', () => {
+  const event = buildGoogleCalendarEvent({
+    ...schedule,
+    stageType: 'HW',
+    variant: 'BASE',
+    community: 'ANZA',
+    phaseCode: 'Phase 2',
+    building: '2',
+    lotNumbers: ['6', '7', '8', '9', '10', '11'],
+  })
+
+  assertEquals(event.summary, 'ANZA · P2 B2 · (6–11) · HW')
+  assertEquals(
+    buildGoogleCalendarEvent({ ...schedule, building: '', lotNumbers: ['4'] }).summary,
+    'River Walk · P3 · (4) · EXT',
+  )
 })

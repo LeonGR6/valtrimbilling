@@ -278,13 +278,41 @@ function lotLabel(lotNumbers: string[]) {
   return `${labels.length === 1 ? 'Lot' : 'Lots'} ${labels.join(', ')}`
 }
 
+// The short names the Month view of the app uses.
 function stageLabel(stageType: GoogleCalendarSchedule['stageType']) {
   return {
-    EXT: 'EXT FRAMES',
-    SHUTTER: 'Shutter',
+    EXT: 'EXT',
+    SHUTTER: 'SHUTTER',
     DM: 'DM',
-    HW: 'Hardware',
+    HW: 'HW',
   }[stageType]
+}
+
+// "Phase 1" -> "P1", "Building 2" -> "B2", like the Month view. "Building B" stays "B".
+function shortPhaseOrBuilding(prefix: string, value: string) {
+  const text = String(value ?? '').trim().replace(/^(phase|building)\s*/iu, '')
+  if (!text) return ''
+  return text.toLowerCase().startsWith(prefix.toLowerCase()) ? text : `${prefix}${text}`
+}
+
+/**
+ * The name of the event, the same line the Month view of the app shows:
+ * "* Community · P1 B2 · (Lots) · Event". "* " only when it is confirmed.
+ */
+export function googleEventSummary(schedule: GoogleCalendarSchedule) {
+  const phaseBuilding = [
+    shortPhaseOrBuilding('P', schedule.phaseCode),
+    shortPhaseOrBuilding('B', schedule.building),
+  ].filter(Boolean).join(' ')
+  const lots = schedule.lotNumbers.length
+    ? lotLabel(schedule.lotNumbers).replace(/^Lots?\s+/u, '')
+    : ''
+  return (schedule.confirmed ? '* ' : '') + [
+    schedule.community,
+    phaseBuilding,
+    lots ? `(${lots})` : '',
+    `${stageLabel(schedule.stageType)}${variantSuffix(schedule.variant)}`,
+  ].filter(Boolean).join(' · ')
 }
 
 function variantSuffix(variant: GoogleCalendarSchedule['variant']) {
@@ -352,7 +380,7 @@ export function buildGoogleCalendarEvent(
   const colorId = googleEventColorId(schedule)
 
   return {
-    summary: `${schedule.confirmed ? '* ' : ''}${stageLabel(schedule.stageType)}${variantSuffix(schedule.variant)} • ${lots}`,
+    summary: googleEventSummary(schedule),
     description,
     location: `${schedule.builderName} — ${schedule.community}`,
     ...(colorId ? { colorId } : {}),

@@ -2,12 +2,14 @@ const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token'
 const GOOGLE_CALENDAR_API_URL = 'https://www.googleapis.com/calendar/v3'
 const VALTRIM_SOURCE = 'ValtrimBilling'
 
+// The colors of the company ValTrim calendar: EXT Grape, EXT with Order material yellow
+// (Banana, the yellow the Google API offers), DM Tomato, Tentative DM Tangerine, HW Peacock.
 const GOOGLE_EVENT_COLOR_IDS = {
   EXT: '3',
   EXT_ORDER_MATERIAL: '5',
   DM: '11',
   DM_TENTATIVE: '6',
-  HW: '9',
+  HW: '7',
 } as const
 
 type Fetcher = typeof fetch

@@ -9,6 +9,7 @@ import {
   Link,
   Snackbar,
   Stack,
+  Tab,
   Table,
   TableBody,
   TableCell,
@@ -16,10 +17,13 @@ import {
   TableHead,
   TablePagination,
   TableRow,
+  Tabs,
   TextField,
   Typography,
 } from '@mui/material'
 import ClearRoundedIcon from '@mui/icons-material/ClearRounded'
+import FolderOpenRoundedIcon from '@mui/icons-material/FolderOpenRounded'
+import PostAddRoundedIcon from '@mui/icons-material/PostAddRounded'
 import ReceiptLongOutlinedIcon from '@mui/icons-material/ReceiptLongOutlined'
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
 
@@ -33,6 +37,7 @@ import {
   focusRingSx,
 } from '../../../components/common/CatalogPage'
 import ResponsiveCreateButton from '../../../components/common/ResponsiveCreateButton'
+import { usePersistentState } from '../../../hooks/usePersistentState.js'
 import { formatCurrency, formatDate } from '../../draw-invoice/utils/drawInvoiceFormatters.js'
 import { useAuth } from '../../auth/context/useAuth.js'
 import { useChangeOrders } from '../hooks/useChangeOrderData.js'
@@ -45,6 +50,7 @@ import {
   filterChangeOrders,
   summarizeChangeOrders,
 } from '../services/changeOrderRecord.js'
+import ChangeOrderDocumentsCatalog from './ChangeOrderDocumentsCatalog.jsx'
 import ChangeOrderRowActions from './ChangeOrderRowActions.jsx'
 import ChangeOrderStatusChip from './ChangeOrderStatusChip.jsx'
 
@@ -69,6 +75,12 @@ export default function ChangeOrdersList() {
     onError: setActionError,
   })
   const columns = canEdit ? 9 : 8
+  // The list of Extras / COs, or their documents grouped by Job.
+  const [section, setSection] = usePersistentState(
+    'change-orders:section',
+    'orders',
+    (value) => value === 'orders' || value === 'documents',
+  )
 
   const [status, setStatus] = useState('ALL')
   const [search, setSearch] = useState('')
@@ -116,8 +128,23 @@ export default function ChangeOrdersList() {
           />
         )}
         actions={createAction}
+        borderless
       />
+      <Box sx={{ px: { xs: 2.5, md: 4 }, bgcolor: 'background.paper', borderBottom: 1, borderColor: 'divider' }}>
+        <Tabs
+          value={section}
+          onChange={(_event, value) => setSection(value)}
+          aria-label="Extras / Change Orders sections"
+          sx={{ minHeight: 40, '& .MuiTab-root': { minHeight: 40, py: 0 } }}
+        >
+          <Tab value="orders" icon={<PostAddRoundedIcon />} iconPosition="start" label="Extras / COs" />
+          <Tab value="documents" icon={<FolderOpenRoundedIcon />} iconPosition="start" label="Documents" />
+        </Tabs>
+      </Box>
 
+      {section === 'documents' ? (
+        <ChangeOrderDocumentsCatalog orders={orders} loading={loading} />
+      ) : (
       <Box sx={{ p: { xs: 2.5, md: 4 } }}>
         <Box
           sx={{
@@ -334,6 +361,7 @@ export default function ChangeOrdersList() {
           />
         </Box>
       </Box>
+      )}
 
       {dialog}
       <Snackbar

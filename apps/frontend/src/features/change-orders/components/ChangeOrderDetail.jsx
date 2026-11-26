@@ -51,6 +51,9 @@ import ChangeOrderStatusChip from './ChangeOrderStatusChip.jsx'
 import PoCoNumberDialog from './PoCoNumberDialog.jsx'
 import SchedulingEmailDialog from './SchedulingEmailDialog.jsx'
 import ChangeOrderOwnEvents from './ChangeOrderOwnEvents.jsx'
+import ChangeOrderPosCard from './ChangeOrderPosCard.jsx'
+import LinePoChip from './LinePoChip.jsx'
+import { useChangeOrderLinePos } from '../hooks/useChangeOrderLinePos.js'
 
 const plural = (count, singular) => `${count} ${singular}${count === 1 ? '' : 's'}`
 
@@ -356,16 +359,15 @@ function EventCard({ order }) {
   )
 }
 
-function LinesTable({ order, totals }) {
+function LinesTable({ order, totals, linePos }) {
   return (
     <TableContainer>
       <Table size="small" aria-label="Every line" sx={[{ minWidth: 1000 }, catalogTableSx]}>
         <TableHead>
           <TableRow>
-            <TableCell width={48}>#</TableCell>
+            <TableCell>Lot / Place</TableCell>
             <TableCell>Phase</TableCell>
             <TableCell>Building</TableCell>
-            <TableCell>Lot / Place</TableCell>
             <TableCell>Plan Type</TableCell>
             <TableCell sx={{ minWidth: 260 }}>Scope of Work</TableCell>
             <TableCell>Charged with</TableCell>
@@ -376,9 +378,6 @@ function LinesTable({ order, totals }) {
         <TableBody>
           {order.lines.map((line) => (
             <TableRow key={line.id} hover>
-              <TableCell>{line.lineNumber}</TableCell>
-              <TableCell>{line.phase || '—'}</TableCell>
-              <TableCell>{line.building || '—'}</TableCell>
               <TableCell>
                 {line.isPlace ? (
                   <>
@@ -389,6 +388,8 @@ function LinesTable({ order, totals }) {
                   </>
                 ) : line.lot}
               </TableCell>
+              <TableCell>{line.phase || '—'}</TableCell>
+              <TableCell>{line.building || '—'}</TableCell>
               <TableCell>{line.plan ? `Plan ${line.plan}` : '—'}</TableCell>
               <TableCell sx={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{line.scope}</TableCell>
               <TableCell sx={{ whiteSpace: 'nowrap' }}>
@@ -396,14 +397,23 @@ function LinesTable({ order, totals }) {
                   ? `${line.billingEvent} · ${formatDate(line.billingEventDate)}`
                   : <Box component="span" sx={{ color: 'text.secondary' }}>Own CO event</Box>}
               </TableCell>
-              <TableCell sx={{ whiteSpace: 'nowrap' }}>{line.poNumber || '—'}</TableCell>
+              <TableCell sx={{ whiteSpace: 'nowrap' }}>
+                {linePos ? (
+                  <LinePoChip
+                    matches={linePos.byLine[String(line.id)]}
+                    fallback={line.poNumber}
+                    openingId={linePos.openingId}
+                    onOpen={linePos.open}
+                  />
+                ) : (line.poNumber || '—')}
+              </TableCell>
               <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
                 {formatCurrency(line.amount)}
               </TableCell>
             </TableRow>
           ))}
           <TableRow>
-            <TableCell colSpan={8} align="right" sx={{ fontWeight: 700 }}>Total</TableCell>
+            <TableCell colSpan={7} align="right" sx={{ fontWeight: 700 }}>Total</TableCell>
             <TableCell align="right" sx={{ fontWeight: 800, whiteSpace: 'nowrap' }}>
               {formatCurrency(totals.total)}
             </TableCell>
@@ -415,11 +425,12 @@ function LinesTable({ order, totals }) {
 }
 
 /**
- * What is charged. By default the lines are read as the work they are (the same work on many lots is
- * said once); "Every line" is the full list, one row per lot, with the PO of each.
+ * What is charged. It opens on "Every line", the full list, one row per lot with the PO of each; "By work"
+ * reads the lines as the work they are (the same work on many lots is said once).
  */
-function WorkCard({ order, totals }) {
-  const [view, setView] = useState('work')
+function WorkCard({ order, totals, linePos }) {
+  // Every line first: one row per Lot, with the PO of each.
+  const [view, setView] = useState('lines')
   const { works, places } = useMemo(() => groupDetailLines(order.lines), [order.lines])
   const pieces = works.length + places.length
 
@@ -499,7 +510,7 @@ function WorkCard({ order, totals }) {
           ))}
         </Stack>
       ) : (
-        <LinesTable order={order} totals={totals} />
+        <LinesTable order={order} totals={totals} linePos={linePos} />
       )}
     </Paper>
   )
@@ -695,6 +706,8 @@ export default function ChangeOrderDetail() {
   const { profile } = useAuth()
   const [editingPoCo, setEditingPoCo] = useState(false)
   const totals = useMemo(() => summarizeDetailLines(order?.lines ?? []), [order])
+  // The builder POs read in Documents, matched to each Lot; read again when the Extra / CO is saved.
+  const linePos = useChangeOrderLinePos(order?.id, order?.lines, order?.updatedAt)
   const canSetPoCo = order ? canSetPoCoNumber(order.status, profile?.role) : false
   // Draw & Invoice comes from its Change Orders tab and goes back there; the list of Extras / COs is not theirs.
   // Whoever works Extras / COs (Project Management, Scheduling) goes back to the list.
@@ -805,7 +818,14 @@ export default function ChangeOrderDetail() {
           }}
         >
           <Stack spacing={3} sx={{ gridArea: 'work', minWidth: 0 }}>
-            <WorkCard order={order} totals={totals} />
+            <WorkCard order={order} totals={totals} linePos={linePos} />
+            <ChangeOrderPosCard
+              summary={linePos.summary}
+              loading={linePos.loading}
+              error={linePos.error}
+              openingId={linePos.openingId}
+              onOpen={linePos.open}
+            />
             {order.planRules.length > 0 && <PlanRulesCard order={order} />}
             {(order.planRules.length > 0 && order.status !== 'DRAFT' && order.status !== 'PENDING')
               || order.packageOrders.length > 0

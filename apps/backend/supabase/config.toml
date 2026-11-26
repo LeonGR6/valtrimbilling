@@ -496,6 +496,12 @@ verify_jwt = true
 [functions.purchase-order-analyze]
 verify_jwt = true
 
+# Reads the orders inside a builder Purchase Order PDF of the Extras / Change Orders
+# (OCR for scans, AI with every number checked against the PDF). Same trust model:
+# the caller's JWT and role first, then writes as service_role.
+[functions.change-order-po-read]
+verify_jwt = true
+
 # Emails Purchasing and the Job Coordinator the options a Purchase Order added to the
 # Sequence Sheet. Previews and sends as the signed-in Admin or Project Management user;
 # it reuses the Sequence Sheet email's Resend secrets.

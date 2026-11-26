@@ -11,6 +11,7 @@ import {
   AccordionDetails,
   AccordionSummary,
   Alert,
+  Autocomplete,
   Box,
   Button,
   Checkbox,
@@ -116,6 +117,9 @@ import {
   parseUsDateInput,
 } from '../utils/dates.js'
 import { createCustomerServiceSubmissionKey } from '../utils/customerServiceIntake.js'
+import { communityAliasOffer, extractedSourceProperty } from '../utils/communityAliasOffer.js'
+import { searchCatalogOptions } from '../utils/catalogSearch.js'
+import { readImportedProperty } from '../services/customerServiceImportProperty.js'
 import {
   buildRequestReviewSummary,
   effectiveRequestWorkflowStage,
@@ -203,6 +207,69 @@ function SelectField({
           <FormHelperText>{error?.message ?? helperText ?? ' '}</FormHelperText>
         </FormControl>
       )}
+    />
+  )
+}
+
+// A catalog field searched as the coordinator types (decided 26 Nov 2026): Builder and
+// Project / Job, by code, name or a known name. Options are { value, label, aliases }.
+// A saved value outside the catalog stays visible for the review, as in the plain list.
+function SearchSelectField({
+  control,
+  name,
+  label,
+  options,
+  error,
+  helperText,
+  noOptionsText,
+  onValueChange,
+  disabled = false,
+  readOnly = false,
+  required = false,
+}) {
+  return (
+    <Controller
+      name={name}
+      control={control}
+      render={({ field }) => {
+        const current = options.find((option) => String(option.value) === String(field.value))
+        const missing = !current && field.value
+          ? { value: field.value, label: `${field.value} · needs review`, missing: true }
+          : null
+        return (
+          <Autocomplete
+            options={missing ? [missing, ...options] : options}
+            value={current ?? missing}
+            openOnFocus
+            autoHighlight
+            fullWidth
+            disabled={readOnly || disabled}
+            getOptionLabel={(option) => option.label}
+            getOptionKey={(option) => String(option.value)}
+            getOptionDisabled={(option) => Boolean(option.missing)}
+            isOptionEqualToValue={(option, value) => String(option.value) === String(value.value)}
+            filterOptions={(list, { inputValue }) => searchCatalogOptions(list, inputValue)}
+            noOptionsText={noOptionsText}
+            onChange={(_, next) => {
+              const value = next?.value ?? ''
+              field.onChange(value)
+              onValueChange?.(value)
+            }}
+            onBlur={field.onBlur}
+            slotProps={{ listbox: { sx: { maxHeight: 320 } } }}
+            renderInput={(params) => (
+              <TextField
+                {...params}
+                inputRef={field.ref}
+                label={label}
+                required={required}
+                error={Boolean(error)}
+                helperText={error?.message ?? helperText ?? ' '}
+              />
+            )}
+          />
+        )
+      }}
     />
   )
 }
@@ -434,6 +501,7 @@ export default function NewRequestPrototypeDialog({
     loading: jobsLoading,
     error: jobsError,
     refreshJobs,
+    canManageCommunityAliases,
   } = useJobs()
   const now = useMemo(() => new Date(), [])
   const isEditMode = Boolean(request)
@@ -474,6 +542,10 @@ export default function NewRequestPrototypeDialog({
   const [saveError, setSaveError] = useState('')
   const saveErrorRef = useRef(null)
   const [savedSubmission, setSavedSubmission] = useState(null)
+  // The community and Builder the email import read, and the name the coordinator chose to
+  // remember for the selected Job ("jobId|key"), saved after the request (26 Nov 2026).
+  const [importedProperty, setImportedProperty] = useState(null)
+  const [rememberedCommunity, setRememberedCommunity] = useState('')
   const [retryingSave, setRetryingSave] = useState(false)
   useEffect(() => {
     if (!saveError) return
@@ -620,6 +692,7 @@ export default function NewRequestPrototypeDialog({
   const jobOptions = (selectedBuilderOption?.jobs ?? []).map((job) => ({
     value: job.id,
     label: job.label,
+    aliases: job.aliases,
   }))
   const selectedJob = selectedBuilderOption
     ? selectedBuilderOption.jobs.find(
@@ -640,6 +713,34 @@ export default function NewRequestPrototypeDialog({
     if (!selectedJob || String(selectedJob.id) === String(selectedJobId)) return
     setValue('jobId', selectedJob.id, { shouldDirty: false })
   }, [selectedJob, selectedJobId, setValue])
+
+  const editableImportId = isEditMode && !isFormDataReadOnly && request?.emailImportId ? request.id : null
+  useEffect(() => {
+    if (!editableImportId || !canManageCommunityAliases) return undefined
+    let current = true
+    // Only an offer depends on it: a failed read leaves the review as it was.
+    readImportedProperty(editableImportId)
+      .then((property) => { if (current) setImportedProperty(property) })
+      .catch(() => {})
+    return () => { current = false }
+  }, [canManageCommunityAliases, editableImportId])
+  const sourceProperty = extractedSourceProperty({
+    imported: importedProperty,
+    extraction: isEditMode ? request?.sourceDocument?.extraction : sourceExtraction,
+  })
+  // Only for the Builder the source named: CS-3572's email names KB Home, so its community
+  // is never offered for a Brookfield Job.
+  const communityOffer = !isFormDataReadOnly && canManageCommunityAliases && selectedJob
+    ? communityAliasOffer({
+      extractedName: sourceProperty.communityName,
+      sourceBuilderName: sourceProperty.builderName,
+      builderOption: selectedBuilderOption,
+      builderOptions,
+      job: selectedJob,
+    })
+    : null
+  const communityOfferId = communityOffer?.status === 'OFFER' ? `${selectedJob.id}|${communityOffer.key}` : ''
+  const rememberCommunity = Boolean(communityOfferId) && rememberedCommunity === communityOfferId
   const sourceConfidenceLabel = sourceExtraction
     ? pdfExtractionConfidenceLabel(sourceExtraction.pages)
     : ''
@@ -908,7 +1009,7 @@ export default function NewRequestPrototypeDialog({
     // Administrative saves must not revalidate or normalize locked legacy Job,
     // location or contact fields. The server enforces the same field whitelist.
     if (isEditMode && planningLocked) {
-      try { await onSave(values) }
+      try { await onSave(values, { communityAlias: null }) }
       catch (error) { setSaveError(error?.message || 'The changes could not be saved. Try again.') }
       return
     }
@@ -958,17 +1059,24 @@ export default function NewRequestPrototypeDialog({
         ? request.sourceEmail?.body ?? ''
         : sourceInputMode === 'EMAIL_TEXT' ? sourceEmailText.trim() : '',
     }
+    // Saved after the request, only for the Job being saved and only when checked.
+    const communityAlias = rememberCommunity && submittedJob && String(submittedJob.id) === String(selectedJob?.id)
+      ? {
+        jobId: submittedJob.id, builderId: selectedBuilderOption.builderId, jobLabel: submittedJob.label,
+        alias: communityOffer.name, aliasKey: communityOffer.key,
+      }
+      : null
 
     if (isEditMode) {
-      try { await onSave(submittedValues) }
+      try { await onSave(submittedValues, { communityAlias }) }
       catch (error) { setSaveError(error?.message || 'The changes could not be saved. Try again.') }
       return
     }
 
     try {
-      await onCreate(submittedValues, attachments, submissionKey)
+      await onCreate(submittedValues, attachments, submissionKey, { communityAlias })
     } catch (error) {
-      if (error.savedIdentity) setSavedSubmission({ values: submittedValues, attachments })
+      if (error.savedIdentity) setSavedSubmission({ values: submittedValues, attachments, communityAlias })
       setSaveError(error?.message || 'The request could not be saved. Try again.')
     }
   }
@@ -978,7 +1086,9 @@ export default function NewRequestPrototypeDialog({
     setRetryingSave(true)
     setSaveError('')
     try {
-      await onCreate(savedSubmission.values, savedSubmission.attachments, submissionKey)
+      await onCreate(savedSubmission.values, savedSubmission.attachments, submissionKey, {
+        communityAlias: savedSubmission.communityAlias,
+      })
     } catch (error) {
       setSaveError(error?.message || 'The saved request could not be completed. Try again.')
     } finally {
@@ -1556,15 +1666,16 @@ export default function NewRequestPrototypeDialog({
               </Alert>
             )}
             <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} sx={{ mt: 2 }}>
-              <SelectField
+              <SearchSelectField
                 control={control}
                 name="builderName"
                 label="Builder"
                 options={builderSelectOptions}
                 error={visibleErrors.builderName}
+                noOptionsText="No active Builder matches that search."
                 helperText={catalogLoading
                   ? 'Loading registered Builders…'
-                  : 'Only active Builders registered in Supabase are available.'}
+                  : 'Type a code or name to search active Builders registered in Supabase.'}
                 required={!canSavePartialImport}
                 onValueChange={() => {
                   clearErrors(['builderName', 'jobId', 'community', 'coordinates'])
@@ -1575,14 +1686,15 @@ export default function NewRequestPrototypeDialog({
                 disabled={catalogLoading || Boolean(catalogError) || builderOptions.length === 0}
                 readOnly={isFormDataReadOnly}
               />
-              <SelectField
+              <SearchSelectField
                 control={control}
                 name="jobId"
                 label="Project / Job"
                 options={jobOptions}
                 error={visibleErrors.jobId ?? visibleErrors.community}
+                noOptionsText="No active Job of this Builder matches that search."
                 helperText={selectedBuilderOption
-                  ? 'Only active Jobs registered for the selected Builder are available.'
+                  ? 'Type a code, community or a name saved from emails to search the Builder’s active Jobs.'
                   : 'Select a registered Builder first.'}
                 required={!canSavePartialImport}
                 onValueChange={(value) => {
@@ -1606,6 +1718,34 @@ export default function NewRequestPrototypeDialog({
                 readOnly={isFormDataReadOnly}
               />
             </Stack>
+            {communityOffer?.status === 'OFFER' && (
+              <FormControlLabel
+                sx={{ mt: 1, alignItems: 'flex-start' }}
+                control={(
+                  <Checkbox
+                    checked={rememberCommunity}
+                    onChange={(event) => setRememberedCommunity(event.target.checked ? communityOfferId : '')}
+                  />
+                )}
+                label={(
+                  <Box sx={{ pt: 0.75 }}>
+                    <Typography variant="body2" fontWeight={700}>
+                      Remember “{communityOffer.name}” as a name for {selectedJob.label}
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary" component="div">
+                      The source named the community this way. Future emails that use this name will link to this
+                      Job by themselves. You can remove the name from the Job details.
+                    </Typography>
+                  </Box>
+                )}
+              />
+            )}
+            {communityOffer?.status === 'TAKEN' && (
+              <Typography variant="caption" color="text.secondary" component="div" sx={{ mt: 1 }}>
+                “{communityOffer.name}” is already a name of {communityOffer.otherJobs.map((job) => job.label).join(', ')},
+                so it cannot be remembered for this Job.
+              </Typography>
+            )}
             <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} sx={{ mt: 1 }}>
               <ControlledTextField
                 control={control}

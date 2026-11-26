@@ -324,6 +324,7 @@ export function filterAndSortRequestInbox(
     priority = 'all',
     sortBy = 'ACTION_REQUIRED',
     view = 'REQUESTS',
+    now = new Date(),
   } = {},
 ) {
   const query = search.trim().toLowerCase()
@@ -363,6 +364,13 @@ export function filterAndSortRequestInbox(
     }
     if (sortBy === 'DUE_DATE') {
       return compareKnownDates(left.dueOn, right.dueOn)
+    }
+    // New requests go first, the latest on top, so a request just imported from an email
+    // can be checked right away (decided 25 Nov 2026).
+    const leftIsNew = isNewRequest(left, now)
+    const rightIsNew = isNewRequest(right, now)
+    if (leftIsNew || rightIsNew) {
+      return Number(rightIsNew) - Number(leftIsNew) || Date.parse(right.createdAt) - Date.parse(left.createdAt)
     }
     return (
       actionRank[effectiveRequestWorkflowStage(left)]

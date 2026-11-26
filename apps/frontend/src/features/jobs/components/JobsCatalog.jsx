@@ -39,9 +39,9 @@ import BlockRoundedIcon from '@mui/icons-material/BlockRounded'
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined'
 import HomeWorkRoundedIcon from '@mui/icons-material/HomeWorkRounded'
 import LayersRoundedIcon from '@mui/icons-material/LayersRounded'
-import LocationOnOutlinedIcon from '@mui/icons-material/LocationOnOutlined'
 import MoreHorizRoundedIcon from '@mui/icons-material/MoreHorizRounded'
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
+import GoogleGIcon from '../../../components/common/GoogleGIcon'
 import ResponsiveCreateButton from '../../../components/common/ResponsiveCreateButton'
 import { BuildersCatalog } from '../../builders/index.js'
 import { useBuilders } from '../../builders/context/useBuilders.js'
@@ -227,11 +227,17 @@ function JobDialog({
                   target={coordinatesUrl ? '_blank' : undefined}
                   rel={coordinatesUrl ? 'noreferrer' : undefined}
                   variant="outlined"
-                  startIcon={<LocationOnOutlinedIcon />}
+                  startIcon={<GoogleGIcon />}
                   disabled={!coordinatesUrl}
-                  sx={{ minWidth: 190, minHeight: 56, whiteSpace: 'nowrap' }}
+                  aria-label="Open in Google Maps"
+                  sx={{
+                    minHeight: 56,
+                    flexShrink: 0,
+                    whiteSpace: 'nowrap',
+                    '&.Mui-disabled .MuiButton-startIcon': { filter: 'grayscale(1)', opacity: 0.5 },
+                  }}
                 >
-                  Open in Google Maps
+                  Maps
                 </Button>
               </Stack>
             </Stack>

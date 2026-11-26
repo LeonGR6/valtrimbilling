@@ -15,7 +15,9 @@ const builderAliasesByCode = Object.freeze({
   ],
 })
 
-function normalizeAlias(value) {
+// The comparison key shared with the email import (accents removed, lower case, each run
+// of other characters as one space); job_community_aliases.alias_key stores it.
+export function normalizeAlias(value) {
   return String(value ?? '')
     .normalize('NFKD')
     .replace(/[\u0300-\u036f]/gu, '')
@@ -63,7 +65,11 @@ export function buildCustomerServiceBuilderOptions(builders = [], jobs = []) {
             name: job.community,
             value: job.community,
             label: `${job.code} · ${job.community}`,
-            aliases: uniqueAliases(job.community, [job.code, ...(job.aliases ?? [])]),
+            aliases: uniqueAliases(job.community, [
+              job.code,
+              // Names saved from earlier emails (26 Nov 2026).
+              ...(job.communityAliases ?? []).map((entry) => entry.alias),
+            ]),
             coordinates: latitude !== null && longitude !== null
               ? { latitude, longitude }
               : null,

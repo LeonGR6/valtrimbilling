@@ -500,7 +500,10 @@ export default function JobDetails({ builderId, job, onBack }) {
     createPlanOption,
     updatePlanOption,
     deactivatePlanOption,
+    canManageCommunityAliases,
+    removeCommunityAlias,
   } = useJobs()
+  const [removingAliasId, setRemovingAliasId] = useState(null)
   const [planDialog, setPlanDialog] = useState(null)
   const [optionDialog, setOptionDialog] = useState(null)
   const [deleteTarget, setDeleteTarget] = useState(null)
@@ -558,6 +561,23 @@ export default function JobDetails({ builderId, job, onBack }) {
       setNotice({ severity: 'error', message: saveError.message })
     } finally {
       setSubmitting(false)
+    }
+  }
+
+  // Other names of the community saved from Customer Service emails (26 Nov 2026).
+  const communityAliases = job.communityAliases ?? []
+  const handleAliasRemove = async (entry) => {
+    setRemovingAliasId(entry.id)
+    try {
+      await removeCommunityAlias(job.id, entry.id)
+      setNotice({
+        severity: 'success',
+        message: `“${entry.alias}” removed. Emails that use it will need the Job chosen by hand.`,
+      })
+    } catch (removeError) {
+      setNotice({ severity: 'error', message: removeError.message })
+    } finally {
+      setRemovingAliasId(null)
     }
   }
 
@@ -700,6 +720,34 @@ export default function JobDetails({ builderId, job, onBack }) {
               />
               <JobField label="Supervisor" value={job.supervisor} />
               <JobField label="Jobsite Superintendent" value={job.jobsiteSuperintendent} />
+            </Stack>
+            <Divider sx={{ my: 2 }} />
+            <Typography variant="caption" color="text.secondary" component="div">
+              Other names from emails
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.25 }}>
+              Customer Service emails that name the community this way link to this Job by themselves.
+              {canManageCommunityAliases && ' Remove a name that belongs to another Job.'}
+            </Typography>
+            <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: 'wrap', mt: 1 }}>
+              {communityAliases.length > 0
+                ? communityAliases.map((entry) => (
+                  <Chip
+                    key={entry.id}
+                    label={entry.alias}
+                    size="small"
+                    variant="outlined"
+                    disabled={removingAliasId === entry.id}
+                    onDelete={canManageCommunityAliases && removingAliasId === null
+                      ? () => handleAliasRemove(entry)
+                      : undefined}
+                  />
+                ))
+                : (
+                  <Typography variant="body2" fontWeight={600}>
+                    None yet. They are saved while reviewing a Customer Service request.
+                  </Typography>
+                )}
             </Stack>
           </CardContent>
         </Card>

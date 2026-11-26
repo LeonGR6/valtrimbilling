@@ -31,6 +31,10 @@ export function toJob(row) {
     isActive: row.is_active,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    // Other names of the community that link Customer Service emails to this Job.
+    communityAliases: (row.job_community_aliases ?? [])
+      .map((entry) => ({ id: entry.id, alias: entry.alias }))
+      .sort((left, right) => left.alias.localeCompare(right.alias)),
     sequenceSheet: {
       name: row.sequence_sheet_name || 'Options Sequence Sheet',
       plans: [],

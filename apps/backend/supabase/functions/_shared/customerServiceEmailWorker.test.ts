@@ -89,7 +89,7 @@ async function workerFixture(graphImages = false) {
             analysis_payload: state.report,
           }]);
         }
-        if (["builders", "jobs"].includes(route)) return reply([]);
+        if (["builders", "jobs", "job_community_aliases"].includes(route)) return reply([]);
         if (route === "read_customer_service_graph_image_source") {
           return reply({
             importId: TEST_IMPORT_ID,

@@ -24,10 +24,7 @@ import ContentCopyRoundedIcon from '@mui/icons-material/ContentCopyRounded'
 import MoveToInboxRoundedIcon from '@mui/icons-material/MoveToInboxRounded'
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded'
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
-import {
-  isSpconnectUatConfigured,
-  listSpconnectMessages,
-} from '../services/spconnectMessagesRepository.js'
+import { listSpconnectMessages } from '../services/spconnectMessagesRepository.js'
 import {
   listSpconnectLines,
   listSpconnectOptions,
@@ -298,13 +295,12 @@ function MessageDetailsDrawer({ row, onClose }) {
 
 export default function HyphenRequests() {
   const [rows, setRows] = useState([])
-  const [loading, setLoading] = useState(isSpconnectUatConfigured)
+  const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState(null)
   const [search, setSearch] = useState('')
   const [selectedRow, setSelectedRow] = useState(null)
 
   const loadMessages = useCallback(async () => {
-    if (!isSpconnectUatConfigured) return
     setLoading(true)
     setLoadError(null)
     try {
@@ -317,7 +313,7 @@ export default function HyphenRequests() {
   }, [])
 
   useEffect(() => {
-    // The UAT project is the external source for this read-only view.
+    // The hyphen-messages Edge Function reads the external UAT project for this view.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     loadMessages()
   }, [loadMessages])
@@ -355,7 +351,7 @@ export default function HyphenRequests() {
         <Button
           variant="outlined"
           startIcon={loading ? <CircularProgress size={16} /> : <RefreshRoundedIcon />}
-          disabled={loading || !isSpconnectUatConfigured}
+          disabled={loading}
           onClick={loadMessages}
         >
           Refresh
@@ -363,13 +359,6 @@ export default function HyphenRequests() {
       </Box>
 
       <Box sx={{ p: { xs: 2.5, md: 4 } }}>
-        {!isSpconnectUatConfigured && (
-          <Alert severity="info" sx={{ mb: 2.5 }}>
-            The Hyphen UAT connection is not configured. Add VITE_SPCONNECT_UAT_URL and
-            VITE_SPCONNECT_UAT_PUBLISHABLE_KEY to apps/frontend/.env.
-          </Alert>
-        )}
-
         {loadError && (
           <Alert
             severity="error"
@@ -494,7 +483,7 @@ export default function HyphenRequests() {
                   </TableRow>
                 ))}
 
-                {!loading && !loadError && isSpconnectUatConfigured && visibleMessages.length === 0 && (
+                {!loading && !loadError && visibleMessages.length === 0 && (
                   <TableRow>
                     <TableCell colSpan={8} sx={{ py: 8, textAlign: 'center' }}>
                       <MoveToInboxRoundedIcon color="action" sx={{ fontSize: 40, mb: 1 }} />

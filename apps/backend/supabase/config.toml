@@ -403,6 +403,12 @@ verify_jwt = false
 [functions.users-admin]
 verify_jwt = true
 
+# ADMIN-only Hyphen Requests screen. The function checks the admin, then reads the
+# SPConnect UAT messages from the teammate's webhook project with that project's
+# secret key (SPCONNECT_UAT_SECRET_KEY), which never leaves the server.
+[functions.hyphen-messages]
+verify_jwt = true
+
 # A signed-in administrator initiates OAuth. Google then returns through the
 # callback without a Supabase JWT; its one-time, expiring state is the trust
 # boundary before the callback performs any privileged write.

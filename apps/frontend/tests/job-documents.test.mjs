@@ -249,7 +249,7 @@ test('an upload id that is not in the refreshed library is skipped, not an error
   assert.deepEqual(findJobDocuments(documentsByJob, 1307, []), [])
 })
 
-test('a Job follows the document requirements of its own setup version, not the Builder\'s newest', () => {
+test('a Job follows the document requirements of its Builder\'s current version, not its own', () => {
   // Builder 2 first asked only for an invoice (version 4), then also for a PO, a payment schedule
   // and a Release (version 5, the current one). Job 1326 stayed on version 4.
   const jobs = [
@@ -266,30 +266,19 @@ test('a Job follows the document requirements of its own setup version, not the 
     { setup_version_id: 1, document_type: 'RELEASE', is_required: true },
   ]
 
-  // Builder 2 is on version 5 now, and still every Job reads its own.
+  // Builder 2 is on version 5 now: every one of its Jobs reads version 5, also 1326, which is still
+  // on version 4 (its Packages keep 4 for prices and Draws).
   const versions = pickRequirementVersions(jobs, new Map([['2', 5]]))
-  assert.deepEqual(versions, { 1326: 4, 1327: 5, 1319: 1 })
+  assert.deepEqual(versions, { 1326: 5, 1327: 5, 1319: 1 })
 
   const library = buildJobDocumentLibrary(jobs, [], requirements, versions)
-  // The older Job keeps asking for what its setup asks for: the Preliminary Notice only.
-  assert.deepEqual(library.requiredTypeKeysByJob['1326'], ['preliminary-notice'])
-  assert.deepEqual(library.requiredTypeKeysByJob['1327'], [
-    'preliminary-notice',
-    'purchase-order',
-    'payment-schedule',
-    'release',
-  ])
+  const version5 = ['preliminary-notice', 'purchase-order', 'payment-schedule', 'release']
+  assert.deepEqual(library.requiredTypeKeysByJob['1326'], version5)
+  assert.deepEqual(library.requiredTypeKeysByJob['1327'], version5)
+  // Builder 1 has no ACTIVE version in the map: its Job keeps the version it is on.
   assert.deepEqual(library.requiredTypeKeysByJob['1319'], ['preliminary-notice', 'release'])
 
-  // Moving the Job to the newer version (Change setup) is what gives it the new documents.
-  const moved = [{ ...jobs[0], billingSetupVersionId: 5 }]
-  assert.deepEqual(
-    buildJobDocumentLibrary(moved, [], requirements, pickRequirementVersions(moved, new Map([['2', 5]])))
-      .requiredTypeKeysByJob['1326'],
-    ['preliminary-notice', 'purchase-order', 'payment-schedule', 'release'],
-  )
-
-  // Without the mapping a Job reads its own version too.
+  // Without the mapping a Job reads its own version.
   const own = buildJobDocumentLibrary(jobs, [], requirements)
   assert.deepEqual(own.requiredTypeKeysByJob['1326'], ['preliminary-notice'])
 })

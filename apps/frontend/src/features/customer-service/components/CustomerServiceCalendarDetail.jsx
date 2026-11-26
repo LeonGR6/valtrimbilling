@@ -8,7 +8,6 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
-  Divider,
   IconButton,
   Stack,
   TextField,
@@ -26,7 +25,6 @@ import EventNoteOutlinedIcon from '@mui/icons-material/EventNoteOutlined'
 import FlagOutlinedIcon from '@mui/icons-material/FlagOutlined'
 import HomeWorkOutlinedIcon from '@mui/icons-material/HomeWorkOutlined'
 import PersonOutlineRoundedIcon from '@mui/icons-material/PersonOutlineRounded'
-import TaskAltRoundedIcon from '@mui/icons-material/TaskAltRounded'
 import BuildOutlinedIcon from '@mui/icons-material/BuildOutlined'
 import {
   formatWorkTypes,
@@ -208,8 +206,6 @@ export default function CustomerServiceCalendarDetail({ event, onClose, onEdit, 
     )
   }
 
-  const lastVisit = props.lastVisit
-
   return (
     <Box className="service-detail-panel">
       <Box className="service-detail-panel__header">
@@ -266,31 +262,8 @@ export default function CustomerServiceCalendarDetail({ event, onClose, onEdit, 
           {props.technician}
         </Field>
 
-        <Box className="service-detail-panel__last-visit">
-          <TaskAltRoundedIcon color={lastVisit ? 'success' : 'disabled'} />
-          <Box>
-            <Typography variant="caption" color={lastVisit ? 'success.main' : 'text.secondary'}>
-              Last completed visit
-            </Typography>
-            <Typography variant="body2" fontWeight={700} sx={{ mt: 0.25 }}>
-              {lastVisit
-                ? `${dateFormatter.format(new Date(`${lastVisit.date}T12:00:00`))} · ${formatWorkTypes(lastVisit.workTypes)}`
-                : 'No previous visits'}
-            </Typography>
-          </Box>
-        </Box>
-
-        <Divider />
-
-        <Box>
-          <Typography variant="caption" color="text.secondary">Issue</Typography>
-          <Typography variant="body2" sx={{ mt: 0.5 }}>{props.issue}</Typography>
-        </Box>
-        <Box>
-          <Typography variant="caption" color="text.secondary">Notes</Typography>
-          <Typography variant="body2" sx={{ mt: 0.5 }}>{props.notes || 'No notes added.'}</Typography>
-        </Box>
-
+        {/* The last completed visit, the issue and the notes are left out (24 Nov 2026): they
+            are in the full request. */}
         {onViewRequest && (
           <Button variant="outlined" onClick={() => onViewRequest(event)}>
             View full request

@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import {
-  Alert, Box, Button, Checkbox, Dialog, DialogActions, DialogContent, DialogTitle, Divider, FormControl,
-  FormControlLabel, Radio, RadioGroup, Stack, TextField, Typography,
+  Alert, Box, Button, Checkbox, Dialog, DialogActions, DialogContent, DialogTitle, FormControl, FormControlLabel,
+  FormLabel, Radio, RadioGroup, Stack, TextField, Typography,
 } from '@mui/material'
 import {
   confirmationEmail, confirmationTextProblems, defaultConfirmationText, defaultInvitationText, invitationEmail,
@@ -10,14 +10,55 @@ import {
 import { serviceWorkTypeLabel } from '../utils/customerServicePlanning.js'
 import { normalizeCustomerEmail } from '../utils/proposalDraft.js'
 import CustomerEmailEditor from './CustomerEmailEditor.jsx'
-
-// A radio whose label has a title and a caption lines up with the title.
-const choiceSx = { alignItems: 'flex-start', mb: 1, '& .MuiRadio-root': { pt: 0.25 } }
+import CustomerEmailPreview from './CustomerEmailPreview.jsx'
 
 const acceptanceOptions = [
   { value: 'CUSTOMER_ACCEPTED_PROPOSAL', label: 'Customer accepted the proposal' },
   { value: 'COUNTER_PROPOSAL_ACCEPTED', label: 'Counter-proposal accepted' },
 ]
+
+const dayBoxSx = { p: 1.5, borderRadius: 2, bgcolor: 'action.hover' }
+
+// A titled part of the form, kept apart from the next one by the dialog's spacing.
+function Section({ title, children }) {
+  return (
+    <Stack component="section" spacing={1.5}>
+      <Typography variant="subtitle2" component="h3" fontWeight={700}>{title}</Typography>
+      {children}
+    </Stack>
+  )
+}
+
+// A radio drawn as a card, so the two ways to send read as two separate choices.
+function ChoiceCard({ value, title, description, selected, disabled }) {
+  return (
+    <FormControlLabel value={value} disabled={disabled} control={<Radio />} label={(
+      <Box>
+        <Typography variant="body2" fontWeight={700}>{title}</Typography>
+        <Typography variant="caption" color="text.secondary" component="div">{description}</Typography>
+      </Box>
+    )} sx={{
+      m: 0, py: 1.25, pr: 1.5, pl: 0.5, alignItems: 'flex-start', border: 1, borderRadius: 2,
+      borderColor: selected ? 'primary.main' : 'divider', bgcolor: selected ? 'action.selected' : 'transparent',
+      transition: 'border-color 150ms, background-color 150ms', '& .MuiRadio-root': { pt: 0.25 },
+    }} />
+  )
+}
+
+// A day as the coordinator reads it: { date, detail } with the work hours and technicians.
+function DayDetails({ label, day }) {
+  return (
+    <Box sx={{ minWidth: 0 }}>
+      {label && (
+        <Typography variant="caption" color="primary" fontWeight={700} component="div" sx={{ letterSpacing: 0.5 }}>
+          {label}
+        </Typography>
+      )}
+      <Typography variant="body2" fontWeight={700}>{day.date}</Typography>
+      <Typography variant="body2" color="text.secondary">{day.detail}</Typography>
+    </Box>
+  )
+}
 
 // "Send to customer" (block B, step B4), with two paths:
 // - "Send a proposal" (path b): emails one or two days from the coordinator's mailbox and
@@ -29,7 +70,9 @@ const acceptanceOptions = [
 // The greeting and the message can be edited; the visit details come from the request.
 // The customer's email is shown to be checked with them and can be corrected here: the
 // correction is saved to the request when sending, without a new review (24 Nov 2026).
-// secondOffer: { available, values, summary } or { available: false, reason }.
+// The form sits on the left and the email preview on the right, each with its own scroll.
+// summary: { date, detail } of the form's day. secondOffer: { available, values, summary }
+// or { available: false, reason }.
 // onSend({ acceptance, confirmationEmail, customerEmail }) registers; onSendProposal({
 // includeSecond, invitation, customerEmail }) sends; customerEmail is set only when it was
 // corrected. Both reject with the error to show.
@@ -101,57 +144,71 @@ export default function SendToCustomerDialog({
   const buttonLabel = saving
     ? (writesEmail ? 'Sending…' : 'Registering…')
     : proposing ? 'Send proposal' : emailOn ? 'Register and email' : 'Register appointment'
+  const editor = preview && (
+    <CustomerEmailEditor senderEmail={senderEmail} text={text} problems={problems}
+      onChange={proposing ? setInvitationText : setConfirmationText} />
+  )
 
   return (
-    <Dialog open onClose={() => !saving && onClose()} fullWidth maxWidth="sm">
-      <DialogTitle>Send to customer</DialogTitle>
-      <DialogContent>
-        <Stack spacing={2}>
-          <FormControl>
-            <RadioGroup value={path} onChange={(event) => { setPath(event.target.value); setError('') }}>
-              <FormControlLabel value="PROPOSAL" sx={choiceSx} disabled={!customerEmail || saving} control={<Radio />} label={(
-                <Box>
-                  <Typography variant="body2" fontWeight={700}>Send a proposal</Typography>
-                  <Typography variant="caption" color="text.secondary" component="div">
-                    Email the customer the days to choose from. They are held until you record the answer.
-                  </Typography>
-                </Box>
-              )} />
-              <FormControlLabel value="ACCEPTED" sx={choiceSx} disabled={saving} control={<Radio />} label={(
-                <Box>
-                  <Typography variant="body2" fontWeight={700}>Customer accepted by phone</Typography>
-                  <Typography variant="caption" color="text.secondary" component="div">
-                    Register the visit now: it moves to Confirmed, appears in Calendar and reserves the technicians&apos; time.
-                  </Typography>
-                </Box>
-              )} />
+    <Dialog open onClose={() => !saving && onClose()} fullWidth maxWidth="lg"
+      slotProps={{ paper: { sx: { height: { md: 'calc(100% - 64px)' }, maxHeight: { md: 900 } } } }}>
+      <DialogTitle>
+        Send to customer
+        <Typography component="span" variant="body2" color="text.secondary" sx={{ display: 'block' }}>
+          {[request.requestNumber, request.contactName].filter(Boolean).join(' · ')}
+        </Typography>
+      </DialogTitle>
+      <DialogContent dividers sx={{
+        display: 'grid', gap: 3,
+        gridTemplateColumns: { xs: 'minmax(0, 1fr)', md: 'minmax(0, 1fr) minmax(0, 1.25fr)' },
+        gridTemplateRows: { md: 'minmax(0, 1fr)' }, overflowY: { md: 'hidden' },
+      }}>
+        <Stack spacing={3} sx={{ overflowY: { md: 'auto' }, pr: { md: 1.5 }, py: { md: 0.5 } }}>
+          <Section title="How to send">
+            <RadioGroup aria-label="How to send" value={path} sx={{ gap: 1 }}
+              onChange={(event) => { setPath(event.target.value); setError('') }}>
+              <ChoiceCard value="PROPOSAL" selected={proposing} disabled={!customerEmail || saving}
+                title="Send a proposal"
+                description="Email the customer the days to choose from. They are held until you record the answer." />
+              <ChoiceCard value="ACCEPTED" selected={!proposing} disabled={saving}
+                title="Customer accepted by phone"
+                description="Register the visit now: it moves to Confirmed, appears in Calendar and reserves the technicians' time." />
             </RadioGroup>
-          </FormControl>
-          <TextField
-            label="Customer email" type="email" size="small" value={emailInput} disabled={saving}
-            onChange={(event) => { setEmailInput(event.target.value); setError('') }}
-            error={emailBlocked}
-            helperText={emailInvalid ? 'Enter a valid email, like name@example.com.'
-              : writesEmail && !customerEmail ? 'Add the customer email to send it.'
-                : emailChanged ? 'Corrected email: it is saved to the request when you send.'
-                  : 'Check it with the customer before sending.'}
-            slotProps={{ htmlInput: { maxLength: 254 } }} />
-          {!savedEmail && !customerEmail && (
-            <Alert severity="info" variant="outlined">
-              This request has no customer email. Add it above to email a proposal or a confirmation, or register the
-              visit without one.
-            </Alert>
-          )}
-          <Divider />
+          </Section>
+
+          <Section title="Customer email">
+            <TextField
+              label="Customer email" type="email" size="small" value={emailInput} disabled={saving}
+              onChange={(event) => { setEmailInput(event.target.value); setError('') }}
+              error={emailBlocked}
+              helperText={emailInvalid ? 'Enter a valid email, like name@example.com.'
+                : writesEmail && !customerEmail ? 'Add the customer email to send it.'
+                  : emailChanged ? 'Corrected email: it is saved to the request when you send.'
+                    : 'Check it with the customer before sending.'}
+              slotProps={{ htmlInput: { maxLength: 254 } }} />
+            {!savedEmail && !customerEmail && (
+              <Alert severity="info" variant="outlined">
+                This request has no customer email. Add it above to email a proposal or a confirmation, or register the
+                visit without one.
+              </Alert>
+            )}
+          </Section>
 
           {proposing ? (
-            <Stack spacing={1}>
-              <Typography variant="subtitle2" fontWeight={800}>Days offered</Typography>
-              <Typography variant="body2">{secondOffer?.available ? 'Option 1 · ' : ''}{summary}</Typography>
+            <Section title="Days offered">
+              <Box sx={dayBoxSx}>
+                <DayDetails label={secondOffer?.available ? 'OPTION 1' : null} day={summary} />
+              </Box>
               {secondOffer?.available ? (
-                <FormControlLabel
-                  control={<Checkbox checked={includeSecond} disabled={saving} onChange={(event) => setIncludeSecond(event.target.checked)} />}
-                  label={<Typography variant="body2">Option 2 · {secondOffer.summary}</Typography>} />
+                <Stack direction="row" spacing={1} sx={{ ...dayBoxSx, alignItems: 'flex-start', justifyContent: 'space-between' }}>
+                  <DayDetails label="OPTION 2" day={secondOffer.summary} />
+                  <FormControlLabel label="Include" labelPlacement="start" sx={{ m: 0, flexShrink: 0 }}
+                    control={(
+                      <Checkbox checked={includeSecond} disabled={saving} size="small"
+                        slotProps={{ input: { 'aria-label': 'Include option 2' } }}
+                        onChange={(event) => setIncludeSecond(event.target.checked)} />
+                    )} />
+                </Stack>
               ) : (
                 <Typography variant="caption" color="text.secondary">
                   Only this day is offered. {secondOffer?.reason ?? ''}
@@ -161,32 +218,49 @@ export default function SendToCustomerDialog({
                 The schedule is checked again before sending, and each day stays held until you record the customer&apos;s
                 answer in Awaiting customer.
               </Typography>
-            </Stack>
+            </Section>
           ) : (
-            <Stack spacing={1}>
-              <Typography variant="body2">{summary}</Typography>
-              <FormControl>
-                <Typography variant="caption" color="text.secondary">How did the customer accept?</Typography>
+            <Section title="Visit">
+              <Box sx={dayBoxSx}><DayDetails day={summary} /></Box>
+              <FormControl component="fieldset">
+                <FormLabel component="legend" sx={{ typography: 'body2', mb: 0.5 }}>How did the customer accept?</FormLabel>
                 <RadioGroup value={acceptance} onChange={(event) => setAcceptance(event.target.value)}>
                   {acceptanceOptions.map((option) => (
-                    <FormControlLabel key={option.value} value={option.value} control={<Radio />} label={option.label} />
+                    <FormControlLabel key={option.value} value={option.value} control={<Radio size="small" />}
+                      label={<Typography variant="body2">{option.label}</Typography>} />
                   ))}
                 </RadioGroup>
               </FormControl>
-              <FormControlLabel
-                control={<Checkbox checked={emailOn} disabled={!customerEmail} onChange={(event) => setEmailOn(event.target.checked)} />}
-                label="Email a confirmation to the customer" />
-            </Stack>
+            </Section>
           )}
 
-          {preview && (
-            <CustomerEmailEditor to={customerEmail} senderEmail={senderEmail} text={text} problems={problems} preview={preview}
-              onChange={proposing ? setInvitationText : setConfirmationText} />
+          {proposing ? (
+            <Section title="Email message">{editor}</Section>
+          ) : (
+            <Section title="Confirmation email">
+              <FormControlLabel sx={{ m: 0 }}
+                control={<Checkbox checked={emailOn} disabled={!customerEmail} onChange={(event) => setEmailOn(event.target.checked)} />}
+                label={<Typography variant="body2">Email a confirmation to the customer</Typography>} />
+              {editor}
+            </Section>
           )}
-          {error && <Alert severity="error">{error}</Alert>}
         </Stack>
+
+        <Box sx={{ minHeight: 0 }}>
+          {preview ? <CustomerEmailPreview preview={preview} fill /> : (
+            <Box sx={{
+              height: { md: '100%' }, minHeight: 160, display: 'grid', placeItems: 'center', p: 3, textAlign: 'center',
+              border: 1, borderStyle: 'dashed', borderColor: 'divider', borderRadius: 2,
+            }}>
+              <Typography variant="body2" color="text.secondary">
+                No email is sent: the visit is registered without one.
+              </Typography>
+            </Box>
+          )}
+        </Box>
       </DialogContent>
-      <DialogActions>
+      {error && <Alert severity="error" sx={{ mx: 3, mt: 2 }}>{error}</Alert>}
+      <DialogActions sx={{ px: 3, py: 2 }}>
         <Button onClick={onClose} disabled={saving}>Cancel</Button>
         <Button variant="contained" onClick={submit} disabled={saving || problems.length > 0 || emailBlocked}>{buttonLabel}</Button>
       </DialogActions>

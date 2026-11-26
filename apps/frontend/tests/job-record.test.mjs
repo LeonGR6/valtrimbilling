@@ -38,12 +38,25 @@ test('Job rows map the persisted catalog and initialize unopened child modules',
     isActive: true,
     createdAt: '2026-09-09T20:00:00Z',
     updatedAt: '2026-09-09T20:00:00Z',
+    communityAliases: [],
     sequenceSheet: {
       name: 'Options Sequence Sheet',
       plans: [],
       phases: [],
     },
   })
+})
+
+test('Job rows carry the other community names saved from emails, sorted by name', () => {
+  const job = toJob({
+    id: 694, code: 'KB-RM', builder_id: 10, community: 'Rancho Madrina',
+    community_latitude: '33.7', community_longitude: '-117.1', status: 'ACTIVE', is_active: true,
+    job_community_aliases: [{ id: 5, alias: 'Rancho Madrina Phase 2' }, { id: 4, alias: 'KB Rancho Madrina' }],
+  })
+  assert.deepEqual(job.communityAliases, [
+    { id: 4, alias: 'KB Rancho Madrina' },
+    { id: 5, alias: 'Rancho Madrina Phase 2' },
+  ])
 })
 
 test('Job mutations expose only the fields owned by the current form', () => {

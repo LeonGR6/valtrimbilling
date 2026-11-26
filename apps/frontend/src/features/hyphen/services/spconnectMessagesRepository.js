@@ -1,48 +1,32 @@
-// Reads the messages that Hyphen's UAT environment sent to the SPConnect
-// webhook. That webhook (spconnect-orders) still runs in a separate Supabase
-// project, so this is a plain read-only PostgREST call to that project instead
-// of a second Supabase client: no session, no writes. It goes away once the
-// webhook moves into our own project and the table is read through api.js.
-//
-// The UAT project exposes only UAT rows, read-only, through the
-// public.spconnect_messages_uat view.
+import { requireSupabase } from '../../../services/api.js'
 
-const url = import.meta.env.VITE_SPCONNECT_UAT_URL
-const publishableKey = import.meta.env.VITE_SPCONNECT_UAT_PUBLISHABLE_KEY
+// Reads the messages that Hyphen's UAT environment sent to the SPConnect webhook through
+// our hyphen-messages Edge Function. The function checks that the caller is an ADMIN and
+// reads the teammate's webhook project with its secret key, which stays on the server:
+// the browser never holds a key for that project (decided 24 Nov 2026, after the view
+// readable with the publishable key was removed).
 
-export const isSpconnectUatConfigured = Boolean(url && publishableKey)
+const FUNCTION_NAME = 'hyphen-messages'
 
-const MESSAGE_LIMIT = 200
+async function functionErrorMessage(error, data) {
+  if (data?.error) return data.error
+
+  const response = error?.context
+  if (response && typeof response.clone === 'function') {
+    const payload = await response.clone().json().catch(() => null)
+    if (payload?.error) return payload.error
+  }
+
+  return 'Could not load the Hyphen requests. Try again in a moment.'
+}
 
 export async function listSpconnectMessages() {
-  if (!isSpconnectUatConfigured) {
-    throw new Error(
-      'The Hyphen UAT connection is not configured. Add VITE_SPCONNECT_UAT_URL and '
-      + 'VITE_SPCONNECT_UAT_PUBLISHABLE_KEY to apps/frontend/.env.',
-    )
+  const client = await requireSupabase()
+  const { data, error } = await client.functions.invoke(FUNCTION_NAME, { body: {} })
+
+  if (error || data?.error) {
+    throw new Error(await functionErrorMessage(error, data), { cause: error })
   }
 
-  const endpoint = new URL('/rest/v1/spconnect_messages_uat', url)
-  endpoint.searchParams.set('select', '*')
-  endpoint.searchParams.set('order', 'received_at.desc')
-  endpoint.searchParams.set('limit', String(MESSAGE_LIMIT))
-
-  let response
-  try {
-    response = await fetch(endpoint, { headers: { apikey: publishableKey } })
-  } catch {
-    throw new Error('Could not reach the Hyphen UAT project. Check your connection and try again.')
-  }
-
-  if (response.status === 404) {
-    throw new Error('The Hyphen UAT project does not expose the spconnect_messages_uat view yet.')
-  }
-  if (response.status === 401 || response.status === 403) {
-    throw new Error('The Hyphen UAT project rejected the key. Check VITE_SPCONNECT_UAT_PUBLISHABLE_KEY.')
-  }
-  if (!response.ok) {
-    throw new Error(`The Hyphen UAT project answered with status ${response.status}.`)
-  }
-
-  return response.json()
+  return data?.messages ?? []
 }

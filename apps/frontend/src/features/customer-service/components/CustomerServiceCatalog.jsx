@@ -33,6 +33,7 @@ import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
 import ViewListRoundedIcon from '@mui/icons-material/ViewListRounded'
 import ResponsiveCreateButton from '../../../components/common/ResponsiveCreateButton'
 import { useAuth } from '../../auth/context/useAuth.js'
+import { useJobs } from '../../jobs/context/useJobs.js'
 import { useCustomerServicePrototype } from '../context/customerServicePrototypeContext.js'
 import { priorityOptions } from '../data/customerService.js'
 import {
@@ -95,6 +96,7 @@ export default function CustomerServiceCatalog() {
     markRequestReady: persistApproval,
     proposalDrafts, setProposalDrafts, technicians, scheduleError,
   } = useCustomerServicePrototype()
+  const { addCommunityAlias } = useJobs()
   const draftDirty = useRef(false)
   const [pendingDraftNavigation, setPendingDraftNavigation] = useState(null)
   const reportDraftDirty = useCallback((dirty) => { draftDirty.current = dirty }, [])
@@ -204,10 +206,27 @@ export default function CustomerServiceCatalog() {
     changeView('PROPOSALS', current.id)
   }
 
-  const createRequest = async (values, attachmentNames, submissionKey) => {
+  // The community name the coordinator chose to remember for the Job (26 Nov 2026). The
+  // request is already saved, so a failure only adds a warning to the notice.
+  const rememberCommunityAlias = async (communityAlias) => {
+    if (!communityAlias) return null
+    try {
+      await addCommunityAlias(communityAlias)
+      return { severity: 'success', text: `Future emails that say “${communityAlias.alias}” will link to ${communityAlias.jobLabel}.` }
+    } catch (aliasError) {
+      return { severity: 'warning', text: `“${communityAlias.alias}” was not remembered for ${communityAlias.jobLabel}: ${aliasError.message}` }
+    }
+  }
+  const noticeWithAlias = (message, alias) => ({
+    severity: alias?.severity === 'warning' ? 'warning' : 'success',
+    message: [message, alias?.text].filter(Boolean).join(' '),
+  })
+
+  const createRequest = async (values, attachmentNames, submissionKey, { communityAlias = null } = {}) => {
     const request = requestDialog?.mode === 'recover'
       ? await persistRecovery(requestDialog.emailImport, values)
       : await persistRequest(values, submissionKey)
+    const alias = await rememberCommunityAlias(communityAlias)
     if (requestDialog?.mode === 'recover') setImportPanelRevision((value) => value + 1)
     setSearch('')
     setStageFilter('all')
@@ -217,12 +236,9 @@ export default function CustomerServiceCatalog() {
     setPage(0)
     setRequestDialog(null)
     setViewRequest(request)
-    setNotice({
-      severity: 'success',
-      message: request.sourceDocument?.storage
-        ? `${request.requestNumber} was saved in Supabase and its private PDF was retained.`
-        : `${request.requestNumber} was saved in Supabase.`,
-    })
+    setNotice(noticeWithAlias(request.sourceDocument?.storage
+      ? `${request.requestNumber} was saved in Supabase and its private PDF was retained.`
+      : `${request.requestNumber} was saved in Supabase.`, alias))
   }
 
   const openImportRecovery = async (receipt) => {
@@ -250,7 +266,7 @@ export default function CustomerServiceCatalog() {
     setViewRequest(null)
   }
 
-  const updateRequest = async (values) => {
+  const updateRequest = async (values, { communityAlias = null } = {}) => {
     const originalRequest = requestDialog?.request
     const current = findRequestForView(requests, originalRequest?.id, activeView)
     if (!current || !canEditRequestInView(current, activeView)) {
@@ -258,6 +274,7 @@ export default function CustomerServiceCatalog() {
     }
 
     const updatedRequest = await persistUpdate(originalRequest, values)
+    const alias = await rememberCommunityAlias(communityAlias)
     setSearch('')
     setStageFilter('all')
     setAreaFilter('all')
@@ -265,13 +282,10 @@ export default function CustomerServiceCatalog() {
     setPage(0)
     setRequestDialog(null)
     setViewRequest(updatedRequest)
-    setNotice({
-      severity: 'success',
-      message: ['READY_TO_PROPOSE', 'NEEDS_CONTACT'].includes(originalRequest.workflowStage)
-        && updatedRequest.workflowStage === 'NEEDS_REVIEW'
-        ? `${updatedRequest.requestNumber} saved. Important changes require a new review.`
-        : `${updatedRequest.requestNumber} changes saved.`,
-    })
+    setNotice(noticeWithAlias(['READY_TO_PROPOSE', 'NEEDS_CONTACT'].includes(originalRequest.workflowStage)
+      && updatedRequest.workflowStage === 'NEEDS_REVIEW'
+      ? `${updatedRequest.requestNumber} saved. Important changes require a new review.`
+      : `${updatedRequest.requestNumber} changes saved.`, alias))
   }
 
   const markReadyToPropose = async (request, reviewDetails) => {

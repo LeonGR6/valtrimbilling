@@ -35,6 +35,20 @@ export interface IntakeCatalog {
     }
   >;
 }
+// Names a coordinator saved for a Job (job_community_aliases, 26 Nov 2026) join the
+// Job's own community and code. A name of another Builder is ignored; a name that also
+// matches another Job leaves the request without a Job, like any other ambiguity.
+export function withJobCommunityAliases(
+  jobs: IntakeCatalog["jobs"],
+  aliases: Array<{ job_id: number; builder_id: number; alias: string }>,
+): IntakeCatalog["jobs"] {
+  return jobs.map((job) => ({
+    ...job,
+    aliases: aliases
+      .filter((row) => row.job_id === job.id && row.builder_id === job.builderId)
+      .map((row) => row.alias),
+  }));
+}
 export interface ImportedIntakePayload {
   property: {
     jobId: number | null;

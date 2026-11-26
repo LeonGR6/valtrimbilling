@@ -17,6 +17,8 @@ const JOB_COLUMNS = [
   'is_active',
   'created_at',
   'updated_at',
+  // Other names of the community saved from Customer Service emails (26 Nov 2026).
+  'job_community_aliases(id, alias)',
 ].join(', ')
 
 function throwRepositoryError(error) {

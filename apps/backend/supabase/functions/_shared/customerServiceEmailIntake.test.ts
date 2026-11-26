@@ -2,6 +2,7 @@ import { assertEquals } from "@std/assert";
 import {
   buildEmailImportIntake,
   type SourceFacts,
+  withJobCommunityAliases,
 } from "./customerServiceEmailIntake.ts";
 import {
   emptyCatalog,
@@ -363,6 +364,38 @@ Deno.test("ambiguous or invalid catalog location is not filled with zero coordin
       .latitude,
     null,
   );
+});
+Deno.test("a name saved for a Job links the next email that uses it", () => {
+  // Like CS-3572: the email says "KB Rancho Madrina" and the Job is "Rancho Madrina".
+  const facts = importFacts();
+  facts.property.builderName = "KB Homes";
+  facts.property.communityName = "KB Arroyo";
+  assertEquals(buildEmailImportIntake(wrap(facts), testCatalog, "2026-10-22").intakePayload?.property.jobId, null);
+  const saved = {
+    ...testCatalog,
+    jobs: withJobCommunityAliases(testCatalog.jobs, [
+      { job_id: 10, builder_id: 1, alias: "KB  Arroyo" },
+      // A name kept for another Builder never joins this Job.
+      { job_id: 10, builder_id: 2, alias: "Somewhere Else" },
+    ]),
+  };
+  assertEquals(saved.jobs[0].aliases, ["KB  Arroyo"]);
+  const result = buildEmailImportIntake(wrap(facts), saved, "2026-10-22");
+  assertEquals(result.intakePayload?.property.jobId, 10);
+  assertEquals(result.intakePayload?.property.latitude, 34.1);
+});
+Deno.test("a saved name that also matches another Job leaves the Job for the review", () => {
+  const facts = importFacts();
+  facts.property.builderName = "KB Homes";
+  facts.property.communityName = "Arroyo";
+  const catalog = {
+    ...testCatalog,
+    jobs: withJobCommunityAliases(
+      [...testCatalog.jobs, { ...testCatalog.jobs[0], id: 12, code: "KB-AW", community: "Arroyo West" }],
+      [{ job_id: 12, builder_id: 1, alias: "Arroyo" }],
+    ),
+  };
+  assertEquals(buildEmailImportIntake(wrap(facts), catalog, "2026-10-22").intakePayload?.property.jobId, null);
 });
 Deno.test("when the email text and the work order name different communities, the work order PDF wins", () => {
   // Like Magnolia: the email says "Magnolia at Arcadia Phase 4", the PDF "Magnolia Townhomes".

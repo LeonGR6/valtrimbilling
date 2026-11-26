@@ -370,3 +370,19 @@ test('a request created in the last 24 hours is labeled New', () => {
   assert.equal(isNewRequest({}, now), false)
   assert.equal(isNewRequest(null, now), false)
 })
+
+test('New requests go first in Action required, the latest on top; other sorts keep their order', () => {
+  const now = new Date('2026-11-25T22:00:00Z')
+  const request = (requestNumber, workflowStage, dueOn, createdAt) => ({
+    id: requestNumber, requestNumber, workflowStage, dueOn, reportedAt: dueOn, createdAt,
+  })
+  const inbox = [
+    request('CS-3401', 'NEEDS_REVIEW', '2026-11-20', '2026-11-12T17:00:00Z'), // overdue
+    request('CS-3402', 'READY_TO_PROPOSE', '2026-12-02', '2026-11-25T15:00:00Z'), // new, this morning
+    request('CS-3403', 'NEEDS_REVIEW', '2026-12-01', '2026-11-20T17:00:00Z'),
+    request('CS-3404', 'NEEDS_REVIEW', '2026-12-02', '2026-11-25T21:30:00Z'), // new, just imported
+  ]
+  const order = (sortBy) => filterAndSortRequestInbox(inbox, { sortBy, now }).map((entry) => entry.requestNumber)
+  assert.deepEqual(order('ACTION_REQUIRED'), ['CS-3404', 'CS-3402', 'CS-3401', 'CS-3403'])
+  assert.deepEqual(order('DUE_DATE'), ['CS-3401', 'CS-3403', 'CS-3402', 'CS-3404'])
+})

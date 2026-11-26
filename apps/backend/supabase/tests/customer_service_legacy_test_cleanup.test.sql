@@ -6,7 +6,7 @@ select is((select count(*) from valtrim.service_requests where id in (3,4)), 0::
 select is((select count(*) from valtrim.service_requests where folio in ('SR-00001003','SR-00001004')), 0::bigint, 'Legacy test folios are absent');
 select is((select count(*) from valtrim.service_properties where id in (3,4)), 0::bigint, 'Exclusive legacy properties are removed');
 select is((select count(*) from valtrim.service_appointments where id in (2,3) or request_id in (3,4)), 0::bigint, 'Exclusive test appointments are removed');
--- The proposal tables themselves were dropped in 20261105120000.
+-- The proposal tables themselves were dropped in 20261105120500.
 select ok(to_regclass('valtrim.service_schedule_proposals') is null, 'Legacy proposals are retired');
 select ok(to_regclass('valtrim.service_schedule_proposal_stops') is null, 'Legacy proposal stops are retired');
 select is((select count(*) from valtrim.service_request_availability where request_id in (3,4)), 0::bigint, 'Legacy availability cascades are complete');
@@ -15,7 +15,7 @@ select is((select count(*) from valtrim.service_request_contacts where request_i
 select is((select count(*) from valtrim.service_request_items where request_id in (3,4)), 0::bigint, 'No legacy items remain');
 select is((select count(*) from valtrim.service_request_sources where request_id in (3,4)), 0::bigint, 'No legacy sources remain');
 select is((select count(*) from valtrim.service_communications where request_id in (3,4) or appointment_id in (2,3)), 0::bigint, 'No communication references remain');
--- The confirmation tokens table itself was dropped in 20261119120000.
+-- The confirmation tokens table itself was dropped in 20261119120500.
 select ok(to_regclass('private.service_confirmation_tokens') is null, 'No confirmation tokens remain');
 select is((select count(*) from valtrim.audit_events where action = 'SERVICE_REQUEST_TEST_DATA_DELETED'
   and metadata ->> 'migration' = '20261020210000' and entity_id in ('3','4')), 2::bigint, 'Each removed request has a dedicated audit event');

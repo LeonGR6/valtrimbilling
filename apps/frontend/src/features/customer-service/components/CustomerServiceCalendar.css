@@ -497,16 +497,6 @@
   border-bottom: 1px solid var(--mui-palette-divider);
 }
 
-.service-detail-panel__last-visit {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 14px;
-  border: 1px solid color-mix(in srgb, #22c55e 30%, var(--mui-palette-divider));
-  border-radius: 10px;
-  background: color-mix(in srgb, #22c55e 9%, transparent);
-}
-
 @media (max-width: 900px) {
   .service-calendar-production-toggle {
     width: 100%;

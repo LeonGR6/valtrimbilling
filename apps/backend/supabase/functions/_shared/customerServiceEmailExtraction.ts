@@ -12,6 +12,7 @@ import {
 import {
   buildEmailImportIntake,
   type IntakeCatalog,
+  withJobCommunityAliases,
 } from "./customerServiceEmailIntake.ts";
 import {
   type EmailImportExtractor,
@@ -75,30 +76,36 @@ export async function extractCustomerServiceEmailImport(
       "The complete email source must be AVAILABLE before analysis.",
     );
   }
-  const [builders, jobs] = await Promise.all([
+  const [builders, jobs, aliases] = await Promise.all([
     admin.from("builders").select("id,code,name").eq("is_active", true),
     admin.from("jobs").select(
       "id,builder_id,code,community,community_latitude,community_longitude",
     ).eq("is_active", true).eq("status", "ACTIVE"),
+    admin.from("job_community_aliases").select("job_id,builder_id,alias"),
   ]);
-  if (builders.error || jobs.error) throw builders.error ?? jobs.error;
+  if (builders.error || jobs.error || aliases.error) {
+    throw builders.error ?? jobs.error ?? aliases.error;
+  }
   const catalog: IntakeCatalog = {
     builders: (builders.data ?? []).map((builder) => ({
       id: builder.id,
       code: builder.code,
       name: builder.name,
     })),
-    jobs: (jobs.data ?? []).filter((job) =>
-      builders.data?.some((builder) => builder.id === job.builder_id)
-    )
-      .map((job) => ({
-        id: job.id,
-        builderId: job.builder_id,
-        code: job.code,
-        community: job.community,
-        latitude: numeric(job.community_latitude),
-        longitude: numeric(job.community_longitude),
-      })),
+    jobs: withJobCommunityAliases(
+      (jobs.data ?? []).filter((job) =>
+        builders.data?.some((builder) => builder.id === job.builder_id)
+      )
+        .map((job) => ({
+          id: job.id,
+          builderId: job.builder_id,
+          code: job.code,
+          community: job.community,
+          latitude: numeric(job.community_latitude),
+          longitude: numeric(job.community_longitude),
+        })),
+      aliases.data ?? [],
+    ),
   };
   const receipt: ImportAnalysisReceipt = {
     id: row.id,

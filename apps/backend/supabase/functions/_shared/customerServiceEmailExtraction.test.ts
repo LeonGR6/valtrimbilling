@@ -48,7 +48,8 @@ async function adapterFixture() {
           return Promise.resolve(Response.json([row]));
         }
         if (
-          path.endsWith("/builders") || path.endsWith("/jobs")
+          path.endsWith("/builders") || path.endsWith("/jobs") ||
+          path.endsWith("/job_community_aliases")
         ) return Promise.resolve(Response.json([]));
         if (path.endsWith("/record_customer_service_import_analysis")) {
           if (recordingFailure) {
@@ -180,7 +181,8 @@ Deno.test("successful stored analysis is reused without repeating paid inference
     { extractor: fixture.extractor },
   );
   assertEquals(result.idempotentReplay, true);
-  assertEquals(fixture.requests.length, 4);
+  // The import, Builders, Jobs, saved community names and the analysis record.
+  assertEquals(fixture.requests.length, 5);
   assertEquals(fixture.calls.text.length, 0);
 });
 Deno.test("unavailable original fails before inference or report writes", async () => {

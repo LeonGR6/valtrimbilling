@@ -215,8 +215,11 @@ export default function ProposalDraftPlanner({
     }
     return {
       available: true, values: secondValues, validation: secondValidation,
-      summary: `${formatWeekdayDate(secondValues.date)} · work ${formatTime(secondValues.internalStart)}–${
-        formatTime(secondValidation.internalEnd)} · ${technicianNames(secondValues.technicianIds).join(', ')}`,
+      summary: {
+        date: formatWeekdayDate(secondValues.date),
+        detail: `Work ${formatTime(secondValues.internalStart)}–${formatTime(secondValidation.internalEnd)} · ${
+          technicianNames(secondValues.technicianIds).join(', ')}`,
+      },
     }
   })()
   // Holds the days and emails the invitation; a failure stays in the dialog.
@@ -480,8 +483,11 @@ export default function ProposalDraftPlanner({
       </Stack>
       {sending && (
         <SendToCustomerDialog request={request} values={values}
-          summary={`${request.requestNumber} · ${formatWeekdayDate(values.date)} · work ${formatTime(values.internalStart)}–${
-            formatTime(validation.internalEnd)} · ${technicianNames(values.technicianIds).join(', ')}`}
+          summary={{
+            date: formatWeekdayDate(values.date),
+            detail: `Work ${formatTime(values.internalStart)}–${formatTime(validation.internalEnd)} · ${
+              technicianNames(values.technicianIds).join(', ')}`,
+          }}
           secondOffer={secondOffer} senderEmail={profile?.email ?? ''} customerChoice={formIsCustomerChoice}
           onClose={() => setSending(false)} onSend={send} onSendProposal={sendInvitation} />
       )}

@@ -64,7 +64,7 @@ select hasnt_column(
   'valtrim',
   'service_scheduling_settings',
   'travel_buffer_minutes',
-  'The fixed travel buffer was retired in 20261105120000'
+  'The fixed travel buffer was retired in 20261105120500'
 );
 
 select ok(

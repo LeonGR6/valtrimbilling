@@ -97,7 +97,7 @@ select has_table(
 select hasnt_trigger(
   'valtrim', 'service_properties',
   'service_properties_supersede_proposals',
-  'Legacy schedule proposals were retired in 20261105120000'
+  'Legacy schedule proposals were retired in 20261105120500'
 );
 
 create temporary table point_two_fixture (

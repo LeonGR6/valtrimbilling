@@ -39,7 +39,7 @@ select has_table(
   'Customer communications are persisted'
 );
 
--- Replaced by signed proposal links in 20261119120000.
+-- Replaced by signed proposal links in 20261119120500.
 select hasnt_table(
   'private',
   'service_confirmation_tokens',
@@ -293,7 +293,7 @@ select ok(
         'service_communications',
         'service_scheduling_settings'
       )
-  -- 21 until 20261105120000 removed the unused browser insert/update policies on
+  -- 21 until 20261105120500 removed the unused browser insert/update policies on
   -- appointments: only the service-role Edge Function writes them now.
   ) >= 19,
   'Customer Service tables have at least the required RLS policies'
@@ -434,7 +434,7 @@ select ok(
 );
 
 -- Appointment registration and its audit event are covered by
--- customer_service_appointments.test.sql (20261105120000).
+-- customer_service_appointments.test.sql (20261105120500).
 select has_column('valtrim', 'service_appointments', 'technician_ids',
   'Appointments store the full crew');
 

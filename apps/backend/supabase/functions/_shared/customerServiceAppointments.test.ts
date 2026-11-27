@@ -5,7 +5,10 @@ import {
   californiaDayRange,
   changedTravelLegs,
   type HoldRow,
+  parseCancelInput,
+  parseCloseInput,
   parseCustomerEmail,
+  parseMoveInput,
   parseRegisterInput,
   type RegisterAppointmentInput,
   type RequestRow,
@@ -198,4 +201,92 @@ Deno.test("database errors map to planner statuses", () => {
   assertEquals(statusForDatabaseError("42501"), 403);
   assertEquals(statusForDatabaseError("23514"), 422);
   assertEquals(statusForDatabaseError("XX000"), 500);
+});
+
+// Reschedule block (27 Nov 2026). The visit being moved: Tech One, Monday 10:00–10:45.
+const movingVisit: AppointmentRow = {
+  id: 11, request_id: 20, technician_ids: [4], window_starts_at: "2026-11-09T18:00:00Z",
+  starts_at: "2026-11-09T18:00:00Z", ends_at: "2026-11-09T18:45:00Z", pickup_minutes: 10,
+  service_requests: { folio: "SR-00000020" },
+};
+const confirmed: RequestRow = { ...request, workflow_stage: "CONFIRMED" };
+const moveFields = {
+  requestId: 20, expectedRequestUpdatedAt: "2026-11-05T10:00:00Z", technicianIds: [4],
+  date: "2026-11-09", windowStart: "10:00", workStart: "10:30", travelMinutes: { "10>20": 30 },
+};
+
+Deno.test("a moved visit does not occupy its own slot and leaves the fingerprint", () => {
+  // The same slot taken by another request's visit is a conflict.
+  const taken = validateRegistration({
+    input: input({ workStart: "10:30", travelMinutes: { "10>20": 30 } }), request,
+    technicians, dayAppointments: [earlier, { ...movingVisit, id: 12, request_id: 30 }], now,
+  });
+  assert(!taken.rpcArgs);
+
+  const moved = validateRegistration({
+    input: moveFields, request: confirmed, technicians, dayAppointments: [earlier, movingVisit], now,
+    movingAppointmentId: 11,
+  });
+  assertEquals(moved.errors, []);
+  assertEquals(moved.warnings, []);
+  assertEquals(moved.rpcArgs?.p_expected_appointment_ids, [7]);
+  assertEquals(moved.rpcArgs?.p_appointment.startsAt, "2026-11-09T18:30:00.000Z");
+  assertEquals("acceptance" in (moved.rpcArgs?.p_appointment ?? {}), false, "the RPC keeps the old acceptance");
+});
+
+Deno.test("only a confirmed visit moves, also under way, and after the due date it only warns", () => {
+  const ready = validateRegistration({
+    input: moveFields, request, technicians, dayAppointments: [earlier, movingVisit], now, movingAppointmentId: 11,
+  });
+  assertEquals(ready.errors.map((error) => error.message), ["Only a confirmed visit can be moved."]);
+
+  const working = validateRegistration({
+    input: moveFields, request: { ...confirmed, workflow_stage: "WORKING" }, technicians,
+    dayAppointments: [earlier, movingVisit], now, movingAppointmentId: 11,
+  });
+  assert(working.rpcArgs);
+
+  // Due Friday (today) while on-time days remain: registering is blocked, moving only warns (P3).
+  const late = validateRegistration({
+    input: moveFields, request: { ...confirmed, due_on: "2026-11-06" }, technicians,
+    dayAppointments: [earlier, movingVisit], now, movingAppointmentId: 11,
+  });
+  assertEquals(late.errors, []);
+  assert(late.rpcArgs);
+  assert(late.warnings.some((warning) => warning.message.startsWith("This date is after the due date (Fri, Nov 6).")));
+});
+
+Deno.test("moving, cancelling and closing check the reason with the RPC's words", () => {
+  const move = {
+    ...moveFields, appointmentId: 11, expectedAppointmentUpdatedAt: "2026-11-05T09:00:00Z",
+    reason: "CUSTOMER_ASKED", note: "  Thursday works better ",
+  };
+  assertEquals(parseMoveInput(move).note, "Thursday works better");
+  assertEquals(parseMoveInput({ ...move, note: "   " }).note, null);
+  assertThrows(() => parseMoveInput({ ...move, reason: "CUSTOMER_CANCELLED" }), AppointmentInputError, "Choose why the visit moves.");
+  assertThrows(() => parseMoveInput({ ...move, reason: "OTHER", note: "" }), AppointmentInputError,
+    "Describe the reason in 500 characters or fewer.");
+  assertThrows(() => parseMoveInput({ ...move, note: "x".repeat(501) }), AppointmentInputError);
+  assertThrows(() => parseMoveInput({ ...move, appointmentId: 0 }), AppointmentInputError, "A valid appointmentId is required.");
+  assertThrows(() => parseMoveInput({ ...move, expectedAppointmentUpdatedAt: "soon" }), AppointmentInputError,
+    "The visit version is required.");
+
+  const cancel = { appointmentId: 11, expectedAppointmentUpdatedAt: "2026-11-05T09:00:00Z", reason: "BUILDER_CANCELLED" };
+  assertEquals(parseCancelInput(cancel), {
+    appointmentId: 11, expectedAppointmentUpdatedAt: "2026-11-05T09:00:00Z", reason: "BUILDER_CANCELLED",
+    note: null, closeRequest: false, duplicateOfRequestId: null,
+  });
+  assertThrows(() => parseCancelInput({ ...cancel, reason: "WEATHER" }), AppointmentInputError, "Choose why the visit is cancelled.");
+  assertThrows(() => parseCancelInput({ ...cancel, reason: "DUPLICATE", duplicateOfRequestId: 30 }), AppointmentInputError,
+    "A duplicate closes the request.");
+  assertThrows(() => parseCancelInput({ ...cancel, reason: "DUPLICATE", closeRequest: true }), AppointmentInputError,
+    "A duplicate needs the original request");
+  assertEquals(parseCancelInput({ ...cancel, reason: "DUPLICATE", closeRequest: true, duplicateOfRequestId: 30 }).duplicateOfRequestId, 30);
+  assertThrows(() => parseCancelInput({ ...cancel, closeRequest: "yes" }), AppointmentInputError, "closeRequest must be true or false.");
+
+  const close = { requestId: 20, expectedRequestUpdatedAt: "2026-11-05T10:00:00Z", reason: "NOT_VALTRIM_WORK" };
+  assertEquals(parseCloseInput(close).reason, "NOT_VALTRIM_WORK");
+  assertThrows(() => parseCloseInput({ ...close, reason: "CUSTOMER_ASKED" }), AppointmentInputError, "Choose why the request closes.");
+  assertThrows(() => parseCloseInput({ ...close, reason: "DUPLICATE", duplicateOfRequestId: 20 }), AppointmentInputError,
+    "A request is not a duplicate of itself.");
 });

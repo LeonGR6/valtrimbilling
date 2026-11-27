@@ -1,7 +1,9 @@
-// Server-side validation for registering an accepted Customer Service appointment.
+// Server-side validation for registering an accepted Customer Service appointment, and
+// for moving, cancelling and closing (Reschedule block, 27 Nov 2026).
 // It applies the same capacity rules as the browser planner
 // (customerServiceScheduling.mjs) to data read with the service role, then returns
-// the arguments for the atomic register_customer_service_appointment RPC.
+// the arguments for the atomic register_customer_service_appointment and
+// reschedule_customer_service_appointment RPCs.
 import {
   californiaClockAt,
   californiaInstant,
@@ -9,6 +11,7 @@ import {
   checkVisitDate,
   customerServicePickupMinutes,
 } from "./customerServiceScheduling.mjs";
+import { visitChangeProblem } from "./customerServiceVisitChanges.mjs";
 
 export const appointmentAcceptances = [
   "CUSTOMER_ACCEPTED_PROPOSAL",
@@ -16,7 +19,8 @@ export const appointmentAcceptances = [
 ] as const;
 export type AppointmentAcceptance = typeof appointmentAcceptances[number];
 
-export interface RegisterAppointmentInput {
+// Where and when a visit goes: the same fields to register one or to move one.
+export interface VisitFields {
   requestId: number;
   expectedRequestUpdatedAt: string;
   technicianIds: number[];
@@ -24,9 +28,39 @@ export interface RegisterAppointmentInput {
   windowStart: string;
   workStart: string;
   travelMinutes: Record<string, number>;
+}
+
+export interface RegisterAppointmentInput extends VisitFields {
   acceptance: AppointmentAcceptance;
   // A customer email corrected in Send to customer (24 Nov 2026), saved before sending.
   customerEmail?: string;
+}
+
+// Move a scheduled visit to a day agreed with the customer (decision P1).
+export interface MoveAppointmentInput extends VisitFields {
+  appointmentId: number;
+  expectedAppointmentUpdatedAt: string;
+  reason: string;
+  note: string | null;
+}
+
+// Cancel a scheduled visit; with closeRequest the request closes too (decision P4).
+export interface CancelVisitInput {
+  appointmentId: number;
+  expectedAppointmentUpdatedAt: string;
+  reason: string;
+  note: string | null;
+  closeRequest: boolean;
+  duplicateOfRequestId: number | null;
+}
+
+// Close a request that has no confirmed visit (decision D2).
+export interface CloseRequestInput {
+  requestId: number;
+  expectedRequestUpdatedAt: string;
+  reason: string;
+  note: string | null;
+  duplicateOfRequestId: number | null;
 }
 
 export interface RequestRow {
@@ -98,14 +132,97 @@ export function parseCustomerEmail(value: unknown): string | undefined {
   return email;
 }
 
+const isTimestamp = (value: unknown): value is string => typeof value === "string" && !Number.isNaN(Date.parse(value));
+
+function requestVersion(value: Record<string, unknown>) {
+  const requestId = positiveId(value.requestId);
+  if (!requestId) throw new AppointmentInputError("A valid requestId is required.");
+  if (!isTimestamp(value.expectedRequestUpdatedAt)) {
+    throw new AppointmentInputError("The request version is required. Reload requests and try again.");
+  }
+  return { requestId, expectedRequestUpdatedAt: value.expectedRequestUpdatedAt };
+}
+
+function appointmentVersion(value: Record<string, unknown>) {
+  const appointmentId = positiveId(value.appointmentId);
+  if (!appointmentId) throw new AppointmentInputError("A valid appointmentId is required.");
+  if (!isTimestamp(value.expectedAppointmentUpdatedAt)) {
+    throw new AppointmentInputError("The visit version is required. Reload and try again.");
+  }
+  return { appointmentId, expectedAppointmentUpdatedAt: value.expectedAppointmentUpdatedAt };
+}
+
+// The reason and note of a change, checked with the shared rule (same words as the RPCs).
+function changeReason(
+  action: "move" | "cancel" | "close",
+  value: Record<string, unknown>,
+  { closeRequest = false, duplicateOfRequestId = null }: { closeRequest?: boolean; duplicateOfRequestId?: number | null } = {},
+) {
+  const reason = typeof value.reason === "string" ? value.reason : "";
+  const note = typeof value.note === "string" && value.note.trim() ? value.note.trim() : null;
+  const problem = visitChangeProblem({ action, reason, note: note ?? "", closeRequest, duplicateOfRequestId });
+  if (problem) throw new AppointmentInputError(`${problem}.`);
+  return { reason, note };
+}
+
+function duplicateOf(value: Record<string, unknown>) {
+  if (value.duplicateOfRequestId === undefined || value.duplicateOfRequestId === null) return null;
+  const id = positiveId(value.duplicateOfRequestId);
+  if (!id) throw new AppointmentInputError("Choose the original request from the list.");
+  return id;
+}
+
+export function parseMoveInput(body: unknown): MoveAppointmentInput {
+  const value = (body ?? {}) as Record<string, unknown>;
+  return {
+    ...parseVisitFields(value),
+    ...appointmentVersion(value),
+    ...changeReason("move", value),
+  };
+}
+
+export function parseCancelInput(body: unknown): CancelVisitInput {
+  const value = (body ?? {}) as Record<string, unknown>;
+  if (value.closeRequest !== undefined && typeof value.closeRequest !== "boolean") {
+    throw new AppointmentInputError("closeRequest must be true or false.");
+  }
+  const closeRequest = value.closeRequest === true;
+  const duplicateOfRequestId = duplicateOf(value);
+  return {
+    ...appointmentVersion(value),
+    ...changeReason("cancel", value, { closeRequest, duplicateOfRequestId }),
+    closeRequest,
+    duplicateOfRequestId,
+  };
+}
+
+export function parseCloseInput(body: unknown): CloseRequestInput {
+  const value = (body ?? {}) as Record<string, unknown>;
+  const duplicateOfRequestId = duplicateOf(value);
+  const version = requestVersion(value);
+  if (duplicateOfRequestId === version.requestId) {
+    throw new AppointmentInputError("A request is not a duplicate of itself.");
+  }
+  return { ...version, ...changeReason("close", value, { duplicateOfRequestId }), duplicateOfRequestId };
+}
+
 // Shape checks only; the business rules run in validateRegistration.
 export function parseRegisterInput(body: unknown): RegisterAppointmentInput {
   const value = (body ?? {}) as Record<string, unknown>;
-  const requestId = positiveId(value.requestId);
-  if (!requestId) throw new AppointmentInputError("A valid requestId is required.");
-  if (typeof value.expectedRequestUpdatedAt !== "string" || Number.isNaN(Date.parse(value.expectedRequestUpdatedAt))) {
-    throw new AppointmentInputError("The request version is required. Reload requests and try again.");
+  const fields = parseVisitFields(value);
+  if (!appointmentAcceptances.includes(value.acceptance as AppointmentAcceptance)) {
+    throw new AppointmentInputError("Choose how the appointment was accepted.");
   }
+  const customerEmail = parseCustomerEmail(value.customerEmail);
+  return {
+    ...fields,
+    acceptance: value.acceptance as AppointmentAcceptance,
+    ...(customerEmail ? { customerEmail } : {}),
+  };
+}
+
+function parseVisitFields(value: Record<string, unknown>): VisitFields {
+  const { requestId, expectedRequestUpdatedAt } = requestVersion(value);
   if (!Array.isArray(value.technicianIds) || value.technicianIds.length === 0) {
     throw new AppointmentInputError("Select the technicians assigned to this work.");
   }
@@ -127,20 +244,14 @@ export function parseRegisterInput(body: unknown): RegisterAppointmentInput {
     }
     travelMinutes[key] = minutes as number;
   }
-  if (!appointmentAcceptances.includes(value.acceptance as AppointmentAcceptance)) {
-    throw new AppointmentInputError("Choose how the appointment was accepted.");
-  }
-  const customerEmail = parseCustomerEmail(value.customerEmail);
   return {
     requestId,
-    expectedRequestUpdatedAt: value.expectedRequestUpdatedAt,
+    expectedRequestUpdatedAt,
     technicianIds: technicianIds as number[],
     date: value.date as string,
     windowStart: value.windowStart as string,
     workStart: value.workStart as string,
     travelMinutes,
-    acceptance: value.acceptance as AppointmentAcceptance,
-    ...(customerEmail ? { customerEmail } : {}),
   };
 }
 
@@ -155,19 +266,35 @@ export function californiaDayRange(date: string) {
 
 const plusMinutes = (iso: string, minutes: number) => new Date(Date.parse(iso) + minutes * 60_000);
 
-export function validateRegistration({ input, request, technicians, dayAppointments, dayHolds = [], now = new Date() }: {
-  input: RegisterAppointmentInput;
+export function validateRegistration({
+  input, request, technicians, dayAppointments: loadedAppointments, dayHolds = [], now = new Date(),
+  movingAppointmentId = null,
+}: {
+  input: VisitFields & { acceptance?: AppointmentAcceptance };
   request: RequestRow | null;
   technicians: TechnicianRow[];
   dayAppointments: AppointmentRow[];
   dayHolds?: HoldRow[];
   now?: Date;
+  // Moving a visit (Reschedule, 27 Nov 2026): the request must have a confirmed visit,
+  // that visit does not occupy the new day, and a date after the due date is only a
+  // warning, because the customer asked for it (decision P3).
+  movingAppointmentId?: number | null;
 }) {
   const errors: ValidationMessage[] = [];
+  const warnings: ValidationMessage[] = [];
   if (!request) {
-    return { errors: [{ field: "request", message: "The Customer Service request was not found." }] };
+    return { errors: [{ field: "request", message: "The Customer Service request was not found." }], warnings };
   }
-  if (!["READY_TO_PROPOSE", "AWAITING_CUSTOMER", "NEEDS_CONTACT"].includes(request.workflow_stage) || request.closed_at) {
+  const moving = movingAppointmentId !== null;
+  const dayAppointments = moving
+    ? loadedAppointments.filter((appointment) => appointment.id !== movingAppointmentId)
+    : loadedAppointments;
+  if (moving) {
+    if (!["CONFIRMED", "WORKING"].includes(request.workflow_stage) || request.closed_at) {
+      errors.push({ field: "request", message: "Only a confirmed visit can be moved." });
+    }
+  } else if (!["READY_TO_PROPOSE", "AWAITING_CUSTOMER", "NEEDS_CONTACT"].includes(request.workflow_stage) || request.closed_at) {
     errors.push({ field: "request", message: "Only an open request waiting for a proposal can get an appointment." });
   } else if (request.valtrim_items_confirmed !== true) {
     errors.push({ field: "request", message: "Complete and approve the request information in Requests before planning." });
@@ -189,9 +316,10 @@ export function validateRegistration({ input, request, technicians, dayAppointme
   });
   errors.push(...dateCheck.errors);
   // A date after the due date is blocked while on-time days remain (approved
-  // 2026-11-05); an already overdue request keeps only the warning.
+  // 2026-11-05); an already overdue request keeps only the warning. A moved visit only
+  // warns (P3).
   for (const warning of dateCheck.warnings) {
-    if (warning.pastDue) errors.push({ field: warning.field, message: warning.message });
+    if (warning.pastDue) (moving ? warnings : errors).push({ field: warning.field, message: warning.message });
   }
 
   const ids = new Set(uniqueIds);
@@ -245,11 +373,12 @@ export function validateRegistration({ input, request, technicians, dayAppointme
     if (warning.travelPending) errors.push({ field: warning.field, message: warning.message });
   }
   const window = capacity.window;
-  if (errors.length || !window) return { errors };
+  if (errors.length || !window) return { errors, warnings };
 
   const windowStartsAt = californiaInstant(input.date, window.start)!;
   return {
     errors,
+    warnings,
     rpcArgs: {
       p_request_id: request.id,
       p_expected_request_updated_at: input.expectedRequestUpdatedAt,
@@ -262,7 +391,8 @@ export function validateRegistration({ input, request, technicians, dayAppointme
         startsAt: californiaInstant(input.date, input.workStart)!.toISOString(),
         endsAt: californiaInstant(input.date, capacity.internalEnd)!.toISOString(),
         pickupMinutes: customerServicePickupMinutes,
-        acceptance: input.acceptance,
+        // A moved visit keeps how the old one was accepted (the RPC copies it).
+        ...(input.acceptance ? { acceptance: input.acceptance } : {}),
       },
       p_travel: capacity.travelLegs.map((leg: { fromRequestId: string; toRequestId: string; minutes: number }) => ({
         fromRequestId: Number(leg.fromRequestId), toRequestId: Number(leg.toRequestId), minutes: leg.minutes,

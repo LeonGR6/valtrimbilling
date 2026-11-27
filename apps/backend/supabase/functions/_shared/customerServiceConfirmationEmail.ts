@@ -7,6 +7,8 @@ import {
   confirmationEmail,
   confirmationTextProblems,
   mailingAddress,
+  visitCancelledEmail,
+  visitMovedEmail,
 } from "./customerServiceEmailTemplates.mjs";
 import { MicrosoftGraphSendError, MicrosoftGraphSyncError } from "./customerServiceMicrosoftGraph.ts";
 import { serviceWorkTypeLabel } from "./customerServicePlanning.mjs";
@@ -69,6 +71,76 @@ export type PreparedConfirmation =
   }
   | { send: false; message: string };
 
+// The address and work the customer sees, from the request.
+function visitDetails(request: ConfirmationRequest) {
+  const property = request.service_properties;
+  return {
+    address: mailingAddress({
+      street: property?.address,
+      city: property?.city,
+      state: property?.state,
+      postalCode: property?.postal_code,
+    }),
+    work: serviceWorkTypeLabel(request.work_category),
+  };
+}
+
+// The email to the customer, or to the test inbox with "[TEST for …]" in the subject.
+function addressed(
+  delivery: Extract<CustomerEmailDelivery, { mode: "TEST" | "LIVE" }>,
+  customerEmail: string,
+  email: { subject: string; text: string; html: string },
+  attachments: EmailAttachment[],
+): PreparedConfirmation {
+  const testMode = delivery.mode === "TEST";
+  return {
+    send: true,
+    to: delivery.mode === "TEST" ? delivery.recipient : customerEmail,
+    customerEmail,
+    testMode,
+    subject: testMode ? `[TEST for ${customerEmail}] ${email.subject}` : email.subject,
+    text: email.text,
+    html: email.html,
+    attachments,
+  };
+}
+
+// The visit change of the Reschedule block (27 Nov 2026), in California time.
+export type VisitChange =
+  | { kind: "MOVED"; date: string; windowStart: string; previousDate: string; previousWindowStart: string }
+  | { kind: "CANCELLED"; date: string; windowStart: string };
+
+// After the coordinator moved or cancelled a confirmed visit: the customer gets the new
+// date (or the cancelled one) and a calendar file that updates or removes the event.
+export function prepareVisitChange({ input, request, change, delivery, now = new Date() }: {
+  input: ConfirmationInput;
+  request: ConfirmationRequest;
+  change: VisitChange;
+  delivery: CustomerEmailDelivery;
+  now?: Date;
+}): PreparedConfirmation {
+  const customerEmail = request.homeowner_email?.trim() ?? "";
+  if (!customerEmail) {
+    return { send: false, message: "This request has no customer email, so the customer was not emailed." };
+  }
+  if (delivery.mode === "OFF") {
+    return { send: false, message: "Customer emails are turned off on the server, so the customer was not emailed." };
+  }
+  const { address, work } = visitDetails(request);
+  const common = {
+    folio: request.folio, homeownerName: request.homeowner_name, date: change.date, windowStart: change.windowStart,
+    address, work, greeting: input.greeting, message: input.message,
+  };
+  const email = change.kind === "MOVED"
+    ? visitMovedEmail({ ...common, previousDate: change.previousDate, previousWindowStart: change.previousWindowStart })
+    : visitCancelledEmail(common);
+  const calendar = visitCalendarFile({
+    folio: request.folio, date: change.date, windowStart: change.windowStart, address, work, now,
+    cancel: change.kind === "CANCELLED",
+  });
+  return addressed(delivery, customerEmail, email, calendar ? [calendar] : []);
+}
+
 export function prepareConfirmation({ input, request, date, windowStart, delivery }: {
   input: ConfirmationInput;
   request: ConfirmationRequest;
@@ -83,14 +155,7 @@ export function prepareConfirmation({ input, request, date, windowStart, deliver
   if (delivery.mode === "OFF") {
     return { send: false, message: "Customer emails are turned off on the server, so no confirmation was sent." };
   }
-  const property = request.service_properties;
-  const address = mailingAddress({
-    street: property?.address,
-    city: property?.city,
-    state: property?.state,
-    postalCode: property?.postal_code,
-  });
-  const work = serviceWorkTypeLabel(request.work_category);
+  const { address, work } = visitDetails(request);
   const email = confirmationEmail({
     folio: request.folio,
     homeownerName: request.homeowner_name,
@@ -103,17 +168,7 @@ export function prepareConfirmation({ input, request, date, windowStart, deliver
   });
   // The visit as a calendar file the customer can add (decided 23 Nov 2026).
   const calendar = visitCalendarFile({ folio: request.folio, date, windowStart, address, work });
-  const testMode = delivery.mode === "TEST";
-  return {
-    send: true,
-    to: testMode ? delivery.recipient : customerEmail,
-    customerEmail,
-    testMode,
-    subject: testMode ? `[TEST for ${customerEmail}] ${email.subject}` : email.subject,
-    text: email.text,
-    html: email.html,
-    attachments: calendar ? [calendar] : [],
-  };
+  return addressed(delivery, customerEmail, email, calendar ? [calendar] : []);
 }
 
 // True when Microsoft answered that it did not take the email. A timeout or an outage

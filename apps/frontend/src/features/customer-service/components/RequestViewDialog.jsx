@@ -9,6 +9,7 @@ export default function RequestViewDialog({
   onEdit,
   onViewSource,
   onOpenProposal,
+  onCloseRequest,
 }) {
   return (
     <NewRequestPrototypeDialog
@@ -20,6 +21,7 @@ export default function RequestViewDialog({
       onEdit={onEdit}
       onViewSource={onViewSource}
       onOpenProposal={onOpenProposal}
+      onCloseRequest={onCloseRequest}
       readOnly
     />
   )

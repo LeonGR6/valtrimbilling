@@ -341,6 +341,117 @@ ${optionCard({ label: '', date, windowStart })}
   }
 }
 
+// --- Visit moved or cancelled (Reschedule block, 27 Nov 2026) ---
+
+// The day a visit no longer has: gray and struck through, so it reads as replaced.
+function previousCard({ label, date, windowStart }) {
+  const window = windowLabel(windowStart)
+  const when = [longDate(date), window].filter(Boolean).join(', ')
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin: 0 0 12px; border: 1px solid #e5e7eb; border-radius: 12px; background-color: #f9fafb;">
+<tr>
+  <td style="padding: 12px 20px; ${font}">
+    <div style="margin: 0 0 4px; color: #6b7280; font-size: 12px; font-weight: 700; line-height: 1.4; text-transform: uppercase; letter-spacing: 0.6px;">${escapeHtml(label)}</div>
+    <div style="color: #6b7280; font-size: 15px; line-height: 1.5; text-decoration: line-through;">${escapeHtml(when)}</div>
+  </td>
+</tr>
+</table>`
+}
+
+const calendarNoteHtml = (text) => (
+  `<p style="margin: 0; color: #6b7280; font-size: 13px; line-height: 1.6; text-align: center;">${escapeHtml(text)}</p>`
+)
+
+export function defaultVisitMovedText({ homeownerName } = {}) {
+  const name = singleLine(homeownerName)
+  return {
+    greeting: name ? `Hi ${name},` : 'Hello,',
+    message: 'As we agreed, your Valtrim service visit has a new date. Here are the details:',
+  }
+}
+
+// The coordinator moved a confirmed visit to a day agreed with the customer (decision
+// P1). date and windowStart are the new visit; previousDate and previousWindowStart the
+// replaced one, in California time. The greeting and message are editable, like the
+// confirmation; the details are fixed.
+export function visitMovedEmail({
+  folio, homeownerName, date, windowStart, previousDate, previousWindowStart, address, work, greeting, message,
+}) {
+  const window = windowLabel(windowStart)
+  const previousWindow = windowLabel(previousWindowStart)
+  const fallback = defaultVisitMovedText({ homeownerName })
+  const typedGreeting = singleLine(greeting) || fallback.greeting
+  const typedMessage = paragraph(message) || fallback.message
+  const calendarNote = 'The attached calendar file updates your visit. If your calendar still shows the previous date, delete it.'
+  const details = [
+    `New date: ${longDate(date)}`,
+    window && `Arrival window: ${window}`,
+    previousDate && `Previous date: ${[longDate(previousDate), previousWindow].filter(Boolean).join(', ')}`,
+    singleLine(address) && `Address: ${singleLine(address)}`,
+    singleLine(work) && `Work: ${singleLine(work)}`,
+    `Reference: ${singleLine(folio)}`,
+  ].filter(Boolean)
+  return {
+    subject: `Your Valtrim service visit was moved to ${shortDate(date)} (${singleLine(folio)})`,
+    text: [typedGreeting, typedMessage, details.join('\n'), calendarNote].join('\n\n'),
+    html: emailLayout({
+      title: 'Your service visit was moved',
+      preheader: `Your Valtrim service visit is now on ${longDate(date)}${window ? `, ${window}` : ''}.`,
+      content: [
+        messageHtml(typedGreeting),
+        messageHtml(typedMessage),
+        `<div style="margin: 8px 0 16px;">
+${optionCard({ label: 'New date', date, windowStart })}
+${previousDate ? previousCard({ label: 'Previous date', date: previousDate, windowStart: previousWindowStart }) : ''}
+</div>`,
+        detailsCard([['Address', address], ['Work', work], ['Reference', folio]]),
+        calendarNoteHtml(calendarNote),
+      ].join('\n'),
+      footer: footerHtml(folio),
+    }),
+  }
+}
+
+export function defaultVisitCancelledText({ homeownerName } = {}) {
+  const name = singleLine(homeownerName)
+  return {
+    greeting: name ? `Hi ${name},` : 'Hello,',
+    message: 'Your Valtrim service visit has been cancelled. These were its details:',
+  }
+}
+
+// The coordinator cancelled a confirmed visit. date and windowStart are the cancelled visit.
+export function visitCancelledEmail({ folio, homeownerName, date, windowStart, address, work, greeting, message }) {
+  const window = windowLabel(windowStart)
+  const fallback = defaultVisitCancelledText({ homeownerName })
+  const typedGreeting = singleLine(greeting) || fallback.greeting
+  const typedMessage = paragraph(message) || fallback.message
+  const calendarNote = 'The attached calendar file removes the visit. If your calendar still shows it, delete it.'
+  const details = [
+    `Cancelled visit: ${[longDate(date), window].filter(Boolean).join(', ')}`,
+    singleLine(address) && `Address: ${singleLine(address)}`,
+    singleLine(work) && `Work: ${singleLine(work)}`,
+    `Reference: ${singleLine(folio)}`,
+  ].filter(Boolean)
+  return {
+    subject: `Your Valtrim service visit on ${shortDate(date)} was cancelled (${singleLine(folio)})`,
+    text: [typedGreeting, typedMessage, details.join('\n'), calendarNote].join('\n\n'),
+    html: emailLayout({
+      title: 'Your service visit was cancelled',
+      preheader: `Your Valtrim service visit on ${longDate(date)} was cancelled.`,
+      content: [
+        messageHtml(typedGreeting),
+        messageHtml(typedMessage),
+        `<div style="margin: 8px 0 16px;">
+${previousCard({ label: 'Cancelled visit', date, windowStart })}
+</div>`,
+        detailsCard([['Address', address], ['Work', work], ['Reference', folio]]),
+        calendarNoteHtml(calendarNote),
+      ].join('\n'),
+      footer: footerHtml(folio),
+    }),
+  }
+}
+
 // --- Notices to the coordinator who sent a proposal (decided 23 Nov 2026) ---
 
 // Only when they must act: the customer picked another day or asked for a call on the

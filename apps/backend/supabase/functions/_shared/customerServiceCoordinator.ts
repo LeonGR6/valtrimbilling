@@ -7,7 +7,9 @@ import {
   confirmationFailureMessage,
   customerEmailDelivery,
   prepareConfirmation,
+  prepareVisitChange,
   sendFailureIsCertain,
+  type VisitChange,
 } from "./customerServiceConfirmationEmail.ts";
 import { prepareCoordinatorNotice } from "./customerServiceCoordinatorNotices.ts";
 import { createCustomerServiceMicrosoftGraph } from "./customerServiceMicrosoftGraph.ts";
@@ -184,7 +186,7 @@ export async function deliverCustomerEmail({ admin, actor, requestId, appointmen
   actor: { id: string | null; email: string };
   requestId: number;
   appointmentId?: number | null;
-  type: "CUSTOMER_CONFIRMATION" | "APPOINTMENT_PROPOSAL" | "REMINDER" | "COORDINATOR_NOTICE";
+  type: "CUSTOMER_CONFIRMATION" | "APPOINTMENT_PROPOSAL" | "REMINDER" | "COORDINATOR_NOTICE" | "VISIT_MOVED" | "VISIT_CANCELLED";
   email: CustomerEmail;
   metadata?: Record<string, unknown>;
 }): Promise<{ sent: true } | { sent: false; certain: boolean; message: string }> {
@@ -279,6 +281,35 @@ export async function sendConfirmation({ admin, actor, input, request, appointme
     appointmentId,
     type: "CUSTOMER_CONFIRMATION",
     email,
+  });
+  return result.sent
+    ? { status: "SENT", to: prepared.to, testMode: prepared.testMode }
+    : { status: "FAILED", message: result.message };
+}
+
+// The customer email after the coordinator moved or cancelled a confirmed visit (Reschedule
+// block, 27 Nov 2026), from the coordinator's own mailbox. The change is already saved, so
+// a failure is reported, never thrown. appointmentId: the new visit, or the cancelled one.
+export async function sendVisitChange({ admin, actor, input, request, appointmentId, change }: {
+  admin: AdminClient;
+  actor: Actor;
+  input: ConfirmationInput;
+  request: ConfirmationRequest & { id: number };
+  appointmentId: number;
+  change: VisitChange;
+}) {
+  const prepared = prepareVisitChange({ input, request, change, delivery: customerEmailDeliveryFromEnv() });
+  if (!prepared.send) return { status: "NOT_SENT", message: prepared.message };
+
+  const { send: _send, ...email } = prepared;
+  const result = await deliverCustomerEmail({
+    admin,
+    actor,
+    requestId: request.id,
+    appointmentId,
+    type: change.kind === "MOVED" ? "VISIT_MOVED" : "VISIT_CANCELLED",
+    email,
+    metadata: { change: change.kind },
   });
   return result.sent
     ? { status: "SENT", to: prepared.to, testMode: prepared.testMode }

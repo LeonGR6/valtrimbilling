@@ -90,6 +90,8 @@ function RecommendedSlot({ children }) {
 export default function ProposalNearbySlots({
   request, requests, technicians, candidates, hasCoordinates = true, distanceBands = null, drivingById, drivingLoading,
   formDate = null, formFits = false, onUseSlot, onRecommendedChange, onSecondChange,
+  // A proposal offers a second day; moving a visit does not (Reschedule block, P1).
+  showSecondDay = true,
 }) {
   const {
     estimateTravel, storedTravelMinutes, storedRoutesMinutes, storedTravelDetails, travelTrafficMode,
@@ -301,7 +303,7 @@ export default function ProposalNearbySlots({
           {' '}Check their agendas below or plan it by hand.
         </Alert>
       )}
-      {firstOption && second && (
+      {showSecondDay && firstOption && second && (
         <Stack spacing={1}>
           <Box>
             <Typography variant="subtitle2" fontWeight={800}>Second day for the customer</Typography>

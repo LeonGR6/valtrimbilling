@@ -147,24 +147,21 @@ select is(valtrim.mark_customer_service_visit_reminders(array[appointment_id]), 
   'A second run never reminds the same visit again') from review_fixture;
 select is(current_setting('valtrim.system_actor', true), '', 'The system actor is switched off after the claim');
 
--- Cancelling: allowed in test mode only, in the database too.
+-- Cancelling a proposal: allowed in test mode only, in the database too. A visit is cancelled
+-- live since the Reschedule block (27 Nov 2026), through the Edge Function's RPC.
 update valtrim.service_scheduling_settings set test_mode = false where id = 1;
 select set_config('request.jwt.claim.sub', admin_id::text, true) from review_fixture;
 select throws_ok(format('select valtrim.cancel_customer_service_proposal(%s, %L)', future_id, 'Test'), '55000',
   'A sent proposal cannot be cancelled. Record the customer''s answer instead.',
   'Outside test mode a sent proposal cannot be cancelled') from review_fixture;
-select throws_ok(format('select valtrim.cancel_customer_service_appointment(%s, %L, %L)', appointment_id,
-    (select updated_at from valtrim.service_appointments where id = appointment_id), 'Test'), '55000',
-  'A confirmed appointment cannot be cancelled. Call the customer to agree on a change.',
-  'Outside test mode a confirmed appointment cannot be cancelled') from review_fixture;
 select set_config('request.jwt.claim.sub', '', true);
 update valtrim.service_scheduling_settings set test_mode = true where id = 1;
 select set_config('request.jwt.claim.sub', admin_id::text, true) from review_fixture;
 select is((valtrim.cancel_customer_service_proposal(future_id, 'Test cleanup') ->> 'proposalId')::bigint, future_id,
   'In test mode a coordinator still cancels a proposal') from review_fixture;
-select is((valtrim.cancel_customer_service_appointment(appointment_id,
-    (select updated_at from valtrim.service_appointments where id = appointment_id), 'Test cleanup') ->> 'appointmentId')::bigint,
-  appointment_id, 'In test mode a coordinator still cancels an appointment') from review_fixture;
+select is((valtrim.cancel_customer_service_visit(admin_id, appointment_id,
+    (select updated_at from valtrim.service_appointments where id = appointment_id), 'OTHER', 'Test cleanup') ->> 'appointmentId')::bigint,
+  appointment_id, 'A coordinator cancels the visit') from review_fixture;
 select set_config('request.jwt.claim.sub', '', true);
 select is(valtrim.mark_customer_service_visit_reminders(array[appointment_id]), '{}'::bigint[],
   'A cancelled visit is never reminded') from review_fixture;

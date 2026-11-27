@@ -19,10 +19,8 @@ select ok(not has_function_privilege('authenticated', 'valtrim.register_customer
   'Browsers cannot bypass the Edge Function validation');
 select ok(has_function_privilege('service_role', 'valtrim.register_customer_service_appointment(uuid,bigint,timestamptz,bigint[],jsonb,jsonb,bigint[])', 'execute'),
   'The Edge Function can register');
-select ok(has_function_privilege('authenticated', 'valtrim.cancel_customer_service_appointment(bigint,timestamptz,text)', 'execute'),
-  'Signed-in coordinators can call the guarded cancellation');
-select ok(not has_function_privilege('anon', 'valtrim.cancel_customer_service_appointment(bigint,timestamptz,text)', 'execute'),
-  'Anonymous callers cannot cancel');
+select ok(to_regprocedure('valtrim.cancel_customer_service_appointment(bigint,timestamptz,text)') is null,
+  'The test-mode cancellation is retired: a visit is cancelled through the Edge Function (Reschedule block)');
 
 -- Fixture: one coordinator, one field user, two ready requests and three technicians.
 create temporary table appointment_fixture as select
@@ -170,18 +168,20 @@ select is((select count(*) from valtrim.service_appointments where request_id in
 select throws_ok($$update valtrim.service_appointments set notes = 'x' where id = (select first_appointment from appointment_fixture)$$,
   '42501', null, 'Coordinators cannot update appointments directly');
 
--- Cancellation releases the slot and returns the request to planning.
-select throws_ok(format('select valtrim.cancel_customer_service_appointment(%s, now(), %L)', first_appointment, '  '),
-  '22023', 'Enter a cancellation reason of 500 characters or fewer', 'A reason is required')
+-- Cancellation releases the slot and returns the request to planning. Since the Reschedule
+-- block (27 Nov 2026) it goes through the Edge Function's RPC, with a reason from the list.
+reset role;
+select throws_ok(format('select valtrim.cancel_customer_service_visit(%L, %s, now(), %L)', admin_id, first_appointment, 'WEATHER'),
+  '22023', 'Choose why the visit is cancelled', 'A cancellation reason from the list is required')
 from appointment_fixture;
-select throws_ok(format('select valtrim.cancel_customer_service_appointment(%s, now() - interval %L, %L)', first_appointment, '1 day', 'Customer asked'),
-  '40001', 'This appointment changed after you opened it. Reload and try again.', 'A stale appointment version is rejected')
+select throws_ok(format('select valtrim.cancel_customer_service_visit(%L, %s, now() - interval %L, %L, %L)',
+    admin_id, first_appointment, '1 day', 'OTHER', 'Customer asked'),
+  '40001', 'This visit changed after you opened it. Reload and try again.', 'A stale appointment version is rejected')
 from appointment_fixture;
-select lives_ok(format('select valtrim.cancel_customer_service_appointment(%s, %L, %L)', first_appointment,
-    (select updated_at from valtrim.service_appointments where id = first_appointment), 'Customer asked for another day'),
+select lives_ok(format('select valtrim.cancel_customer_service_visit(%L, %s, %L, %L, %L)', admin_id, first_appointment,
+    (select updated_at from valtrim.service_appointments where id = first_appointment), 'OTHER', 'Customer asked for another day'),
   'A coordinator cancels with a reason')
 from appointment_fixture;
-reset role;
 select ok(exists (select 1 from valtrim.service_appointments a, appointment_fixture f
   where a.id = f.first_appointment and a.state = 'CANCELLED' and not a.is_current
     and a.cancelled_at is not null and a.cancel_reason = 'Customer asked for another day' and a.updated_by = f.admin_id),
@@ -191,13 +191,10 @@ select is((select workflow_stage::text from valtrim.service_requests where id = 
 select ok(exists (select 1 from valtrim.audit_events e, appointment_fixture f
   where e.entity_id = f.first_appointment::text and e.action = 'SERVICE_APPOINTMENT_CANCELLED' and e.actor_user_id = f.admin_id),
   'Cancellation is audited');
-select set_config('request.jwt.claim.sub', admin_id::text, true) from appointment_fixture;
-set local role authenticated;
-select throws_ok(format('select valtrim.cancel_customer_service_appointment(%s, %L, %L)', first_appointment,
-    (select updated_at from valtrim.service_appointments where id = first_appointment), 'Again'),
-  '55000', 'Only a scheduled appointment can be cancelled', 'A cancelled appointment cannot be cancelled again')
+select throws_ok(format('select valtrim.cancel_customer_service_visit(%L, %s, %L, %L)', admin_id, first_appointment,
+    (select updated_at from valtrim.service_appointments where id = first_appointment), 'CUSTOMER_CANCELLED'),
+  '55000', 'Only a scheduled visit can be cancelled', 'A cancelled appointment cannot be cancelled again')
 from appointment_fixture;
-reset role;
 
 -- The released request can be registered again against the technician's current day.
 select lives_ok(format('select pg_temp.register(%L, %s, array[%s]::bigint[], pg_temp.visit(array[%s]::bigint[], %L, %L, %L))',

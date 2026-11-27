@@ -16,7 +16,10 @@ es una columna de la base y el otro es la dirección de la app.
 | Desvío de los correos al cliente | secreto `CUSTOMER_SERVICE_TEST_RECIPIENT` | Todo correo para un cliente llega a ese buzón con el asunto `[TEST for cliente@…]`. Los avisos a quien mandó la propuesta también. | Se borra el secreto. |
 | Envío real | secreto `CUSTOMER_SERVICE_CUSTOMER_EMAILS` | No existe. | `LIVE` |
 | Botones del correo (página del cliente) | secreto `CUSTOMER_SERVICE_PUBLIC_APP_URL` | `http://localhost:5173`: solo funcionan en una computadora con la app corriendo. | `https://<dominio de producción>` |
-| "Cancel appointment" y "Cancel proposal" | columna `valtrim.service_scheduling_settings.test_mode` | `true`: los botones se ven y la base permite cancelar. | `false`: los botones desaparecen y la base lo impide. |
+| "Cancel proposal" | columna `valtrim.service_scheduling_settings.test_mode` | `true`: el botón se ve y la base permite cancelar una propuesta enviada. | `false`: el botón desaparece y la base lo impide. |
+
+Una visita confirmada se mueve o se cancela con "Move visit" y "Cancel visit" en los dos modos (bloque
+Reschedule, 27 nov 2026): no depende de `test_mode`.
 
 Cómo se decide a quién va un correo:
 
@@ -26,8 +29,8 @@ Cómo se decide a quién va un correo:
 
 ## Antes de empezar
 
-- [ ] **Bloque Reschedule terminado.** Con LIVE desaparece "Cancel appointment", y sin Reschedule no
-      hay forma de mover una cita confirmada.
+- [x] **Bloque Reschedule terminado** (27 nov 2026): "Move visit" y "Cancel visit" funcionan también en
+      LIVE.
 - [ ] **El buzón de Anelda conectado** para leer las requests nuevas. Si las requests van a seguir
       llegando a otro buzón, ese.
 - [ ] **Sin datos de prueba en producción.** Las migraciones de datos de prueba
@@ -52,8 +55,10 @@ where a.is_current and a.state = 'SCHEDULED' and a.window_starts_at > now()
 order by kind, at;
 ```
 
-  Cada fila debe ser un cliente real que de verdad espera esa visita o esa respuesta. Las que sean de
-  prueba se cancelan **antes** del paso 2, mientras "Cancel" todavía existe.
+  Cada fila debe ser un cliente real que de verdad espera esa visita o esa respuesta.
+  - Las visitas de prueba se cancelan con "Cancel visit"; conviene desmarcar el correo al cliente.
+  - Las propuestas de prueba se cancelan con "Cancel proposal" **antes** del paso 2, mientras ese botón
+    todavía existe.
 
 ## Pasos
 
@@ -69,7 +74,7 @@ que apunten a `localhost`.
    - En Supabase → Authentication → URL Configuration, el mismo dominio en *Site URL* y en
      *Redirect URLs*.
    - Comprobar que `https://<dominio>/customer-service/respond` abre **sin iniciar sesión**.
-2. **Quitar los botones de cancelar.** Solo en producción, en el SQL Editor (no como migración, porque
+2. **Quitar el botón "Cancel proposal".** Solo en producción, en el SQL Editor (no como migración, porque
    apagaría también el modo de prueba de desarrollo):
 
    ```sql
@@ -94,7 +99,8 @@ que apunten a `localhost`.
       Anelda). Debe llegar **sin** `[TEST for …]` en el asunto, y su botón debe abrir el dominio de
       producción.
 - [ ] En la app, el aviso después de enviar ya no dice "(test inbox)".
-- [ ] En el Calendar y en Proposal Workspace ya no aparecen "Cancel appointment" ni "Cancel proposal".
+- [ ] En Proposal Workspace ya no aparece "Cancel proposal". "Move visit" y "Cancel visit" siguen en el
+      Calendar: son de uso normal.
 
 ## Si hay que volver al modo de prueba
 
@@ -102,5 +108,5 @@ que apunten a `localhost`.
 npx supabase secrets set CUSTOMER_SERVICE_TEST_RECIPIENT=<buzón de prueba> --project-ref <ref>
 ```
 
-Desde la siguiente llamada, todo correo vuelve a llegar a ese buzón. Para que regresen los botones de
-cancelar, se pone `test_mode = true` con el mismo `update` del paso 2.
+Desde la siguiente llamada, todo correo vuelve a llegar a ese buzón. Para que regrese el botón "Cancel
+proposal", se pone `test_mode = true` con el mismo `update` del paso 2.

@@ -8,9 +8,9 @@ import { createCustomerServiceEmailAutomationMonitor } from '../services/custome
 import { listTechnicians } from '../services/techniciansRepository.js'
 import { setCustomerServiceHolidays } from '../utils/customerServiceScheduling.js'
 import {
-  answerCustomerServiceProposal, cancelCustomerServiceAppointment, cancelCustomerServiceProposal, markProposalBuilderContacted,
-  estimateCustomerServiceNearby, estimateCustomerServiceTravel, loadCustomerServiceSchedule,
-  registerCustomerServiceAppointment, sendCustomerServiceProposal,
+  answerCustomerServiceProposal, cancelCustomerServiceProposal, cancelCustomerServiceVisit, closeCustomerServiceRequest,
+  markProposalBuilderContacted, estimateCustomerServiceNearby, estimateCustomerServiceTravel, loadCustomerServiceSchedule,
+  registerCustomerServiceAppointment, rescheduleCustomerServiceVisit, sendCustomerServiceProposal,
 } from '../services/customerServiceAppointmentsRepository.js'
 import {
   applyAppointmentsToRequests, manualTravelChecks, toPlanningTechnicians, travelEstimateDetails, travelEstimatesToMinutes,
@@ -116,7 +116,7 @@ export default function CustomerServicePrototypeProvider({ children }) {
       travelTrafficMode: schedule.travelTrafficMode,
       distanceBands: schedule.distanceBands,
       travelChecks: schedule.travelChecks ?? [],
-      // Cancel appointment and Cancel proposal show only in test mode.
+      // Cancel proposal shows only in test mode (cancelling a visit is live since the Reschedule block).
       testMode: schedule.testMode === true,
       // US holidays Valtrim closes: shown in Calendar, not business days.
       holidays: schedule.holidays ?? [],
@@ -133,7 +133,18 @@ export default function CustomerServicePrototypeProvider({ children }) {
           throw error
         }
       },
-      cancelAppointment: async (payload) => afterScheduleChange(await cancelCustomerServiceAppointment(payload)),
+      // Reschedule block (27 Nov 2026). A refused move may come from a schedule that changed,
+      // so the schedule reloads after a failure too.
+      rescheduleVisit: async (payload) => {
+        try {
+          return await afterScheduleChange(await rescheduleCustomerServiceVisit(payload))
+        } catch (error) {
+          await Promise.all([store.reloadRequests(), reloadSchedule()]).catch(() => {})
+          throw error
+        }
+      },
+      cancelVisit: async (payload) => afterScheduleChange(await cancelCustomerServiceVisit(payload)),
+      closeRequest: async (payload) => afterScheduleChange(await closeCustomerServiceRequest(payload)),
       // A refused invitation closes its proposal on the server, which still changes the
       // request, so the schedule reloads after a failure too.
       sendProposal: async (payload) => {

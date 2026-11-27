@@ -89,6 +89,11 @@ export function toCustomerServiceIntakeRecord(record) {
     dueOn: row.due_on,
     priority: row.priority,
     workflowStage: row.workflow_stage,
+    // Closed without a visit (Reschedule block, decision D2): it keeps its last open stage.
+    closedAt: row.closed_at ?? null,
+    closeReasonCode: row.close_reason_code ?? null,
+    closeReason: row.close_reason ?? '',
+    duplicateOfRequestId: row.duplicate_of_request_id ?? null,
     builderName: record.builderName ?? '',
     jobId: property.job_id == null ? '' : String(property.job_id),
     jobCode: record.jobCode ?? '',

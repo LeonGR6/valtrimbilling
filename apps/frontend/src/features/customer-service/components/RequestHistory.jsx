@@ -3,18 +3,21 @@ import {
   Box, Button, FormControl, InputAdornment, InputLabel, MenuItem, Paper, Select, Stack, Table, TableBody, TableCell,
   TableContainer, TableHead, TablePagination, TableRow, TextField, Typography,
 } from '@mui/material'
+import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded'
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
-import { completedRequestHistory, historyTechnicianOptions } from '../utils/requestHistory.js'
+import { closedDate, completedRequestHistory, historyOutcome, historyTechnicianOptions } from '../utils/requestHistory.js'
 import { inboxPageSizeOptions, paginateRequestInbox, requestLocationLabel } from '../utils/requestInbox.js'
 import { serviceWorkTypeLabel } from '../utils/customerServicePlanning.js'
 import { formatTime, formatWeekdayDate } from '../utils/dates.js'
+import Pill from './Pill.jsx'
 
 const emptyFilters = { search: '', technicianId: 'all', from: '', to: '' }
 const filterFieldSx = { flex: '1 1 160px' }
 
 // The History tab (decided 25 Nov 2026): completed requests to look up after the visit,
 // for example when a customer calls again about the same lot. Opening one shows the full
-// request, as from the Calendar; only its internal notes can be edited.
+// request, as from the Calendar; only its internal notes can be edited. Since the Reschedule
+// block (27 Nov 2026) it also lists requests closed without a visit, with their reason.
 export default function RequestHistory({ requests, onViewRequest }) {
   const [filters, setFilters] = useState(emptyFilters)
   const [page, setPage] = useState(0)
@@ -51,9 +54,9 @@ export default function RequestHistory({ requests, onViewRequest }) {
               {technicianOptions.map((option) => <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>)}
             </Select>
           </FormControl>
-          <TextField size="small" type="date" label="Visit from" value={filters.from} onChange={change('from')}
+          <TextField size="small" type="date" label="From" value={filters.from} onChange={change('from')}
             sx={filterFieldSx} slotProps={{ inputLabel: { shrink: true }, htmlInput: { max: filters.to || undefined } }} />
-          <TextField size="small" type="date" label="Visit to" value={filters.to} onChange={change('to')}
+          <TextField size="small" type="date" label="To" value={filters.to} onChange={change('to')}
             sx={filterFieldSx} slotProps={{ inputLabel: { shrink: true }, htmlInput: { min: filters.from || undefined } }} />
           {filtered && (
             <Button color="inherit" onClick={() => { setFilters(emptyFilters); setPage(0) }}>Clear filters</Button>
@@ -62,14 +65,15 @@ export default function RequestHistory({ requests, onViewRequest }) {
       </Paper>
 
       <Typography variant="body2" color="text.secondary">
-        {rows.length} of {completedCount} completed {completedCount === 1 ? 'request' : 'requests'} · most recent visit first
+        {rows.length} of {completedCount} completed or closed {completedCount === 1 ? 'request' : 'requests'} · most recent first
       </Typography>
 
       <TableContainer component={Paper} variant="outlined">
-        <Table size="small" aria-label="Completed requests">
+        <Table size="small" aria-label="Completed and closed requests">
           <TableHead>
             <TableRow>
               <TableCell>Folio</TableCell>
+              <TableCell>Outcome</TableCell>
               <TableCell>Visit</TableCell>
               <TableCell>Property</TableCell>
               <TableCell>Work</TableCell>
@@ -78,7 +82,9 @@ export default function RequestHistory({ requests, onViewRequest }) {
             </TableRow>
           </TableHead>
           <TableBody>
-            {visible.items.map((request) => (
+            {visible.items.map((request) => {
+              const outcome = historyOutcome(request, requests)
+              return (
               <TableRow key={request.id} hover onClick={() => onViewRequest(request)} sx={{ cursor: 'pointer' }}>
                 <TableCell>
                   <Button size="small" onClick={(event) => { event.stopPropagation(); onViewRequest(request) }}
@@ -86,9 +92,18 @@ export default function RequestHistory({ requests, onViewRequest }) {
                     {request.requestNumber}
                   </Button>
                 </TableCell>
+                <TableCell>
+                  <Pill label={outcome.label} color={outcome.closed ? 'neutral' : 'success'}
+                    icon={outcome.closed ? null : <CheckCircleRoundedIcon />} />
+                  {outcome.detail && (
+                    <Typography variant="caption" color="text.secondary" component="div" sx={{ mt: 0.5 }}>{outcome.detail}</Typography>
+                  )}
+                </TableCell>
                 <TableCell sx={{ whiteSpace: 'nowrap' }}>
                   <Typography variant="body2">
-                    {request.customerWindow?.date ? formatWeekdayDate(request.customerWindow.date) : 'No visit date'}
+                    {request.customerWindow?.date
+                      ? formatWeekdayDate(request.customerWindow.date)
+                      : request.closedAt ? `Closed ${formatWeekdayDate(closedDate(request))}` : 'No visit date'}
                   </Typography>
                   {request.customerWindow?.start && (
                     <Typography variant="caption" color="text.secondary">
@@ -104,15 +119,16 @@ export default function RequestHistory({ requests, onViewRequest }) {
                 <TableCell>{(request.assignedTechnicians ?? []).map((person) => person.name).join(', ') || '—'}</TableCell>
                 <TableCell>{request.contactName || '—'}</TableCell>
               </TableRow>
-            ))}
+              )
+            })}
             {rows.length === 0 && (
               <TableRow>
-                <TableCell colSpan={6}>
+                <TableCell colSpan={7}>
                   <Box sx={{ py: 3, textAlign: 'center' }}>
                     <Typography variant="body2" color="text.secondary">
                       {completedCount === 0
-                        ? 'No completed requests yet. A request shows here once its visit is completed.'
-                        : 'No completed requests match these filters.'}
+                        ? 'No completed or closed requests yet. A request shows here once its visit is completed or it is closed.'
+                        : 'No completed or closed requests match these filters.'}
                     </Typography>
                   </Box>
                 </TableCell>

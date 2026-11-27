@@ -48,6 +48,7 @@ import {
   proposalWorkspacePath,
   requestsForView,
 } from '../utils/requestInbox.js'
+import { buildRequestClose, canCloseRequest, requestClosedNotice } from '../utils/customerServiceVisitChanges.js'
 import {
   createPrototypeProposalDraft, proposalSentNotice, prototypePlanningHours, registrationNotice,
 } from '../utils/proposalDraft.js'
@@ -58,6 +59,7 @@ import ProposalWorkspace from './ProposalWorkspace.jsx'
 import RequestHistory from './RequestHistory.jsx'
 import RequestInboxList from './RequestInboxList.jsx'
 import RequestViewDialog from './RequestViewDialog.jsx'
+import CloseRequestDialog from './CloseRequestDialog.jsx'
 import ServiceSummaryCards from './ServiceSummaryCards.jsx'
 import SourcePdfPreviewDialog from './SourcePdfPreviewDialog.jsx'
 import TravelCheckAlert from './TravelCheckAlert.jsx'
@@ -77,7 +79,7 @@ const viewCopy = {
   },
   HISTORY: {
     title: 'Customer Service History',
-    description: 'Completed requests. Search by folio, customer, address or builder and open one to review it.',
+    description: 'Completed requests and requests closed without a visit. Search by folio, customer, address or builder and open one to review it.',
   },
 }
 
@@ -94,7 +96,7 @@ export default function CustomerServiceCatalog() {
     recoverRequest: persistRecovery,
     completeRecovery,
     markRequestReady: persistApproval,
-    proposalDrafts, setProposalDrafts, technicians, scheduleError,
+    proposalDrafts, setProposalDrafts, technicians, scheduleError, closeRequest,
   } = useCustomerServicePrototype()
   const { addCommunityAlias } = useJobs()
   const draftDirty = useRef(false)
@@ -136,6 +138,8 @@ export default function CustomerServiceCatalog() {
   const [rowsPerPage, setRowsPerPage] = useState(10)
   const [filtersAnchor, setFiltersAnchor] = useState(null)
   const [notice, setNotice] = useState(null)
+  // Close request (decision D2, Reschedule block): the request whose closing dialog is open.
+  const [closingRequest, setClosingRequest] = useState(null)
   const [importPanelRevision, setImportPanelRevision] = useState(0)
   const visibleRequest = viewRequest != null
     ? findRequestForView(requests, viewRequest.id, activeView)
@@ -444,6 +448,7 @@ export default function CustomerServiceCatalog() {
             requests={requests}
             settings={prototypePlanningHours}
             onViewRequest={setViewRequest}
+            onNotice={setNotice}
           />
         ) : activeView === 'PROPOSALS' ? (
           <ProposalWorkspace
@@ -688,12 +693,24 @@ export default function CustomerServiceCatalog() {
           onMarkReady={markReadyToPropose}
           onViewSource={setPdfPreviewRequest}
           onOpenProposal={openProposalWorkspace}
+          onCloseRequest={canCloseRequest(visibleRequest) ? setClosingRequest : undefined}
           onEdit={canEditRequestInView(visibleRequest, activeView) ? (request) => {
             setViewRequest(null)
             setEmailRequestId(null)
             setRequestDialog({ mode: 'edit', request })
           } : undefined}
         />
+      )}
+
+      {closingRequest && (
+        <CloseRequestDialog request={closingRequest} requests={requests} onClose={() => setClosingRequest(null)}
+          onConfirm={async (choice) => {
+            await closeRequest(buildRequestClose({ request: closingRequest, ...choice }))
+            setClosingRequest(null)
+            setViewRequest(null)
+            setEmailRequestId(null)
+            setNotice(requestClosedNotice(closingRequest.requestNumber, choice.reason))
+          }} />
       )}
 
       {sourceRequest && (

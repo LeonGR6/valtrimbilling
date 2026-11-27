@@ -32,13 +32,20 @@ function fold(line: string) {
   return parts.join("\r\n ");
 }
 
-export function visitCalendarFile({ folio, date, windowStart, address, work, now = new Date() }: {
+// Reschedule block (27 Nov 2026): one calendar event per request. The identifier no longer
+// depends on the date, so a moved visit replaces the event instead of adding a second one,
+// and a cancelled visit removes it (cancel: true). SEQUENCE only grows: every later file
+// for the same request wins. Calendars that ignore it still get the email's words.
+const SEQUENCE_EPOCH = Date.UTC(2026, 0, 1);
+
+export function visitCalendarFile({ folio, date, windowStart, address, work, now = new Date(), cancel = false }: {
   folio: string;
   date: string;
   windowStart: string;
   address: string;
   work: string;
   now?: Date;
+  cancel?: boolean;
 }): EmailAttachment | null {
   const window = customerServiceWindows.find((entry) => entry.start === windowStart);
   const start = californiaInstant(date, windowStart);
@@ -46,31 +53,34 @@ export function visitCalendarFile({ folio, date, windowStart, address, work, now
   if (!window || !start || !end) return null;
   const reference = singleLine(folio);
   const description = [
+    cancel && "This visit was cancelled.",
     `Arrival window: ${formatServiceTime(window.start)} to ${formatServiceTime(window.end)}.`,
     singleLine(work) && `Work: ${singleLine(work)}.`,
     `Reference: ${reference}.`,
-    "Reply to the confirmation email to reach your coordinator.",
+    "Reply to the email from Valtrim to reach your coordinator.",
   ].filter(Boolean).join(" ");
   const lines = [
     "BEGIN:VCALENDAR",
     "VERSION:2.0",
     "PRODID:-//Valtrim//Customer Service//EN",
     "CALSCALE:GREGORIAN",
-    "METHOD:PUBLISH",
+    `METHOD:${cancel ? "CANCEL" : "PUBLISH"}`,
     "BEGIN:VEVENT",
-    `UID:${reference.replace(/[^A-Za-z0-9-]/gu, "")}-${date.replaceAll("-", "")}-${windowStart.replace(":", "")}@valtriminc.com`,
+    `UID:${reference.replace(/[^A-Za-z0-9-]/gu, "")}-visit@valtriminc.com`,
+    `SEQUENCE:${Math.max(0, Math.floor((now.getTime() - SEQUENCE_EPOCH) / 1000))}`,
     `DTSTAMP:${stamp(now)}`,
     `DTSTART:${stamp(start)}`,
     `DTEND:${stamp(end)}`,
-    `SUMMARY:${text(`Valtrim service visit (${reference})`)}`,
+    `SUMMARY:${text(`${cancel ? "Cancelled: " : ""}Valtrim service visit (${reference})`)}`,
     ...(singleLine(address) ? [`LOCATION:${text(singleLine(address))}`] : []),
     `DESCRIPTION:${text(description)}`,
-    "TRANSP:OPAQUE",
+    `STATUS:${cancel ? "CANCELLED" : "CONFIRMED"}`,
+    `TRANSP:${cancel ? "TRANSPARENT" : "OPAQUE"}`,
     "END:VEVENT",
     "END:VCALENDAR",
   ];
   return {
-    name: "valtrim-service-visit.ics",
+    name: cancel ? "valtrim-service-visit-cancelled.ics" : "valtrim-service-visit.ics",
     contentType: "text/calendar",
     content: `${lines.map(fold).join("\r\n")}\r\n`,
   };

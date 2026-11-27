@@ -5,12 +5,17 @@ import {
   customerEmailDelivery,
   parseConfirmationInput,
   prepareConfirmation,
+  prepareVisitChange,
 } from "./customerServiceConfirmationEmail.ts";
 import {
   confirmationEmail,
   confirmationTextProblems,
   defaultConfirmationText,
+  defaultVisitCancelledText,
+  defaultVisitMovedText,
   mailingAddress,
+  visitCancelledEmail,
+  visitMovedEmail,
 } from "./customerServiceEmailTemplates.mjs";
 import {
   createCustomerServiceMicrosoftGraph,
@@ -195,4 +200,68 @@ Deno.test("the HTML email follows the team layout and escapes what was typed", (
   assert(!html.includes("If this day no longer works"));
   assert(!html.includes("Valtrim Customer Service"));
   assert(email.text.endsWith("Reference: CS-2031"));
+});
+
+// Reschedule block, part R3 (27 Nov 2026).
+Deno.test("a moved visit's email shows the new date, the old one struck through and the fixed details", () => {
+  const email = visitMovedEmail({
+    folio: "CS-2023", homeownerName: "Charline Bessermin", date: "2026-12-03", windowStart: "10:00",
+    previousDate: "2026-12-01", previousWindowStart: "08:00", address: "5242 Guava Lane, Banning, CA 92220",
+    work: "Doors", greeting: "", message: "",
+  });
+  assertEquals(email.subject, "Your Valtrim service visit was moved to Thu, Dec 3 (CS-2023)");
+  assertEquals(email.text.split("\n\n").slice(0, 2), [
+    defaultVisitMovedText({ homeownerName: "Charline Bessermin" }).greeting,
+    "As we agreed, your Valtrim service visit has a new date. Here are the details:",
+  ]);
+  assert(email.text.includes("New date: Thursday, December 3, 2026\nArrival window: 10:00 AM–12:00 PM"));
+  assert(email.text.includes("Previous date: Tuesday, December 1, 2026, 8:00 AM–10:00 AM"));
+  assert(email.text.endsWith("If your calendar still shows the previous date, delete it."));
+  assert(email.html.includes("Your service visit was moved"));
+  assert(email.html.includes('text-decoration: line-through;">Tuesday, December 1, 2026, 8:00 AM–10:00 AM</div>'));
+});
+
+Deno.test("a cancelled visit's email names the cancelled day and its typed text is escaped", () => {
+  const email = visitCancelledEmail({
+    folio: "CS-3404", homeownerName: "", date: "2026-11-30", windowStart: "08:00", address: "", work: "Shelving",
+    greeting: "Hi <Zhuan>,", message: "The Builder cancelled the work order.",
+  });
+  assertEquals(email.subject, "Your Valtrim service visit on Mon, Nov 30 was cancelled (CS-3404)");
+  assertEquals(defaultVisitCancelledText({}).greeting, "Hello,");
+  assert(email.text.startsWith("Hi <Zhuan>,\n\nThe Builder cancelled the work order."));
+  assert(email.text.includes("Cancelled visit: Monday, November 30, 2026, 8:00 AM–10:00 AM"));
+  assert(email.html.includes("Hi &lt;Zhuan&gt;,"));
+  assert(!email.html.includes("<Zhuan>"));
+});
+
+Deno.test("moved and cancelled visits go to the test inbox with a calendar file that updates or removes the visit", () => {
+  const delivery = customerEmailDelivery({ testRecipient: "leon@valtriminc.com" });
+  const moved = prepareVisitChange({
+    input: typed, request, delivery, now: new Date("2026-11-27T18:00:00Z"),
+    change: { kind: "MOVED", date: "2026-12-03", windowStart: "10:00", previousDate: "2026-12-01", previousWindowStart: "08:00" },
+  });
+  assert(moved.send);
+  assertEquals([moved.to, moved.customerEmail, moved.testMode], ["leon@valtriminc.com", "customer@example.com", true]);
+  assertEquals(moved.subject, "[TEST for customer@example.com] Your Valtrim service visit was moved to Thu, Dec 3 (CS-2031)");
+  assert(moved.text.startsWith("Hi Yesenia,\n\nThanks for the call.\nSee you then."));
+  assertEquals(moved.attachments.map((file) => file.name), ["valtrim-service-visit.ics"]);
+  assert(moved.attachments[0].content.includes("UID:CS-2031-visit@valtriminc.com"));
+  assert(moved.attachments[0].content.includes("DTSTART:20261203T180000Z"));
+
+  const cancelled = prepareVisitChange({
+    input: typed, request, delivery: { mode: "LIVE" }, now: new Date("2026-11-28T18:00:00Z"),
+    change: { kind: "CANCELLED", date: "2026-12-03", windowStart: "10:00" },
+  });
+  assert(cancelled.send);
+  assertEquals([cancelled.to, cancelled.testMode], ["customer@example.com", false]);
+  assertEquals(cancelled.attachments.map((file) => file.name), ["valtrim-service-visit-cancelled.ics"]);
+  assert(cancelled.attachments[0].content.includes("METHOD:CANCEL"));
+
+  assertEquals(prepareVisitChange({
+    input: typed, request: { ...request, homeowner_email: null }, delivery,
+    change: { kind: "CANCELLED", date: "2026-12-03", windowStart: "10:00" },
+  }), { send: false, message: "This request has no customer email, so the customer was not emailed." });
+  assertEquals(prepareVisitChange({
+    input: typed, request, delivery: { mode: "OFF" }, change: { kind: "CANCELLED", date: "2026-12-03", windowStart: "10:00" },
+  }).send, false);
 });

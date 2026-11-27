@@ -95,7 +95,10 @@ Deno.test("the confirmation's calendar file holds the arrival window at the prop
   const lines = file.content.split("\r\n");
   assertEquals(lines.slice(0, 6), ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Valtrim//Customer Service//EN",
     "CALSCALE:GREGORIAN", "METHOD:PUBLISH", "BEGIN:VEVENT"]);
-  assert(lines.includes("UID:CS-3049-20261130-1000@valtriminc.com"));
+  // One event per request (27 Nov 2026): a moved visit replaces it; SEQUENCE is seconds since 2026.
+  assert(lines.includes("UID:CS-3049-visit@valtriminc.com"));
+  assert(lines.includes(`SEQUENCE:${(Date.parse("2026-11-24T18:00:00Z") - Date.UTC(2026, 0, 1)) / 1000}`));
+  assert(lines.includes("STATUS:CONFIRMED"));
   // 10:00 AM to 12:00 PM PST is 18:00 to 20:00 UTC.
   assert(lines.includes("DTSTART:20261130T180000Z"));
   assert(lines.includes("DTEND:20261130T200000Z"));
@@ -105,7 +108,25 @@ Deno.test("the confirmation's calendar file holds the arrival window at the prop
   // Long lines are folded at 75 octets.
   assert(lines.every((line) => new TextEncoder().encode(line).length <= 75));
   assertEquals(lines.join("\r\n").replaceAll("\r\n ", "").includes(
-    "DESCRIPTION:Arrival window: 10:00 AM to 12:00 PM. Work: Shelving. Reference: CS-3049. Reply to the confirmation email to reach your coordinator.",
+    "DESCRIPTION:Arrival window: 10:00 AM to 12:00 PM. Work: Shelving. Reference: CS-3049. Reply to the email from Valtrim to reach your coordinator.",
   ), true);
   assertEquals(visitCalendarFile({ folio: "CS-1", date: "2026-11-30", windowStart: "09:00", address: "", work: "" }), null);
+});
+
+Deno.test("a moved visit keeps the event and a cancelled one removes it, each file newer than the last", () => {
+  const visit = { folio: "CS-3049", address: "200 Test Court", work: "Shelving" };
+  const first = visitCalendarFile({ ...visit, date: "2026-11-30", windowStart: "10:00", now: new Date("2026-11-24T18:00:00Z") })!;
+  const moved = visitCalendarFile({ ...visit, date: "2026-12-03", windowStart: "08:00", now: new Date("2026-11-27T18:00:00Z") })!;
+  const cancelled = visitCalendarFile({
+    ...visit, date: "2026-12-03", windowStart: "08:00", now: new Date("2026-11-28T18:00:00Z"), cancel: true,
+  })!;
+  const field = (file: { content: string }, name: string) =>
+    file.content.split("\r\n").find((line) => line.startsWith(`${name}:`))?.slice(name.length + 1);
+  assertEquals([field(first, "UID"), field(moved, "UID"), field(cancelled, "UID")], Array(3).fill("CS-3049-visit@valtriminc.com"));
+  assert(Number(field(first, "SEQUENCE")) < Number(field(moved, "SEQUENCE")));
+  assert(Number(field(moved, "SEQUENCE")) < Number(field(cancelled, "SEQUENCE")));
+  assertEquals(field(moved, "DTSTART"), "20261203T160000Z");
+  assertEquals([field(cancelled, "METHOD"), field(cancelled, "STATUS")], ["CANCEL", "CANCELLED"]);
+  assertEquals(field(cancelled, "SUMMARY"), "Cancelled: Valtrim service visit (CS-3049)");
+  assertEquals([cancelled.name, cancelled.contentType], ["valtrim-service-visit-cancelled.ics", "text/calendar"]);
 });

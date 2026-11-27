@@ -18,8 +18,10 @@ import {
   travelLegHelperText, travelLegSource, travelLegsToEstimate,
 } from '../utils/travelEstimates.js'
 import { formatTime, formatWeekdayDate, getCustomerServiceClock } from '../utils/dates.js'
+import { buildVisitMove, visitSummary } from '../utils/customerServiceVisitChanges.js'
 import { useCustomerServicePrototype } from '../context/customerServicePrototypeContext.js'
 import { useAuth } from '../../auth/context/useAuth.js'
+import MoveVisitDialog from './MoveVisitDialog.jsx'
 import ProposalDayAgenda from './ProposalDayAgenda.jsx'
 import ProposalNearbyVisits from './ProposalNearbyVisits.jsx'
 import SendToCustomerDialog from './SendToCustomerDialog.jsx'
@@ -31,12 +33,17 @@ const sectionTitleSx = { flex: '1 1 240px' }
 const fieldRowSx = { flexWrap: 'wrap', '& > *': { flex: '1 1 160px' } }
 const actionRowSx = { flexWrap: 'wrap', '& > *': { flex: '1 1 200px' } }
 
+// moving (Reschedule block, 27 Nov 2026): { request, previous } moves the confirmed visit of
+// request instead of preparing a proposal. The planner then gets request and requests as
+// requestPlanningForMove gives them, so the visit does not occupy its own slot; the final
+// button is Move visit and onMoved(result) runs after it.
 export default function ProposalDraftPlanner({
   request, requests, technicians: roster, savedDraft, onSave, onDirtyChange, onRegistered, onProposalSent,
+  moving = null, onMoved,
 }) {
   const {
-    registerAppointment, sendProposal, storedTravelMinutes, storedRoutesMinutes, storedTravelDetails, travelTrafficMode, estimateTravel,
-    distanceBands,
+    registerAppointment, sendProposal, rescheduleVisit, storedTravelMinutes, storedRoutesMinutes, storedTravelDetails,
+    travelTrafficMode, estimateTravel, distanceBands,
   } = useCustomerServicePrototype()
   // Customer emails leave from the signed-in coordinator's mailbox.
   const { profile } = useAuth()
@@ -142,6 +149,8 @@ export default function ProposalDraftPlanner({
       .map((result) => `${result.fromRequestId}>${result.toRequestId}`),
   })
   const canRegister = validation.isValid && !validation.travelPending && !validation.pastDue && outdatedLegs.length === 0
+  // A moved visit may go after the due date: the customer asked for it (decision P3).
+  const canMove = validation.isValid && !validation.travelPending && outdatedLegs.length === 0
   // Same three states as the suggestions. An unfinished form points to the suggestions
   // and lists only real problems, not "Select…" for each field still empty.
   const formIncomplete = !values.technicianIds.length || !values.date || !values.windowStart || !values.internalStart
@@ -192,7 +201,7 @@ export default function ProposalDraftPlanner({
     && !validation.errors.some((error) => ['date', 'technicianIds', 'request'].includes(error.field))
   // The other day the customer picked on the proposal page (step B5): the coordinator
   // approves it by using it and registering the visit.
-  const customerChoice = customerChosenSlot(request)
+  const customerChoice = moving ? null : customerChosenSlot(request)
   const choiceCheck = customerChoice && validatePrototypeProposalDraft({
     requestId: request.id, requests, technicians, values: { ...customerChoice, travelMinutes: values.travelMinutes },
   })
@@ -242,6 +251,14 @@ export default function ProposalDraftPlanner({
     onDirtyChange(false)
     onProposalSent?.(request, result)
   }
+  // Moves the confirmed visit to the form's day and, when asked, emails the customer; a
+  // failure stays in the dialog.
+  const move = async ({ reason, note, email }) => {
+    const result = await rescheduleVisit(buildVisitMove({ request: moving.request, values, validation, reason, note, email }))
+    setSending(false)
+    onDirtyChange(false)
+    onMoved?.(result, values)
+  }
   // Registers the visit and, when asked, emails the customer; a failure stays in the dialog.
   const send = async ({ acceptance, confirmationEmail, customerEmail }) => {
     const result = await registerAppointment(buildAppointmentRegistration({
@@ -268,13 +285,21 @@ export default function ProposalDraftPlanner({
     <Paper variant="outlined" sx={{ p: { xs: 2, md: 3 } }}>
       <Stack spacing={2.5}>
         <Box>
-          <Typography variant="h6" fontWeight={800}>Prepare proposal · {request.requestNumber}</Typography>
+          <Typography variant="h6" fontWeight={800}>
+            {moving ? 'Move visit' : 'Prepare proposal'} · {request.requestNumber}
+          </Typography>
           <Typography variant="body2" color="text.secondary">
-            A saved draft lasts until the page is reloaded; it reserves no time and contacts nobody. Send to customer
-            emails a proposal that holds its days until the customer answers, or registers the visit they already
-            accepted by phone.
+            {moving
+              ? 'Choose the day you agreed with the customer. The current visit does not take up its own time, so it can also move within the same day. Nothing changes until you confirm Move visit.'
+              : 'A saved draft lasts until the page is reloaded; it reserves no time and contacts nobody. Send to customer emails a proposal that holds its days until the customer answers, or registers the visit they already accepted by phone.'}
           </Typography>
         </Box>
+        {moving && (
+          <Alert severity="info" variant="outlined">
+            <Typography variant="body2" fontWeight={700}>Current visit</Typography>
+            {moving.previous.summary.date} · {moving.previous.summary.detail}
+          </Alert>
+        )}
         <Alert severity="info" variant="outlined">
           Only registered Customer Service appointments are checked. Production work and days off are not known here, so
           confirm the technician is free.
@@ -288,7 +313,7 @@ export default function ProposalDraftPlanner({
           {Number.isInteger(margin) && (
             <Chip variant="outlined" label={`Margin ${Math.max(0, margin)} min`} />
           )}
-          {!savedDraft && hasUnsavedChanges && <Chip label="Unsaved draft changes" color="warning" variant="outlined" />}
+          {!moving && !savedDraft && hasUnsavedChanges && <Chip label="Unsaved draft changes" color="warning" variant="outlined" />}
           {savedDraft && <Chip label={savedIsStale || savedNeedsRevalidation ? 'Saved draft needs review' : hasUnsavedChanges ? 'Unsaved draft changes' : 'Draft saved · not sent'} color={savedIsStale || savedNeedsRevalidation ? 'warning' : hasUnsavedChanges ? 'default' : 'success'} variant="outlined" />}
         </Stack>
         {customerChoice && (
@@ -307,7 +332,8 @@ export default function ProposalDraftPlanner({
         <ProposalNearbyVisits request={request} requests={requests} technicians={technicians}
           distanceBands={distanceBands} formDate={formIncomplete ? null : values.date}
           formFits={validation.isValid && !validation.pastDue}
-          onUseSlot={applyNearbySlot} onRecommendedChange={setRecommendedSlot} onSecondChange={setSecondSlot} />
+          onUseSlot={applyNearbySlot} onRecommendedChange={setRecommendedSlot} onSecondChange={setSecondSlot}
+          showSecondDay={!moving} />
         <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'minmax(0, 1fr) minmax(0, 1fr)' }, gap: 2.5 }}>
           <Stack spacing={2}>
             <FormControl fullWidth error={values.technicianIds.length > 0 && Boolean(errorFor('technicianIds'))}>
@@ -457,31 +483,61 @@ export default function ProposalDraftPlanner({
             )}
             {saveError && <Alert severity="error">{saveError}</Alert>}
             <Stack direction="row" spacing={1.5} useFlexGap sx={actionRowSx}>
-              <Button variant="outlined" onClick={save} disabled={!validation.isValid}>
-                {savedDraft ? 'Update proposal draft' : 'Save proposal draft'}
-              </Button>
-              <Button variant="contained" disabled={!canRegister} onClick={() => setSending(true)}>
-                Send to customer
-              </Button>
+              {moving ? (
+                <Button variant="contained" disabled={!canMove} onClick={() => setSending(true)}>
+                  Move visit
+                </Button>
+              ) : (
+                <>
+                  <Button variant="outlined" onClick={save} disabled={!validation.isValid}>
+                    {savedDraft ? 'Update proposal draft' : 'Save proposal draft'}
+                  </Button>
+                  <Button variant="contained" disabled={!canRegister} onClick={() => setSending(true)}>
+                    Send to customer
+                  </Button>
+                </>
+              )}
             </Stack>
             <Typography variant="caption" color="text.secondary">
-              {!validation.isValid
-                ? (formIncomplete
-                  ? 'Saving and sending open once the date, window, work start and technicians fit.'
-                  : 'Resolve the problems listed above to save the draft or send it to the customer.')
-                : validation.pastDue
-                  ? 'Choose a date on or before the due date to send it to the customer.'
+              {moving
+                ? (!validation.isValid
+                  ? (formIncomplete
+                    ? 'Move visit opens once the date, window, work start and technicians fit.'
+                    : 'Resolve the problems listed above to move the visit.')
                   : validation.travelPending
-                    ? 'Calculate or type every travel time before sending: a proposal or a visit reserves the technicians’ time.'
+                    ? 'Calculate or type every travel time before moving: the visit reserves the technicians’ time.'
                     : outdatedLegs.length > 0
-                      ? 'Calculate the travel marked “calculate again” with Google Maps, or type its minutes, before sending.'
-                      : 'Send to customer: email a proposal that holds the days until the customer answers, or register the visit if they already accepted by phone.'}
+                      ? 'Calculate the travel marked “calculate again” with Google Maps, or type its minutes, before moving.'
+                      : 'Move visit: the current date is released and the customer can be emailed the new one.')
+                : !validation.isValid
+                  ? (formIncomplete
+                    ? 'Saving and sending open once the date, window, work start and technicians fit.'
+                    : 'Resolve the problems listed above to save the draft or send it to the customer.')
+                  : validation.pastDue
+                    ? 'Choose a date on or before the due date to send it to the customer.'
+                    : validation.travelPending
+                      ? 'Calculate or type every travel time before sending: a proposal or a visit reserves the technicians’ time.'
+                      : outdatedLegs.length > 0
+                        ? 'Calculate the travel marked “calculate again” with Google Maps, or type its minutes, before sending.'
+                        : 'Send to customer: email a proposal that holds the days until the customer answers, or register the visit if they already accepted by phone.'}
             </Typography>
           </Stack>
           <ProposalDayAgenda {...agendaProps} requests={requests} plannedRequest={request} />
         </Box>
       </Stack>
-      {sending && (
+      {sending && moving && (
+        <MoveVisitDialog request={moving.request} previous={moving.previous}
+          next={{
+            date: values.date, windowStart: values.windowStart,
+            summary: visitSummary({
+              date: values.date, windowStart: values.windowStart, workStart: values.internalStart,
+              workEnd: validation.internalEnd, technicianNames: technicianNames(values.technicianIds),
+            }),
+          }}
+          warnings={validation.warnings.filter((warning) => warning.pastDue)}
+          senderEmail={profile?.email ?? ''} onClose={() => setSending(false)} onMove={move} />
+      )}
+      {sending && !moving && (
         <SendToCustomerDialog request={request} values={values}
           summary={{
             date: formatWeekdayDate(values.date),

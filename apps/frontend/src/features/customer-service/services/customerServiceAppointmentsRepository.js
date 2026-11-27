@@ -149,13 +149,25 @@ export async function estimateCustomerServiceNearby({ requestId, candidateIds })
   return data.candidates
 }
 
-export async function cancelCustomerServiceAppointment({ appointmentId, expectedUpdatedAt, reason }) {
+// Reschedule block (27 Nov 2026): the same Edge Function moves or cancels a confirmed
+// visit and closes a request without one. Moving revalidates capacity like registering.
+async function invokeAppointments(body, fallback) {
   const client = await requireSupabase()
-  const { data, error } = await client.rpc('cancel_customer_service_appointment', {
-    p_appointment_id: appointmentId, p_expected_updated_at: expectedUpdatedAt, p_reason: reason,
-  })
-  if (error) throw new Error(error.message || 'The appointment could not be cancelled.', { cause: error })
+  const { data, error } = await client.functions.invoke('customer-service-appointments', { body })
+  if (error || data?.error) throw new Error(await functionErrorMessage(error, data, fallback), { cause: error })
   return data
+}
+
+export function rescheduleCustomerServiceVisit(payload) {
+  return invokeAppointments({ action: 'reschedule', ...payload }, 'The visit could not be moved.')
+}
+
+export function cancelCustomerServiceVisit(payload) {
+  return invokeAppointments({ action: 'cancel', ...payload }, 'The visit could not be cancelled.')
+}
+
+export function closeCustomerServiceRequest(payload) {
+  return invokeAppointments({ action: 'close', ...payload }, 'The request could not be closed.')
 }
 
 // Proposals (block B, steps B4 path b and B6). The Edge Function revalidates capacity,

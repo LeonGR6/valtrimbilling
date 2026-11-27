@@ -33,7 +33,6 @@ import {
   TextField,
   Typography,
 } from '@mui/material'
-import { alpha } from '@mui/material/styles'
 import CheckCircleOutlineRoundedIcon from '@mui/icons-material/CheckCircleOutlineRounded'
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined'
 import FilterListRoundedIcon from '@mui/icons-material/FilterListRounded'
@@ -51,7 +50,6 @@ import {
   isScopedRole,
   userRoleLabels,
   userRoleOptions,
-  userStatusByValue,
   userStatusOptions,
 } from '../data/users.js'
 import {
@@ -64,45 +62,8 @@ import {
 import { getInitials } from '../../../utils/initials.js'
 import UserDialog from './UserDialog.jsx'
 import { communityLabel } from '../utils/communityLabel.js'
-
-function StatTile({ label, value, icon: Icon, color }) {
-  return (
-    <Box
-      sx={{
-        bgcolor: 'background.paper',
-        border: 1,
-        borderColor: 'divider',
-        borderRadius: 2,
-        p: 2.5,
-      }}
-    >
-      <Stack direction="row" spacing={2} sx={{ alignItems: 'center' }}>
-        <Box
-          sx={(theme) => ({
-            width: 48,
-            height: 48,
-            flexShrink: 0,
-            borderRadius: '50%',
-            display: 'grid',
-            placeItems: 'center',
-            color: `${color}.main`,
-            bgcolor: alpha(theme.palette[color].main, 0.12),
-          })}
-        >
-          <Icon />
-        </Box>
-        <Box sx={{ minWidth: 0 }}>
-          <Typography variant="body2" color="text.secondary" noWrap>
-            {label}
-          </Typography>
-          <Typography variant="h4" fontWeight={700} color="text.primary">
-            {value}
-          </Typography>
-        </Box>
-      </Stack>
-    </Box>
-  )
-}
+import StatTile from './StatTile.jsx'
+import UserStatusChip from './UserStatusChip.jsx'
 
 const dateTimeFormatter = new Intl.DateTimeFormat('en-US', {
   dateStyle: 'medium',
@@ -114,22 +75,6 @@ function formatDateTime(value, fallback = '—') {
 
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? fallback : dateTimeFormatter.format(date)
-}
-
-function UserStatusChip({ status }) {
-  const details = userStatusByValue[status] ?? {
-    label: 'Unknown',
-    color: 'default',
-  }
-
-  return (
-    <Chip
-      label={details.label}
-      color={details.color}
-      size="small"
-      variant="outlined"
-    />
-  )
 }
 
 export default function UsersCatalog() {

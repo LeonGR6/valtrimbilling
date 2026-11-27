@@ -74,6 +74,7 @@ function useNearbyDriving(requestId, ids) {
 // traffic); "≈" marks straight-line miles while they are being checked or when Google fails.
 export default function ProposalNearbyVisits({
   request, requests, technicians, distanceBands, formDate, formFits, onUseSlot, onRecommendedChange, onSecondChange,
+  showSecondDay = true,
 }) {
   const [open, setOpen] = useState(false)
   const [showFarther, setShowFarther] = useState(false)
@@ -91,7 +92,8 @@ export default function ProposalNearbyVisits({
       <ProposalNearbySlots request={request} requests={requests} technicians={technicians} candidates={candidates}
         hasCoordinates={hasCoordinates} distanceBands={distanceBands} drivingById={driving.byId}
         drivingLoading={driving.loading} formDate={formDate} formFits={formFits}
-        onUseSlot={onUseSlot} onRecommendedChange={onRecommendedChange} onSecondChange={onSecondChange} />
+        onUseSlot={onUseSlot} onRecommendedChange={onRecommendedChange} onSecondChange={onSecondChange}
+        showSecondDay={showSecondDay} />
       <Divider />
       <Stack spacing={1}>
         <Stack direction="row" spacing={1} useFlexGap sx={{ alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap' }}>

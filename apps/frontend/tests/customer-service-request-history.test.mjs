@@ -47,3 +47,20 @@ test('History has its own address and edits only completed requests (internal no
   assert.equal(canEditRequestInView(requests[0], 'HISTORY'), true)
   assert.equal(canEditRequestInView(requests[3], 'HISTORY'), false)
 })
+
+// Reschedule block, part R5 (27 Nov 2026): closed requests in History, with their reason.
+test('a closed request is dated by the California day it closed and shows its reason', async () => {
+  const { closedDate, historyOutcome } = await import('../src/features/customer-service/utils/requestHistory.js')
+  const original = { id: 2402, requestNumber: 'CS-3402' }
+  // 11:30 PM on Nov 26 in California is already Nov 27 in UTC.
+  const duplicate = {
+    id: 2403, requestNumber: 'CS-3403', workflowStage: 'NEEDS_REVIEW', closedAt: '2026-11-27T07:30:00Z',
+    closeReasonCode: 'DUPLICATE', closeReason: 'Duplicate request', duplicateOfRequestId: 2402,
+  }
+  assert.equal(closedDate(duplicate), '2026-11-26')
+  assert.deepEqual(historyOutcome(duplicate, [original, duplicate]), { closed: true, label: 'Closed', detail: 'Duplicate of CS-3402' })
+  assert.deepEqual(historyOutcome({ ...duplicate, closeReasonCode: 'BUILDER_CANCELLED', closeReason: 'PO 1234 void', duplicateOfRequestId: null }), {
+    closed: true, label: 'Closed', detail: 'Cancelled by Builder · PO 1234 void',
+  })
+  assert.deepEqual(historyOutcome({ id: 1, workflowStage: 'COMPLETED' }), { closed: false, label: 'Completed', detail: '' })
+})

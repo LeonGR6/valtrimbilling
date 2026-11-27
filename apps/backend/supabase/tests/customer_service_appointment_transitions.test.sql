@@ -128,14 +128,12 @@ from transition_fixture;
 select throws_ok($$select valtrim.apply_customer_service_appointment_transitions('{}'::jsonb)$$,
   '22023', 'Transitions must be an array', 'The writer only accepts a list');
 
--- Cancelling during the window returns a WORKING request to planning.
-select set_config('request.jwt.claim.sub', admin_id::text, true) from transition_fixture;
-set local role authenticated;
-select lives_ok(format('select valtrim.cancel_customer_service_appointment(%s, %L, %L)', started_appointment,
-    (select updated_at from valtrim.service_appointments where id = started_appointment), 'Customer was not home'),
+-- Cancelling during the window returns a WORKING request to planning (since the Reschedule
+-- block through the Edge Function's RPC, until the window ends).
+select lives_ok(format('select valtrim.cancel_customer_service_visit(%L, %s, %L, %L, %L)', admin_id, started_appointment,
+    (select updated_at from valtrim.service_appointments where id = started_appointment), 'OTHER', 'Customer was not home'),
   'A started appointment can still be cancelled with a reason')
 from transition_fixture;
-reset role;
 select is((select workflow_stage::text from valtrim.service_requests where id = (select started_request from transition_fixture)),
   'READY_TO_PROPOSE', 'A cancelled WORKING request returns to Ready to propose');
 

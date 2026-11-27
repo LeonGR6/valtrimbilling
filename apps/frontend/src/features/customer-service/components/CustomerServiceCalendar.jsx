@@ -40,6 +40,7 @@ import {
   serviceCalendarViewOptions,
 } from '../data/serviceCalendarEvents.js'
 import CustomerServiceCalendarDetail from './CustomerServiceCalendarDetail.jsx'
+import VisitChangeActions from './VisitChangeActions.jsx'
 import CustomerServiceEventCard from './CustomerServiceEventCard.jsx'
 import { customerServiceTimeZone, getCustomerServiceClock } from '../utils/dates.js'
 import { scheduledDelayMargins } from '../utils/proposalDraft.js'
@@ -84,7 +85,8 @@ const legendItems = [
   { tone: 'overdue', label: 'Overdue' },
 ]
 
-export default function CustomerServiceCalendar({ requests, settings, onViewRequest }) {
+// onNotice(notice): what to tell the coordinator after a visit moved or was cancelled.
+export default function CustomerServiceCalendar({ requests, settings, onViewRequest, onNotice }) {
   const calendarRef = useRef(null)
   const { technicians, storedTravelMinutes, holidays } = useCustomerServicePrototype()
   // Each visit carries its delay margin from the saved travel legs, which the day-before
@@ -386,6 +388,12 @@ export default function CustomerServiceCalendar({ requests, settings, onViewRequ
         <CustomerServiceCalendarDetail
           event={selectedEvent}
           onClose={() => setSelectedId(null)}
+          visitActions={selectedEvent?.extendedProps.requestId != null && (
+            <VisitChangeActions requestId={selectedEvent.extendedProps.requestId} onChanged={(notice) => {
+              setSelectedId(null)
+              onNotice?.(notice)
+            }} />
+          )}
           onViewRequest={onViewRequest ? (event) => {
             const request = requests.find((entry) => entry.id === event.extendedProps.requestId)
             if (request) {

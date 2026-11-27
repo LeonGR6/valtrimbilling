@@ -487,6 +487,8 @@ export default function NewRequestPrototypeDialog({
   onEdit,
   onViewSource,
   onOpenProposal,
+  // Close request (decision D2, Reschedule block): given only when the request can close.
+  onCloseRequest,
   readOnly = false,
 }) {
   const fullScreen = useMediaQuery((theme) => theme.breakpoints.down('sm'))
@@ -2839,6 +2841,11 @@ export default function NewRequestPrototypeDialog({
               ? canSaveIncomplete ? 'Ready to save for review; remaining planning can be completed later.' : 'Ready to save.'
               : 'Select Save to check the information entered.'}
         </Typography>}
+        {isReadOnlyMode && onCloseRequest && (
+          <Button color="error" onClick={() => onCloseRequest(request)} disabled={saving || isAutofillApplying}>
+            Close request
+          </Button>
+        )}
         {isReadOnlyMode && onEdit && (
           <Button variant="outlined" startIcon={<EditOutlinedIcon />} onClick={() => onEdit(request)}
             disabled={saving || isAutofillApplying}>

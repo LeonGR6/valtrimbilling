@@ -1,23 +1,16 @@
 import { useState } from 'react'
 import {
-  Alert,
   Box,
   Button,
   Chip,
-  Dialog,
-  DialogActions,
-  DialogContent,
-  DialogTitle,
   IconButton,
   Stack,
-  TextField,
   Tooltip,
   Typography,
 } from '@mui/material'
 import ContentCopyRoundedIcon from '@mui/icons-material/ContentCopyRounded'
 import GoogleIcon from '@mui/icons-material/Google'
 import PlaceOutlinedIcon from '@mui/icons-material/PlaceOutlined'
-import { useCustomerServicePrototype } from '../context/customerServicePrototypeContext.js'
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded'
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined'
 import EventAvailableRoundedIcon from '@mui/icons-material/EventAvailableRounded'
@@ -120,57 +113,11 @@ function CoordinatesField({ coordinates }) {
   )
 }
 
-// In test mode only, a saved appointment can be cancelled with a reason; the request
-// returns to Ready to propose. Otherwise a confirmed visit is not cancelled (decided
-// 23 Nov 2026): the coordinator calls the customer, until the Reschedule block exists.
-function CancelAppointment({ appointment, requestNumber, onCancelled }) {
-  const { cancelAppointment } = useCustomerServicePrototype()
-  const [dialog, setDialog] = useState(null)
-  const submit = async () => {
-    setDialog((current) => ({ ...current, saving: true, error: '' }))
-    try {
-      await cancelAppointment({
-        appointmentId: appointment.id, expectedUpdatedAt: appointment.updatedAt, reason: dialog.reason,
-      })
-      setDialog(null)
-      onCancelled()
-    } catch (error) {
-      setDialog((current) => ({ ...current, saving: false, error: error.message }))
-    }
-  }
-  return (
-    <>
-      <Button variant="outlined" color="error" onClick={() => setDialog({ reason: '', saving: false, error: '' })}>
-        Cancel appointment
-      </Button>
-      <Dialog open={Boolean(dialog)} onClose={() => !dialog?.saving && setDialog(null)} fullWidth maxWidth="xs">
-        <DialogTitle>Cancel appointment · {requestNumber}</DialogTitle>
-        <DialogContent>
-          <Stack spacing={2} sx={{ pt: 1 }}>
-            <Typography variant="body2" color="text.secondary">
-              The technicians&apos; time is released and the request returns to Ready to propose.
-            </Typography>
-            <TextField label="Cancellation reason" value={dialog?.reason ?? ''} required multiline minRows={2}
-              onChange={(event) => setDialog((current) => ({ ...current, reason: event.target.value }))}
-              slotProps={{ htmlInput: { maxLength: 500 } }} helperText="Required · up to 500 characters" />
-            {dialog?.error && <Alert severity="error">{dialog.error}</Alert>}
-          </Stack>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setDialog(null)} disabled={dialog?.saving}>Keep appointment</Button>
-          <Button variant="contained" color="error" onClick={submit}
-            disabled={dialog?.saving || !dialog?.reason.trim()}>
-            {dialog?.saving ? 'Cancelling…' : 'Cancel appointment'}
-          </Button>
-        </DialogActions>
-      </Dialog>
-    </>
-  )
-}
-
 // canCancel: false shows the visit read-only (the Proposal Workspace day agenda).
-export default function CustomerServiceCalendarDetail({ event, onClose, onEdit, onViewRequest, canCancel = true }) {
-  const { testMode } = useCustomerServicePrototype()
+// visitActions: Move visit and Cancel visit, passed by the Calendar (Reschedule block).
+export default function CustomerServiceCalendarDetail({
+  event, onClose, onEdit, onViewRequest, canCancel = true, visitActions = null,
+}) {
   if (!event) return null
 
   const props = event.extendedProps
@@ -269,9 +216,7 @@ export default function CustomerServiceCalendarDetail({ event, onClose, onEdit, 
             View full request
           </Button>
         )}
-        {canCancel && testMode && props.appointment?.state === 'SCHEDULED' && props.status === 'CONFIRMED' && (
-          <CancelAppointment appointment={props.appointment} requestNumber={props.requestNumber} onCancelled={onClose} />
-        )}
+        {canCancel && props.appointment?.state === 'SCHEDULED' && visitActions}
         {onEdit && (
           <Button
             variant="outlined"

@@ -8,8 +8,9 @@ export const requestViewStages = {
   REQUESTS: ['NEEDS_REVIEW', 'READY_TO_PROPOSE'],
   PROPOSALS: ['READY_TO_PROPOSE', 'AWAITING_CUSTOMER', 'NEEDS_CONTACT'],
   CALENDAR: ['CONFIRMED', 'WORKING', 'COMPLETED'],
-  // Completed requests to look up after the visit (decided 25 Nov 2026).
-  HISTORY: ['COMPLETED'],
+  // Completed requests to look up after the visit (decided 25 Nov 2026), and requests
+  // closed without one (Reschedule block, decision D2).
+  HISTORY: ['COMPLETED', 'CLOSED'],
 }
 
 export const defaultProposalStage = 'READY_TO_PROPOSE'
@@ -66,6 +67,12 @@ export const requestWorkflowStages = {
     color: 'neutral',
     nextAction: 'View completed request',
   },
+  // Closed without a visit: shown from closedAt, not stored as a stage.
+  CLOSED: {
+    label: 'Closed',
+    color: 'neutral',
+    nextAction: 'View closed request',
+  },
 }
 
 export const inboxFilterOptions = [
@@ -90,6 +97,7 @@ export const inboxSortOptions = [
 export const inboxPageSizeOptions = [10, 15, 20]
 
 export function effectiveRequestWorkflowStage(request) {
+  if (request?.closedAt) return 'CLOSED'
   return request?.workflowStage || 'NEEDS_REVIEW'
 }
 
@@ -112,8 +120,9 @@ const editableStagesByView = {
   REQUESTS: requestViewStages.REQUESTS,
   PROPOSALS: ['READY_TO_PROPOSE', 'NEEDS_CONTACT'],
   CALENDAR: requestViewStages.CALENDAR,
-  // Only the internal notes of a completed request, as from the Calendar.
-  HISTORY: requestViewStages.HISTORY,
+  // Only the internal notes of a completed request, as from the Calendar. A closed request
+  // is not edited: the server refuses it.
+  HISTORY: ['COMPLETED'],
 }
 
 export function canEditRequestInView(request, view = 'REQUESTS') {

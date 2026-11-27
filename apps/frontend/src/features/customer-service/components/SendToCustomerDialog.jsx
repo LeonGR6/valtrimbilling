@@ -9,6 +9,7 @@ import {
 } from '../utils/customerServiceEmailTemplates.js'
 import { serviceWorkTypeLabel } from '../utils/customerServicePlanning.js'
 import { normalizeCustomerEmail } from '../utils/proposalDraft.js'
+import { DayDetails, Section } from './CustomerEmailDialogParts.jsx'
 import CustomerEmailEditor from './CustomerEmailEditor.jsx'
 import CustomerEmailPreview from './CustomerEmailPreview.jsx'
 
@@ -18,16 +19,6 @@ const acceptanceOptions = [
 ]
 
 const dayBoxSx = { p: 1.5, borderRadius: 2, bgcolor: 'action.hover' }
-
-// A titled part of the form, kept apart from the next one by the dialog's spacing.
-function Section({ title, children }) {
-  return (
-    <Stack component="section" spacing={1.5}>
-      <Typography variant="subtitle2" component="h3" fontWeight={700}>{title}</Typography>
-      {children}
-    </Stack>
-  )
-}
 
 // A radio drawn as a card, so the two ways to send read as two separate choices.
 function ChoiceCard({ value, title, description, selected, disabled }) {
@@ -42,21 +33,6 @@ function ChoiceCard({ value, title, description, selected, disabled }) {
       borderColor: selected ? 'primary.main' : 'divider', bgcolor: selected ? 'action.selected' : 'transparent',
       transition: 'border-color 150ms, background-color 150ms', '& .MuiRadio-root': { pt: 0.25 },
     }} />
-  )
-}
-
-// A day as the coordinator reads it: { date, detail } with the work hours and technicians.
-function DayDetails({ label, day }) {
-  return (
-    <Box sx={{ minWidth: 0 }}>
-      {label && (
-        <Typography variant="caption" color="primary" fontWeight={700} component="div" sx={{ letterSpacing: 0.5 }}>
-          {label}
-        </Typography>
-      )}
-      <Typography variant="body2" fontWeight={700}>{day.date}</Typography>
-      <Typography variant="body2" color="text.secondary">{day.detail}</Typography>
-    </Box>
   )
 }
 

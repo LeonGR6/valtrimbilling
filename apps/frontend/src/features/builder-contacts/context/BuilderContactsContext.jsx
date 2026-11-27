@@ -6,6 +6,7 @@ import {
   deactivateBuilderContact as deactivateBuilderContactRecord,
   listBuilderContactTypes,
   listBuilderContacts,
+  reactivateBuilderContact as reactivateBuilderContactRecord,
   updateBuilderContact as updateBuilderContactRecord,
 } from '../services/builderContactsRepository.js'
 import { BuilderContactsContext } from './builderContactsContext.js'
@@ -34,7 +35,7 @@ export function BuilderContactsProvider({ children }) {
   const [error, setError] = useState(null)
   const canManageBuilderContacts = canWork(profile?.role, ADMIN_ROLES)
 
-  const refreshBuilderContacts = useCallback(async () => {
+  const refreshContacts = useCallback(async () => {
     if (!profile?.id) {
       setContacts([])
       setContactTypes([])
@@ -71,11 +72,11 @@ export function BuilderContactsProvider({ children }) {
       return undefined
     }
 
-    refreshBuilderContacts().catch(() => {})
+    refreshContacts().catch(() => {})
     return undefined
-  }, [profile?.id, refreshBuilderContacts])
+  }, [profile?.id, refreshContacts])
 
-  const createBuilderContact = useCallback(async (contact) => {
+  const createContact = useCallback(async (contact) => {
     const created = await createBuilderContactRecord(contact)
     setContacts((current) => sortContacts([created, ...current]))
     setContactTypes((current) => withContactType(current, created))
@@ -83,7 +84,7 @@ export function BuilderContactsProvider({ children }) {
     return created
   }, [])
 
-  const updateBuilderContact = useCallback(async (contactId, contact) => {
+  const updateContact = useCallback(async (contactId, contact) => {
     const updated = await updateBuilderContactRecord(contactId, contact)
     setContacts((current) => sortContacts(current.map((item) => (
       item.id === contactId ? updated : item
@@ -93,14 +94,29 @@ export function BuilderContactsProvider({ children }) {
     return updated
   }, [])
 
-  const deactivateBuilderContact = useCallback(async (contactId) => {
-    const updated = await deactivateBuilderContactRecord(contactId)
-    setContacts((current) => current.map((item) => (
+  const replaceContact = useCallback((contactId, updated) => {
+    setContacts((current) => sortContacts(current.map((item) => (
       item.id === contactId ? updated : item
-    )))
+    ))))
     setError(null)
     return updated
   }, [])
+
+  const deactivateContact = useCallback(async (contactId) => {
+    const updated = await deactivateBuilderContactRecord(contactId)
+    return replaceContact(contactId, updated)
+  }, [replaceContact])
+
+  const reactivateContact = useCallback(async (contactId) => {
+    const updated = await reactivateBuilderContactRecord(contactId)
+    return replaceContact(contactId, updated)
+  }, [replaceContact])
+
+  // Keep both naming conventions while the merged screens converge on one API.
+  const refreshBuilderContacts = refreshContacts
+  const createBuilderContact = createContact
+  const updateBuilderContact = updateContact
+  const deactivateBuilderContact = deactivateContact
 
   const value = useMemo(() => ({
     contacts,
@@ -108,6 +124,11 @@ export function BuilderContactsProvider({ children }) {
     loading,
     error,
     canManageBuilderContacts,
+    refreshContacts,
+    createContact,
+    updateContact,
+    deactivateContact,
+    reactivateContact,
     refreshBuilderContacts,
     createBuilderContact,
     updateBuilderContact,
@@ -122,6 +143,11 @@ export function BuilderContactsProvider({ children }) {
     loading,
     refreshBuilderContacts,
     updateBuilderContact,
+    createContact,
+    deactivateContact,
+    reactivateContact,
+    refreshContacts,
+    updateContact,
   ])
 
   return (

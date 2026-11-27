@@ -1,0 +1,564 @@
+.customer-service-calendar.calendar-page {
+  min-height: 0;
+  background: transparent;
+  color: var(--calendar-text);
+}
+
+.calendar-type-filter--service {
+  --activity-color: #8b5cf6;
+  --activity-strong: #7c3aed;
+  --activity-soft: color-mix(in srgb, #8b5cf6 12%, transparent);
+  margin-left: 8px !important;
+}
+
+.service-calendar-filterbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 16px 20px;
+  border: 1px solid var(--calendar-border);
+  border-bottom: 0;
+  border-radius: 12px 12px 0 0;
+  background: var(--calendar-panel);
+}
+
+.service-calendar-production-toggle .MuiFormControlLabel-label {
+  font-size: 0.82rem;
+  font-weight: 650;
+}
+
+.service-calendar-weekends-toggle {
+  margin-left: auto;
+}
+
+.service-calendar-weekends-toggle .MuiFormControlLabel-label {
+  font-size: 0.82rem;
+  font-weight: 650;
+}
+
+.service-calendar-workspace.calendar-workspace {
+  min-height: 690px;
+  border-radius: 0 0 12px 12px;
+}
+
+.service-calendar-note {
+  flex-wrap: wrap;
+  row-gap: 4px;
+  color: var(--calendar-muted);
+}
+
+/* The view description keeps one line; the legend moves below it when both do not fit. */
+.service-calendar-note > span {
+  flex: 0 1 auto;
+}
+
+.service-calendar-canvas.calendar-canvas {
+  --service-calendar-timegrid-height: 600px;
+  min-height: var(--service-calendar-timegrid-height);
+}
+
+.service-calendar-canvas .fc {
+  height: auto;
+}
+
+.service-calendar-canvas--timeGridWeek.calendar-canvas,
+.service-calendar-canvas--timeGridDay.calendar-canvas {
+  height: var(--service-calendar-timegrid-height);
+}
+
+.service-calendar-canvas--multiMonthYear.calendar-canvas {
+  overflow: visible;
+}
+
+.customer-service-calendar .calendar-view-switcher {
+  flex-wrap: wrap;
+}
+
+.service-calendar-canvas .fc .fc-scrollgrid,
+.service-calendar-canvas .fc .fc-daygrid-day,
+.service-calendar-canvas .fc .fc-timegrid-col {
+  border-color: var(--calendar-grid-color) !important;
+}
+
+.service-calendar-canvas--dayGridMonth .fc .fc-daygrid-day-frame {
+  min-height: 118px;
+}
+
+.service-calendar-canvas .fc .fc-daygrid-more-link {
+  margin: 2px 5px;
+  color: var(--calendar-primary);
+  font-size: 0.68rem;
+  font-weight: 800;
+}
+
+.service-calendar-canvas .fc .fc-multimonth {
+  gap: 16px 0;
+  padding: 16px;
+  border: 0;
+  background: var(--calendar-muted-surface);
+}
+
+.service-calendar-canvas .fc .fc-multimonth-month {
+  overflow: hidden;
+  border: 1px solid var(--calendar-grid-strong);
+  border-radius: 10px;
+  background: var(--calendar-surface);
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--calendar-text) 7%, transparent);
+}
+
+.service-calendar-canvas .fc .fc-multimonth-title {
+  padding: 10px 8px;
+  border-bottom: 1px solid var(--calendar-grid-strong);
+  font-size: 0.78rem;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.service-calendar-canvas .fc .fc-multimonth .fc-daygrid-day-frame {
+  min-height: 54px;
+}
+
+.service-calendar-canvas .fc .fc-timegrid-slot {
+  height: 44px;
+}
+
+.service-calendar-canvas .fc .fc-timegrid-slot-label {
+  color: var(--calendar-muted);
+  font-size: 0.72rem;
+}
+
+.service-calendar-canvas .fc .fc-timegrid-axis,
+.service-calendar-canvas .fc .fc-timegrid-slot,
+.service-calendar-canvas .fc .fc-timegrid-col {
+  border-color: var(--calendar-border);
+}
+
+.service-calendar-canvas .fc .fc-timegrid-now-indicator-line {
+  border-color: #8b5cf6;
+}
+
+.service-calendar-canvas .fc .fc-timegrid-now-indicator-arrow {
+  border-right-color: #8b5cf6;
+}
+
+.service-calendar-canvas .fc .fc-timegrid-event-harness {
+  margin: 1px 3px;
+}
+
+.service-calendar-canvas .fc .fc-timegrid-event {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.service-calendar-canvas .fc .fc-timegrid-event .fc-event-main {
+  padding: 0;
+}
+
+.service-calendar-canvas .fc .fc-timegrid .fc-daygrid-day-frame {
+  min-height: 42px;
+}
+
+.service-work-event {
+  --service-accent: #8b5cf6;
+  height: 100%;
+  min-height: 54px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--service-accent) 58%, transparent);
+  border-left: 4px solid var(--service-accent);
+  border-radius: 7px;
+  padding: 7px 8px;
+  background: color-mix(in srgb, var(--service-accent) 22%, var(--calendar-panel));
+  color: var(--calendar-text);
+  font-size: 0.7rem;
+  line-height: 1.2;
+}
+
+.service-work-event__topline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  text-transform: none;
+}
+
+.service-work-event__topline strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.service-work-event__topline span {
+  color: var(--calendar-muted);
+  font-size: 0.61rem;
+  text-transform: capitalize;
+}
+
+.service-work-event__property,
+.service-work-event__time,
+.service-work-event__history {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.service-work-event__property {
+  font-weight: 650;
+}
+
+.service-work-event__margin {
+  color: var(--calendar-muted-text, #64748b);
+}
+
+/* The status on a card, in the card color (25 Nov 2026). */
+.service-status-tag,
+.service-work-event__topline .service-status-tag {
+  flex: 0 0 auto;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--service-accent) 26%, transparent);
+  color: var(--calendar-text);
+  font-size: 0.6rem;
+  font-weight: 750;
+  letter-spacing: 0.02em;
+  text-transform: none;
+  white-space: nowrap;
+}
+
+.service-list-event__heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.service-calendar-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 14px;
+  margin: 0 0 0 auto;
+  padding: 0;
+  list-style: none;
+}
+
+.service-calendar-legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.service-legend__swatch {
+  width: 16px;
+  height: 11px;
+  border: 1px solid color-mix(in srgb, var(--service-accent) 58%, transparent);
+  border-left: 3px solid var(--service-accent);
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--service-accent) 24%, transparent);
+}
+
+.service-legend__swatch.service-tone--awaiting {
+  border-style: dashed;
+  border-left-style: solid;
+}
+
+.service-legend__swatch--holiday {
+  --service-accent: var(--calendar-muted-text, #64748b);
+  background: repeating-linear-gradient(
+    -45deg,
+    color-mix(in srgb, var(--calendar-muted-text, #64748b) 40%, transparent) 0 2px,
+    transparent 2px 4px
+  );
+}
+
+.service-holiday__list {
+  color: var(--calendar-muted-text, #64748b);
+  font-weight: 650;
+}
+
+.service-work-event__history {
+  margin-top: auto;
+  color: var(--calendar-muted);
+  font-size: 0.64rem;
+}
+
+.service-compact-event {
+  --service-accent: #8b5cf6;
+  width: 100%;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--service-accent) 44%, transparent);
+  border-left: 3px solid var(--service-accent);
+  border-radius: 5px;
+  padding: 3px 5px;
+  background: color-mix(in srgb, var(--service-accent) 14%, var(--calendar-surface));
+  color: var(--calendar-text);
+  font-size: 0.62rem;
+  line-height: 1.2;
+}
+
+.service-compact-event__marker {
+  width: 6px;
+  height: 6px;
+  flex: 0 0 6px;
+  border-radius: 50%;
+  background: var(--service-accent);
+}
+
+.service-compact-event strong,
+.service-compact-event > span:last-child:not(.service-compact-event__marker) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.service-compact-event strong {
+  min-width: 0;
+}
+
+.service-compact-event > span:last-child:not(.service-compact-event__marker) {
+  margin-left: auto;
+  flex: 0 0 auto;
+  color: var(--calendar-muted-text);
+  font-size: 0.58rem;
+}
+
+.service-compact-event--production {
+  --service-accent: var(--activity-color, #2563eb);
+}
+
+.service-compact-event--year {
+  justify-content: center;
+  gap: 3px;
+  min-height: 16px;
+  border-left-width: 2px;
+  padding: 1px 2px;
+  font-size: 0.54rem;
+}
+
+.service-compact-event--year .service-compact-event__marker {
+  width: 4px;
+  height: 4px;
+  flex-basis: 4px;
+}
+
+.service-list-event {
+  --service-accent: #8b5cf6;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  gap: 18px;
+  border-left: 4px solid var(--service-accent);
+  border-radius: 7px;
+  padding: 10px 12px;
+  background: color-mix(in srgb, var(--service-accent) 13%, transparent);
+  color: var(--calendar-text);
+}
+
+.service-list-event__identity {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.service-list-event__badge {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 34px;
+  border-radius: 8px;
+  background: var(--service-accent);
+  color: #fff;
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.service-list-event__copy {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 2px;
+}
+
+.service-list-event__copy span,
+.service-list-event__history {
+  color: var(--calendar-muted);
+  font-size: 0.72rem;
+}
+
+.service-list-event__history {
+  flex: 0 0 auto;
+}
+
+/* Confirmed is blue and Completed green, so the two read apart (25 Nov 2026). */
+.service-tone--confirmed {
+  --service-accent: #3b82f6;
+}
+
+.service-tone--overdue {
+  --service-accent: #ef4444;
+}
+
+.service-tone--completed {
+  --service-accent: #10b981;
+}
+
+.service-tone--cancelled {
+  --service-accent: #64748b;
+}
+
+/* A holiday (Valtrim is closed): the whole day is hatched and named, behind any visit
+   booked before it became a holiday. */
+.customer-service-calendar .fc .fc-bg-event.service-holiday {
+  background: repeating-linear-gradient(
+    -45deg,
+    color-mix(in srgb, var(--calendar-muted-text, #64748b) 14%, transparent) 0 6px,
+    transparent 6px 12px
+  );
+  opacity: 1;
+}
+
+.service-holiday__label {
+  display: block;
+  margin: 4px 6px;
+  overflow: hidden;
+  color: var(--calendar-muted-text, #64748b);
+  font-size: 0.72rem;
+  font-weight: 650;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* In the month grid the name sits at the bottom, so the day number stays readable. */
+.service-calendar-canvas .fc .fc-daygrid-day .service-holiday__label {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+}
+
+.service-calendar-canvas .fc .fc-multimonth .service-holiday__label {
+  display: none;
+}
+
+/* A day held by a proposal waiting for the customer: tentative, so dashed. The card sets
+   the theme's secondary color inline (the Awaiting customer stage color in the Proposal
+   Workspace); this is only the fallback. */
+.service-tone--awaiting {
+  --service-accent: #9c27b0;
+}
+
+.service-work-event.service-tone--awaiting,
+.service-compact-event.service-tone--awaiting {
+  border-style: dashed;
+  border-left-style: solid;
+}
+
+.fc-service--scheduled,
+.fc-service--confirmed,
+.fc-service--overdue,
+.fc-service--completed,
+.fc-service--cancelled,
+.fc-service--awaiting {
+  border: 0 !important;
+  background: transparent !important;
+}
+
+.fc-event.is-selected .service-work-event,
+.fc-event.is-selected .service-list-event,
+.fc-event.is-selected .service-compact-event {
+  outline: 2px solid var(--service-accent);
+  outline-offset: 1px;
+}
+
+.service-detail-panel {
+  min-height: 100%;
+  background: var(--mui-palette-background-paper);
+}
+
+.service-detail-panel__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 24px;
+  border-bottom: 1px solid var(--mui-palette-divider);
+}
+
+@media (max-width: 900px) {
+  .service-calendar-production-toggle {
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .service-calendar-filterbar .MuiFormControl-root {
+    flex: 1 1 180px;
+  }
+}
+
+@media (max-width: 600px) {
+  .service-calendar-filterbar {
+    padding: 14px;
+  }
+
+  .service-calendar-workspace.calendar-workspace {
+    min-height: 620px;
+  }
+
+  .service-calendar-canvas.calendar-canvas {
+    --service-calendar-timegrid-height: 540px;
+  }
+
+  .customer-service-calendar .calendar-view-switcher {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .service-calendar-canvas--dayGridMonth .fc .fc-daygrid-day-frame {
+    min-height: 88px;
+  }
+
+  .service-calendar-canvas .fc .fc-daygrid-day-top {
+    padding-inline: 4px;
+  }
+
+  .service-calendar-canvas .fc .fc-event {
+    margin-inline: 2px;
+  }
+
+  .service-compact-event--compact {
+    border-left-width: 2px;
+    padding-inline: 3px;
+  }
+
+  .service-compact-event--compact .service-compact-event__marker,
+  .service-compact-event--compact > span:last-child:not(.service-compact-event__marker) {
+    display: none;
+  }
+
+  .service-calendar-canvas .fc .fc-multimonth {
+    gap: 12px 0;
+    padding: 10px;
+  }
+
+  .service-work-event__history,
+  .service-work-event__topline span {
+    display: none;
+  }
+
+  .service-list-event {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}

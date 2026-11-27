@@ -29,6 +29,7 @@ import {
 } from '../data/calendarEvents.js'
 import { ghostEventSource } from '../utils/calendarLoading.js'
 import CalendarEventCard from './CalendarEventCard.jsx'
+<<<<<<< HEAD
 import CalendarEventGhost from './CalendarEventGhost.jsx'
 import CalendarSearchResults from './CalendarSearchResults.jsx'
 
@@ -41,6 +42,9 @@ const LOADING_MESSAGES = {
   loading: 'Loading events…',
   slow: 'Still loading. This is taking longer than usual.',
 }
+=======
+import { getServiceEventTone } from '../../customer-service/data/serviceCalendarEvents.js'
+>>>>>>> dev/leon
 
 export default function CalendarWorkspace({
   calendarRef,
@@ -55,8 +59,12 @@ export default function CalendarWorkspace({
   viewTitle,
   viewType,
   visibleTypes,
+<<<<<<< HEAD
   // The kinds of event that can be shown or hidden (EXT, Shutter, DM, HW, and Extra / CO when it is on).
   typeOptions = activityTypeOptions,
+=======
+  showCustomerService,
+>>>>>>> dev/leon
   onChangeView,
   onDatesSet,
   onEventClick,
@@ -64,9 +72,13 @@ export default function CalendarWorkspace({
   canMove = false,
   onNavigate,
   onToggleType,
+<<<<<<< HEAD
   search,
   searchResults,
   onChangeSearch,
+=======
+  onToggleCustomerService,
+>>>>>>> dev/leon
 }) {
   const searching = search.trim() !== ''
   // The calendar stays mounted while searching so it comes back on the same
@@ -96,6 +108,7 @@ export default function CalendarWorkspace({
             <span />
             EXT · Order Material
           </Box>
+<<<<<<< HEAD
           <Box className="calendar-color-key activity-tone--baseboard">
             <span />
             DM · Baseboard install
@@ -184,6 +197,19 @@ export default function CalendarWorkspace({
               </Typography>
             )}
           </Box>
+=======
+          <FormControlLabel
+            className="calendar-type-filter calendar-type-filter--service"
+            control={(
+              <Checkbox
+                checked={showCustomerService}
+                onChange={(event) => onToggleCustomerService(event.target.checked)}
+                size="small"
+              />
+            )}
+            label="Customer Service"
+          />
+>>>>>>> dev/leon
         </Box>
       </Box>
 
@@ -268,7 +294,7 @@ export default function CalendarWorkspace({
               }}
               listDayFormat={{ weekday: 'long', month: 'short', day: 'numeric' }}
               listDaySideFormat={{ year: 'numeric' }}
-              noEventsContent="No production activities in this period"
+              noEventsContent="No calendar events in this period"
               height="100%"
               expandRows
               fixedWeekCount={false}
@@ -281,6 +307,7 @@ export default function CalendarWorkspace({
               // A few pixels of wobble while clicking must not count as a drag.
               eventDragMinDistance={8}
               eventDurationEditable={false}
+<<<<<<< HEAD
               events={loading ? ghostEventSource : events}
               eventClick={({ event }) => {
                 if (!event.extendedProps.ghost) onEventClick(event.id)
@@ -313,6 +340,26 @@ export default function CalendarWorkspace({
                   event.extendedProps.orderMaterial,
                   event.extendedProps.variant,
                 )
+=======
+              events={events}
+              eventClick={({ event }) => onEventClick(event.id)}
+              eventContent={(info) => (
+                <CalendarEventCard
+                  event={info.event}
+                  displayMode={info.view.type === 'listWeek' ? 'list' : 'timed'}
+                />
+              )}
+              eventClassNames={({ event }) => {
+                if (event.extendedProps.calendarType === 'CUSTOMER_SERVICE') {
+                  const serviceTone = getServiceEventTone(event.extendedProps.status)
+                  return [
+                    `fc-service--${serviceTone}`,
+                    `service-tone--${serviceTone}`,
+                    event.id === selectedId ? 'is-selected' : '',
+                  ]
+                }
+                const tone = getActivityTone(event.extendedProps.activityType, event.extendedProps.orderMaterial)
+>>>>>>> dev/leon
                 return [`fc-activity--${tone}`, `activity-tone--${tone}`, event.id === selectedId ? 'is-selected' : '']
               }}
               datesSet={({ view }) => onDatesSet(view.title, view.type)}

@@ -16,6 +16,8 @@ import {
   BuilderContactsPage,
   CustomerServicePage,
   UsersPage,
+  ActivityHistoryPage,
+  HyphenRequestsPage,
 } from './lazyPages.jsx'
 import { ADMIN_ROLES, PAGE_ROLES } from '../features/auth/authorization/roleAccess.js'
 import StartPageGate from '../features/auth/context/StartPageGate.jsx'
@@ -104,6 +106,13 @@ export const navigationRoutes = [
     allowedRoles: adminPage,
   },
   {
+    path: '/history',
+    label: 'Activity History',
+    icon: 'activity-history',
+    element: <ActivityHistoryPage />,
+    allowedRoles: ['ADMIN'],
+  },
+  {
     path: '/users',
     label: 'Users',
     icon: 'users',
@@ -120,6 +129,34 @@ export const navigationRoutes = [
   {
     path: '/customer-service',
     label: 'Customer Service',
+    icon: 'customer-service',
+    element: <CustomerServicePage />,
+    allowedRoles: customerServicePage,
+  },
+  {
+    path: '/hyphen-requests',
+    label: 'Hyphen Requests',
+    icon: 'hyphen-requests',
+    element: <HyphenRequestsPage />,
+    allowedRoles: ADMIN_ROLES,
+  },
+  {
+    path: '/customer-service/proposals',
+    label: 'Customer Service Proposals',
+    icon: 'customer-service',
+    element: <CustomerServicePage />,
+    allowedRoles: customerServicePage,
+  },
+  {
+    path: '/customer-service/calendar',
+    label: 'Customer Service Calendar',
+    icon: 'customer-service',
+    element: <CustomerServicePage />,
+    allowedRoles: customerServicePage,
+  },
+  {
+    path: '/customer-service/history',
+    label: 'Customer Service History',
     icon: 'customer-service',
     element: <CustomerServicePage />,
     allowedRoles: customerServicePage,

@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(22);
+select plan(19);
 
 select has_table('valtrim', 'jobs', 'Jobs table is available');
 
@@ -110,21 +110,6 @@ select ok(
 select ok(
   not has_table_privilege('authenticated', 'valtrim.job_overview', 'select'),
   'Job overview remains closed while its downstream tables are unopened'
-);
-
-select ok(
-  not has_table_privilege('authenticated', 'valtrim.communities', 'select'),
-  'The legacy Communities model remains closed'
-);
-
-select ok(
-  not has_table_privilege('authenticated', 'valtrim.plans', 'select'),
-  'Plans remain closed'
-);
-
-select ok(
-  not has_table_privilege('authenticated', 'valtrim.phases', 'select'),
-  'Sequence Sheet phases remain closed'
 );
 
 select ok(

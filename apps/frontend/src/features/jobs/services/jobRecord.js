@@ -12,6 +12,8 @@ export function toJobMutation(job) {
     code: job.code.trim().toUpperCase(),
     builder_id: requiredId(job.builderId),
     community: job.community.trim(),
+    community_latitude: Number(job.communityLatitude),
+    community_longitude: Number(job.communityLongitude),
     supervisor_id: requiredId(job.supervisorId),
     superintendent_id: requiredId(job.superintendentId),
     estimator_id: optionalId(job.estimatorId),
@@ -29,6 +31,8 @@ export function toJob(row) {
     code: row.code,
     builderId: row.builder_id,
     community: row.community,
+    communityLatitude: Number(row.community_latitude),
+    communityLongitude: Number(row.community_longitude),
     supervisorId: row.supervisor_id,
     superintendentId: row.superintendent_id,
     estimatorId: row.estimator_id,
@@ -44,6 +48,10 @@ export function toJob(row) {
     isActive: row.is_active,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    // Other names of the community that link Customer Service emails to this Job.
+    communityAliases: (row.job_community_aliases ?? [])
+      .map((entry) => ({ id: entry.id, alias: entry.alias }))
+      .sort((left, right) => left.alias.localeCompare(right.alias)),
     sequenceSheet: {
       name: row.sequence_sheet_name || 'Options Sequence Sheet',
       plans: [],

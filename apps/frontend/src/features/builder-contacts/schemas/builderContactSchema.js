@@ -89,6 +89,7 @@ export const builderExtraContactSchema = z
 export function createBuilderContactSchema(contacts, currentContactId) {
   return z
     .object({
+<<<<<<< HEAD
       name: contactNameSchema,
       typeName: contactTypeNameSchema,
       builderId: z.preprocess(
@@ -96,6 +97,26 @@ export function createBuilderContactSchema(contacts, currentContactId) {
         z.number().int().positive('Select a builder.'),
       ),
       email: contactEmailSchema,
+=======
+      name: z
+        .string()
+        .trim()
+        .min(1, 'Enter the contact’s name.')
+        .max(100, 'Use 100 characters or fewer.')
+        .regex(namePattern, 'Enter a valid name.'),
+      type: contactTypeSchema,
+      builderId: z.coerce
+        .number({ invalid_type_error: 'Select a builder.' })
+        .int()
+        .positive('Select a builder.'),
+      email: z
+        .string()
+        .trim()
+        .min(1, 'Enter an email address.')
+        .max(160, 'Use 160 characters or fewer.')
+        .email('Enter a valid email address.')
+        .transform((value) => value.toLowerCase()),
+>>>>>>> dev/leon
       phone: optionalPhone,
       phoneCountry,
       officePhone: optionalPhone,
@@ -122,5 +143,18 @@ export function createBuilderContactSchema(contacts, currentContactId) {
         })
       }
     })
+<<<<<<< HEAD
     .transform(normalizeContactPhones)
+=======
+    .transform((data) => {
+      const { phoneCountry: mobileCountry, officePhoneCountry, ...savedContact } = data
+
+      return {
+        ...savedContact,
+        builderId: Number(data.builderId),
+        phone: normalizePhoneNumber(data.phone, mobileCountry),
+        officePhone: normalizePhoneNumber(data.officePhone, officePhoneCountry),
+      }
+    })
+>>>>>>> dev/leon
 }

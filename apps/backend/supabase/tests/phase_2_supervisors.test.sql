@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(24);
+select plan(22);
 
 select has_table('valtrim', 'people', 'People table is available');
 select has_table('valtrim', 'person_roles', 'Person roles table is available');
@@ -138,19 +138,10 @@ select is(
     from pg_policies
     where schemaname = 'valtrim'
       and tablename in ('people', 'person_roles')
+      and policyname like 'supervisor\_%'
   ),
   3::bigint,
-  'People and person roles have the three expected RLS policies'
-);
-
-select ok(
-  not has_table_privilege('authenticated', 'valtrim.communities', 'select'),
-  'Communities and jobsites remain closed after the Supervisor phase'
-);
-
-select ok(
-  not has_table_privilege('authenticated', 'valtrim.plans', 'select'),
-  'Unopened Plans remain closed after the Supervisor phase'
+  'People and person roles have the three expected Supervisor RLS policies'
 );
 
 select * from finish();

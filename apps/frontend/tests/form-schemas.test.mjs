@@ -24,7 +24,7 @@ import {
   normalizePhaseCode,
 } from '../src/features/sequence-sheets/utils/phaseBuildingCodes.js'
 import { parseLotRange } from '../src/features/sequence-sheets/utils/lotRange.js'
-import { initialContacts } from '../src/features/builder-contacts/data/builderContacts.js'
+import { contactTypeOptions } from '../src/features/builder-contacts/data/builderContacts.js'
 import { createBuilderContactSchema } from '../src/features/builder-contacts/schemas/builderContactSchema.js'
 import { initialPeople } from '../src/features/people/data/people.js'
 import { personSchema } from '../src/features/people/schemas/personSchema.js'
@@ -183,6 +183,7 @@ test('job schema normalizes the fields used to create a job', () => {
     code: ' job-1005 ',
     builder: ' KB Home ',
     community: ' Andara ',
+    coordinates: ' 33.561437, -117.194302 ',
     supervisorId: 2,
     ...jobContacts,
   })
@@ -191,6 +192,8 @@ test('job schema normalizes the fields used to create a job', () => {
     code: 'JOB-1005',
     builder: 'KB Home',
     community: 'Andara',
+    communityLatitude: 33.561437,
+    communityLongitude: -117.194302,
     supervisorId: 2,
     ...jobContacts,
   })
@@ -202,6 +205,7 @@ test('job schema requires only a supervisor and a jobsite superintendent', () =>
     code: 'JOB-2001',
     builder: 'KB Home',
     community: 'Andara',
+    coordinates: '33.561437, -117.194302',
     supervisorId: 2,
     ...jobContacts,
     projectManagerId: 11,
@@ -240,6 +244,8 @@ test('job schema rejects a duplicate job number', () => {
     code: 'JOB-1005',
     builder: 'KB Home',
     community: 'Andara',
+    communityLatitude: 33.561437,
+    communityLongitude: -117.194302,
     supervisorId: 2,
     ...jobContacts,
   }
@@ -249,12 +255,30 @@ test('job schema rejects a duplicate job number', () => {
     code: ' job-1005 ',
     builder: ' kb home ',
     community: 'andara',
+    coordinates: '33.561437, -117.194302',
     supervisorId: 2,
     ...jobContacts,
   })
 
   assert.equal(duplicate.success, false)
   assert.ok(duplicate.error.flatten().fieldErrors.code)
+})
+
+test('job schema requires valid community coordinates', () => {
+  const schema = createJobSchema([], null)
+  const base = {
+    code: 'JOB-3001',
+    builder: 'KB Home',
+    community: 'Andara',
+    coordinates: '33.561437, -117.194302',
+    supervisorId: 2,
+    superintendentId: 5,
+  }
+
+  assert.equal(schema.safeParse({ ...base, coordinates: '' }).success, false)
+  assert.equal(schema.safeParse({ ...base, coordinates: '33.56' }).success, false)
+  assert.equal(schema.safeParse({ ...base, coordinates: '91, -117' }).success, false)
+  assert.equal(schema.safeParse({ ...base, coordinates: '33, -181' }).success, false)
 })
 
 test('job total lots are calculated from all phase lots', () => {
@@ -925,17 +949,16 @@ test('person schema requires an email and at least one person type', () => {
   assert.ok(result.error.flatten().fieldErrors.types)
 })
 
-test('saved job assignment catalogs keep Valtrim supervisors separate from builder contacts', () => {
+test('job assignment catalogs keep Valtrim supervisors separate from builder contacts', () => {
   assert.equal(new Set(initialPeople.map((person) => person.id)).size, initialPeople.length)
   assert.ok(
     initialPeople.every(
       (person) => person.types.length === 1 && person.types[0] === 'SUPERVISOR',
     ),
   )
-  assert.ok(
-    initialContacts.every((contact) =>
-      ['JOBSITE_SUPERINTENDENT', 'AP_CONTACT'].includes(contact.type),
-    ),
+  assert.deepEqual(
+    contactTypeOptions.map((contactType) => contactType.value),
+    ['JOBSITE_SUPERINTENDENT', 'AP_CONTACT'],
   )
 })
 

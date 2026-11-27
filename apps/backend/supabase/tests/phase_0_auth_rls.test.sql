@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(9);
+select plan(8);
 
 select has_table(
   'valtrim',
@@ -55,11 +55,6 @@ select ok(
 select ok(
   not has_table_privilege('authenticated', 'valtrim.app_users', 'update'),
   'Profile and access mutations require a trusted backend'
-);
-
-select ok(
-  not has_table_privilege('authenticated', 'valtrim.plans', 'select'),
-  'Unopened business tables remain closed until their feature migration'
 );
 
 select * from finish();

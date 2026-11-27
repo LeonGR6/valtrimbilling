@@ -29,6 +29,7 @@ import BlockRoundedIcon from '@mui/icons-material/BlockRounded'
 import ClearRoundedIcon from '@mui/icons-material/ClearRounded'
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined'
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
+import GoogleGIcon from '../../../components/common/GoogleGIcon'
 import ResponsiveCreateButton from '../../../components/common/ResponsiveCreateButton'
 import {
   CatalogEmptyState,
@@ -53,12 +54,282 @@ import JobDetails from './JobDetails.jsx'
 import { getJobPlanCount, getJobUnitCount } from '../data/jobs.js'
 import { jobContactRoles } from '../data/jobContactRoles.js'
 import { useJobs } from '../context/useJobs.js'
+<<<<<<< HEAD
 import { builderJobsPath, getJobBuilderId, jobPlansOptionsPath } from '../utils/jobRoutes.js'
 import { contactTypesToAdd, resolveJobContacts } from '../utils/jobAssignments.js'
 import { JobContactsSummary } from './JobContacts.jsx'
 import JobDialog from './JobDialog.jsx'
 
 const JOB_ROWS_PER_PAGE_OPTIONS = [5, 10, 25]
+=======
+import { createJobSchema } from '../schemas/jobSchema.js'
+import {
+  builderJobsPath,
+  getJobBuilderId,
+  jobPlansOptionsPath,
+} from '../utils/jobRoutes.js'
+import {
+  formatJobCoordinates,
+  jobCoordinatesGoogleMapsUrl,
+  parseJobCoordinates,
+} from '../utils/jobCoordinates.js'
+
+const personName = (index, id) => index.get(id)?.name ?? 'Unassigned'
+
+function JobDialog({
+  builderOptions,
+  builderIdsByName,
+  defaultBuilder,
+  supervisors,
+  superintendents,
+  job,
+  jobs,
+  onClose,
+  onCreateSuperintendent,
+  onSave,
+  submitting,
+}) {
+
+  const schema = useMemo(
+    () => createJobSchema(jobs, job?.id),
+    [job?.id, jobs],
+  )
+  const {
+    control,
+    register,
+    handleSubmit,
+    formState: { errors },
+  } = useForm({
+    resolver: zodResolver(schema),
+    defaultValues: job
+      ? {
+          code: job.code,
+          builder: job.builder,
+          community: job.community,
+          coordinates: formatJobCoordinates(
+            job.communityLatitude,
+            job.communityLongitude,
+          ),
+          supervisorId: job.supervisorId ?? null,
+          superintendentId: job.superintendentId ?? null,
+        }
+      : { ...emptyJob, builder: defaultBuilder ?? '' },
+    mode: 'onTouched',
+    reValidateMode: 'onChange',
+  })
+  const selectedBuilderName = useWatch({ control, name: 'builder' })
+  const coordinatesValue = useWatch({ control, name: 'coordinates' })
+  const selectedBuilderId = builderIdsByName.get(selectedBuilderName)
+  const coordinates = parseJobCoordinates(coordinatesValue)
+  const coordinatesUrl = coordinates
+    ? jobCoordinatesGoogleMapsUrl(coordinates.latitude, coordinates.longitude)
+    : ''
+  const availableSuperintendents = useMemo(
+    () => superintendents.filter(
+      (contact) =>
+        contact.type === 'JOBSITE_SUPERINTENDENT'
+        && (
+          contact.id === job?.superintendentId
+          || (
+            contact.isActive
+            && (!selectedBuilderId || contact.builderId === selectedBuilderId)
+          )
+        ),
+    ),
+    [job?.superintendentId, selectedBuilderId, superintendents],
+  )
+
+  return (
+    <Dialog
+      open
+      onClose={submitting ? undefined : onClose}
+      fullWidth
+      maxWidth="md"
+      component="form"
+      onSubmit={handleSubmit(onSave)}
+      noValidate
+    >
+      <DialogTitle sx={{ pb: 1 }}>
+        <Typography variant="h6" component="div" fontWeight={700}>
+          {job ? 'Edit job' : 'Create new job'}
+        </Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+          Add the identifying and assigned team information for this job.
+        </Typography>
+      </DialogTitle>
+
+      <DialogContent sx={{ pt: '16px !important' }}>
+        <Stack spacing={3}>
+          <Box>
+            <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1.5 }}>
+              Job information
+            </Typography>
+            <Stack spacing={2}>
+              <TextField
+                label="Job#"
+                {...register('code')}
+                error={Boolean(errors.code)}
+                helperText={errors.code?.message ?? 'Example: JOB-1005'}
+                fullWidth
+                slotProps={{ htmlInput: { maxLength: 30 } }}
+              />
+              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
+                <FormControl fullWidth error={Boolean(errors.builder)}>
+                  <InputLabel id="job-builder-label">Builder / Client</InputLabel>
+                  <Controller
+                    name="builder"
+                    control={control}
+                    render={({ field }) => (
+                      <Select
+                        {...field}
+                        labelId="job-builder-label"
+                        label="Builder / Client"
+                      >
+                        {builderOptions.map((builder) => (
+                          <MenuItem key={builder.id} value={builder.name}>
+                            {builder.name}
+                          </MenuItem>
+                        ))}
+                      </Select>
+                    )}
+                  />
+                  <Typography
+                    variant="caption"
+                    color={errors.builder ? 'error' : 'text.secondary'}
+                    sx={{ mt: 0.5, ml: 1.75, minHeight: 18 }}
+                  >
+                    {errors.builder?.message ?? 'Select a builder from the catalog.'}
+                  </Typography>
+                </FormControl>
+
+                <TextField
+                  label="Community"
+                  {...register('community')}
+                  error={Boolean(errors.community)}
+                  helperText={errors.community?.message ?? 'Example: Andara'}
+                  fullWidth
+                  slotProps={{ htmlInput: { maxLength: 100 } }}
+                />
+              </Stack>
+              <Stack
+                direction={{ xs: 'column', sm: 'row' }}
+                spacing={2}
+                sx={{ alignItems: { sm: 'flex-start' } }}
+              >
+                <TextField
+                  label="Community coordinates"
+                  {...register('coordinates')}
+                  error={Boolean(errors.coordinates)}
+                  helperText={
+                    errors.coordinates?.message
+                    ?? 'Latitude and longitude, for example: 33.977882, -117.345208'
+                  }
+                  fullWidth
+                  required
+                />
+                <Button
+                  component="a"
+                  href={coordinatesUrl || undefined}
+                  target={coordinatesUrl ? '_blank' : undefined}
+                  rel={coordinatesUrl ? 'noreferrer' : undefined}
+                  variant="outlined"
+                  startIcon={<GoogleGIcon />}
+                  disabled={!coordinatesUrl}
+                  aria-label="Open in Google Maps"
+                  sx={{
+                    minHeight: 56,
+                    flexShrink: 0,
+                    whiteSpace: 'nowrap',
+                    '&.Mui-disabled .MuiButton-startIcon': { filter: 'grayscale(1)', opacity: 0.5 },
+                  }}
+                >
+                  Maps
+                </Button>
+              </Stack>
+            </Stack>
+          </Box>
+
+          <Box>
+            <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1.5 }}>
+              Job team
+            </Typography>
+            <Stack
+              direction={{ xs: 'column', sm: 'row' }}
+              spacing={2}
+              sx={{ alignItems: 'flex-start' }}
+            >
+              <PersonPickerField
+                name="supervisorId"
+                label="Supervisor"
+                helperText="Loaded from the saved Crews & Foremen roster."
+                control={control}
+                error={errors.supervisorId}
+                people={supervisors}
+              />
+              <PersonPickerField
+                name="superintendentId"
+                label="Jobsite Superintendent"
+                helperText="Builder contact responsible for the jobsite."
+                control={control}
+                error={errors.superintendentId}
+                people={availableSuperintendents}
+                onCreate={onCreateSuperintendent
+                  ? (draft) => onCreateSuperintendent(draft, selectedBuilderName)
+                  : undefined}
+                createTitle="Add new superintendent"
+                extraFields={['phone']}
+              />
+            </Stack>
+          </Box>
+
+          <Alert severity="info">
+            After creating the Job, open it to configure its Plans and Options sequence sheet.
+          </Alert>
+        </Stack>
+      </DialogContent>
+
+      <DialogActions sx={{ px: 3, pb: 2.5, pt: 1.5 }}>
+        <Button color="inherit" onClick={onClose} disabled={submitting}>
+          Cancel
+        </Button>
+        <Button type="submit" variant="contained" disabled={submitting} disableElevation>
+          {job ? 'Save changes' : 'Create job'}
+        </Button>
+      </DialogActions>
+    </Dialog>
+  )
+}
+
+function SummaryCard({ icon, label, value }) {
+  return (
+    <Card variant="outlined" sx={{ flex: 1, minWidth: 180 }}>
+      <CardContent sx={{ display: 'flex', alignItems: 'center', gap: 1.5, p: '16px !important' }}>
+        <Box
+          sx={{
+            width: 40,
+            height: 40,
+            borderRadius: 1.5,
+            display: 'grid',
+            placeItems: 'center',
+            bgcolor: 'primary.light',
+            color: 'primary.main',
+          }}
+        >
+          {icon}
+        </Box>
+        <Box>
+          <Typography variant="h6" fontWeight={700} sx={{ lineHeight: 1.2 }}>
+            {value}
+          </Typography>
+          <Typography variant="caption" color="text.secondary">
+            {label}
+          </Typography>
+        </Box>
+      </CardContent>
+    </Card>
+  )
+}
+>>>>>>> dev/leon
 
 export default function JobsCatalog() {
   const navigate = useNavigate()
@@ -177,7 +448,6 @@ export default function JobsCatalog() {
         builder.name === selectedBuilder?.name ||
         builder.name === editTarget?.builder,
     )
-    .map((builder) => builder.name)
   const availableSupervisors = supervisors.filter(
     (supervisor) => supervisor.isActive || supervisor.id === editTarget?.supervisorId,
   )

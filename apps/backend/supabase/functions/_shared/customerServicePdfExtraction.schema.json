@@ -1,0 +1,430 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://valtrim.com/schemas/customer-service-pdf-extraction-1.0.json",
+  "title": "Customer Service PDF extraction",
+  "description": "Structured facts and reviewable suggestions extracted from one Customer Service source PDF. Missing facts must be null or an empty array; values must never be invented.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "document",
+    "property",
+    "contacts",
+    "serviceItems",
+    "warnings"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "const": "1.0",
+      "description": "Version of this extraction contract."
+    },
+    "document": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "documentType",
+        "issuerName",
+        "documentTitle",
+        "workOrderNumbers",
+        "orderDate",
+        "scheduledDate",
+        "sourceEmailSentDate",
+        "sourceEmailFrom",
+        "sourceEmailSubject"
+      ],
+      "properties": {
+        "documentType": {
+          "type": "string",
+          "enum": [
+            "HOMEOWNER_WARRANTY_REQUEST",
+            "WORK_ORDER",
+            "EMAIL_EXPORT",
+            "OTHER",
+            "UNKNOWN"
+          ],
+          "description": "The visible document type. Use UNKNOWN when it cannot be determined."
+        },
+        "issuerName": {
+          "anyOf": [
+            { "type": "string", "minLength": 1, "maxLength": 200 },
+            { "type": "null" }
+          ],
+          "description": "Organization that issued the document, not the supplier or homeowner."
+        },
+        "documentTitle": {
+          "anyOf": [
+            { "type": "string", "minLength": 1, "maxLength": 250 },
+            { "type": "null" }
+          ],
+          "description": "Title printed on the document."
+        },
+        "workOrderNumbers": {
+          "type": "array",
+          "maxItems": 20,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1, "maxLength": 100 },
+          "description": "All explicitly labeled work-order or claim identifiers."
+        },
+        "orderDate": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+            },
+            { "type": "null" }
+          ],
+          "description": "Explicit order date normalized as YYYY-MM-DD. Do not use COE, completion, scheduled, warranty-effective or PDF-generated dates."
+        },
+        "scheduledDate": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+            },
+            { "type": "null" }
+          ],
+          "description": "Single explicit Scheduled Date normalized as YYYY-MM-DD. Keep it separate from Order Date. Use null when blank or when multiple distinct scheduled dates are present."
+        },
+        "sourceEmailSentDate": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+            },
+            { "type": "null" }
+          ],
+          "description": "Date of the original external email that delivered this request to a @valtriminc.com recipient. Ignore later forwards between @valtriminc.com users. Use null when no qualifying Sent or Date header is visible."
+        },
+        "sourceEmailFrom": {
+          "anyOf": [
+            { "type": "string", "minLength": 1, "maxLength": 200 },
+            { "type": "null" }
+          ],
+          "description": "Email sender only when the PDF explicitly displays email-message metadata labeled From. Do not substitute a contact or company email."
+        },
+        "sourceEmailSubject": {
+          "anyOf": [
+            { "type": "string", "minLength": 1, "maxLength": 250 },
+            { "type": "null" }
+          ],
+          "description": "Email subject only when explicitly displayed as email-message metadata."
+        }
+      }
+    },
+    "property": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "builderName",
+        "communityName",
+        "lotNumber",
+        "model",
+        "address",
+        "coordinates"
+      ],
+      "properties": {
+        "builderName": {
+          "anyOf": [
+            { "type": "string", "minLength": 1, "maxLength": 200 },
+            { "type": "null" }
+          ],
+          "description": "Builder name stated by the document. A logo may identify the issuer but must not fill this field when the builder is explicitly blank."
+        },
+        "communityName": {
+          "anyOf": [
+            { "type": "string", "minLength": 1, "maxLength": 200 },
+            { "type": "null" }
+          ],
+          "description": "Property project, tract or community name."
+        },
+        "lotNumber": {
+          "anyOf": [
+            { "type": "string", "minLength": 1, "maxLength": 80 },
+            { "type": "null" }
+          ],
+          "description": "Lot identifier exactly as represented in the document. Preserve meaningful leading zeroes."
+        },
+        "model": {
+          "anyOf": [
+            { "type": "string", "minLength": 1, "maxLength": 100 },
+            { "type": "null" }
+          ],
+          "description": "Property model when explicitly labeled."
+        },
+        "address": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "street",
+            "unit",
+            "city",
+            "state",
+            "postalCode",
+            "formatted"
+          ],
+          "properties": {
+            "street": {
+              "anyOf": [
+                { "type": "string", "minLength": 1, "maxLength": 250 },
+                { "type": "null" }
+              ]
+            },
+            "unit": {
+              "anyOf": [
+                { "type": "string", "minLength": 1, "maxLength": 100 },
+                { "type": "null" }
+              ]
+            },
+            "city": {
+              "anyOf": [
+                { "type": "string", "minLength": 1, "maxLength": 120 },
+                { "type": "null" }
+              ]
+            },
+            "state": {
+              "anyOf": [
+                { "type": "string", "minLength": 1, "maxLength": 80 },
+                { "type": "null" }
+              ]
+            },
+            "postalCode": {
+              "anyOf": [
+                { "type": "string", "minLength": 1, "maxLength": 20 },
+                { "type": "null" }
+              ]
+            },
+            "formatted": {
+              "anyOf": [
+                { "type": "string", "minLength": 1, "maxLength": 500 },
+                { "type": "null" }
+              ],
+              "description": "Complete service-property address assembled only from visible property-address parts."
+            }
+          },
+          "description": "Address where Valtrim will perform the work. Never use the issuer or supplier office address."
+        },
+        "coordinates": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["raw", "latitude", "longitude"],
+          "properties": {
+            "raw": {
+              "anyOf": [
+                { "type": "string", "minLength": 1, "maxLength": 100 },
+                { "type": "null" }
+              ],
+              "description": "Coordinates exactly as printed in the document."
+            },
+            "latitude": {
+              "anyOf": [
+                { "type": "number", "minimum": -90, "maximum": 90 },
+                { "type": "null" }
+              ]
+            },
+            "longitude": {
+              "anyOf": [
+                { "type": "number", "minimum": -180, "maximum": 180 },
+                { "type": "null" }
+              ]
+            }
+          },
+          "description": "Coordinates must remain null when they are not explicitly present. Never geocode or estimate them."
+        }
+      }
+    },
+    "contacts": {
+      "type": "array",
+      "maxItems": 20,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "role",
+          "name",
+          "phones",
+          "email",
+          "sourceLabel",
+          "sourcePage"
+        ],
+        "properties": {
+          "role": {
+            "type": "string",
+            "enum": [
+              "HOMEOWNER",
+              "PRIMARY_CONTACT",
+              "BUILDER_CONTACT",
+              "WARRANTY_REP",
+              "OTHER",
+              "UNKNOWN"
+            ],
+            "description": "Role explicitly supported by this source. An email sender, builder signature or warranty representative is not a HOMEOWNER merely because the homeowner's name is absent."
+          },
+          "name": {
+            "anyOf": [
+              { "type": "string", "minLength": 1, "maxLength": 200 },
+              { "type": "null" }
+            ],
+            "description": "The person's name exactly as written in this source, including a name immediately before the homeowner's phone/address in a warranty email. Put a person's name here, not in sourceLabel. Return null when absent; never use a role/field label, a department, an address or a missing-name placeholder."
+          },
+          "phones": {
+            "type": "array",
+            "maxItems": 10,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["type", "number"],
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "enum": ["HOME", "MOBILE", "WORK", "OTHER", "UNKNOWN"]
+                },
+                "number": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 50,
+                  "description": "Phone number exactly as printed."
+                }
+              }
+            }
+          },
+          "email": {
+            "anyOf": [
+              { "type": "string", "minLength": 1, "maxLength": 200 },
+              { "type": "null" }
+            ]
+          },
+          "sourceLabel": {
+            "anyOf": [
+              { "type": "string", "minLength": 1, "maxLength": 100 },
+              { "type": "null" }
+            ],
+            "description": "Only a visible field or role label such as Homeowner Contact Info, Owner, Contact or Warranty Rep. Never put a person's name or contact value here instead of name. Return null if no label is printed."
+          },
+          "sourcePage": {
+            "anyOf": [
+              { "type": "integer", "minimum": 1 },
+              { "type": "null" }
+            ]
+          }
+        }
+      },
+      "description": "Every relevant person, preserving separate roles and allowing incomplete contact details."
+    },
+    "serviceItems": {
+      "type": "array",
+      "maxItems": 100,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "sourceItemNumber",
+          "description",
+          "requestedAction",
+          "location",
+          "assignedVendor",
+          "assignedToValtrim",
+          "sourceCategory",
+          "suggestedServiceKind",
+          "suggestedWorkType",
+          "suggestedServiceTask",
+          "sourcePage",
+          "reviewReasons"
+        ],
+        "properties": {
+          "sourceItemNumber": {
+            "anyOf": [
+              { "type": "string", "minLength": 1, "maxLength": 100 },
+              { "type": "null" }
+            ]
+          },
+          "description": {
+            "anyOf": [
+              { "type": "string", "minLength": 1, "maxLength": 4000 },
+              { "type": "null" }
+            ],
+            "description": "Problem or service item as stated in the source."
+          },
+          "requestedAction": {
+            "anyOf": [
+              { "type": "string", "minLength": 1, "maxLength": 2000 },
+              { "type": "null" }
+            ],
+            "description": "Explicitly requested repair, adjustment or replacement. Do not infer an action from damage alone."
+          },
+          "location": {
+            "anyOf": [
+              { "type": "string", "minLength": 1, "maxLength": 500 },
+              { "type": "null" }
+            ],
+            "description": "Location within the property, such as Primary Bedroom."
+          },
+          "assignedVendor": {
+            "anyOf": [
+              { "type": "string", "minLength": 1, "maxLength": 200 },
+              { "type": "null" }
+            ],
+            "description": "Supplier or subcontractor explicitly assigned to this item or to the whole work order."
+          },
+          "assignedToValtrim": {
+            "type": ["boolean", "null"],
+            "description": "True only when the document explicitly assigns this item or its whole work order to Valtrim; false when it explicitly assigns another vendor; null when assignment is not stated."
+          },
+          "sourceCategory": {
+            "anyOf": [
+              { "type": "string", "minLength": 1, "maxLength": 200 },
+              { "type": "null" }
+            ],
+            "description": "Category or trade printed by the source, before mapping to Valtrim catalogs."
+          },
+          "suggestedServiceKind": {
+            "enum": ["Adjustment", "Replacement", "Paid Extra", null],
+            "description": "Suggested Valtrim service kind. Use null when the document does not support a confident classification."
+          },
+          "suggestedWorkType": {
+            "enum": [
+              "Exterior Frames",
+              "Doors",
+              "Moldings",
+              "Hardware",
+              "Weatherstripping",
+              "Shelving",
+              null
+            ],
+            "description": "Suggested current Valtrim work type or null."
+          },
+          "suggestedServiceTask": {
+            "enum": [
+              "GENERAL_FIX",
+              "EXTERIOR_DOOR_REPLACEMENT",
+              "EXTERIOR_FRAME_REPLACEMENT",
+              "SHUTTER_REPLACEMENT",
+              "SHELVING_REPLACEMENT",
+              null
+            ],
+            "description": "Suggested current Valtrim service-task identifier. Never infer replacement unless the source explicitly requests replacement."
+          },
+          "sourcePage": {
+            "anyOf": [
+              { "type": "integer", "minimum": 1 },
+              { "type": "null" }
+            ]
+          },
+          "reviewReasons": {
+            "type": "array",
+            "maxItems": 20,
+            "items": { "type": "string", "minLength": 1, "maxLength": 500 },
+            "description": "Short reasons why a coordinator must review this item or its suggested classifications."
+          }
+        }
+      },
+      "description": "All service items in the source, including items assigned to other vendors."
+    },
+    "warnings": {
+      "type": "array",
+      "maxItems": 50,
+      "items": { "type": "string", "minLength": 1, "maxLength": 500 },
+      "description": "Document-level ambiguities, missing information and conflicts that require coordinator review."
+    }
+  }
+}

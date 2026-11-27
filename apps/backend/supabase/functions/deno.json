@@ -1,6 +1,8 @@
 {
   "imports": {
     "@std/assert": "jsr:@std/assert@1",
-    "@supabase/supabase-js": "jsr:@supabase/supabase-js@2"
+    "@supabase/supabase-js": "jsr:@supabase/supabase-js@2",
+    "htmlparser2": "npm:htmlparser2@10.0.0",
+    "pdf-lib": "npm:pdf-lib@1.17.1"
   }
 }

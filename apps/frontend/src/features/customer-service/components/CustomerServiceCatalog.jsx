@@ -1,269 +1,328 @@
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
+import { useBeforeUnload, useBlocker, useLocation, useNavigate } from 'react-router-dom'
 import {
   Alert,
   Badge,
   Box,
   Button,
+  Chip,
+  CircularProgress,
+  Divider,
   Dialog,
   DialogActions,
   DialogContent,
+  DialogContentText,
   DialogTitle,
-  Divider,
-  Drawer,
   FormControl,
   InputAdornment,
-  InputLabel,
-  Menu,
   MenuItem,
   Popover,
   Select,
   Snackbar,
   Stack,
+  Tab,
+  Tabs,
   TextField,
   Typography,
-  useMediaQuery,
 } from '@mui/material'
-import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
-import EditOutlinedIcon from '@mui/icons-material/EditOutlined'
-import LockOpenRoundedIcon from '@mui/icons-material/LockOpenRounded'
-import LockOutlinedIcon from '@mui/icons-material/LockOutlined'
+import CalendarMonthRoundedIcon from '@mui/icons-material/CalendarMonthRounded'
+import EventNoteRoundedIcon from '@mui/icons-material/EventNoteRounded'
 import FilterListRoundedIcon from '@mui/icons-material/FilterListRounded'
+import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded'
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
+import ViewListRoundedIcon from '@mui/icons-material/ViewListRounded'
 import ResponsiveCreateButton from '../../../components/common/ResponsiveCreateButton'
-import { useBuilders } from '../../builders/context/useBuilders.js'
-import RequestDetailPanel from './RequestDetailPanel.jsx'
-import ServiceRequestsTable from './ServiceRequestsTable.jsx'
-import ServiceSummaryCards from './ServiceSummaryCards.jsx'
+import { useAuth } from '../../auth/context/useAuth.js'
+import { useJobs } from '../../jobs/context/useJobs.js'
+import { useCustomerServicePrototype } from '../context/customerServicePrototypeContext.js'
+import { priorityOptions } from '../data/customerService.js'
 import {
-  appointmentStateOptions,
-  defaultCoordinatorId,
-  initialRequests,
-  isClosed,
-  openStatuses,
-  priorityOptions,
-  statusOptions,
-  statusesByValue,
-} from '../data/customerService.js'
-import { toIsoDate } from '../utils/dates.js'
-import { sortOptions, sortRequests } from '../utils/sorting.js'
-import RequestDialog from './RequestDialog.jsx'
+  canEditRequestInView,
+  filterAndSortRequestInbox,
+  findRequestForView,
+  customerServiceViewFromPath,
+  customerServiceViewPaths,
+  inboxFilterOptions,
+  inboxSortOptions,
+  paginateRequestInbox,
+  proposalWorkspacePath,
+  requestsForView,
+} from '../utils/requestInbox.js'
+import {
+  createPrototypeProposalDraft, proposalSentNotice, prototypePlanningHours, registrationNotice,
+} from '../utils/proposalDraft.js'
+import CustomerServiceCalendar from './CustomerServiceCalendar.jsx'
+import EmailInboxPanel from './EmailInboxPanel.jsx'
+import NewRequestPrototypeDialog from './NewRequestPrototypeDialog.jsx'
+import ProposalWorkspace from './ProposalWorkspace.jsx'
+import RequestHistory from './RequestHistory.jsx'
+import RequestInboxList from './RequestInboxList.jsx'
+import RequestViewDialog from './RequestViewDialog.jsx'
+import ServiceSummaryCards from './ServiceSummaryCards.jsx'
+import SourcePdfPreviewDialog from './SourcePdfPreviewDialog.jsx'
+import TravelCheckAlert from './TravelCheckAlert.jsx'
 
-// The mockup shows six rows per page, which is also about as much as fits
-// before the coordinator has to scroll.
-const ROWS_PER_PAGE = 6
+const viewCopy = {
+  REQUESTS: {
+    title: 'Customer Service Requests',
+    description: 'Capture, complete and review requests before preparing appointment proposals.',
+  },
+  PROPOSALS: {
+    title: 'Proposal Workspace',
+    description: 'Prepare ready requests. Follow up on sent proposals or customers requiring contact.',
+  },
+  CALENDAR: {
+    title: 'Customer Service Calendar',
+    description: 'Confirmed service visits, technician schedules and completed work.',
+  },
+  HISTORY: {
+    title: 'Customer Service History',
+    description: 'Completed requests. Search by folio, customer, address or builder and open one to review it.',
+  },
+}
 
 export default function CustomerServiceCatalog() {
-  const { builders } = useBuilders()
-  const [requests, setRequests] = useState(initialRequests)
+  const location = useLocation()
+  const navigate = useNavigate()
+  const { profile, user } = useAuth()
+  const activeView = customerServiceViewFromPath(location.pathname)
+  const selectedWorkspaceId = new URLSearchParams(location.search).get('request')
+  const currentUserName = profile?.name || profile?.email || user?.email || 'Signed-in user'
+  const {
+    requests, loading, error, reloadRequests, emailAutomation, emailAutomationError, refreshEmailAutomation,
+    createRequest: persistRequest, updateRequest: persistUpdate, retrySourcePdf, pendingPdfIds,
+    recoverRequest: persistRecovery,
+    completeRecovery,
+    markRequestReady: persistApproval,
+    proposalDrafts, setProposalDrafts, technicians, scheduleError,
+  } = useCustomerServicePrototype()
+  const { addCommunityAlias } = useJobs()
+  const draftDirty = useRef(false)
+  const [pendingDraftNavigation, setPendingDraftNavigation] = useState(null)
+  const reportDraftDirty = useCallback((dirty) => { draftDirty.current = dirty }, [])
+  const blocker = useBlocker(useCallback(({ currentLocation, nextLocation }) => (
+    draftDirty.current && (currentLocation.pathname !== nextLocation.pathname
+      || currentLocation.search !== nextLocation.search)
+  ), []))
+  useBeforeUnload(useCallback((event) => {
+    if (!draftDirty.current) return
+    event.preventDefault()
+    event.returnValue = ''
+  }, []))
+  const beforeDraftNavigation = (action) => {
+    if (draftDirty.current) setPendingDraftNavigation(() => action)
+    else action()
+  }
+  const keepDraftEditing = () => {
+    setPendingDraftNavigation(null)
+    if (blocker.state === 'blocked') blocker.reset()
+  }
+  const discardDraftChanges = () => {
+    reportDraftDirty(false)
+    setPendingDraftNavigation(null)
+    if (blocker.state === 'blocked') blocker.proceed()
+    else pendingDraftNavigation?.()
+  }
   const [search, setSearch] = useState('')
-  const [builderFilter, setBuilderFilter] = useState('all')
-  // Closed and completed work piles up month after month, so the screen opens
-  // on what is still live.
-  const [statusFilter, setStatusFilter] = useState('open')
+  const [stageFilter, setStageFilter] = useState('all')
+  const [areaFilter, setAreaFilter] = useState('all')
   const [priorityFilter, setPriorityFilter] = useState('all')
-  const [appointmentFilter, setAppointmentFilter] = useState('all')
-  // Highest folio first. "Next up" stays one pick away in the same control.
-  const [sortBy, setSortBy] = useState('FOLIO')
-  const [filtersAnchor, setFiltersAnchor] = useState(null)
+  const [sortBy, setSortBy] = useState('ACTION_REQUIRED')
+  const [requestDialog, setRequestDialog] = useState(null)
+  const [viewRequest, setViewRequest] = useState(null)
+  const [emailRequestId, setEmailRequestId] = useState(null)
+  const [pdfPreviewRequest, setPdfPreviewRequest] = useState(null)
   const [page, setPage] = useState(0)
-  const [menuAnchor, setMenuAnchor] = useState(null)
-  const [selectedRequest, setSelectedRequest] = useState(null)
-  const [selectedId, setSelectedId] = useState(initialRequests[0]?.id ?? null)
-  const [panelOpen, setPanelOpen] = useState(false)
-  const [dialogState, setDialogState] = useState(null)
-  const [deleteTarget, setDeleteTarget] = useState(null)
+  const [rowsPerPage, setRowsPerPage] = useState(10)
+  const [filtersAnchor, setFiltersAnchor] = useState(null)
   const [notice, setNotice] = useState(null)
-  const builderOptions = useMemo(
-    () => builders.map((builder) => ({
-      value: builder.code,
-      label: builder.name,
-    })),
-    [builders],
+  const [importPanelRevision, setImportPanelRevision] = useState(0)
+  const visibleRequest = viewRequest != null
+    ? findRequestForView(requests, viewRequest.id, activeView)
+    : requests.find((entry) => String(entry.id) === String(emailRequestId)) ?? null
+  const editCandidate = findRequestForView(requests, requestDialog?.request?.id, activeView)
+  // Keep the record/version opened by the user. A later provider refresh must
+  // not turn stale form values into a write using the newest concurrency token.
+  const editableRequest = canEditRequestInView(editCandidate, activeView) ? requestDialog.request : null
+  const sourceRequest = emailRequestId != null && viewRequest == null
+    ? requests.find((entry) => String(entry.id) === String(pdfPreviewRequest?.id)) ?? null
+    : findRequestForView(requests, pdfPreviewRequest?.id, activeView)
+
+  const reviewRequests = useMemo(() => requestsForView(requests), [requests])
+  const areaOptions = useMemo(
+    () => [...new Set(reviewRequests.map((request) => request.community).filter(Boolean))].sort(),
+    [reviewRequests],
   )
-  const builderLabelsById = useMemo(
-    () => Object.fromEntries(
-      builderOptions.map(({ value, label }) => [value, label]),
-    ),
-    [builderOptions],
+
+  const visibleRequests = useMemo(
+    () => filterAndSortRequestInbox(requests, {
+      search,
+      stage: stageFilter,
+      area: areaFilter,
+      priority: priorityFilter,
+      sortBy,
+    }),
+    [areaFilter, priorityFilter, requests, search, sortBy, stageFilter],
   )
 
-  // Wide screens keep the panel beside the table, the way the mockup shows it.
-  // Below that it would leave the table unreadable, so it slides over instead.
-  const isWide = useMediaQuery((theme) => theme.breakpoints.up('lg'))
-  const panelRequest =
-    requests.find((request) => request.id === selectedId) ?? null
-
-  const openPanel = (request) => {
-    setSelectedId(request.id)
-    setPanelOpen(true)
-  }
-
+  const paginatedRequests = useMemo(
+    () => paginateRequestInbox(visibleRequests, page, rowsPerPage),
+    [page, rowsPerPage, visibleRequests],
+  )
   const extraFilterCount =
-    (priorityFilter === 'all' ? 0 : 1) + (appointmentFilter === 'all' ? 0 : 1)
-
-  const filteredRequests = useMemo(() => {
-    const query = search.trim().toLowerCase()
-
-    const matching = requests.filter((request) => {
-      const matchesSearch =
-        !query ||
-        [
-          request.requestNumber,
-          request.community,
-          request.lotNumber,
-          request.street,
-          request.contactName,
-          request.contactPhone,
-          request.contactEmail,
-          request.issue,
-          builderLabelsById[request.builder],
-        ]
-          .filter(Boolean)
-          .join(' ')
-          .toLowerCase()
-          .includes(query)
-      const matchesBuilder =
-        builderFilter === 'all' || request.builder === builderFilter
-      const matchesStatus =
-        statusFilter === 'all' ||
-        (statusFilter === 'open'
-          ? openStatuses.includes(request.status)
-          : request.status === statusFilter)
-      const matchesPriority =
-        priorityFilter === 'all' || request.priority === priorityFilter
-      const matchesAppointment =
-        appointmentFilter === 'all' ||
-        request.appointmentState === appointmentFilter
-
-      return (
-        matchesSearch &&
-        matchesBuilder &&
-        matchesStatus &&
-        matchesPriority &&
-        matchesAppointment
-      )
-    })
-
-    return sortRequests(matching, sortBy)
-  }, [
-    requests,
-    search,
-    builderFilter,
-    statusFilter,
-    priorityFilter,
-    appointmentFilter,
-    builderLabelsById,
-    sortBy,
-  ])
-
-  const visibleRequests = filteredRequests.slice(
-    page * ROWS_PER_PAGE,
-    page * ROWS_PER_PAGE + ROWS_PER_PAGE,
-  )
-
-  const handleMenuOpen = (event, request) => {
-    setMenuAnchor(event.currentTarget)
-    setSelectedRequest(request)
-  }
-
-  const handleMenuClose = () => {
-    setMenuAnchor(null)
-    setSelectedRequest(null)
-  }
-
-  const openEditDialog = () => {
-    setDialogState({ mode: 'edit', request: selectedRequest })
-    handleMenuClose()
-  }
-
-  const openDeleteDialog = () => {
-    setDeleteTarget(selectedRequest)
-    handleMenuClose()
-  }
-
-  // Closing keeps the status the request had, so reopening lands it back where
-  // it was instead of guessing. Hiding Edit and Delete is a courtesy, not a
-  // lock — the real one is an RLS policy, once the table lives in Postgres.
-  const closeRequest = () => {
-    const target = selectedRequest
-
-    setRequests((current) =>
-      current.map((request) =>
-        request.id === target.id
-          ? {
-              ...request,
-              statusBeforeClose: request.status,
-              status: 'CLOSED',
-              closedAt: toIsoDate(new Date()),
-              closedById: defaultCoordinatorId,
-            }
-          : request,
-      ),
-    )
-    setNotice({
-      severity: 'success',
-      message: `${target.requestNumber} closed.`,
-    })
-    handleMenuClose()
-  }
-
-  const reopenRequest = () => {
-    const target = selectedRequest
-
-    setRequests((current) =>
-      current.map((request) =>
-        request.id === target.id
-          ? {
-              ...request,
-              status: request.statusBeforeClose || 'CONTACT_NEEDED',
-              statusBeforeClose: '',
-              closedAt: '',
-              closedById: '',
-            }
-          : request,
-      ),
-    )
-    setNotice({
-      severity: 'success',
-      message: `${target.requestNumber} reopened.`,
-    })
-    handleMenuClose()
-  }
-
-  const handleSave = (form) => {
-    if (dialogState?.mode === 'edit') {
-      setRequests((current) =>
-        current.map((request) =>
-          request.id === dialogState.request.id
-            ? { ...request, ...form }
-            : request,
-        ),
-      )
-      setNotice({ severity: 'success', message: 'Request updated.' })
-    } else {
-      const id = Date.now()
-      setRequests((current) => [{ ...form, id }, ...current])
-      setSelectedId(id)
-      setPage(0)
-      setNotice({ severity: 'success', message: 'Request created.' })
-    }
-
-    setDialogState(null)
-  }
-
-  const handleDelete = () => {
-    setRequests((current) =>
-      current.filter((request) => request.id !== deleteTarget.id),
-    )
-    setDeleteTarget(null)
-    setPage(0)
-    setNotice({ severity: 'success', message: 'Request deleted.' })
-  }
+    (priorityFilter === 'all' ? 0 : 1) +
+    (sortBy === 'ACTION_REQUIRED' ? 0 : 1)
 
   const clearFilters = () => {
+    setSearch('')
+    setStageFilter('all')
+    setAreaFilter('all')
     setPriorityFilter('all')
-    setAppointmentFilter('all')
+    setSortBy('ACTION_REQUIRED')
     setPage(0)
+  }
+
+  const changeView = (view, requestId) => {
+    setFiltersAnchor(null)
+    setRequestDialog(null)
+    setViewRequest(null)
+    setEmailRequestId(null)
+    setPdfPreviewRequest(null)
+    navigate(view === 'PROPOSALS' && requestId
+      ? proposalWorkspacePath(requestId)
+      : customerServiceViewPaths[view])
+  }
+
+  const openProposalWorkspace = (request) => {
+    if (!request) {
+      changeView('PROPOSALS')
+      return
+    }
+    const current = requests.find((entry) => entry.id === request.id)
+    if (!current || requestsForView([current], 'PROPOSALS').length === 0) {
+      setNotice({ severity: 'warning', message: 'Review this request before opening Proposal Workspace.' })
+      return
+    }
+    changeView('PROPOSALS', current.id)
+  }
+
+  // The community name the coordinator chose to remember for the Job (26 Nov 2026). The
+  // request is already saved, so a failure only adds a warning to the notice.
+  const rememberCommunityAlias = async (communityAlias) => {
+    if (!communityAlias) return null
+    try {
+      await addCommunityAlias(communityAlias)
+      return { severity: 'success', text: `Future emails that say “${communityAlias.alias}” will link to ${communityAlias.jobLabel}.` }
+    } catch (aliasError) {
+      return { severity: 'warning', text: `“${communityAlias.alias}” was not remembered for ${communityAlias.jobLabel}: ${aliasError.message}` }
+    }
+  }
+  const noticeWithAlias = (message, alias) => ({
+    severity: alias?.severity === 'warning' ? 'warning' : 'success',
+    message: [message, alias?.text].filter(Boolean).join(' '),
+  })
+
+  const createRequest = async (values, attachmentNames, submissionKey, { communityAlias = null } = {}) => {
+    const request = requestDialog?.mode === 'recover'
+      ? await persistRecovery(requestDialog.emailImport, values)
+      : await persistRequest(values, submissionKey)
+    const alias = await rememberCommunityAlias(communityAlias)
+    if (requestDialog?.mode === 'recover') setImportPanelRevision((value) => value + 1)
+    setSearch('')
+    setStageFilter('all')
+    setAreaFilter('all')
+    setPriorityFilter('all')
+    setSortBy('NEWEST')
+    setPage(0)
+    setRequestDialog(null)
+    setViewRequest(request)
+    setNotice(noticeWithAlias(request.sourceDocument?.storage
+      ? `${request.requestNumber} was saved in Supabase and its private PDF was retained.`
+      : `${request.requestNumber} was saved in Supabase.`, alias))
+  }
+
+  const openImportRecovery = async (receipt) => {
+    if (!receipt.requestId) {
+      setRequestDialog({ mode: 'recover', emailImport: receipt })
+      return
+    }
+    const refreshed = await reloadRequests()
+    const existing = refreshed?.find((entry) => String(entry.id) === String(receipt.requestId))
+    if (!existing) throw new Error('The linked request could not be loaded. Refresh the inbox.')
+    if (receipt.errorCode === 'RECOVERY_PDF_PENDING') {
+      if (existing.sourceDocument?.fileStatus === 'AVAILABLE') {
+        const completed = await completeRecovery(receipt.id)
+        setViewRequest(completed)
+        setImportPanelRevision((value) => value + 1)
+      } else setRequestDialog({ mode: 'recover', emailImport: receipt, recoveryRequest: existing })
+    } else setViewRequest(existing)
+  }
+
+  const openEmailRequest = async (requestId) => {
+    const refreshed = await reloadRequests()
+    const current = refreshed?.find((entry) => String(entry.id) === String(requestId))
+    if (!current) throw new Error('The request is no longer available. Refresh the email status.')
+    setEmailRequestId(current.id)
+    setViewRequest(null)
+  }
+
+  const updateRequest = async (values, { communityAlias = null } = {}) => {
+    const originalRequest = requestDialog?.request
+    const current = findRequestForView(requests, originalRequest?.id, activeView)
+    if (!current || !canEditRequestInView(current, activeView)) {
+      throw new Error('This request can no longer be edited in this view. Close the editor and reload requests.')
+    }
+
+    const updatedRequest = await persistUpdate(originalRequest, values)
+    const alias = await rememberCommunityAlias(communityAlias)
+    setSearch('')
+    setStageFilter('all')
+    setAreaFilter('all')
+    setPriorityFilter('all')
+    setPage(0)
+    setRequestDialog(null)
+    setViewRequest(updatedRequest)
+    setNotice(noticeWithAlias(['READY_TO_PROPOSE', 'NEEDS_CONTACT'].includes(originalRequest.workflowStage)
+      && updatedRequest.workflowStage === 'NEEDS_REVIEW'
+      ? `${updatedRequest.requestNumber} saved. Important changes require a new review.`
+      : `${updatedRequest.requestNumber} changes saved.`, alias))
+  }
+
+  const markReadyToPropose = async (request, reviewDetails) => {
+    // Approve the version actually displayed, never silently use a newer token.
+    const updatedRequest = await persistApproval(request, reviewDetails)
+    setViewRequest(updatedRequest)
+    setNotice({
+      severity: 'success',
+      message: `${updatedRequest.requestNumber} was reviewed and saved as Ready to propose.`,
+    })
+    return updatedRequest
+  }
+
+  const saveProposalDraft = (requestId, values) => {
+    const draft = createPrototypeProposalDraft({ requestId, values, requests, technicians })
+    setProposalDrafts((current) => ({ ...current, [requestId]: draft }))
+    setNotice({ severity: 'success', message: 'Draft saved until the page is reloaded. The request stays Ready to propose; nothing was registered or sent.' })
+  }
+
+  const appointmentRegistered = (request, result) => {
+    // The accepted appointment replaces the draft; drafts are never stored.
+    setProposalDrafts((current) => {
+      const next = { ...current }
+      delete next[request.id]
+      return next
+    })
+    setNotice(registrationNotice(request.requestNumber, result))
+  }
+
+  // A sent proposal also replaces the draft; its days are held on the server.
+  const proposalSent = (request, result) => {
+    setProposalDrafts((current) => {
+      const next = { ...current }
+      delete next[request.id]
+      return next
+    })
+    setNotice(proposalSentNotice(request.requestNumber, result))
   }
 
   return (
@@ -275,202 +334,290 @@ export default function CustomerServiceCatalog() {
           bgcolor: 'background.paper',
           borderBottom: 1,
           borderColor: 'divider',
-          display: 'flex',
-          alignItems: { xs: 'flex-start', sm: 'center' },
-          justifyContent: 'space-between',
-          gap: 2,
-          flexDirection: { xs: 'column', sm: 'row' },
         }}
       >
-        <Box>
-          <Typography variant="h5" fontWeight={700} color="text.primary">
-            Customer Service
-          </Typography>
-          <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-            Warranty work, punch list items and callbacks reported after
-            handover.
-          </Typography>
-        </Box>
-        <ResponsiveCreateButton
-          label="New request"
-          onClick={() => setDialogState({ mode: 'create' })}
-        />
+        <Stack
+          direction={{ xs: 'column', sm: 'row' }}
+          spacing={2}
+          sx={{ alignItems: { xs: 'flex-start', sm: 'center' }, justifyContent: 'space-between' }}
+        >
+          <Box>
+            <Stack direction="row" spacing={1} useFlexGap sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
+              <Typography variant="h5" fontWeight={800} color="text.primary">
+                {viewCopy[activeView].title}
+              </Typography>
+              <Chip size="small" label="Requests saved" color="info" variant="outlined" />
+            </Stack>
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+              {viewCopy[activeView].description}
+            </Typography>
+          </Box>
+          {activeView === 'REQUESTS' && (
+            <ResponsiveCreateButton
+              label="New request"
+              onClick={() => setRequestDialog({ mode: 'create' })}
+            />
+          )}
+        </Stack>
+      </Box>
+
+      <Box
+        sx={{
+          px: { xs: 2.5, md: 4 },
+          bgcolor: 'background.paper',
+          borderBottom: 1,
+          borderColor: 'divider',
+        }}
+      >
+        <Tabs
+          value={activeView}
+          onChange={(_, value) => changeView(value)}
+          aria-label="Customer Service views"
+          variant="scrollable"
+          scrollButtons="auto"
+        >
+          <Tab
+            value="REQUESTS"
+            icon={<ViewListRoundedIcon />}
+            iconPosition="start"
+            label="Requests"
+          />
+          <Tab
+            value="PROPOSALS"
+            icon={<EventNoteRoundedIcon />}
+            iconPosition="start"
+            label="Proposal Workspace"
+          />
+          <Tab
+            value="CALENDAR"
+            icon={<CalendarMonthRoundedIcon />}
+            iconPosition="start"
+            label="Calendar"
+          />
+          <Tab
+            value="HISTORY"
+            icon={<HistoryRoundedIcon />}
+            iconPosition="start"
+            label="History"
+          />
+        </Tabs>
       </Box>
 
       <Box sx={{ p: { xs: 2.5, md: 4 } }}>
-        {/* The tiles read the whole log, not the filtered view: they are the
-            triage picture the coordinator starts the day with. */}
-        <ServiceSummaryCards requests={requests} />
-
-        <Box sx={{ display: 'flex', gap: 2.5, alignItems: 'flex-start' }}>
-          <Box
-            sx={{
-              flex: 1,
-              minWidth: 0,
-              bgcolor: 'background.paper',
-              border: 1,
-              borderColor: 'divider',
-              borderRadius: 2,
-              overflow: 'hidden',
-            }}
-          >
-            <Stack
-              direction={{ xs: 'column', md: 'row' }}
-              spacing={1.5}
-              useFlexGap
-              sx={{
-                flexWrap: 'wrap',
-                p: 2.5,
-                borderBottom: 1,
-                borderColor: 'divider',
+        <TravelCheckAlert requests={requests} />
+        {/* Without the schedule every technician looks free, so planning must not look normal. */}
+        {scheduleError && activeView !== 'REQUESTS' && (
+          <Alert severity="error" sx={{ mb: 2 }} action={<Button color="inherit" onClick={reloadRequests}>Retry</Button>}>
+            Appointments and days held by sent proposals could not be loaded, so technicians may look free when they are
+            not. Retry before planning. {scheduleError}
+          </Alert>
+        )}
+        {activeView === 'REQUESTS' && (
+          <Alert severity="info" variant="outlined" sx={{ mb: 2 }}>
+            Requests, edits, review approval and original sources are saved. Approving a request sends no email and
+            creates no appointment.
+          </Alert>
+        )}
+        {activeView === 'REQUESTS' && profile?.id && profile.isActive
+          && ['ADMIN', 'SCHEDULING'].includes(profile.role) && (
+          <EmailInboxPanel key={`${profile.id}-${profile.role}-${importPanelRevision}`}
+            requests={requests} automation={emailAutomation} automationError={emailAutomationError}
+            onRefreshAutomation={refreshEmailAutomation} onOpenRequest={openEmailRequest}
+            onRecover={openImportRecovery} onChanged={reloadRequests} />
+        )}
+        {/* Only the first load replaces the view. A background reload (the Outlook check,
+            or the one after a write) keeps the current screen, so an open dialog or an
+            unsaved plan survives it. */}
+        {loading && !requests.length ? (
+          <Stack role="status" direction="row" spacing={1.5} sx={{ alignItems: 'center', py: 4 }}>
+            <CircularProgress size={24} />
+            <Typography>Loading Customer Service requests…</Typography>
+          </Stack>
+        ) : error ? (
+          <Alert severity="error" action={<Button color="inherit" onClick={reloadRequests}>Retry</Button>}>
+            Requests could not be loaded. {error}
+          </Alert>
+        ) : activeView === 'HISTORY' ? (
+          <RequestHistory requests={requests} onViewRequest={setViewRequest} />
+        ) : activeView === 'CALENDAR' ? (
+          <CustomerServiceCalendar
+            requests={requests}
+            settings={prototypePlanningHours}
+            onViewRequest={setViewRequest}
+          />
+        ) : activeView === 'PROPOSALS' ? (
+          <ProposalWorkspace
+            requests={requests}
+            selectedRequestId={selectedWorkspaceId}
+            onSelectRequest={openProposalWorkspace}
+            onView={setViewRequest}
+            onEdit={(request) => setRequestDialog({ mode: 'edit', request })}
+            onViewSource={setPdfPreviewRequest}
+            onBackToRequests={() => changeView('REQUESTS')}
+            proposalDrafts={proposalDrafts}
+            onSaveDraft={saveProposalDraft}
+            technicians={technicians}
+            onDraftDirtyChange={reportDraftDirty}
+            onBeforeLeave={beforeDraftNavigation}
+            onRegistered={appointmentRegistered}
+            onProposalSent={proposalSent}
+            onProposalAnswered={(_request, answerNotice) => setNotice(answerNotice)}
+          />
+        ) : (
+          <>
+            <ServiceSummaryCards
+              requests={reviewRequests}
+              activeFilter={stageFilter}
+              onFilterChange={(value) => {
+                setStageFilter(value)
+                setPage(0)
               }}
+            />
+
+            <Stack
+          direction={{ xs: 'column', md: 'row' }}
+          spacing={1.25}
+          useFlexGap
+          sx={{
+            flexWrap: 'wrap',
+            mb: 2,
+            p: 2,
+            bgcolor: 'background.paper',
+            border: 1,
+            borderColor: 'divider',
+            borderRadius: 2,
+          }}
+        >
+          <TextField
+            value={search}
+            onChange={(event) => {
+              setSearch(event.target.value)
+              setPage(0)
+            }}
+            size="small"
+            placeholder="Search request, customer, property, issue or coordinates..."
+            sx={{ flex: 1, minWidth: { md: 300 } }}
+            slotProps={{
+              input: {
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <SearchRoundedIcon fontSize="small" color="action" />
+                  </InputAdornment>
+                ),
+              },
+            }}
+          />
+
+          <FormControl size="small" sx={{ minWidth: 190 }}>
+            <Select
+              value={stageFilter}
+              onChange={(event) => {
+                setStageFilter(event.target.value)
+                setPage(0)
+              }}
+              renderValue={(value) => (
+                `Stage: ${inboxFilterOptions.find((option) => option.value === value)?.label ?? 'All requests'}`
+              )}
+              inputProps={{ 'aria-label': 'Filter requests by workflow stage' }}
             >
-              <TextField
-                value={search}
-                onChange={(event) => {
-                  setSearch(event.target.value)
-                  setPage(0)
-                }}
-                size="small"
-                placeholder="Search builder, community, lot, address, phone, email, request #..."
-                sx={{ flex: 1 }}
-                slotProps={{
-                  input: {
-                    startAdornment: (
-                      <InputAdornment position="start">
-                        <SearchRoundedIcon fontSize="small" color="action" />
-                      </InputAdornment>
-                    ),
-                  },
-                }}
-              />
+              {inboxFilterOptions.map((option) => (
+                <MenuItem key={option.value} value={option.value}>
+                  {option.label}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
 
-              <FormControl size="small" sx={{ minWidth: 190 }}>
-                <Select
-                  value={statusFilter}
-                  onChange={(event) => {
-                    setStatusFilter(event.target.value)
-                    setPage(0)
-                  }}
-                  renderValue={(value) => {
-                    if (value === 'all') return 'Status: All'
-                    if (value === 'open') return 'Status: Open'
-                    return `Status: ${statusesByValue[value].label}`
-                  }}
-                  inputProps={{ 'aria-label': 'Filter by status' }}
-                >
-                  <MenuItem value="all">All statuses</MenuItem>
-                  <MenuItem value="open">Still open</MenuItem>
-                  <Divider />
-                  {statusOptions.map((option) => (
-                    <MenuItem key={option.value} value={option.value}>
-                      {option.label}
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
+          <FormControl size="small" sx={{ minWidth: 210 }}>
+            <Select
+              value={areaFilter}
+              onChange={(event) => {
+                setAreaFilter(event.target.value)
+                setPage(0)
+              }}
+              renderValue={(value) => `Community: ${value === 'all' ? 'All' : value}`}
+              inputProps={{ 'aria-label': 'Filter requests by community' }}
+            >
+              <MenuItem value="all">All communities</MenuItem>
+              <Divider />
+              {areaOptions.map((area) => (
+                <MenuItem key={area} value={area}>{area}</MenuItem>
+              ))}
+            </Select>
+          </FormControl>
 
-              <FormControl size="small" sx={{ minWidth: 200 }}>
-                <Select
-                  value={builderFilter}
-                  onChange={(event) => {
-                    setBuilderFilter(event.target.value)
-                    setPage(0)
-                  }}
-                  renderValue={(value) =>
-                    `Builder: ${value === 'all' ? 'All' : builderLabelsById[value] ?? value}`
-                  }
-                  inputProps={{ 'aria-label': 'Filter by builder' }}
-                >
-                  <MenuItem value="all">All builders</MenuItem>
-                  <Divider />
-                  {builderOptions.map((option) => (
-                    <MenuItem key={option.value} value={option.value}>
-                      {option.label}
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
+          <Badge badgeContent={extraFilterCount} color="primary">
+            <Button
+              aria-label="Open more request filters"
+              variant="outlined"
+              color="inherit"
+              startIcon={<FilterListRoundedIcon />}
+              onClick={(event) => setFiltersAnchor(event.currentTarget)}
+              sx={{ height: 40, whiteSpace: 'nowrap' }}
+            >
+              More filters
+            </Button>
+          </Badge>
 
-              <FormControl size="small" sx={{ minWidth: 190 }}>
-              <Select
-                value={sortBy}
-                onChange={(event) => {
-                  setSortBy(event.target.value)
-                  setPage(0)
-                }}
-                renderValue={(value) =>
-                  `Sort: ${sortOptions.find((option) => option.value === value).label}`
-                }
-                inputProps={{ 'aria-label': 'Sort requests' }}
-              >
-                {sortOptions.map((option) => (
-                  <MenuItem key={option.value} value={option.value}>
-                    {option.label}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-
-            <Badge badgeContent={extraFilterCount} color="primary">
-                <Button
-                  variant="outlined"
-                  color="inherit"
-                  startIcon={<FilterListRoundedIcon />}
-                  onClick={(event) => setFiltersAnchor(event.currentTarget)}
-                  sx={{ height: 40, whiteSpace: 'nowrap' }}
-                >
-                  Filters
-                </Button>
-              </Badge>
+          {(search || stageFilter !== 'all' || areaFilter !== 'all' || extraFilterCount > 0) && (
+            <Button color="inherit" onClick={clearFilters}>Clear</Button>
+          )}
             </Stack>
 
-            <ServiceRequestsTable
-              requests={visibleRequests}
-              builderLabelsById={builderLabelsById}
-              totalCount={filteredRequests.length}
-              page={page}
-              rowsPerPage={ROWS_PER_PAGE}
-              selectedId={selectedId}
-              onSelect={setSelectedId}
-              onOpen={openPanel}
-              onSchedule={(request) => {
-                setSelectedId(request.id)
-                setDialogState({ mode: 'edit', request })
+            <Box
+              sx={{
+                width: '100%',
+                minWidth: 0,
+                bgcolor: 'background.paper',
+                border: 1,
+                borderColor: 'divider',
+                borderRadius: 2,
+                overflow: 'hidden',
               }}
-              onMenuOpen={handleMenuOpen}
-              onPageChange={setPage}
-            />
-          </Box>
-
-          {isWide && panelOpen && panelRequest && (
-            <Box sx={{ width: 420, flexShrink: 0 }}>
-              <RequestDetailPanel
-                request={panelRequest}
-                builderLabelsById={builderLabelsById}
-                onClose={() => setPanelOpen(false)}
-                onEdit={(request) => setDialogState({ mode: 'edit', request })}
+            >
+              <Stack
+                direction={{ xs: 'column', sm: 'row' }}
+                spacing={1}
+                sx={{
+                  alignItems: { xs: 'flex-start', sm: 'center' },
+                  justifyContent: 'space-between',
+                  px: 2.5,
+                  py: 1.75,
+                  borderBottom: 1,
+                  borderColor: 'divider',
+                }}
+              >
+                <Box>
+                  <Typography variant="subtitle1" fontWeight={800}>
+                    Request inbox
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    {visibleRequests.length} of {reviewRequests.length} requests in review
+                  </Typography>
+                </Box>
+                <Typography variant="caption" color="text.secondary">
+                  View the full record, edit its details or open the source PDF.
+                </Typography>
+              </Stack>
+              <RequestInboxList
+                requests={paginatedRequests.items}
+                totalCount={visibleRequests.length}
+                page={paginatedRequests.page}
+                rowsPerPage={paginatedRequests.rowsPerPage}
+                onPageChange={setPage}
+                onRowsPerPageChange={(value) => {
+                  setRowsPerPage(value)
+                  setPage(0)
+                }}
+                onView={setViewRequest}
+                onEdit={(request) => setRequestDialog({ mode: 'edit', request })}
+                onViewPdf={setPdfPreviewRequest}
+                onOpenProposal={openProposalWorkspace}
               />
             </Box>
-          )}
-        </Box>
-      </Box>
-
-      <Drawer
-        anchor="right"
-        open={!isWide && panelOpen && Boolean(panelRequest)}
-        onClose={() => setPanelOpen(false)}
-        slotProps={{ paper: { sx: { width: { xs: '100%', sm: 440 } } } }}
-      >
-        {panelRequest && (
-          <RequestDetailPanel
-            request={panelRequest}
-            builderLabelsById={builderLabelsById}
-            onClose={() => setPanelOpen(false)}
-            onEdit={(request) => setDialogState({ mode: 'edit', request })}
-          />
+          </>
         )}
-      </Drawer>
+      </Box>
 
       <Popover
         open={Boolean(filtersAnchor)}
@@ -478,146 +625,135 @@ export default function CustomerServiceCatalog() {
         onClose={() => setFiltersAnchor(null)}
         anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
         transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+        slotProps={{ paper: { sx: { width: 300, p: 2 } } }}
       >
-        <Stack spacing={2} sx={{ p: 2.5, width: 260 }}>
-          <Typography variant="subtitle2" fontWeight={700}>
-            More filters
-          </Typography>
-
+        <Typography variant="subtitle2" fontWeight={800}>More filters</Typography>
+        <Stack spacing={1.5} sx={{ mt: 1.5 }}>
           <FormControl size="small" fullWidth>
-            <InputLabel id="filter-priority-label">Priority</InputLabel>
             <Select
-              labelId="filter-priority-label"
-              label="Priority"
               value={priorityFilter}
               onChange={(event) => {
                 setPriorityFilter(event.target.value)
                 setPage(0)
               }}
+              renderValue={(value) => (
+                `Priority: ${value === 'all'
+                  ? 'All'
+                  : priorityOptions.find((option) => option.value === value)?.label}`
+              )}
+              inputProps={{ 'aria-label': 'Filter requests by priority' }}
             >
-              <MenuItem value="all">Any priority</MenuItem>
+              <MenuItem value="all">All priorities</MenuItem>
               {priorityOptions.map((option) => (
-                <MenuItem key={option.value} value={option.value}>
-                  {option.label}
-                </MenuItem>
+                <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>
               ))}
             </Select>
           </FormControl>
 
           <FormControl size="small" fullWidth>
-            <InputLabel id="filter-appointment-label">Appointment</InputLabel>
             <Select
-              labelId="filter-appointment-label"
-              label="Appointment"
-              value={appointmentFilter}
+              value={sortBy}
               onChange={(event) => {
-                setAppointmentFilter(event.target.value)
+                setSortBy(event.target.value)
                 setPage(0)
               }}
+              renderValue={(value) => (
+                `Sort: ${inboxSortOptions.find((option) => option.value === value)?.label}`
+              )}
+              inputProps={{ 'aria-label': 'Sort requests' }}
             >
-              <MenuItem value="all">Any appointment</MenuItem>
-              {appointmentStateOptions.map((option) => (
-                <MenuItem key={option.value} value={option.value}>
-                  {option.label}
-                </MenuItem>
+              {inboxSortOptions.map((option) => (
+                <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>
               ))}
             </Select>
           </FormControl>
 
-          <Button
-            color="inherit"
-            onClick={clearFilters}
-            disabled={extraFilterCount === 0}
-          >
-            Clear filters
+          <Button color="inherit" onClick={() => {
+            setPriorityFilter('all')
+            setSortBy('ACTION_REQUIRED')
+            setPage(0)
+          }}>
+            Reset advanced filters
           </Button>
         </Stack>
       </Popover>
 
-      <Menu
-        anchorEl={menuAnchor}
-        open={Boolean(menuAnchor)}
-        onClose={handleMenuClose}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-        transformOrigin={{ vertical: 'top', horizontal: 'right' }}
-      >
-        {selectedRequest && isClosed(selectedRequest)
-          ? [
-              <MenuItem key="reopen" onClick={reopenRequest}>
-                <LockOpenRoundedIcon fontSize="small" sx={{ mr: 1.25 }} />
-                Reopen
-              </MenuItem>,
-            ]
-          : [
-              <MenuItem key="edit" onClick={openEditDialog}>
-                <EditOutlinedIcon fontSize="small" sx={{ mr: 1.25 }} />
-                Edit
-              </MenuItem>,
-              <MenuItem key="close" onClick={closeRequest}>
-                <LockOutlinedIcon fontSize="small" sx={{ mr: 1.25 }} />
-                Close request
-              </MenuItem>,
-              <MenuItem
-                key="delete"
-                onClick={openDeleteDialog}
-                sx={{ color: 'error.main' }}
-              >
-                <DeleteOutlineRoundedIcon fontSize="small" sx={{ mr: 1.25 }} />
-                Delete
-              </MenuItem>,
-            ]}
-      </Menu>
-
-      {dialogState && (
-        <RequestDialog
-          key={dialogState.request?.id ?? 'new'}
-          request={dialogState.request}
+      {visibleRequest && (
+        <RequestViewDialog
+          key={`${visibleRequest.id}-${visibleRequest.workflowStage}-${visibleRequest.updatedAt}`}
+          request={visibleRequest}
           requests={requests}
-          builderOptions={builderOptions}
-          onClose={() => setDialogState(null)}
-          onSave={handleSave}
+          currentUserName={currentUserName}
+          onClose={() => { setViewRequest(null); setEmailRequestId(null) }}
+          onMarkReady={markReadyToPropose}
+          onViewSource={setPdfPreviewRequest}
+          onOpenProposal={openProposalWorkspace}
+          onEdit={canEditRequestInView(visibleRequest, activeView) ? (request) => {
+            setViewRequest(null)
+            setEmailRequestId(null)
+            setRequestDialog({ mode: 'edit', request })
+          } : undefined}
+        />
+      )}
+
+      {sourceRequest && (
+        <SourcePdfPreviewDialog
+          key={sourceRequest.id}
+          request={sourceRequest}
+          canRetryPdf={pendingPdfIds.includes(sourceRequest.id)}
+          onRetryPdf={async () => {
+            await retrySourcePdf(sourceRequest.id)
+            setImportPanelRevision((value) => value + 1)
+          }}
+          onClose={() => setPdfPreviewRequest(null)}
+        />
+      )}
+
+      {requestDialog && ((['create', 'recover'].includes(requestDialog.mode) && activeView === 'REQUESTS') || editableRequest) && (
+        <NewRequestPrototypeDialog
+          key={editableRequest ? `${editableRequest.id}-${editableRequest.workflowStage}` : requestDialog.emailImport?.id ?? 'new-request'}
+          request={editableRequest}
+          emailImport={requestDialog.emailImport}
+          recoveryRequest={requestDialog.recoveryRequest}
+          currentUserName={currentUserName}
+          onClose={() => setRequestDialog(null)}
+          onCreate={createRequest}
+          onSave={updateRequest}
+          onViewSource={setPdfPreviewRequest}
         />
       )}
 
       <Dialog
-        open={Boolean(deleteTarget)}
-        onClose={() => setDeleteTarget(null)}
-        fullWidth
-        maxWidth="xs"
+        open={Boolean(pendingDraftNavigation) || blocker.state === 'blocked'}
+        onClose={keepDraftEditing}
+        aria-labelledby="unsaved-proposal-title"
+        aria-describedby="unsaved-proposal-description"
+        maxWidth="xs" fullWidth
       >
-        <DialogTitle>Delete request?</DialogTitle>
+        <DialogTitle id="unsaved-proposal-title">Unsaved proposal changes</DialogTitle>
         <DialogContent>
-          <Typography variant="body2" color="text.secondary">
-            {deleteTarget
-              ? `${deleteTarget.requestNumber} will be removed from the service log.`
-              : ''}
-          </Typography>
+          <DialogContentText id="unsaved-proposal-description">
+            Leaving will discard your unsaved technician, date and time selections.
+            Any previously saved draft will remain available during this session.
+          </DialogContentText>
         </DialogContent>
-        <DialogActions sx={{ px: 3, pb: 2.5 }}>
-          <Button color="inherit" onClick={() => setDeleteTarget(null)}>
-            Cancel
-          </Button>
-          <Button
-            color="error"
-            variant="contained"
-            onClick={handleDelete}
-            disableElevation
-          >
-            Delete request
-          </Button>
+        <DialogActions sx={{ flexWrap: 'wrap', gap: 1, px: 3, pb: 2 }}>
+          <Button color="warning" onClick={discardDraftChanges}>Leave without saving</Button>
+          <Button variant="contained" autoFocus onClick={keepDraftEditing}>Keep editing</Button>
         </DialogActions>
       </Dialog>
 
       <Snackbar
-        open={Boolean(notice)}
-        autoHideDuration={3000}
+        open={Boolean(notice) && ((!viewRequest && !requestDialog) || notice.severity === 'error')}
+        // A warning (for example a confirmation email that failed) stays long enough to read.
+        autoHideDuration={notice?.severity === 'success' ? 3500 : 10000}
         onClose={() => setNotice(null)}
         anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
       >
         <Alert
-          severity={notice?.severity ?? 'success'}
-          onClose={() => setNotice(null)}
+          severity={notice?.severity ?? 'info'}
           variant="filled"
+          onClose={() => setNotice(null)}
         >
           {notice?.message}
         </Alert>

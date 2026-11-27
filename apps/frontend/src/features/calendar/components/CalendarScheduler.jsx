@@ -39,6 +39,8 @@ import { getBuilderDateConfiguration } from '../../builders/data/builders.js'
 import { useLoadingPhase } from '../hooks/useLoadingPhase.js'
 import { usePhaseCalendarCoverage } from '../hooks/usePhaseCalendarCoverage.js'
 import { calendarEventSchema } from '../schemas/calendarEventSchema.js'
+import { useCustomerServiceCalendar } from '../../customer-service/context/useCustomerServiceCalendar.js'
+import CustomerServiceCalendarDetail from '../../customer-service/components/CustomerServiceCalendarDetail.jsx'
 import {
   classifySaveError,
   collectFormErrors,
@@ -127,6 +129,7 @@ export default function CalendarScheduler() {
   const { builders } = useBuilders()
   const { people } = usePeople()
   const { contacts: builderContacts } = useBuilderContacts()
+  const { serviceEvents } = useCustomerServiceCalendar()
   const {
     events,
     loaded: productionLoaded,
@@ -201,6 +204,7 @@ export default function CalendarScheduler() {
   const [googleCalendarSyncing, setGoogleCalendarSyncing] = useState(false)
   const [googleCalendarError, setGoogleCalendarError] = useState('')
   const [viewTitle, setViewTitle] = useState(initialCalendarTitle)
+<<<<<<< HEAD
   const [viewType, setViewType] = usePersistentState(
     'calendar:view',
     defaultCalendarView(),
@@ -210,6 +214,11 @@ export default function CalendarScheduler() {
   // left on from before could hide events without anyone noticing.
   const [visibleTypes, setVisibleTypes] = useState(ACTIVITY_TYPES)
   const [search, setSearch] = useState('')
+=======
+  const [viewType, setViewType] = useState('dayGridWeek')
+  const [visibleTypes, setVisibleTypes] = useState(['EXT', 'SHUTTER', 'DM', 'HW'])
+  const [showCustomerService, setShowCustomerService] = useState(false)
+>>>>>>> dev/leon
 
   useEffect(() => {
     if (!profile?.id) return undefined
@@ -254,6 +263,7 @@ export default function CalendarScheduler() {
     window.history.replaceState({}, '', currentUrl)
   }, [])
 
+<<<<<<< HEAD
   const [storedBuilder, setStoredBuilder] = useState('ALL')
   const [storedCommunity, setStoredCommunity] = useState('ALL')
   const [storedJobId, setStoredJobId] = useState('ALL')
@@ -301,8 +311,18 @@ export default function CalendarScheduler() {
     () => splitOrderMaterialEvents(events, today),
     [events, today],
   )
+=======
+  const filteredEvents = useMemo(() => {
+    const productionEvents = events.filter((event) => (
+      visibleTypes.includes(event.extendedProps.activityType)
+    ))
+    return showCustomerService
+      ? [...productionEvents, ...serviceEvents]
+      : productionEvents
+  }, [events, serviceEvents, showCustomerService, visibleTypes])
+>>>>>>> dev/leon
 
-  const selectedEvent = events.find((event) => event.id === selectedId) ?? null
+  const selectedEvent = filteredEvents.find((event) => event.id === selectedId) ?? null
 
   const validationErrors = useMemo(
     () => (validationShown ? validateProductionDraft(draft) : []),
@@ -448,6 +468,7 @@ export default function CalendarScheduler() {
   }, [pendingDate, activeTab, calendarMode])
 
   const openEventOptions = (eventId) => {
+<<<<<<< HEAD
     if (String(eventId).startsWith(CO_EVENT_PREFIX)) {
       openChangeOrderEvent(eventId)
       return
@@ -456,6 +477,18 @@ export default function CalendarScheduler() {
     if (!calendarEvent) return
 
     setDateMove(null)
+=======
+    const calendarEvent = filteredEvents.find((event) => event.id === eventId)
+    if (!calendarEvent) return
+
+    if (calendarEvent.extendedProps.calendarType === 'CUSTOMER_SERVICE') {
+      setSelectedId(eventId)
+      setFormError('')
+      setDrawerMode('service-detail')
+      return
+    }
+
+>>>>>>> dev/leon
     setSelectedId(eventId)
     setDraft(createDraftFromProductionEvent(calendarEvent))
     resetFormFeedback()
@@ -822,6 +855,7 @@ export default function CalendarScheduler() {
             viewTitle={viewTitle}
             viewType={viewType}
             visibleTypes={visibleTypes}
+            showCustomerService={showCustomerService}
             onChangeView={changeView}
             onDatesSet={(title, type) => {
               setViewTitle(title)
@@ -832,9 +866,18 @@ export default function CalendarScheduler() {
             canMove={canManageProductionActivities}
             onNavigate={navigateCalendar}
             onToggleType={toggleType}
+<<<<<<< HEAD
             search={search}
             searchResults={searchResults}
             onChangeSearch={setSearch}
+=======
+            onToggleCustomerService={(checked) => {
+              setShowCustomerService(checked)
+              if (!checked && selectedEvent?.extendedProps.calendarType === 'CUSTOMER_SERVICE') {
+                closeDrawer()
+              }
+            }}
+>>>>>>> dev/leon
           />
         </>
       ) : (
@@ -857,6 +900,7 @@ export default function CalendarScheduler() {
           },
         }}
       >
+<<<<<<< HEAD
         {drawerMode === 'change-order' ? (
           <ChangeOrderEventPanel
             event={changeOrderEvents.find((item) => calendarEventId(item.id) === selectedChangeOrderEventId) ?? null}
@@ -866,6 +910,13 @@ export default function CalendarScheduler() {
               setNotice(message)
               refreshChangeOrderEvents()
             }}
+=======
+        {drawerMode === 'service-detail' ? (
+          <CustomerServiceCalendarDetail
+            event={selectedEvent}
+            onClose={closeDrawer}
+            onEdit={() => setNotice('Visit editing is visual-only in this frontend prototype.')}
+>>>>>>> dev/leon
           />
         ) : drawerMode === 'detail' ? (
           <ActivityDetail

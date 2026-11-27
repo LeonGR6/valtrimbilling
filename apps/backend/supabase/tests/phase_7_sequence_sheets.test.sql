@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(36);
+select plan(35);
 
 select has_table('valtrim', 'phases', 'Sequence Sheet Phases table is available');
 select has_table('valtrim', 'lots', 'Sequence Sheet Lots table is available');
@@ -230,11 +230,6 @@ select ok(
 select ok(
   not has_table_privilege('authenticated', 'valtrim.invoices', 'select'),
   'Invoices and QuickBooks inputs remain closed'
-);
-
-select ok(
-  not has_table_privilege('authenticated', 'valtrim.service_requests', 'select'),
-  'Customer Service remains closed'
 );
 
 select * from finish();

@@ -1,0 +1,476 @@
+import { serviceCustomerWindowOptions } from '../data/serviceCalendarEvents.js'
+import { requestToPrototypeFormValues } from './newRequestPrototype.js'
+import { buildRequestReviewSummary, effectiveRequestWorkflowStage } from './requestInbox.js'
+import { customerServiceTimeZone, getCustomerServiceClock } from './dates.js'
+import { proposalOptionsStatus } from './proposalAnswers.js'
+import { assignedPrototypeTechnicianIds, prototypeTechnicians } from '../data/prototypeTechnicians.js'
+import {
+  checkVisitCapacity, checkVisitDate, customerServicePickupMinutes,
+  customerServiceWorkday, isCustomerServiceBusinessDay, minutesToTime as timeFromMinutes, parseServiceDate as validDate,
+  timeToMinutes as minutes, travelLegKey, visitDelayMargins,
+} from './customerServiceScheduling.js'
+
+export const prototypePlanningHours = {
+  workdayStartsAt: customerServiceWorkday.startsAt, workdayEndsAt: customerServiceWorkday.endsAt,
+}
+// Each visit keeps the technician busy for 10 minutes after the work to collect tools.
+export const prototypePickupMinutes = customerServicePickupMinutes
+
+const busyStages = ['CONFIRMED', 'AWAITING_CUSTOMER', 'WORKING', 'COMPLETED']
+const reservedStages = ['CONFIRMED', 'AWAITING_CUSTOMER', 'WORKING']
+
+export function getPrototypePlanningTechnicians(technicians = prototypeTechnicians) {
+  return technicians.map(({ id, name }) => ({ id: String(id), name }))
+    .sort((left, right) => left.name.localeCompare(right.name))
+}
+
+export function proposalPlanningSignature(request) {
+  const values = requestToPrototypeFormValues(request)
+  return JSON.stringify({
+    builder: values.builderName, community: values.community, lot: values.lotNumber,
+    address: values.address, coordinates: values.coordinates,
+    serviceKind: values.serviceKind, workType: values.workType, task: values.serviceTask,
+    items: values.requestedWorkItems.map(({ description, materialRequired, chargeable }) => (
+      { description, materialRequired, chargeable }
+    )),
+    duration: Number(request.estimatedDurationMinutes), crew: Number(request.crewSize),
+    reviewedAt: request.review?.completedAt ?? null,
+  })
+}
+
+export function proposalDraftFormValues(draft, now = new Date()) {
+  return {
+    technicianIds: [...(draft?.technicianIds ?? [])],
+    date: draft?.date ?? getCustomerServiceClock(now).date,
+    windowStart: draft?.customerWindow?.start ?? '',
+    internalStart: draft?.internalSlot?.start ?? '',
+    travelMinutes: { ...(draft?.travelMinutes ?? {}) },
+  }
+}
+
+// Sets or clears one manual travel estimate without mutating the current values.
+export function changePrototypeTravelMinutes(values, key, input) {
+  const travelMinutes = { ...(values.travelMinutes ?? {}) }
+  const text = String(input ?? '').trim()
+  if (/^\d{1,3}$/u.test(text)) travelMinutes[key] = Number(text)
+  else delete travelMinutes[key]
+  return { ...values, travelMinutes }
+}
+
+export function changePrototypeProposalWindow(values, windowStart) {
+  if (windowStart === values.windowStart) return values
+  return { ...values, windowStart, internalStart: windowStart }
+}
+
+export function proposalDraftHasChanges(values, baseline) {
+  const comparable = (entry) => [
+    entry.date, entry.windowStart, entry.internalStart, [...entry.technicianIds].sort(),
+    Object.entries(entry.travelMinutes ?? {}).sort(([left], [right]) => left.localeCompare(right)),
+  ]
+  return JSON.stringify(comparable(values)) !== JSON.stringify(comparable(baseline))
+}
+
+// Occupied time per technician. Known work occupies its time plus pickup, not the whole
+// arrival window. If the work time is unknown, the whole arrival window stays busy.
+export function getPrototypeTechnicianAgenda(requests, technicianIds, date, technicians = prototypeTechnicians) {
+  const ids = new Set(technicianIds)
+  const nameOf = (id) => technicians.find((person) => String(person.id) === id)?.name ?? 'Unknown technician'
+  return requests.flatMap((request) => {
+    // A sent proposal holds each offered day for its technicians until the customer answers.
+    if (request.proposalHolds?.length) {
+      return request.proposalHolds.filter((hold) => hold.date === date).flatMap((hold) => hold.technicianIds
+        .filter((id) => ids.has(id))
+        .map((id) => ({
+          requestId: request.id, requestNumber: request.requestNumber, technicianId: id, technicianName: nameOf(id),
+          stage: 'AWAITING_CUSTOMER', date, customerWindow: { date, start: hold.windowStart, end: hold.windowEnd },
+          internalSlot: { start: hold.start, end: hold.end },
+          start: hold.start, end: timeFromMinutes(minutes(hold.end) + hold.pickupMinutes),
+          windowUncertain: false, timingUncertain: false, blocksAvailability: true,
+          issue: request.issue || request.description || '', proposalOption: hold.optionNumber,
+        })))
+    }
+    const stage = effectiveRequestWorkflowStage(request)
+    const assignedIds = assignedPrototypeTechnicianIds(request, technicians).filter((id) => ids.has(id))
+    if (!assignedIds.length || !busyStages.includes(stage)) return []
+    const entryDate = request.customerWindow?.date
+    // A sent/confirmed record without a usable date must not imply availability on other days.
+    if (validDate(entryDate) && entryDate !== date) return []
+    const start = minutes(request.internalSlot?.start)
+    const end = minutes(request.internalSlot?.end)
+    const hasInternalSlot = start !== null && end !== null && end > start
+    const windowStart = minutes(request.customerWindow?.start)
+    const windowEnd = minutes(request.customerWindow?.end)
+    const hasWindow = serviceCustomerWindowOptions.some((window) => (
+      window.start === request.customerWindow?.start && window.end === request.customerWindow?.end
+    ))
+    const occupiedStart = hasInternalSlot ? start : (hasWindow ? windowStart : null)
+    const occupiedEnd = hasInternalSlot ? end + prototypePickupMinutes : (hasWindow ? windowEnd : null)
+    return assignedIds.map((id) => ({
+      requestId: request.id, requestNumber: request.requestNumber,
+      technicianId: id, technicianName: nameOf(id), stage,
+      date: validDate(entryDate) ? entryDate : null,
+      customerWindow: request.customerWindow ?? null,
+      internalSlot: hasInternalSlot ? { start: request.internalSlot.start, end: request.internalSlot.end } : null,
+      start: occupiedStart === null ? null : timeFromMinutes(occupiedStart),
+      end: occupiedEnd === null ? null : timeFromMinutes(occupiedEnd),
+      windowUncertain: !hasWindow,
+      timingUncertain: !hasInternalSlot,
+      blocksAvailability: reservedStages.includes(stage),
+      issue: request.issue || request.description || '',
+    }))
+  }).sort((left, right) => String(left.start ?? '').localeCompare(String(right.start ?? '')))
+}
+
+// Delay margins of each selected technician's day with the new visit in it. The visit's
+// own margin is the lowest across technicians (null while a leg after it is unknown);
+// its own slack is the same for all. Keyed per agenda entry ("requestId-technicianId")
+// and per leg, the lowest across technicians. A visit without recorded work time keeps
+// an unknown margin. If the new visit keeps the minimum margin, no earlier visit drops
+// below it because of the insertion: its margin is min(own slack, wait + that margin).
+export function draftDelayMargins({ requestId, agenda, technicianIds, visit, travelMinutes = {} }) {
+  const id = String(requestId)
+  const lowest = (current, value) => (current === undefined ? value
+    : current === null || value === null ? null : Math.min(current, value))
+  const entryMargins = {}
+  const legAbsorbs = {}
+  let margin
+  let ownSlack = null
+  for (const technicianId of technicianIds) {
+    const visits = agenda
+      .filter((entry) => entry.technicianId === technicianId && entry.blocksAvailability && entry.start && entry.end)
+      .map((entry) => ({
+        requestId: String(entry.requestId), start: entry.start, end: entry.end,
+        windowEnd: entry.windowUncertain || entry.timingUncertain ? null : entry.customerWindow?.end,
+      }))
+    visits.push({ requestId: id, start: visit.start, end: visit.end, windowEnd: visit.windowEnd })
+    for (const result of visitDelayMargins({ visits, travelMinutes })) {
+      if (result.requestId === id) {
+        margin = lowest(margin, result.margin)
+        ownSlack = result.ownSlack
+      } else {
+        entryMargins[`${result.requestId}-${technicianId}`] = result.margin
+      }
+      if (result.nextLeg) {
+        const key = travelLegKey(result.requestId, result.nextLeg.toRequestId)
+        legAbsorbs[key] = lowest(legAbsorbs[key], result.nextLeg.absorbsMinutes)
+      }
+    }
+  }
+  return { margin: margin ?? null, ownSlack, entryMargins, legAbsorbs }
+}
+
+// Delay margin of every scheduled visit on a date, from the saved travel legs (the
+// day-before traffic check refreshes them, block R6). Keyed by request id: the lowest
+// across its technicians, or null while a leg after it is unknown.
+export function scheduledDelayMargins({ requests, technicians, date, travelMinutes = {} }) {
+  return scheduledDay({ requests, technicians, date, travelMinutes }).margins
+}
+
+// Legs between consecutive scheduled visits of each technician on a date, by leg key.
+export function scheduledLegKeys({ requests, technicians, date }) {
+  return scheduledDay({ requests, technicians, date }).legKeys
+}
+
+function scheduledDay({ requests, technicians, date, travelMinutes = {} }) {
+  const technicianIds = technicians.map((person) => String(person.id))
+  const agenda = getPrototypeTechnicianAgenda(requests, technicianIds, date, technicians)
+  const margins = {}
+  const legKeys = new Set()
+  for (const technicianId of technicianIds) {
+    const visits = agenda
+      .filter((entry) => entry.technicianId === technicianId && entry.date === date && entry.blocksAvailability
+        && entry.start && entry.end)
+      .map((entry) => ({
+        requestId: String(entry.requestId), start: entry.start, end: entry.end,
+        windowEnd: entry.windowUncertain || entry.timingUncertain ? null : entry.customerWindow?.end,
+      }))
+    for (const { requestId, margin, nextLeg } of visitDelayMargins({ visits, travelMinutes })) {
+      const current = margins[requestId]
+      margins[requestId] = current === undefined ? margin
+        : current === null || margin === null ? null : Math.min(current, margin)
+      if (nextLeg) legKeys.add(travelLegKey(requestId, nextLeg.toRequestId))
+    }
+  }
+  return { margins, legKeys: [...legKeys] }
+}
+
+// One of three states for the draft and for each suggestion (block R5): it fits, it fits
+// with what is known but a travel leg is unknown or must be calculated again, or it does
+// not fit. The middle one cannot be registered yet, so its label says what is missing.
+export const fitStatusLabels = { FITS: 'Fits', TRAVEL_PENDING: 'Fits once travel is calculated', DOESNT_FIT: "Doesn't fit" }
+export const fitStatus = ({ fits, travelPending }) => (!fits ? 'DOESNT_FIT' : travelPending ? 'TRAVEL_PENDING' : 'FITS')
+
+export function validatePrototypeProposalDraft({ requestId, values, requests, technicians = prototypeTechnicians, now = new Date() }) {
+  const request = requests.find((entry) => String(entry.id) === String(requestId))
+  const errors = []
+  const addError = (field, message) => errors.push({ field, message })
+  // Warnings never claim viability, but they do not block a draft: drafts reserve nothing.
+  const warnings = []
+  // After a declined proposal the coordinator calls the customer and plans again from
+  // Needs contact; the server accepts both stages (block B, step B6). A proposal whose
+  // offered days all started is replaced by the new plan (decided 23 Nov 2026).
+  const stage = request && effectiveRequestWorkflowStage(request)
+  const replacesPassed = stage === 'AWAITING_CUSTOMER' && proposalOptionsStatus(request, now).allStarted
+  if (!request || (!['READY_TO_PROPOSE', 'NEEDS_CONTACT'].includes(stage) && !replacesPassed)) {
+    addError('request', 'Only Ready to propose or Needs contact requests can have a planning draft.')
+  } else if (!request.review?.valtrimItemsConfirmed || !buildRequestReviewSummary(request).isComplete) {
+    addError('request', 'Complete and approve the request information in Requests before planning.')
+  }
+
+  const duration = Number(request?.estimatedDurationMinutes)
+  const crew = Number(request?.crewSize)
+  const roster = getPrototypePlanningTechnicians(technicians)
+  const ids = Array.isArray(values.technicianIds) ? values.technicianIds : []
+  const uniqueIds = [...new Set(ids)]
+  if (!ids.length) addError('technicianIds', 'Select the technicians assigned to this work.')
+  else if (ids.length !== uniqueIds.length || uniqueIds.some((id) => !roster.some((person) => person.id === id))) {
+    addError('technicianIds', 'Select distinct active technicians from the technician catalog.')
+  } else if (uniqueIds.length < crew) {
+    addError('technicianIds', `This work requires ${crew} people; ${uniqueIds.length} selected.`)
+  }
+
+  const clock = getCustomerServiceClock(now)
+  const dateCheck = checkVisitDate({
+    date: values.date, workStart: values.internalStart, today: clock.date,
+    nowMinutes: clock.minutesSinceMidnight,
+    unavailableDates: request?.customerUnavailableDates ?? [], dueOn: request?.dueOn ?? null,
+  })
+  errors.push(...dateCheck.errors)
+  warnings.push(...dateCheck.warnings)
+
+  // The same capacity rules the server applies before registering an appointment.
+  const agenda = getPrototypeTechnicianAgenda(requests, uniqueIds, values.date, technicians)
+  const capacity = checkVisitCapacity({
+    visit: {
+      requestId, label: request?.requestNumber ?? 'This visit', windowStart: values.windowStart,
+      workStart: values.internalStart, durationMinutes: duration, date: values.date,
+    },
+    technicians: uniqueIds.map((id) => ({
+      id, name: technicians.find((person) => String(person.id) === id)?.name ?? 'Unknown technician',
+    })),
+    agenda: dateCheck.dateIsValid ? agenda : [],
+    travelMinutes: values.travelMinutes,
+  })
+  errors.push(...capacity.errors)
+  warnings.push(...capacity.warnings)
+
+  // Margin against delays, shown as information. Since 17 Nov 2026 no minimum is required
+  // (it replaces D4): Google's pessimistic travel and the 10 minutes of pickup already
+  // leave room for a late arrival.
+  const delay = errors.length === 0 && capacity.window
+    ? draftDelayMargins({
+      requestId, agenda, technicianIds: uniqueIds, travelMinutes: values.travelMinutes,
+      visit: { start: values.internalStart, end: capacity.pickupEnd, windowEnd: capacity.window.end },
+    })
+    : null
+  return {
+    isValid: errors.length === 0, errors, warnings,
+    // Registering reserves capacity, so every travel leg must be known first.
+    travelPending: warnings.some((warning) => warning.travelPending),
+    // A date after the due date cannot be registered while on-time days remain.
+    pastDue: warnings.some((warning) => warning.pastDue),
+    internalEnd: capacity.internalEnd, pickupEnd: capacity.pickupEnd, agenda,
+    travelLegs: capacity.travelLegs, dateIsValid: dateCheck.dateIsValid, delay,
+  }
+}
+
+// Body for the customer-service-appointments Edge Function, which revalidates it.
+// Only the travel legs of this sequence are sent, and all of them are known.
+// confirmationEmail ({ greeting, message }) asks the server to email the customer a
+// confirmation after registering (block B, step B4, path a); without it, none is sent.
+// customerEmail: the email corrected in Send to customer, saved before sending (24 Nov 2026).
+export function buildAppointmentRegistration({
+  request, values, validation, acceptance, confirmationEmail = null, customerEmail = '',
+}) {
+  return {
+    requestId: Number(request.id),
+    expectedRequestUpdatedAt: request.updatedAt,
+    technicianIds: values.technicianIds.map(Number),
+    date: values.date,
+    windowStart: values.windowStart,
+    workStart: values.internalStart,
+    travelMinutes: Object.fromEntries(validation.travelLegs
+      .filter((leg) => leg.minutes !== null).map((leg) => [leg.key, leg.minutes])),
+    acceptance,
+    ...(confirmationEmail ? { confirmationEmail } : {}),
+    ...(customerEmail ? { customerEmail } : {}),
+  }
+}
+
+// Body for "Send proposal" (block B, step B4, path b): one or two days, each with the
+// travel of its own sequence. The Edge Function validates both, holds them and emails the
+// invitation. options: [{ values, validation }] in the order the customer reads them.
+// alternatives (step B5): other days the customer may pick when none works, not held.
+export function buildProposalSend({ request, options, invitation, alternatives = [], customerEmail = '' }) {
+  return {
+    requestId: Number(request.id),
+    expectedRequestUpdatedAt: request.updatedAt,
+    options: options.map(({ values, validation }) => ({
+      technicianIds: values.technicianIds.map(Number),
+      date: values.date,
+      windowStart: values.windowStart,
+      workStart: values.internalStart,
+      travelMinutes: Object.fromEntries(validation.travelLegs
+        .filter((leg) => leg.minutes !== null).map((leg) => [leg.key, leg.minutes])),
+    })),
+    invitation,
+    alternatives,
+    ...(customerEmail ? { customerEmail } : {}),
+  }
+}
+
+// The customer email as the server stores it: trimmed and lowercase, one @ and a dot
+// after it (the email_address domain). Empty when it is not valid.
+export function normalizeCustomerEmail(value) {
+  const email = String(value ?? '').trim().toLowerCase()
+  return email.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/u.test(email) ? email : ''
+}
+
+// What the coordinator reads after sending: the days are held, and the invitation went
+// out or its outcome is unknown (a refused invitation comes back as an error instead).
+export function proposalSentNotice(requestNumber, result) {
+  const count = result?.optionIds?.length ?? 1
+  const held = `${requestNumber} is waiting for the customer: ${count === 1 ? 'its day is' : `its ${count} days are`} held.`
+  const invitation = result?.invitation
+  if (invitation?.status === 'SENT') {
+    return {
+      severity: 'success',
+      message: `${held} The invitation was emailed to ${invitation.to}${invitation.testMode ? ' (test inbox)' : ''}.`,
+    }
+  }
+  return { severity: 'warning', message: `${held} ${invitation?.message ?? ''}`.trim() }
+}
+
+// What the coordinator reads after registering: the visit is always saved; the
+// confirmation email may have been sent, failed or not been sent.
+export function registrationNotice(requestNumber, result) {
+  const registered = `${requestNumber} was registered as a confirmed appointment and appears in Calendar.`
+  const confirmation = result?.confirmation
+  if (!confirmation) return { severity: 'success', message: registered }
+  if (confirmation.status === 'SENT') {
+    return {
+      severity: 'success',
+      message: `${registered} The confirmation was emailed to ${confirmation.to}${confirmation.testMode ? ' (test inbox)' : ''}.`,
+    }
+  }
+  if (confirmation.status === 'FAILED') {
+    return { severity: 'warning', message: `${registered} The confirmation email failed: ${confirmation.message}` }
+  }
+  return { severity: 'warning', message: `${registered} ${confirmation.message}` }
+}
+
+export function createPrototypeProposalDraft({ requestId, values, requests, technicians = prototypeTechnicians, now = new Date() }) {
+  const validation = validatePrototypeProposalDraft({ requestId, values, requests, technicians, now })
+  if (!validation.isValid) throw new Error(validation.errors.map((error) => error.message).join(' '))
+  const request = requests.find((entry) => String(entry.id) === String(requestId))
+  const window = serviceCustomerWindowOptions.find((option) => option.start === values.windowStart)
+  return {
+    requestId: request.id, technicianIds: [...values.technicianIds], date: values.date,
+    timeZone: customerServiceTimeZone,
+    customerWindow: { date: values.date, start: window.start, end: window.end, exceptional: window.exceptional },
+    internalSlot: { start: values.internalStart, end: validation.internalEnd },
+    // Keep only the estimates for this sequence; they are revalidated with the draft.
+    travelMinutes: Object.fromEntries(validation.travelLegs
+      .filter((leg) => leg.minutes !== null).map((leg) => [leg.key, leg.minutes])),
+    estimatedDurationMinutes: Number(request.estimatedDurationMinutes), crewSize: Number(request.crewSize),
+    requestSignature: proposalPlanningSignature(request), savedAt: now.toISOString(),
+  }
+}
+
+// Business days searched when the request is already overdue (no on-time day left).
+export const proposalSuggestionSearchBusinessDays = 10
+// Suggestions start this many business days after today (decision of 17 Nov 2026): the
+// customer needs time to answer the proposal. Planning on Monday suggests Wednesday on.
+export const proposalSuggestionLeadBusinessDays = 2
+
+// First day a suggestion may use. A request due before the usual lead starts on its due
+// date, so it stays on time; those slots are short notice (date before leadDate).
+export function suggestionStartDate({ today, dueOn = null, leadBusinessDays = proposalSuggestionLeadBusinessDays }) {
+  const cursor = new Date(`${today}T12:00:00Z`)
+  for (let added = 0; added < leadBusinessDays;) {
+    cursor.setUTCDate(cursor.getUTCDate() + 1)
+    if (isCustomerServiceBusinessDay(cursor.toISOString().slice(0, 10))) added += 1
+  }
+  const leadDate = cursor.toISOString().slice(0, 10)
+  return { date: validDate(dueOn) && dueOn >= today && dueOn < leadDate ? dueOn : leadDate, leadDate }
+}
+// Suggested start times are tried every 5 minutes (decision P3, 12 Nov 2026): a quarter-hour
+// grid wasted room, for example arriving at 9:03 meant starting at 9:15 instead of 9:05.
+export const proposalSuggestionStepMinutes = 5
+
+// Proposes viable times for review (approved rule: suggest, never apply). It only reads
+// the schedule and returns plain values; filling the form is the user's choice and
+// registering still goes through the server. The first viable start of each window is
+// listed, earliest first, using the same validator as the form. "Earliest available"
+// uses it; the planner's own "Suggested times" section was removed in block R5.
+// fromDate (default today) is the first day searched; the overdue search counts its
+// business days from there. skipDates are searched past, still counting as business days.
+export function suggestProposalTimes({
+  requestId, values, requests, technicians = prototypeTechnicians, now = new Date(), limit = 3, fromDate = null,
+  skipDates = [],
+}) {
+  const request = requests.find((entry) => String(entry.id) === String(requestId))
+  const current = validatePrototypeProposalDraft({ requestId, values, requests, technicians, now })
+  // Request or technician problems make every time invalid; the form already explains them.
+  if (!request || current.errors.some((error) => ['request', 'technicianIds'].includes(error.field))) {
+    return { suggestions: [], searchedThrough: null }
+  }
+
+  const today = getCustomerServiceClock(now).date
+  const onTimeUntil = validDate(request.dueOn) && request.dueOn >= today ? request.dueOn : null
+  const suggestions = []
+  let searchedThrough = null
+  let businessDays = 0
+  const first = validDate(fromDate) && fromDate > today ? fromDate : today
+  for (const cursor = new Date(`${first}T12:00:00Z`); suggestions.length < limit; cursor.setUTCDate(cursor.getUTCDate() + 1)) {
+    const date = cursor.toISOString().slice(0, 10)
+    if (onTimeUntil && date > onTimeUntil) break
+    if (!isCustomerServiceBusinessDay(date)) continue
+    businessDays += 1
+    if (!onTimeUntil && businessDays > proposalSuggestionSearchBusinessDays) break
+    searchedThrough = date
+    if (skipDates.includes(date)) continue
+
+    for (const window of serviceCustomerWindowOptions) {
+      for (let start = minutes(window.start); start < minutes(window.end); start += proposalSuggestionStepMinutes) {
+        const internalStart = timeFromMinutes(start)
+        if (date === values.date && window.start === values.windowStart && internalStart === values.internalStart) continue
+        const candidate = { ...values, date, windowStart: window.start, internalStart }
+        const result = validatePrototypeProposalDraft({ requestId, values: candidate, requests, technicians, now })
+        if (!result.isValid || result.pastDue) continue
+        suggestions.push({
+          date, windowStart: window.start, windowLabel: window.label, internalStart,
+          internalEnd: result.internalEnd, pickupEnd: result.pickupEnd, travelPending: result.travelPending,
+          margin: result.delay?.margin ?? null, travelLegs: result.travelLegs,
+        })
+        break
+      }
+      if (suggestions.length >= limit) break
+    }
+  }
+  return { suggestions, searchedThrough }
+}
+
+
+// "Find a time this day" (decided 25 Nov 2026): when the form's time collides on its day,
+// the first time that fits that day for the same technicians, in the chosen window first
+// and then the earliest other window with room. It never changes the day or the
+// technicians: null when they have no room, and the coordinator decides. Travel still
+// unknown is left pending; the planner asks Google for it and searches again.
+export function timeOnSameDay({ requestId, values, requests, technicians = prototypeTechnicians, now = new Date() }) {
+  if (!validDate(values.date) || !values.technicianIds?.length) return null
+  const chosen = serviceCustomerWindowOptions.find((window) => window.start === values.windowStart)
+  const windows = chosen
+    ? [chosen, ...serviceCustomerWindowOptions.filter((window) => window !== chosen)]
+    : serviceCustomerWindowOptions
+  for (const window of windows) {
+    for (let start = minutes(window.start); start < minutes(window.end); start += proposalSuggestionStepMinutes) {
+      const internalStart = timeFromMinutes(start)
+      const result = validatePrototypeProposalDraft({
+        requestId, values: { ...values, windowStart: window.start, internalStart }, requests, technicians, now,
+      })
+      if (result.isValid) return { windowStart: window.start, internalStart, travelLegs: result.travelLegs }
+    }
+  }
+  return null
+}

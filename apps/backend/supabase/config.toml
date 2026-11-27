@@ -403,6 +403,12 @@ verify_jwt = false
 [functions.users-admin]
 verify_jwt = true
 
+# ADMIN-only Hyphen Requests screen. The function checks the admin, then reads the
+# SPConnect UAT messages from the teammate's webhook project with that project's
+# secret key (SPCONNECT_UAT_SECRET_KEY), which never leaves the server.
+[functions.hyphen-messages]
+verify_jwt = true
+
 # A signed-in administrator initiates OAuth. Google then returns through the
 # callback without a Supabase JWT; its one-time, expiring state is the trust
 # boundary before the callback performs any privileged write.
@@ -464,6 +470,84 @@ verify_jwt = false
 [functions.google-calendar-sync]
 verify_jwt = true
 
+# Customer Service staff send a PDF to Mistral OCR through this authenticated
+# boundary. The provider key never reaches the browser and no document is
+# persisted by ValtrimBilling during this first extraction phase.
+[functions.extract-customer-service-pdf]
+verify_jwt = true
+
+# Customer Service staff upload one private source PDF after the request has
+# been created and request short-lived signed URLs for review. The function
+# validates the caller before using service-role-only Storage and database RPCs.
+[functions.customer-service-source-pdf]
+verify_jwt = true
+
+# Registers an accepted appointment for ADMIN/SCHEDULING staff. The function
+# revalidates capacity with the shared planner rules before calling the
+# service-role-only register_customer_service_appointment RPC.
+[functions.customer-service-appointments]
+verify_jwt = true
+
+# Sends a Customer Service proposal (one or two held days) from the coordinator's
+# mailbox and records the customer's answer, for ADMIN/SCHEDULING staff. Capacity is
+# revalidated with the shared planner rules before the service-role-only RPCs.
+[functions.customer-service-proposals]
+verify_jwt = true
+
+# Follow-ups of proposals still waiting for the customer (24-hour reminder, 48-hour and
+# days-passed notices), called by pg_cron every 15 minutes. No caller credential: each
+# email goes out once, only when due.
+[functions.customer-service-proposal-reminders]
+verify_jwt = false
+
+# The reminder of a confirmed visit the business day before, called by pg_cron every 15
+# minutes. No caller credential: each visit is reminded once, only when due.
+[functions.customer-service-visit-reminders]
+verify_jwt = false
+
+# The customer's page for a proposal (step B5). No sign-in: the signed token in the
+# link is the credential, and it only works while the proposal waits for an answer.
+[functions.customer-service-proposal-response]
+verify_jwt = false
+
+# Travel minutes between visits from Google Routes API for ADMIN/SCHEDULING
+# staff. The GOOGLE_MAPS_API_KEY secret stays on the server.
+[functions.customer-service-travel-estimates]
+verify_jwt = true
+
+# Called by pg_cron every minute. No caller credential: it only applies the
+# transitions the server clock makes due, forward-only and idempotent.
+[functions.customer-service-appointment-transitions]
+verify_jwt = false
+
+# Reduced WebP copies of email photos (25 Nov 2026), called by pg_cron every minute. No
+# caller credential: it only converts the photos already queued, one per call, once each.
+[functions.customer-service-email-photos]
+verify_jwt = false
+
+# Called by pg_cron every afternoon (block R6). No caller credential: the date comes
+# from the server clock and a second run for that date within six hours spends nothing.
+[functions.customer-service-travel-check]
+verify_jwt = false
+
+# Read-only short-lived URLs for finalized email attachments. The caller RPC
+# checks active Customer Service roles; no uploads are exposed to the browser.
+[functions.customer-service-import-source]
+verify_jwt = true
+
+# Server-only worker: authenticates its own high-entropy secret before using
+# service role. Disabled by default; no browser JWT, cron or Graph is activated.
+[functions.customer-service-email-worker]
+verify_jwt = false
+
+[functions.customer-service-email-retry]
+verify_jwt = true
+
+# Server-only Graph intake. Its own secret is checked before service-role access;
+# both the global switch and the private connection must be explicitly enabled.
+[functions.customer-service-email-sync]
+verify_jwt = false
+
 # Browser requests are authorized inside the function, while scheduled runs use
 # a separate high-entropy FOLLOW_UP_CRON_SECRET. No request is trusted solely
 # because it reached this public endpoint.
@@ -524,6 +608,9 @@ verify_jwt = true
 # Management user; it reuses the Sequence Sheet email's Resend secrets.
 [functions.change-order-event-email]
 verify_jwt = true
+# Scheduled metadata inventory; authenticates with the existing sync secret.
+[functions.customer-service-email-reconcile]
+verify_jwt = false
 
 [analytics]
 enabled = true

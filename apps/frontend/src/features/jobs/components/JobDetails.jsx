@@ -64,6 +64,7 @@ import {
 import { useJobs } from '../context/useJobs.js'
 import { builderJobsPath } from '../utils/jobRoutes.js'
 import JobModuleNavigation from './JobModuleNavigation.jsx'
+<<<<<<< HEAD
 import { CopyOptionsDialog, CopyOptionsPicker } from './CopyPlanOptions.jsx'
 import {
   emptyCopySelection,
@@ -81,6 +82,12 @@ import { filterPlansByQuery } from '../utils/planSearch.js'
 import BulkPlanOptionsMode from './bulk-edit/BulkPlanOptionsMode.jsx'
 import { describeBulkResult } from '../utils/bulkPlanOptions.js'
 import { getJobPlanUsage } from '../utils/planUsage.js'
+=======
+import {
+  formatJobCoordinates,
+  jobCoordinatesGoogleMapsUrl,
+} from '../utils/jobCoordinates.js'
+>>>>>>> dev/leon
 
 function PlanDialog({ plans, plan, onClose, onSave, submitting }) {
   // A new Plan can start with Options copied from another Plan of the Job.
@@ -365,6 +372,7 @@ function planActions({
   ]
 }
 
+<<<<<<< HEAD
 function optionActions({ onEditOption, onDeleteOption }) {
   return [
     {
@@ -385,6 +393,9 @@ function optionActions({ onEditOption, onDeleteOption }) {
 function PlanDragPreview({ plan }) {
   const count = plan.options?.length ?? 0
 
+=======
+function JobField({ href, label, value }) {
+>>>>>>> dev/leon
   return (
     <Paper
       elevation={6}
@@ -406,6 +417,7 @@ function PlanDragPreview({ plan }) {
       <Typography variant="body2" noWrap sx={{ flex: 1, minWidth: 0 }}>
         {plan.name || `Plan ${plan.code}`}
       </Typography>
+<<<<<<< HEAD
       <Chip
         size="small"
         color="primary"
@@ -414,6 +426,25 @@ function PlanDragPreview({ plan }) {
         sx={{ minWidth: 34, fontWeight: 700 }}
       />
     </Paper>
+=======
+      <Typography
+        variant="body2"
+        fontWeight={600}
+        component={href ? 'a' : 'div'}
+        href={href || undefined}
+        target={href ? '_blank' : undefined}
+        rel={href ? 'noreferrer' : undefined}
+        sx={{
+          mt: 0.25,
+          color: href ? 'primary.main' : 'text.primary',
+          textDecoration: href ? 'none' : undefined,
+          '&:hover': href ? { textDecoration: 'underline' } : undefined,
+        }}
+      >
+        {value || 'Unassigned'}
+      </Typography>
+    </Box>
+>>>>>>> dev/leon
   )
 }
 
@@ -583,6 +614,7 @@ function PlanCard({
   )
 }
 
+<<<<<<< HEAD
 function PlansOptionsSheet({
   plans,
   canManage,
@@ -919,6 +951,17 @@ export default function JobDetails({
   job,
   contacts,
 }) {
+=======
+export default function JobDetails({ builderId, job, onBack }) {
+  const coordinates = formatJobCoordinates(
+    job.communityLatitude,
+    job.communityLongitude,
+  )
+  const coordinatesUrl = jobCoordinatesGoogleMapsUrl(
+    job.communityLatitude,
+    job.communityLongitude,
+  )
+>>>>>>> dev/leon
   const {
     canManageJobs,
     createJobPlan,
@@ -930,7 +973,10 @@ export default function JobDetails({
     createPlanOptions,
     updatePlanOption,
     deactivatePlanOption,
+    canManageCommunityAliases,
+    removeCommunityAlias,
   } = useJobs()
+  const [removingAliasId, setRemovingAliasId] = useState(null)
   const [planDialog, setPlanDialog] = useState(null)
   // The bulk mode: Plans and Options edited, deleted and added in a grid, and saved together.
   const [bulkOpen, setBulkOpen] = useState(false)
@@ -1063,6 +1109,23 @@ export default function JobDetails({
     }
   }
 
+  // Other names of the community saved from Customer Service emails (26 Nov 2026).
+  const communityAliases = job.communityAliases ?? []
+  const handleAliasRemove = async (entry) => {
+    setRemovingAliasId(entry.id)
+    try {
+      await removeCommunityAlias(job.id, entry.id)
+      setNotice({
+        severity: 'success',
+        message: `“${entry.alias}” removed. Emails that use it will need the Job chosen by hand.`,
+      })
+    } catch (removeError) {
+      setNotice({ severity: 'error', message: removeError.message })
+    } finally {
+      setRemovingAliasId(null)
+    }
+  }
+
   const handleDelete = async () => {
     if (!deleteTarget || deletionBlocked) {
       setNotice({
@@ -1154,12 +1217,86 @@ export default function JobDetails({
           </Alert>
         )}
 
+<<<<<<< HEAD
         <Card variant="outlined" sx={{ mb: 2.5 }}>
           <CardContent sx={{ p: '16px 20px !important' }}>
             <Typography component="h2" variant="subtitle1" fontWeight={700} sx={{ mb: 1.25 }}>
               Job team
             </Typography>
             <JobContactsGrid contacts={contacts} />
+=======
+        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} sx={{ mb: 3 }}>
+          <DetailMetric
+            icon={<ApartmentRoundedIcon />}
+            label="Total lots"
+            value={getJobUnitCount(job)}
+          />
+          <DetailMetric
+            icon={<LayersRoundedIcon />}
+            label="Plans"
+            value={getJobPlanCount(job)}
+          />
+          <DetailMetric
+            icon={<ReceiptLongRoundedIcon />}
+            label="Options"
+            value={getJobOptionCount(job)}
+          />
+        </Stack>
+
+        <Card variant="outlined" sx={{ mb: 3 }}>
+          <CardContent sx={{ p: '20px !important' }}>
+            <Stack direction="row" spacing={1} sx={{ alignItems: 'center', mb: 2 }}>
+              <LocationCityRoundedIcon color="primary" fontSize="small" />
+              <Typography variant="subtitle1" fontWeight={700}>
+                Job information
+              </Typography>
+            </Stack>
+            <Divider sx={{ mb: 2 }} />
+            <Stack
+              direction={{ xs: 'column', sm: 'row' }}
+              spacing={{ xs: 2, sm: 4 }}
+              useFlexGap
+              sx={{ flexWrap: 'wrap' }}
+            >
+              <JobField label="Builder" value={job.builder} />
+              <JobField label="Community / Project" value={job.community} />
+              <JobField
+                label="Community coordinates"
+                value={coordinates}
+                href={coordinatesUrl}
+              />
+              <JobField label="Supervisor" value={job.supervisor} />
+              <JobField label="Jobsite Superintendent" value={job.jobsiteSuperintendent} />
+            </Stack>
+            <Divider sx={{ my: 2 }} />
+            <Typography variant="caption" color="text.secondary" component="div">
+              Other names from emails
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.25 }}>
+              Customer Service emails that name the community this way link to this Job by themselves.
+              {canManageCommunityAliases && ' Remove a name that belongs to another Job.'}
+            </Typography>
+            <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: 'wrap', mt: 1 }}>
+              {communityAliases.length > 0
+                ? communityAliases.map((entry) => (
+                  <Chip
+                    key={entry.id}
+                    label={entry.alias}
+                    size="small"
+                    variant="outlined"
+                    disabled={removingAliasId === entry.id}
+                    onDelete={canManageCommunityAliases && removingAliasId === null
+                      ? () => handleAliasRemove(entry)
+                      : undefined}
+                  />
+                ))
+                : (
+                  <Typography variant="body2" fontWeight={600}>
+                    None yet. They are saved while reviewing a Customer Service request.
+                  </Typography>
+                )}
+            </Stack>
+>>>>>>> dev/leon
           </CardContent>
         </Card>
 

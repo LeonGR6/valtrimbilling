@@ -8,13 +8,24 @@ import {
   getLotsLabel,
   getMonthEventLabel,
 } from '../data/calendarEvents.js'
+import CustomerServiceEventCard from '../../customer-service/components/CustomerServiceEventCard.jsx'
 
+<<<<<<< HEAD
 export default function CalendarEventCard({ event, isList = false, isMonth = false }) {
+=======
+export default function CalendarEventCard({ event, displayMode = 'timed' }) {
+>>>>>>> dev/leon
   const props = event.extendedProps
+
+  if (props.calendarType === 'CUSTOMER_SERVICE') {
+    return <CustomerServiceEventCard event={event} displayMode={displayMode} />
+  }
+
   const type = activityTypeMap[props.activityType]
   const tone = getActivityTone(props.activityType, props.orderMaterial, props.variant, props.dateOwner)
   const followUp = getFollowUpStatusMeta(props.followUp)
 
+<<<<<<< HEAD
   // An event of its own of an Extra / CO: its number, Job and Lots (and the note), no Production details.
   if (props.activityType === 'CHANGE_ORDER') {
     if (isMonth) {
@@ -62,6 +73,9 @@ export default function CalendarEventCard({ event, isList = false, isMonth = fal
   }
 
   if (isList) {
+=======
+  if (displayMode === 'list') {
+>>>>>>> dev/leon
     return (
       <Box className={`list-event activity-tone--${tone}`}>
         <Box className="list-event__identity">
@@ -87,6 +101,22 @@ export default function CalendarEventCard({ event, isList = false, isMonth = fal
             </span>
           )}
         </Box>
+      </Box>
+    )
+  }
+
+  if (displayMode === 'compact' || displayMode === 'year') {
+    const isYear = displayMode === 'year'
+    const accessibleTitle = `${type.label} · Job #${props.jobCode} · ${props.community}`
+
+    return (
+      <Box
+        className={`service-compact-event service-compact-event--production service-compact-event--${displayMode} activity-tone--${tone}`}
+        title={accessibleTitle}
+        aria-label={accessibleTitle}
+      >
+        <span className="service-compact-event__marker" aria-hidden="true" />
+        <strong>{isYear ? 'P' : `${type.shortLabel} · #${props.jobCode}`}</strong>
       </Box>
     )
   }

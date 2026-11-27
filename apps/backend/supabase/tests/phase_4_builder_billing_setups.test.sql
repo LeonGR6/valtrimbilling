@@ -2,7 +2,11 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
+<<<<<<< HEAD
 select plan(43);
+=======
+select plan(35);
+>>>>>>> dev/leon
 
 select has_table(
   'valtrim',
@@ -374,6 +378,7 @@ select is(
   3::bigint,
   'Replacement version stores Invoice, Release and Backup requirements'
 );
+<<<<<<< HEAD
 select ok(
   not has_table_privilege('authenticated', 'valtrim.plans', 'select'),
   'Unopened Plans remain closed after the Builder billing setup phase'
@@ -382,6 +387,8 @@ select ok(
   not has_table_privilege('authenticated', 'valtrim.communities', 'select'),
   'Communities remain closed after the Builder billing setup phase'
 );
+=======
+>>>>>>> dev/leon
 
 select * from finish();
 

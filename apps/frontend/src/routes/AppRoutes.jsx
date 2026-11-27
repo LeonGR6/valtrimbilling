@@ -10,12 +10,14 @@ import { contextualRoutes, navigationRoutes } from './navigation.jsx'
 import {
   AcceptInvitePage,
   BuilderFollowUpResponsePage,
+  CustomerProposalResponsePage,
   ForgotPasswordPage,
   LoginPage,
   ResetPasswordPage,
 } from './lazyPages.jsx'
 import RequireAuth from '../features/auth/context/RequireAuth.jsx'
 import RequireRole from '../features/auth/context/RequireRole.jsx'
+import CustomerServicePrototypeProvider from '../features/customer-service/context/CustomerServicePrototypeProvider.jsx'
 
 function withRoleAccess(element, allowedRoles) {
   if (!allowedRoles?.length) return element
@@ -44,11 +46,18 @@ export const appRouter = createBrowserRouter([
     element: <Suspense fallback={<RouteLoading />}><BuilderFollowUpResponsePage /></Suspense>,
   },
   {
+    // A customer's answer to a Customer Service proposal; no sign-in (step B5).
+    path: '/customer-service/respond',
+    element: <Suspense fallback={<RouteLoading />}><CustomerProposalResponsePage /></Suspense>,
+  },
+  {
     path: '/',
     element: (
       <Suspense fallback={<RouteLoading />}>
         <RequireAuth>
-          <AppLayout />
+          <CustomerServicePrototypeProvider>
+            <AppLayout />
+          </CustomerServicePrototypeProvider>
         </RequireAuth>
       </Suspense>
     ),

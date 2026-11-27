@@ -48,6 +48,21 @@ function emitSitesWorker() {
 
 export default defineConfig({
   plugins: [react(), emitSitesWorker()],
+  resolve: {
+    // FullCalendar view plugins must share the same core/preact runtime. This
+    // workspace also uses Deno for Edge Functions, which can leave linked npm
+    // packages under node_modules/.deno. Deduping prevents a linked time-grid
+    // plugin from loading a second FullCalendar core at runtime.
+    dedupe: [
+      '@fullcalendar/core',
+      '@fullcalendar/daygrid',
+      '@fullcalendar/interaction',
+      '@fullcalendar/list',
+      '@fullcalendar/multimonth',
+      '@fullcalendar/react',
+      '@fullcalendar/timegrid',
+    ],
+  },
   build: {
     outDir: resolve(buildDirectory, 'client'),
     emptyOutDir: true,

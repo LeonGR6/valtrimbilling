@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(18);
+select plan(16);
 
 select has_table('valtrim', 'builder_contacts', 'Builder Contacts table is available');
 
@@ -147,16 +147,6 @@ select ok(
       and type = 'AP_CONTACT'
   ),
   'AP Contact is stored with its exact type'
-);
-
-select ok(
-  not has_table_privilege('authenticated', 'valtrim.communities', 'select'),
-  'Communities remain closed after the Builder Contacts phase'
-);
-
-select ok(
-  not has_table_privilege('authenticated', 'valtrim.plans', 'select'),
-  'Unopened Plans remain closed after the Builder Contacts phase'
 );
 
 select * from finish();

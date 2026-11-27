@@ -2,7 +2,6 @@
 // work, punch list items and callbacks. A row carries the property, the
 // homeowner contact and the appointment next to the request itself, which is
 // what the coordinator needs on screen before picking up the phone.
-import { initialPeople } from '../../people/data/people.js'
 import { initialUsers } from '../../users/data/users.js'
 import { toIsoDate } from '../utils/dates.js'
 
@@ -12,18 +11,8 @@ import { toIsoDate } from '../utils/dates.js'
 // the appointment column care about today.
 const today = toIsoDate(new Date())
 
-// The technician who works the call is Valtrim field staff and the coordinator
-// who logged it is an app user. Both are references, not names typed into the
-// request.
-export const technicianOptions = initialPeople.map(({ id, name }) => ({
-  value: id,
-  label: name,
-}))
-
-export const technicianLabelsById = Object.fromEntries(
-  technicianOptions.map(({ value, label }) => [value, label]),
-)
-
+// The coordinator who logged it is an app user; technicians come from the
+// persisted SERVICE_TECHNICIAN roster rather than the supervisor fixtures.
 export const coordinatorOptions = initialUsers.map(({ id, name }) => ({
   value: id,
   label: name,

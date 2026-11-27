@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(17);
+select plan(16);
 
 select has_table('valtrim', 'builders', 'Builders table is available');
 select has_table('valtrim', 'billing_setups', 'Billing setups table is available');
@@ -95,11 +95,6 @@ select is(
   ),
   4::bigint,
   'Builders and billing setups have the four expected RLS policies'
-);
-
-select ok(
-  not has_table_privilege('authenticated', 'valtrim.plans', 'select'),
-  'Unopened Plans remain closed after the Builders phase'
 );
 
 select * from finish();

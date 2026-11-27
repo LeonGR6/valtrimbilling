@@ -47,6 +47,19 @@ export const contactTypeDescriptions = Object.fromEntries(
   contactTypeOptions.map(({ value, description }) => [value, description]),
 )
 
+// Legacy fixture options are still consumed by the not-yet-persisted Customer
+// Service screens. Builder Contacts itself now loads builders from Supabase.
+export const builderOptions = [
+  { value: 'KB_HOME', label: 'KB Home' },
+  { value: 'TRUMARK', label: 'Trumark Homes' },
+  { value: 'CITY_VENTURES', label: 'City Ventures' },
+  { value: 'BROOKFIELD', label: 'Brookfield Residential' },
+]
+
+export const builderLabels = Object.fromEntries(
+  builderOptions.map(({ value, label }) => [value, label]),
+)
+
 export const emptyContact = {
   name: '',
   // What the contact is: a fixed type's label or any text the team types.
@@ -58,6 +71,7 @@ export const emptyContact = {
   notes: '',
   isActive: true,
 }
+<<<<<<< HEAD
 
 export const initialContacts = [
   {
@@ -136,3 +150,5 @@ export function contactTypeNames(customTypes = []) {
   }
   return names
 }
+=======
+>>>>>>> dev/leon

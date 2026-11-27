@@ -93,7 +93,7 @@ export default function PersonPickerField({
       field.onChange(saved.id)
       setDraft(null)
     } catch (error) {
-      setCreateError(error.message)
+      setCreateError(error.message || 'The person could not be created.')
     } finally {
       setSaving(false)
     }

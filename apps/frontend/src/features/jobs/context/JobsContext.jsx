@@ -9,7 +9,14 @@ import {
   updateJob as updateJobRecord,
 } from '../services/jobsRepository.js'
 import {
+<<<<<<< HEAD
   applyPlanOptionChanges as applyPlanOptionChangesRecord,
+=======
+  createJobCommunityAlias,
+  deleteJobCommunityAlias,
+} from '../services/jobCommunityAliasesRepository.js'
+import {
+>>>>>>> dev/leon
   createJobPlan as createJobPlanRecord,
   createPlanOption as createPlanOptionRecord,
   createPlanOptions as createPlanOptionsRecord,
@@ -67,6 +74,8 @@ export function JobsProvider({ children }) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const canManageJobs = ['ADMIN', 'PROJECT_MANAGEMENT'].includes(profile?.role)
+  // Customer Service coordinators save the other names of a community (26 Nov 2026).
+  const canManageCommunityAliases = ['ADMIN', 'SCHEDULING', 'PROJECT_MANAGEMENT'].includes(profile?.role)
   const buildersById = useMemo(
     () => new Map(builders.map((builder) => [String(builder.id), builder])),
     [builders],
@@ -193,6 +202,29 @@ export function JobsProvider({ children }) {
     )))
     setError(null)
     return updated
+  }, [])
+
+  const addCommunityAlias = useCallback(async ({ jobId, builderId, alias, aliasKey }) => {
+    const created = await createJobCommunityAlias({ jobId, builderId, alias, aliasKey })
+    setJobRecords((current) => current.map((job) => (
+      String(job.id) === String(jobId)
+        ? {
+            ...job,
+            communityAliases: [...(job.communityAliases ?? []), created]
+              .sort((left, right) => left.alias.localeCompare(right.alias)),
+          }
+        : job
+    )))
+    return created
+  }, [])
+
+  const removeCommunityAlias = useCallback(async (jobId, aliasId) => {
+    await deleteJobCommunityAlias(aliasId)
+    setJobRecords((current) => current.map((job) => (
+      String(job.id) === String(jobId)
+        ? { ...job, communityAliases: (job.communityAliases ?? []).filter((entry) => entry.id !== aliasId) }
+        : job
+    )))
   }, [])
 
   const createJobPlan = useCallback(async (jobId, plan) => {
@@ -466,9 +498,12 @@ export function JobsProvider({ children }) {
     loading,
     error,
     canManageJobs,
+    canManageCommunityAliases,
     refreshJobs,
     refreshJob,
     createJob,
+    addCommunityAlias,
+    removeCommunityAlias,
     updateJob,
     deactivateJob,
     createJobPlan,
@@ -486,7 +521,12 @@ export function JobsProvider({ children }) {
     saveSequenceSheetPhase,
     deactivateSequenceSheetPhase,
   }), [
+<<<<<<< HEAD
     applyPlanOptionChanges,
+=======
+    addCommunityAlias,
+    canManageCommunityAliases,
+>>>>>>> dev/leon
     canManageJobs,
     createJobPlan,
     createPlanOption,
@@ -500,7 +540,11 @@ export function JobsProvider({ children }) {
     loading,
     refreshJob,
     refreshJobs,
+<<<<<<< HEAD
     reorderJobPlans,
+=======
+    removeCommunityAlias,
+>>>>>>> dev/leon
     saveJobPlanPrice,
     saveJobPrices,
     savePlanOptionPrice,

@@ -20,6 +20,9 @@ coverage
 .claude/
 CLAUDE.md
 
+# Local Codex agent files
+.agents/
+
 # Local architecture notes (not committed)
 docs/architecture.md
 

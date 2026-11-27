@@ -33,9 +33,10 @@ export function userClient(req: Request) {
   })
 }
 
-export function serviceClient() {
+export function serviceClient(fetcher?: typeof fetch) {
   return createClient(supabaseUrl, serviceRoleKey, {
     db: { schema: 'valtrim' },
     auth: { persistSession: false, autoRefreshToken: false },
+    ...(fetcher ? { global: { fetch: fetcher } } : {}),
   })
 }

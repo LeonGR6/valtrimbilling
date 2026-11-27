@@ -11,18 +11,16 @@ const from = new Date(2026, 7, 1)
 const monthly = {
   frequency: 'MONTHLY',
   cutoffDay: 20,
-  submissionDay: 25,
-  invoiceDateRule: 'SUBMISSION',
   paymentTermsDays: 30,
 }
 
-test('monthly rule cuts off and submits on the configured days', () => {
+test('monthly rule uses the cutoff as the invoice date', () => {
   const [first] = computeDrawPeriods(monthly, 2, from)
 
   assert.equal(first.cutoffDate.getMonth(), 7)
   assert.equal(first.cutoffDate.getDate(), 20)
-  assert.equal(first.submissionDate.getDate(), 25)
-  assert.equal(first.invoiceDate.getDate(), 25)
+  assert.equal(first.invoiceDate, first.cutoffDate)
+  assert.equal('submissionDate' in first, false)
 })
 
 test('monthly rule advances one month per period', () => {
@@ -38,17 +36,6 @@ test('estimated payment adds the payment terms to the invoice date', () => {
     (first.estimatedPaymentDate - first.invoiceDate) / 86400000
 
   assert.equal(Math.round(days), 30)
-})
-
-test('a submission day before the cutoff lands the next month', () => {
-  const [first] = computeDrawPeriods(
-    { ...monthly, cutoffDay: 25, submissionDay: 5 },
-    1,
-    from,
-  )
-
-  assert.equal(first.cutoffDate.getMonth(), 7)
-  assert.equal(first.submissionDate.getMonth(), 8)
 })
 
 test('cutoff day 31 clamps to the last day of a short month', () => {
@@ -67,8 +54,6 @@ test('weekly rule always cuts off on the configured weekday', () => {
     {
       frequency: 'WEEKLY',
       cutoffWeekday: 0,
-      submissionOffsetDays: 2,
-      invoiceDateRule: 'SUBMISSION',
       paymentTermsDays: 21,
     },
     3,
@@ -77,13 +62,13 @@ test('weekly rule always cuts off on the configured weekday', () => {
 
   for (const period of periods) {
     assert.equal(period.cutoffDate.getDay(), 0)
-    assert.equal(period.submissionDate.getDay(), 2)
+    assert.equal(period.invoiceDate, period.cutoffDate)
   }
 })
 
 test('weekly periods are seven days apart', () => {
   const [first, second] = computeDrawPeriods(
-    { frequency: 'WEEKLY', cutoffWeekday: 0, submissionOffsetDays: 2, paymentTermsDays: 0 },
+    { frequency: 'WEEKLY', cutoffWeekday: 0, paymentTermsDays: 0 },
     2,
     from,
   )
@@ -97,8 +82,6 @@ test('twice a month alternates between both cutoff days', () => {
     {
       frequency: 'SEMIMONTHLY',
       cutoffDays: [10, 25],
-      submissionOffsetDays: 3,
-      invoiceDateRule: 'CUTOFF',
       paymentTermsDays: 45,
     },
     4,
@@ -120,14 +103,21 @@ test('an unknown frequency produces no periods instead of throwing', () => {
   assert.deepEqual(computeDrawPeriods(null, 3, from), [])
 })
 
+test('Any date replaces fixed periods with the rolling Calendar window rule', () => {
+  const setup = { ...monthly, anyDate: true, cutoffDay: null }
+
+  assert.deepEqual(computeDrawPeriods(setup, 3, from), [])
+  assert.match(describeSchedule(setup), /rolling 14-day Calendar window/)
+})
+
 test('describeSchedule summarizes each frequency in one line', () => {
   assert.match(describeSchedule(monthly), /day 20/)
   assert.match(
-    describeSchedule({ frequency: 'WEEKLY', cutoffWeekday: 0, submissionOffsetDays: 2 }),
+    describeSchedule({ frequency: 'WEEKLY', cutoffWeekday: 0 }),
     /Sunday/,
   )
   assert.match(
-    describeSchedule({ frequency: 'SEMIMONTHLY', cutoffDays: [10, 25], submissionOffsetDays: 3 }),
+    describeSchedule({ frequency: 'SEMIMONTHLY', cutoffDays: [10, 25] }),
     /10 and 25/,
   )
 })

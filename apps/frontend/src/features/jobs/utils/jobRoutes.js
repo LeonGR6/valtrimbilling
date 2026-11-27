@@ -33,14 +33,12 @@ export function jobDrawInvoicePath(builderId, jobId, phaseId, packageId) {
     : `${phasePath}/package/${routeId(packageId)}`
 }
 
-export function getJobBuilderId(job, builders = []) {
-  if (job?.builderId != null) return job.builderId
-
-  return builders.find((builder) => builder.name === job?.builder)?.id ?? null
+export function getJobBuilderId(job) {
+  return job?.builderId ?? null
 }
 
-export function jobBelongsToBuilder(job, builderId, builders = []) {
-  const jobBuilderId = getJobBuilderId(job, builders)
+export function jobBelongsToBuilder(job, builderId) {
+  const jobBuilderId = getJobBuilderId(job)
 
   return jobBuilderId != null && String(jobBuilderId) === String(builderId)
 }

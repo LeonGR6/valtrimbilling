@@ -1,6 +1,4 @@
 import { useMemo, useState } from 'react'
-import { zodResolver } from '@hookform/resolvers/zod'
-import { useForm } from 'react-hook-form'
 import {
   Alert,
   Box,
@@ -12,462 +10,88 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
-  Divider,
   IconButton,
+  InputAdornment,
   Snackbar,
   Stack,
   TextField,
-  Tooltip,
   Typography,
 } from '@mui/material'
 import AddRoundedIcon from '@mui/icons-material/AddRounded'
-import ApartmentRoundedIcon from '@mui/icons-material/ApartmentRounded'
-import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded'
-import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
-import EditOutlinedIcon from '@mui/icons-material/EditOutlined'
+import PlaylistAddRoundedIcon from '@mui/icons-material/PlaylistAddRounded'
+import ClearRoundedIcon from '@mui/icons-material/ClearRounded'
 import LayersRoundedIcon from '@mui/icons-material/LayersRounded'
-import LocationCityRoundedIcon from '@mui/icons-material/LocationCityRounded'
-import ReceiptLongRoundedIcon from '@mui/icons-material/ReceiptLongRounded'
+import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
 import {
-  emptyJobPlan,
-  emptyPlanOption,
+  CatalogEmptyState,
+  CatalogPageHeader,
+  FigureStrip,
+  StatusChip,
+} from '../../../components/common/CatalogPage'
+import {
   getJobOptionCount,
   getJobPlanCount,
   getJobUnitCount,
   getOptionLotDependencies,
   getPlanLotDependencies,
 } from '../data/jobs.js'
-import {
-  createJobPlanSchema,
-  planOptionSchema,
-} from '../schemas/jobSequenceSheetSchema.js'
+import { useJobs } from '../context/useJobs.js'
+import { builderJobsPath } from '../utils/jobRoutes.js'
 import JobModuleNavigation from './JobModuleNavigation.jsx'
+import { CopyOptionsDialog } from './CopyPlanOptions.jsx'
+import { plansToCopyFrom } from '../services/planOptionCopy.js'
+import { JobContactsGrid } from './JobContacts.jsx'
+import JobBillingSetupCard from './JobBillingSetupCard.jsx'
+import JobPurchaseOrders from './JobPurchaseOrders.jsx'
+import OptionsBillingNotice from './OptionsBillingNotice.jsx'
+import PlanOptionNotes from './PlanOptionNotes.jsx'
+import { filterPlansByQuery } from '../utils/planSearch.js'
+import BulkPlanOptionsMode from './bulk-edit/BulkPlanOptionsMode.jsx'
+import { describeBulkResult } from '../utils/bulkPlanOptions.js'
+import { getJobPlanUsage } from '../utils/planUsage.js'
+import PlansOptionsSheet from './PlansOptionsSheet.jsx'
+import PlanDialog from './PlanDialog.jsx'
+import OptionDialog from './OptionDialog.jsx'
 
-function PlanDialog({ plans, plan, onClose, onSave }) {
-  const schema = useMemo(
-    () => createJobPlanSchema(plans, plan?.id),
-    [plan?.id, plans],
-  )
-  const {
-    register,
-    handleSubmit,
-    formState: { errors },
-  } = useForm({
-    resolver: zodResolver(schema),
-    defaultValues: plan
-      ? { code: plan.code, name: plan.name ?? '' }
-      : { ...emptyJobPlan },
-    mode: 'onTouched',
-    reValidateMode: 'onChange',
-  })
-
-  return (
-    <Dialog
-      open
-      onClose={onClose}
-      fullWidth
-      maxWidth="sm"
-      component="form"
-      onSubmit={handleSubmit(onSave)}
-      noValidate
-    >
-      <DialogTitle sx={{ pb: 1 }}>
-        <Typography variant="h6" component="div" fontWeight={700}>
-          {plan ? 'Edit plan' : 'Add plan'}
-        </Typography>
-        <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-          Plans are the main groups displayed in this Job&apos;s sequence sheet.
-        </Typography>
-      </DialogTitle>
-      <DialogContent sx={{ pt: '16px !important' }}>
-        <Stack spacing={2.25}>
-          <TextField
-            label="Plan code"
-            {...register('code')}
-            error={Boolean(errors.code)}
-            helperText={errors.code?.message ?? 'Example: 2 or 2-ADA'}
-            fullWidth
-            slotProps={{ htmlInput: { maxLength: 40 } }}
-          />
-          <TextField
-            label="Plan name"
-            {...register('name')}
-            error={Boolean(errors.name)}
-            helperText={errors.name?.message ?? 'Optional descriptive name.'}
-            fullWidth
-            slotProps={{ htmlInput: { maxLength: 100 } }}
-          />
-        </Stack>
-      </DialogContent>
-      <DialogActions sx={{ px: 3, pb: 2.5 }}>
-        <Button color="inherit" onClick={onClose}>Cancel</Button>
-        <Button type="submit" variant="contained" disableElevation>
-          {plan ? 'Save changes' : 'Add plan'}
-        </Button>
-      </DialogActions>
-    </Dialog>
-  )
-}
-
-function OptionDialog({ plan, option, onClose, onSave }) {
-  const {
-    register,
-    handleSubmit,
-    formState: { errors },
-  } = useForm({
-    resolver: zodResolver(planOptionSchema),
-    defaultValues: option
-      ? { code: option.code, description: option.description }
-      : { ...emptyPlanOption },
-    mode: 'onTouched',
-    reValidateMode: 'onChange',
-  })
-
-  return (
-    <Dialog
-      open
-      onClose={onClose}
-      fullWidth
-      maxWidth="sm"
-      component="form"
-      onSubmit={handleSubmit(onSave)}
-      noValidate
-    >
-      <DialogTitle sx={{ pb: 1 }}>
-        <Typography variant="h6" component="div" fontWeight={700}>
-          {option ? 'Edit option' : `Add option to Plan ${plan.code}`}
-        </Typography>
-        <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-          The code and description will appear as one column in the sequence sheet.
-        </Typography>
-      </DialogTitle>
-      <DialogContent sx={{ pt: '16px !important' }}>
-        <Stack spacing={2.25}>
-          <TextField
-            label="P.O. / OPT # (option code)"
-            {...register('code')}
-            error={Boolean(errors.code)}
-            helperText={errors.code?.message ?? `Example: ${plan.code}-OPT`}
-            fullWidth
-            slotProps={{ htmlInput: { maxLength: 50 } }}
-          />
-          <TextField
-            label="Option description"
-            {...register('description')}
-            error={Boolean(errors.description)}
-            helperText={errors.description?.message ?? 'Describe the work included in this option.'}
-            multiline
-            minRows={3}
-            fullWidth
-            slotProps={{ htmlInput: { maxLength: 240 } }}
-          />
-        </Stack>
-      </DialogContent>
-      <DialogActions sx={{ px: 3, pb: 2.5 }}>
-        <Button color="inherit" onClick={onClose}>Cancel</Button>
-        <Button type="submit" variant="contained" disableElevation>
-          {option ? 'Save changes' : 'Add option'}
-        </Button>
-      </DialogActions>
-    </Dialog>
-  )
-}
-
-function DetailMetric({ icon, label, value }) {
-  return (
-    <Card variant="outlined" sx={{ flex: 1, minWidth: 170 }}>
-      <CardContent sx={{ display: 'flex', alignItems: 'center', gap: 1.5, p: '16px !important' }}>
-        <Box
-          sx={{
-            width: 40,
-            height: 40,
-            borderRadius: 1.5,
-            display: 'grid',
-            placeItems: 'center',
-            bgcolor: 'primary.light',
-            color: 'primary.main',
-          }}
-        >
-          {icon}
-        </Box>
-        <Box>
-          <Typography variant="h6" fontWeight={700} sx={{ lineHeight: 1.2 }}>
-            {value}
-          </Typography>
-          <Typography variant="caption" color="text.secondary">
-            {label}
-          </Typography>
-        </Box>
-      </CardContent>
-    </Card>
-  )
-}
-
-function JobField({ label, value }) {
-  return (
-    <Box sx={{ minWidth: 170 }}>
-      <Typography variant="caption" color="text.secondary" component="div">
-        {label}
-      </Typography>
-      <Typography variant="body2" fontWeight={600} sx={{ mt: 0.25 }}>
-        {value || 'Unassigned'}
-      </Typography>
-    </Box>
-  )
-}
-
-function PlanCard({
-  plan,
-  position,
-  onAddOption,
-  onEditPlan,
-  onDeletePlan,
-  onEditOption,
-  onDeleteOption,
+export default function JobDetails({
+  builderId,
+  job,
+  contacts,
 }) {
-  const options = plan.options ?? []
-
-  return (
-    <Card component="article" variant="outlined" sx={{ overflow: 'hidden' }}>
-      <Box
-        sx={{
-          px: { xs: 2, sm: 2.5 },
-          py: 2,
-          bgcolor: 'primary.light',
-          borderBottom: 1,
-          borderColor: 'divider',
-        }}
-      >
-        <Stack
-          direction={{ xs: 'column', md: 'row' }}
-          spacing={2}
-          sx={{ alignItems: { md: 'center' }, justifyContent: 'space-between' }}
-        >
-          <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center', minWidth: 0 }}>
-            <Box
-              sx={{
-                width: 42,
-                height: 42,
-                flexShrink: 0,
-                borderRadius: 1.5,
-                display: 'grid',
-                placeItems: 'center',
-                bgcolor: 'primary.main',
-                color: 'primary.contrastText',
-                fontWeight: 800,
-              }}
-            >
-              {position}
-            </Box>
-            <Box sx={{ minWidth: 0 }}>
-              <Typography variant="overline" color="text.secondary" fontWeight={700}>
-                Plan code {plan.code}
-              </Typography>
-              <Typography variant="h6" fontWeight={800} sx={{ overflowWrap: 'anywhere' }}>
-                {plan.name || `Plan ${plan.code}`}
-              </Typography>
-            </Box>
-          </Stack>
-
-          <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: 'wrap' }}>
-            <Button
-              size="small"
-              variant="contained"
-              startIcon={<AddRoundedIcon />}
-              onClick={onAddOption}
-              disableElevation
-            >
-              Add option
-            </Button>
-            <Button
-              size="small"
-              variant="outlined"
-              color="inherit"
-              startIcon={<EditOutlinedIcon />}
-              onClick={onEditPlan}
-            >
-              Edit plan
-            </Button>
-            <Tooltip title="Delete plan">
-              <IconButton
-                size="small"
-                color="error"
-                aria-label={`Delete Plan ${plan.code}`}
-                onClick={onDeletePlan}
-              >
-                <DeleteOutlineRoundedIcon fontSize="small" />
-              </IconButton>
-            </Tooltip>
-          </Stack>
-        </Stack>
-      </Box>
-
-      <Box sx={{ p: { xs: 2, sm: 2.5 } }}>
-        <Stack
-          direction="row"
-          spacing={1}
-          sx={{ mb: 1.5, alignItems: 'center', justifyContent: 'space-between' }}
-        >
-          <Box>
-            <Typography variant="subtitle1" fontWeight={750}>
-              Options
-            </Typography>
-            <Typography variant="caption" color="text.secondary">
-              P.O. / OPT # and description for this plan.
-            </Typography>
-          </Box>
-          <Chip
-            size="small"
-            variant="outlined"
-            label={`${options.length} ${options.length === 1 ? 'option' : 'options'}`}
-          />
-        </Stack>
-
-        {options.length > 0 ? (
-          <Box
-            sx={{
-              border: 1,
-              borderColor: 'divider',
-              borderRadius: 1.5,
-              overflow: 'hidden',
-            }}
-          >
-            <Box
-              sx={{
-                display: { xs: 'none', md: 'grid' },
-                gridTemplateColumns: 'minmax(170px, 0.32fr) minmax(260px, 1fr) auto',
-                gap: 2,
-                px: 2,
-                py: 1,
-                bgcolor: 'action.hover',
-                borderBottom: 1,
-                borderColor: 'divider',
-              }}
-            >
-              <Typography variant="caption" color="text.secondary" fontWeight={750}>
-                P.O. / OPT #
-              </Typography>
-              <Typography variant="caption" color="text.secondary" fontWeight={750}>
-                Description
-              </Typography>
-              <Typography variant="caption" color="text.secondary" fontWeight={750}>
-                Actions
-              </Typography>
-            </Box>
-
-            {options.map((option, optionIndex) => (
-              <Box
-                key={option.id}
-                sx={{
-                  display: 'grid',
-                  gridTemplateColumns: {
-                    xs: '1fr',
-                    md: 'minmax(170px, 0.32fr) minmax(260px, 1fr) auto',
-                  },
-                  alignItems: { md: 'center' },
-                  gap: { xs: 1.25, md: 2 },
-                  px: 2,
-                  py: 1.5,
-                  borderTop: optionIndex === 0 ? 0 : 1,
-                  borderColor: 'divider',
-                  bgcolor: optionIndex % 2 === 0 ? 'background.paper' : 'action.hover',
-                }}
-              >
-                <Box>
-                  <Typography
-                    variant="caption"
-                    color="text.secondary"
-                    sx={{ display: { xs: 'block', md: 'none' }, mb: 0.5 }}
-                  >
-                    P.O. / OPT #
-                  </Typography>
-                  <Chip
-                    size="small"
-                    color="primary"
-                    variant="outlined"
-                    label={option.code}
-                    sx={{ fontWeight: 750, maxWidth: '100%' }}
-                  />
-                </Box>
-                <Box sx={{ minWidth: 0 }}>
-                  <Typography
-                    variant="caption"
-                    color="text.secondary"
-                    sx={{ display: { xs: 'block', md: 'none' }, mb: 0.25 }}
-                  >
-                    Description
-                  </Typography>
-                  <Typography variant="body2" sx={{ overflowWrap: 'anywhere' }}>
-                    {option.description}
-                  </Typography>
-                </Box>
-                <Stack
-                  direction="row"
-                  spacing={0.5}
-                  sx={{ justifyContent: { xs: 'flex-start', md: 'flex-end' } }}
-                >
-                  <Button
-                    size="small"
-                    color="inherit"
-                    startIcon={<EditOutlinedIcon />}
-                    onClick={() => onEditOption(option)}
-                  >
-                    Edit
-                  </Button>
-                  <Tooltip title="Delete option">
-                    <IconButton
-                      size="small"
-                      color="error"
-                      aria-label={`Delete option ${option.code} for Plan ${plan.code}`}
-                      onClick={() => onDeleteOption(option)}
-                    >
-                      <DeleteOutlineRoundedIcon fontSize="small" />
-                    </IconButton>
-                  </Tooltip>
-                </Stack>
-              </Box>
-            ))}
-          </Box>
-        ) : (
-          <Box
-            sx={{
-              py: 3,
-              px: 2,
-              textAlign: 'center',
-              border: 1,
-              borderStyle: 'dashed',
-              borderColor: 'divider',
-              borderRadius: 1.5,
-              bgcolor: 'action.hover',
-            }}
-          >
-            <ReceiptLongRoundedIcon color="disabled" sx={{ mb: 0.5 }} />
-            <Typography variant="body2" fontWeight={700}>
-              No options added to this plan
-            </Typography>
-            <Typography variant="caption" color="text.secondary" component="div" sx={{ mb: 1.5 }}>
-              Add the first option to complete this plan.
-            </Typography>
-            <Button size="small" variant="outlined" startIcon={<AddRoundedIcon />} onClick={onAddOption}>
-              Add first option
-            </Button>
-          </Box>
-        )}
-      </Box>
-    </Card>
-  )
-}
-
-export default function JobDetails({ builderId, job, onBack, onChange }) {
+  const {
+    canManageJobs,
+    createJobPlan,
+    applyPlanOptionChanges,
+    updateJobPlan,
+    deactivateJobPlan,
+    reorderJobPlans,
+    createPlanOption,
+    createPlanOptions,
+    updatePlanOption,
+    deactivatePlanOption,
+  } = useJobs()
   const [planDialog, setPlanDialog] = useState(null)
+  // The bulk mode: Plans and Options edited, deleted and added in a grid, and saved together.
+  const [bulkOpen, setBulkOpen] = useState(false)
   const [optionDialog, setOptionDialog] = useState(null)
-  const [deleteTarget, setDeleteTarget] = useState(null)
-  const [notice, setNotice] = useState(null)
-  const sequenceSheet = job.sequenceSheet ?? {
-    name: 'Options Sequence Sheet',
-    plans: [],
+  const [copyDialog, setCopyDialog] = useState(null)
+  // Plans the person has opened; every Plan starts closed.
+  const [openPlanIds, setOpenPlanIds] = useState(() => new Set())
+  const revealPlan = (planId) => {
+    setOpenPlanIds((current) => new Set(current).add(planId))
   }
-  const plans = sequenceSheet.plans ?? []
+  const [deleteTarget, setDeleteTarget] = useState(null)
+  const [submitting, setSubmitting] = useState(false)
+  const [notice, setNotice] = useState(null)
+  const [query, setQuery] = useState('')
+  const canManagePlans = canManageJobs && job.isActive
+  const jobPlans = job.sequenceSheet?.plans
+  const plans = useMemo(() => jobPlans ?? [], [jobPlans])
+  // Which Plans and Options the Lots use: those cannot be deleted in the bulk mode.
+  const bulkUsage = useMemo(() => getJobPlanUsage(job), [job])
+  // While searching, a plan shows when it matches or when some of its options
+  // do; then only the matching options are listed under it.
+  const visiblePlans = useMemo(() => filterPlansByQuery(plans, query), [plans, query])
   const deleteDependencies = deleteTarget
     ? deleteTarget.type === 'plan'
       ? getPlanLotDependencies(job, deleteTarget.plan.id)
@@ -478,58 +102,107 @@ export default function JobDetails({ builderId, job, onBack, onChange }) {
   ).size
   const deletionBlocked = deleteDependencies.length > 0
 
-  const updatePlans = (nextPlans) => {
-    onChange({
-      ...job,
-      sequenceSheet: {
-        ...sequenceSheet,
-        plans: nextPlans,
-      },
-    })
-  }
-
-  const handlePlanSave = (form) => {
-    if (planDialog?.plan) {
-      updatePlans(
-        plans.map((plan) =>
-          plan.id === planDialog.plan.id ? { ...plan, ...form } : plan,
-        ),
-      )
-      setNotice({ severity: 'success', message: 'Plan updated.' })
-    } else {
-      updatePlans([...plans, { ...form, id: Date.now(), options: [] }])
-      setNotice({ severity: 'success', message: 'Plan added.' })
-    }
-    setPlanDialog(null)
-  }
-
-  const handleOptionSave = (form) => {
-    const { plan, option } = optionDialog
-    updatePlans(
-      plans.map((item) => {
-        if (item.id !== plan.id) return item
-
-        const options = item.options ?? []
-        return {
-          ...item,
-          options: option
-            ? options.map((itemOption) =>
-                itemOption.id === option.id
-                  ? { ...itemOption, ...form }
-                  : itemOption,
-              )
-            : [...options, { ...form, id: Date.now() }],
+  const handlePlanSave = async (form, copiedOptions = []) => {
+    setSubmitting(true)
+    try {
+      if (planDialog?.plan) {
+        await updateJobPlan(job.id, planDialog.plan.id, form)
+        setNotice({ severity: 'success', message: 'Plan updated.' })
+      } else {
+        const created = await createJobPlan(job.id, form)
+        if (copiedOptions.length === 0) {
+          setNotice({ severity: 'success', message: 'Plan added.' })
+        } else {
+          // The Plan exists by now: a failure here must not look like the Plan was not saved.
+          try {
+            await createPlanOptions(job.id, created.id, copiedOptions)
+            revealPlan(created.id)
+            setNotice({
+              severity: 'success',
+              message: `Plan added with ${copiedOptions.length} ${copiedOptions.length === 1 ? 'option' : 'options'}.`,
+            })
+          } catch (copyError) {
+            setNotice({
+              severity: 'warning',
+              message: `Plan added, but its options could not be copied: ${copyError.message}`,
+            })
+          }
         }
-      }),
-    )
-    setNotice({
-      severity: 'success',
-      message: option ? 'Option updated.' : 'Option added.',
-    })
-    setOptionDialog(null)
+      }
+      setPlanDialog(null)
+    } catch (saveError) {
+      setNotice({ severity: 'error', message: saveError.message })
+    } finally {
+      setSubmitting(false)
+    }
   }
 
-  const handleDelete = () => {
+  const handleBulkSave = async (changes, summary) => {
+    try {
+      const result = await applyPlanOptionChanges(job.id, changes)
+      // A few Plans open to show what was added; a long list stays closed.
+      const touched = [...new Set([...result.plans.map(({ id }) => id), ...result.optionPlanIds])]
+      if (touched.length <= 3) touched.forEach(revealPlan)
+      setNotice({
+        severity: 'success',
+        // The Options already there that the grid left out count with the ones the database skipped.
+        message: describeBulkResult({ ...result, optionsSkipped: result.optionsSkipped + summary.optionsSkipped }),
+      })
+      setBulkOpen(false)
+    } catch (bulkError) {
+      setNotice({ severity: 'error', message: bulkError.message })
+      throw bulkError
+    }
+  }
+
+  const handleCopyOptions = async (options) => {
+    setSubmitting(true)
+    try {
+      await createPlanOptions(job.id, copyDialog.plan.id, options)
+      revealPlan(copyDialog.plan.id)
+      setNotice({
+        severity: 'success',
+        message: `${options.length} ${options.length === 1 ? 'option' : 'options'} copied into Plan ${copyDialog.plan.code}.`,
+      })
+      setCopyDialog(null)
+    } catch (copyError) {
+      setNotice({ severity: 'error', message: copyError.message })
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const handleReorder = async (planIds) => {
+    try {
+      await reorderJobPlans(job.id, planIds)
+    } catch (reorderError) {
+      setNotice({ severity: 'error', message: reorderError.message })
+    }
+  }
+
+  const handleOptionSave = async (form) => {
+    const { plan, option } = optionDialog
+    setSubmitting(true)
+    try {
+      if (option) {
+        await updatePlanOption(job.id, plan.id, option.id, form)
+      } else {
+        await createPlanOption(job.id, plan.id, form)
+      }
+      revealPlan(plan.id)
+      setNotice({
+        severity: 'success',
+        message: option ? 'Option updated.' : 'Option added.',
+      })
+      setOptionDialog(null)
+    } catch (saveError) {
+      setNotice({ severity: 'error', message: saveError.message })
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const handleDelete = async () => {
     if (!deleteTarget || deletionBlocked) {
       setNotice({
         severity: 'error',
@@ -538,200 +211,234 @@ export default function JobDetails({ builderId, job, onBack, onChange }) {
       return
     }
 
-    if (deleteTarget.type === 'plan') {
-      updatePlans(plans.filter((plan) => plan.id !== deleteTarget.plan.id))
-      setNotice({ severity: 'success', message: 'Plan deleted.' })
-    } else {
-      updatePlans(
-        plans.map((plan) =>
-          plan.id === deleteTarget.plan.id
-            ? {
-                ...plan,
-                options: (plan.options ?? []).filter(
-                  (option) => option.id !== deleteTarget.option.id,
-                ),
-              }
-            : plan,
-        ),
-      )
-      setNotice({ severity: 'success', message: 'Option deleted.' })
+    setSubmitting(true)
+    try {
+      if (deleteTarget.type === 'plan') {
+        await deactivateJobPlan(job.id, deleteTarget.plan.id)
+        setNotice({ severity: 'success', message: 'Plan deleted.' })
+      } else {
+        await deactivatePlanOption(
+          job.id,
+          deleteTarget.plan.id,
+          deleteTarget.option.id,
+        )
+        setNotice({ severity: 'success', message: 'Option deleted.' })
+      }
+      setDeleteTarget(null)
+    } catch (deleteError) {
+      setNotice({ severity: 'error', message: deleteError.message })
+    } finally {
+      setSubmitting(false)
     }
-    setDeleteTarget(null)
   }
 
   return (
     <Box sx={{ minHeight: '100%', bgcolor: 'background.default' }}>
-      <Box
-        sx={{
-          px: { xs: 2.5, md: 4 },
-          py: 3,
-          bgcolor: 'background.paper',
-          borderBottom: 1,
-          borderColor: 'divider',
-          display: 'flex',
-          alignItems: { xs: 'flex-start', sm: 'center' },
-          justifyContent: 'space-between',
-          gap: 2,
-          flexDirection: { xs: 'column', sm: 'row' },
-        }}
-      >
-        <Stack direction="row" spacing={1.5} sx={{ alignItems: 'flex-start' }}>
-          <IconButton aria-label="Back to jobs" onClick={onBack} sx={{ mt: -0.5, ml: -1 }}>
-            <ArrowBackRoundedIcon />
-          </IconButton>
-          <Box>
-            <Typography variant="caption" color="primary.main" fontWeight={700}>
-              Builders / {job.builder} / Jobs / Job {job.code} / Plans &amp; Options
-            </Typography>
-            <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
-              <Typography variant="h5" fontWeight={700} color="text.primary">
-                Job {job.code} · Plans &amp; options
-              </Typography>
-              <Chip label="Active" size="small" color="success" variant="outlined" />
-            </Stack>
-            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-              {job.builder} · {job.community}
-            </Typography>
-          </Box>
-        </Stack>
-        <Button
-          variant="contained"
-          startIcon={<AddRoundedIcon />}
-          onClick={() => setPlanDialog({ plan: null })}
-          disableElevation
-        >
-          New plan
-        </Button>
-      </Box>
+      <CatalogPageHeader
+        borderless
+        breadcrumbs={[
+          { label: 'Jobs', to: '/jobs' },
+          { label: job.builder, to: builderJobsPath(builderId) },
+          { label: `Job ${job.code}` },
+        ]}
+        title={`Job ${job.code}`}
+        titleAdornment={<StatusChip active={job.isActive} />}
+        subtitle={`${job.community} · ${job.builder}`}
+        meta={(
+          <FigureStrip
+            label={`Job ${job.code} summary`}
+            figures={[
+              { label: 'lots', value: getJobUnitCount(job) },
+              { label: getJobPlanCount(job) === 1 ? 'plan' : 'plans', value: getJobPlanCount(job) },
+              { label: getJobOptionCount(job) === 1 ? 'option' : 'options', value: getJobOptionCount(job) },
+            ]}
+          />
+        )}
+        actions={canManagePlans && (
+          <Stack direction="row" spacing={1}>
+            <Button
+              variant="outlined"
+              startIcon={<PlaylistAddRoundedIcon />}
+              onClick={() => setBulkOpen(true)}
+              disabled={bulkOpen}
+            >
+              Bulk edit
+            </Button>
+            <Button
+              variant="contained"
+              startIcon={<AddRoundedIcon />}
+              onClick={() => setPlanDialog({ plan: null })}
+              disabled={bulkOpen}
+              disableElevation
+            >
+              New plan
+            </Button>
+          </Stack>
+        )}
+      />
 
       <JobModuleNavigation
         active="plans-options"
         builderId={builderId}
         jobId={job.id}
+        showBack={false}
       />
 
       <Box sx={{ p: { xs: 2.5, md: 4 } }}>
-        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} sx={{ mb: 3 }}>
-          <DetailMetric
-            icon={<ApartmentRoundedIcon />}
-            label="Total lots"
-            value={getJobUnitCount(job)}
-          />
-          <DetailMetric
-            icon={<LayersRoundedIcon />}
-            label="Plans"
-            value={getJobPlanCount(job)}
-          />
-          <DetailMetric
-            icon={<ReceiptLongRoundedIcon />}
-            label="Options"
-            value={getJobOptionCount(job)}
-          />
-        </Stack>
+        {!canManagePlans && (
+          <Alert severity="info" sx={{ mb: 2.5 }}>
+            {job.isActive
+              ? 'You can review Plans and Options, but your role cannot change them.'
+              : 'This Job is inactive. Its Plans, Options and prices are read-only.'}
+          </Alert>
+        )}
 
-        <Card variant="outlined" sx={{ mb: 3 }}>
-          <CardContent sx={{ p: '20px !important' }}>
-            <Stack direction="row" spacing={1} sx={{ alignItems: 'center', mb: 2 }}>
-              <LocationCityRoundedIcon color="primary" fontSize="small" />
-              <Typography variant="subtitle1" fontWeight={700}>
-                Job information
-              </Typography>
-            </Stack>
-            <Divider sx={{ mb: 2 }} />
-            <Stack
-              direction={{ xs: 'column', sm: 'row' }}
-              spacing={{ xs: 2, sm: 4 }}
-              useFlexGap
-              sx={{ flexWrap: 'wrap' }}
-            >
-              <JobField label="Builder" value={job.builder} />
-              <JobField label="Community / Project" value={job.community} />
-              <JobField label="Supervisor" value={job.supervisor} />
-              <JobField label="Jobsite Superintendent" value={job.jobsiteSuperintendent} />
-            </Stack>
+        <Card variant="outlined" sx={{ mb: 2.5 }}>
+          <CardContent sx={{ p: '16px 20px !important' }}>
+            <Typography component="h2" variant="subtitle1" fontWeight={700} sx={{ mb: 1.25 }}>
+              Job team
+            </Typography>
+            <JobContactsGrid contacts={contacts} />
           </CardContent>
         </Card>
 
-        <Box
-          sx={{
-            bgcolor: 'background.paper',
-            border: 1,
-            borderColor: 'divider',
-            borderRadius: 2,
-            overflow: 'hidden',
-          }}
-        >
+        <JobBillingSetupCard job={job} />
+        <JobPurchaseOrders job={job} />
+        <OptionsBillingNotice job={job} optionCount={getJobOptionCount(job)} sx={{ mb: 2.5 }} />
+        <PlanOptionNotes job={job} canAdd={canManageJobs} />
+
+        {bulkOpen && canManagePlans ? (
+          <BulkPlanOptionsMode
+            plans={plans}
+            usage={bulkUsage}
+            onSave={handleBulkSave}
+            onClose={() => setBulkOpen(false)}
+          />
+        ) : (
           <Box
             sx={{
-              px: 2.5,
-              py: 2,
-              borderBottom: 1,
+              bgcolor: 'background.paper',
+              border: 1,
               borderColor: 'divider',
-              display: 'flex',
-              alignItems: { xs: 'flex-start', sm: 'center' },
-              justifyContent: 'space-between',
-              gap: 1.5,
-              flexDirection: { xs: 'column', sm: 'row' },
+              borderRadius: 2,
+              overflow: 'hidden',
             }}
           >
-            <Box>
-              <Typography variant="subtitle1" fontWeight={700}>
-                Plans &amp; options
-              </Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ mt: 0.25 }}>
-                Review each plan and manage its options directly underneath it.
-              </Typography>
-            </Box>
-            <Chip
-              label={`${plans.length} ${plans.length === 1 ? 'plan' : 'plans'}`}
-              color="primary"
-              variant="outlined"
-              size="small"
-            />
-          </Box>
-
-          {plans.length > 0 ? (
-            <Stack spacing={2} sx={{ p: { xs: 2, sm: 2.5 } }}>
-              {plans.map((plan, index) => (
-                <PlanCard
-                  key={plan.id}
-                  plan={plan}
-                  position={index + 1}
-                  onAddOption={() => setOptionDialog({ plan, option: null })}
-                  onEditPlan={() => setPlanDialog({ plan })}
-                  onDeletePlan={() => setDeleteTarget({ type: 'plan', plan })}
-                  onEditOption={(option) => setOptionDialog({ plan, option })}
-                  onDeleteOption={(option) =>
-                    setDeleteTarget({ type: 'option', plan, option })
-                  }
+            <Stack
+              direction={{ xs: 'column', md: 'row' }}
+              spacing={1.5}
+              sx={{
+                px: 2.5,
+                py: 1.5,
+                borderBottom: 1,
+                borderColor: 'divider',
+                alignItems: { md: 'center' },
+                justifyContent: 'space-between',
+              }}
+            >
+              <Stack direction="row" spacing={1.25} sx={{ alignItems: 'center' }}>
+                <Typography component="h2" variant="subtitle1" fontWeight={700}>
+                  Plans &amp; options
+                </Typography>
+                <Chip
+                  label={`${plans.length} ${plans.length === 1 ? 'plan' : 'plans'}`}
+                  size="small"
+                  variant="outlined"
                 />
-              ))}
-              <Button
-                variant="outlined"
-                startIcon={<AddRoundedIcon />}
-                onClick={() => setPlanDialog({ plan: null })}
-                sx={{ alignSelf: { xs: 'stretch', sm: 'flex-start' } }}
-              >
-                Add another plan
-              </Button>
+              </Stack>
+              {plans.length > 0 && (
+                <TextField
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  size="small"
+                  placeholder="Search plans or options"
+                  sx={{ width: { xs: '100%', md: 320 } }}
+                  slotProps={{
+                    htmlInput: { 'aria-label': 'Search plans or options' },
+                    input: {
+                      startAdornment: (
+                        <InputAdornment position="start">
+                          <SearchRoundedIcon fontSize="small" color="action" />
+                        </InputAdornment>
+                      ),
+                      endAdornment: query ? (
+                        <InputAdornment position="end">
+                          <IconButton
+                            size="small"
+                            edge="end"
+                            aria-label="Clear search"
+                            onClick={() => setQuery('')}
+                          >
+                            <ClearRoundedIcon fontSize="small" />
+                          </IconButton>
+                        </InputAdornment>
+                      ) : null,
+                    },
+                  }}
+                />
+              )}
             </Stack>
-          ) : (
-            <Box sx={{ py: 8, px: 3, textAlign: 'center' }}>
-              <LayersRoundedIcon color="action" sx={{ fontSize: 42, mb: 1 }} />
-              <Typography fontWeight={700}>No plans configured for this Job</Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, mb: 2 }}>
-                Add the first plan, then organize its options underneath it.
-              </Typography>
-              <Button
-                variant="outlined"
-                startIcon={<AddRoundedIcon />}
-                onClick={() => setPlanDialog({ plan: null })}
-              >
-                Add plan
-              </Button>
-            </Box>
-          )}
-        </Box>
+
+            {plans.length === 0 ? (
+              <Box sx={{ py: 6, px: 3, textAlign: 'center' }}>
+                <LayersRoundedIcon color="disabled" sx={{ fontSize: 36, mb: 1 }} aria-hidden="true" />
+                <Typography fontWeight={700}>No plans in this job yet</Typography>
+                <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, mb: 2 }}>
+                  Add the first plan, then organize its options underneath it.
+                </Typography>
+                {canManagePlans && (
+                  <Stack direction="row" spacing={1} sx={{ justifyContent: 'center' }}>
+                    <Button
+                      variant="outlined"
+                      startIcon={<AddRoundedIcon />}
+                      onClick={() => setPlanDialog({ plan: null })}
+                    >
+                      Add plan
+                    </Button>
+                    <Button
+                      variant="outlined"
+                      startIcon={<PlaylistAddRoundedIcon />}
+                      onClick={() => setBulkOpen(true)}
+                    >
+                      Bulk edit
+                    </Button>
+                  </Stack>
+                )}
+              </Box>
+            ) : visiblePlans.length === 0 ? (
+              <CatalogEmptyState
+                title="No plans or options found"
+                description={`Nothing in Job ${job.code} matches “${query.trim()}”.`}
+                action={(
+                  <Button size="small" variant="outlined" onClick={() => setQuery('')}>
+                    Clear search
+                  </Button>
+                )}
+              />
+            ) : (
+              <PlansOptionsSheet
+                plans={visiblePlans}
+                canManage={canManagePlans}
+                // A filtered list hides Plans, so the order only changes without a search.
+                reorderable={canManagePlans && !query.trim() && plans.length > 1}
+                onReorder={handleReorder}
+                openPlanIds={openPlanIds}
+                onOpenPlanIdsChange={setOpenPlanIds}
+                searching={Boolean(query.trim())}
+                onAddPlan={() => setPlanDialog({ plan: null })}
+                onAddOption={(plan) => setOptionDialog({ plan, option: null })}
+                copySourcePlans={plans}
+                onCopyOptions={(plan) => setCopyDialog({ plan })}
+                onEditPlan={(plan) => setPlanDialog({ plan })}
+                onDeletePlan={(plan) => setDeleteTarget({ type: 'plan', plan })}
+                onEditOption={(plan, option) => setOptionDialog({ plan, option })}
+                onDeleteOption={(plan, option) =>
+                  setDeleteTarget({ type: 'option', plan, option })
+                }
+              />
+            )}
+          </Box>
+        )}
       </Box>
 
       {planDialog && (
@@ -741,6 +448,18 @@ export default function JobDetails({ builderId, job, onBack, onChange }) {
           plan={planDialog.plan}
           onClose={() => setPlanDialog(null)}
           onSave={handlePlanSave}
+          submitting={submitting}
+        />
+      )}
+
+      {copyDialog && (
+        <CopyOptionsDialog
+          key={`copy-${copyDialog.plan.id}`}
+          plan={plans.find(({ id }) => id === copyDialog.plan.id) ?? copyDialog.plan}
+          sources={plansToCopyFrom(plans, copyDialog.plan.id)}
+          onClose={() => setCopyDialog(null)}
+          onCopy={handleCopyOptions}
+          submitting={submitting}
         />
       )}
 
@@ -751,12 +470,13 @@ export default function JobDetails({ builderId, job, onBack, onChange }) {
           option={optionDialog.option}
           onClose={() => setOptionDialog(null)}
           onSave={handleOptionSave}
+          submitting={submitting}
         />
       )}
 
       <Dialog
         open={Boolean(deleteTarget)}
-        onClose={() => setDeleteTarget(null)}
+        onClose={submitting ? undefined : () => setDeleteTarget(null)}
         fullWidth
         maxWidth="xs"
       >
@@ -808,7 +528,11 @@ export default function JobDetails({ builderId, job, onBack, onChange }) {
           )}
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2.5 }}>
-          <Button color="inherit" onClick={() => setDeleteTarget(null)}>
+          <Button
+            color="inherit"
+            onClick={() => setDeleteTarget(null)}
+            disabled={submitting}
+          >
             {deletionBlocked ? 'Close' : 'Cancel'}
           </Button>
           <Button
@@ -816,9 +540,9 @@ export default function JobDetails({ builderId, job, onBack, onChange }) {
             variant="contained"
             onClick={handleDelete}
             disableElevation
-            disabled={deletionBlocked}
+            disabled={deletionBlocked || submitting}
           >
-            Delete
+            {submitting ? 'Deleting...' : 'Delete'}
           </Button>
         </DialogActions>
       </Dialog>

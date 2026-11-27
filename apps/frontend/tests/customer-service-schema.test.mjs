@@ -10,7 +10,7 @@ function validRequest(overrides = {}) {
     tag: 'NEW',
     reportedAt: '2026-08-26',
     createdById: 1,
-    builder: 'KB_HOME',
+    builder: 'KB',
     community: 'Andara',
     lotNumber: '24a',
     street: '123 Main Street',

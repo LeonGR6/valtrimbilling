@@ -29,15 +29,21 @@ export const activityTypeOptions = [
   },
 ]
 
-export const activityTypeMap = Object.fromEntries(
-  activityTypeOptions.map((type) => [type.value, type]),
-)
-
 export const changeOrderType = {
   value: 'CHANGE_ORDER',
-  label: 'Extra / Change Order',
+  label: 'Extra / CO',
+  shortLabel: 'CO',
+  description: 'Extra / Change Order event',
   tone: 'change-order',
 }
+
+// The events the Production Calendar can show: EXT, Shutter, DM, HW and the events of their own of an
+// approved Extra / CO. Only the first four are made from a Production activity.
+export const calendarTypeOptions = [...activityTypeOptions, changeOrderType]
+
+export const activityTypeMap = Object.fromEntries(
+  calendarTypeOptions.map((type) => [type.value, type]),
+)
 
 export const dateOwnerOptions = [
   { value: 'SUPERVISOR', label: 'Supervisor Date', shortLabel: 'Supervisor' },
@@ -57,7 +63,36 @@ export function getDateOwnerLabel(value, short = false) {
   return short ? option.shortLabel : option.label
 }
 
-export function getActivityTone(activityType, orderMaterial = false) {
+export function getFollowUpStatusMeta(followUp) {
+  if (!followUp?.status) return null
+  const rescheduledByJobsite = followUp.status === 'RESCHEDULED'
+    && String(followUp.note ?? '').includes('Jobsite Superintendent')
+  const values = {
+    SCHEDULED: { label: 'Awaiting response', color: 'info', tone: 'scheduled' },
+    CONFIRMED: { label: 'Confirmed', color: 'success', tone: 'confirmed' },
+    RESCHEDULED: {
+      label: rescheduledByJobsite ? 'Rescheduled by Jobsite' : 'Rescheduled',
+      color: 'warning',
+      tone: 'rescheduled',
+    },
+    RESCHEDULE_REQUESTED: { label: 'Date review pending', color: 'warning', tone: 'rescheduled' },
+    NO_RESPONSE: { label: 'No response', color: 'error', tone: 'no-response' },
+    ON_HOLD: { label: 'On hold', color: 'warning', tone: 'on-hold' },
+    COMPLETED: { label: 'Completed', color: 'success', tone: 'confirmed' },
+    CANCELLED: { label: 'Cancelled', color: 'default', tone: 'cancelled' },
+  }
+  return values[followUp.status] ?? {
+    label: String(followUp.status).replaceAll('_', ' ').toLowerCase(),
+    color: 'default',
+    tone: 'cancelled',
+  }
+}
+
+export function getActivityTone(activityType, orderMaterial = false, variant = null, dateOwner = null) {
+  // The Baseboard install is a DM event with a color of its own.
+  if (variant === 'baseboard-install') return 'baseboard'
+  // A DM whose date is still Tentative is orange until someone owns the date.
+  if (activityType === 'DM' && dateOwner === 'TENTATIVE') return 'dm-tentative'
   if (activityType === 'EXT' && orderMaterial) return 'ext-order'
   return activityTypeMap[activityType]?.tone ?? 'ext'
 }
@@ -74,7 +109,9 @@ export function getLotsLabel(lotStart, lotEnd, lotNumbers = []) {
     let rangeEnd = normalizedLots[0]
 
     normalizedLots.slice(1).forEach((lot) => {
-      if (lot === rangeEnd + 1) {
+      // Only whole Lots run together ("5–7"). A Lot such as 12.1 stands on its own, so 12, 12.1
+      // and 13 read as three Lots and not as "12–13".
+      if (Number.isInteger(lot) && Number.isInteger(rangeEnd) && lot === rangeEnd + 1) {
         rangeEnd = lot
         return
       }
@@ -97,6 +134,8 @@ export function getLotsLabel(lotStart, lotEnd, lotNumbers = []) {
 
 export function createEmptyProductionDraft(date = new Date().toISOString().split('T')[0]) {
   return {
+    activityId: null,
+    followUpStates: {},
     calendarType: 'PRODUCTION',
     jobId: '',
     phaseId: '',
@@ -108,6 +147,7 @@ export function createEmptyProductionDraft(date = new Date().toISOString().split
     lotStart: 1,
     lotEnd: 1,
     lotNumbers: [],
+    lotIds: [],
     foreman: '',
     superintendent: '',
     notes: '',
@@ -115,32 +155,51 @@ export function createEmptyProductionDraft(date = new Date().toISOString().split
     extDateOwner: '',
     extDateNote: '',
     extDateHistory: [],
+    extScheduleId: null,
+    extConfirmed: false,
     extOrderMaterial: false,
     extInstallOnly: false,
     extInstallDate: '',
     extInstallDateOwner: '',
     extInstallDateNote: '',
     extInstallDateHistory: [],
+    extInstallScheduleId: null,
+    extInstallConfirmed: false,
     dmShutters: false,
     shutterDate: '',
     shutterDateOwner: '',
     shutterDateNote: '',
     shutterDateHistory: [],
+    shutterScheduleId: null,
+    shutterConfirmed: false,
     dmDate: date,
     dmDateOwner: '',
     dmDateNote: '',
     dmDateHistory: [],
+    dmScheduleId: null,
+    dmConfirmed: false,
     dmInstallOnly: false,
     dmInstallDate: '',
     dmInstallDateOwner: '',
     dmInstallDateNote: '',
     dmInstallDateHistory: [],
+    dmInstallScheduleId: null,
+    dmInstallConfirmed: false,
+    dmBaseboardInstall: false,
+    dmBaseboardInstallDate: '',
+    dmBaseboardInstallDateOwner: '',
+    dmBaseboardInstallDateNote: '',
+    dmBaseboardInstallDateHistory: [],
+    dmBaseboardInstallScheduleId: null,
+    dmBaseboardInstallConfirmed: false,
     dmSplitPhase: false,
     dmSplitParts: [],
     hwDate: date,
     hwDateOwner: '',
     hwDateNote: '',
     hwDateHistory: [],
+    hwScheduleId: null,
+    hwConfirmed: false,
     hwSplitPhase: false,
     hwSplitParts: [],
     hwLockUp: false,
@@ -148,6 +207,15 @@ export function createEmptyProductionDraft(date = new Date().toISOString().split
     hwLockUpDateOwner: '',
     hwLockUpDateNote: '',
     hwLockUpDateHistory: [],
+    hwLockUpScheduleId: null,
+    hwLockUpConfirmed: false,
+    hwWeatherstripping: false,
+    hwWeatherstrippingDate: '',
+    hwWeatherstrippingDateOwner: '',
+    hwWeatherstrippingDateNote: '',
+    hwWeatherstrippingDateHistory: [],
+    hwWeatherstrippingScheduleId: null,
+    hwWeatherstrippingConfirmed: false,
   }
 }
 
@@ -156,6 +224,8 @@ export const emptyCalendarDraft = createEmptyProductionDraft()
 function buildProductionSchedule(values) {
   return {
     EXT: {
+      id: values.extScheduleId,
+      confirmed: values.extConfirmed,
       date: values.extDate,
       dateOwner: values.extDateOwner,
       note: values.extDateNote,
@@ -166,10 +236,14 @@ function buildProductionSchedule(values) {
       installDateOwner: values.extInstallDateOwner,
       installDateNote: values.extInstallDateNote,
       installDateHistory: values.extInstallDateHistory,
+      installScheduleId: values.extInstallScheduleId,
+      installConfirmed: values.extInstallConfirmed,
       splitPhase: false,
       splitParts: [],
     },
     SHUTTER: {
+      id: values.shutterScheduleId,
+      confirmed: values.shutterConfirmed,
       enabled: values.dmShutters,
       date: values.shutterDate,
       dateOwner: values.shutterDateOwner,
@@ -182,6 +256,8 @@ function buildProductionSchedule(values) {
       splitParts: [],
     },
     DM: {
+      id: values.dmScheduleId,
+      confirmed: values.dmConfirmed,
       date: values.dmDate,
       dateOwner: values.dmDateOwner,
       note: values.dmDateNote,
@@ -192,11 +268,22 @@ function buildProductionSchedule(values) {
       installDateOwner: values.dmInstallDateOwner,
       installDateNote: values.dmInstallDateNote,
       installDateHistory: values.dmInstallDateHistory,
+      installScheduleId: values.dmInstallScheduleId,
+      installConfirmed: values.dmInstallConfirmed,
+      baseboardInstall: values.dmBaseboardInstall,
+      baseboardInstallDate: values.dmBaseboardInstallDate,
+      baseboardInstallDateOwner: values.dmBaseboardInstallDateOwner,
+      baseboardInstallDateNote: values.dmBaseboardInstallDateNote,
+      baseboardInstallDateHistory: values.dmBaseboardInstallDateHistory,
+      baseboardInstallScheduleId: values.dmBaseboardInstallScheduleId,
+      baseboardInstallConfirmed: values.dmBaseboardInstallConfirmed,
       splitPhase: values.dmSplitPhase,
       splitParts: values.dmSplitParts,
       shutters: values.dmShutters,
     },
     HW: {
+      id: values.hwScheduleId,
+      confirmed: values.hwConfirmed,
       date: values.hwDate,
       dateOwner: values.hwDateOwner,
       note: values.hwDateNote,
@@ -211,6 +298,15 @@ function buildProductionSchedule(values) {
       lockUpDateOwner: values.hwLockUpDateOwner,
       lockUpDateNote: values.hwLockUpDateNote,
       lockUpDateHistory: values.hwLockUpDateHistory,
+      lockUpScheduleId: values.hwLockUpScheduleId,
+      lockUpConfirmed: values.hwLockUpConfirmed,
+      weatherstripping: values.hwWeatherstripping,
+      weatherstrippingDate: values.hwWeatherstrippingDate,
+      weatherstrippingDateOwner: values.hwWeatherstrippingDateOwner,
+      weatherstrippingDateNote: values.hwWeatherstrippingDateNote,
+      weatherstrippingDateHistory: values.hwWeatherstrippingDateHistory,
+      weatherstrippingScheduleId: values.hwWeatherstrippingScheduleId,
+      weatherstrippingConfirmed: values.hwWeatherstrippingConfirmed,
     },
   }
 }
@@ -252,6 +348,11 @@ const stageFieldMap = {
     installDateOwner: 'dmInstallDateOwner',
     installDateNote: 'dmInstallDateNote',
     installDateHistory: 'dmInstallDateHistory',
+    baseboardInstall: 'dmBaseboardInstall',
+    baseboardInstallDate: 'dmBaseboardInstallDate',
+    baseboardInstallDateOwner: 'dmBaseboardInstallDateOwner',
+    baseboardInstallDateNote: 'dmBaseboardInstallDateNote',
+    baseboardInstallDateHistory: 'dmBaseboardInstallDateHistory',
     splitPhase: 'dmSplitPhase',
     splitParts: 'dmSplitParts',
   },
@@ -270,6 +371,11 @@ const stageFieldMap = {
     lockUpDateOwner: 'hwLockUpDateOwner',
     lockUpDateNote: 'hwLockUpDateNote',
     lockUpDateHistory: 'hwLockUpDateHistory',
+    weatherstripping: 'hwWeatherstripping',
+    weatherstrippingDate: 'hwWeatherstrippingDate',
+    weatherstrippingDateOwner: 'hwWeatherstrippingDateOwner',
+    weatherstrippingDateNote: 'hwWeatherstrippingDateNote',
+    weatherstrippingDateHistory: 'hwWeatherstrippingDateHistory',
     splitPhase: 'hwSplitPhase',
     splitParts: 'hwSplitParts',
   },
@@ -338,6 +444,22 @@ export function recordProductionDateHistory(values, previousEvent, changedAt = n
       )
     }
 
+    if (fields.baseboardInstall && previousStage.baseboardInstall && values[fields.baseboardInstall]) {
+      nextValues[fields.baseboardInstallDateHistory] = appendPreviousDate(
+        values[fields.baseboardInstallDateHistory],
+        {
+          date: previousStage.baseboardInstallDate,
+          dateOwner: previousStage.baseboardInstallDateOwner,
+          note: previousStage.baseboardInstallDateNote,
+        },
+        {
+          date: values[fields.baseboardInstallDate],
+          dateOwner: values[fields.baseboardInstallDateOwner],
+        },
+        changedAt,
+      )
+    }
+
     if (fields.lockUp && previousStage.lockUp && values[fields.lockUp]) {
       nextValues[fields.lockUpDateHistory] = appendPreviousDate(
         values[fields.lockUpDateHistory],
@@ -349,6 +471,22 @@ export function recordProductionDateHistory(values, previousEvent, changedAt = n
         {
           date: values[fields.lockUpDate],
           dateOwner: values[fields.lockUpDateOwner],
+        },
+        changedAt,
+      )
+    }
+
+    if (fields.weatherstripping && previousStage.weatherstripping && values[fields.weatherstripping]) {
+      nextValues[fields.weatherstrippingDateHistory] = appendPreviousDate(
+        values[fields.weatherstrippingDateHistory],
+        {
+          date: previousStage.weatherstrippingDate,
+          dateOwner: previousStage.weatherstrippingDateOwner,
+          note: previousStage.weatherstrippingDateNote,
+        },
+        {
+          date: values[fields.weatherstrippingDate],
+          dateOwner: values[fields.weatherstrippingDateOwner],
         },
         changedAt,
       )
@@ -380,6 +518,7 @@ export function createProductionCalendarEvents(values, groupId, stamp = Date.now
   const productionSchedule = buildProductionSchedule(values)
   const commonProps = {
     calendarType: 'PRODUCTION',
+    activityId: values.activityId ?? null,
     groupId,
     jobId: values.jobId,
     phaseId: values.phaseId,
@@ -391,11 +530,13 @@ export function createProductionCalendarEvents(values, groupId, stamp = Date.now
     lotStart: values.lotStart,
     lotEnd: values.lotEnd,
     lotNumbers: values.lotNumbers,
+    lotIds: values.lotIds ?? [],
     phaseLotNumbers: values.lotNumbers,
     foreman: values.foreman,
     superintendent: values.superintendent,
     notes: values.notes,
     productionSchedule,
+    followUpStates: values.followUpStates ?? {},
   }
 
   return activityTypeOptions.flatMap((type) => {
@@ -411,14 +552,18 @@ export function createProductionCalendarEvents(values, groupId, stamp = Date.now
         dateOwner: stage.dateOwner,
         note: stage.note,
         history: stage.history,
+        confirmed: stage.confirmed,
       }]
     const stageEvents = schedules.map((schedule, index) => {
+      const scheduleId = schedule.scheduleId ?? schedule.id ?? stage.id ?? null
       const scheduleLotNumbers = values.lotNumbers.filter((lot) => (
         Number(lot) >= Number(schedule.lotStart) && Number(lot) <= Number(schedule.lotEnd)
       ))
 
       return {
-        id: `${groupId}-${type.value.toLowerCase()}-${stamp}-${index}`,
+        id: scheduleId
+          ? `production-schedule-${scheduleId}`
+          : `${groupId}-${type.value.toLowerCase()}-${stamp}-${index}`,
         groupId,
         title: `${type.label} • ${getLotsLabel(schedule.lotStart, schedule.lotEnd, scheduleLotNumbers)}`,
         start: schedule.date,
@@ -426,19 +571,26 @@ export function createProductionCalendarEvents(values, groupId, stamp = Date.now
         extendedProps: {
           ...commonProps,
           activityType: type.value,
+          scheduleId,
+          followUp: values.followUpStates?.[String(scheduleId)] ?? null,
           dateOwner: schedule.dateOwner ?? stage.dateOwner,
           dateNote: schedule.note ?? stage.note ?? '',
           dateHistory: schedule.history ?? stage.history ?? [],
+          confirmed: Boolean(schedule.confirmed),
           lotStart: schedule.lotStart,
           lotEnd: schedule.lotEnd,
           lotNumbers: scheduleLotNumbers,
           orderMaterial: Boolean(stage.orderMaterial),
           installOnly: Boolean(stage.installOnly),
           installDate: stage.installDate ?? '',
+          baseboardInstall: Boolean(stage.baseboardInstall),
+          baseboardInstallDate: stage.baseboardInstallDate ?? '',
           splitPhase: Boolean(stage.splitPhase),
           splitParts: stage.splitParts ?? [],
           lockUp: Boolean(stage.lockUp),
           lockUpDate: stage.lockUpDate ?? '',
+          weatherstripping: Boolean(stage.weatherstripping),
+          weatherstrippingDate: stage.weatherstrippingDate ?? '',
           variant: stage.splitPhase ? 'division' : 'base',
         },
       }
@@ -446,7 +598,9 @@ export function createProductionCalendarEvents(values, groupId, stamp = Date.now
 
     if (stage.installOnly) {
       stageEvents.push({
-        id: `${groupId}-${type.value.toLowerCase()}-install-${stamp}`,
+        id: stage.installScheduleId
+          ? `production-schedule-${stage.installScheduleId}`
+          : `${groupId}-${type.value.toLowerCase()}-install-${stamp}`,
         groupId,
         title: `${type.label} INSTALL ONLY • ${getLotsLabel(values.lotStart, values.lotEnd, values.lotNumbers)}`,
         start: stage.installDate,
@@ -454,9 +608,12 @@ export function createProductionCalendarEvents(values, groupId, stamp = Date.now
         extendedProps: {
           ...commonProps,
           activityType: type.value,
+          scheduleId: stage.installScheduleId ?? null,
+          followUp: values.followUpStates?.[String(stage.installScheduleId)] ?? null,
           dateOwner: stage.installDateOwner,
           dateNote: stage.installDateNote ?? '',
           dateHistory: stage.installDateHistory ?? [],
+          confirmed: Boolean(stage.installConfirmed),
           lotStart: values.lotStart,
           lotEnd: values.lotEnd,
           lotNumbers: values.lotNumbers,
@@ -471,9 +628,45 @@ export function createProductionCalendarEvents(values, groupId, stamp = Date.now
       })
     }
 
+    if (type.value === 'DM' && stage.baseboardInstall) {
+      stageEvents.push({
+        id: stage.baseboardInstallScheduleId
+          ? `production-schedule-${stage.baseboardInstallScheduleId}`
+          : `${groupId}-${type.value.toLowerCase()}-baseboard-install-${stamp}`,
+        groupId,
+        title: `${type.label} BASEBOARD INSTALL • ${getLotsLabel(values.lotStart, values.lotEnd, values.lotNumbers)}`,
+        start: stage.baseboardInstallDate,
+        allDay: true,
+        extendedProps: {
+          ...commonProps,
+          activityType: type.value,
+          scheduleId: stage.baseboardInstallScheduleId ?? null,
+          followUp: values.followUpStates?.[String(stage.baseboardInstallScheduleId)] ?? null,
+          dateOwner: stage.baseboardInstallDateOwner,
+          dateNote: stage.baseboardInstallDateNote ?? '',
+          dateHistory: stage.baseboardInstallDateHistory ?? [],
+          confirmed: Boolean(stage.baseboardInstallConfirmed),
+          lotStart: values.lotStart,
+          lotEnd: values.lotEnd,
+          lotNumbers: values.lotNumbers,
+          orderMaterial: false,
+          installOnly: false,
+          installDate: '',
+          baseboardInstall: true,
+          baseboardInstallDate: stage.baseboardInstallDate,
+          splitPhase: Boolean(stage.splitPhase),
+          splitParts: stage.splitParts ?? [],
+          lockUp: false,
+          variant: 'baseboard-install',
+        },
+      })
+    }
+
     if (type.value === 'HW' && stage.lockUp) {
       stageEvents.push({
-        id: `${groupId}-${type.value.toLowerCase()}-lock-up-${stamp}`,
+        id: stage.lockUpScheduleId
+          ? `production-schedule-${stage.lockUpScheduleId}`
+          : `${groupId}-${type.value.toLowerCase()}-lock-up-${stamp}`,
         groupId,
         title: `${type.label} LOCK UP • ${getLotsLabel(values.lotStart, values.lotEnd, values.lotNumbers)}`,
         start: stage.lockUpDate,
@@ -481,9 +674,12 @@ export function createProductionCalendarEvents(values, groupId, stamp = Date.now
         extendedProps: {
           ...commonProps,
           activityType: type.value,
+          scheduleId: stage.lockUpScheduleId ?? null,
+          followUp: values.followUpStates?.[String(stage.lockUpScheduleId)] ?? null,
           dateOwner: stage.lockUpDateOwner,
           dateNote: stage.lockUpDateNote ?? '',
           dateHistory: stage.lockUpDateHistory ?? [],
+          confirmed: Boolean(stage.lockUpConfirmed),
           lotStart: values.lotStart,
           lotEnd: values.lotEnd,
           lotNumbers: values.lotNumbers,
@@ -495,6 +691,40 @@ export function createProductionCalendarEvents(values, groupId, stamp = Date.now
           lockUp: true,
           lockUpDate: stage.lockUpDate,
           variant: 'lock-up',
+        },
+      })
+    }
+
+    if (type.value === 'HW' && stage.weatherstripping) {
+      stageEvents.push({
+        id: stage.weatherstrippingScheduleId
+          ? `production-schedule-${stage.weatherstrippingScheduleId}`
+          : `${groupId}-${type.value.toLowerCase()}-weatherstripping-${stamp}`,
+        groupId,
+        title: `${type.label} WEATHERSTRIPPING • ${getLotsLabel(values.lotStart, values.lotEnd, values.lotNumbers)}`,
+        start: stage.weatherstrippingDate,
+        allDay: true,
+        extendedProps: {
+          ...commonProps,
+          activityType: type.value,
+          scheduleId: stage.weatherstrippingScheduleId ?? null,
+          followUp: values.followUpStates?.[String(stage.weatherstrippingScheduleId)] ?? null,
+          dateOwner: stage.weatherstrippingDateOwner,
+          dateNote: stage.weatherstrippingDateNote ?? '',
+          dateHistory: stage.weatherstrippingDateHistory ?? [],
+          confirmed: Boolean(stage.weatherstrippingConfirmed),
+          lotStart: values.lotStart,
+          lotEnd: values.lotEnd,
+          lotNumbers: values.lotNumbers,
+          orderMaterial: false,
+          installOnly: false,
+          installDate: '',
+          splitPhase: Boolean(stage.splitPhase),
+          splitParts: stage.splitParts ?? [],
+          lockUp: false,
+          weatherstripping: true,
+          weatherstrippingDate: stage.weatherstrippingDate,
+          variant: 'weatherstripping',
         },
       })
     }
@@ -511,6 +741,8 @@ export function createDraftFromProductionEvent(event) {
 
   return {
     ...createEmptyProductionDraft(schedule.EXT.date),
+    activityId: props.activityId ?? null,
+    followUpStates: props.followUpStates ?? {},
     jobId: props.jobId,
     phaseId: props.phaseId,
     jobCode: props.jobCode,
@@ -521,6 +753,7 @@ export function createDraftFromProductionEvent(event) {
     lotStart: phaseLotNumbers[0] ?? props.lotStart,
     lotEnd: phaseLotNumbers.at(-1) ?? props.lotEnd,
     lotNumbers: phaseLotNumbers,
+    lotIds: props.lotIds ?? [],
     foreman: props.foreman ?? '',
     superintendent: props.superintendent ?? '',
     notes: props.notes ?? '',
@@ -528,26 +761,43 @@ export function createDraftFromProductionEvent(event) {
     extDateOwner: schedule.EXT.dateOwner ?? '',
     extDateNote: schedule.EXT.note ?? '',
     extDateHistory: (schedule.EXT.history ?? []).map((entry) => ({ ...entry })),
+    extScheduleId: schedule.EXT.id ?? null,
+    extConfirmed: Boolean(schedule.EXT.confirmed),
     extOrderMaterial: Boolean(schedule.EXT.orderMaterial),
     extInstallOnly: Boolean(schedule.EXT.installOnly),
     extInstallDate: schedule.EXT.installDate ?? '',
     extInstallDateOwner: schedule.EXT.installDateOwner ?? '',
     extInstallDateNote: schedule.EXT.installDateNote ?? '',
     extInstallDateHistory: (schedule.EXT.installDateHistory ?? []).map((entry) => ({ ...entry })),
+    extInstallScheduleId: schedule.EXT.installScheduleId ?? null,
+    extInstallConfirmed: Boolean(schedule.EXT.installConfirmed),
     dmShutters: Boolean(schedule.DM.shutters ?? shutterSchedule.enabled),
     shutterDate: shutterSchedule.date ?? '',
     shutterDateOwner: shutterSchedule.dateOwner ?? '',
     shutterDateNote: shutterSchedule.note ?? '',
     shutterDateHistory: (shutterSchedule.history ?? []).map((entry) => ({ ...entry })),
+    shutterScheduleId: shutterSchedule.id ?? null,
+    shutterConfirmed: Boolean(shutterSchedule.confirmed),
     dmDate: schedule.DM.date,
     dmDateOwner: schedule.DM.dateOwner ?? '',
     dmDateNote: schedule.DM.note ?? '',
     dmDateHistory: (schedule.DM.history ?? []).map((entry) => ({ ...entry })),
+    dmScheduleId: schedule.DM.id ?? null,
+    dmConfirmed: Boolean(schedule.DM.confirmed),
     dmInstallOnly: Boolean(schedule.DM.installOnly),
     dmInstallDate: schedule.DM.installDate ?? '',
     dmInstallDateOwner: schedule.DM.installDateOwner ?? '',
     dmInstallDateNote: schedule.DM.installDateNote ?? '',
     dmInstallDateHistory: (schedule.DM.installDateHistory ?? []).map((entry) => ({ ...entry })),
+    dmInstallScheduleId: schedule.DM.installScheduleId ?? null,
+    dmInstallConfirmed: Boolean(schedule.DM.installConfirmed),
+    dmBaseboardInstall: Boolean(schedule.DM.baseboardInstall),
+    dmBaseboardInstallDate: schedule.DM.baseboardInstallDate ?? '',
+    dmBaseboardInstallDateOwner: schedule.DM.baseboardInstallDateOwner ?? '',
+    dmBaseboardInstallDateNote: schedule.DM.baseboardInstallDateNote ?? '',
+    dmBaseboardInstallDateHistory: (schedule.DM.baseboardInstallDateHistory ?? []).map((entry) => ({ ...entry })),
+    dmBaseboardInstallScheduleId: schedule.DM.baseboardInstallScheduleId ?? null,
+    dmBaseboardInstallConfirmed: Boolean(schedule.DM.baseboardInstallConfirmed),
     dmSplitPhase: Boolean(schedule.DM.splitPhase),
     dmSplitParts: (schedule.DM.splitParts ?? []).map((part) => ({
       ...part,
@@ -557,6 +807,8 @@ export function createDraftFromProductionEvent(event) {
     hwDateOwner: schedule.HW.dateOwner ?? '',
     hwDateNote: schedule.HW.note ?? '',
     hwDateHistory: (schedule.HW.history ?? []).map((entry) => ({ ...entry })),
+    hwScheduleId: schedule.HW.id ?? null,
+    hwConfirmed: Boolean(schedule.HW.confirmed),
     hwSplitPhase: Boolean(schedule.HW.splitPhase),
     hwSplitParts: (schedule.HW.splitParts ?? []).map((part) => ({
       ...part,
@@ -567,60 +819,61 @@ export function createDraftFromProductionEvent(event) {
     hwLockUpDateOwner: schedule.HW.lockUpDateOwner ?? '',
     hwLockUpDateNote: schedule.HW.lockUpDateNote ?? '',
     hwLockUpDateHistory: (schedule.HW.lockUpDateHistory ?? []).map((entry) => ({ ...entry })),
+    hwLockUpScheduleId: schedule.HW.lockUpScheduleId ?? null,
+    hwLockUpConfirmed: Boolean(schedule.HW.lockUpConfirmed),
+    hwWeatherstripping: Boolean(schedule.HW.weatherstripping),
+    hwWeatherstrippingDate: schedule.HW.weatherstrippingDate ?? '',
+    hwWeatherstrippingDateOwner: schedule.HW.weatherstrippingDateOwner ?? '',
+    hwWeatherstrippingDateNote: schedule.HW.weatherstrippingDateNote ?? '',
+    hwWeatherstrippingDateHistory: (schedule.HW.weatherstrippingDateHistory ?? []).map((entry) => ({ ...entry })),
+    hwWeatherstrippingScheduleId: schedule.HW.weatherstrippingScheduleId ?? null,
+    hwWeatherstrippingConfirmed: Boolean(schedule.HW.weatherstrippingConfirmed),
   }
 }
 
-const demoActivityOne = {
-  ...createEmptyProductionDraft('2026-08-10'),
-  jobId: 1,
-  phaseId: 2102,
-  jobCode: '1307',
-  builder: 'Trumark Homes',
-  community: 'Andara',
-  phase: 'Phase 2',
-  building: 'Building 15',
-  lotStart: 66,
-  lotEnd: 70,
-  lotNumbers: ['66', '67', '68', '69', '70'],
-  foreman: 'Lauren Mitchell',
-  superintendent: 'Daniel Torres',
-  notes: 'Production schedule for the full phase.',
-  extDate: '2026-08-10',
-  extDateOwner: 'SUPERVISOR',
-  extOrderMaterial: true,
-  dmShutters: true,
-  shutterDate: '2026-08-04',
-  shutterDateOwner: 'TENTATIVE',
-  dmDate: '2026-08-11',
-  dmDateOwner: 'JOBSITE_SUPERINTENDENT',
-  hwDate: '2026-08-12',
-  hwDateOwner: 'TENTATIVE',
+// "Phase 1" -> "P1", "Building 2" -> "B2": the short form the Month view uses.
+function shortPhaseOrBuilding(prefix, value) {
+  const text = String(value ?? '').trim().replace(/^(phase|building)\s*/i, '')
+  if (!text) return ''
+  // "Building B" is already short: do not turn it into "BB".
+  return text.toLowerCase().startsWith(prefix.toLowerCase()) ? text : `${prefix}${text}`
 }
 
-const demoActivityTwo = {
-  ...createEmptyProductionDraft('2026-08-17'),
-  jobId: 1,
-  phaseId: 2101,
-  jobCode: '1307',
-  builder: 'Trumark Homes',
-  community: 'Andara',
-  phase: 'Phase 3',
-  building: 'Building 5',
-  lotStart: 18,
-  lotEnd: 22,
-  lotNumbers: ['18', '19', '20', '21', '22'],
-  foreman: 'Lauren Mitchell',
-  superintendent: 'Daniel Torres',
-  notes: 'Second production sequence for Job 1307.',
-  extDate: '2026-08-17',
-  extDateOwner: 'TENTATIVE',
-  dmDate: '2026-08-18',
-  dmDateOwner: 'SUPERVISOR',
-  hwDate: '2026-08-19',
-  hwDateOwner: 'JOBSITE_SUPERINTENDENT',
+/**
+ * One line for a Production event in the Month view:
+ * "Community · P1 B2 · (Lots) · Event". The Job number is left out: the
+ * community already says which job it is.
+ */
+/** "* " before the name of a confirmed event (any event, Extra / CO ones too); empty otherwise. */
+export function confirmedMark(props) {
+  return props?.confirmed ? '* ' : ''
 }
 
-export const initialCalendarEvents = [
-  ...createProductionCalendarEvents(demoActivityOne, 'production-1307-2102', 101),
-  ...createProductionCalendarEvents(demoActivityTwo, 'production-1307-2101', 102),
-]
+export function getMonthEventLabel(props) {
+  // An Extra / CO event: its Community, its number and its Lots, which can be in several Phases.
+  if (props.activityType === changeOrderType.value) {
+    return confirmedMark(props)
+      + [props.community, props.lotsText, props.changeOrderNumber].filter(Boolean).join(' · ')
+  }
+  const type = activityTypeMap[props.activityType]
+  const extra = props.variant === 'install-only'
+    ? 'INSTALL ONLY'
+    : props.variant === 'baseboard-install'
+      ? 'BASEBOARD INSTALL'
+      : props.variant === 'lock-up'
+        ? 'LOCK UP'
+        : props.variant === 'weatherstripping' ? 'WEATHERSTRIPPING' : ''
+  const phaseBuilding = [
+    shortPhaseOrBuilding('P', props.phase),
+    shortPhaseOrBuilding('B', props.building),
+  ].filter(Boolean).join(' ')
+  const lots = getLotsLabel(props.lotStart, props.lotEnd, props.lotNumbers)
+    .replace(/^Lots?\s+/, '')
+
+  return confirmedMark(props) + [
+    props.community,
+    phaseBuilding,
+    lots ? `(${lots})` : '',
+    [type?.shortLabel ?? props.activityType, extra].filter(Boolean).join(' '),
+  ].filter(Boolean).join(' · ')
+}

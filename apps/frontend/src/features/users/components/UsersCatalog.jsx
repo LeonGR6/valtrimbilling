@@ -1,9 +1,11 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { zodResolver } from '@hookform/resolvers/zod'
-import { Controller, useForm, useWatch } from 'react-hook-form'
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from 'react'
 import {
   Alert,
-  Autocomplete,
   Avatar,
   Box,
   Button,
@@ -14,7 +16,6 @@ import {
   DialogContent,
   DialogTitle,
   FormControl,
-  FormHelperText,
   IconButton,
   InputAdornment,
   InputLabel,
@@ -28,12 +29,10 @@ import {
   TableCell,
   TableContainer,
   TableHead,
-  TablePagination,
   TableRow,
   TextField,
   Typography,
 } from '@mui/material'
-import { alpha } from '@mui/material/styles'
 import CheckCircleOutlineRoundedIcon from '@mui/icons-material/CheckCircleOutlineRounded'
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined'
 import FilterListRoundedIcon from '@mui/icons-material/FilterListRounded'
@@ -45,23 +44,14 @@ import PersonOffRoundedIcon from '@mui/icons-material/PersonOffRounded'
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded'
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
 import ResponsiveCreateButton from '../../../components/common/ResponsiveCreateButton'
-import { FormPhoneInput } from '../../../components/common/InternationalPhoneInput.jsx'
 import { useAuth } from '../../auth/context/useAuth.js'
+import { formatPhoneNumber } from '../../../utils/phoneNumbers.js'
 import {
-  formatPhoneNumber,
-  getNationalPhoneNumber,
-  getPhoneCountry,
-} from '../../../utils/phoneNumbers.js'
-import {
-  emptyUser,
   isScopedRole,
-  userRoleDescriptions,
   userRoleLabels,
   userRoleOptions,
-  userStatusByValue,
   userStatusOptions,
 } from '../data/users.js'
-import { createUserSchema } from '../schemas/userSchema.js'
 import {
   inviteUser,
   listUsers,
@@ -69,74 +59,11 @@ import {
   setUserActive,
   updateUser,
 } from '../services/usersRepository.js'
-
-function getInitials(name) {
-  return name
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0])
-    .join('')
-    .toUpperCase()
-}
-
-function getUserFormValues(user) {
-  if (!user) return { ...emptyUser, phoneCountry: 'US' }
-
-  const phoneCountry = getPhoneCountry(user.phone)
-  return {
-    ...user,
-    phoneCountry,
-    phone: getNationalPhoneNumber(user.phone, phoneCountry),
-  }
-}
-
-// Summary tile shown above the table. `color` is a theme palette key, so the
-// tinted badge follows light and dark mode without hardcoded values.
-function StatTile({ label, value, icon: Icon, color }) {
-  return (
-    <Box
-      sx={{
-        bgcolor: 'background.paper',
-        border: 1,
-        borderColor: 'divider',
-        borderRadius: 2,
-        p: 2.5,
-      }}
-    >
-      <Stack direction="row" spacing={2} sx={{ alignItems: 'center' }}>
-        <Box
-          sx={(theme) => ({
-            width: 48,
-            height: 48,
-            flexShrink: 0,
-            borderRadius: '50%',
-            display: 'grid',
-            placeItems: 'center',
-            color: `${color}.main`,
-            bgcolor: alpha(theme.palette[color].main, 0.12),
-          })}
-        >
-          <Icon />
-        </Box>
-        <Box sx={{ minWidth: 0 }}>
-          <Typography variant="body2" color="text.secondary" noWrap>
-            {label}
-          </Typography>
-          <Typography variant="h4" fontWeight={700} color="text.primary">
-            {value}
-          </Typography>
-        </Box>
-      </Stack>
-    </Box>
-  )
-}
-
-function communityLabel(community) {
-  const code = community.code ? `${community.code} — ` : ''
-  const inactive = community.isActive ? '' : ' (Inactive)'
-  return `${code}${community.name}${inactive}`
-}
+import { getInitials } from '../../../utils/initials.js'
+import UserDialog from './UserDialog.jsx'
+import { communityLabel } from '../utils/communityLabel.js'
+import StatTile from './StatTile.jsx'
+import UserStatusChip from './UserStatusChip.jsx'
 
 const dateTimeFormatter = new Intl.DateTimeFormat('en-US', {
   dateStyle: 'medium',
@@ -150,228 +77,6 @@ function formatDateTime(value, fallback = '—') {
   return Number.isNaN(date.getTime()) ? fallback : dateTimeFormatter.format(date)
 }
 
-function UserStatusChip({ status }) {
-  const details = userStatusByValue[status] ?? {
-    label: 'Unknown',
-    color: 'default',
-  }
-
-  return (
-    <Chip
-      label={details.label}
-      color={details.color}
-      size="small"
-      variant="outlined"
-    />
-  )
-}
-
-function UserDialog({ communities, saving, user, users, onClose, onSave }) {
-  const {
-    control,
-    register,
-    handleSubmit,
-    formState: { errors },
-  } = useForm({
-    resolver: zodResolver(createUserSchema(users, user?.id ?? null)),
-    defaultValues: getUserFormValues(user),
-    mode: 'onTouched',
-    reValidateMode: 'onChange',
-  })
-
-  // The scope selector only applies to roles that can be limited to specific
-  // communities, and the project picker only when they actually are.
-  const selectedRole = useWatch({ control, name: 'role' })
-  const allProjects = useWatch({ control, name: 'allProjects' })
-  const showScopeSelector = isScopedRole(selectedRole)
-  const showProjectPicker = showScopeSelector && !allProjects
-
-  return (
-    <Dialog
-      open
-      onClose={onClose}
-      fullWidth
-      maxWidth="sm"
-      component="form"
-      onSubmit={handleSubmit(onSave)}
-      noValidate
-    >
-      <DialogTitle sx={{ pb: 1 }}>
-        <Typography variant="h6" component="div" fontWeight={700}>
-          {user ? 'Edit user' : 'New user'}
-        </Typography>
-        <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-          {user
-            ? 'Update the contact information and access level.'
-            : 'Send an invitation so the user can choose their password.'}
-        </Typography>
-      </DialogTitle>
-
-      <DialogContent sx={{ pt: '16px !important' }}>
-        <Stack spacing={2.25}>
-          <TextField
-            label="Name"
-            {...register('name')}
-            error={Boolean(errors.name)}
-            helperText={errors.name?.message ?? ' '}
-            fullWidth
-            slotProps={{ htmlInput: { maxLength: 100 } }}
-          />
-
-          <TextField
-            label="Email"
-            type="email"
-            {...register('email')}
-            error={Boolean(errors.email)}
-            helperText={errors.email?.message ?? 'Used to sign in.'}
-            fullWidth
-            slotProps={{
-              input: {
-                startAdornment: (
-                  <InputAdornment position="start">
-                    <MailOutlineRoundedIcon fontSize="small" />
-                  </InputAdornment>
-                ),
-              },
-              htmlInput: { maxLength: 160 },
-            }}
-          />
-
-          <FormPhoneInput
-            control={control}
-            name="phone"
-            label="Phone number"
-            error={errors.phone}
-            helperText="Optional · choose +1 or +52"
-          />
-
-          <Controller
-            name="role"
-            control={control}
-            render={({ field }) => (
-              <FormControl error={Boolean(errors.role)} fullWidth>
-                <InputLabel id="user-role-label">Role</InputLabel>
-                <Select
-                  labelId="user-role-label"
-                  label="Role"
-                  value={field.value}
-                  onChange={field.onChange}
-                  onBlur={field.onBlur}
-                >
-                  {userRoleOptions.map((option) => (
-                    <MenuItem key={option.value} value={option.value}>
-                      {option.label}
-                    </MenuItem>
-                  ))}
-                </Select>
-                <FormHelperText>
-                  {errors.role?.message ?? userRoleDescriptions[field.value]}
-                </FormHelperText>
-              </FormControl>
-            )}
-          />
-
-          {showScopeSelector && (
-            <Controller
-              name="allProjects"
-              control={control}
-              render={({ field }) => (
-                <FormControl fullWidth>
-                  <InputLabel id="user-scope-label">Project access</InputLabel>
-                  <Select
-                    labelId="user-scope-label"
-                    label="Project access"
-                    value={field.value ? 'all' : 'selected'}
-                    onChange={(event) =>
-                      field.onChange(event.target.value === 'all')
-                    }
-                    onBlur={field.onBlur}
-                  >
-                    <MenuItem value="all">All projects</MenuItem>
-                    <MenuItem value="selected">Selected projects</MenuItem>
-                  </Select>
-                </FormControl>
-              )}
-            />
-          )}
-
-          {showProjectPicker && (
-            <Controller
-              name="projectAccess"
-              control={control}
-              render={({ field }) => (
-                <Autocomplete
-                  multiple
-                  disableCloseOnSelect
-                  options={communities.map((community) => community.id)}
-                  getOptionLabel={(communityId) => {
-                    const community = communities.find(({ id }) => id === communityId)
-                    return community ? communityLabel(community) : String(communityId)
-                  }}
-                  value={field.value}
-                  onChange={(_, nextValue) => field.onChange(nextValue)}
-                  onBlur={field.onBlur}
-                  size="small"
-                  renderInput={(params) => (
-                    <TextField
-                      {...params}
-                      label="Projects"
-                      placeholder="Add project"
-                      error={Boolean(errors.projectAccess)}
-                      helperText={
-                        errors.projectAccess?.message ??
-                        'The user only sees the projects listed here.'
-                      }
-                    />
-                  )}
-                />
-              )}
-            />
-          )}
-
-          {user && (
-            <Controller
-              name="isActive"
-              control={control}
-              render={({ field }) => (
-                <FormControl fullWidth>
-                  <InputLabel id="user-status-label">Status</InputLabel>
-                  <Select
-                    labelId="user-status-label"
-                    label="Status"
-                    value={field.value ? 'active' : 'inactive'}
-                    onChange={(event) =>
-                      field.onChange(event.target.value === 'active')
-                    }
-                    onBlur={field.onBlur}
-                  >
-                    <MenuItem value="active">Active</MenuItem>
-                    <MenuItem value="inactive">Inactive</MenuItem>
-                  </Select>
-                  <FormHelperText>
-                    {field.value
-                      ? 'The user can sign in.'
-                      : 'The user keeps their history but cannot sign in.'}
-                  </FormHelperText>
-                </FormControl>
-              )}
-            />
-          )}
-        </Stack>
-      </DialogContent>
-
-      <DialogActions sx={{ px: 3, pb: 2.5, pt: 1.5 }}>
-        <Button color="inherit" onClick={onClose} disabled={saving}>
-          Cancel
-        </Button>
-        <Button type="submit" variant="contained" disabled={saving} disableElevation>
-          {saving ? 'Saving…' : user ? 'Save changes' : 'Send invitation'}
-        </Button>
-      </DialogActions>
-    </Dialog>
-  )
-}
-
 export default function UsersCatalog() {
   const { profile, refreshProfile } = useAuth()
   const [users, setUsers] = useState([])
@@ -382,8 +87,6 @@ export default function UsersCatalog() {
   const [search, setSearch] = useState('')
   const [roleFilter, setRoleFilter] = useState('all')
   const [statusFilter, setStatusFilter] = useState('all')
-  const [page, setPage] = useState(0)
-  const [rowsPerPage, setRowsPerPage] = useState(5)
   const [menuAnchor, setMenuAnchor] = useState(null)
   const [selectedUser, setSelectedUser] = useState(null)
   const [dialogState, setDialogState] = useState(null)
@@ -482,11 +185,6 @@ export default function UsersCatalog() {
     })
   }, [users, search, roleFilter, statusFilter])
 
-  const visibleUsers = filteredUsers.slice(
-    page * rowsPerPage,
-    page * rowsPerPage + rowsPerPage,
-  )
-
   const handleMenuOpen = (event, user) => {
     setMenuAnchor(event.currentTarget)
     setSelectedUser(user)
@@ -525,7 +223,6 @@ export default function UsersCatalog() {
       } else {
         const invited = await inviteUser(form)
         setUsers((current) => [invited, ...current])
-        setPage(0)
         setNotice({
           severity: 'success',
           message: `Invitation sent to ${invited.email}.`,
@@ -680,10 +377,7 @@ export default function UsersCatalog() {
           >
             <TextField
               value={search}
-              onChange={(event) => {
-                setSearch(event.target.value)
-                setPage(0)
-              }}
+              onChange={(event) => setSearch(event.target.value)}
               size="small"
               placeholder="Search users by name, email or phone..."
               sx={{ width: { xs: '100%', md: 380 } }}
@@ -703,10 +397,7 @@ export default function UsersCatalog() {
                 labelId="user-role-filter-label"
                 label="Role"
                 value={roleFilter}
-                onChange={(event) => {
-                  setRoleFilter(event.target.value)
-                  setPage(0)
-                }}
+                onChange={(event) => setRoleFilter(event.target.value)}
                 startAdornment={
                   <InputAdornment position="start">
                     <FilterListRoundedIcon fontSize="small" color="action" />
@@ -727,10 +418,7 @@ export default function UsersCatalog() {
                 labelId="user-status-filter-label"
                 label="Status"
                 value={statusFilter}
-                onChange={(event) => {
-                  setStatusFilter(event.target.value)
-                  setPage(0)
-                }}
+                onChange={(event) => setStatusFilter(event.target.value)}
               >
                 <MenuItem value="all">All statuses</MenuItem>
                 {userStatusOptions.map((status) => (
@@ -743,7 +431,12 @@ export default function UsersCatalog() {
           </Stack>
 
           <TableContainer>
-            <Table sx={{ minWidth: 1250 }}>
+            <Table
+              sx={{
+                minWidth: 1250,
+                '& tbody tr:last-of-type .MuiTableCell-root': { borderBottom: 0 },
+              }}
+            >
               <TableHead>
                 <TableRow
                   sx={{
@@ -778,7 +471,7 @@ export default function UsersCatalog() {
                   </TableRow>
                 )}
 
-                {!loading && visibleUsers.map((user) => (
+                {!loading && filteredUsers.map((user) => (
                   <TableRow
                     key={user.id}
                     hover
@@ -879,7 +572,7 @@ export default function UsersCatalog() {
                   </TableRow>
                 ))}
 
-                {!loading && !loadError && visibleUsers.length === 0 && (
+                {!loading && !loadError && filteredUsers.length === 0 && (
                   <TableRow>
                     <TableCell colSpan={7} sx={{ py: 8, textAlign: 'center' }}>
                       <SearchRoundedIcon color="action" sx={{ fontSize: 40, mb: 1 }} />
@@ -893,19 +586,6 @@ export default function UsersCatalog() {
               </TableBody>
             </Table>
           </TableContainer>
-
-          <TablePagination
-            component="div"
-            count={filteredUsers.length}
-            page={page}
-            onPageChange={(_, nextPage) => setPage(nextPage)}
-            rowsPerPage={rowsPerPage}
-            onRowsPerPageChange={(event) => {
-              setRowsPerPage(Number(event.target.value))
-              setPage(0)
-            }}
-            rowsPerPageOptions={[5, 10, 25]}
-          />
         </Box>
       </Box>
 

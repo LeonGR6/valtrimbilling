@@ -75,11 +75,11 @@ export default function SourcePdfPreviewDialog({ request, onClose, canRetryPdf =
       </DialogTitle>
       <DialogContent dividers sx={{ bgcolor: 'background.default', minWidth: 0, overflowWrap: 'anywhere' }}>
         <Alert severity="info" variant="outlined" sx={{ mb: 2 }}>
+          {/* Every request comes from the database; email photos are kept as reduced copies
+              since 25 Nov 2026 (Photos from the email). */}
           {request.emailImportId
-            ? 'Email reference and extracted information are retained with this request. New email image files are not stored. Manual form corrections do not change the source extraction.'
-            : sourceDocument?.persisted || request.prototypeOnly === false || storedPdf
-            ? 'The original source and extraction are retained with the request. Manual form corrections do not change this reference.'
-            : 'Frontend simulation: this source is available only in memory and resets when the page reloads. Manual form corrections do not change this reference.'}
+            ? 'Email reference and extracted information are retained with this request. Email photos are kept as reduced copies under Photos from the email. Manual form corrections do not change the source extraction.'
+            : 'The original source and extraction are retained with the request. Manual form corrections do not change this reference.'}
         </Alert>
         {pdfPending && (
           <Alert severity="warning" variant="outlined" sx={{ mb: 2 }} action={canRetryPdf && (

@@ -118,7 +118,7 @@ select throws_ok(format('select pg_temp.invalid_ready(%L)',
   'update valtrim.service_requests set workflow_stage = ' || quote_literal(stage) || ' where id = (select request_id from ready_fixture)'),
   '55000', 'Only a request awaiting review without an active appointment can be approved', stage || ' cannot be approved')
 from unnest(array['READY_TO_PROPOSE','AWAITING_CUSTOMER','NEEDS_CONTACT','CONFIRMED','WORKING','COMPLETED']) stages(stage);
-select throws_ok($$select pg_temp.invalid_ready('update valtrim.service_requests set closed_at = now(), close_reason = ''Test closure'' where id = (select request_id from ready_fixture)')$$,
+select throws_ok($$select pg_temp.invalid_ready('update valtrim.service_requests set closed_at = now(), close_reason = ''Test closure'', close_reason_code = ''OTHER'' where id = (select request_id from ready_fixture)')$$,
   '55000', 'Only a request awaiting review without an active appointment can be approved', 'Closed requests cannot be approved');
 select is(records.value, original, 'Rejected approvals preserve the complete aggregate and its version')
 from ready_fixture cross join lateral valtrim.read_customer_service_request_intakes(request_id) records(value);

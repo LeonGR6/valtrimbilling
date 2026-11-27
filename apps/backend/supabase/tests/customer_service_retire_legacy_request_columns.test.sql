@@ -79,7 +79,7 @@ select ok(exists(select 1 from valtrim.audit_events a where a.entity_id = f.requ
   and a.new_values ->> 'work_category' = 'DOORS'), 'Creation audit uses the current classification') from cleanup_fixture f;
 
 -- Existing closed-record metadata still prevents edits without inventing CLOSED.
-update valtrim.service_requests set closed_at = now(), close_reason = 'Guard test'
+update valtrim.service_requests set closed_at = now(), close_reason = 'Guard test', close_reason_code = 'OTHER'
 where id = (select request_id from cleanup_fixture);
 select throws_ok(format('select valtrim.update_customer_service_request_intake(%s,%L,%L::jsonb)',
   r.id, r.updated_at, '{"request":{"internalNotes":"Must reject"}}'), '55000',
